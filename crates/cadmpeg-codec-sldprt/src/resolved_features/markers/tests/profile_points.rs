@@ -1,19 +1,11 @@
 //! Indexed and linked profile-point marker tests.
-#![allow(unused_imports)]
 
 use super::super::super::selections::coordinate_marker_local_links;
-use super::super::super::{
-    CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
-};
+use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::super::*;
 use crate::layout::legacy_140_single_incidence_profile_point as point_140;
 use crate::layout::legacy_144_single_incidence_profile_point as point_144;
-use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchRelationKind,
-};
-use cadmpeg_ir::math::Point3;
+use crate::records::{SketchInputEntity, SketchInputKind};
 
 const EPS_POINT_COORDINATE: f64 = 1e-12;
 

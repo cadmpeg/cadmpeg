@@ -150,6 +150,40 @@ pub(crate) mod compressed_buffer_prologue {
     pub(crate) const METHOD: usize = 8;
 }
 
+/// Byte offsets for the `windows_bitmap_header` record.
+///
+/// Spec §20.4. Record length 40 B.
+///
+/// ```text
+/// The class payload may prepend a packed version and UTF-16 path for ON_WindowsBitmapEx; this record is the common header that follows that optional prefix.
+/// ```
+pub(crate) mod windows_bitmap_header {
+    /// Record length in bytes. Spec §20.4.
+    pub(crate) const LEN: usize = 40;
+    /// Offset of `header_size` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const HEADER_SIZE: usize = 0;
+    /// Offset of `width` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const WIDTH: usize = 4;
+    /// Offset of `height` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const HEIGHT: usize = 8;
+    /// Offset of `planes` (`u16`, little-endian). Spec §20.4.
+    pub(crate) const PLANES: usize = 12;
+    /// Offset of `bits_per_pixel` (`u16`, little-endian). Spec §20.4.
+    pub(crate) const BITS_PER_PIXEL: usize = 14;
+    /// Offset of `compression` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const COMPRESSION: usize = 16;
+    /// Offset of `image_byte_count` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const IMAGE_BYTE_COUNT: usize = 20;
+    /// Offset of `horizontal_pixels_per_meter` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const HORIZONTAL_PIXELS_PER_METER: usize = 24;
+    /// Offset of `vertical_pixels_per_meter` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const VERTICAL_PIXELS_PER_METER: usize = 28;
+    /// Offset of `colors_used` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const COLORS_USED: usize = 32;
+    /// Offset of `important_colors` (`i32`, little-endian). Spec §20.4.
+    pub(crate) const IMPORTANT_COLORS: usize = 36;
+}
+
 /// Byte offsets for the `subd_component_base` record.
 ///
 /// Spec §19.5. Record length 10 B.

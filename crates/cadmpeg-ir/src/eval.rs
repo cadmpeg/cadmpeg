@@ -212,7 +212,12 @@ fn insert_homogeneous_knot(
     if multiplicity >= degree {
         return Some(());
     }
-    let mut inserted = vec![[0.0; 4]; count + 1];
+    let mut inserted = alloc_filled(
+        count.checked_add(1)?,
+        [0.0; 4],
+        "IR homogeneous knot insertion",
+    )
+    .ok()?;
     inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
     inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
     for index in span - degree + 1..=span - multiplicity {
@@ -235,6 +240,19 @@ fn homogeneous_bezier_spans(
     knots: &[f64],
     mut controls: Vec<[f64; 4]>,
 ) -> Option<Vec<HomogeneousBezierSpan>> {
+    if degree == 0 {
+        let mut spans = Vec::new();
+        for (index, window) in knots.windows(2).enumerate() {
+            if window[0] < window[1] {
+                spans.push(HomogeneousBezierSpan {
+                    domain: [window[0], window[1]],
+                    controls: vec![*controls.get(index)?],
+                });
+            }
+        }
+        return (!spans.is_empty()).then_some(spans);
+    }
+
     let mut knots = knots.to_vec();
     let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
     let mut internal = knots[degree + 1..controls.len()]
@@ -274,9 +292,7 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
     let u_count = usize::try_from(surface.u_count).ok()?;
     let v_count = usize::try_from(surface.v_count).ok()?;
     let control_count = u_count.checked_mul(v_count)?;
-    if u_degree == 0
-        || v_degree == 0
-        || u_degree >= u_count
+    if u_degree >= u_count
         || v_degree >= v_count
         || surface.control_points.len() != control_count
         || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
@@ -504,7 +520,12 @@ fn rational_patch_parameter_segment(
         })
         .collect::<Option<Vec<_>>>()?;
     let degree = patch.u_degree + patch.v_degree;
-    let mut diagonal = vec![[0.0; 4]; degree + 1];
+    let mut diagonal = alloc_filled(
+        degree.checked_add(1)?,
+        [0.0; 4],
+        "IR rational surface diagonal",
+    )
+    .ok()?;
     for (u, row) in restricted.iter().enumerate() {
         for (v, control) in row.iter().enumerate() {
             let index = u + v;
@@ -1297,15 +1318,15 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 }
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
-fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
     let mut values = vec![1.0];
-    let mut left = vec![0.0; degree + 1];
-    let mut right = vec![0.0; degree + 1];
+    let mut left = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis left").ok()?;
+    let mut right = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis right").ok()?;
     for j in 1..=degree {
         left[j] = t - knots[span + 1 - j];
         right[j] = knots[span + j] - t;
         let mut saved = 0.0;
-        let mut next = vec![0.0; j + 1];
+        let mut next = alloc_filled(j.checked_add(1)?, 0.0, "IR B-spline basis level").ok()?;
         for (r, &value) in values.iter().enumerate().take(j) {
             let denominator = right[r + 1] + left[j - r];
             let factor = if denominator == 0.0 {
@@ -1319,14 +1340,14 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> 
         next[j] = saved;
         values = next;
     }
-    values
+    Some(values)
 }
 
-fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
     if degree == 0 {
-        return vec![0.0];
+        return Some(vec![0.0]);
     }
-    let lower = bspline_basis(knots, degree - 1, span, t);
+    let lower = bspline_basis(knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
     (0..=degree)
         .map(|local| {
@@ -1352,14 +1373,25 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
             };
             left - right
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
 
-fn bspline_basis_second_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+fn bspline_basis_second_derivative(
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+) -> Option<Vec<f64>> {
     if degree < 2 {
-        return vec![0.0; degree + 1];
+        return alloc_filled(
+            degree.checked_add(1)?,
+            0.0,
+            "IR B-spline second-derivative basis",
+        )
+        .ok();
     }
-    let lower = bspline_basis_derivative(knots, degree - 1, span, t);
+    let lower = bspline_basis_derivative(knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
     (0..=degree)
         .map(|local| {
@@ -1385,7 +1417,8 @@ fn bspline_basis_second_derivative(knots: &[f64], degree: usize, span: usize, t:
             };
             left - right
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
 
 /// Evaluate a possibly-rational B-spline curve over 3D poles.
@@ -1398,7 +1431,7 @@ pub fn nurbs_curve_point(
 ) -> Option<Point3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
     let mut x = 0.0;
     let mut y = 0.0;
     let mut z = 0.0;
@@ -1998,9 +2031,9 @@ fn nurbs_pcurve_differential(
 ) -> Option<PcurveDifferential> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
-    let derivative = bspline_basis_derivative(knots, degree, span, t);
-    let second_derivative = bspline_basis_second_derivative(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
+    let derivative = bspline_basis_derivative(knots, degree, span, t)?;
+    let second_derivative = bspline_basis_second_derivative(knots, degree, span, t)?;
     let mut u = 0.0;
     let mut v = 0.0;
     let mut weight_sum = 0.0;
@@ -2184,8 +2217,8 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
-    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
+    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at)?;
     let mut x = 0.0;
     let mut y = 0.0;
     let mut z = 0.0;
@@ -2268,7 +2301,7 @@ pub fn nurbs_surface_isocurve(
         fixed_parameter,
     )?;
     let fixed_span = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)?;
-    let fixed_basis = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter);
+    let fixed_basis = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter)?;
     let varying_count = match fixed_axis {
         SurfaceParameterAxis::U => v_count,
         SurfaceParameterAxis::V => u_count,
@@ -2406,12 +2439,12 @@ pub fn nurbs_surface_second_partials(
     )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
-    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
-    let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at);
-    let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at);
-    let u_second = bspline_basis_second_derivative(&surface.u_knots, u_degree, u_span, u_at);
-    let v_second = bspline_basis_second_derivative(&surface.v_knots, v_degree, v_span, v_at);
+    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at)?;
+    let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at)?;
+    let u_second = bspline_basis_second_derivative(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_second = bspline_basis_second_derivative(&surface.v_knots, v_degree, v_span, v_at)?;
     let mut weighted = [0.0; 3];
     let mut weighted_u = [0.0; 3];
     let mut weighted_v = [0.0; 3];
@@ -2684,8 +2717,8 @@ fn nurbs_curve_tangent(
 ) -> Option<Vector3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
-    let derivatives = bspline_basis_derivative(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
+    let derivatives = bspline_basis_derivative(knots, degree, span, t)?;
     let mut weighted = Vector3::new(0.0, 0.0, 0.0);
     let mut weighted_derivative = Vector3::new(0.0, 0.0, 0.0);
     let mut weight = 0.0;
@@ -2725,9 +2758,9 @@ fn nurbs_curve_second_derivative(
 ) -> Option<Vector3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
-    let first_basis = bspline_basis_derivative(knots, degree, span, t);
-    let second_basis = bspline_basis_second_derivative(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
+    let first_basis = bspline_basis_derivative(knots, degree, span, t)?;
+    let second_basis = bspline_basis_second_derivative(knots, degree, span, t)?;
     let mut weighted = Vector3::new(0.0, 0.0, 0.0);
     let mut weighted_first = Vector3::new(0.0, 0.0, 0.0);
     let mut weighted_second = Vector3::new(0.0, 0.0, 0.0);
@@ -2944,49 +2977,113 @@ fn model_axis_revolution_partials(
 /// IGES line entities use a normalized surface interval while the neutral
 /// line carrier uses signed distance. Other curve carriers retain their native
 /// parameterization. A line used by more than one edge is only unambiguous
-/// when every retained edge range agrees.
+/// when every retained edge range agrees, unless the construction stores its
+/// neutral carrier interval explicitly.
+fn record_u_interval(record_bounds: Option<[Option<f64>; 4]>) -> Option<[f64; 2]> {
+    let [Some(start), Some(end), _, _] = record_bounds? else {
+        return None;
+    };
+    Some([start, end])
+}
+
+fn is_line_geometry(geometry: &CurveGeometry, depth: usize) -> bool {
+    if depth > 256 {
+        return false;
+    }
+    match geometry {
+        CurveGeometry::Line { .. } => true,
+        CurveGeometry::Transformed { basis, .. } => is_line_geometry(basis, depth + 1),
+        _ => false,
+    }
+}
+
 fn construction_curve_parameter(
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
     parameter: f64,
     surface_interval: Option<[f64; 2]>,
+    carrier_interval: Option<[f64; 2]>,
 ) -> Option<(f64, f64)> {
     if !parameter.is_finite() {
         return None;
     }
-    let Some([surface_start, surface_end]) = surface_interval else {
-        return Some((parameter, 1.0));
+    let (parameter, surface_derivative) = match (surface_interval, carrier_interval) {
+        (Some([surface_start, surface_end]), Some([carrier_start, carrier_end])) => {
+            let surface_width = surface_end - surface_start;
+            let carrier_width = carrier_end - carrier_start;
+            if !surface_start.is_finite()
+                || !surface_end.is_finite()
+                || !carrier_start.is_finite()
+                || !carrier_end.is_finite()
+                || surface_width <= 0.0
+                || carrier_width <= 0.0
+                || parameter < carrier_start
+                || parameter > carrier_end
+            {
+                return None;
+            }
+            let derivative = surface_width / carrier_width;
+            let source_parameter = (parameter - carrier_start).mul_add(derivative, surface_start);
+            (source_parameter, derivative)
+        }
+        (Some([surface_start, surface_end]), None) => {
+            let surface_width = surface_end - surface_start;
+            if !surface_start.is_finite()
+                || !surface_end.is_finite()
+                || surface_width <= 0.0
+                || parameter < surface_start
+                || parameter > surface_end
+            {
+                return None;
+            }
+            (parameter, 1.0)
+        }
+        (None, Some([carrier_start, carrier_end])) => {
+            if !carrier_start.is_finite()
+                || !carrier_end.is_finite()
+                || carrier_start >= carrier_end
+                || parameter < carrier_start
+                || parameter > carrier_end
+            {
+                return None;
+            }
+            (parameter, 1.0)
+        }
+        (None, None) => (parameter, 1.0),
     };
-    let surface_width = surface_end - surface_start;
-    if !surface_start.is_finite()
-        || !surface_end.is_finite()
-        || surface_width <= 0.0
-        || parameter < surface_start
-        || parameter > surface_end
-    {
-        return None;
-    }
     let curve = index.curves(&directrix.0)?;
-    if !matches!(curve.geometry, CurveGeometry::Line { .. }) {
-        return Some((parameter, 1.0));
+    let Some([surface_start, surface_end]) = surface_interval else {
+        return Some((parameter, surface_derivative));
+    };
+    if !is_line_geometry(&curve.geometry, 0) {
+        return Some((parameter, surface_derivative));
     }
-
-    let mut ranges = index
-        .ir()
-        .model
-        .edges
-        .iter()
-        .filter(|edge| edge.curve.as_ref() == Some(directrix))
-        .filter_map(|edge| edge.param_range);
-    let [curve_start, curve_end] = ranges.next()?;
-    if !curve_start.is_finite()
-        || !curve_end.is_finite()
-        || ranges.any(|range| range != [curve_start, curve_end])
-    {
+    let line_interval = if let Some(carrier_interval) = carrier_interval {
+        carrier_interval
+    } else {
+        let mut ranges = index
+            .ir()
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve.as_ref() == Some(directrix))
+            .filter_map(|edge| edge.param_range);
+        let interval = ranges.next()?;
+        if ranges.any(|range| range != interval) {
+            return None;
+        }
+        interval
+    };
+    let [curve_start, curve_end] = line_interval;
+    if !curve_start.is_finite() || !curve_end.is_finite() {
         return None;
     }
     let curve_width = curve_end - curve_start;
-    let derivative = curve_width / surface_width;
+    let surface_width = surface_end - surface_start;
+    if !curve_width.is_finite() || curve_width <= 0.0 || surface_width <= 0.0 {
+        return None;
+    }
+    let derivative = curve_width / surface_width * surface_derivative;
     let fraction = (parameter - surface_start) / surface_width;
     Some((curve_start + fraction * curve_width, derivative))
 }
@@ -2996,6 +3093,7 @@ fn model_native_extrusion_partials(
     directrix: &crate::ids::CurveId,
     direction: Vector3,
     parameter_interval: Option<[f64; 2]>,
+    carrier_interval: Option<[f64; 2]>,
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
@@ -3003,7 +3101,7 @@ fn model_native_extrusion_partials(
         return None;
     }
     let (parameter, derivative) =
-        construction_curve_parameter(index, directrix, u, parameter_interval)?;
+        construction_curve_parameter(index, directrix, u, parameter_interval, carrier_interval)?;
     let differential = model_curve_differential_by_id(index, directrix, parameter)?;
     let zero = Vector3::new(0.0, 0.0, 0.0);
     Some(SurfaceSecondPartials {
@@ -3025,6 +3123,7 @@ fn model_native_revolution_partials(
     angular_interval: [f64; 2],
     angular_parameter_interval: Option<[f64; 2]>,
     parameter_interval: Option<[f64; 2]>,
+    carrier_interval: Option<[f64; 2]>,
     transposed: bool,
     u: f64,
     v: f64,
@@ -3033,8 +3132,13 @@ fn model_native_revolution_partials(
         return None;
     }
     let (directrix_parameter, angular_parameter) = if transposed { (v, u) } else { (u, v) };
-    let (directrix_parameter, derivative) =
-        construction_curve_parameter(index, directrix, directrix_parameter, parameter_interval)?;
+    let (directrix_parameter, derivative) = construction_curve_parameter(
+        index,
+        directrix,
+        directrix_parameter,
+        parameter_interval,
+        carrier_interval,
+    )?;
     let (angle, angular_derivative) = angular_parameter_interval.map_or_else(
         || Some((angular_parameter, 1.0)),
         |parameter_interval| {
@@ -3195,14 +3299,31 @@ pub fn model_curve_parameter_near_point_in_index(
     point: Point3,
     seed: f64,
 ) -> Option<f64> {
-    model_curve_parameter_near_point_with_tolerance(
+    model_curve_parameter_near_point_in_index_with_tolerance(
         index,
         curve_id,
         point,
         seed,
         index.ir().tolerances.linear,
-        0,
     )
+}
+
+/// Invert a model curve using a caller-owned lookup index and tolerance.
+///
+/// The tolerance controls the forward validation of every candidate returned
+/// by the inversion. Callers that admit an evaluated geometric residual above
+/// the document default must pass that same admission bound here.
+pub fn model_curve_parameter_near_point_in_index_with_tolerance(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    point: Point3,
+    seed: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return None;
+    }
+    model_curve_parameter_near_point_with_tolerance(index, curve_id, point, seed, tolerance, 0)
 }
 
 fn model_curve_parameter_near_point_with_tolerance(
@@ -3972,6 +4093,7 @@ pub fn model_surface_point(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)?;
+    let carrier_interval = record_u_interval(procedural.record_bounds);
     let index = crate::index::ModelIndex::new(ir);
     match &procedural.definition {
         ProceduralSurfaceDefinition::Extrusion {
@@ -3984,6 +4106,7 @@ pub fn model_surface_point(
             directrix,
             *direction,
             *parameter_interval,
+            carrier_interval,
             u,
             v,
         )
@@ -4010,6 +4133,7 @@ pub fn model_surface_point(
             *angular_interval,
             *angular_parameter_interval,
             *parameter_interval,
+            carrier_interval,
             *transposed,
             u,
             v,
@@ -4049,6 +4173,8 @@ pub fn model_surface_point_by_id(
         visiting.push(surface_id.clone());
         let surface = index.surfaces(&surface_id.0)?;
         let procedural = index.procedural_surface_for_surface(&surface_id.0);
+        let carrier_interval =
+            procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
         let result = match procedural.map(|procedural| &procedural.definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
@@ -4071,6 +4197,7 @@ pub fn model_surface_point_by_id(
                 directrix,
                 *direction,
                 *parameter_interval,
+                carrier_interval,
                 u,
                 v,
             )
@@ -4102,6 +4229,7 @@ pub fn model_surface_point_by_id(
                 *angular_interval,
                 *angular_parameter_interval,
                 *parameter_interval,
+                carrier_interval,
                 *transposed,
                 u,
                 v,
@@ -4110,6 +4238,9 @@ pub fn model_surface_point_by_id(
                 point: partials.point,
                 oriented_normal: None,
             }),
+            Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
+                evaluate(index, support, u, v, visiting)
+            }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
                 let mut evaluation = evaluate(index, source, u, v, visiting)?;
                 let partials = model_surface_partials_by_id(index, source, u, v)?;
@@ -4263,6 +4394,8 @@ fn model_surface_mapping(
     visiting.push(surface.clone());
     let carrier = index.surfaces(&surface.0)?;
     let procedural = index.procedural_surface_for_surface(&surface.0);
+    let carrier_interval =
+        procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
     let result = match procedural.map(|procedural| &procedural.definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
@@ -4293,6 +4426,7 @@ fn model_surface_mapping(
                 directrix,
                 *direction,
                 *parameter_interval,
+                carrier_interval,
                 u,
                 v,
             )?,
@@ -4340,6 +4474,7 @@ fn model_surface_mapping(
                 *angular_interval,
                 *angular_parameter_interval,
                 *parameter_interval,
+                carrier_interval,
                 *transposed,
                 u,
                 v,
@@ -4349,6 +4484,9 @@ fn model_surface_mapping(
             v_scale: 1.0,
             orientation: 1.0,
         }),
+        Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
+            model_surface_mapping(index, support, u, v, visiting)
+        }
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
             let source = model_surface_mapping(index, source, u, v, visiting)?;
             let base = if source.offset_distance == 0.0 {

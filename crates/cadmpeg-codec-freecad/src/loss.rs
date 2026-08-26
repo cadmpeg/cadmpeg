@@ -21,30 +21,40 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FreecadLossCode {
+    /// Feature history cannot enter a neutral definition because its ordering is cyclic.
+    FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
     FeatureNativeKindRetained,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
+    /// Topology color values were retained because their count did not match mapped topology.
+    AppearanceTopologyColorCountMismatch,
 }
 
 impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     pub const ALL: &'static [FreecadLossCode] = &[
+        Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
+        Self::AppearanceTopologyColorCountMismatch,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNativeConstraint => "sketch.native-constraint",
+            Self::AppearanceTopologyColorCountMismatch => {
+                "appearance.topology-color-count-mismatch"
+            }
         }
     }
 
@@ -52,40 +62,36 @@ impl FreecadLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::FeatureNativeKindRetained
+            Self::FeatureCyclicHistory
+            | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
+            Self::AppearanceTopologyColorCountMismatch => Severity::Warning,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::FeatureNativeKindRetained => LossTaxonomy::FeatureHistoryRetained,
+            Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::SketchNativeGeometry | Self::SketchNativeConstraint => {
                 LossTaxonomy::RecordNotTyped
             }
+            Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
         }
     }
 
-    /// Strict floor pinned from this local code (independent of taxonomy remap).
-    ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection; list only intentional overrides here.
-    const fn strict_floor(self) -> Option<Severity> {
-        self.shared_taxonomy().strict_floor()
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
         LossKind::namespaced("fcstd", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The structured code is `fcstd/<local>`. Severity and strict floor come
-    /// from the local code.
+    /// The structured code is `fcstd/<local>`. Severity comes from the local
+    /// code; the strict floor comes from the taxonomy.
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -105,9 +111,11 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "sketch.native-geometry",
                 "sketch.native-constraint",
+                "appearance.topology-color-count-mismatch",
             ]
         );
     }

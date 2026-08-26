@@ -66,7 +66,7 @@ fn parse_configuration_variant_order(
     serde_json::from_slice::<ConfigurationMemberOrder>(bytes)
         .map(|order| order.configurations.0)
         .map_err(|error| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "invalid F3D configuration variant order {entry_name}: {error}"
             ))
         })
@@ -81,13 +81,13 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
         .map(|entry| {
             let bytes = scan.entry_bytes(&entry.name)?;
             let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "invalid F3D configuration JSON {}: {error}",
                     entry.name
                 ))
             })?;
             if !payload.is_object() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D configuration JSON must be an object: {}",
                     entry.name
                 )));
@@ -118,7 +118,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
         if !names.insert(configuration.entry_name.as_str())
             || !ids.insert(configuration.id.as_str())
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate F3D configuration identity: {}",
                 configuration.entry_name
             )));
@@ -135,7 +135,7 @@ pub(crate) fn validate_configuration_payload(
     payload: &serde_json::Value,
 ) -> Result<(), CodecError> {
     let object = payload.as_object().ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "F3D configuration JSON must be an object: {entry_name}"
         ))
     })?;
@@ -145,7 +145,7 @@ pub(crate) fn validate_configuration_payload(
     }
     let configurations = match object.get("configurations") {
         Some(value) => Some(value.as_object().ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D configuration table `configurations` must be an object: {entry_name}"
             ))
         })?),
@@ -153,19 +153,19 @@ pub(crate) fn validate_configuration_payload(
     };
     if let Some(active) = object.get("active") {
         let active = active.as_str().ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D configuration table `active` must be a string: {entry_name}"
             ))
         })?;
         if !configurations.is_some_and(|variants| variants.contains_key(active)) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D active configuration `{active}` is not a named variant: {entry_name}"
             )));
         }
     }
     for (name, value) in configurations.into_iter().flatten() {
         let definition = value.as_object().ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D configuration variant `{name}` must be an object: {entry_name}"
             ))
         })?;
@@ -173,7 +173,7 @@ pub(crate) fn validate_configuration_payload(
             .get("parameters")
             .is_some_and(|value| !value.is_object())
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D configuration variant `{name}` parameters must be an object: {entry_name}"
             )));
         }
@@ -186,7 +186,7 @@ pub(crate) fn validate_configuration_payload(
                     .any(|value| value.is_array() || value.is_object())
             })
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D configuration variant `{name}` parameter overrides must be JSON scalars: {entry_name}"
             )));
         }
@@ -195,7 +195,7 @@ pub(crate) fn validate_configuration_payload(
                 .as_array()
                 .is_some_and(|values| values.iter().all(serde_json::Value::is_string));
             if !valid {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D configuration variant `{name}` suppressed list must contain strings: {entry_name}"
                 )));
             }
@@ -204,7 +204,7 @@ pub(crate) fn validate_configuration_payload(
             .get("material")
             .is_some_and(|value| !value.is_string())
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D configuration variant `{name}` material must be a string: {entry_name}"
             )));
         }
@@ -224,7 +224,7 @@ pub(crate) fn validate_configuration_variant_order(
             .is_empty()
             .then_some(())
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D configuration rule carries a variant order: {}",
                     configuration.entry_name
                 ))
@@ -247,7 +247,7 @@ pub(crate) fn validate_configuration_variant_order(
                 .all(|name| unique.insert(name) && variants.contains_key(name))
     });
     valid.then_some(()).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "F3D configuration variant order does not match its table: {}",
             configuration.entry_name
         ))
@@ -349,7 +349,7 @@ pub(crate) fn encode_configuration_payload(
     )?;
     validate_configuration_variant_order(configuration)?;
     serde_json::to_vec(&OrderedConfigurationPayload(configuration)).map_err(|error| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "cannot encode F3D configuration JSON {}: {error}",
             configuration.entry_name
         ))

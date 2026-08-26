@@ -1,37 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral feature synchronization into native history records.
 
-#![allow(unused_imports)]
-use crate::classification::{
-    classify, classify_type_token, classify_xml_element, native_object_class,
-    principal_plane_with_siblings, FeatureClass, NativeClassKind,
-};
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::decode::View;
+use crate::records::{Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
-    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
-    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
-    PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SplitFaceTool, SurfaceExtension, SweepMode,
-    Termination, TrimRegion, VariableRadius, VertexSelection, WrapMode,
-};
-use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, Edge, Face};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::Exactness;
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::features::{DesignParameter, FeatureDefinition, FeatureId, FeatureSourceContent};
+use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
 
 use crate::history::classify::{
     feature_tree_node_role, is_custom_property, principal_plane_in_history,
@@ -336,7 +310,7 @@ pub fn sync_neutral_features(
             .as_deref()
             .is_some_and(|tag| !valid_xml_name(tag))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} has an invalid source tag",
                 feature.id
             )));
@@ -390,7 +364,7 @@ pub fn sync_neutral_features(
                 .map(|body| body_sources.get(body).cloned())
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "SLDPRT feature {} references a missing output body",
                         feature.id
                     ))
@@ -508,7 +482,7 @@ pub fn sync_neutral_features(
                 }
             });
         if !consistent {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} dependencies are inconsistent with its operands",
                 feature.id
             )));
@@ -540,13 +514,13 @@ pub(crate) fn synchronize_neutral_feature_content(
                 FeatureSourceContent::Text(text) => Ok(FeatureContent::Text(text.clone())),
                 FeatureSourceContent::Parameter(id) => {
                     let parameter = parameters.get(id).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references missing parameter {}",
                             feature.id, id.0
                         ))
                     })?;
                     if parameter.owner.as_ref() != Some(&feature.id) {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references parameter {} owned by another feature",
                             feature.id, id.0
                         )));
@@ -558,7 +532,7 @@ pub(crate) fn synchronize_neutral_feature_content(
                     .cloned()
                     .map(FeatureContent::Feature)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references missing feature {}",
                             feature.id, id
                         ))

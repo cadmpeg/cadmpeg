@@ -60,6 +60,7 @@ serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"
 sha2 = "0.11"
+sha1 = "0.11"
 memchr = "2"
 base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
@@ -70,6 +71,7 @@ flate2 = "1"
 zstd = "0.13"
 crc32fast = "1"
 roxmltree = "0.21"
+hdf5-reader = { version = "0.9.1", default-features = false }
 regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
@@ -86,6 +88,9 @@ rmp = "=0.8.15"
 # Leaving DWARF in the object files keeps every byte available to debuggers
 # while taking it off the link path. Most of the weight is in dependency rlibs.
 split-debuginfo = "unpacked"
+
+[profile.dev.package.sha2]
+opt-level = 3
 
 [profile.test]
 # Test failures need `file:line` in the backtrace; they do not need variable

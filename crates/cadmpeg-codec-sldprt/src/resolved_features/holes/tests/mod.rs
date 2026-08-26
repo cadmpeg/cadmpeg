@@ -1,27 +1,15 @@
 //! Tests for the `holes` module.
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, Length, Termination,
-};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
-};
-use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
+use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 
-use super::super::compact_reference_planes::CompactReferencePlaneIndex;
-use super::super::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
-use super::*;
 use crate::records::{
-    FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputGeneratedSurfaceIdentity,
-    FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
-    FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
+    FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
 };
 
 fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {

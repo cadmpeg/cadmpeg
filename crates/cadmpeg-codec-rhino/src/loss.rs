@@ -33,8 +33,22 @@ pub enum RhinoLossCode {
     IntegrityFailure,
     /// A framed presentation record could not be transferred.
     PresentationRecordDropped,
+    /// A recognized annotation userdata payload could not be typed.
+    AnnotationUserdataDropped,
+    /// Viewport userdata has no typed CADIR owner.
+    ViewportUserdataDropped,
     /// Mesh n-gon grouping is not represented in neutral tessellation.
     MeshNgonGroupingDropped,
+    /// A stored enumeration value was retained but could not select a neutral value.
+    EnumerationValueDegraded,
+    /// A redundant count or size was inconsistent; dependent data was dropped.
+    RedundantFieldRepaired,
+    /// A Brep display-mesh cache slot was wrong-class or unreadable.
+    BrepMeshCacheDegraded,
+    /// A duplicate source record was resolved by the format's ownership rule.
+    DuplicateRecordResolved,
+    /// A stored quad was converted to neutral triangles.
+    MeshQuadTopologyTriangulated,
     /// Embedded history geometry could not be decoded.
     HistoryEmbeddedGeometryDropped,
     /// A dimension-style override object was not applied.
@@ -93,7 +107,14 @@ impl RhinoLossCode {
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
+        Self::AnnotationUserdataDropped,
+        Self::ViewportUserdataDropped,
         Self::MeshNgonGroupingDropped,
+        Self::EnumerationValueDegraded,
+        Self::RedundantFieldRepaired,
+        Self::BrepMeshCacheDegraded,
+        Self::DuplicateRecordResolved,
+        Self::MeshQuadTopologyTriangulated,
         Self::HistoryEmbeddedGeometryDropped,
         Self::DimensionOverrideDropped,
         Self::HistoryDependencyDropped,
@@ -128,7 +149,14 @@ impl RhinoLossCode {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
+            Self::ViewportUserdataDropped => "viewport.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
+            Self::EnumerationValueDegraded => "container.enumeration-value-degraded",
+            Self::RedundantFieldRepaired => "container.redundant-field-repaired",
+            Self::BrepMeshCacheDegraded => "brep.mesh-cache-degraded",
+            Self::DuplicateRecordResolved => "container.duplicate-record-resolved",
+            Self::MeshQuadTopologyTriangulated => "mesh.quad-topology-triangulated",
             Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
             Self::DimensionOverrideDropped => "dimension.override-dropped",
             Self::HistoryDependencyDropped => "history.dependency-dropped",
@@ -174,13 +202,22 @@ impl RhinoLossCode {
             | Self::ContainerInstanceDefinitionDegraded
             | Self::ObjectFramingUndecodable
             | Self::ObjectDecodeDiagnostic
+            | Self::AnnotationUserdataDropped
             | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
             | Self::ReferenceMemberAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
-            Self::MeshNgonGroupingDropped => LossTaxonomy::RecordNotTyped,
+            Self::ViewportUserdataDropped => LossTaxonomy::RecordNotTyped,
+            Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
+                LossTaxonomy::RecordNotTyped
+            }
+            Self::EnumerationValueDegraded | Self::RedundantFieldRepaired => {
+                LossTaxonomy::DecodeDiagnostic
+            }
+            Self::BrepMeshCacheDegraded => LossTaxonomy::RecordNotTyped,
+            Self::DuplicateRecordResolved => LossTaxonomy::DecodeDiagnostic,
             Self::HistoryEmbeddedGeometryDropped => LossTaxonomy::GeometryNotTransferred,
             Self::DimensionOverrideDropped => LossTaxonomy::PmiOmitted,
             Self::HistoryDependencyDropped => LossTaxonomy::ReferenceGraphNotClosed,
@@ -247,7 +284,14 @@ mod tests {
                 "container.scan-diagnostic",
                 "container.integrity-failure",
                 "presentation.record-dropped",
+                "annotation.userdata-dropped",
+                "viewport.userdata-dropped",
                 "mesh.ngon-grouping-dropped",
+                "container.enumeration-value-degraded",
+                "container.redundant-field-repaired",
+                "brep.mesh-cache-degraded",
+                "container.duplicate-record-resolved",
+                "mesh.quad-topology-triangulated",
                 "history.embedded-geometry-dropped",
                 "dimension.override-dropped",
                 "history.dependency-dropped",

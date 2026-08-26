@@ -3116,8 +3116,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -3161,6 +3164,7 @@
               ],
               "member": null,
               "neutral_links": [],
+              "root": true,
               "source_instance": "iges:entity:directory#9",
               "world_transform": [
                 [
@@ -3212,6 +3216,7 @@
               ],
               "member": null,
               "neutral_links": [],
+              "root": false,
               "source_instance": "iges:entity:directory#5",
               "world_transform": [
                 [
@@ -3267,6 +3272,7 @@
                 "iges:model:point#D1-start",
                 "iges:model:point#D1-end"
               ],
+              "root": false,
               "source_instance": "iges:entity:directory#5",
               "world_transform": [
                 [
@@ -3292,6 +3298,8 @@
           ],
           "product_properties": [],
           "properties": [],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [],
           "rectangular_arrays": [],
           "segmented_visibility": [],
           "selected_components": [],
@@ -3302,6 +3310,7 @@
               "declared_member_count": 1,
               "depth": 0,
               "id": "iges:product:subfigure-definition#D3",
+              "label_display": null,
               "members": [
                 "iges:entity:directory#1"
               ],
@@ -3312,12 +3321,14 @@
                 76,
                 68
               ],
-              "source_entity": "iges:entity:directory#3"
+              "source_entity": "iges:entity:directory#3",
+              "transformation": null
             },
             {
               "declared_member_count": 1,
               "depth": 1,
               "id": "iges:product:subfigure-definition#D7",
+              "label_display": null,
               "members": [
                 "iges:entity:directory#5"
               ],
@@ -3329,7 +3340,8 @@
                 78,
                 84
               ],
-              "source_entity": "iges:entity:directory#7"
+              "source_entity": "iges:entity:directory#7",
+              "transformation": null
             }
           ],
           "subfigure_instances": [
@@ -3365,7 +3377,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 2
+        "version": 6
       }
     },
     "source": {
@@ -3384,7 +3396,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 0.001
     },
     "units": {
       "length": "millimeter"

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 use super::*;
+
+mod surface_styles;
 
 #[test]
 fn surface_color_search_ignores_curve_style_colors() {
@@ -23,35 +24,23 @@ ENDSEC;END-ISO-10303-21;",
         &mut BTreeSet::new(),
         &mut BTreeMap::new(),
         &mut Vec::new(),
+        &mut BTreeSet::new(),
         0,
     )
     .expect("surface color");
-    assert_eq!(color.2.r, 1.0);
-    assert_eq!(color.2.b, 0.0);
+    let ColorResolution::Candidate(color) = color else {
+        panic!("expected one surface color");
+    };
+    assert_eq!(color.color.r, 1.0);
+    assert_eq!(color.color.b, 0.0);
 }
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
@@ -68,9 +57,9 @@ fn presentation_layer_expands_all_product_definition_views() {
 #3=PRODUCT('P','Part','',(#2));
 #4=PRODUCT_DEFINITION_FORMATION('v1','',#3);
 #5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
-#6=PRODUCT_DEFINITION('design view','',#4,#5);
-#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
 #8=PRODUCT_DEFINITION('manufacturing view','',#7,#5);
+#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
+#6=PRODUCT_DEFINITION('design view','',#4,#5);
 #9=PRESENTATION_LAYER_ASSIGNMENT('definition views','',(#3));",
     );
 
@@ -85,9 +74,131 @@ fn presentation_layer_expands_all_product_definition_views() {
         [
             PresentationItem::Product { product: first },
             PresentationItem::Product { product: second },
-        ] if first.as_str() == "step:product:product#3-definition-6"
-            && second.as_str() == "step:product:product#3-definition-8"
+        ] if first.as_str() == "step:product:product#3-definition-8"
+            && second.as_str() == "step:product:product#3-definition-6"
     ));
+    assert!(result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| {
+            definition.id.as_str() == "step:product:product#3-definition-8"
+                && definition.native_ref.as_deref() == Some("#8")
+        }));
+    assert!(result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| {
+            definition.id.as_str() == "step:product:product#3-definition-6"
+                && definition.native_ref.as_deref() == Some("#6")
+        }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn ps04_product_definition_views_keep_identity_when_records_reordered() {
+    use cadmpeg_ir::presentation::PresentationItem;
+
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-04 fixture")
+    };
+    let product_views = |result: &cadmpeg_ir::codec::DecodeResult| {
+        let mut views = result
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.as_str().to_owned(),
+                    definition.description.clone(),
+                    definition.native_ref.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        views.sort_by(|left, right| left.0.cmp(&right.0));
+        views
+    };
+    let layer_items = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .ir()
+            .model
+            .presentation_layers
+            .first()
+            .expect("PS-04 layer")
+            .items
+            .iter()
+            .map(|item| match item {
+                PresentationItem::Product { product } => product.as_str().to_owned(),
+                other => panic!("unexpected PS-04 layer item: {other:?}"),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let source_order = decode_fixture(include_bytes!(
+        "tests/data/ps04_product_definition_views_source_order.p21"
+    ));
+    let reordered = decode_fixture(include_bytes!(
+        "tests/data/ps04_product_definition_views_reordered.p21"
+    ));
+
+    assert_eq!(product_views(&source_order), product_views(&reordered));
+    assert_eq!(
+        layer_items(&source_order),
+        [
+            "step:product:product#3-definition-8",
+            "step:product:product#3-definition-6",
+        ]
+    );
+    assert_eq!(
+        layer_items(&reordered),
+        [
+            "step:product:product#3-definition-6",
+            "step:product:product#3-definition-8",
+        ]
+    );
+    let mut source_members = layer_items(&source_order);
+    let mut reordered_members = layer_items(&reordered);
+    source_members.sort();
+    reordered_members.sort();
+    assert_eq!(source_members, reordered_members);
+    for result in [&source_order, &reordered] {
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn presentation_layer_preserves_empty_label_and_visibility() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=PRESENTATION_LAYER_ASSIGNMENT('','empty label description',(#1));
+#3=INVISIBILITY((#2));",
+    );
+
+    let layer = result
+        .ir()
+        .model
+        .presentation_layers
+        .first()
+        .expect("empty-label presentation layer");
+    assert!(layer.name.is_empty());
+    assert_eq!(
+        layer.description.as_deref(),
+        Some("empty label description")
+    );
+    assert_eq!(layer.visible, Some(false));
+    assert!(matches!(
+        layer.items.as_slice(),
+        [PresentationItem::Source { source_id }] if source_id == "#1"
+    ));
+
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -336,14 +447,24 @@ fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
         .ir()
         .native_unknowns("step")
         .expect("STEP unknown records");
-    for id in [11, 12, 13] {
+    assert!(
+        unknowns.iter().any(|record| record.id.0.ends_with("#11")),
+        "unmodeled tessellated wrapper #11 was not retained"
+    );
+    for id in [12, 13] {
         assert!(
-            unknowns
+            !unknowns
                 .iter()
                 .any(|record| record.id.0.ends_with(&format!("#{id}"))),
-            "tessellated carrier #{id} was consumed without a neutral representation"
+            "decoded tessellated curve carrier #{id} was retained as opaque"
         );
     }
+    assert!(result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#12"));
 }
 
 #[test]
@@ -443,6 +564,515 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn independent_face_style_permutations_do_not_select_by_instance_order() {
+    for input in [
+        include_bytes!("tests/data/ap05_independent_styles_first.p21").as_slice(),
+        include_bytes!("tests/data/ap05_independent_styles_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode independent style permutation");
+        let face = result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == "step:data:face#29")
+            .expect("styled face");
+        assert!(face.color.is_none());
+
+        let bindings = result
+            .ir()
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| {
+                matches!(
+                    &binding.target,
+                    cadmpeg_ir::appearance::AppearanceTarget::Face(face)
+                        if face.as_str() == "step:data:face#29"
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(bindings.len(), 2);
+        for (red, green, blue) in [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0)] {
+            assert!(result.ir().model.appearances.iter().any(|appearance| {
+                appearance
+                    .base_color
+                    .is_some_and(|color| color.r == red && color.g == green && color.b == blue)
+            }));
+        }
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::ConflictingScalarColors.kind()
+                && loss.message.contains("#47")
+                && loss.message.contains("#76")
+                && loss.message.contains("scalar color omitted")
+        }));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
+    const EPS_ALPHA: f32 = 0.000_001;
+
+    let source = String::from_utf8(
+        include_bytes!("tests/data/ap05_independent_styles_first.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#60=COLOUR_RGB('independent blue',0.,0.,1.);",
+        "#60=COLOUR_RGB('independent red transparent',1.,0.,0.);",
+    )
+    .replace(
+        "#43=SURFACE_STYLE_FILL_AREA(#42);",
+        "#43=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#40,(#77));",
+    )
+    .replace(
+        "#63=SURFACE_STYLE_FILL_AREA(#62);",
+        "#63=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#60,(#78));",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#77=SURFACE_STYLE_TRANSPARENT(0.25);\n#78=SURFACE_STYLE_TRANSPARENT(0.75);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode same-RGB independent styles");
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "step:data:face#29")
+        .expect("styled face");
+    let color = face.color.expect("same-RGB scalar face color");
+    assert!((color.a - 0.25).abs() < EPS_ALPHA);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::ConflictingScalarColors.kind() }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn same_type_surface_colors_do_not_select_by_alpha_or_source_order() {
+    let source = "#1=COLOUR_RGB('red',1.,0.,0.);
+#2=COLOUR_RGB('blue',0.,0.,1.);
+#3=SURFACE_STYLE_TRANSPARENT(0.25);
+#4=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#1,(#3));
+#5=SURFACE_STYLE_TRANSPARENT(0.75);
+#6=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#2,(#5));
+#7=PRESENTATION_STYLE_ASSIGNMENT((#4,#6));
+#8=STYLED_ITEM('',(#7),#9);
+#9=(ADVANCED_FACE() FACE_SURFACE());";
+    let reordered = source.replace("(#4,#6)", "(#6,#4)");
+
+    for input in [source, reordered.as_str()] {
+        let result = decode_inline(input);
+        assert!(result.ir().model.appearance_bindings.is_empty());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::ConflictingScalarColors.kind()
+                && loss.message.contains("STYLED_ITEM #8")
+                && loss.message.contains("equal-precedence")
+        }));
+        assert!(result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .all(|face| face.color.is_none()));
+    }
+}
+
+#[test]
+fn context_dependent_styles_are_not_flattened_without_context() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('shaded red',1.,0.,0.);
+#2=PRESENTATION_STYLE_ASSIGNMENT((#1));
+#3=COLOUR_RGB('wire blue',0.,0.,1.);
+#4=PRESENTATION_STYLE_ASSIGNMENT((#3));
+#5=CARTESIAN_POINT('shaded context',(0.,0.,0.));
+#6=CARTESIAN_POINT('wire context',(1.,0.,0.));
+#7=PRESENTATION_STYLE_BY_CONTEXT((#2),#5);
+#8=PRESENTATION_STYLE_BY_CONTEXT((#4),#6);
+#9=STYLED_ITEM('',(#7,#8),#10);
+#10=CARTESIAN_POINT('styled point',(0.,1.,0.));",
+    );
+
+    assert!(result.ir().model.appearances.is_empty());
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    let unknowns = result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    for id in [
+        "step:data:styled_item#9",
+        "step:data:presentation_style_by_context#7",
+        "step:data:presentation_style_by_context#8",
+    ] {
+        assert!(
+            unknowns.iter().any(|record| record.id.0 == id),
+            "missing {id}"
+        );
+    }
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+            && loss.message.contains("#7 in #5")
+            && loss.message.contains("#8 in #6")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let mut output = Vec::new();
+    let error = write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            unsupported: StepUnsupportedPolicy::Reject,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect_err("strict write must reject retained context styles");
+    assert!(matches!(error, StepError::Unsupported(_)));
+    assert!(output.is_empty());
+}
+
+#[test]
+fn context_dependent_styles_remain_native_for_distinct_contexts() {
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("tests/data/ap08_context_styles.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode context-qualified style witness");
+
+    assert_eq!(result.ir().model.appearances.len(), 1);
+    assert_eq!(result.ir().model.appearance_bindings.len(), 1);
+    assert!(matches!(
+        &result.ir().model.appearance_bindings[0].target,
+        cadmpeg_ir::appearance::AppearanceTarget::Point(point)
+            if point.0 == "step:data:point#13"
+    ));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+            && loss.message.contains("#10 in #5")
+            && loss.message.contains("#11 in #7")
+    }));
+    let unknowns = result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    for id in [
+        "step:data:styled_item#12",
+        "step:data:presentation_style_by_context#10",
+        "step:data:presentation_style_by_context#11",
+    ] {
+        assert!(
+            unknowns.iter().any(|record| record.id.0 == id),
+            "missing {id}"
+        );
+    }
+    assert!(!unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:styled_item#15"));
+    assert!(result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#3"));
+}
+
+#[test]
+fn context_style_retention_is_independent_of_style_set_order() {
+    for source in [
+        include_bytes!("tests/data/ap08_context_styles.p21").as_slice(),
+        include_bytes!("tests/data/ap08_context_styles_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode context style order witness");
+        assert!(result.ir().model.appearance_bindings.iter().all(|binding| {
+            !matches!(
+                &binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Point(point)
+                    if point.0 == "step:data:point#3"
+            )
+        }));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+                && loss.message.contains("#10 in #5")
+                && loss.message.contains("#11 in #7")
+        }));
+        let unknowns = result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena");
+        for id in [
+            "step:data:styled_item#12",
+            "step:data:presentation_style_by_context#10",
+            "step:data:presentation_style_by_context#11",
+        ] {
+            assert!(
+                unknowns.iter().any(|record| record.id.0 == id),
+                "missing {id}"
+            );
+        }
+    }
+}
+
+#[test]
+fn complex_representation_invisibility_reaches_surface_body() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#39=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#38),#2);",
+        "#39=(CHARACTERIZED_REPRESENTATION() REPRESENTATION('',(#38),#2) MANIFOLD_SURFACE_SHAPE_REPRESENTATION());",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#91=INVISIBILITY((#39));\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex representation invisibility");
+
+    let body = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "step:data:body#38")
+        .expect("surface body");
+    assert_eq!(body.visible, Some(false));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #91 targets unsupported item #39")
+    }));
+}
+
+#[test]
+fn styled_item_invisibility_is_binding_scoped() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
+#2=DIRECTION('surface normal',(0.,0.,1.));
+#3=DIRECTION('surface u',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('surface placement',#1,#2,#3);
+#5=PLANE('styled surface',#4);
+#6=COLOUR_RGB('red',1.,0.,0.);
+#7=SURFACE_STYLE_RENDERING(#6,$,$,$,$,$);
+#8=PRESENTATION_STYLE_ASSIGNMENT((#7));
+#9=STYLED_ITEM('',(#8),#5);
+#10=COLOUR_RGB('blue',0.,0.,1.);
+#11=SURFACE_STYLE_RENDERING(#10,$,$,$,$,$);
+#12=PRESENTATION_STYLE_ASSIGNMENT((#11));
+#13=STYLED_ITEM('',(#12),#5);
+#14=INVISIBILITY((#13));",
+    );
+    let bindings = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| {
+            matches!(
+                &binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Surface(surface)
+                    if surface.0 == "step:data:surface#5"
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(bindings.len(), 2);
+    assert!(bindings.iter().any(|binding| {
+        binding.source_entity_id.as_deref() == Some("#13") && binding.visible == Some(false)
+    }));
+    assert!(bindings.iter().any(|binding| {
+        binding.source_entity_id.as_deref() == Some("#9") && binding.visible.is_none()
+    }));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #14 targets unsupported item #13")
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#14"));
+}
+
+#[test]
+fn surface_style_transparency_transfers_to_appearance_alpha() {
+    const EPS_ALPHA: f32 = 0.000_001;
+
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
+#2=DIRECTION('surface normal',(0.,0.,1.));
+#3=DIRECTION('surface u',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('surface placement',#1,#2,#3);
+#5=PLANE('styled surface',#4);
+#6=COLOUR_RGB('red',1.,0.,0.);
+#7=SURFACE_STYLE_TRANSPARENT(0.25);
+#8=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#6,(#7));
+#9=SURFACE_SIDE_STYLE('',(#8));
+#10=SURFACE_STYLE_USAGE(.BOTH.,#9);
+#11=PRESENTATION_STYLE_ASSIGNMENT((#10));
+#12=STYLED_ITEM('',(#11),#5);
+#13=SURFACE_STYLE_TRANSPARENT(0.75);
+#14=SURFACE_STYLE_RENDERING_WITH_PROPERTIES(.CONSTANT_SHADING.,#6,(#13));
+#15=SURFACE_SIDE_STYLE('',(#14));
+#16=SURFACE_STYLE_USAGE(.BOTH.,#15);
+#17=PRESENTATION_STYLE_ASSIGNMENT((#16));
+#18=STYLED_ITEM('',(#17),#5);",
+    );
+
+    let alphas = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| appearance.base_color.map(|color| color.a))
+        .collect::<Vec<_>>();
+    assert_eq!(alphas.len(), 2);
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.75).abs() < EPS_ALPHA));
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.25).abs() < EPS_ALPHA));
+    assert!(result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| binding.source_entity_id.as_deref() == Some("#12")));
+}
+
+#[test]
+fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
+    for input in [
+        include_bytes!("tests/data/ap10_duplicate_transparency_first.p21").as_slice(),
+        include_bytes!("tests/data/ap10_duplicate_transparency_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode duplicate transparency witness");
+        let appearance = result
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .find(|appearance| {
+                appearance
+                    .base_color
+                    .is_some_and(|color| color.r == 1.0 && color.g == 0.0 && color.b == 0.0)
+            })
+            .expect("red appearance");
+        assert_eq!(appearance.base_color.expect("appearance color").a, 1.0);
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::SurfaceTransparencyConflict.kind()
+                && loss.message.contains("rendering #12")
+                && loss.message.contains("#10=0.25")
+                && loss.message.contains("#11=0.75")
+                && loss.message.contains("transparency omitted")
+        }));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn point_style_invisibility_on_a_point_set_is_binding_scoped() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('point',(0.,0.,0.));
+#2=GEOMETRIC_CURVE_SET('point set',(#1));
+#3=COLOUR_RGB('red',1.,0.,0.);
+#4=PRE_DEFINED_MARKER('dot');
+#5=POINT_STYLE('point style',#4,1.,#3);
+#6=PRESENTATION_STYLE_ASSIGNMENT((#5));
+#7=STYLED_ITEM('',(#6),#2);
+#8=INVISIBILITY((#7));",
+    );
+    let binding = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| binding.source_entity_id.as_deref() == Some("#7"))
+        .expect("point styled item appearance binding");
+    assert_eq!(binding.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #8 targets unsupported item #7")
+    }));
+}
+
+#[test]
+fn invisibility_on_a_base_styled_item_hides_overriding_bindings() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('start',(0.,0.,0.));
+#2=CARTESIAN_POINT('end',(1.,0.,0.));
+#3=POLYLINE('line',(#1,#2));
+#4=COLOUR_RGB('red',1.,0.,0.);
+#5=CURVE_STYLE('line style',1.,.POSITIVE.,#4);
+#6=PRESENTATION_STYLE_ASSIGNMENT((#5));
+#7=STYLED_ITEM('',(#6),#3);
+#8=OVER_RIDING_STYLED_ITEM('',(#6),#3,#7);
+#9=INVISIBILITY((#7));",
+    );
+    let binding = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| binding.source_entity_id.as_deref() == Some("#8"))
+        .expect("overriding styled item appearance binding");
+    assert_eq!(binding.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #9 targets unsupported item #7")
+    }));
+}
+
+#[test]
+fn presentation_layer_invisibility_is_layer_scoped() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('layer point',(0.,0.,0.));
+#2=PRESENTATION_LAYER_ASSIGNMENT('hidden layer','',(#1));
+#3=INVISIBILITY((#2));",
+    );
+    let layer = result
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "hidden layer")
+        .expect("hidden presentation layer");
+    assert_eq!(layer.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #3 targets unsupported item #2")
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#3"));
 }
 
 #[test]
@@ -619,6 +1249,47 @@ fn surface_style_usage_prefers_positive_side_over_set_order() {
 }
 
 #[test]
+fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
+    for input in [
+        include_bytes!("tests/data/ap06_surface_sides_positive_negative_first.p21").as_slice(),
+        include_bytes!("tests/data/ap06_surface_sides_positive_negative_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode surface side permutation");
+        assert_eq!(result.ir().model.appearances.len(), 1);
+        assert_eq!(
+            result.ir().model.appearances[0].base_color,
+            Some(cadmpeg_ir::topology::Color {
+                r: 0.0,
+                g: 1.0,
+                b: 0.0,
+                a: 1.0,
+            })
+        );
+        let face = result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == "step:data:face#29")
+            .expect("styled face");
+        assert_eq!(
+            face.color,
+            Some(cadmpeg_ir::topology::Color {
+                r: 0.0,
+                g: 1.0,
+                b: 0.0,
+                a: 1.0,
+            })
+        );
+        assert!(result.report().losses.is_empty());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn curve_targets_use_curve_style_domain() {
     let result = decode_inline(
         "#1=COLOUR_RGB('surface',1.,0.,0.);
@@ -704,6 +1375,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
         id: LayerId("test:layer#body".into()),
         name: "all body regions".into(),
         description: None,
+        visible: None,
         items: vec![PresentationItem::Body { body }],
     });
 
@@ -767,9 +1439,11 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
 #31=UNKNOWN_LIMIT();
 #32=UNKNOWN_CHARACTERISTIC();
 #40=PRESENTATION_LAYER_ASSIGNMENT('inspection','',(#30));
+#41=PRESENTATION_LAYER_ASSIGNMENT('invalid empty set','',());
 #99=UNRESOLVED_PRODUCT();",
     );
     assert_eq!(result.ir().model.presentation_layers.len(), 1);
+    assert_eq!(result.ir().model.presentation_layers[0].name, "inspection");
     assert!(matches!(
         result.ir().model.presentation_layers[0].items.as_slice(),
         [PresentationItem::Source { source_id }] if source_id == "#30"
@@ -933,6 +1607,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
     let s = export(&ir);
@@ -981,6 +1656,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         appearance: AppearanceId("test:appearance#vertex".to_string()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 
@@ -1015,6 +1691,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
         id: LayerId("test:layer#point".to_string()),
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
+        visible: None,
         items: vec![PresentationItem::Point { point }],
     });
 
@@ -1123,6 +1800,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
         name: Some("inspection note".into()),
+        visible: None,
         targets: Vec::new(),
         definition: PmiDefinition::Presentation {
             text: Some("inspect this assembly".into()),
@@ -1134,6 +1812,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         id: LayerId("test:layer#mixed".into()),
         name: "mixed layer".into(),
         description: None,
+        visible: None,
         items: vec![
             PresentationItem::Product {
                 product: parent_product,
@@ -1221,6 +1900,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 

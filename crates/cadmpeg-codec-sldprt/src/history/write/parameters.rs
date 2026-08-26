@@ -1,39 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter records for native write.
 
-#![allow(unused_imports)]
-use crate::classification::{
-    classify, classify_type_token, classify_xml_element, native_object_class,
-    principal_plane_with_siblings, FeatureClass, NativeClassKind,
-};
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::decode::View;
+use crate::records::{Feature, FeatureContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
-    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
-    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
-    PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SplitFaceTool, SurfaceExtension, SweepMode,
-    Termination, TrimRegion, VariableRadius, VertexSelection, WrapMode,
-};
-use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, Edge, Face};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::Exactness;
-use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
+use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterId, ParameterValue};
+use std::collections::{BTreeMap, HashMap};
 
-use super::features::{generated_feature_record_id, synchronize_history_content_order};
+use super::features::generated_feature_record_id;
 use crate::history::hash::{native_parameter_hash, parameter_hash};
 use crate::history::literals::{
     dimension_display, format_parameter_value, parse_neutral_parameter_literal,
@@ -162,13 +135,13 @@ pub(crate) fn sync_neutral_parameters(
             )));
         };
         let Some(owner) = features.get(owner_id) else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references a missing feature",
                 parameter.id.0
             )));
         };
         if parameter.display != dimension_display(&parameter.expression) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has display semantics inconsistent with its expression",
                 parameter.id.0
             )));
@@ -176,7 +149,7 @@ pub(crate) fn sync_neutral_parameters(
         if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
             .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",
                 parameter.id.0
             )));
@@ -186,7 +159,7 @@ pub(crate) fn sync_neutral_parameters(
             .iter()
             .any(|candidate| candidate.name == parameter.name)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate SLDPRT parameter {} on feature {}",
                 parameter.name, owner_id
             )));
@@ -195,7 +168,7 @@ pub(crate) fn sync_neutral_parameters(
             .iter()
             .any(|candidate| candidate.ordinal == parameter.ordinal)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate SLDPRT parameter ordinal {} on feature {}",
                 parameter.ordinal, owner_id
             )));
@@ -273,7 +246,7 @@ pub(crate) fn sync_neutral_parameters(
                     .map(|scalar_index| (lane_index, scalar_index))
             })
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT parameter {} references missing scalar {native_ref}",
                     parameter.id.0
                 ))
@@ -281,7 +254,7 @@ pub(crate) fn sync_neutral_parameters(
         let lane = &mut native.feature_input_lanes[location.0];
         let scalar = &mut lane.scalars[location.1];
         if scalar.role == crate::records::FeatureInputScalarRole::Display {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references a display scalar",
                 parameter.id.0
             )));
@@ -304,7 +277,7 @@ pub(crate) fn sync_neutral_parameters(
             .native_payload
             .get_mut(offset..offset + 8)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT scalar {} lies outside its payload",
                     scalar.id
                 ))

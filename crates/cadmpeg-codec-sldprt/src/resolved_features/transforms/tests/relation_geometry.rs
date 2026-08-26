@@ -1,29 +1,14 @@
 //! Evaluated-geometry matching and locus-fallback tests.
-#![allow(unused_imports)]
 
 use super::super::*;
 use super::marker;
-use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
-    SketchInputKind, SketchInputLink, SketchRelationKind,
-};
-use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
-use cadmpeg_ir::annotations::{Annotations, ExactnessNote, StreamProvenance};
+use crate::records::{SketchInputKind, SketchInputLink, SketchRelationKind};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-    Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, PathRef,
-    PatternKind, PatternSeed, ProfileRef, RadiusSpec, SweepMode, Termination,
+    Angle, DesignParameter, FeatureId, Length, ParameterId, ParameterValue,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
-    SketchPlacement,
+    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 

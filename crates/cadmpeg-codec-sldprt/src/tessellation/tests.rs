@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
@@ -114,6 +113,48 @@ fn extended_face_tessellation_header_places_table_at_plus_40() {
     payload.extend(table());
     assert_eq!(descriptor_table_offset(&payload, 0), 40);
     assert!(parse_table_sequence(&payload, 40, payload.len()).is_some());
+}
+
+#[test]
+fn body_property_class_does_not_end_face_table_sequence() {
+    let mut payload = Vec::new();
+    class(&mut payload, "uoTempFaceTessData_c", &[]);
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(table());
+
+    class(&mut payload, "uoBodyPropInfo_c", &[]);
+    payload.extend([0x37, 0x80]);
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(table());
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir().model.tessellations.len(), 2);
+}
+
+#[test]
+fn next_face_class_ends_face_table_sequence() {
+    let mut payload = Vec::new();
+    for _ in 0..2 {
+        class(&mut payload, "uoTempFaceTessData_c", &[]);
+        payload.extend(1_u32.to_le_bytes());
+        payload.extend(1_u32.to_le_bytes());
+        payload.extend(table());
+    }
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir().model.tessellations.len(), 2);
 }
 
 #[test]

@@ -618,11 +618,25 @@ pub(crate) fn archive_writer(version: &str, writer_version: i64, objects: &[Vec<
     archive_version_unit(version, 2, Some(writer_version), objects)
 }
 
+pub(crate) fn archive_with_user_records(objects: &[Vec<u8>], user_records: &[Vec<u8>]) -> Vec<u8> {
+    archive_version_unit_with_user("50", 2, None, objects, user_records)
+}
+
 fn archive_version_unit(
     version: &str,
     unit: i32,
     writer_version: Option<i64>,
     objects: &[Vec<u8>],
+) -> Vec<u8> {
+    archive_version_unit_with_user(version, unit, writer_version, objects, &[])
+}
+
+fn archive_version_unit_with_user(
+    version: &str,
+    unit: i32,
+    writer_version: Option<i64>,
+    objects: &[Vec<u8>],
+    user_records: &[Vec<u8>],
 ) -> Vec<u8> {
     let mut bytes = MAGIC.to_vec();
     let mut version_field = [b' '; 8];
@@ -636,6 +650,9 @@ fn archive_version_unit(
     bytes.extend(table(0x1000_0014, &properties));
     bytes.extend(table(0x1000_0015, &[units_record(unit)]));
     bytes.extend(table(0x1000_0013, objects));
+    if !user_records.is_empty() {
+        bytes.extend(table(0x1000_0017, user_records));
+    }
     let eof_offset = bytes.len();
     bytes.extend(long_chunk(TCODE_ENDOFFILE, &[0; 8]));
     let eof = long_chunk(TCODE_ENDOFFILE, &(bytes.len() as u64).to_le_bytes());

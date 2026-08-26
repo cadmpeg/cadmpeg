@@ -75,7 +75,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .iter()
                 .all(|value| value.is_finite())
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite reference-plane origin",
                     feature.id
                 )));
@@ -106,7 +106,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let parent_sources = self.parent_sources;
         Ok({
             if !distance.0.is_finite() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite reference-plane offset",
                     feature.id
                 )));
@@ -121,7 +121,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match reference {
                 Some(DatumPlaneReference::Feature(reference)) => {
                     let source = parent_sources.get(reference).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "SLDPRT feature {} references a missing datum plane",
                             feature.id
                         ))
@@ -190,7 +190,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .iter()
                 .all(|value| value.is_finite())
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite reference-axis origin",
                     feature.id
                 )));
@@ -250,7 +250,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             if !valid_coordinate_frame(*origin, *x_axis, *y_axis, *z_axis) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid coordinate-system frame",
                     feature.id
                 )));

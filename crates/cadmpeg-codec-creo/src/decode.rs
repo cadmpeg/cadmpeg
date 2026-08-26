@@ -36,10 +36,8 @@ mod uniqueness;
 use build::{build_container_ir, build_ir, build_report, BuiltIr};
 
 #[cfg(test)]
-#[allow(unused_imports)] // `resolved_section_scalar_values` is part of the test surface
 pub(crate) use sketch::{
     resolved_section_coordinates, resolved_section_points, resolved_section_radii,
-    resolved_section_scalar_values,
 };
 
 #[cfg(test)]

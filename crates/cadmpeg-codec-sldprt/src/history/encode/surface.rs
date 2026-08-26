@@ -48,13 +48,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let sketch_sources = self.sketch_sources;
         Ok({
             let faces = face_selection_value(faces).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no trim-surface input faces",
                     feature.id
                 ))
             })?;
             let tool = path_source(tool, record_sources, sketch_sources).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} references a missing trim path",
                     feature.id
                 ))
@@ -87,7 +87,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(faces).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no extend-surface input faces",
                     feature.id
                 ))
@@ -100,7 +100,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ))
             })?;
             if !distance.0.is_finite() || distance.0 <= 0.0 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid surface extension",
                     feature.id
                 )));
@@ -136,19 +136,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             if angle.is_some() || alternate_face.is_some() || corner.is_some() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                                    "SLDPRT feature {} cannot encode ruled-surface angle, face-side, or corner semantics",
                                    feature.id
                                )));
             }
             let edges = edge_selection_value(edges).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no ruled-surface boundary edges",
                     feature.id
                 ))
             })?;
             let support_faces = face_selection_value(support_faces).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no ruled-surface supports",
                     feature.id
                 ))
@@ -166,7 +166,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             };
             if !distance.0.is_finite() || distance.0 <= 0.0 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid ruled-surface distance",
                     feature.id
                 )));
@@ -368,7 +368,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let selection = face_selection_value(faces).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no offset-surface support faces",
                     feature.id
                 ))
@@ -381,7 +381,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ))
             })?;
             if !distance.0.is_finite() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite surface offset",
                     feature.id
                 )));
@@ -411,7 +411,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let selection = face_selection_value(faces).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no knit-surface input faces",
                     feature.id
                 ))
@@ -437,7 +437,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert("GapTolerance".into(), format_length_mm(value.0));
                 }
                 Some(_) => {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has an invalid knit tolerance",
                         feature.id
                     )));
@@ -476,13 +476,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             };
             let boundary = edge_selection_value(boundary).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no filled-surface boundary",
                     feature.id
                 ))
             })?;
             let support_faces = face_selection_value(support_faces).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no filled-surface supports",
                     feature.id
                 ))
@@ -560,7 +560,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 require_direction(*pull_direction, &feature.id, "draft direction")?;
             }
             if angle.is_some_and(|angle| !angle.0.is_finite()) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite draft angle",
                     feature.id
                 )));

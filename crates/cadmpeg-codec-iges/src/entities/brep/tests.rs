@@ -1,33 +1,110 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
+
+const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
+    let curve_id = CurveId("curve".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.edges.extend([
+        Edge {
+            id: EdgeId("wrong-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("wrong-start".into()),
+            end: VertexId("wrong-end".into()),
+            param_range: Some([10.0, 11.0]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("matching-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("matching-start".into()),
+            end: VertexId("matching-end".into()),
+            param_range: Some([0.0, 2.0]),
+            tolerance: None,
+        },
+    ]);
+
+    let source_edge = super::source_edge_for_vertices(
+        &ir,
+        &[0, 1],
+        &ir.model.curves[0].geometry,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        EPS_EDGE_ENDPOINT_MATCH,
+    )
+    .expect("matching edge occurrence");
+    assert_eq!(source_edge.id.0, "matching-occurrence");
+}
+
+#[test]
+fn source_edge_selection_rejects_multiple_matching_occurrences() {
+    let curve_id = CurveId("curve".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        },
+        source_object: None,
+    });
+    ir.model.edges.extend([
+        Edge {
+            id: EdgeId("first-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("first-start".into()),
+            end: VertexId("first-end".into()),
+            param_range: Some([0.0, std::f64::consts::TAU]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("second-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("second-start".into()),
+            end: VertexId("second-end".into()),
+            param_range: Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
+            tolerance: None,
+        },
+    ]);
+
+    let result = super::source_edge_for_vertices(
+        &ir,
+        &[0, 1],
+        &ir.model.curves[0].geometry,
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        EPS_EDGE_ENDPOINT_MATCH,
+    );
+    assert!(matches!(
+        result,
+        Err(super::SourceEdgeSelectionError::Ambiguous)
+    ));
+}
 
 #[test]
 fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
@@ -117,7 +194,7 @@ fn decode_preserves_a_face_with_no_explicit_outer_loop() {
         .unwrap();
     assert_eq!(
         loop_.boundary_role,
-        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+        cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
     assert!(
         result.report().losses.is_empty(),

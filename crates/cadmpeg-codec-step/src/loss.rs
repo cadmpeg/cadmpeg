@@ -32,6 +32,8 @@ pub enum StepLossCode {
     OpaqueRecordPreserved,
     /// A metadata string field failed to decode.
     MetadataStringInvalid,
+    /// A `FILE_SCHEMA` object identifier component is out of range.
+    SchemaObjectIdentifierOutOfRange,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
     /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
@@ -60,6 +62,10 @@ pub enum StepLossCode {
     EdgeNoSurfaceOrCurveForPcurve,
     /// A single optional pcurve is not endpoint-continuous with the edge.
     PcurveEndpointsDiscontinuous,
+    /// A single endpoint-continuous pcurve fails the bounded model-space locus witness.
+    PcurveLocusDiscontinuous,
+    /// A finite non-seam pcurve witness did not prove global point-set and direction fidelity.
+    PcurveGlobalFidelityUnproved,
     /// Several pcurves associate with a surface and none selects uniquely.
     PcurveAssociationAmbiguous,
     /// Pcurve candidates exist but the source surface or curve is unresolved.
@@ -70,10 +76,14 @@ pub enum StepLossCode {
     ShellDisconnectedFaces,
     /// A NAUO has no resolved occurrence transform.
     NauoPlacementUnresolved,
+    /// A NAUO has competing resolved placement candidates.
+    NauoPlacementAmbiguous,
     /// A body has conflicting standalone `MAPPED_ITEM` placements.
     BodyConflictingMappedPlacements,
     /// A presentation annotation has several text carriers and no order.
     PresentationAnnotationTextUnordered,
+    /// A presentation annotation has several placement carriers and no unique placement.
+    PresentationAnnotationPlacementAmbiguous,
     /// A dimensional characteristic has several named nominal measures.
     DimensionalNominalAmbiguous,
     /// A dimensional characteristic has several unnamed measure values.
@@ -84,10 +94,18 @@ pub enum StepLossCode {
     PmiAngleUnitUnresolved,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
+    /// A surface style usage has an invalid `surface_side` enumeration value.
+    SurfaceSideInvalid,
+    /// A surface rendering has multiple transparency properties.
+    SurfaceTransparencyConflict,
+    /// A context-dependent style has no matching neutral presentation context.
+    ContextDependentStyleUnresolved,
     /// A drawing record has too few parameters and was retained opaque.
     DrawingRecordTooFewParameters,
     /// A drawing relationship references a source-typed record without identity.
     DrawingRelationshipUntypedTarget,
+    /// A drawing relationship references a source record with multiple identities.
+    DrawingRelationshipTargetAmbiguous,
     /// A drawing sheet usage has no resolvable drawing revision.
     DrawingSheetRevisionUnresolved,
     /// A drawing revision usage has no resolvable sheet revision.
@@ -96,10 +114,14 @@ pub enum StepLossCode {
     DraughtingSemanticDefinitionUntyped,
     /// A draughting model association references a source-typed item without identity.
     DraughtingAssociatedItemUntyped,
-    /// A tessellation item does not bind to exactly one decoded body.
+    /// A body-representation tessellation item does not bind to exactly one decoded body.
     TessellationItemBodyUnresolved,
-    /// A tessellation item is not declared by an exact body container.
+    /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
+    /// A repositioned tessellation item has no valid placement.
+    TessellationPlacementUnresolved,
+    /// A detached tessellation item has multiple distinct repositioning placements.
+    TessellationPlacementAmbiguous,
     /// A geometric validation measure unit scale did not resolve.
     ValidationMeasureUnitUnresolved,
     /// The IR document has bodies but no exportable solids.
@@ -120,6 +142,12 @@ pub enum StepLossCode {
     BodyNonRigidTransform,
     /// Hidden body visibility assignments are unsupported by the target schema.
     HiddenBodyVisibilityUnsupported,
+    /// Hidden appearance binding visibility assignments are unsupported by the target schema.
+    HiddenAppearanceVisibilityUnsupported,
+    /// Hidden presentation layer visibility assignments are unsupported by the target schema.
+    HiddenPresentationLayerVisibilityUnsupported,
+    /// Hidden PMI annotation visibility assignments are unsupported by the target schema.
+    HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
     /// Tessellations require an AP242 target.
@@ -162,10 +190,14 @@ pub enum StepLossCode {
     WireRegionMissingShell,
     /// Hidden bodies had no emitted STEP item and were omitted from INVISIBILITY.
     HiddenBodyOmitted,
+    /// Hidden presentation layers had no emitted STEP assignment and were omitted from INVISIBILITY.
+    HiddenPresentationLayerOmitted,
     /// Appearance bindings reference missing appearance assets.
     AppearanceBindingMissingAsset,
     /// Appearance bindings reference appearances without a base color.
     AppearanceBindingNoBaseColor,
+    /// Appearance bindings target one body or face with conflicting styles.
+    AppearanceBindingTargetConflict,
     /// Coedge pcurve references have no geometry.
     CoedgePcurveNoGeometry,
     /// Emitted coedge pcurves carry native-only metadata.
@@ -271,6 +303,7 @@ impl StepLossCode {
         Self::ByteAccountingUnclassified,
         Self::OpaqueRecordPreserved,
         Self::MetadataStringInvalid,
+        Self::SchemaObjectIdentifierOutOfRange,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
         Self::ConflictingRepresentationUnits,
@@ -285,26 +318,36 @@ impl StepLossCode {
         Self::SeamEdgePcurveUnresolved,
         Self::EdgeNoSurfaceOrCurveForPcurve,
         Self::PcurveEndpointsDiscontinuous,
+        Self::PcurveLocusDiscontinuous,
+        Self::PcurveGlobalFidelityUnproved,
         Self::PcurveAssociationAmbiguous,
         Self::PcurveCandidatesCarrierUnresolved,
         Self::FaceMultipleOuterBounds,
         Self::ShellDisconnectedFaces,
         Self::NauoPlacementUnresolved,
+        Self::NauoPlacementAmbiguous,
         Self::BodyConflictingMappedPlacements,
         Self::PresentationAnnotationTextUnordered,
+        Self::PresentationAnnotationPlacementAmbiguous,
         Self::DimensionalNominalAmbiguous,
         Self::DimensionalUnnamedMeasureAmbiguous,
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
         Self::ConflictingScalarColors,
+        Self::SurfaceSideInvalid,
+        Self::SurfaceTransparencyConflict,
+        Self::ContextDependentStyleUnresolved,
         Self::DrawingRecordTooFewParameters,
         Self::DrawingRelationshipUntypedTarget,
+        Self::DrawingRelationshipTargetAmbiguous,
         Self::DrawingSheetRevisionUnresolved,
         Self::DrawingRevisionSheetUnresolved,
         Self::DraughtingSemanticDefinitionUntyped,
         Self::DraughtingAssociatedItemUntyped,
         Self::TessellationItemBodyUnresolved,
         Self::TessellationItemUndeclared,
+        Self::TessellationPlacementUnresolved,
+        Self::TessellationPlacementAmbiguous,
         Self::ValidationMeasureUnitUnresolved,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
@@ -315,6 +358,9 @@ impl StepLossCode {
         Self::OccurrencePlacementNotRigid,
         Self::BodyNonRigidTransform,
         Self::HiddenBodyVisibilityUnsupported,
+        Self::HiddenAppearanceVisibilityUnsupported,
+        Self::HiddenPresentationLayerVisibilityUnsupported,
+        Self::HiddenPmiVisibilityUnsupported,
         Self::WireShellFreeVertices,
         Self::TessellationRequiresAp242,
         Self::TessellationFeatureEdges,
@@ -336,8 +382,10 @@ impl StepLossCode {
         Self::WireRegionNoConnectedEdgeSet,
         Self::WireRegionMissingShell,
         Self::HiddenBodyOmitted,
+        Self::HiddenPresentationLayerOmitted,
         Self::AppearanceBindingMissingAsset,
         Self::AppearanceBindingNoBaseColor,
+        Self::AppearanceBindingTargetConflict,
         Self::CoedgePcurveNoGeometry,
         Self::CoedgePcurveNativeMetadata,
         Self::PcurveUseNativeMetadata,
@@ -396,6 +444,9 @@ impl StepLossCode {
             Self::ByteAccountingUnclassified => "decode.byte-accounting-unclassified",
             Self::OpaqueRecordPreserved => "decode.opaque-record-preserved",
             Self::MetadataStringInvalid => "metadata.string-invalid",
+            Self::SchemaObjectIdentifierOutOfRange => {
+                "metadata.schema-object-identifier-out-of-range"
+            }
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
             Self::ConflictingRepresentationUnits => "geometry.conflicting-representation-units",
@@ -410,6 +461,8 @@ impl StepLossCode {
             Self::SeamEdgePcurveUnresolved => "topology.seam-edge-pcurve-unresolved",
             Self::EdgeNoSurfaceOrCurveForPcurve => "topology.edge-no-surface-or-curve-for-pcurve",
             Self::PcurveEndpointsDiscontinuous => "topology.pcurve-endpoints-discontinuous",
+            Self::PcurveLocusDiscontinuous => "topology.pcurve-locus-discontinuous",
+            Self::PcurveGlobalFidelityUnproved => "topology.pcurve-global-fidelity-unproved",
             Self::PcurveAssociationAmbiguous => "topology.pcurve-association-ambiguous",
             Self::PcurveCandidatesCarrierUnresolved => {
                 "topology.pcurve-candidates-carrier-unresolved"
@@ -417,17 +470,27 @@ impl StepLossCode {
             Self::FaceMultipleOuterBounds => "topology.face-multiple-outer-bounds",
             Self::ShellDisconnectedFaces => "topology.shell-disconnected-faces",
             Self::NauoPlacementUnresolved => "product.nauo-placement-unresolved",
+            Self::NauoPlacementAmbiguous => "product.nauo-placement-ambiguous",
             Self::BodyConflictingMappedPlacements => "product.body-conflicting-mapped-placements",
             Self::PresentationAnnotationTextUnordered => {
                 "pmi.presentation-annotation-text-unordered"
+            }
+            Self::PresentationAnnotationPlacementAmbiguous => {
+                "pmi.presentation-annotation-placement-ambiguous"
             }
             Self::DimensionalNominalAmbiguous => "pmi.dimensional-nominal-ambiguous",
             Self::DimensionalUnnamedMeasureAmbiguous => "pmi.dimensional-unnamed-measure-ambiguous",
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
+            Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
+            Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
+            Self::ContextDependentStyleUnresolved => {
+                "presentation.context-dependent-style-unresolved"
+            }
             Self::DrawingRecordTooFewParameters => "drawing.record-too-few-parameters",
             Self::DrawingRelationshipUntypedTarget => "drawing.relationship-untyped-target",
+            Self::DrawingRelationshipTargetAmbiguous => "drawing.relationship-target-ambiguous",
             Self::DrawingSheetRevisionUnresolved => "drawing.sheet-revision-unresolved",
             Self::DrawingRevisionSheetUnresolved => "drawing.revision-sheet-unresolved",
             Self::DraughtingSemanticDefinitionUntyped => {
@@ -436,6 +499,8 @@ impl StepLossCode {
             Self::DraughtingAssociatedItemUntyped => "drawing.draughting-associated-item-untyped",
             Self::TessellationItemBodyUnresolved => "tessellation.item-body-unresolved",
             Self::TessellationItemUndeclared => "tessellation.item-undeclared",
+            Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
+            Self::TessellationPlacementAmbiguous => "tessellation.placement-ambiguous",
             Self::ValidationMeasureUnitUnresolved => "validation.measure-unit-unresolved",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
@@ -448,6 +513,13 @@ impl StepLossCode {
             Self::OccurrencePlacementNotRigid => "occurrence.placement-not-rigid",
             Self::BodyNonRigidTransform => "body.non-rigid-transform",
             Self::HiddenBodyVisibilityUnsupported => "body.hidden-visibility-unsupported",
+            Self::HiddenAppearanceVisibilityUnsupported => {
+                "presentation.hidden-appearance-visibility-unsupported"
+            }
+            Self::HiddenPresentationLayerVisibilityUnsupported => {
+                "presentation.hidden-layer-visibility-unsupported"
+            }
+            Self::HiddenPmiVisibilityUnsupported => "pmi.hidden-visibility-unsupported",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
@@ -471,8 +543,10 @@ impl StepLossCode {
             Self::WireRegionNoConnectedEdgeSet => "topology.wire-region-no-connected-edge-set",
             Self::WireRegionMissingShell => "topology.wire-region-missing-shell",
             Self::HiddenBodyOmitted => "body.hidden-omitted",
+            Self::HiddenPresentationLayerOmitted => "presentation.hidden-layer-omitted",
             Self::AppearanceBindingMissingAsset => "appearance.binding-missing-asset",
             Self::AppearanceBindingNoBaseColor => "appearance.binding-no-base-color",
+            Self::AppearanceBindingTargetConflict => "appearance.binding-target-conflict",
             Self::CoedgePcurveNoGeometry => "pcurve.coedge-no-geometry",
             Self::CoedgePcurveNativeMetadata => "pcurve.coedge-native-metadata",
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
@@ -534,7 +608,9 @@ impl StepLossCode {
             | Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
             | Self::PcurveEndpointsDiscontinuous
+            | Self::PcurveLocusDiscontinuous
             | Self::NauoPlacementUnresolved
+            | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
             | Self::PmiLengthUnitUnresolved
             | Self::PmiAngleUnitUnresolved
@@ -580,17 +656,22 @@ impl StepLossCode {
             Self::ParseNoncanonicalSyntax | Self::OrientedShellOmitsCfsFaces => {
                 LossTaxonomy::NoncanonicalSourceSyntax
             }
-            Self::DecodeWarning | Self::ByteAccountingUnclassified => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::DecodeWarning
+            | Self::ByteAccountingUnclassified
+            | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
             }
             Self::MetadataStringInvalid
+            | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
+            | Self::PresentationAnnotationPlacementAmbiguous
             | Self::DimensionalNominalAmbiguous
             | Self::DimensionalUnnamedMeasureAmbiguous
             | Self::ConflictingScalarColors
+            | Self::SurfaceSideInvalid
+            | Self::SurfaceTransparencyConflict
+            | Self::ContextDependentStyleUnresolved
             | Self::DrawingRelationshipUntypedTarget
             | Self::DraughtingSemanticDefinitionUntyped
             | Self::DraughtingAssociatedItemUntyped
@@ -601,6 +682,10 @@ impl StepLossCode {
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
             | Self::HiddenBodyVisibilityUnsupported
+            | Self::HiddenAppearanceVisibilityUnsupported
+            | Self::HiddenPresentationLayerVisibilityUnsupported
+            | Self::HiddenPmiVisibilityUnsupported
+            | Self::HiddenPresentationLayerOmitted
             | Self::TessellationFeatureEdges
             | Self::TessellationCornerNormals
             | Self::TessellationTriangleGroups
@@ -659,11 +744,15 @@ impl StepLossCode {
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
             | Self::PcurveCandidatesCarrierUnresolved
+            | Self::DrawingRelationshipTargetAmbiguous
             | Self::DrawingSheetRevisionUnresolved
             | Self::DrawingRevisionSheetUnresolved
             | Self::TessellationItemBodyUnresolved
-            | Self::TessellationItemUndeclared => LossTaxonomy::ReferenceGraphNotClosed,
+            | Self::TessellationItemUndeclared
+            | Self::TessellationPlacementUnresolved
+            | Self::TessellationPlacementAmbiguous => LossTaxonomy::ReferenceGraphNotClosed,
             Self::PcurveEndpointsDiscontinuous
+            | Self::PcurveLocusDiscontinuous
             | Self::PcurveCarrierUnwritable
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
@@ -672,6 +761,7 @@ impl StepLossCode {
                 LossTaxonomy::SourceTopologyInvalid
             }
             Self::NauoPlacementUnresolved
+            | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
             | Self::AssemblyOccurrenceOmittedNoParentProduct
             | Self::AssemblyJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
@@ -687,9 +777,9 @@ impl StepLossCode {
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
             Self::UnknownSurfaceFaceOmitted => LossTaxonomy::UnknownSurfaceFaceOmitted,
             Self::HiddenBodyOmitted => LossTaxonomy::HiddenBodyOmitted,
-            Self::AppearanceBindingMissingAsset | Self::AppearanceBindingNoBaseColor => {
-                LossTaxonomy::MaterialNotTransferred
-            }
+            Self::AppearanceBindingMissingAsset
+            | Self::AppearanceBindingNoBaseColor
+            | Self::AppearanceBindingTargetConflict => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
             Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
                 LossTaxonomy::ParametricRecordOmitted
@@ -708,25 +798,16 @@ impl StepLossCode {
         }
     }
 
-    /// Strict floor pinned from this local code (independent of taxonomy remap).
-    ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection; list only intentional overrides here.
-    const fn strict_floor(self) -> Option<Severity> {
-        self.shared_taxonomy().strict_floor()
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
         LossKind::namespaced("step", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The structured code is `step/<local>`. Severity and strict floor come
-    /// from the local code.
+    /// The structured code is `step/<local>`. Severity comes from the local
+    /// code; the strict floor comes from the taxonomy.
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -736,6 +817,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
+    use cadmpeg_ir::report::{Severity, StrictConsequence};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -750,6 +832,7 @@ mod tests {
                 "decode.byte-accounting-unclassified",
                 "decode.opaque-record-preserved",
                 "metadata.string-invalid",
+                "metadata.schema-object-identifier-out-of-range",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
                 "geometry.conflicting-representation-units",
@@ -764,26 +847,36 @@ mod tests {
                 "topology.seam-edge-pcurve-unresolved",
                 "topology.edge-no-surface-or-curve-for-pcurve",
                 "topology.pcurve-endpoints-discontinuous",
+                "topology.pcurve-locus-discontinuous",
+                "topology.pcurve-global-fidelity-unproved",
                 "topology.pcurve-association-ambiguous",
                 "topology.pcurve-candidates-carrier-unresolved",
                 "topology.face-multiple-outer-bounds",
                 "topology.shell-disconnected-faces",
                 "product.nauo-placement-unresolved",
+                "product.nauo-placement-ambiguous",
                 "product.body-conflicting-mapped-placements",
                 "pmi.presentation-annotation-text-unordered",
+                "pmi.presentation-annotation-placement-ambiguous",
                 "pmi.dimensional-nominal-ambiguous",
                 "pmi.dimensional-unnamed-measure-ambiguous",
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
                 "presentation.conflicting-scalar-colors",
+                "presentation.surface-side-invalid",
+                "presentation.surface-transparency-conflict",
+                "presentation.context-dependent-style-unresolved",
                 "drawing.record-too-few-parameters",
                 "drawing.relationship-untyped-target",
+                "drawing.relationship-target-ambiguous",
                 "drawing.sheet-revision-unresolved",
                 "drawing.revision-sheet-unresolved",
                 "drawing.draughting-semantic-definition-untyped",
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
                 "tessellation.item-undeclared",
+                "tessellation.placement-unresolved",
+                "tessellation.placement-ambiguous",
                 "validation.measure-unit-unresolved",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",
@@ -794,6 +887,9 @@ mod tests {
                 "occurrence.placement-not-rigid",
                 "body.non-rigid-transform",
                 "body.hidden-visibility-unsupported",
+                "presentation.hidden-appearance-visibility-unsupported",
+                "presentation.hidden-layer-visibility-unsupported",
+                "pmi.hidden-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
                 "tessellation.requires-ap242",
                 "tessellation.feature-edges",
@@ -815,8 +911,10 @@ mod tests {
                 "topology.wire-region-no-connected-edge-set",
                 "topology.wire-region-missing-shell",
                 "body.hidden-omitted",
+                "presentation.hidden-layer-omitted",
                 "appearance.binding-missing-asset",
                 "appearance.binding-no-base-color",
+                "appearance.binding-target-conflict",
                 "pcurve.coedge-no-geometry",
                 "pcurve.coedge-native-metadata",
                 "pcurve.use-native-metadata",
@@ -896,5 +994,22 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    /// The admission warning reports transferred source data and its
+    /// verification status, so strict decode keeps it.
+    #[test]
+    fn globally_unproved_pcurve_admission_does_not_refuse_strict_decode() {
+        let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
+        assert_eq!(note.severity, Severity::Warning);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+    }
+
+    /// A kept default replaces a source value, so strict decode refuses it.
+    #[test]
+    fn substituted_length_uncertainty_refuses_strict_decode() {
+        let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
+        assert_eq!(note.severity, Severity::Warning);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
     }
 }

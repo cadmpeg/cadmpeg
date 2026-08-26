@@ -10,8 +10,9 @@ use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
-    chunk_at, parse_eof, parse_header, verify_checksum, ArchiveVersion, ChecksumStatus,
-    FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
+    parse_eof, parse_header, verify_checksum, verify_checksum_ranges, ArchiveVersion,
+    BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -43,6 +44,8 @@ const TCODE_HISTORY: u32 = 0x1000_0026;
 const TCODE_USER: u32 = 0x1000_0017;
 
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
+const TCODE_USER_TABLE_UUID: u32 = 0x2000_8080;
+const TCODE_USER_TABLE_RECORD_HEADER: u32 = 0x2000_8082;
 const TCODE_BITMAP_RECORD: u32 = 0x2000_8090;
 const TCODE_MATERIAL_RECORD: u32 = 0x2000_8040;
 const TCODE_LAYER_RECORD: u32 = 0x2000_8050;
@@ -82,6 +85,8 @@ const TCODE_CURRENT_DIMSTYLE: u32 = 0xa000_0133;
 const TCODE_SETTINGS_ATTRIBUTES: u32 = 0x2000_8134;
 const TCODE_PLUGIN_LIST: u32 = 0x2000_8135;
 const TCODE_RENDER_USERDATA: u32 = 0x2000_8136;
+const TCODE_HISTORICAL_UNUSED_SETTINGS: u32 = 0x2000_803e;
+const TCODE_ANONYMOUS: u32 = 0x4000_8000;
 
 /// A bounded record descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +101,15 @@ pub(crate) struct Record {
     pub(crate) short: bool,
     /// Inline value for a short chunk, or zero for a long chunk.
     pub(crate) value: i64,
+}
+
+/// A complete direct table record whose payload has no typed owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpaqueRecord {
+    /// Containing table typecode.
+    pub(crate) table_typecode: u32,
+    /// Complete record descriptor.
+    pub(crate) record: Record,
 }
 
 /// A table descriptor with explicit source ranges.
@@ -130,6 +144,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
     pub(crate) objects: Vec<ObjectDescriptor>,
+    /// Direct table records retained as opaque source data.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
     /// Parsed instance definitions and recoverable definition diagnostics.
     pub(crate) definitions: DefinitionScan,
     /// Decoded built-in history records in source order.
@@ -175,9 +191,82 @@ fn checksum_warning(
 ) -> Result<Option<String>, CodecError> {
     let chunk = chunk_at(data, offset, parent_end, archive, false).map_err(framing_error)?;
     let status = if typecode & TCODE_TABLE != 0
-        || matches!(typecode, TCODE_OBJECT_RECORD | TCODE_LAYER_RECORD)
-    {
+        || matches!(
+            typecode,
+            TCODE_OBJECT_RECORD
+                | TCODE_BITMAP_RECORD
+                | TCODE_MATERIAL_RECORD
+                | TCODE_LAYER_RECORD
+                | TCODE_LIGHT_RECORD
+                | TCODE_GROUP_RECORD
+                | TCODE_OBSOLETE_LAYERSET_RECORD
+                | TCODE_FONT_RECORD
+                | TCODE_DIMSTYLE_RECORD
+                | TCODE_HATCH_PATTERN_RECORD
+                | TCODE_LINETYPE_RECORD
+                | TCODE_TEXTURE_MAPPING_RECORD
+                | TCODE_HISTORY_RECORD
+        ) {
         crate::chunks::verify_checksum_ranges(data, &chunk, &[])
+    } else if matches!(
+        typecode,
+        TCODE_NAMED_PLANES | TCODE_NAMED_VIEWS | TCODE_VIEWS
+    ) {
+        let Ok(children) = list_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if matches!(
+        typecode,
+        TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
+    ) {
+        let Ok(children) = mesh_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_RENDER_SETTINGS {
+        let Ok(children) = render_settings_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
+        let Ok(children) = settings_attributes_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_PLUGIN_LIST {
+        let Ok(children) = plugin_list_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_RENDER_USERDATA {
+        let Ok(children) = checksum_children_through_class_end(
+            data,
+            chunk.body.clone(),
+            archive,
+            "render-settings userdata",
+        ) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_COMPRESSED_PREVIEW {
+        let Ok(children) = compressed_preview_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
+    } else if typecode == TCODE_USER_TABLE_UUID {
+        let Ok(children) = user_table_uuid_checksum_children(data, &chunk, archive) else {
+            return Ok(None);
+        };
+        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
     }
@@ -188,6 +277,400 @@ fn checksum_warning(
         ))),
         _ => Ok(None),
     }
+}
+
+/// Returns the nested SubD-display chunk in a version 1.5-or-newer mesh
+/// settings payload.
+///
+/// `ON_MeshParameters::Write()` writes the direct mesh fields first and then
+/// calls `ON_SubDDisplayParameters::Write()`. Future minor versions keep that
+/// child position; any later bytes remain direct suffix bytes.
+fn mesh_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    Ok(mesh_subd_checksum_child(data, &mut reader, archive)?
+        .into_iter()
+        .collect())
+}
+
+/// Skips the direct mesh-parameter prefix and returns its nested `SubD` child.
+fn mesh_subd_checksum_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Option<std::ops::Range<usize>>, FramingError> {
+    let packed_version = reader.u8()?;
+    if packed_version >> 4 != 1 || packed_version & 0x0f < 5 {
+        return Ok(None);
+    }
+
+    for _ in 0..5 {
+        reader.i32()?;
+    }
+    for _ in 0..4 {
+        reader.f64()?;
+    }
+    for _ in 0..2 {
+        reader.i32()?;
+    }
+    for _ in 0..4 {
+        reader.f64()?;
+    }
+    reader.i32()?;
+    reader.i32()?;
+    reader.bool()?;
+    reader.f64()?;
+    reader.u8()?;
+    reader.bool()?;
+
+    Ok(Some(take_anonymous_checksum_child(
+        data,
+        reader,
+        archive,
+        "mesh SubD display parameters",
+    )?))
+}
+
+/// Returns the modern anonymous render-settings child, when present.
+///
+/// Legacy V5 render settings are direct fields beginning with an integer
+/// version. Modern V6-and-later settings begin with one anonymous chunk; a
+/// direct suffix after that child remains part of the outer checksum.
+fn render_settings_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    if View::u32_le_at(data, chunk.body.start) != Some(TCODE_ANONYMOUS) {
+        return Ok(Vec::new());
+    }
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    Ok(vec![take_anonymous_checksum_child(
+        data,
+        &mut reader,
+        archive,
+        "modern render settings",
+    )?])
+}
+
+/// Returns the complete nested chunks in a settings-attributes body.
+fn settings_attributes_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let packed_version = reader.u8()?;
+    if packed_version >> 4 != 1 {
+        return Ok(Vec::new());
+    }
+    reader.f64()?;
+    reader.take(4)?;
+    for _ in 0..3 {
+        reader.i32()?;
+    }
+
+    let minor = packed_version & 0x0f;
+    let mut children = Vec::new();
+    if minor >= 1 {
+        children.push(take_anonymous_checksum_child(
+            data,
+            &mut reader,
+            archive,
+            "settings-attributes page units",
+        )?);
+    }
+    if minor >= 2 {
+        reader.skip(16)?;
+    }
+    if minor >= 3 {
+        reader.skip(24)?;
+        children.push(take_anonymous_checksum_child(
+            data,
+            &mut reader,
+            archive,
+            "settings-attributes earth anchor",
+        )?);
+    }
+    if minor >= 4 {
+        reader.bool()?;
+    }
+    if minor >= 5 {
+        children.push(take_anonymous_checksum_child(
+            data,
+            &mut reader,
+            archive,
+            "settings-attributes IO settings",
+        )?);
+    }
+    if minor >= 6 {
+        if let Some(child) = mesh_subd_checksum_child(data, &mut reader, archive)? {
+            children.push(child);
+        }
+    }
+    if minor >= 7 {
+        reader.skip(16 * 6)?;
+    }
+    Ok(children)
+}
+
+/// Returns the deflate children in an `ON_WindowsBitmap::WriteCompressed`
+/// preview payload.
+///
+/// The bitmap header is direct data. Each nonzero compressed-buffer record
+/// contains a direct uncompressed size, buffer CRC, and method byte. Method 1
+/// stores the deflate bytes in a complete anonymous CRC chunk; method 0 stores
+/// the bytes directly. A non-contiguous bitmap writes a second buffer after a
+/// palette-only first buffer.
+fn compressed_preview_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    reader.i32()?;
+    reader.i32()?;
+    reader.i32()?;
+    reader.i16()?;
+    let bit_count = reader.u16()?;
+    reader.i32()?;
+    let image_size = reader.i32()?;
+    reader.i32()?;
+    reader.i32()?;
+    let colors_used = reader.i32()?;
+    reader.i32()?;
+
+    if image_size < 0 || colors_used < 0 {
+        return Ok(Vec::new());
+    }
+    let color_count = if colors_used != 0 {
+        usize::try_from(colors_used).map_err(|_| FramingError::Overflow {
+            offset: reader.position(),
+        })?
+    } else {
+        match bit_count {
+            1 => 2,
+            4 => 16,
+            8 => 256,
+            _ => 0,
+        }
+    };
+    let palette_size = color_count.checked_mul(4).ok_or(FramingError::Overflow {
+        offset: reader.position(),
+    })?;
+    let image_size = usize::try_from(image_size).map_err(|_| FramingError::Overflow {
+        offset: reader.position(),
+    })?;
+    let first_size = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
+        offset: reader.position(),
+    })?;
+
+    let mut children = Vec::new();
+    let contiguous_size = palette_size
+        .checked_add(image_size)
+        .ok_or(FramingError::Overflow {
+            offset: reader.position(),
+        })?;
+    if first_size == contiguous_size {
+        if let Some(child) = compressed_preview_buffer_child(
+            data,
+            &mut reader,
+            archive,
+            first_size,
+            "compressed preview buffer",
+        )? {
+            children.push(child);
+        }
+    } else if image_size > 0 && first_size == palette_size {
+        if let Some(child) = compressed_preview_buffer_child(
+            data,
+            &mut reader,
+            archive,
+            first_size,
+            "compressed preview palette buffer",
+        )? {
+            children.push(child);
+        }
+        let second_size = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
+            offset: reader.position(),
+        })?;
+        if second_size != image_size {
+            return Ok(Vec::new());
+        }
+        if let Some(child) = compressed_preview_buffer_child(
+            data,
+            &mut reader,
+            archive,
+            second_size,
+            "compressed preview image buffer",
+        )? {
+            children.push(child);
+        }
+    } else {
+        return Ok(Vec::new());
+    }
+
+    Ok(children)
+}
+
+/// Reads one `WriteCompressedBuffer` prefix and returns its nested deflate
+/// chunk, if method 1 is selected.
+fn compressed_preview_buffer_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    size: usize,
+    label: &str,
+) -> Result<Option<std::ops::Range<usize>>, FramingError> {
+    if size == 0 {
+        return Ok(None);
+    }
+    reader.skip(4)?;
+    let method_offset = reader.position();
+    match reader.u8()? {
+        0 => {
+            reader.skip(size)?;
+            Ok(None)
+        }
+        1 => Ok(Some(take_anonymous_checksum_child(
+            data, reader, archive, label,
+        )?)),
+        method => Err(FramingError::structural(
+            method_offset,
+            format!("{label} has unsupported compression method {method}"),
+        )),
+    }
+}
+
+/// Takes one long anonymous child and records its complete range.
+fn take_anonymous_checksum_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    label: &str,
+) -> Result<std::ops::Range<usize>, FramingError> {
+    let start = reader.position();
+    let child = chunk_at(data, start, reader.end(), archive, false)?;
+    if child.typecode != TCODE_ANONYMOUS || child.short {
+        return Err(FramingError::structural(
+            start,
+            format!("{label} must be an anonymous long chunk"),
+        ));
+    }
+    reader.skip(child.next_offset - start)?;
+    Ok(child.range())
+}
+
+/// Returns the optional record-header child inside a user-table UUID record.
+fn user_table_uuid_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    reader.skip(16)?;
+    if reader.position() == reader.end() {
+        return Ok(Vec::new());
+    }
+
+    let start = reader.position();
+    let child = chunk_at(data, start, reader.end(), archive, false)?;
+    if child.typecode != TCODE_USER_TABLE_RECORD_HEADER || child.short {
+        return Ok(Vec::new());
+    }
+    reader.skip(child.next_offset - start)?;
+    Ok(vec![child.range()])
+}
+
+/// Returns the complete nested chunks after a counted view-list prefix.
+///
+/// The list CRC covers the count and any direct suffix bytes, but not these
+/// complete child chunks. A malformed child has no recoverable checksum range;
+/// the owning view parser reports that framing failure separately.
+fn list_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let count = View::i32_le_at(data, chunk.body.start).ok_or(FramingError::Truncated {
+        offset: chunk.body.start,
+        needed: 4,
+    })?;
+    let child_count = usize::try_from(count).unwrap_or(0);
+    let mut offset = chunk
+        .body
+        .start
+        .checked_add(4)
+        .ok_or(FramingError::Overflow {
+            offset: chunk.body.start,
+        })?;
+    if offset > chunk.body.end {
+        return Err(FramingError::Truncated {
+            offset: chunk.body.end,
+            needed: offset - chunk.body.end,
+        });
+    }
+    let mut children = Vec::new();
+    for _ in 0..child_count {
+        let child = chunk_at(data, offset, chunk.body.end, archive, false)?;
+        if child.next_offset <= offset {
+            return Err(FramingError::structural(
+                offset,
+                "view-list child did not advance",
+            ));
+        }
+        children.push(child.range());
+        offset = child.next_offset;
+    }
+    Ok(children)
+}
+
+/// Returns the complete plugin-reference chunks after the packed
+/// version/count prefix.
+///
+/// The plugin-list CRC covers the prefix and any direct suffix bytes, but not
+/// these complete anonymous child chunks.
+fn plugin_list_checksum_children(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    archive: ArchiveVersion,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let packed_version = reader.u8()?;
+    if packed_version >> 4 != 1 {
+        return Ok(Vec::new());
+    }
+    let count_offset = reader.position();
+    let child_count = checked_count_bytes(
+        reader.i32()?,
+        1,
+        reader.remaining(),
+        TABLE_RECORD_CAP,
+        count_offset,
+    )?;
+    let mut children = Vec::with_capacity(child_count);
+    for _ in 0..child_count {
+        let start = reader.position();
+        let child = chunk_at(data, start, reader.end(), archive, false)?;
+        if child.typecode != TCODE_ANONYMOUS || child.short {
+            return Err(FramingError::structural(
+                start,
+                "plugin-list child must be an anonymous long chunk",
+            ));
+        }
+        if child.next_offset <= start {
+            return Err(FramingError::structural(
+                start,
+                "plugin-list child did not advance",
+            ));
+        }
+        children.push(child.range());
+        reader.skip(child.next_offset - start)?;
+    }
+    Ok(children)
 }
 
 fn parse_record(
@@ -302,6 +785,7 @@ fn expected_record(table: u32, record: u32) -> bool {
                 | TCODE_SETTINGS_ATTRIBUTES
                 | TCODE_PLUGIN_LIST
                 | TCODE_RENDER_USERDATA
+                | TCODE_HISTORICAL_UNUSED_SETTINGS
         ),
         TCODE_OBJECTS => record == TCODE_OBJECT_RECORD,
         TCODE_USER => true,
@@ -358,6 +842,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     let mut saw_settings = false;
     let mut saw_objects = false;
     let mut all_objects = Vec::new();
+    let mut opaque_records = Vec::new();
     let mut definitions = DefinitionScan::default();
     let mut history = Vec::new();
     let mut record_count = 0_usize;
@@ -370,14 +855,17 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 ));
             }
             parse_eof(data, offset, archive).map_err(framing_error)?;
-            let metadata = crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
+            let mut metadata =
+                crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
             resolve_identities(&mut all_objects, &metadata, &mut warnings);
+            opaque_records.extend(std::mem::take(&mut metadata.opaque_records));
             return Ok(Scan {
                 data,
                 archive,
                 comment,
                 tables,
                 objects: all_objects,
+                opaque_records,
                 definitions,
                 history,
                 eof_offset: offset,
@@ -386,7 +874,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             });
         }
         let rank = table_rank(chunk.typecode).ok_or_else(|| {
-            CodecError::Malformed(format!("expected table or EOF at offset {offset}"))
+            CodecError::malformed(format_args!("expected table or EOF at offset {offset}"))
         })?;
         match table_base(chunk.typecode) {
             TCODE_PROPERTIES => saw_properties = true,
@@ -408,7 +896,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             saw_user = true;
         } else {
             if saw_user || rank <= last_rank {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "table typecode {:#x} is out of order or duplicated",
                     chunk.typecode
                 )));
@@ -419,6 +907,19 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         let mut records = Vec::new();
         let mut table_record_count = 0_usize;
         let mut object_typecodes = BTreeMap::new();
+        let writer_version = if table_base(chunk.typecode) == TCODE_OBJECTS {
+            tables
+                .iter()
+                .rev()
+                .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
+                .flat_map(|table| table.records.iter().rev())
+                .find_map(|record| {
+                    (record.typecode == TCODE_WRITER_VERSION && record.short)
+                        .then_some(record.value)
+                })
+        } else {
+            None
+        };
         let mut child_offset = chunk.body.start;
         let mut terminated = false;
         while child_offset < chunk.body.end {
@@ -442,7 +943,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 .checked_add(1)
                 .filter(|count| *count <= record_limit)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "document table record budget of {record_limit} exceeded"
                     ))
                 })?;
@@ -456,9 +957,11 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 short: child.short,
                 value: child.value,
             };
+            let opaque = table_base(chunk.typecode) == TCODE_USER
+                || !record_is_allowed(chunk.typecode, record.typecode, record.short);
             if !record_is_allowed(chunk.typecode, record.typecode, record.short) {
                 if known_record(record.typecode) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "record typecode {:#x} is invalid or short-framed in table {:#x}",
                         record.typecode, chunk.typecode
                     )));
@@ -475,7 +978,13 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
-                let descriptor = match parse_object_record(data, &record, archive, &mut warnings) {
+                let descriptor = match parse_object_record(
+                    data,
+                    &record,
+                    archive,
+                    writer_version,
+                    &mut warnings,
+                ) {
                     Ok(descriptor) => descriptor,
                     Err(error) => {
                         warnings.push(format!(
@@ -486,6 +995,12 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 };
                 *object_typecodes.entry(descriptor.object_type).or_insert(0) += 1;
                 all_objects.push(descriptor);
+            }
+            if opaque {
+                opaque_records.push(OpaqueRecord {
+                    table_typecode: chunk.typecode,
+                    record: record.clone(),
+                });
             }
             if retain_records {
                 records.push(record);
@@ -504,10 +1019,20 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             warnings.push(note);
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
-            definitions = parse_definitions(data, &records, archive);
+            let parsed = parse_definitions(data, &records, archive, chunk.typecode);
+            definitions = parsed.scan;
+            opaque_records.extend(parsed.opaque_records);
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
-            history = crate::history::parse_records(data, &records, archive, &mut warnings);
+            let parsed = crate::history::parse_records(
+                data,
+                &records,
+                archive,
+                &mut warnings,
+                chunk.typecode,
+            );
+            history = parsed.records;
+            opaque_records.extend(parsed.opaque_records);
         }
         tables.push(Table {
             typecode: chunk.typecode,
@@ -708,12 +1233,14 @@ pub(crate) fn decode(
     if container_only
         && matches!(
             scan.archive,
-            ArchiveVersion::V3
+            ArchiveVersion::V2
+                | ArchiveVersion::V3
                 | ArchiveVersion::V4
                 | ArchiveVersion::V5
                 | ArchiveVersion::V6
                 | ArchiveVersion::V7
                 | ArchiveVersion::V8
+                | ArchiveVersion::V9
         )
     {
         return Ok(container_only_result(&scan));

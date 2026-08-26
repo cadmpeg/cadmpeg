@@ -17,6 +17,10 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::ops::Range;
 
+const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
+const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
+
 /// Native identity form of one decoded freeform surface carrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FreeformSurfaceIdentity {
@@ -802,7 +806,8 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
             ];
             let length =
                 (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
-            ((length - 1.0).abs() < 1e-9).then_some(GuideCurveSite { point, direction })
+            ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT)
+                .then_some(GuideCurveSite { point, direction })
         })
         .collect();
     Some(A5GuideCurve {
@@ -1057,8 +1062,9 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
         if !radius.is_finite()
             || radius <= 0.0
             || !other.is_finite()
-            || relative_radius_difference > 1e-9
-            || (v[9] - 2.0 * ((chord / radius) * 0.5).clamp(-1.0, 1.0).asin()).abs() > 1e-9
+            || relative_radius_difference > EPS_ROLLING_BALL_RADIUS
+            || (v[9] - 2.0 * ((chord / radius) * 0.5).clamp(-1.0, 1.0).asin()).abs()
+                > EPS_ROLLING_BALL_ANGLE
         {
             return None;
         }

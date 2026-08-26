@@ -94,7 +94,6 @@
 mod annotations;
 mod appearance;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
-#[allow(unused_imports)] // Preserve the parser's crate-facing research names.
 pub(crate) mod brep;
 mod classification;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.

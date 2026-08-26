@@ -24,8 +24,8 @@ use super::planes::{
 };
 use super::vertices::solved_topological_vertices;
 
-const EPS_AGREE: f64 = 1e-9;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 pub fn transfer_topology_bound_planes(
     scan: &ContainerScan,

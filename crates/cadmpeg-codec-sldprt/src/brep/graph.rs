@@ -13,7 +13,7 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point,
     nurbs_surface_isocurve, nurbs_surface_parameter_near_point,
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
-    nurbs_surface_partials, nurbs_surface_point, surface_point,
+    nurbs_surface_point, surface_point,
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry,
@@ -39,6 +39,16 @@ use super::topology::{self, Record};
 use super::typed;
 use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
+
+const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
+const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
+const EPS_GEOMETRY_RESIDUAL: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_CIRCLE_RADIUS_MATCH: f64 = 1.0e-6;
+const EPS_RADIUS_ABSOLUTE: f64 = 1.0e-6;
+const EPS_RADIUS_RELATIVE: f64 = 1.0e-9;
+const EPS_NURBS_WEIGHT: f64 = 1.0e-12;
+const EPS_POINT_DISTANCE: f64 = 1.0e-12;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
@@ -2288,7 +2298,7 @@ fn derive_planar_pcurves(
                     + direction.z * v_reference.z,
             );
             let norm = (projected.u * projected.u + projected.v * projected.v).sqrt();
-            (norm > 1e-12)
+            (norm > EPS_NORMAL_NONZERO)
                 .then(|| cadmpeg_ir::math::Point2::new(projected.u / norm, projected.v / norm))
         };
         let plane_distance = |point: cadmpeg_ir::math::Point3| {
@@ -2301,10 +2311,10 @@ fn derive_planar_pcurves(
                 origin: curve_origin,
                 direction,
             } => {
-                if plane_distance(*curve_origin).abs() > 1e-6
+                if plane_distance(*curve_origin).abs() > EPS_PLANAR_DISTANCE
                     || (direction.x * normal.x + direction.y * normal.y + direction.z * normal.z)
                         .abs()
-                        > 1e-9
+                        > EPS_GEOMETRY_RESIDUAL
                 {
                     continue;
                 }
@@ -2323,8 +2333,8 @@ fn derive_planar_pcurves(
                 radius,
             } => {
                 let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
-                if axis_dot.abs() < 1.0 - 1e-9
-                    || plane_distance(*center).abs() > 1e-6
+                if axis_dot.abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || plane_distance(*center).abs() > EPS_PLANAR_DISTANCE
                     || *radius <= 0.0
                 {
                     continue;
@@ -2351,8 +2361,8 @@ fn derive_planar_pcurves(
                 minor_radius,
             } => {
                 let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
-                if axis_dot.abs() < 1.0 - 1e-9
-                    || plane_distance(*center).abs() > 1e-6
+                if axis_dot.abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || plane_distance(*center).abs() > EPS_PLANAR_DISTANCE
                     || *major_radius <= 0.0
                     || *minor_radius <= 0.0
                 {
@@ -2478,10 +2488,10 @@ fn derive_cylindrical_pcurves(
                 axis: circle_axis,
                 ref_direction: circle_reference,
                 radius: circle_radius,
-            } if (circle_radius.abs() - radius.abs()).abs() < 1e-6
+            } if (circle_radius.abs() - radius.abs()).abs() < EPS_CIRCLE_RADIUS_MATCH
                 && (circle_axis.x * axis.x + circle_axis.y * axis.y + circle_axis.z * axis.z)
                     .abs()
-                    > 1.0 - 1e-9 =>
+                    > 1.0 - EPS_AXIS_ALIGNMENT =>
             {
                 let d = [
                     center.x - origin.x,
@@ -2499,7 +2509,7 @@ fn derive_cylindrical_pcurves(
                     cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
                 )
                 .sqrt()
-                    > 1e-6
+                    > EPS_PLANAR_DISTANCE
                 {
                     continue;
                 }
@@ -2515,7 +2525,7 @@ fn derive_cylindrical_pcurves(
             }
             CurveGeometry::Line { direction, .. }
                 if (direction.x * axis.x + direction.y * axis.y + direction.z * axis.z).abs()
-                    > 1.0 - 1e-9 =>
+                    > 1.0 - EPS_AXIS_ALIGNMENT =>
             {
                 let Some(start) = position(&edge.start) else {
                     continue;
@@ -2575,7 +2585,7 @@ fn derive_cylindrical_pcurves(
                 let product = |a: cadmpeg_ir::math::Point2, b: cadmpeg_ir::math::Point2| {
                     a.u * b.u + a.v * b.v
                 };
-                let tolerance = 1e-6_f64.max(radius.abs() * 1e-9);
+                let tolerance = EPS_RADIUS_ABSOLUTE.max(radius.abs() * EPS_RADIUS_RELATIVE);
                 if norm(radial_center) > tolerance
                     || (norm(radial_cos) - radius.abs()).abs() > tolerance
                     || (norm(radial_sin) - radius.abs()).abs() > tolerance
@@ -2898,7 +2908,7 @@ fn quadratic_nurbs_has_constant_radius(
     let weight = |index: usize| weights.map_or(1.0, |weights| weights[index]);
     let choose_2 = [1.0, 2.0, 1.0];
     let choose_4 = [1.0, 4.0, 6.0, 4.0, 1.0];
-    let tolerance = 1e-6_f64.max(radius * radius * 1e-9);
+    let tolerance = EPS_RADIUS_ABSOLUTE.max(radius * radius * EPS_RADIUS_RELATIVE);
     for start in (0..radial_control_points.len() - 1).step_by(2) {
         let homogeneous = (0..3)
             .map(|offset| {
@@ -2938,7 +2948,7 @@ fn circle_azimuth_parameter(
     let axis_dot = surface_axis.x * circle_axis.x
         + surface_axis.y * circle_axis.y
         + surface_axis.z * circle_axis.z;
-    if axis_dot.abs() < 1.0 - 1e-9 {
+    if axis_dot.abs() < 1.0 - EPS_AXIS_ALIGNMENT {
         return None;
     }
     let surface_tangent = cadmpeg_ir::math::Vector3::new(
@@ -3009,7 +3019,7 @@ fn derive_revolved_circle_pcurves(
                 radius,
                 ratio,
                 half_angle,
-            } if (*ratio - 1.0).abs() < 1e-12 => {
+            } if (*ratio - 1.0).abs() < EPS_NORMAL_NONZERO => {
                 let d = [
                     circle_center.x - origin.x,
                     circle_center.y - origin.y,
@@ -3023,8 +3033,8 @@ fn derive_revolved_circle_pcurves(
                     cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
                 )
                 .sqrt()
-                    > 1e-6
-                    || (circle_radius.abs() - expected_radius.abs()).abs() > 1e-6
+                    > EPS_PLANAR_DISTANCE
+                    || (circle_radius.abs() - expected_radius.abs()).abs() > EPS_CIRCLE_RADIUS_MATCH
                 {
                     continue;
                 }
@@ -3053,10 +3063,10 @@ fn derive_revolved_circle_pcurves(
                     cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
                 )
                 .sqrt()
-                    > 1e-6
+                    > EPS_PLANAR_DISTANCE
                     || ((circle_radius.abs() - major_radius).hypot(height) - minor_radius.abs())
                         .abs()
-                        > 1e-6_f64.max(minor_radius.abs() * 1e-9)
+                        > EPS_RADIUS_ABSOLUTE.max(minor_radius.abs() * EPS_RADIUS_RELATIVE)
                 {
                     continue;
                 }
@@ -3176,7 +3186,7 @@ fn derive_spherical_pcurves(
             continue;
         };
         let axis_dot = axis.x * v_reference.x + axis.y * v_reference.y + axis.z * v_reference.z;
-        let geometry = if axis_dot.abs() > 1.0 - 1e-9 {
+        let geometry = if axis_dot.abs() > 1.0 - EPS_AXIS_ALIGNMENT {
             let d = [
                 center.x - sphere_center.x,
                 center.y - sphere_center.y,
@@ -3184,7 +3194,7 @@ fn derive_spherical_pcurves(
             ];
             let height = d[0] * v_reference.x + d[1] * v_reference.y + d[2] * v_reference.z;
             if ((radius * radius - height * height).max(0.0).sqrt() - circle_radius.abs()).abs()
-                > 1e-6
+                > EPS_CIRCLE_RADIUS_MATCH
             {
                 continue;
             }
@@ -3195,7 +3205,9 @@ fn derive_spherical_pcurves(
                 ),
                 direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
             }
-        } else if axis_dot.abs() < 1e-9 && (circle_radius.abs() - radius.abs()).abs() < 1e-6 {
+        } else if axis_dot.abs() < EPS_AXIS_ALIGNMENT
+            && (circle_radius.abs() - radius.abs()).abs() < EPS_CIRCLE_RADIUS_MATCH
+        {
             let equator = cadmpeg_ir::math::Vector3::new(
                 axis.y * v_reference.z - axis.z * v_reference.y,
                 axis.z * v_reference.x - axis.x * v_reference.z,
@@ -3744,10 +3756,9 @@ fn nurbs_boundary_pcurve(
                 (None, None) => true,
                 (Some(candidate), Some(actual)) => {
                     candidate.len() == actual.len()
-                        && candidate
-                            .iter()
-                            .zip(actual)
-                            .all(|(candidate, actual)| (candidate - actual).abs() <= 1e-12)
+                        && candidate.iter().zip(actual).all(|(candidate, actual)| {
+                            (candidate - actual).abs() <= EPS_NURBS_WEIGHT
+                        })
                 }
                 _ => false,
             }
@@ -3831,7 +3842,7 @@ fn nurbs_strict_isocurve_pcurve(
         if surface.weights.as_ref().is_some_and(|weights| {
             (0..varying_count).any(|varying| {
                 let (a, b) = pole_indices(varying);
-                (weights[a] - weights[b]).abs() > 1e-12
+                (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
             })
         }) || match (curve.weights.as_deref(), expected_weights.as_deref()) {
             (None, None) => false,
@@ -3840,7 +3851,7 @@ fn nurbs_strict_isocurve_pcurve(
                     || actual
                         .iter()
                         .zip(expected)
-                        .any(|(actual, expected)| (actual - expected).abs() > 1e-12)
+                        .any(|(actual, expected)| (actual - expected).abs() > EPS_NURBS_WEIGHT)
             }
             _ => true,
         } {
@@ -4579,7 +4590,7 @@ fn ruled_surface_line_pcurve(
                     SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
                     SurfaceParameterAxis::V => (fixed, vc + fixed),
                 };
-                (weights[a] - weights[b]).abs() > 1e-12
+                (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
             })
         })
     {
@@ -5116,7 +5127,7 @@ fn synthesize_sphere_seams(
                         let dx = point.x - seam_point.x;
                         let dy = point.y - seam_point.y;
                         let dz = point.z - seam_point.z;
-                        dx * dx + dy * dy + dz * dz <= 1e-12
+                        dx * dx + dy * dy + dz * dz <= EPS_POINT_DISTANCE
                     })
                 })
                 .cloned()

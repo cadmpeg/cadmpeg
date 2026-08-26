@@ -38,7 +38,7 @@ pub(crate) mod typed;
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
-pub use self::graph::{decode, decode_bodies, Brep, Stats};
+pub use self::graph::{decode, decode_bodies, Brep};
 pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
 pub(crate) use self::topology::patch_point;
 

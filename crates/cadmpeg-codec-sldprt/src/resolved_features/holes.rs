@@ -16,7 +16,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, View};
 use cadmpeg_ir::features::{
     Angle, FeatureDefinition, HoleBottom, HoleKind, HolePlacement, Length, Termination,
 };
@@ -1116,7 +1116,13 @@ pub(crate) fn project_profiled_hole_constructions(
                 .map(move |feature| (feature.id.as_str(), history_index))
         })
         .collect::<HashMap<_, _>>();
-    let mut unowned_incomplete_holes = vec![Vec::<(String, u32)>::new(); histories.len()];
+    let Ok(mut unowned_incomplete_holes) = alloc_filled(
+        histories.len(),
+        Vec::<(String, u32)>::new(),
+        "SLDPRT unowned incomplete-hole histories",
+    ) else {
+        return;
+    };
     for feature in features.iter() {
         let FeatureDefinition::Hole {
             diameter,
@@ -2446,7 +2452,13 @@ fn partition_seeded_hole_axes(
         seed_directions.push(direction);
     }
 
-    let mut partitions = vec![Vec::new(); siblings.len()];
+    let Ok(mut partitions) = alloc_filled(
+        siblings.len(),
+        Vec::<HolePlacement>::new(),
+        "SLDPRT seeded hole-axis partitions",
+    ) else {
+        return;
+    };
     for placement in candidates {
         let HolePlacement::Axis { axis, .. } = placement else {
             return;

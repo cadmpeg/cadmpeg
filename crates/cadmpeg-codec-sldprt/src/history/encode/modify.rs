@@ -122,7 +122,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             .windows(2)
                             .any(|pair| pair[0].parameter >= pair[1].parameter)
                     {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has an invalid variable-radius law",
                             feature.id
                         )));
@@ -354,7 +354,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || body_selection_value(tools).is_none()
                     || *op == BooleanOp::Unresolved)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has unresolved combine semantics",
                     feature.id
                 )));
@@ -393,13 +393,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             require_same_family(existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
             let targets = body_selection_value(targets).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no surface-cut target bodies",
                     feature.id
                 ))
             })?;
             let tools = face_selection_value(tools).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no surface-cut tools",
                     feature.id
                 ))
@@ -601,7 +601,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     require_direction(*axis_dir, &feature.id, "face rotation axis")?;
                     if !angle.0.is_finite() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite face rotation angle",
                             feature.id
                         )));
@@ -631,7 +631,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let bodies = body_selection_value(bodies).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no body-motion selection",
                     feature.id
                 ))
@@ -641,7 +641,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .into_iter()
                 .all(f64::is_finite)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite body translation",
                     feature.id
                 )));
@@ -664,7 +664,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             .into_iter()
                             .all(f64::is_finite)
                     {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has invalid body rotation",
                             feature.id
                         )));
@@ -716,7 +716,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             if height.is_some_and(|height| !height.0.is_finite()) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite dome height",
                     feature.id
                 )));
@@ -781,7 +781,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 FlexMode::Unresolved { .. } => {}
                 FlexMode::Bending { angle } => {
                     if !angle.0.is_finite() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite flex angle",
                             feature.id
                         )));
@@ -793,7 +793,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 FlexMode::Twisting { angle } => {
                     if !angle.0.is_finite() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite flex angle",
                             feature.id
                         )));
@@ -805,7 +805,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 FlexMode::Tapering { factor } => {
                     if !factor.is_finite() || *factor <= 0.0 {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has an invalid flex taper factor",
                             feature.id
                         )));
@@ -817,7 +817,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 FlexMode::Stretching { distance } => {
                     if !distance.0.is_finite() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite flex distance",
                             feature.id
                         )));
@@ -873,7 +873,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .flatten()
                 .all(|factor| factor.is_finite() && factor != 0.0);
             if !factors_valid || !center_valid {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid scale transform",
                     feature.id
                 )));

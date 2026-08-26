@@ -9,6 +9,7 @@
 use std::fmt;
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::decode::alloc_filled;
 use clap::Args;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -195,30 +196,6 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
         .collect()
 }
 
-/// Every record in `target`, plus entry counts for every array arena.
-pub(crate) struct ArenaSnapshot {
-    pub found_array: bool,
-    pub entry_count: u64,
-    pub records: Vec<serde_json::Value>,
-    pub addressable: Vec<(String, u64)>,
-}
-
-/// Streams the CADIR document and keeps every record in `target`.
-pub(crate) fn snapshot_arena(text: &str, target: &ArenaTarget) -> Result<ArenaSnapshot> {
-    let capture = CaptureSeed {
-        target,
-        mode: &KeepMode::Head(usize::MAX),
-    }
-    .deserialize(&mut serde_json::Deserializer::from_str(text))
-    .context("parsing the CADIR document")?;
-    Ok(ArenaSnapshot {
-        found_array: capture.found_array,
-        entry_count: capture.entry_count,
-        records: parse_kept(&capture.kept)?,
-        addressable: capture.addressable,
-    })
-}
-
 fn resolve_ids(
     ids: &[String],
     capture: &Capture,
@@ -293,8 +270,18 @@ fn resolve_one<'a>(
 }
 
 fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
-    if args.json {
-        print_json("item", &serde_json::Value::Array(values.to_vec()));
+    emit_values("item", args.json, args.fields.as_deref(), values)
+}
+
+/// Pretty-print records, TSV `--fields`, or the versioned `--json` envelope.
+pub(crate) fn emit_values(
+    view: &str,
+    json: bool,
+    fields: Option<&[String]>,
+    values: &[serde_json::Value],
+) -> Result<()> {
+    if json {
+        print_json(view, &serde_json::Value::Array(values.to_vec()));
         return Ok(());
     }
     // Empty arena / no matches: empty stdout (no TSV header), exit 0 unless a
@@ -302,7 +289,7 @@ fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
     if values.is_empty() {
         return Ok(());
     }
-    if let Some(paths) = &args.fields {
+    if let Some(paths) = fields {
         let (tsv, empty_paths) = project_fields(values, paths)?;
         print!("{tsv}");
         if !empty_paths.is_empty() {
@@ -322,7 +309,7 @@ fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
     Ok(())
 }
 
-fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
+pub(crate) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
     let list = if addressable.is_empty() {
         "(none — this document has no array arenas)".to_owned()
     } else {
@@ -340,7 +327,12 @@ fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) ->
     )
 }
 
-fn miss_id_message(arena: &str, request: &str, entry_count: u64, all_ids: &[String]) -> String {
+pub(crate) fn miss_id_message(
+    arena: &str,
+    request: &str,
+    entry_count: u64,
+    all_ids: &[String],
+) -> String {
     const SHOWN: usize = 10;
     let lower = request.to_lowercase();
     let mut label = "close ids";
@@ -368,7 +360,7 @@ fn miss_id_message(arena: &str, request: &str, entry_count: u64, all_ids: &[Stri
     }
 }
 
-fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
+pub(crate) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
     const SHOWN: usize = 10;
     let shown: Vec<&str> = matches.iter().take(SHOWN).map(String::as_str).collect();
     format!(
@@ -378,7 +370,7 @@ fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
     )
 }
 
-fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
+pub(crate) fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
     let mut parts = Vec::new();
     for path in empty_paths {
         let keys = first_parent_keys(values, path);
@@ -423,7 +415,10 @@ fn first_parent_keys(values: &[serde_json::Value], path: &str) -> Option<Vec<Str
 /// Cell rules (projection-specific; not the other views' [`super::cell`]):
 /// JSON strings/numbers/bools are bare; tab/newline in a string become `\t`/
 /// `\n`; null or absent is an empty cell; arrays/objects are compact JSON.
-fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(String, Vec<String>)> {
+pub(crate) fn project_fields(
+    values: &[serde_json::Value],
+    paths: &[String],
+) -> Result<(String, Vec<String>)> {
     if paths.is_empty() {
         bail!("--fields requires at least one dotted path");
     }
@@ -431,7 +426,7 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     out.push_str(&paths.join("\t"));
     out.push('\n');
 
-    let mut empty_counts = vec![0usize; paths.len()];
+    let mut empty_counts = alloc_filled(paths.len(), 0usize, "cli query field counts")?;
     let row_count = values.len();
     for value in values {
         for (i, path) in paths.iter().enumerate() {
@@ -463,7 +458,10 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     Ok((out, empty_paths))
 }
 
-fn navigate<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+pub(crate) fn navigate<'a>(
+    value: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
     let mut cur = value;
     for part in path.split('.') {
         cur = cur.as_object()?.get(part)?;

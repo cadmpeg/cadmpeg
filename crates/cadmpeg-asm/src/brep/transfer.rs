@@ -59,7 +59,7 @@ pub fn transfer_into_ir(
                 .is_some_and(|records| !records.is_empty())
         })
     }) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "native namespace {native_format} already contains ASM records"
         )));
     }
