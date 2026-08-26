@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "73871696fe2b9341d8a86d8f8e0252ce0e9b9efc"
+measured_at = "2997caaca876d6ed588b25ec03d88ab93f150a87"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; lexically mask Rust comments and literals, then strip cfg(test)-attributed items with blank-preserving elision. bare tolerance literals count at use sites; named const/static numeric initializers are declarations and are excluded. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -35,10 +35,9 @@ nonliteral_vec_repeat = 38
 crate_root_tests_rs = 0
 path_test_includes = 0
 test_line_debt = 818
-production_line_debt = 704
+production_line_debt = 0
 
 [reasons]
 from_endian_bytes = "The remaining 48 calls are intentional exceptions retained after merging the mainline codec work. None reads a bounded decode window as a standard-width scalar."
 nonliteral_vec_repeat = "The merged CATIA branch retains 36 sites; NX topology preparation keeps one optional census slot per admitted stream; and SLDPRT sweep decoding allocates one scalar output per admitted count."
 test_line_debt = "The merged tree contains 155 lines in CATIA B2 tests, 278 lines in NX tests, 178 lines in the IR evaluator suite, and 207 lines in five SLDPRT test suites."
-production_line_debt = "merged the long-running CATIA level-6 solver branch after main introduced production-file line-debt accounting; crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs contains the branch's coupled quotient search and contributes the measured 704 lines above the convergence threshold"
