@@ -250,11 +250,16 @@ fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
     index.points(&point_id.0).map(|point| point.position)
 }
 
+pub(super) struct PcurveSupport<'a> {
+    pub(super) surface_id: &'a SurfaceId,
+    pub(super) geometry: &'a SurfaceGeometry,
+    pub(super) factor: f64,
+}
+
 pub(super) fn pcurve_geometry(
     ir: &CadIr,
     sequence: u32,
-    support: &SurfaceGeometry,
-    factor: f64,
+    support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     composite_index: Option<&CompositeIndex>,
@@ -262,16 +267,41 @@ pub(super) fn pcurve_geometry(
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
     let (nurbs, range) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
-    let (u_factor, v_factor) = match support {
-        SurfaceGeometry::Plane { .. } => (1.0, 1.0),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),
-        SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Torus { .. }
-        | SurfaceGeometry::Nurbs(_) => (1.0 / factor, 1.0 / factor),
-        SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => return None,
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *support.surface_id);
+    let parameter_map = match procedural {
+        Some(procedural)
+            if matches!(
+                &procedural.definition,
+                ProceduralSurfaceDefinition::Extrusion { .. }
+                    | ProceduralSurfaceDefinition::Revolution { .. }
+            ) =>
+        {
+            Some(procedural_pcurve_parameter_map(ir, &procedural.id))
+        }
+        _ => None,
+    };
+    let (u_factor, u_offset, v_factor, v_offset) = match parameter_map {
+        Some(Some(parameter_map)) => parameter_map,
+        Some(None) => return None,
+        None => match support.geometry {
+            SurfaceGeometry::Plane { .. } => (1.0, 0.0, 1.0, 0.0),
+            SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+                (1.0 / support.factor, 0.0, 1.0, 0.0)
+            }
+            SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Torus { .. }
+            | SurfaceGeometry::Nurbs(_) => (1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0),
+            SurfaceGeometry::Procedural { construction } => {
+                procedural_pcurve_parameter_map(ir, construction)?
+            }
+            SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Transformed { .. }
+            | SurfaceGeometry::Unknown { .. } => return None,
+        },
     };
     Some((
         PcurveGeometry::Nurbs {
@@ -280,13 +310,120 @@ pub(super) fn pcurve_geometry(
             control_points: nurbs
                 .control_points
                 .iter()
-                .map(|point| Point2::new(point.x * u_factor, point.y * v_factor))
+                .map(|point| {
+                    Point2::new(
+                        point.x.mul_add(u_factor, u_offset),
+                        point.y.mul_add(v_factor, v_offset),
+                    )
+                })
                 .collect(),
             weights: nurbs.weights,
             periodic: nurbs.periodic,
         },
         range,
     ))
+}
+
+fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
+    fn is_line(geometry: &CurveGeometry, depth: usize) -> bool {
+        if depth > 256 {
+            return false;
+        }
+        match geometry {
+            CurveGeometry::Line { .. } => true,
+            CurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
+            _ => false,
+        }
+    }
+
+    ir.model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+        .is_some_and(|curve| is_line(&curve.geometry, 0))
+}
+
+fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
+    let source_width = source[1] - source[0];
+    let target_width = target[1] - target[0];
+    if !source
+        .iter()
+        .chain(target.iter())
+        .all(|value| value.is_finite())
+        || source_width <= 0.0
+        || target_width <= 0.0
+    {
+        return None;
+    }
+    let scale = target_width / source_width;
+    let offset = target[0] - source[0] * scale;
+    (scale.is_finite() && offset.is_finite()).then_some((scale, offset))
+}
+
+fn procedural_pcurve_parameter_map(
+    ir: &CadIr,
+    construction: &ProceduralSurfaceId,
+) -> Option<(f64, f64, f64, f64)> {
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)?;
+    let Some([Some(carrier_start), Some(carrier_end), _, _]) = procedural.record_bounds else {
+        return None;
+    };
+    let carrier_interval = [carrier_start, carrier_end];
+    if !carrier_interval.iter().all(|value| value.is_finite())
+        || carrier_interval[0] >= carrier_interval[1]
+    {
+        return None;
+    }
+    let mut u_map = (1.0, 0.0);
+    let mut v_map = (1.0, 0.0);
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            parameter_interval,
+            ..
+        } => {
+            if line_directrix(ir, directrix) {
+                u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
+            } else if let Some(parameter_interval) = parameter_interval {
+                u_map = affine_parameter_map(*parameter_interval, carrier_interval)?;
+            }
+        }
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            angular_interval,
+            angular_parameter_interval,
+            parameter_interval,
+            transposed,
+            ..
+        } => {
+            let directrix_map = if line_directrix(ir, directrix) {
+                affine_parameter_map([0.0, 1.0], carrier_interval)?
+            } else if let Some(parameter_interval) = parameter_interval {
+                affine_parameter_map(*parameter_interval, carrier_interval)?
+            } else {
+                (1.0, 0.0)
+            };
+            let angular_map = match angular_parameter_interval {
+                Some(parameter_interval) => {
+                    affine_parameter_map(*parameter_interval, *angular_interval)?
+                }
+                None => (1.0, 0.0),
+            };
+            if *transposed {
+                u_map = angular_map;
+                v_map = directrix_map;
+            } else {
+                u_map = directrix_map;
+                v_map = angular_map;
+            }
+        }
+        _ => return None,
+    }
+    Some((u_map.0, u_map.1, v_map.0, v_map.1))
 }
 
 fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<Point3>> {
@@ -1486,8 +1623,11 @@ pub(super) fn project(
                         pcurve_geometry(
                             ir,
                             *sequence,
-                            &support_geometry,
-                            factor,
+                            &PcurveSupport {
+                                surface_id: &surface_id,
+                                geometry: &support_geometry,
+                                factor,
+                            },
                             Some(carrier_agreement_tolerance),
                             ctx,
                             Some(

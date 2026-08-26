@@ -497,7 +497,11 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
             .geometry,
         cadmpeg_ir::geometry::CurveGeometry::Line { .. }
     ));
-    assert_eq!(*parameter_interval, [0.0, 6.606_051_667_958_6]);
+    assert_eq!(*parameter_interval, [0.0, 1.0]);
+    assert_eq!(
+        procedural.record_bounds,
+        Some([Some(0.0), Some(6.606_051_667_958_6), None, None])
+    );
     assert!(
         result
             .report()
@@ -656,6 +660,33 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         "losses={:#?}",
         result.report().losses
     );
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .expect("trimmed revolution support");
+    assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+    let procedural = result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == surface.id)
+        .expect("trimmed revolution construction");
+    assert_eq!(
+        procedural.record_bounds,
+        Some([Some(0.0), Some(2.0), None, None])
+    );
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+        parameter_interval: Some(parameter_interval),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected bounded trimmed revolution");
+    };
+    assert_eq!(*parameter_interval, [0.0, 1.0]);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

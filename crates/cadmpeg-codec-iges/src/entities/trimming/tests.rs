@@ -1415,6 +1415,88 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
 }
 
 #[test]
+fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_procedural_line_surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D13")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .unwrap();
+    let SurfaceGeometry::Procedural { construction } = &surface.geometry else {
+        panic!("expected a procedural revolution surface");
+    };
+    let procedural = result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)
+        .unwrap();
+    let ProceduralSurfaceDefinition::Revolution {
+        parameter_interval: Some(parameter_interval),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected a bounded procedural revolution");
+    };
+    assert_eq!(*parameter_interval, [0.0, 1.0]);
+    let carrier_interval = procedural.record_bounds.unwrap();
+    assert!(carrier_interval[1].is_some_and(|value| value > 3.0));
+
+    let loop_ = result
+        .ir()
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    let coedge = result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == loop_.coedges[0])
+        .unwrap();
+    assert_eq!(coedge.pcurves.len(), 1);
+    let pcurve = result
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+        .unwrap();
+    let PcurveGeometry::Nurbs { control_points, .. } = &pcurve.geometry else {
+        panic!("expected a NURBS pcurve, got {:?}", pcurve.geometry);
+    };
+    let expected_u =
+        (11.762_109_22_f64 - 6.814_348_186).hypot(-6.969_522_429_f64 - -2.592_356_749_f64) * 0.5;
+    assert!((control_points[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(control_points[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_builds_a_model_curve_only_trimmed_sheet() {
     let result = IgesCodec
         .decode(

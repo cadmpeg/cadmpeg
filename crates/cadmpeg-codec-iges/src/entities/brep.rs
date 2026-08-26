@@ -215,8 +215,11 @@ fn resolve_pcurve_uses<'a>(
         let (geometry, range) = pcurve_geometry(
             source,
             *sequence,
-            support.geometry,
-            support.factor,
+            &super::trimming::PcurveSupport {
+                surface_id: support.id,
+                geometry: support.geometry,
+                factor: support.factor,
+            },
             Some(tolerance),
             ctx,
             None,

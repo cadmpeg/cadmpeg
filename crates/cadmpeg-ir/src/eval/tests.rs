@@ -7,9 +7,10 @@ use crate::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
 };
-use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
+use crate::topology::{Edge, Point, Vertex};
 use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -771,9 +772,12 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+        geometry: CurveGeometry::Transformed {
+            basis: Box::new(CurveGeometry::Line {
+                origin: Point3::new(2.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            }),
+            transform: Transform::identity(),
         },
         source_object: None,
     });
@@ -861,6 +865,86 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     assert!(partials.dvv.x.abs() < 1.0e-12);
     assert!((partials.dvv.y + std::f64::consts::PI.powi(2) / 8.0).abs() < 1.0e-12);
     assert!(partials.duv.norm() < 1.0e-12);
+}
+
+#[test]
+fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
+    let directrix_id = CurveId("normalized-profile".into());
+    let surface_id = SurfaceId("normalized-revolution".into());
+    let start_point_id = PointId("normalized-profile-start-point".into());
+    let end_point_id = PointId("normalized-profile-end-point".into());
+    let start_vertex_id = VertexId("normalized-profile-start-vertex".into());
+    let end_vertex_id = VertexId("normalized-profile-end-vertex".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(2.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: start_point_id.clone(),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: end_point_id.clone(),
+            position: Point3::new(2.0, 0.0, 10.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: start_vertex_id.clone(),
+            point: start_point_id,
+            tolerance: None,
+        },
+        Vertex {
+            id: end_vertex_id.clone(),
+            point: end_point_id,
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("normalized-profile-edge".into()),
+        curve: Some(directrix_id.clone()),
+        start: start_vertex_id,
+        end: end_vertex_id,
+        param_range: Some([0.0, 10.0]),
+        tolerance: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("normalized-revolution-construction".into()),
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Revolution {
+            directrix: directrix_id,
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            angular_interval: [0.0, std::f64::consts::TAU],
+            angular_parameter_interval: None,
+            parameter_interval: Some([0.0, 1.0]),
+            transposed: false,
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: Some([Some(0.0), Some(10.0), None, None]),
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+        .expect("normalized line domain maps to distance carrier");
+    assert_eq!(point, Point3::new(2.0, 0.0, 5.0));
+    let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+        .expect("normalized line domain partials");
+    assert_eq!(partials.du, Vector3::new(0.0, 0.0, 1.0));
 }
 
 #[test]

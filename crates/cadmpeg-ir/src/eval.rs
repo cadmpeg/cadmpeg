@@ -2864,49 +2864,113 @@ fn model_axis_revolution_partials(
 /// IGES line entities use a normalized surface interval while the neutral
 /// line carrier uses signed distance. Other curve carriers retain their native
 /// parameterization. A line used by more than one edge is only unambiguous
-/// when every retained edge range agrees.
+/// when every retained edge range agrees, unless the construction stores its
+/// neutral carrier interval explicitly.
+fn record_u_interval(record_bounds: Option<[Option<f64>; 4]>) -> Option<[f64; 2]> {
+    let [Some(start), Some(end), _, _] = record_bounds? else {
+        return None;
+    };
+    Some([start, end])
+}
+
+fn is_line_geometry(geometry: &CurveGeometry, depth: usize) -> bool {
+    if depth > 256 {
+        return false;
+    }
+    match geometry {
+        CurveGeometry::Line { .. } => true,
+        CurveGeometry::Transformed { basis, .. } => is_line_geometry(basis, depth + 1),
+        _ => false,
+    }
+}
+
 fn construction_curve_parameter(
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
     parameter: f64,
     surface_interval: Option<[f64; 2]>,
+    carrier_interval: Option<[f64; 2]>,
 ) -> Option<(f64, f64)> {
     if !parameter.is_finite() {
         return None;
     }
-    let Some([surface_start, surface_end]) = surface_interval else {
-        return Some((parameter, 1.0));
+    let (parameter, surface_derivative) = match (surface_interval, carrier_interval) {
+        (Some([surface_start, surface_end]), Some([carrier_start, carrier_end])) => {
+            let surface_width = surface_end - surface_start;
+            let carrier_width = carrier_end - carrier_start;
+            if !surface_start.is_finite()
+                || !surface_end.is_finite()
+                || !carrier_start.is_finite()
+                || !carrier_end.is_finite()
+                || surface_width <= 0.0
+                || carrier_width <= 0.0
+                || parameter < carrier_start
+                || parameter > carrier_end
+            {
+                return None;
+            }
+            let derivative = surface_width / carrier_width;
+            let source_parameter = (parameter - carrier_start).mul_add(derivative, surface_start);
+            (source_parameter, derivative)
+        }
+        (Some([surface_start, surface_end]), None) => {
+            let surface_width = surface_end - surface_start;
+            if !surface_start.is_finite()
+                || !surface_end.is_finite()
+                || surface_width <= 0.0
+                || parameter < surface_start
+                || parameter > surface_end
+            {
+                return None;
+            }
+            (parameter, 1.0)
+        }
+        (None, Some([carrier_start, carrier_end])) => {
+            if !carrier_start.is_finite()
+                || !carrier_end.is_finite()
+                || carrier_start >= carrier_end
+                || parameter < carrier_start
+                || parameter > carrier_end
+            {
+                return None;
+            }
+            (parameter, 1.0)
+        }
+        (None, None) => (parameter, 1.0),
     };
-    let surface_width = surface_end - surface_start;
-    if !surface_start.is_finite()
-        || !surface_end.is_finite()
-        || surface_width <= 0.0
-        || parameter < surface_start
-        || parameter > surface_end
-    {
-        return None;
-    }
     let curve = index.curves(&directrix.0)?;
-    if !matches!(curve.geometry, CurveGeometry::Line { .. }) {
-        return Some((parameter, 1.0));
+    let Some([surface_start, surface_end]) = surface_interval else {
+        return Some((parameter, surface_derivative));
+    };
+    if !is_line_geometry(&curve.geometry, 0) {
+        return Some((parameter, surface_derivative));
     }
-
-    let mut ranges = index
-        .ir()
-        .model
-        .edges
-        .iter()
-        .filter(|edge| edge.curve.as_ref() == Some(directrix))
-        .filter_map(|edge| edge.param_range);
-    let [curve_start, curve_end] = ranges.next()?;
-    if !curve_start.is_finite()
-        || !curve_end.is_finite()
-        || ranges.any(|range| range != [curve_start, curve_end])
-    {
+    let line_interval = if let Some(carrier_interval) = carrier_interval {
+        carrier_interval
+    } else {
+        let mut ranges = index
+            .ir()
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve.as_ref() == Some(directrix))
+            .filter_map(|edge| edge.param_range);
+        let interval = ranges.next()?;
+        if ranges.any(|range| range != interval) {
+            return None;
+        }
+        interval
+    };
+    let [curve_start, curve_end] = line_interval;
+    if !curve_start.is_finite() || !curve_end.is_finite() {
         return None;
     }
     let curve_width = curve_end - curve_start;
-    let derivative = curve_width / surface_width;
+    let surface_width = surface_end - surface_start;
+    if !curve_width.is_finite() || curve_width <= 0.0 || surface_width <= 0.0 {
+        return None;
+    }
+    let derivative = curve_width / surface_width * surface_derivative;
     let fraction = (parameter - surface_start) / surface_width;
     Some((curve_start + fraction * curve_width, derivative))
 }
@@ -2916,6 +2980,7 @@ fn model_native_extrusion_partials(
     directrix: &crate::ids::CurveId,
     direction: Vector3,
     parameter_interval: Option<[f64; 2]>,
+    carrier_interval: Option<[f64; 2]>,
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
@@ -2923,7 +2988,7 @@ fn model_native_extrusion_partials(
         return None;
     }
     let (parameter, derivative) =
-        construction_curve_parameter(index, directrix, u, parameter_interval)?;
+        construction_curve_parameter(index, directrix, u, parameter_interval, carrier_interval)?;
     let differential = model_curve_differential_by_id(index, directrix, parameter)?;
     let zero = Vector3::new(0.0, 0.0, 0.0);
     Some(SurfaceSecondPartials {
@@ -2945,6 +3010,7 @@ fn model_native_revolution_partials(
     angular_interval: [f64; 2],
     angular_parameter_interval: Option<[f64; 2]>,
     parameter_interval: Option<[f64; 2]>,
+    carrier_interval: Option<[f64; 2]>,
     transposed: bool,
     u: f64,
     v: f64,
@@ -2953,8 +3019,13 @@ fn model_native_revolution_partials(
         return None;
     }
     let (directrix_parameter, angular_parameter) = if transposed { (v, u) } else { (u, v) };
-    let (directrix_parameter, derivative) =
-        construction_curve_parameter(index, directrix, directrix_parameter, parameter_interval)?;
+    let (directrix_parameter, derivative) = construction_curve_parameter(
+        index,
+        directrix,
+        directrix_parameter,
+        parameter_interval,
+        carrier_interval,
+    )?;
     let (angle, angular_derivative) = angular_parameter_interval.map_or_else(
         || Some((angular_parameter, 1.0)),
         |parameter_interval| {
@@ -3909,6 +3980,7 @@ pub fn model_surface_point(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)?;
+    let carrier_interval = record_u_interval(procedural.record_bounds);
     let index = crate::index::ModelIndex::new(ir);
     match &procedural.definition {
         ProceduralSurfaceDefinition::Extrusion {
@@ -3921,6 +3993,7 @@ pub fn model_surface_point(
             directrix,
             *direction,
             *parameter_interval,
+            carrier_interval,
             u,
             v,
         )
@@ -3947,6 +4020,7 @@ pub fn model_surface_point(
             *angular_interval,
             *angular_parameter_interval,
             *parameter_interval,
+            carrier_interval,
             *transposed,
             u,
             v,
@@ -3986,6 +4060,8 @@ pub fn model_surface_point_by_id(
         visiting.push(surface_id.clone());
         let surface = index.surfaces(&surface_id.0)?;
         let procedural = index.procedural_surface_for_surface(&surface_id.0);
+        let carrier_interval =
+            procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
         let result = match procedural.map(|procedural| &procedural.definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
@@ -4008,6 +4084,7 @@ pub fn model_surface_point_by_id(
                 directrix,
                 *direction,
                 *parameter_interval,
+                carrier_interval,
                 u,
                 v,
             )
@@ -4039,6 +4116,7 @@ pub fn model_surface_point_by_id(
                 *angular_interval,
                 *angular_parameter_interval,
                 *parameter_interval,
+                carrier_interval,
                 *transposed,
                 u,
                 v,
@@ -4203,6 +4281,8 @@ fn model_surface_mapping(
     visiting.push(surface.clone());
     let carrier = index.surfaces(&surface.0)?;
     let procedural = index.procedural_surface_for_surface(&surface.0);
+    let carrier_interval =
+        procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
     let result = match procedural.map(|procedural| &procedural.definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
@@ -4233,6 +4313,7 @@ fn model_surface_mapping(
                 directrix,
                 *direction,
                 *parameter_interval,
+                carrier_interval,
                 u,
                 v,
             )?,
@@ -4280,6 +4361,7 @@ fn model_surface_mapping(
                 *angular_interval,
                 *angular_parameter_interval,
                 *parameter_interval,
+                carrier_interval,
                 *transposed,
                 u,
                 v,

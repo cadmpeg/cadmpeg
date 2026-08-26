@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::composite::CompositeIndex;
+use super::composite::{bounded_parameter_range_for_curve, CompositeIndex};
 use super::geometry::{
     declared_unit_vector, entity_loss, resolve_transform, source_object, ProjectionOutcome,
 };
@@ -176,6 +176,33 @@ fn bounded_evaluable_curve(
         .into_iter()
         .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_some())
         .then_some((geometry, parameter_interval))
+}
+
+fn is_line_carrier(geometry: &CurveGeometry, depth: usize) -> bool {
+    if depth > 256 {
+        return false;
+    }
+    match geometry {
+        CurveGeometry::Line { .. } => true,
+        CurveGeometry::Transformed { basis, .. } => is_line_carrier(basis, depth + 1),
+        _ => false,
+    }
+}
+
+fn source_parameter_interval(geometry: &CurveGeometry, carrier_interval: [f64; 2]) -> [f64; 2] {
+    if is_line_carrier(geometry, 0) {
+        [0.0, 1.0]
+    } else {
+        carrier_interval
+    }
+}
+
+fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeometry> {
+    ir.model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+        .map(|curve| &curve.geometry)
 }
 
 #[derive(Clone)]
@@ -1232,10 +1259,10 @@ pub(super) fn project(
             }
         };
         let directrix_id = CurveId(format!("iges:model:curve#D{directrix_sequence}"));
-        let Some((directrix, interval)) =
+        let Some((directrix, cached_interval)) =
             bounded_nurbs(ir, directrix_sequence, ctx, &composite_index)
         else {
-            let Some((directrix_geometry, interval)) = bounded_evaluable_curve(
+            let Some((directrix_geometry, carrier_interval)) = bounded_evaluable_curve(
                 ir,
                 directrix_sequence,
                 global.minimum_resolution_mm(),
@@ -1247,7 +1274,9 @@ pub(super) fn project(
                 ));
                 continue;
             };
-            let Some(start) = cadmpeg_ir::eval::curve_point(&directrix_geometry, interval[0])
+            let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
+            let Some(start) =
+                cadmpeg_ir::eval::curve_point(&directrix_geometry, carrier_interval[0])
             else {
                 losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
                 continue;
@@ -1294,17 +1323,33 @@ pub(super) fn project(
                 surface: surface_id,
                 definition: ProceduralSurfaceDefinition::Extrusion {
                     directrix: procedural_directrix,
-                    parameter_interval: Some(interval),
+                    parameter_interval: Some(source_interval),
                     direction,
                     native_position: Some(target),
                     revision_form: None,
                 },
                 cache_fit_tolerance: None,
-                record_bounds: Some([Some(interval[0]), Some(interval[1]), None, None]),
+                record_bounds: Some([
+                    Some(carrier_interval[0]),
+                    Some(carrier_interval[1]),
+                    None,
+                    None,
+                ]),
             });
             decoded.insert(entry.sequence);
             continue;
         };
+        let carrier_interval = bounded_parameter_range_for_curve(
+            ir,
+            &directrix_id,
+            global.minimum_resolution_mm(),
+            Some(&composite_index),
+        )
+        .unwrap_or(cached_interval);
+        let source_interval = curve_geometry(ir, &directrix_id)
+            .map_or(cached_interval, |geometry| {
+                source_parameter_interval(geometry, cached_interval)
+            });
         let mut placed_directrix = directrix;
         if entry.transform != 0 {
             for point in &mut placed_directrix.control_points {
@@ -1316,7 +1361,7 @@ pub(super) fn project(
             &placed_directrix.knots,
             &placed_directrix.control_points,
             placed_directrix.weights.as_deref(),
-            interval[0],
+            cached_interval[0],
         ) else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
             continue;
@@ -1381,13 +1426,18 @@ pub(super) fn project(
             surface: surface_id,
             definition: ProceduralSurfaceDefinition::Extrusion {
                 directrix: procedural_directrix,
-                parameter_interval: Some(interval),
+                parameter_interval: Some(source_interval),
                 direction,
                 native_position: Some(target),
                 revision_form: None,
             },
             cache_fit_tolerance: None,
-            record_bounds: Some([Some(interval[0]), Some(interval[1]), None, None]),
+            record_bounds: Some([
+                Some(carrier_interval[0]),
+                Some(carrier_interval[1]),
+                None,
+                None,
+            ]),
         });
         decoded.insert(entry.sequence);
     }
@@ -1464,10 +1514,10 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some((generatrix, parameter_interval)) =
+        let Some((generatrix, cached_interval)) =
             bounded_nurbs(ir, generatrix_sequence, ctx, &composite_index)
         else {
-            let Some((directrix_geometry, parameter_interval)) = bounded_evaluable_curve(
+            let Some((directrix_geometry, carrier_interval)) = bounded_evaluable_curve(
                 ir,
                 generatrix_sequence,
                 global.minimum_resolution_mm(),
@@ -1479,6 +1529,7 @@ pub(super) fn project(
                 ));
                 continue;
             };
+            let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
             let mut procedural_directrix =
                 CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
             let mut procedural_axis_origin = axis_origin;
@@ -1532,14 +1583,14 @@ pub(super) fn project(
                     axis_direction: procedural_axis_direction,
                     angular_interval: [start_angle, end_angle],
                     angular_parameter_interval: None,
-                    parameter_interval: Some(parameter_interval),
+                    parameter_interval: Some(source_interval),
                     transposed: false,
                     revision_form: None,
                 },
                 cache_fit_tolerance: None,
                 record_bounds: Some([
-                    Some(parameter_interval[0]),
-                    Some(parameter_interval[1]),
+                    Some(carrier_interval[0]),
+                    Some(carrier_interval[1]),
                     None,
                     None,
                 ]),
@@ -1547,6 +1598,18 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             continue;
         };
+        let generatrix_id = CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
+        let carrier_interval = bounded_parameter_range_for_curve(
+            ir,
+            &generatrix_id,
+            global.minimum_resolution_mm(),
+            Some(&composite_index),
+        )
+        .unwrap_or(cached_interval);
+        let source_interval = curve_geometry(ir, &generatrix_id)
+            .map_or(cached_interval, |geometry| {
+                source_parameter_interval(geometry, cached_interval)
+            });
         let Ok(u_count) = u32::try_from(generatrix.control_points.len()) else {
             losses.push(entity_loss(entry, "generatrix pole count exceeds u32"));
             continue;
@@ -1661,14 +1724,14 @@ pub(super) fn project(
                     axis_direction: procedural_axis_direction,
                     angular_interval: [start_angle, end_angle],
                     angular_parameter_interval: None,
-                    parameter_interval: Some(parameter_interval),
+                    parameter_interval: Some(source_interval),
                     transposed: false,
                     revision_form: None,
                 },
                 cache_fit_tolerance: None,
                 record_bounds: Some([
-                    Some(parameter_interval[0]),
-                    Some(parameter_interval[1]),
+                    Some(carrier_interval[0]),
+                    Some(carrier_interval[1]),
                     None,
                     None,
                 ]),

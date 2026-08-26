@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::ids::{CurveId, PointId, ShellId, VertexId};
+use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
     CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, WritePath,
@@ -1275,7 +1275,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 ))
             })?;
         let index = entities.len();
-        entities.push(pcurve_entity(pcurve)?);
+        entities.push(pcurve_entity(ir, pcurve)?);
         pcurve_indices.insert(pcurve_id, index);
     }
 
@@ -2070,7 +2070,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             .find(|candidate| candidate.id.as_str() == pcurve_id)
             .expect("validated pcurve reference");
         let index = entities.len();
-        entities.push(pcurve_entity(pcurve)?);
+        entities.push(pcurve_entity(ir, pcurve)?);
         pcurve_indices.insert(pcurve_id, index);
     }
 
@@ -2572,7 +2572,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                             pcurve_use.pcurve
                         )));
                     }
-                    pcurve_entity(pcurve)?;
+                    pcurve_entity(ir, pcurve)?;
                     used_pcurves.insert(pcurve.id.as_str().to_owned());
                 }
                 let orientation = pcurve_orientation_context(
@@ -3185,7 +3185,187 @@ fn oriented_curve_entity(
     Ok(entity)
 }
 
-fn oriented_pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
+fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
+    fn is_line(geometry: &CurveGeometry, depth: usize) -> bool {
+        if depth > 256 {
+            return false;
+        }
+        match geometry {
+            CurveGeometry::Line { .. } => true,
+            CurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
+            _ => false,
+        }
+    }
+
+    ir.model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+        .is_some_and(|curve| is_line(&curve.geometry, 0))
+}
+
+fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
+    let source_width = source[1] - source[0];
+    let target_width = target[1] - target[0];
+    if !source
+        .iter()
+        .chain(target.iter())
+        .all(|value| value.is_finite())
+        || source_width <= 0.0
+        || target_width <= 0.0
+    {
+        return None;
+    }
+    let scale = target_width / source_width;
+    let offset = target[0] - source[0] * scale;
+    (scale.is_finite() && offset.is_finite()).then_some((scale, offset))
+}
+
+fn procedural_pcurve_source_map(
+    ir: &CadIr,
+    surface_id: &SurfaceId,
+) -> Result<Option<(f64, f64, f64, f64)>, CodecError> {
+    let Some(procedural) = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface_id)
+    else {
+        return Ok(None);
+    };
+    let (directrix, fallback_interval) = match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            parameter_interval,
+            ..
+        }
+        | ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            parameter_interval,
+            ..
+        } => (directrix, parameter_interval.unwrap_or([0.0, 1.0])),
+        _ => return Ok(None),
+    };
+    let source_curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *directrix)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES procedural surface directrix {directrix} is missing"
+            ))
+        })?;
+    let geometry = flatten_curve(&source_curve.geometry)?;
+    let carrier_interval =
+        construction_carrier_interval(ir, directrix, &geometry, procedural, fallback_interval)?;
+    let mut u_map;
+    let mut v_map = (1.0, 0.0);
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            parameter_interval,
+            ..
+        } => {
+            let source_interval = if line_directrix(ir, directrix) {
+                parameter_interval.unwrap_or([0.0, 1.0])
+            } else {
+                parameter_interval.unwrap_or(carrier_interval)
+            };
+            u_map = affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
+                CodecError::Malformed(
+                    "IGES procedural surface parameter domains are invalid".into(),
+                )
+            })?;
+        }
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            angular_interval,
+            angular_parameter_interval,
+            parameter_interval,
+            transposed,
+            ..
+        } => {
+            let source_interval = if line_directrix(ir, directrix) {
+                parameter_interval.unwrap_or([0.0, 1.0])
+            } else {
+                parameter_interval.unwrap_or(carrier_interval)
+            };
+            u_map = affine_parameter_map(carrier_interval, source_interval).ok_or_else(|| {
+                CodecError::Malformed(
+                    "IGES procedural surface parameter domains are invalid".into(),
+                )
+            })?;
+            if let Some(parameter_interval) = angular_parameter_interval {
+                v_map = affine_parameter_map(*angular_interval, *parameter_interval).ok_or_else(
+                    || {
+                        CodecError::Malformed(
+                            "IGES procedural surface angular domains are invalid".into(),
+                        )
+                    },
+                )?;
+            }
+            if *transposed {
+                std::mem::swap(&mut u_map, &mut v_map);
+            }
+        }
+        _ => return Ok(None),
+    }
+    Ok(Some((u_map.0, u_map.1, v_map.0, v_map.1)))
+}
+
+fn pcurve_support_surfaces(ir: &CadIr, pcurve_id: &cadmpeg_ir::ids::PcurveId) -> Vec<SurfaceId> {
+    let mut surfaces = BTreeSet::new();
+    for face in &ir.model.faces {
+        for loop_id in &face.loops {
+            let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id) else {
+                continue;
+            };
+            if loop_.coedges.iter().any(|coedge_id| {
+                ir.model
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.id == *coedge_id)
+                    .is_some_and(|coedge| {
+                        coedge.pcurves.iter().any(|use_| use_.pcurve == *pcurve_id)
+                    })
+            }) {
+                surfaces.insert(face.surface.clone());
+            }
+        }
+    }
+    surfaces.into_iter().collect()
+}
+
+fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
+    let mut parameter_map = None;
+    for surface_id in pcurve_support_surfaces(ir, &pcurve.id) {
+        let candidate =
+            procedural_pcurve_source_map(ir, &surface_id)?.unwrap_or((1.0, 0.0, 1.0, 0.0));
+        if parameter_map.is_some_and(|existing| existing != candidate) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES pcurve {} is shared by incompatible procedural surface parameterizations",
+                pcurve.id
+            )));
+        }
+        parameter_map = Some(candidate);
+    }
+    let Some((u_factor, u_offset, v_factor, v_offset)) = parameter_map else {
+        return Ok(pcurve.clone());
+    };
+    let mut pcurve = pcurve.clone();
+    let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+        return Ok(pcurve);
+    };
+    for point in control_points {
+        point.u = point.u.mul_add(u_factor, u_offset);
+        point.v = point.v.mul_add(v_factor, v_offset);
+    }
+    Ok(pcurve)
+}
+
+fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
+    let pcurve = source_pcurve(ir, pcurve)?;
     let range = pcurve.parameter_range.ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
@@ -3272,7 +3452,8 @@ fn reverse_nurbs(
     ))
 }
 
-fn pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
+fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
+    let pcurve = source_pcurve(ir, pcurve)?;
     let range = pcurve.parameter_range.ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
@@ -3423,7 +3604,7 @@ fn validate_brep_pcurve_uses(
                 orientation.owner, pcurve.id
             )));
         }
-        pcurve_entity(pcurve)?;
+        pcurve_entity(orientation.ir, pcurve)?;
     }
     orientation.validate(uses)
 }
@@ -3565,7 +3746,7 @@ impl PcurveOrientationContext<'_> {
                     })?;
                 let index = if reverse {
                     let index = entities.len();
-                    entities.push(oriented_pcurve_entity(pcurve)?);
+                    entities.push(oriented_pcurve_entity(self.ir, pcurve)?);
                     index
                 } else {
                     *pcurve_indices.get(pcurve.id.as_str()).ok_or_else(|| {
@@ -4059,6 +4240,38 @@ struct CurveSpan {
     end: Point3,
 }
 
+fn construction_carrier_interval(
+    ir: &CadIr,
+    directrix: &CurveId,
+    geometry: &CurveGeometry,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    fallback: [f64; 2],
+) -> Result<[f64; 2], CodecError> {
+    match procedural.record_bounds {
+        None => {
+            if matches!(geometry, CurveGeometry::Line { .. })
+                && ir
+                    .model
+                    .edges
+                    .iter()
+                    .any(|edge| edge.curve.as_ref() == Some(directrix))
+            {
+                curve_reference_span(ir, directrix, geometry).map(|span| span.range)
+            } else {
+                Ok(fallback)
+            }
+        }
+        Some([Some(start), Some(end), _, _])
+            if start.is_finite() && end.is_finite() && start < end =>
+        {
+            Ok([start, end])
+        }
+        Some(_) => Err(CodecError::Malformed(
+            "IGES procedural surface directrix bounds are invalid".into(),
+        )),
+    }
+}
+
 fn point_entity(position: Point3) -> Entity {
     point_entity_with_status(position, "00000000")
 }
@@ -4278,6 +4491,13 @@ fn extrusion_surface_entities(
             ))
         })?;
     let geometry = flatten_curve(&source_curve.geometry)?;
+    let carrier_interval = construction_carrier_interval(
+        ir,
+        directrix,
+        &geometry,
+        procedural,
+        [start_parameter, terminate_parameter],
+    )?;
     let (start, end) = if matches!(&geometry, CurveGeometry::Composite { .. }) {
         let span = curve_reference_span(ir, directrix, &geometry)?;
         if !same_range(span.range, [start_parameter, terminate_parameter]) {
@@ -4288,10 +4508,15 @@ fn extrusion_surface_entities(
         }
         (span.start, span.end)
     } else {
-        let start = curve_point(&geometry, start_parameter).ok_or_else(|| {
+        let evaluation_interval = if matches!(&geometry, CurveGeometry::Line { .. }) {
+            carrier_interval
+        } else {
+            [start_parameter, terminate_parameter]
+        };
+        let start = curve_point(&geometry, evaluation_interval[0]).ok_or_else(|| {
             CodecError::Malformed("IGES Type 122 directrix start cannot be evaluated".into())
         })?;
-        let end = curve_point(&geometry, terminate_parameter).ok_or_else(|| {
+        let end = curve_point(&geometry, evaluation_interval[1]).ok_or_else(|| {
             CodecError::Malformed("IGES Type 122 directrix terminate cannot be evaluated".into())
         })?;
         (start, end)
@@ -4419,10 +4644,22 @@ fn revolution_surface_entities(
             ))
         })?;
     let geometry = flatten_curve(&source_curve.geometry)?;
-    let start = curve_point(&geometry, start_parameter).ok_or_else(|| {
+    let carrier_interval = construction_carrier_interval(
+        ir,
+        directrix,
+        &geometry,
+        procedural,
+        [start_parameter, terminate_parameter],
+    )?;
+    let evaluation_interval = if matches!(&geometry, CurveGeometry::Line { .. }) {
+        carrier_interval
+    } else {
+        [start_parameter, terminate_parameter]
+    };
+    let start = curve_point(&geometry, evaluation_interval[0]).ok_or_else(|| {
         CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into())
     })?;
-    let end = curve_point(&geometry, terminate_parameter).ok_or_else(|| {
+    let end = curve_point(&geometry, evaluation_interval[1]).ok_or_else(|| {
         CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into())
     })?;
     ensure_finite_point(start, "Type 120 generatrix start")?;

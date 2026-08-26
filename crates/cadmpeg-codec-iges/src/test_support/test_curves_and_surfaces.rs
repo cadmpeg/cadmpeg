@@ -1346,7 +1346,7 @@ pub(crate) fn trimmed_surface_of_revolution_file() -> Vec<u8> {
             form: 0,
             label: "PROFILE".into(),
             status: "00010000",
-            parameters: "110,1,0,0,1,0,1;".into(),
+            parameters: "110,1,0,0,1,0,2;".into(),
         },
         OwnedTestEntity {
             entity_type: 120,
@@ -1361,7 +1361,7 @@ pub(crate) fn trimmed_surface_of_revolution_file() -> Vec<u8> {
             label: "MODEL".into(),
             status: "00010000",
             parameters: format!(
-                "100,0.5,0,0,{},{},{},{};",
+                "100,1,0,0,{},{},{},{};",
                 angle.cos(),
                 angle.sin(),
                 angle.cos(),
