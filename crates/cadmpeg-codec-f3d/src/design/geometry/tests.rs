@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(unused_imports)]
 use super::*;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
-use crate::history_records::{
-    AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalPoint, AsmHistoricalRelation,
-    AsmHistoricalTopology,
-};
-use crate::records::AsmHistoricalEntityKind;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{Angle, Length, SketchProfileBoundaryUse, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

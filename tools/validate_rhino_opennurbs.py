@@ -22,7 +22,12 @@ def main() -> None:
     root = args.opennurbs.resolve()
     repo = Path(__file__).resolve().parents[1]
     run(["make", "-s", f"-j{args.jobs}", "example_read/example_read"], root)
-    with tempfile.TemporaryDirectory(prefix="cadmpeg-rhino-comparison-") as temporary:
+    scratch_root = Path.home() / "side2" / "tmp" / "rhino-l9"
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="opennurbs-comparison-",
+        dir=scratch_root,
+    ) as temporary:
         generated = Path(temporary)
         generator = generated / "rhino-comparison"
         run(
@@ -40,7 +45,24 @@ def main() -> None:
             repo,
         )
         for version in (50, 60, 70, 80):
-            run([str(generator), str(version), str(generated / f"witness-v{version}.3dm")], repo)
+            run(
+                [
+                    str(generator),
+                    "point",
+                    str(version),
+                    str(generated / f"witness-v{version}-point.3dm"),
+                ],
+                repo,
+            )
+            run(
+                [
+                    str(generator),
+                    "structured",
+                    str(version),
+                    str(generated / f"witness-v{version}-structured.3dm"),
+                ],
+                repo,
+            )
         env = os.environ.copy()
         env["OPENNURBS_ROOT"] = str(root)
         env["OPENNURBS_SYNTH_DIR"] = str(generated)
@@ -52,7 +74,7 @@ def main() -> None:
             "cadmpeg-codec-rhino",
             "--lib",
             "--",
-            "external_transfer_tests::opennurbs_object_walk_and_transfer_floor",
+            "integration_tests::opennurbs_object_walk_and_transfer_floor",
             "--ignored",
         ], repo, env)
 

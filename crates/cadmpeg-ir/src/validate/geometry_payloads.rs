@@ -4,6 +4,11 @@
 
 use super::*;
 use crate::geometry::{knots_nondecreasing, knots_strictly_increasing};
+use cadmpeg_core::decode::alloc_filled;
+
+const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
+const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
+const EPS_HELIX_RADIUS: f64 = 1.0e-9;
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
@@ -100,7 +105,19 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if !mesh.triangle_groups.is_empty() {
-            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let Ok(mut memberships) = alloc_filled(
+                mesh.triangles.len(),
+                0_u32,
+                "IR tessellation triangle-group memberships",
+            ) else {
+                findings.push(Finding {
+                    check: Check::Tessellation,
+                    severity: Severity::Error,
+                    message: "cannot allocate tessellation triangle-group memberships".into(),
+                    entity: Some(mesh.id.clone()),
+                });
+                continue;
+            };
             let mut source_ids = std::collections::BTreeSet::new();
             let valid = mesh.triangle_groups.iter().all(|group| {
                 !group.triangles.is_empty()
@@ -131,7 +148,19 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         if !mesh.texture_assignments.is_empty() {
-            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let Ok(mut memberships) = alloc_filled(
+                mesh.triangles.len(),
+                0_u32,
+                "IR tessellation texture memberships",
+            ) else {
+                findings.push(Finding {
+                    check: Check::Tessellation,
+                    severity: Severity::Error,
+                    message: "cannot allocate tessellation texture memberships".into(),
+                    entity: Some(mesh.id.clone()),
+                });
+                continue;
+            };
             let mut source_ids = std::collections::BTreeSet::new();
             let mut anonymous_textures = std::collections::BTreeSet::new();
             let valid = mesh.texture_assignments.iter().all(|assignment| {
@@ -1783,7 +1812,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && first_radius > 0.0
                     && second_radius.is_finite()
                     && (first_radius - second_radius).abs()
-                        <= 1e-9 * first_radius.max(second_radius).max(1.0)
+                        <= EPS_ROLLING_BALL_RADIUS * first_radius.max(second_radius).max(1.0)
             });
             if *degree == 0
                 || knots.len() != sites.len()
@@ -2231,7 +2260,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 ]
                 .into_iter()
                 .all(f64::is_finite)
-                || (reference_direction.norm() - 1.0).abs() > 1e-9
+                || (reference_direction.norm() - 1.0).abs() > EPS_SPATIAL_CURVE_DIRECTION
             {
                 bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
             }
@@ -2617,7 +2646,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if degenerate(major) || degenerate(minor) || degenerate(axis) {
             bounds_err(findings, &procedural.id.0, "helix frame is degenerate");
         }
-        if (major.norm() - minor.norm()).abs() > 1e-9 {
+        if (major.norm() - minor.norm()).abs() > EPS_HELIX_RADIUS {
             bounds_err(
                 findings,
                 &procedural.id.0,

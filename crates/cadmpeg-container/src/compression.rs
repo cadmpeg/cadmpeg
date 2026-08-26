@@ -31,7 +31,7 @@ pub fn inflate_zlib_member<'a>(
         let before_out = decoder.total_out();
         let status = decoder
             .decompress(&input[source_offset..], &mut chunk, FlushDecompress::None)
-            .map_err(|error| CodecError::Malformed(format!("invalid zlib member: {error}")))?;
+            .map_err(|error| CodecError::malformed(format_args!("invalid zlib member: {error}")))?;
         let consumed = usize::try_from(decoder.total_in() - before_in)
             .map_err(|_| CodecError::Malformed("zlib input overflow".into()))?;
         source_offset = source_offset
@@ -77,7 +77,7 @@ pub fn inflate_deflate<'a>(
     let mut chunk = [0_u8; INFLATE_CHUNK];
     loop {
         let read = decoder.read(&mut chunk).map_err(|error| {
-            CodecError::Malformed(format!("invalid raw-DEFLATE member: {error}"))
+            CodecError::malformed(format_args!("invalid raw-DEFLATE member: {error}"))
         })?;
         if read == 0 {
             break;

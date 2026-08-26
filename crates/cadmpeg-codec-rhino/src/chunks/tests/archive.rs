@@ -3,6 +3,8 @@
 use std::fmt::Write;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
@@ -483,6 +485,37 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .any(|loss| loss.severity == Severity::Error && loss.message.contains("normals")));
 }
 
+/// `ObjectFramingUndecodable` carries severity `Error` and pins its strict
+/// floor at `Warning`, above the tolerable floor of its `DecodeDiagnostic`
+/// taxonomy, so the loss rejects. Strict decode therefore refuses the archive,
+/// and it refuses with the policy class that names the loss: the container
+/// parses, one record payload does not, and salvage mode keeps the result.
+#[test]
+fn strict_decode_refuses_an_undecodable_framed_object_record() {
+    let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
+    let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+
+    let error = RhinoCodec
+        .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)
+        .expect_err("strict mode refuses an undecodable framed object record");
+
+    let CodecError::StrictRefusal { loss_code, message } = &error else {
+        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
+    };
+    assert_eq!(
+        loss_code,
+        &crate::loss::RhinoLossCode::ObjectFramingUndecodable
+            .kind()
+            .to_string()
+    );
+    assert!(
+        message.starts_with("1 framed object record(s)"),
+        "the refusal carries the loss message alone: {message}"
+    );
+}
+
 #[test]
 fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
     for minor in 0..=3 {
@@ -574,6 +607,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         0..payload.len(),
         crate::chunks::ArchiveVersion::V5,
         None,
+        &[],
     )
     .expect("direct Brep fixture parse");
     let result = decode(&archive_unit(

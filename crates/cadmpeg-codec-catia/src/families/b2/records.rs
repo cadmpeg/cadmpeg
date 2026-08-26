@@ -943,7 +943,7 @@ pub(crate) fn b2_closed_owner_boundary_edges(
         *degrees.entry(end).or_default() += 1;
     }
     (degrees.len() == 4 && degrees.values().all(|degree| *degree == 2))
-        .then(|| edges.try_into().ok().expect("four owner boundary edges"))
+        .then(|| edges.try_into().expect("four owner boundary edges"))
 }
 
 /// Decode source-closed carrier/reference/side/owner chart productions.

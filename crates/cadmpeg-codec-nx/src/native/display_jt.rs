@@ -3906,26 +3906,10 @@ pub(crate) fn display_jt_tessellations(
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
-    use std::io::{Cursor, Write};
+    use std::io::Write;
 
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
-
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-
-    use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
-    use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
-
-    use crate::container;
-    use crate::parasolid::{self, StreamKind};
-    use crate::test_support::*;
-    use crate::NxCodec;
 
     use super::*;
 

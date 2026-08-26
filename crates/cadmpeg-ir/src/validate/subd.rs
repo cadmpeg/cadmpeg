@@ -6,6 +6,8 @@ use super::*;
 use crate::math::Point3;
 use crate::validate::geometry_payloads::bounds_err;
 
+const EPS_AXIS_DIRECTION_UNIT: f64 = 1.0e-9;
+
 fn finite_point(point: &Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
 }
@@ -165,7 +167,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             ]
             .into_iter()
             .all(f64::is_finite)
-                || (axis_direction.norm() - 1.0).abs() > 1e-9
+                || (axis_direction.norm() - 1.0).abs() > EPS_AXIS_DIRECTION_UNIT
             {
                 bounds_err(findings, &procedural.id.0, "invalid revolution axis");
             }

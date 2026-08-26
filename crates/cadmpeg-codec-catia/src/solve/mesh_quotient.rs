@@ -119,6 +119,7 @@ pub(crate) enum MeshFaceDomainCandidateSolve {
     Exhausted(MeshCandidateExhaustion),
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum MeshFaceAssignmentCandidates<'a> {
     Domains {
         edge_faces: &'a [[usize; 2]],
@@ -9312,26 +9313,16 @@ fn resolve_singleton_mesh_selection(
         vertex_points.to_vec(),
         selected,
         directions,
-    );
-    let Some(topology) = topology else {
-        return None;
-    };
-    let Some(edge_vertices) = topology.edge_vertices() else {
-        return None;
-    };
-    let Some(mut quotient) =
-        initial_mesh_quotient(edge_candidates, vertex_points.len(), port_identities)
-    else {
-        return None;
-    };
+    )?;
+    let edge_vertices = topology.edge_vertices()?;
+    let mut quotient =
+        initial_mesh_quotient(edge_candidates, vertex_points.len(), port_identities)?;
     let mut port_by_vertex = HashMap::<usize, usize>::new();
     for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
         for (port, vertex) in [(0, start), (1, end)] {
             let node = edge * 2 + port;
             if let Some(previous) = port_by_vertex.insert(vertex, node) {
-                if quotient.merge(previous, node).is_none() {
-                    return None;
-                }
+                quotient.merge(previous, node)?;
             }
         }
     }
@@ -9472,6 +9463,9 @@ fn resolve_singleton_mesh_selection(
     Some(MeshEndpointResolve::Solved(first.0, first.1))
 }
 
+// The arguments are independent serialized evidence, solver state, and budget
+// inputs; grouping them would hide their ownership without reducing coupling.
+#[allow(clippy::too_many_arguments)]
 fn resolve_singleton_mesh_endpoint_candidates(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
@@ -9520,9 +9514,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
             viable.next().is_none().then_some(first)
         })
         .collect::<Option<Vec<_>>>();
-    let Some(selected) = selected else {
-        return None;
-    };
+    let selected = selected?;
     let (selected, endpoint_labelled_directions): (Vec<_>, Vec<_>) = selected.into_iter().unzip();
     if let Some(topology) = reconstruct_singleton_coordinate_topology(
         edge_rows,
@@ -9573,7 +9565,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
         }
     }
 
-    let resolved = resolve_singleton_mesh_selection(
+    resolve_singleton_mesh_selection(
         edge_rows,
         vertex_points,
         edge_candidates,
@@ -9582,8 +9574,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
         port_identities,
         budget,
         candidate_gauge,
-    );
-    resolved
+    )
 }
 
 // Endpoint materialization receives independent evidence, budgets, predicates,
@@ -10203,7 +10194,7 @@ where
             assignments,
             face_count,
         } => {
-            let edge_count = assignments.first().map(Vec::len).unwrap_or(0);
+            let edge_count = assignments.first().map_or(0, Vec::len);
             if assignments.len() > MAX_FACE_DOMAIN_ASSIGNMENTS
                 || assignments.iter().any(|assignment| {
                     assignment.len() != edge_count
@@ -10324,9 +10315,7 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
         &budget,
         |faces, _| {
             visited.push(faces.to_vec());
-            if faces[0][1] != 2 {
-                MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
-            } else {
+            if faces[0][1] == 2 {
                 MeshCandidateSolve::Solved(
                     StandardTopology {
                         faces: Vec::new(),
@@ -10336,6 +10325,8 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
                     },
                     Vec::new(),
                 )
+            } else {
+                MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
             }
         },
     );

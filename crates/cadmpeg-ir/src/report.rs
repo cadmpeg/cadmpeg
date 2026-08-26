@@ -146,6 +146,9 @@ pub enum LossTaxonomy {
     IntegrityFailure,
     /// The source uses a recoverable but noncanonical serialization.
     NoncanonicalSourceSyntax,
+    /// The source declares a dialect or specification version whose semantics
+    /// the decoder has not verified for that declaration.
+    SourceDialectUnverified,
     /// Standalone mesh vertices were stored at reduced (f32) precision by the
     /// source archive.
     MeshVertexPrecision,
@@ -220,6 +223,7 @@ impl LossTaxonomy {
             Self::DecodeDiagnostic => "decode_diagnostic",
             Self::IntegrityFailure => "integrity_failure",
             Self::NoncanonicalSourceSyntax => "noncanonical_source_syntax",
+            Self::SourceDialectUnverified => "source_dialect_unverified",
             Self::MeshVertexPrecision => "mesh_vertex_precision",
             Self::ObjectRecordsUntransferred => "object_records_untransferred",
             Self::UnsupportedObjectFamily => "unsupported_object_family",
@@ -266,6 +270,7 @@ impl LossTaxonomy {
             "decode_diagnostic" => Self::DecodeDiagnostic,
             "integrity_failure" => Self::IntegrityFailure,
             "noncanonical_source_syntax" => Self::NoncanonicalSourceSyntax,
+            "source_dialect_unverified" => Self::SourceDialectUnverified,
             "mesh_vertex_precision" => Self::MeshVertexPrecision,
             "object_records_untransferred" => Self::ObjectRecordsUntransferred,
             "unsupported_object_family" => Self::UnsupportedObjectFamily,
@@ -313,6 +318,7 @@ impl LossTaxonomy {
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure
             | Self::NoncanonicalSourceSyntax
+            | Self::SourceDialectUnverified
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
             | Self::PreservedSourceUnavailable => LossCategory::Other,
@@ -360,6 +366,7 @@ impl LossTaxonomy {
             | Self::UnknownSurfaceFaceOmitted
             | Self::SubdOmitted
             | Self::NoncanonicalSourceSyntax
+            | Self::SourceDialectUnverified
             | Self::IntegrityFailure
             | Self::NoExportableSolids => Some(Severity::Warning),
             _ => None,
@@ -626,6 +633,7 @@ pub struct DecodeReport {
     /// Source format id.
     pub format: String,
     /// Whether the decode stopped at the container layer (no entity decode).
+    /// The shared codec wrapper stamps this from the decode request.
     pub container_only: bool,
     /// Whether the decoder transferred B-rep geometry into the IR.
     pub geometry_transferred: bool,

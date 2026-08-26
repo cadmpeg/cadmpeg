@@ -44,6 +44,7 @@ pub(crate) fn transfer_dimensions(
         ir.model.pmi.push(PmiAnnotation {
             id,
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition,
         });

@@ -131,6 +131,9 @@ fn finish_decode(
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
 ) -> Result<DecodeResult, CodecError> {
+    // Retained unknown records are source entities even when a route transfers
+    // no neutral model entity (for example, an unrecognized storage variant).
+    ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
     // Charge route-built entities before native decode and transfer work so
     // max_entities refuses that work rather than only reporting afterward.
     let mut admitted_entities = 0_u64;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-module projection and completeness unit tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -1745,6 +1744,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         appearance: AppearanceId("f3d:appearance#material".into()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: Default::default(),
     };
     ir.model.appearance_bindings = vec![

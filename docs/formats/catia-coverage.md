@@ -11,11 +11,10 @@ The reader recognizes `V5_CFV2` part documents and classifies their geometry
 storage as `standard_nested`, `fbb_only`, `zero_entity`, `e5_stream`,
 `float_packed_inner_no_fbb`, `inner_no_directory`, or `unknown`.
 
-The current primary envelope is `standard_nested`: a nested `V5_CFV2` stream
-with an FBB spine and the standard edge-table delimiter. Its implementation
-score is L2. The other recognized geometry layouts form separate
-envelopes and currently score L1. `unknown` is an inspection and
-retention envelope and does not inherit geometry support.
+The codec score is L1. Geometry on the `standard_nested` layout (a nested
+`V5_CFV2` stream with an FBB spine and the standard edge-table delimiter)
+shows as extras. `unknown` is an inspection and retention envelope and
+does not inherit geometry support.
 
 These envelopes are not closed release bands. Supported CATIA release bounds,
 required and optional container segments, and the admitted carrier, topology,
@@ -765,7 +764,6 @@ current levels require those matrices and representative fixtures.
 5. Run deterministic malformed-input, resource-limit, and fuzz gates for every
    admitted parser family.
 
-The current public scores remain L2 for `standard_nested` and L1
-for the other recognized layouts. Capabilities above those scores are
-extras until every cumulative gate through the target level passes for a
-closed envelope.
+The current public score is L1. Capabilities above L1, including
+standard-nested geometry, are extras until every cumulative gate through
+the target level passes for every admitted layout.

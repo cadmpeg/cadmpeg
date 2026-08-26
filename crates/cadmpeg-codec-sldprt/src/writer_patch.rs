@@ -172,7 +172,7 @@ fn annotation_offset(
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
     let provenance = annotations.provenance.get(&id).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
     })?;
@@ -180,12 +180,12 @@ fn annotation_offset(
         .ok()
         .and_then(|index| annotations.streams.get(index))
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "SLDPRT mutation provenance for {id} references a missing stream"
             ))
         })?;
     if stream != section {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "SLDPRT mutation provenance for {id} references {stream}, not {section}"
         )));
     }
@@ -198,12 +198,12 @@ fn raw_annotation_offset(
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
     let provenance = annotations.provenance.get(&id).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
     })?;
     usize::try_from(provenance.offset).map_err(|_| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "SLDPRT mutation provenance offset for {id} exceeds address space"
         ))
     })

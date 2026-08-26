@@ -8,6 +8,7 @@ use crate::families::standard::fbb::{
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::missing_edge::{standard_mesh_boundary_assignments, MeshFaceBoundaryAssignment};
 use crate::solve::UnionFind;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -103,9 +104,24 @@ impl StandardTopology {
         for (body, count) in face_groups.iter().copied().enumerate() {
             body_by_face.extend(std::iter::repeat_n(body, count));
         }
-        let mut uses = vec![HashMap::<usize, usize>::new(); face_groups.len()];
-        let mut bodies_by_edge = vec![HashSet::new(); self.edge_rows.len()];
-        let mut first_face_by_edge = vec![None; self.edge_rows.len()];
+        let mut uses = alloc_filled(
+            face_groups.len(),
+            HashMap::<usize, usize>::new(),
+            "catia standard body edge uses",
+        )
+        .ok()?;
+        let mut bodies_by_edge = alloc_filled(
+            self.edge_rows.len(),
+            HashSet::new(),
+            "catia standard edge bodies",
+        )
+        .ok()?;
+        let mut first_face_by_edge = alloc_filled(
+            self.edge_rows.len(),
+            None,
+            "catia standard first edge faces",
+        )
+        .ok()?;
         for (face, topology) in self.faces.iter().enumerate() {
             let body = body_by_face[face];
             for coedge in topology
@@ -125,8 +141,14 @@ impl StandardTopology {
             return None;
         }
         let components = self.face_components();
-        let mut component_by_face = vec![0usize; self.faces.len()];
-        let mut components_by_body = vec![Vec::new(); face_groups.len()];
+        let mut component_by_face =
+            alloc_filled(self.faces.len(), 0usize, "catia standard face components").ok()?;
+        let mut components_by_body = alloc_filled(
+            face_groups.len(),
+            Vec::new(),
+            "catia standard body components",
+        )
+        .ok()?;
         for (component, faces) in components.iter().enumerate() {
             let body = body_by_face[faces[0]];
             components_by_body[body].push(component);
@@ -194,7 +216,12 @@ impl StandardTopology {
         }
         let edge_vertices = self.edge_vertices()?;
         let all_points: HashSet<usize> = (0..self.vertex_points.len()).collect();
-        let mut domains = vec![all_points; self.logical_vertex_count];
+        let mut domains = alloc_filled(
+            self.logical_vertex_count,
+            all_points,
+            "catia standard vertex point domains",
+        )
+        .ok()?;
         for (edge, pair) in edge_vertices.into_iter().zip(edge_point_pairs) {
             if pair[0] >= self.vertex_points.len() || pair[1] >= self.vertex_points.len() {
                 return None;
@@ -214,7 +241,8 @@ impl StandardTopology {
     /// Logical endpoint components in physical edge-row direction.
     #[must_use]
     pub fn edge_vertices(&self) -> Option<Vec<[usize; 2]>> {
-        let mut edge_vertices = vec![None; self.edge_rows.len()];
+        let mut edge_vertices =
+            alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices").ok()?;
         for face in &self.faces {
             for boundary in &face.boundaries {
                 for coedge in &boundary.coedges {
@@ -423,7 +451,7 @@ pub(crate) fn reconstruct_incidence_with_edge_classes_and_mesh(
         mesh_bytes,
     )?;
     let edge_faces = completed_edge_faces.as_slice();
-    let mut face_edges = vec![Vec::new(); face_count];
+    let mut face_edges = alloc_filled(face_count, Vec::new(), "catia standard face edges").ok()?;
     for (edge, &[left, right]) in edge_faces.iter().enumerate() {
         face_edges.get_mut(left)?.push(edge);
         if right != left {
@@ -613,7 +641,12 @@ pub(crate) fn complete_duplicate_face_slots(
     if unresolved.is_empty() {
         return Some(completed);
     }
-    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
+    let mut degrees = alloc_filled(
+        face_count,
+        BTreeMap::<usize, u8>::new(),
+        "catia standard endpoint degrees",
+    )
+    .ok()?;
     for (edge, faces) in edge_faces.iter().enumerate() {
         let mut incident = *faces;
         incident.sort_unstable();
@@ -657,11 +690,23 @@ pub(crate) fn complete_duplicate_face_slots(
         edge_classes,
         mesh_bytes: None,
     };
+    let mut assignment = alloc_filled(
+        unresolved.len(),
+        0,
+        "catia standard unresolved edge assignment",
+    )
+    .ok()?;
+    let mut assigned = alloc_filled(
+        unresolved.len(),
+        false,
+        "catia standard unresolved edge marks",
+    )
+    .ok()?;
     search(
         &inputs,
         &mut degrees,
-        &mut vec![0; unresolved.len()],
-        &mut vec![false; unresolved.len()],
+        &mut assignment,
+        &mut assigned,
         &mut solutions,
         &mut operations,
         &mut exhausted,
@@ -680,11 +725,23 @@ pub(crate) fn complete_duplicate_face_slots(
             edge_classes,
             mesh_bytes: Some(bytes),
         };
+        let mut assignment = alloc_filled(
+            unresolved.len(),
+            0,
+            "catia standard unresolved edge assignment",
+        )
+        .ok()?;
+        let mut assigned = alloc_filled(
+            unresolved.len(),
+            false,
+            "catia standard unresolved edge marks",
+        )
+        .ok()?;
         search(
             &inputs,
             &mut degrees,
-            &mut vec![0; unresolved.len()],
-            &mut vec![false; unresolved.len()],
+            &mut assignment,
+            &mut assigned,
             &mut solutions,
             &mut operations,
             &mut exhausted,
@@ -711,7 +768,13 @@ fn duplicate_face_assignments_equivalent(
     left: &[usize],
     right: &[usize],
 ) -> bool {
-    let mut classified = vec![false; unresolved.len()];
+    let Ok(mut classified) = alloc_filled(
+        unresolved.len(),
+        false,
+        "catia standard duplicate assignment marks",
+    ) else {
+        return false;
+    };
     for first in 0..unresolved.len() {
         if classified[first] {
             continue;
@@ -792,7 +855,12 @@ pub(crate) fn solve_boundary_orientation_constraints(
     edge_uses: &HashMap<usize, Vec<(usize, bool)>>,
     require_paired_uses: bool,
 ) -> Option<Vec<bool>> {
-    let mut constraints = vec![Vec::<(usize, bool)>::new(); boundary_count];
+    let mut constraints = alloc_filled(
+        boundary_count,
+        Vec::<(usize, bool)>::new(),
+        "catia standard boundary constraints",
+    )
+    .ok()?;
     for uses in edge_uses.values() {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
             if !require_paired_uses && uses.len() == 1 {
@@ -814,7 +882,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
         }
     }
 
-    let mut flips = vec![None; boundary_count];
+    let mut flips = alloc_filled(boundary_count, None, "catia standard boundary flips").ok()?;
     for root in 0..boundary_count {
         if flips[root].is_some() {
             continue;

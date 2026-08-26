@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "961975233d2931b4197295e918591f93c16e2fe0"
+measured_at = "1413d5e782f2a29dc812abc1669fca0c52be3529"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -27,16 +27,15 @@ test_line_debt = 0
 production_line_debt = 0
 
 [ceilings]
-from_endian_bytes = 109
-codec_error_malformed_format = 1264
-loss_note_struct_literals = 2
-bare_tolerance_literals = 710
-nonliteral_vec_repeat = 144
+from_endian_bytes = 93
+codec_error_malformed_format = 0
+loss_note_struct_literals = 0
+bare_tolerance_literals = 68
+nonliteral_vec_repeat = 36
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 1962
-production_line_debt = 393
+test_line_debt = 155
+production_line_debt = 704
 
 [reasons]
-bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; earlier slices added named geometric comparison tolerances; this slice adds one distinct named 1e-8 fixed-radius evaluator tolerance for D8 rolling-ball jets; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "added source-boundary and native round-trip tests for the SN-37 class-0x5b/0x5c retained control-lane arena; the test-only modules already exceed the 2000-line placement limit and this coverage increases their measured debt; added synthesized width-coded owner-chart coverage for SN-17 in the owning b2 test module; added one synthesized width-coded class-0x5e terminal-0x02 admission test for SN-04 in the owning b2 test module; added synthesized coverage for all admitted SN-04 terminal allocation-reference forms and native retention of the decoded form"
+production_line_debt = "merged the long-running CATIA level-6 solver branch after main introduced production-file line-debt accounting; crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs contains the branch's coupled quotient search and contributes the measured 704 lines above the convergence threshold"

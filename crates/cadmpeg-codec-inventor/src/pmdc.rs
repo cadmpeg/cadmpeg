@@ -97,7 +97,7 @@ impl<'a> Cursor<'a> {
     pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
         let value = self.source.req_f64_le()?;
         if !value.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} is not finite"
             )));
         }
@@ -111,17 +111,17 @@ impl<'a> Cursor<'a> {
     ) -> Result<String, CodecError> {
         let units = self.u32(&format!("{field} length"))? as usize;
         if units > 1_048_576 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} exceeds 1048576 code units"
             )));
         }
         let len = units.checked_mul(2).ok_or_else(|| {
-            CodecError::Malformed(format!("Inventor PmDc {field} length overflows"))
+            CodecError::malformed(format_args!("Inventor PmDc {field} length overflows"))
         })?;
         ctx.charge_retained(len as u64, "retain Inventor PmDc string", None)?;
-        self.source
-            .utf16_le(units)
-            .ok_or_else(|| CodecError::Malformed(format!("Inventor PmDc {field} is not UTF-16")))
+        self.source.utf16_le(units).ok_or_else(|| {
+            CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
+        })
     }
 
     pub(crate) fn reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
@@ -136,7 +136,7 @@ impl<'a> Cursor<'a> {
         if self.remaining() == 0 {
             Ok(())
         } else {
-            Err(CodecError::Malformed(format!(
+            Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {record} has {} trailing bytes",
                 self.remaining()
             )))
@@ -186,7 +186,7 @@ fn list_preamble(
         cursor.u16(&format!("{field} marker form"))?,
     ];
     if actual != [marker, 0x3000] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} marker is {actual:?}"
         )));
     }

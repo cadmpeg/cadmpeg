@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Directory display attributes and color definitions.
 
+use super::geometry::ProjectionOutcome;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
+use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
@@ -12,12 +13,6 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
-
-pub(super) struct PresentationProjection {
-    pub(super) handled: BTreeSet<u32>,
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
 
 #[derive(Clone, Copy)]
 struct TextFontDefinition {
@@ -50,6 +45,98 @@ fn standard_color(number: i64) -> Option<Color> {
     Some(Color { r, g, b, a: 1.0 })
 }
 
+fn text_font_definition_pointer_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    value
+        .checked_neg()
+        .and_then(|value| u32::try_from(value).ok())
+        .is_some_and(|sequence| {
+            sequence % 2 == 1
+                && entries
+                    .get(&sequence)
+                    .is_some_and(|entry| entry.entity_type == 310 && entry.form == 0)
+        })
+}
+
+pub(super) fn general_note_font_valid_for_dialect(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+) -> bool {
+    let standard = match dialect {
+        Dialect::V4_0 => {
+            matches!(
+                value,
+                0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003
+            )
+        }
+        Dialect::V5_0 => matches!(
+            value,
+            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001
+        ),
+        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => matches!(
+            value,
+            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
+        ),
+    };
+    standard || text_font_definition_pointer_valid(value, entries)
+}
+
+pub(super) fn new_general_note_font_valid(value: i64) -> bool {
+    matches!(value, 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19)
+}
+
+pub(super) fn new_general_note_charset_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001)
+        || text_font_definition_pointer_valid(value, entries)
+}
+
+fn mirror_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=2)
+}
+
+fn vertical_text_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
+}
+
+fn line_font_definition_directory_valid(entry: &DirectoryEntry) -> bool {
+    entry.status.subordinate == 0
+        && entry.status.use_flag == 2
+        && (1..=5).contains(&entry.line_font)
+}
+
+fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::V4_0 | Dialect::V5_0 => {
+            entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
+        }
+        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+            entry.status.subordinate == 0
+                && entry.status.use_flag == 2
+                && entry.structure == 0
+                && entry.line_font == 0
+                && entry.view == 0
+                && entry.transform == 0
+                && entry.label_display == 0
+                && entry.line_weight == 0
+                && entry.status.hierarchy == 0
+        }
+    }
+}
+
+fn directory_color_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 406))
+}
+
+fn directory_line_weight_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
+}
+
 fn source_sequence(id: &str) -> Option<u32> {
     let marker = id.rfind("#D").into_iter().chain(id.rfind(":D")).max()? + 2;
     let digits = id[marker..].bytes().take_while(u8::is_ascii_digit).count();
@@ -79,17 +166,8 @@ fn text_font_definition(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
-    let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start);
-    let directory_valid = entry.status.use_flag == 2
-        && entry.structure == 0
-        && entry.line_font == 0
-        && entry.level == 0
-        && entry.view == 0
-        && entry.transform == 0
-        && entry.label_display == 0
-        && entry.line_weight == 0
-        && entry.color == 0;
+    let parameter_end = record.parameter_end();
+    let directory_valid = entry.status.subordinate == 0 && entry.status.use_flag == 2;
     if !directory_valid
         || record.integer(1).is_none_or(|value| value < 0)
         || record.string(2).is_none_or(<[u8]>::is_empty)
@@ -97,7 +175,7 @@ fn text_font_definition(
     {
         return None;
     }
-    let supersedes = match record.tokens.get(3).map(|token| &token.value) {
+    let supersedes = match record.value(3) {
         None | Some(TokenValue::Omitted) => None,
         Some(TokenValue::Integer(value)) if *value >= 0 => None,
         Some(TokenValue::Integer(value)) => value
@@ -144,9 +222,9 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
-) -> PresentationProjection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -155,7 +233,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
@@ -174,7 +251,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, |sequence| {
             text_fonts
                 .get(&sequence)
@@ -200,29 +276,16 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let parameter_end = trailing_pointer_groups(record, &entries)
-            .map_or(record.tokens.len(), |groups| groups.token_start);
+        let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| {
-            font >= 0
-                || font
-                    .checked_neg()
-                    .and_then(|value| u32::try_from(value).ok())
-                    .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|target| target.entity_type == 310 && target.form == 0)
+            general_note_font_valid_for_dialect(font, &entries, global.dialect())
         });
-        let directory_valid = entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.view == 0
-            && entry.transform == 0
-            && entry.label_display == 0
-            && entry.line_weight == 0;
+        let directory_valid = text_template_directory_valid(entry, global.dialect());
         let fields_valid = parameter_end <= 11
             && (1..=2).all(|index| {
                 record
@@ -234,12 +297,10 @@ pub(super) fn project(
                 .number_or(4, std::f64::consts::FRAC_PI_2)
                 .is_some_and(f64::is_finite)
             && record.number_or(5, 0.0).is_some_and(f64::is_finite)
-            && record
-                .integer_or(6, 0)
-                .is_some_and(|value| matches!(value, 0..=2))
+            && record.integer_or(6, 0).is_some_and(mirror_flag_valid)
             && record
                 .integer_or(7, 0)
-                .is_some_and(|value| matches!(value, 0..=1))
+                .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
         if directory_valid && fields_valid {
             decoded.insert(entry.sequence);
@@ -255,7 +316,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -283,12 +343,11 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if entry.status.use_flag != 2 || !(1..=5).contains(&entry.line_font) {
+        if !line_font_definition_directory_valid(entry) {
             losses.push(loss(
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
@@ -342,7 +401,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -358,11 +416,16 @@ pub(super) fn project(
             losses.push(loss(entry, "RGB percentage is outside 0 through 100"));
             continue;
         };
-        let name = match record.tokens.get(4).map(|token| &token.value) {
+        let name = match record.value(4) {
             None | Some(crate::parameter::TokenValue::Omitted) => None,
             Some(crate::parameter::TokenValue::String(_)) => record
                 .string(4)
                 .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok()),
+            Some(crate::parameter::TokenValue::Integer(0))
+                if matches!(global.dialect(), Dialect::V4_0) =>
+            {
+                None
+            }
             Some(
                 crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
             ) => {
@@ -370,6 +433,13 @@ pub(super) fn project(
                 continue;
             }
         };
+        let directory_valid = entry.status.subordinate == 0
+            && entry.status.use_flag == 2
+            && matches!(entry.color, 0..=8);
+        if !directory_valid {
+            losses.push(loss(entry, "color definition Directory fields are invalid"));
+            continue;
+        }
         let color = Color {
             r: (components[0] / 100.0) as f32,
             g: (components[1] / 100.0) as f32,
@@ -408,7 +478,10 @@ pub(super) fn project(
         }
     };
 
-    for entry in directory.iter().filter(|entry| entry.color != 0) {
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.color != 0 && directory_color_is_semantic(entry, global.dialect()))
+    {
         if resolve(entry.color).is_none() {
             losses.push(loss(
                 entry,
@@ -430,8 +503,10 @@ pub(super) fn project(
             ));
         }
     }
-    for entry in directory.iter().filter(|entry| entry.line_weight != 0) {
-        if global.line_weight_mm(entry.line_weight).is_none() {
+    for entry in directory.iter().filter(|entry| {
+        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.dialect())
+    }) {
+        if !global.line_weight_number_is_valid(entry.line_weight) {
             losses.push(loss(
                 entry,
                 "line-weight number is outside the Global gradation range",
@@ -480,6 +555,7 @@ pub(super) fn project(
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Body".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }
@@ -513,15 +589,12 @@ pub(super) fn project(
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Face".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }
 
-    PresentationProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

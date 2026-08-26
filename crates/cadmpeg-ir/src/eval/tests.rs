@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::*;
 use crate::examples::unit_cube;
@@ -9,12 +8,15 @@ use crate::geometry::{
     ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, Surface,
     SurfaceGeometry, SurfaceParameterAxis,
 };
-use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
+use crate::topology::{Edge, Point, Vertex};
 use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
+
+const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface {
@@ -205,6 +207,57 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
 }
 
 #[test]
+fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
+    let surface = NurbsSurface {
+        u_degree: 0,
+        v_degree: 0,
+        u_knots: vec![0.0, 1.0],
+        v_knots: vec![0.0, 1.0],
+        u_count: 1,
+        v_count: 1,
+        control_points: vec![Point3::new(1.0, 2.0, 3.0)],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let point = Point3::new(1.0, 2.0, 3.0);
+    assert_eq!(nurbs_surface_point(&surface, 0.25, 0.75), Some(point));
+    let bound = nurbs_surface_parameter_segment_chord_bound(
+        &surface,
+        [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+        [point, point],
+    )
+    .expect("degree-zero surface bound");
+    assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
+}
+
+#[test]
+fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
+    let surface = NurbsSurface {
+        u_degree: 0,
+        v_degree: 0,
+        u_knots: vec![0.0, 1.0, 2.0],
+        v_knots: vec![0.0, 1.0],
+        u_count: 2,
+        v_count: 1,
+        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
+    for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
+        let bound = nurbs_surface_parameter_segment_chord_bound(
+            &surface,
+            [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
+            [pole, pole],
+        )
+        .expect("degree-zero patch span bound");
+        assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
+    }
+}
+
+#[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
     let surface = NurbsSurface {
         u_degree: 1,
@@ -365,6 +418,28 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             .expect("polyline inverse");
         assert!((inverse - expected).abs() < 1.0e-12);
     }
+}
+
+#[test]
+fn indexed_curve_inverse_uses_the_caller_tolerance() {
+    let id = CurveId("test:inverse-tolerance".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = Point3::new(0.5, 0.005, 0.0);
+    assert!(super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5).is_none());
+    let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
+        &index, &id, point, 0.5, 0.01,
+    )
+    .expect("caller tolerance admits the bounded residual");
+    assert!((inverse - 0.5).abs() < 1.0e-12);
 }
 
 #[test]
@@ -698,6 +773,52 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
 }
 
 #[test]
+fn curve_bounded_surface_delegates_evaluation_to_its_support() {
+    let support_id = SurfaceId("curve-bounded-support".into());
+    let bounded_id = SurfaceId("curve-bounded".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.surfaces = vec![
+        Surface {
+            id: support_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: bounded_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
+    ];
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("curve-bounded-construction".into()),
+        surface: bounded_id.clone(),
+        definition: ProceduralSurfaceDefinition::CurveBounded {
+            support: support_id,
+            boundaries: Vec::new(),
+            boundary_pcurves: Vec::new(),
+            implicit_outer: true,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75),
+        Some(Point3::new(1.25, 2.75, 3.0))
+    );
+    let partials = model_surface_partials_by_id(&index, &bounded_id, 0.25, 0.75)
+        .expect("curve-bounded support evaluates");
+    assert_eq!(partials.point, Point3::new(1.25, 2.75, 3.0));
+    assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
 fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let directrix_id = CurveId("directrix".into());
     let surface_id = SurfaceId("sweep".into());
@@ -749,9 +870,12 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+        geometry: CurveGeometry::Transformed {
+            basis: Box::new(CurveGeometry::Line {
+                origin: Point3::new(2.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            }),
+            transform: Transform::identity(),
         },
         source_object: None,
     });
@@ -839,6 +963,86 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     assert!(partials.dvv.x.abs() < 1.0e-12);
     assert!((partials.dvv.y + std::f64::consts::PI.powi(2) / 8.0).abs() < 1.0e-12);
     assert!(partials.duv.norm() < 1.0e-12);
+}
+
+#[test]
+fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
+    let directrix_id = CurveId("normalized-profile".into());
+    let surface_id = SurfaceId("normalized-revolution".into());
+    let start_point_id = PointId("normalized-profile-start-point".into());
+    let end_point_id = PointId("normalized-profile-end-point".into());
+    let start_vertex_id = VertexId("normalized-profile-start-vertex".into());
+    let end_vertex_id = VertexId("normalized-profile-end-vertex".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(2.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: start_point_id.clone(),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: end_point_id.clone(),
+            position: Point3::new(2.0, 0.0, 10.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: start_vertex_id.clone(),
+            point: start_point_id,
+            tolerance: None,
+        },
+        Vertex {
+            id: end_vertex_id.clone(),
+            point: end_point_id,
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("normalized-profile-edge".into()),
+        curve: Some(directrix_id.clone()),
+        start: start_vertex_id,
+        end: end_vertex_id,
+        param_range: Some([0.0, 10.0]),
+        tolerance: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("normalized-revolution-construction".into()),
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Revolution {
+            directrix: directrix_id,
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            angular_interval: [0.0, std::f64::consts::TAU],
+            angular_parameter_interval: None,
+            parameter_interval: Some([0.0, 1.0]),
+            transposed: false,
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: Some([Some(0.0), Some(10.0), None, None]),
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+        .expect("normalized line domain maps to distance carrier");
+    assert_eq!(point, Point3::new(2.0, 0.0, 5.0));
+    let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+        .expect("normalized line domain partials");
+    assert_eq!(partials.du, Vector3::new(0.0, 0.0, 1.0));
 }
 
 #[test]

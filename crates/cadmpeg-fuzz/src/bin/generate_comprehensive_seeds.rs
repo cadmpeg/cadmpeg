@@ -7,16 +7,19 @@ use std::io::Write;
 
 include!("../seed_paths.rs");
 
+use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
 
-fn main() {
+fn main() -> Result<(), CodecError> {
     generate_f3d_seeds();
     generate_sldprt_seeds();
     generate_catia_seeds();
     generate_creo_seeds();
-    generate_nx_seeds();
+    generate_nx_seeds()?;
     println!("All comprehensive seeds generated.");
+    Ok(())
 }
 
 // ============================================================================
@@ -1103,23 +1106,24 @@ mod creo {
 // NX seeds - comprehensive
 // ============================================================================
 
-fn generate_nx_seeds() {
+fn generate_nx_seeds() -> Result<(), CodecError> {
     let dir = seed_dir("seeds/nx_container");
     fs::create_dir_all(&dir).expect("required invariant");
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
         ("just_magic", nx::just_magic()),
-        ("single_part", nx::single_part_prt()),
+        ("single_part", nx::single_part_prt()?),
         ("assembly", nx::assembly_prt()),
-        ("topology_part", nx::topology_part_prt()),
-        ("bspline_part", nx::bspline_part_prt()),
+        ("topology_part", nx::topology_part_prt()?),
+        ("bspline_part", nx::bspline_part_prt()?),
     ];
 
     for (name, data) in seeds {
         fs::write(dir.join(name), &data).expect("required invariant");
         println!("  nx/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 mod nx {
@@ -1147,14 +1151,14 @@ mod nx {
         rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
     }
 
-    fn record(tag: u8, len: usize) -> Vec<u8> {
-        let mut r = vec![0u8; len];
+    fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
+        let mut r = alloc_filled(len, 0_u8, "NX comprehensive seed record")?;
         r[0] = 0x00;
         r[1] = tag;
-        r
+        Ok(r)
     }
 
-    fn partition_stream() -> Vec<u8> {
+    fn partition_stream() -> Result<Vec<u8>, CodecError> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00");
         s.extend_from_slice(
@@ -1162,48 +1166,48 @@ mod nx {
         );
         s.extend_from_slice(b"SCH_TEST_1_9999\x00");
 
-        let mut pt = record(0x1d, 40);
+        let mut pt = record(0x1d, 40)?;
         put_vec3(&mut pt, 16, [0.0625, 0.0, 0.0127]);
         s.extend_from_slice(&pt);
 
-        let mut pl = record(0x32, 91);
+        let mut pl = record(0x32, 91)?;
         put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]);
         put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
         put_vec3(&mut pl, 67, [1.0, 0.0, 0.0]);
         s.extend_from_slice(&pl);
 
-        let mut cy = record(0x33, 99);
+        let mut cy = record(0x33, 99)?;
         put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
         put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
         put_f64(&mut cy, 67, 0.004_05);
         s.extend_from_slice(&cy);
 
-        let mut ln = record(0x1e, 67);
+        let mut ln = record(0x1e, 67)?;
         put_vec3(&mut ln, 19, [0.01, 0.02, 0.03]);
         put_vec3(&mut ln, 43, [1.0, 0.0, 0.0]);
         s.extend_from_slice(&ln);
 
-        s
+        Ok(s)
     }
 
-    fn topology_partition_stream() -> Vec<u8> {
+    fn topology_partition_stream() -> Result<Vec<u8>, CodecError> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00");
         s.extend_from_slice(
             b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
         );
 
-        let mut body = record(12, 24);
+        let mut body = record(12, 24)?;
         put_ref(&mut body, 2, 2);
         s.extend_from_slice(&body);
 
-        let mut shell = record(13, 24);
+        let mut shell = record(13, 24)?;
         put_ref(&mut shell, 2, 3);
         put_ref(&mut shell, 10, 2);
         put_ref(&mut shell, 14, 4);
         s.extend_from_slice(&shell);
 
-        let mut face = record(14, 39);
+        let mut face = record(14, 39)?;
         put_ref(&mut face, 2, 4);
         put_ref(&mut face, 22, 5);
         put_ref(&mut face, 24, 3);
@@ -1211,13 +1215,13 @@ mod nx {
         face[28] = b'+';
         s.extend_from_slice(&face);
 
-        let mut loop_ = record(15, 16);
+        let mut loop_ = record(15, 16)?;
         put_ref(&mut loop_, 2, 5);
         put_ref(&mut loop_, 10, 7);
         put_ref(&mut loop_, 12, 4);
         s.extend_from_slice(&loop_);
 
-        let mut fin = record(17, 23);
+        let mut fin = record(17, 23)?;
         put_ref(&mut fin, 2, 7);
         put_ref(&mut fin, 6, 5);
         put_ref(&mut fin, 8, 7);
@@ -1228,48 +1232,48 @@ mod nx {
         fin[22] = b'+';
         s.extend_from_slice(&fin);
 
-        let mut edge = record(16, 32);
+        let mut edge = record(16, 32)?;
         put_ref(&mut edge, 2, 8);
         put_ref(&mut edge, 18, 7);
         put_ref(&mut edge, 24, 9);
         s.extend_from_slice(&edge);
 
-        let mut plane = record(50, 91);
+        let mut plane = record(50, 91)?;
         put_ref(&mut plane, 2, 6);
         put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
         put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
         put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
         s.extend_from_slice(&plane);
 
-        let mut line = record(30, 67);
+        let mut line = record(30, 67)?;
         put_ref(&mut line, 2, 9);
         put_vec3(&mut line, 19, [0.0, 0.0, 0.0]);
         put_vec3(&mut line, 43, [1.0, 0.0, 0.0]);
         s.extend_from_slice(&line);
 
-        let mut vertex = record(18, 28);
+        let mut vertex = record(18, 28)?;
         put_ref(&mut vertex, 2, 10);
         put_ref(&mut vertex, 16, 11);
         s.extend_from_slice(&vertex);
 
-        let mut point = record(29, 40);
+        let mut point = record(29, 40)?;
         put_ref(&mut point, 2, 11);
         put_vec3(&mut point, 16, [0.01, 0.02, 0.03]);
         s.extend_from_slice(&point);
 
-        s
+        Ok(s)
     }
 
-    fn bspline_partition_stream() -> Vec<u8> {
+    fn bspline_partition_stream() -> Result<Vec<u8>, CodecError> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
-        let mut surface = record(124, 23);
+        let mut surface = record(124, 23)?;
         put_ref(&mut surface, 2, 10);
         put_ref(&mut surface, 19, 20);
         put_ref(&mut surface, 21, 21);
         s.extend(surface);
 
-        let mut descriptor = record(126, 48);
+        let mut descriptor = record(126, 48)?;
         put_ref(&mut descriptor, 2, 20);
         put_ref(&mut descriptor, 6, 1);
         put_ref(&mut descriptor, 8, 1);
@@ -1287,7 +1291,7 @@ mod nx {
         put_ref(&mut descriptor, 46, 21);
         s.extend(descriptor);
 
-        let mut data = record(125, 97 + 12 * 8);
+        let mut data = record(125, 97 + 12 * 8)?;
         put_ref(&mut data, 2, 21);
         data[90] = b'+';
         data[91..95].copy_from_slice(&12u32.to_be_bytes());
@@ -1302,7 +1306,7 @@ mod nx {
         s.extend(data);
 
         for (tag, reference, values) in [(127, 30, vec![2u16, 2]), (127, 31, vec![2, 2])] {
-            let mut array = record(tag, 8 + values.len() * 2);
+            let mut array = record(tag, 8 + values.len() * 2)?;
             array[4..6].copy_from_slice(&(values.len() as u16).to_be_bytes());
             put_ref(&mut array, 6, reference);
             for (index, value) in values.into_iter().enumerate() {
@@ -1311,7 +1315,7 @@ mod nx {
             s.extend(array);
         }
         for reference in [32, 33] {
-            let mut array = record(128, 8 + 2 * 8);
+            let mut array = record(128, 8 + 2 * 8)?;
             array[4..6].copy_from_slice(&2u16.to_be_bytes());
             put_ref(&mut array, 6, reference);
             put_f64(&mut array, 8, 0.0);
@@ -1319,12 +1323,12 @@ mod nx {
             s.extend(array);
         }
 
-        let mut curve = record(134, 23);
+        let mut curve = record(134, 23)?;
         put_ref(&mut curve, 2, 50);
         put_ref(&mut curve, 19, 40);
         put_ref(&mut curve, 21, 41);
         s.extend(curve);
-        let mut curve_descriptor = record(136, 27);
+        let mut curve_descriptor = record(136, 27)?;
         put_ref(&mut curve_descriptor, 2, 40);
         put_ref(&mut curve_descriptor, 4, 1);
         put_ref(&mut curve_descriptor, 8, 2);
@@ -1334,7 +1338,7 @@ mod nx {
         put_ref(&mut curve_descriptor, 23, 42);
         put_ref(&mut curve_descriptor, 25, 43);
         s.extend(curve_descriptor);
-        let mut curve_data = record(135, 15 + 6 * 8);
+        let mut curve_data = record(135, 15 + 6 * 8)?;
         put_ref(&mut curve_data, 2, 41);
         curve_data[9..13].copy_from_slice(&6u32.to_be_bytes());
         for (index, value) in [0.0, 0.0, 0.0, 0.02, 0.0, 0.0].into_iter().enumerate() {
@@ -1342,7 +1346,7 @@ mod nx {
         }
         s.extend(curve_data);
         for (tag, reference) in [(127, 42), (128, 43)] {
-            let mut array = record(tag, if tag == 127 { 12 } else { 24 });
+            let mut array = record(tag, if tag == 127 { 12 } else { 24 })?;
             array[4..6].copy_from_slice(&2u16.to_be_bytes());
             put_ref(&mut array, 6, reference);
             if tag == 127 {
@@ -1354,7 +1358,7 @@ mod nx {
             }
             s.extend(array);
         }
-        s
+        Ok(s)
     }
 
     fn zlib_compress(raw: &[u8]) -> Vec<u8> {
@@ -1367,7 +1371,7 @@ mod nx {
         MAGIC.to_vec()
     }
 
-    pub fn single_part_prt() -> Vec<u8> {
+    pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
         let mut f = Vec::new();
         f.extend_from_slice(MAGIC);
         f.push(0x06);
@@ -1382,20 +1386,20 @@ mod nx {
         f.extend_from_slice(&(name.len() as u32).to_le_bytes());
         f.extend_from_slice(name);
 
-        let blob = zlib_compress(&partition_stream());
+        let blob = zlib_compress(&partition_stream()?);
         let dir_end = f.len() + 16;
         let blob_off = dir_end as u64;
         f.extend_from_slice(&blob_off.to_le_bytes());
         f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
         f.extend_from_slice(&blob);
-        f
+        Ok(f)
     }
 
-    pub fn topology_part_prt() -> Vec<u8> {
-        prt_with_partition(&topology_partition_stream())
+    pub fn topology_part_prt() -> Result<Vec<u8>, CodecError> {
+        Ok(prt_with_partition(&topology_partition_stream()?))
     }
-    pub fn bspline_part_prt() -> Vec<u8> {
-        prt_with_partition(&bspline_partition_stream())
+    pub fn bspline_part_prt() -> Result<Vec<u8>, CodecError> {
+        Ok(prt_with_partition(&bspline_partition_stream()?))
     }
 
     fn prt_with_partition(stream: &[u8]) -> Vec<u8> {

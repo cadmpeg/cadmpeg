@@ -1586,7 +1586,10 @@ pub(crate) fn compact_boundary_domain_viable(
     let Some(selected_pairs) = selected_pairs.into_iter().collect::<Option<Vec<_>>>() else {
         return true;
     };
-    let mut edge_points = vec![[0; 2]; assignment.len()];
+    let Ok(mut edge_points) = alloc_filled(assignment.len(), [0; 2], "catia labeled edge points")
+    else {
+        return false;
+    };
     for (edge, pair) in selected_pairs {
         edge_points[edge] = pair;
     }
@@ -1650,7 +1653,13 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
         else {
             continue;
         };
-        let mut points = vec![[0; 2]; assignment.len()];
+        let Ok(mut points) = alloc_filled(
+            assignment.len(),
+            [0; 2],
+            "catia compact boundary edge points",
+        ) else {
+            return CompactBoundaryAdvanceOutcome::Rejected;
+        };
         for (edge, pair) in edge_points {
             points[edge] = pair;
         }
@@ -3316,7 +3325,13 @@ fn component_incidence_faces_viable(
                         }))
             });
         }
-        let mut points = vec![[0; 2]; assignment.len()];
+        let Ok(mut points) = alloc_filled(
+            assignment.len(),
+            [0; 2],
+            "catia component incidence edge points",
+        ) else {
+            return false;
+        };
         for &edge in &face_edges[face] {
             let Some(pair) = assignment[edge] else {
                 return false;
@@ -3623,9 +3638,18 @@ where
         orientation_budget: &WorkBudget<'_>,
         solution_visitor: Option<MeshEndpointSolutionVisitor<'_>>,
     ) -> bool {
-        let mut active = vec![false; choices.len()];
+        let Ok(mut active) = alloc_filled(choices.len(), false, "catia incidence active edges")
+        else {
+            return false;
+        };
         let mut constraints = HashSet::<(usize, usize)>::new();
-        let mut point_support_edges = vec![HashMap::<usize, Vec<usize>>::new(); face_edges.len()];
+        let Ok(mut point_support_edges) = alloc_filled(
+            face_edges.len(),
+            HashMap::<usize, Vec<usize>>::new(),
+            "catia incidence point support edges",
+        ) else {
+            return false;
+        };
         let mut component_faces = HashSet::new();
         for &edge in component {
             active[edge] = true;
@@ -4050,7 +4074,8 @@ where
             partial_solution_valid.and_then(|constraint| constraint.assignment_predecessors),
             partial_solution_valid.and_then(|constraint| constraint.assignment_dependencies),
         )?;
-        let mut face_edges = vec![Vec::new(); face_count];
+        let mut face_edges =
+            alloc_filled(face_count, Vec::new(), "catia incidence face edges").ok()?;
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {
                 if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
@@ -4058,8 +4083,13 @@ where
                 }
             }
         }
-        let mut fixed = vec![None; choices.len()];
-        let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
+        let mut fixed = alloc_filled(choices.len(), None, "catia incidence fixed edges").ok()?;
+        let mut degrees = alloc_filled(
+            face_count,
+            BTreeMap::<usize, u8>::new(),
+            "catia incidence face degrees",
+        )
+        .ok()?;
         for (edge, pairs) in choices.iter().enumerate() {
             let [pair] = pairs.as_slice() else {
                 continue;

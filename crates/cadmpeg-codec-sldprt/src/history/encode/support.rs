@@ -253,7 +253,7 @@ pub(super) fn require_direction(
     if direction.norm().is_finite() && direction.norm() > 0.0 {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "SLDPRT feature {feature} has a degenerate {role}"
         )))
     }
@@ -263,7 +263,7 @@ pub(super) fn require_count(count: u32, feature: &FeatureId) -> Result<(), Codec
     if count > 0 {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "SLDPRT feature {feature} has a zero pattern count"
         )))
     }

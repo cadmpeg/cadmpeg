@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Atomic staging for neutral entity transfer.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use crate::annotations::{Annotations, ExactnessNote};
@@ -13,7 +13,6 @@ use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
-use crate::index::ModelIndex;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::provenance::Exactness;
@@ -304,9 +303,33 @@ impl ModelDraft {
         )
     }
 
+    // Validation needs only membership in the identity universe, so this
+    // collects the universe directly — every neutral arena in the registry
+    // plus every native record id — instead of building a full `ModelIndex`
+    // whose typed lookup maps would all go unused. The set must stay equal
+    // to `ModelIndex::contains`'s universe, or identity-collision detection
+    // goes unsound; both derive their arena list from `arena_registry!`, so
+    // only an identity source added to `ModelIndex` outside the registry
+    // arenas and the native namespaces could split them.
     fn validate_against(&mut self, base: &CadIr) -> Result<(), DraftError> {
-        let index = ModelIndex::new(base);
-        self.validate_with_contains(|identity| index.contains(identity))
+        let mut identities = HashSet::with_capacity(base.model.entity_count());
+        macro_rules! collect_identities {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(for entity in &base.model.$field {
+                    identities.insert(entity.identity());
+                })*
+            };
+        }
+        crate::document::arena_registry!(collect_identities);
+        for record in base
+            .native
+            .0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+        {
+            identities.insert(record.id());
+        }
+        self.validate_with_contains(|identity| identities.contains(identity))
     }
 
     fn synchronize_identities(&mut self) -> Result<(), DraftError> {

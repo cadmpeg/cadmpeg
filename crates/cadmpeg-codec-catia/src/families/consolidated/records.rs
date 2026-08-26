@@ -38,6 +38,11 @@ use crate::wire::records::{
     ConsolidatedPcurve, ConsolidatedRecord,
 };
 
+const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-6;
+const EPS_SAMPLE_AGREEMENT: f64 = 1.0e-6;
+const EPS_ENDPOINT_RANGE: f64 = 1.0e-6;
+const EPS_CIRCLE_ENDPOINT: f64 = 1.0e-9;
+
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
 #[derive(Debug, Clone)]
 pub struct ConsolidatedEdgeBlock {
@@ -1470,16 +1475,16 @@ fn nurbs_carrier_offset(
             residual.z - normal.z * distance,
         );
         let transverse_length = transverse.x.hypot(transverse.y).hypot(transverse.z);
-        if transverse_length > 1e-6 * residual_length {
+        if transverse_length > EPS_TRANSVERSE_RESIDUAL * residual_length {
             return None;
         }
         offsets.push(distance);
     }
     let first = offsets[0];
     if !first.is_finite()
-        || offsets
-            .iter()
-            .any(|value| (value - first).abs() > 1e-6 * value.abs().max(first.abs()))
+        || offsets.iter().any(|value| {
+            (value - first).abs() > EPS_SAMPLE_AGREEMENT * value.abs().max(first.abs())
+        })
     {
         return None;
     }
@@ -1493,9 +1498,9 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
     let span = circle.range[1] - circle.range[0];
     span.is_finite()
         && span > 0.0
-        && (first[1] - last[1]).abs() <= 1e-6 * span
-        && (first[0].min(last[0]) - circle.range[0]).abs() <= 1e-9 * span
-        && (first[0].max(last[0]) - circle.range[1]).abs() <= 1e-9 * span
+        && (first[1] - last[1]).abs() <= EPS_ENDPOINT_RANGE * span
+        && (first[0].min(last[0]) - circle.range[0]).abs() <= EPS_CIRCLE_ENDPOINT * span
+        && (first[0].max(last[0]) - circle.range[1]).abs() <= EPS_CIRCLE_ENDPOINT * span
 }
 
 fn pcurve_endpoints_match_cone(

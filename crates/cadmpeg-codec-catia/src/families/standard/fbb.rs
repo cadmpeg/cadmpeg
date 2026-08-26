@@ -1,7 +1,7 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
-use cadmpeg_core::decode::{View, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
@@ -25,7 +25,7 @@ const TRIM_KINDS: [u8; 14] = [
 // direction to binary32 changes its squared norm by less than 2.1e-7; this
 // bound leaves room for binary32 arithmetic used by a writer without
 // admitting a materially non-unit frame.
-const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1e-6;
+const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1.0e-6;
 
 /// Number of face rows in the governing standard topology spine. The spine is
 /// the unique largest contiguous stride-eight FBB run; shorter marker runs are
@@ -1457,7 +1457,7 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         return None;
     }
 
-    let mut coverage = vec![0u8; length];
+    let mut coverage = alloc_filled(length, 0_u8, "catia FBB boundary coverage").ok()?;
     for &(start, edge_count, _, _) in &matches {
         for offset in 0..edge_count {
             coverage[(start + offset) % length] =

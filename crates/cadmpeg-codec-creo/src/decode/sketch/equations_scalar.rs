@@ -11,6 +11,11 @@ use super::equations_coordinate::{
     SectionCoordinateEquation, SectionCoordinateVariable,
 };
 
+const EPS_SCALAR_AGREEMENT: f64 = 1.0e-9;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_ANGLE_NONZERO: f64 = 1.0e-12;
+const EPS_VARIABLE_NONZERO: f64 = 1.0e-12;
+
 pub(crate) fn section_equation_coordinate_equalities(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -515,7 +520,7 @@ pub(crate) fn section_equation_scalar_equalities(
             .fold(1.0, f64::max);
         if component_values
             .iter()
-            .any(|value| (*value - first).abs() > 1e-9 * scale)
+            .any(|value| (*value - first).abs() > EPS_SCALAR_AGREEMENT * scale)
         {
             continue;
         }
@@ -537,7 +542,7 @@ pub(crate) struct SectionRadialConstraint {
 impl SectionRadialConstraint {
     pub(crate) fn offset(self) -> Option<[f64; 2]> {
         let radius = self.radius_value?;
-        if radius.abs() <= 1e-12 {
+        if radius.abs() <= EPS_RADIUS_NONZERO {
             return Some([0.0; 2]);
         }
         let angle = self.angle_value?;
@@ -631,15 +636,17 @@ pub(crate) fn section_equation_radial_constraints(
                     .abs()
                     .max(radius_value.unwrap_or(0.0).abs())
                     .max(1.0);
-                if radius_value.is_some_and(|value| (value - distance).abs() > 1e-9 * scale) {
+        if radius_value
+            .is_some_and(|value| (value - distance).abs() > EPS_SCALAR_AGREEMENT * scale)
+        {
                     return None;
                 }
                 radius_value.get_or_insert(distance);
-                if distance > 1e-12 {
+        if distance > EPS_ANGLE_NONZERO {
                     let derived_angle = delta[1].atan2(delta[0]);
                     if angle_value.is_some_and(|value| {
                         let difference = (value - derived_angle).rem_euclid(std::f64::consts::TAU);
-                        difference.min(std::f64::consts::TAU - difference) > 1e-9
+            difference.min(std::f64::consts::TAU - difference) > EPS_SCALAR_AGREEMENT
                     }) {
                         return None;
                     }
@@ -874,7 +881,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_values(
                     .any(|row| {
                         row.value.is_some_and(|value| {
                             !value.is_finite()
-                                || row.variable_type == 5 && value.abs() > 1e-12
+            || row.variable_type == 5 && value.abs() > EPS_VARIABLE_NONZERO
                         })
                     })
             {
@@ -896,7 +903,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_values(
             let matches_distance = |value: f64| {
                 deltas.iter().filter_map(move |delta| {
                     let scale = value.abs().max(delta.abs()).max(1.0);
-                    ((*delta - value).abs() <= 1e-9 * scale).then_some(*delta)
+        ((*delta - value).abs() <= EPS_SCALAR_AGREEMENT * scale).then_some(*delta)
                 })
             };
             let value = if let Some(stored) = distance.value {
@@ -909,7 +916,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_values(
             } else {
                 let mut nonzero = deltas
                     .iter()
-                    .filter_map(|delta| (*delta > 1e-12).then_some(*delta));
+        .filter_map(|delta| (*delta > EPS_VARIABLE_NONZERO).then_some(*delta));
                 let value = nonzero.next()?;
                 nonzero.next().is_none().then_some(value)?
             };

@@ -103,7 +103,7 @@ fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError>
         // With `--features sldprt` alone, Neutral is the sole variant and this
         // arm must not compile, or `-D unreachable-patterns` fails the gate.
         #[cfg(any(feature = "step", feature = "rhino", feature = "iges"))]
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "target options do not belong to the {id} encoder"
         ))),
     }

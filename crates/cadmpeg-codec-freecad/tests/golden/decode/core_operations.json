@@ -6813,37 +6813,19 @@
           "sense": "reversed"
         },
         {
-          "edge": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%40d97a855cd33c5a56",
+          "edge": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%40f2271917dc6bb635",
           "id": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A3",
           "next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Revolution:Shape:Revolution.Shape.brp:7%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A2%3A1"
-            }
-          ],
           "previous": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A3",
           "sense": "reversed"
         },
         {
-          "edge": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%401147ad491ccafbbe",
+          "edge": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%403fe4ce1b2051e01a",
           "id": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A4",
           "next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Revolution:Shape:Revolution.Shape.brp:7%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A3%3A1"
-            }
-          ],
           "previous": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A4",
           "sense": "forward"
@@ -14462,7 +14444,7 @@
               ]
             ]
           },
-          "id": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%401147ad491ccafbbe",
+          "id": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%403fe4ce1b2051e01a",
           "source_object": {
             "format": "fcstd",
             "object_id": "fcstd:native:object#Revolution"
@@ -14511,7 +14493,7 @@
               ]
             ]
           },
-          "id": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%40d97a855cd33c5a56",
+          "id": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%40f2271917dc6bb635",
           "source_object": {
             "format": "fcstd",
             "object_id": "fcstd:native:object#Revolution"
@@ -18374,46 +18356,46 @@
         },
         {
           "curve": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:1",
-          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%401147ad491ccafbbe",
+          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%403fe4ce1b2051e01a",
           "id": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:2",
           "param_range": [
             0.0,
             3.926990816987241
           ],
-          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%40d97a855cd33c5a56",
+          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%40f2271917dc6bb635",
           "tolerance": 1e-7
         },
         {
           "curve": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:2",
-          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%401147ad491ccafbbe",
+          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%403fe4ce1b2051e01a",
           "id": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:4",
           "param_range": [
             0.0,
             3.926990816987241
           ],
-          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%40d97a855cd33c5a56",
+          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%40f2271917dc6bb635",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%401147ad491ccafbbe",
-          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%401147ad491ccafbbe",
-          "id": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%401147ad491ccafbbe",
+          "curve": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%403fe4ce1b2051e01a",
+          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%403fe4ce1b2051e01a",
+          "id": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%403fe4ce1b2051e01a",
           "param_range": [
             0.0,
             4.0
           ],
-          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%401147ad491ccafbbe",
+          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%403fe4ce1b2051e01a",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%40d97a855cd33c5a56",
-          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%40d97a855cd33c5a56",
-          "id": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%40d97a855cd33c5a56",
+          "curve": "fcstd:model:curve#Revolution:Shape:Revolution.Shape.brp:3%40f2271917dc6bb635",
+          "end": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%40f2271917dc6bb635",
+          "id": "fcstd:model:edge#Revolution:Shape:Revolution.Shape.brp:5%40f2271917dc6bb635",
           "param_range": [
             0.0,
             4.0
           ],
-          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%40d97a855cd33c5a56",
+          "start": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%40f2271917dc6bb635",
           "tolerance": 1e-7
         },
         {
@@ -20966,6 +20948,7 @@
           "definition": {
             "closed": false,
             "definition": "loft",
+            "linearize": false,
             "max_degree": 4,
             "op": "new_body",
             "ruled": true,
@@ -25140,7 +25123,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -25254,7 +25237,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -25292,7 +25275,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -25330,7 +25313,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -26153,7 +26136,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -26267,7 +26250,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -26305,7 +26288,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -26343,7 +26326,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -27149,7 +27132,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -27263,7 +27246,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -27301,7 +27284,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -27339,7 +27322,7 @@
               ],
               [
                 0.0,
-                0.5150380749100543,
+                0.5150380749100544,
                 0.0
               ],
               [
@@ -29979,82 +29962,6 @@
           "parameter_range": [
             0.0,
             3.926990816987241
-          ]
-        },
-        {
-          "geometry": {
-            "basis": {
-              "direction": {
-                "u": -1.0,
-                "v": 0.0
-              },
-              "kind": "line",
-              "origin": {
-                "u": -4.0,
-                "v": 0.0
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                -1.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          },
-          "id": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
-        },
-        {
-          "geometry": {
-            "basis": {
-              "direction": {
-                "u": 0.7071067811865477,
-                "v": -0.7071067811865475
-              },
-              "kind": "line",
-              "origin": {
-                "u": 2.8284271247461907,
-                "v": -2.82842712474619
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                -1.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          },
-          "id": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            4.0
           ]
         },
         {
@@ -33621,7 +33528,7 @@
           }
         },
         {
-          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%401147ad491ccafbbe",
+          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%403fe4ce1b2051e01a",
           "position": {
             "x": -1.5307337294603565,
             "y": 0.0,
@@ -33633,7 +33540,7 @@
           }
         },
         {
-          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%40d97a855cd33c5a56",
+          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%40f2271917dc6bb635",
           "position": {
             "x": -1.53073372946036,
             "y": 0.0,
@@ -33645,7 +33552,7 @@
           }
         },
         {
-          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%401147ad491ccafbbe",
+          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%403fe4ce1b2051e01a",
           "position": {
             "x": -3.061467458920713,
             "y": 0.0,
@@ -33657,7 +33564,7 @@
           }
         },
         {
-          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%40d97a855cd33c5a56",
+          "id": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%40f2271917dc6bb635",
           "position": {
             "x": -3.06146745892072,
             "y": 0.0,
@@ -40401,23 +40308,23 @@
           "tolerance": 1e-7
         },
         {
-          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%401147ad491ccafbbe",
-          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%401147ad491ccafbbe",
+          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%403fe4ce1b2051e01a",
+          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%403fe4ce1b2051e01a",
           "tolerance": 1.0000000000000002e-7
         },
         {
-          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%40d97a855cd33c5a56",
-          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%40d97a855cd33c5a56",
+          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:1%40f2271917dc6bb635",
+          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:1%40f2271917dc6bb635",
           "tolerance": 1.0000000000000002e-7
         },
         {
-          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%401147ad491ccafbbe",
-          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%401147ad491ccafbbe",
+          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%403fe4ce1b2051e01a",
+          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%403fe4ce1b2051e01a",
           "tolerance": 1.0000000000000002e-7
         },
         {
-          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%40d97a855cd33c5a56",
-          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%40d97a855cd33c5a56",
+          "id": "fcstd:model:vertex#Revolution:Shape:Revolution.Shape.brp:3%40f2271917dc6bb635",
+          "point": "fcstd:model:point#Revolution:Shape:Revolution.Shape.brp:3%40f2271917dc6bb635",
           "tolerance": 1.0000000000000002e-7
         },
         {
@@ -40649,9 +40556,34 @@
       "view_presentations": []
     },
     "native": {
-      "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 4770295,
-      "__sha256": "bca991f05fb3fdd081bec41dc550ccf2cf07251d9e225a6410b14592c11edf2f"
+      "__arena_counts": {
+        "fcstd": {
+          "annotations": 0,
+          "applications": 57,
+          "attachments": 56,
+          "byte_coverage": 1,
+          "carrier_census": 34,
+          "design_census": 32,
+          "document": 1,
+          "drawings": 0,
+          "element_maps": 16,
+          "entries": 66,
+          "extensions": 25,
+          "gui_documents": 0,
+          "gui_properties": 0,
+          "gui_view_providers": 0,
+          "joints": 0,
+          "logical_ledger": 1457,
+          "objects": 57,
+          "physical_ledger": 463,
+          "product_nodes": 0,
+          "properties": 700,
+          "shape_payloads": 43,
+          "string_tables": 1
+        }
+      },
+      "__elided": "native arena values are omitted; structure is pinned by identity",
+      "__shape_sha256": "20a6f8df27b7e96b9672bf58c440b8cf4ff0ecf7baaa335d767d9cdeeba36cc3"
     },
     "source": {
       "attributes": {

@@ -860,7 +860,7 @@ impl Cursor<'_> {
             self.u16(&format!("{field} marker 1"))?,
         ];
         if marker != [3, 0x3000] {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} marker is {marker:?}"
             )));
         }

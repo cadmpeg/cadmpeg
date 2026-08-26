@@ -29,6 +29,8 @@ use crate::writer::primitives::{
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
+const EPS_EDITED_DIRECTION_UNIT: f64 = 1.0e-9;
+
 #[derive(Clone, Copy)]
 pub(crate) struct PatchNatives<'a> {
     pub(crate) baseline: Option<&'a F3dNative>,
@@ -81,13 +83,13 @@ pub(crate) fn validate_creation_timestamp_edits(
             continue;
         }
         if !timestamp.unix_microseconds.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D creation timestamp {} is non-finite",
                 timestamp.id
             )));
         }
         let record_index = usize::try_from(timestamp.record_index).map_err(|_| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D timestamp record index exceeds usize: {}",
                 timestamp.id
             ))
@@ -134,7 +136,7 @@ pub(crate) fn validate_edge_continuity_edits(
             continue;
         }
         if !matches!(after.continuity.as_str(), "tangent" | "unknown") {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D edge continuity {id} has unsupported token {}",
                 after.continuity
             )));
@@ -190,12 +192,12 @@ pub(crate) fn validate_edge_ownership_edits(
                 .iter()
                 .find(|coedge| coedge.id == *owner)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "F3D edge ownership {id} references missing coedge {owner}"
                     ))
                 })?;
             if coedge.edge != after.edge {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D edge ownership {id} selects a coedge of another edge"
                 )));
             }
@@ -204,7 +206,7 @@ pub(crate) fn validate_edge_ownership_edits(
                 .rsplit_once('#')
                 .and_then(|(_, index)| index.parse::<i64>().ok())
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "F3D owning coedge {owner} has no native record index"
                     ))
                 })?
@@ -260,7 +262,7 @@ pub(crate) fn validate_vertex_ownership_edits(
             .iter()
             .find(|edge| edge.id == after.owning_edge)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D vertex ownership {id} references missing edge {}",
                     after.owning_edge
                 ))
@@ -271,7 +273,7 @@ pub(crate) fn validate_vertex_ownership_edits(
             _ => false,
         };
         if !valid {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D vertex ownership {id} has an inconsistent endpoint slot"
             )));
         }
@@ -281,7 +283,7 @@ pub(crate) fn validate_vertex_ownership_edits(
             .rsplit_once('#')
             .and_then(|(_, index)| index.parse::<i64>().ok())
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D owning edge {} has no native record index",
                     after.owning_edge
                 ))
@@ -425,7 +427,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
             Some(tolerance) => tolerance,
             None if after.evaluated_unset => -1.0,
             None => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "tolerant vertex {id} has no tolerance"
                 )))
             }
@@ -436,7 +438,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 .iter()
                 .any(|value| !value.is_finite())
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D tolerant vertex {id} has non-finite fields"
             )));
         }
@@ -526,11 +528,11 @@ pub(crate) fn validate_tolerant_edge_edits(
                 "F3D tolerant-edge tail edit changes retained fields: {id}"
             )));
         }
-        let tolerance = target_edges[after.edge.as_str()]
-            .tolerance
-            .ok_or_else(|| CodecError::Malformed(format!("tolerant edge {id} has no tolerance")))?;
+        let tolerance = target_edges[after.edge.as_str()].tolerance.ok_or_else(|| {
+            CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
+        })?;
         if !tolerance.is_finite() || tolerance < 0.0 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D tolerant edge {id} has invalid fields"
             )));
         }
@@ -603,7 +605,7 @@ pub(crate) fn validate_tolerant_coedge_edits(
             )));
         }
         if after.parameter_range.iter().any(|value| !value.is_finite()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D tolerant coedge {id} has non-finite parameters"
             )));
         }
@@ -748,7 +750,7 @@ pub(crate) fn validate_material_assignment_appearances(
                     .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
                 || color.a != 1.0
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
             }
@@ -768,7 +770,7 @@ pub(crate) fn validate_material_assignment_appearances(
                     _ => false,
                 };
             if !valid {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Protein property {id}.{name} is outside its writable range"
                 )));
             }
@@ -871,9 +873,11 @@ pub(crate) fn validate_material_assignment_edits(
             .entity_id
             .rsplit_once('_')
             .and_then(|(_, suffix)| suffix.parse::<u64>().ok())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid assignment entity id: {id}")))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("invalid assignment entity id: {id}"))
+            })?;
         if suffix != after.entity_suffix {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D assignment entity id and suffix disagree: {id}"
             )));
         }
@@ -962,7 +966,7 @@ pub(crate) fn validate_lost_edge_edits(
         }
         if after.class_tag.len() != 3 || !after.class_tag.bytes().all(|byte| byte.is_ascii_digit())
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D lost-edge class tag must contain three digits: {id}"
             )));
         }
@@ -1069,7 +1073,7 @@ pub(crate) fn validate_act_appearance_bindings(
                 .as_deref()
                 .is_none_or(|source| !after.id.contains(source))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D appearance binding id does not contain its changed source entity: {}",
                 after.id
             )));
@@ -1193,7 +1197,7 @@ pub(crate) fn validate_act_entity_edits(
             if guid.encode_utf16().count() != before_guid.encode_utf16().count()
                 || !canonical_guid(guid)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D ACT channel {name} on {id} must be a same-length canonical GUID"
                 )));
             }
@@ -1251,7 +1255,7 @@ pub(crate) fn validate_act_guid_edits(
             )));
         }
         if !canonical_guid(&after.guid) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D ACT GUID {id} is not canonical"
             )));
         }
@@ -1309,7 +1313,7 @@ pub(crate) fn validate_act_registry_channel_edits(
         if after.guid.encode_utf16().count() != before.guid.encode_utf16().count()
             || !canonical_guid(&after.guid)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D ACT channel-registry GUID {id} must be a same-length canonical GUID"
             )));
         }
@@ -1370,7 +1374,7 @@ pub(crate) fn validate_act_root_edits(
             continue;
         }
         if after.registry_flag > 1 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D ACT root registry flag must be zero or one: {id}"
             )));
         }
@@ -1467,7 +1471,7 @@ pub(crate) fn validate_design_type_edits(
             validate_fixed_design_string(id, before_base, after_base)?;
             strings.push((
                 after.base_type_guid_offset.ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "F3D design type {id} has no base-type-GUID offset"
                     ))
                 })?,
@@ -1481,7 +1485,7 @@ pub(crate) fn validate_design_type_edits(
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":design-type#"))
             .map(|(stream, _)| stream.to_owned())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid design-type id {id}")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("invalid design-type id {id}")))?;
         edits
             .entry(stream)
             .or_default()
@@ -1593,7 +1597,7 @@ pub(crate) fn validate_entity_header_edits(
             continue;
         }
         if after.reference_indices.len() != after.reference_offsets.len() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D entity header {id} has mismatched reference values and offsets"
             )));
         }
@@ -1626,7 +1630,7 @@ pub(crate) fn validate_entity_header_edits(
             .and_then(|id| id.rsplit_once(":design-entity-header#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::Malformed(format!("invalid design-entity-header id {id}"))
+                CodecError::malformed(format_args!("invalid design-entity-header id {id}"))
             })?;
         edits.entry(stream).or_default().push(EntityHeaderEdit {
             record_reference,
@@ -1680,7 +1684,9 @@ pub(crate) fn validate_body_member_edits(
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":design-body-member#"))
             .map(|(stream, _)| stream.to_owned())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid design-body-member id {id}")))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("invalid design-body-member id {id}"))
+            })?;
         edits.entry(stream).or_default().push((
             after.byte_offset,
             after.entity_suffix,
@@ -1824,7 +1830,7 @@ pub(crate) fn validate_body_native_key_edits(
         if after.asm_body_key != before.asm_body_key {
             let key = after.asm_body_key.map_or(Ok(-1), |key| {
                 i64::try_from(key).map_err(|_| {
-                    CodecError::Malformed(format!("F3D ASM body key exceeds i64::MAX: {key}"))
+                    CodecError::malformed(format_args!("F3D ASM body key exceeds i64::MAX: {key}"))
                 })
             })?;
             edits.asm.insert(after.record_index as usize, key);
@@ -1962,7 +1968,9 @@ pub(crate) fn validate_construction_recipe_edits(
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":construction-recipe#"))
             .map(|(stream, _)| stream.to_owned())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid construction-recipe id {id}")))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("invalid construction-recipe id {id}"))
+            })?;
         edits
             .entry(stream)
             .or_default()
@@ -2018,7 +2026,7 @@ pub(crate) fn validate_persistent_reference_edits(
             .and_then(|id| id.rsplit_once(":persistent-reference#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::Malformed(format!("invalid persistent-reference id {id}"))
+                CodecError::malformed(format_args!("invalid persistent-reference id {id}"))
             })?;
         edits
             .entry(stream)
@@ -2130,7 +2138,7 @@ pub(crate) fn validate_history_state_edits(
             .and_then(|id| id.rsplit_once(":asm-history#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::Malformed(format!("invalid ASM history id {}", history.id))
+                CodecError::malformed(format_args!("invalid ASM history id {}", history.id))
             })?;
         if let Some(size) = history.stream_size {
             if history
@@ -2141,7 +2149,7 @@ pub(crate) fn validate_history_state_edits(
                     .history_entry_count
                     .is_none_or(|entry_count| entry_count < 0)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
@@ -2159,7 +2167,7 @@ pub(crate) fn validate_history_state_edits(
                 )));
             };
             if history.byte_offset == 0 || history_entry_count < 0 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
@@ -2194,7 +2202,7 @@ pub(crate) fn validate_history_state_edits(
                 for (change, before_change) in board.changes.iter().zip(&before_board.changes) {
                     if change != before_change {
                         if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
-                            return Err(CodecError::Malformed(format!(
+                            return Err(CodecError::malformed(format_args!(
                                 "F3D entity change {} has a kind inconsistent with its references",
                                 change.id
                             )));
@@ -2253,7 +2261,7 @@ pub(crate) fn validate_sketch_point_edits(
             continue;
         }
         if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch point {} has non-finite coordinates",
                 point.id
             )));
@@ -2264,7 +2272,7 @@ pub(crate) fn validate_sketch_point_edits(
             .and_then(|id| id.rsplit_once(":sketch-point#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::Malformed(format!("invalid sketch-point id {}", point.id))
+                CodecError::malformed(format_args!("invalid sketch-point id {}", point.id))
             })?;
         edits.entry(stream).or_default().push((
             point.byte_offset,
@@ -2332,7 +2340,7 @@ pub(crate) fn validate_sketch_curve_edits(
             .and_then(|id| id.rsplit_once(":sketch-curve-identity#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::Malformed(format!("invalid sketch-curve id {}", curve.id))
+                CodecError::malformed(format_args!("invalid sketch-curve id {}", curve.id))
             })?;
         edits
             .entry(stream)
@@ -2436,7 +2444,7 @@ pub(crate) fn encode_sketch_relation_state(
     state: u64,
 ) -> Result<Vec<u8>, CodecError> {
     match crate::design::decode::sketch::relation_mask_width(raw_bytes).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "F3D sketch relation {relation_id} has no valid mask-width discriminator"
         ))
     })? {
@@ -2511,7 +2519,7 @@ pub(crate) fn validate_sketch_relation_edits(
         let (kinds, unknown) =
             crate::design::decode::sketch::decode_constraint_kinds(relation.state);
         if kinds != relation.constraint_kinds || unknown != relation.unknown_constraint_bits {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",
                 relation.id
             )));
@@ -2522,7 +2530,7 @@ pub(crate) fn validate_sketch_relation_edits(
             .and_then(|id| id.rsplit_once(":sketch-relation#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
-                CodecError::Malformed(format!("invalid sketch-relation id {}", relation.id))
+                CodecError::malformed(format_args!("invalid sketch-relation id {}", relation.id))
             })?;
         let mut values = Vec::new();
         collect_sketch_reference_edits(
@@ -2728,7 +2736,7 @@ pub(crate) fn validate_edge_range_edits(
             || !range[1].is_finite()
             || range[0] == range[1]
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "edited F3D edge range {id} must replace an existing finite non-degenerate range"
             )));
         }
@@ -2921,7 +2929,7 @@ pub(crate) fn validate_curve_edits(
             {
                 finite_point(*origin)
                     && finite_vector(*direction)
-                    && (direction.norm() - 1.0).abs() <= 1e-9
+                    && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
             }
             CurveGeometry::Circle {
                 center,
@@ -2982,7 +2990,7 @@ pub(crate) fn validate_curve_edits(
             }
         };
         if !valid {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "edited F3D curve {id} has an invalid frame or radius"
             )));
         }
@@ -3233,7 +3241,7 @@ pub(crate) fn validate_surface_edits(
             }
         };
         if !valid {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "edited F3D surface {id} requires a finite orthonormal frame and valid radius"
             )));
         }
@@ -3292,18 +3300,20 @@ pub(crate) fn validate_procedural_surface_edits(
                 },
             ) if before_directrix == after_directrix => {
                 let interval = after_parameter_interval.ok_or_else(|| {
-                    CodecError::Malformed(format!("F3D extrusion interval is missing: {id}"))
+                    CodecError::malformed(format_args!("F3D extrusion interval is missing: {id}"))
                 })?;
                 let position = after_native_position.ok_or_else(|| {
-                    CodecError::Malformed(format!("F3D extrusion native position is missing: {id}"))
+                    CodecError::malformed(format_args!(
+                        "F3D extrusion native position is missing: {id}"
+                    ))
                 })?;
                 if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D extrusion interval must be finite and ordered: {id}"
                     )));
                 }
                 if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D extrusion direction must be finite and nonzero: {id}"
                     )));
                 }
@@ -3311,7 +3321,7 @@ pub(crate) fn validate_procedural_surface_edits(
                     .into_iter()
                     .all(f64::is_finite)
                 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D extrusion native position must be finite: {id}"
                     )));
                 }
@@ -3354,7 +3364,7 @@ pub(crate) fn validate_procedural_surface_edits(
                     }
                 };
                 if !values.into_iter().all(f64::is_finite) || values.contains(&0.0) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D rolling-ball radii must be finite and nonzero: {id}"
                     )));
                 }
@@ -3401,7 +3411,7 @@ pub(crate) fn validate_procedural_surface_fit_edits(
             ))
         })?;
         if before.cache_fit_tolerance.is_none() || !tolerance.is_finite() || tolerance < 0.0 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D procedural-surface fit tolerance must replace a finite nonnegative value: {id}"
             )));
         }
@@ -3693,7 +3703,7 @@ pub(crate) fn validate_procedural_curve_edits(
                 ))
             })?;
             if before.cache_fit_tolerance.is_none() || !tolerance.is_finite() || tolerance < 0.0 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D procedural-curve fit tolerance must replace a finite nonnegative value: {id}"
                 )));
             }

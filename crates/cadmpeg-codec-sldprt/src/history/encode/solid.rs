@@ -113,7 +113,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(
                     profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing extrusion profile",
                                 feature.id
                             ))
@@ -274,7 +274,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             if let Some(draft) = first_draft {
                 if !draft.0.is_finite() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has a non-finite extrusion draft",
                         feature.id
                     )));
@@ -488,7 +488,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
                 Some(_) => {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has an empty hole face selection",
                         feature.id
                     )));
@@ -504,7 +504,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }] => {
                     if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite()
                     {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite hole position",
                             feature.id
                         )));

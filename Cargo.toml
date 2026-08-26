@@ -28,7 +28,7 @@ members = [
 exclude = ["crates/cadmpeg-fuzz"]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.3"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/cadmpeg/cadmpeg"
@@ -36,23 +36,23 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
-cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.5.1" }
-cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.5.1" }
-cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.5.1" }
-cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.5.1" }
+cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.5.3" }
+cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.5.3" }
+cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.5.3" }
+cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.5.3" }
 cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
-cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.5.1" }
-cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.5.1" }
-cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.5.1" }
-cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.5.1" }
-cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.5.1" }
-cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.5.1" }
-cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.5.1" }
-cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.5.1" }
-cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.5.1" }
-cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.5.1" }
-cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.5.1" }
-cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.5.1" }
+cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.5.3" }
+cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.5.3" }
+cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.5.3" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.5.3" }
+cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.5.3" }
+cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.5.3" }
+cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.5.3" }
+cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.5.3" }
+cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.5.3" }
+cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.5.3" }
+cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.5.3" }
+cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.5.3" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
@@ -60,6 +60,7 @@ serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"
 sha2 = "0.11"
+sha1 = "0.11"
 memchr = "2"
 base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
@@ -70,6 +71,7 @@ flate2 = "1"
 zstd = "0.13"
 crc32fast = "1"
 roxmltree = "0.21"
+hdf5-reader = { version = "0.9.1", default-features = false }
 regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
@@ -86,6 +88,9 @@ rmp = "=0.8.15"
 # Leaving DWARF in the object files keeps every byte available to debuggers
 # while taking it off the link path. Most of the weight is in dependency rlibs.
 split-debuginfo = "unpacked"
+
+[profile.dev.package.sha2]
+opt-level = 3
 
 [profile.test]
 # Test failures need `file:line` in the backtrace; they do not need variable
