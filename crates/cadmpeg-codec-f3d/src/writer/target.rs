@@ -16,7 +16,7 @@ use crate::{ids, F3dCodec};
 
 /// The dialect `writer::generate::write_new` produces, read off the catalog so
 /// the generator and the catalog cannot name different rows.
-const SYNTHESIS_TARGET: &str = dialect::TARGETS[0].id;
+const SYNTHESIS_TARGET: &str = dialect::SYNTHESIS_TARGET_ID;
 
 /// Resolve the request against the source, then plan the export it names
 /// (design §8.2).
@@ -129,7 +129,14 @@ fn synthesized_plan<'a>(
     target: &DialectId,
     declined: Option<String>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    debug_assert_eq!(target.as_str(), SYNTHESIS_TARGET);
+    if target.as_str() != SYNTHESIS_TARGET {
+        return Err(unsupported_target(
+            dialect::FORMAT,
+            target.as_str(),
+            "the semantic generator emits only its pinned synthesis dialect",
+            dialect::TARGETS,
+        ));
+    }
     let mut bytes = Vec::new();
     super::generate::write_new(input.ir, &mut bytes)?;
     let expects_preserved_source = input
