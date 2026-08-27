@@ -1172,9 +1172,13 @@ witness = "code:crates/cadmpeg-codec-inventor/src/rse.rs:580"
 # lives in the `acis` kernel namespace below, and each row's kernel twin is
 # named in its seam.
 #
-# `StreamKind` (crates/cadmpeg-codec-sat/src/detect.rs:16-26) and `classify`
-# (detect.rs:28-39), which tries ASM magic, then ACIS magic, then text, then
+# `StreamKind` (crates/cadmpeg-codec-sat/src/detect.rs:22-31) and `classify`
+# (detect.rs:33-44), which tries ASM magic, then ACIS magic, then text, then
 # Unknown. Stream content selects the decoder; the file extension does not.
+#
+# `SatDialect` (crates/cadmpeg-codec-sat/src/dialect.rs:83-88) pins one id per
+# stream kind, and `dialect::classify` (dialect.rs:244) is the codec's single
+# construction path for a `DialectMatch`.
 [format.sat]
 complete = false
 
@@ -1185,8 +1189,8 @@ complete = false
 id = "sat:asm-binary"
 title = "Bare ASM binary stream"
 discriminants = { magic = "ASM BinaryFile4 | ASM BinaryFile8" }
-seam = "admitted at any save format: the ASM binary path performs no save-format comparison (crates/cadmpeg-codec-sat/src/decode.rs:34-68). Kernel layer: acis:asm-binaryfile-4 or acis:asm-binaryfile-8"
-witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:29"
+seam = "admitted at any save format: the ASM binary path performs no save-format comparison (crates/cadmpeg-codec-sat/src/decode.rs:36-71, crates/cadmpeg-codec-sat/src/dialect.rs:182-191). Kernel layer: acis:asm-binaryfile-4 or acis:asm-binaryfile-8"
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
 
 [[dialect]]
 # `StreamKind::AcisBinary`. Magic `ACIS BinaryFile`
@@ -1194,29 +1198,31 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:29"
 id = "sat:acis-binary"
 title = "Bare Spatial ACIS binary stream"
 discriminants = { magic = "ACIS BinaryFile" }
-seam = "the only version-banded admission in the codec: majors 217 and 218 decode, everything else is soft-refused (crates/cadmpeg-codec-sat/src/decode.rs:80-88). Kernel layer: acis:save-format-217, acis:save-format-218, or acis:save-format-binary-other"
-witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:32"
+seam = "the only version-banded admission in the codec: majors 217 and 218 decode, everything else is soft-refused. The band is one predicate, `dialect::admits_semantic_decode` (crates/cadmpeg-codec-sat/src/dialect.rs:182), which sets `Admission::Refused`; the decode path branches on that admission (crates/cadmpeg-codec-sat/src/decode.rs:85-95) and charges container.acis-save-format-unsupported on an empty-IR result. Kernel layer: acis:save-format-217, acis:save-format-218, or acis:save-format-binary-other"
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 
 [[dialect]]
 # `StreamKind::Text`. Header line 1 must be exactly four whitespace-separated
 # `i64` fields and line 2 must start with an ASCII digit
-# (detect.rs:43-59, strengthening `sat::has_text_magic`,
+# (detect.rs:48-64, strengthening `sat::has_text_magic`,
 # crates/cadmpeg-asm/src/sat.rs:115-118).
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and gates ACIS-terminated streams to majors 217 and 218, the same band as the ACIS binary path (crates/cadmpeg-codec-sat/src/decode.rs:128-135); ASM-terminated text streams are admitted at any save format. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
-witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:35"
+seam = "the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and gates ACIS-terminated streams to majors 217 and 218 through the same predicate as the ACIS binary path, `dialect::admits_semantic_decode` (crates/cadmpeg-codec-sat/src/dialect.rs:182); the decode path branches on the resulting admission (crates/cadmpeg-codec-sat/src/decode.rs:137-147). The gate keys on the terminator-derived branch, not on the product family the header names, so ASM-terminated text streams are admitted at any save format. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 
 [[dialect]]
-# Mandatory `unknown` row (B4). `StreamKind::Unknown` (detect.rs:38) is
-# returned when no magic matches; detection then reports no confidence, so
-# this row is unreachable through the normal catalog and exists to keep
-# classification total.
+# Mandatory `unknown` row (B4). `StreamKind::Unknown` (detect.rs:43) is
+# returned when no magic matches; detection then reports no confidence and
+# both entry points return a malformed error before classification, so this
+# row is unreachable through the normal catalog and exists to keep
+# classification total. Its disposition is refusal: `classify` never pairs it
+# with an admitted admission.
 id = "sat:unknown"
 title = "Stream matching no ASM, ACIS, or text magic"
 discriminants = { magic = "none" }
-witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:38"
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
 
 # --------------------------------------------------------------------------
 # ACIS / ASM kernel namespace (embedded layer)
