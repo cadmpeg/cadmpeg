@@ -1006,3 +1006,10 @@ crate = "cadmpeg-codec-sldprt"
 kind = "visibility"
 item = "cadmpeg_codec_sldprt::SldprtCodec::write_preserved_with_source_fidelity"
 reason = "the method bypasses TargetRequest and is used only by crate-owned replay tests; external writes must resolve through Encoder::plan"
+
+[[change]]
+commit = "796cb27fca52cbcb6229d4bd7eee589f8fa3d2f8"
+crate = "cadmpeg-asm"
+kind = "addition"
+item = "cadmpeg_asm::dialect::acis_admission"
+reason = "the shared Spatial ACIS decoder band owns the complete Admission fold so SAT and Inventor cannot disagree about verified and nearest rows"

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::{debug_assert_primary_layer, Admission, DialectMatch};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::DecodeResult;
@@ -14,15 +14,15 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::{DecodeReport, LossNote, TransferLedger};
+use cadmpeg_ir::report::{DecodeReport, TransferLedger};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
 use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
-use crate::dialect::DialectRecovery;
+use crate::dialect::{kernel_dialect_loss, kernel_layer, DialectRecovery};
 use crate::external_reference::UfrxState;
-use crate::kernel::{ActiveCarrier, ActiveCarrierState, KernelFamily};
+use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
@@ -1821,76 +1821,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         },
         source_fidelity,
     ))
-}
-
-/// The `acis:` kernel-layer match for one active carrier.
-///
-/// Identity is the carrier's own header — magic, reference width, save-format
-/// major — and admission is the save-format band `cadmpeg-asm` states its
-/// Spatial ACIS record decoders are verified against. The ASM branch compares
-/// no save format, so it is admitted at every band. `None` when the header does
-/// not parse: the carrier decode reports that as a malformed carrier, and no
-/// layer is claimed for bytes nothing read.
-fn kernel_layer(carrier: &ActiveCarrier<'_>) -> Option<DialectMatch> {
-    let bytes = carrier.bytes.window();
-    let (header, dialect, admission) = match carrier.family {
-        KernelFamily::Asm => {
-            let header = cadmpeg_asm::asm_header::parse(bytes)?;
-            let dialect = cadmpeg_asm::dialect::asm_binary_row(header.width);
-            (header, dialect, Admission::Admitted)
-        }
-        KernelFamily::Acis => {
-            let header = cadmpeg_asm::acis_header::parse(bytes)?;
-            let major = header.save_format_major();
-            let admission = if cadmpeg_asm::dialect::acis_band_verified(major) {
-                Admission::Admitted
-            } else {
-                Admission::AdmittedUnverified {
-                    nearest: cadmpeg_asm::dialect::nearest_verified_acis(major),
-                }
-            };
-            (
-                header,
-                cadmpeg_asm::dialect::acis_binary_row(major),
-                admission,
-            )
-        }
-    };
-    let mut declared = BTreeMap::new();
-    if let Some(major) = header.save_format_major() {
-        declared.insert("save_format_major".to_owned(), major.to_string());
-    }
-    if let Some(minor) = header.save_format_minor() {
-        declared.insert("save_format_minor".to_owned(), minor.to_string());
-    }
-    declared.insert("reference_width".to_owned(), header.width.to_string());
-    Some(DialectMatch {
-        format: "acis".to_owned(),
-        dialect: Some(dialect),
-        declared,
-        admission,
-    })
-}
-
-/// The recovery loss the kernel layer charges, if it recovered.
-///
-/// `Some` exactly when [`kernel_layer`] reported
-/// [`Admission::AdmittedUnverified`]: the carrier's records were framed and
-/// decoded with a verified band's grammar, and the result reports what they
-/// decoded.
-fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
-        return None;
-    };
-    let declared = matched.declared.get("save_format_major").map_or_else(
-        || "no save format".to_owned(),
-        |major| format!("save format major {major}"),
-    );
-    Some(InventorLossCode::SourceDialectUnverified.note(format!(
-        "the active kernel carrier declares {declared}, which no verified Spatial ACIS band \
-         declares; its records were read with the grammar `{nearest}` declares, and what they \
-         decoded is reported as it decoded"
-    )))
 }
 
 fn version_record(version: VersionTuple) -> VersionTupleRecord {

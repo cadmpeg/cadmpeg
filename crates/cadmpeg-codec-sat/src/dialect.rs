@@ -38,7 +38,7 @@
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
 use crate::detect::StreamKind;
-use cadmpeg_asm::dialect::{acis_band_verified, nearest_verified_acis};
+use cadmpeg_asm::dialect::acis_admission;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
@@ -167,13 +167,7 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
         | StreamEvidence::Text(None)
         | StreamEvidence::Unknown => return Admission::Refused,
     };
-    if acis_band_verified(major) {
-        Admission::Admitted
-    } else {
-        Admission::AdmittedUnverified {
-            nearest: nearest_verified_acis(major),
-        }
-    }
+    acis_admission(major)
 }
 
 /// The recovery loss a match charges, if it recovered.

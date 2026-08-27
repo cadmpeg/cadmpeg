@@ -14,11 +14,12 @@
 //! decoders were built and witnessed against. A stream outside them is framed
 //! and decoded exactly as one inside them: the record grammar is applied, and
 //! whatever it reads is reported as it read. What the band decides is how the
-//! host labels the result — [`acis_band_verified`] false means
-//! `Admission::AdmittedUnverified` with [`nearest_verified_acis`] as `nearest`,
-//! and the host charges its `source.dialect-unverified` recovery loss.
+//! host labels the result — [`acis_admission`] returns either
+//! `Admission::Admitted` or `Admission::AdmittedUnverified` with
+//! [`nearest_verified_acis`] as `nearest`, and the host charges its kernel-layer
+//! recovery loss.
 
-use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::dialect::{Admission, DialectId};
 
 /// Save-format majors the Spatial ACIS record decoders are verified against.
 pub const VERIFIED_ACIS_MAJORS: [u32; 2] = [217, 218];
@@ -55,6 +56,18 @@ pub fn nearest_verified_acis(save_format_major: Option<u32>) -> DialectId {
     }
 }
 
+/// Admission of a Spatial ACIS save format under the verified decoder band.
+#[must_use]
+pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
+    if acis_band_verified(save_format_major) {
+        Admission::Admitted
+    } else {
+        Admission::AdmittedUnverified {
+            nearest: nearest_verified_acis(save_format_major),
+        }
+    }
+}
+
 /// The `acis:` binary row one save format satisfies.
 #[must_use]
 pub fn acis_binary_row(save_format_major: Option<u32>) -> DialectId {
@@ -86,9 +99,10 @@ pub fn asm_binary_row(width: u8) -> DialectId {
 #[cfg(test)]
 mod tests {
     use super::{
-        acis_band_verified, acis_binary_row, nearest_verified_acis, ACIS_SAVE_FORMAT_217,
-        ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER,
+        acis_admission, acis_band_verified, acis_binary_row, nearest_verified_acis,
+        ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER,
     };
+    use cadmpeg_core::dialect::Admission;
 
     #[test]
     fn only_the_two_witnessed_majors_are_verified() {
@@ -110,5 +124,16 @@ mod tests {
         for major in [Some(218), Some(232), Some(700)] {
             assert_eq!(nearest_verified_acis(major), ACIS_SAVE_FORMAT_218);
         }
+    }
+
+    #[test]
+    fn admission_folds_the_verified_band_and_nearest_row() {
+        assert_eq!(acis_admission(Some(217)), Admission::Admitted);
+        assert_eq!(
+            acis_admission(Some(700)),
+            Admission::AdmittedUnverified {
+                nearest: ACIS_SAVE_FORMAT_218
+            }
+        );
     }
 }

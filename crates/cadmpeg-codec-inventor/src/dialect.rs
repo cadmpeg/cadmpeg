@@ -70,6 +70,7 @@ use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
 use crate::database::RseSchema;
+use crate::kernel::{ActiveCarrier, KernelFamily};
 use crate::loss::InventorLossCode;
 use crate::rse::MetaStreamDeclaration;
 
@@ -304,6 +305,57 @@ impl DialectRecovery {
             MetaStreamDeclaration::VERIFIED_VERSION
         )))
     }
+}
+
+/// The `acis:` kernel-layer match for one active carrier.
+pub(crate) fn kernel_layer(carrier: &ActiveCarrier<'_>) -> Option<DialectMatch> {
+    let bytes = carrier.bytes.window();
+    let (header, dialect, admission) = match carrier.family {
+        KernelFamily::Asm => {
+            let header = cadmpeg_asm::asm_header::parse(bytes)?;
+            let dialect = cadmpeg_asm::dialect::asm_binary_row(header.width);
+            (header, dialect, Admission::Admitted)
+        }
+        KernelFamily::Acis => {
+            let header = cadmpeg_asm::acis_header::parse(bytes)?;
+            let major = header.save_format_major();
+            (
+                header,
+                cadmpeg_asm::dialect::acis_binary_row(major),
+                cadmpeg_asm::dialect::acis_admission(major),
+            )
+        }
+    };
+    let mut declared = BTreeMap::new();
+    if let Some(major) = header.save_format_major() {
+        declared.insert("save_format_major".to_owned(), major.to_string());
+    }
+    if let Some(minor) = header.save_format_minor() {
+        declared.insert("save_format_minor".to_owned(), minor.to_string());
+    }
+    declared.insert("reference_width".to_owned(), header.width.to_string());
+    Some(DialectMatch {
+        format: "acis".to_owned(),
+        dialect: Some(dialect),
+        declared,
+        admission,
+    })
+}
+
+/// The recovery loss the kernel layer charges, if it recovered.
+pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+        return None;
+    };
+    let declared = matched.declared.get("save_format_major").map_or_else(
+        || "no save format".to_owned(),
+        |major| format!("save format major {major}"),
+    );
+    Some(InventorLossCode::KernelDialectUnverified.note(format!(
+        "the active kernel carrier declares {declared}, which no verified Spatial ACIS band \
+         declares; its records were read with the grammar `{nearest}` declares, and what they \
+         decoded is reported as it decoded"
+    )))
 }
 
 #[cfg(test)]
