@@ -1,9 +1,13 @@
-# generated at 410399168
+# generated at 9518f7666
 pub mod cadmpeg_codec_iges
 pub enum cadmpeg_codec_iges::IgesVersion
+pub cadmpeg_codec_iges::IgesVersion::V4_0
+pub cadmpeg_codec_iges::IgesVersion::V5_0
 pub cadmpeg_codec_iges::IgesVersion::V5_1
 pub cadmpeg_codec_iges::IgesVersion::V5_2
 pub cadmpeg_codec_iges::IgesVersion::V5_3
+impl cadmpeg_codec_iges::IgesVersion
+pub const fn cadmpeg_codec_iges::IgesVersion::target(self) -> &'static str
 impl core::clone::Clone for cadmpeg_codec_iges::IgesVersion
 pub fn cadmpeg_codec_iges::IgesVersion::clone(&self) -> cadmpeg_codec_iges::IgesVersion
 impl core::cmp::Eq for cadmpeg_codec_iges::IgesVersion
@@ -43,11 +47,10 @@ impl core::marker::UnsafeUnpin for cadmpeg_codec_iges::IgesCodec
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_iges::IgesCodec
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_iges::IgesCodec
 pub struct cadmpeg_codec_iges::IgesEncoder
-impl cadmpeg_codec_iges::IgesEncoder
-pub const fn cadmpeg_codec_iges::IgesEncoder::new(cadmpeg_codec_iges::IgesWriteOptions) -> Self
 impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_iges::IgesEncoder
 pub fn cadmpeg_codec_iges::IgesEncoder::id(&self) -> &'static str
-pub fn cadmpeg_codec_iges::IgesEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_iges::IgesEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_iges::IgesEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_codec_iges::IgesEncoder
 pub fn cadmpeg_codec_iges::IgesEncoder::clone(&self) -> cadmpeg_codec_iges::IgesEncoder
 impl core::default::Default for cadmpeg_codec_iges::IgesEncoder
@@ -62,23 +65,3 @@ impl core::marker::Unpin for cadmpeg_codec_iges::IgesEncoder
 impl core::marker::UnsafeUnpin for cadmpeg_codec_iges::IgesEncoder
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_iges::IgesEncoder
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_iges::IgesEncoder
-pub struct cadmpeg_codec_iges::IgesWriteOptions
-pub cadmpeg_codec_iges::IgesWriteOptions::version: cadmpeg_codec_iges::IgesVersion
-impl core::clone::Clone for cadmpeg_codec_iges::IgesWriteOptions
-pub fn cadmpeg_codec_iges::IgesWriteOptions::clone(&self) -> cadmpeg_codec_iges::IgesWriteOptions
-impl core::cmp::Eq for cadmpeg_codec_iges::IgesWriteOptions
-impl core::cmp::PartialEq for cadmpeg_codec_iges::IgesWriteOptions
-pub fn cadmpeg_codec_iges::IgesWriteOptions::eq(&self, &cadmpeg_codec_iges::IgesWriteOptions) -> bool
-impl core::default::Default for cadmpeg_codec_iges::IgesWriteOptions
-pub fn cadmpeg_codec_iges::IgesWriteOptions::default() -> cadmpeg_codec_iges::IgesWriteOptions
-impl core::fmt::Debug for cadmpeg_codec_iges::IgesWriteOptions
-pub fn cadmpeg_codec_iges::IgesWriteOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_iges::IgesWriteOptions
-impl core::marker::StructuralPartialEq for cadmpeg_codec_iges::IgesWriteOptions
-impl core::marker::Freeze for cadmpeg_codec_iges::IgesWriteOptions
-impl core::marker::Send for cadmpeg_codec_iges::IgesWriteOptions
-impl core::marker::Sync for cadmpeg_codec_iges::IgesWriteOptions
-impl core::marker::Unpin for cadmpeg_codec_iges::IgesWriteOptions
-impl core::marker::UnsafeUnpin for cadmpeg_codec_iges::IgesWriteOptions
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_iges::IgesWriteOptions
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_iges::IgesWriteOptions

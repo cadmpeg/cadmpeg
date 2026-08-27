@@ -1,5 +1,23 @@
-# generated at 410399168
+# generated at 9518f7666
 pub mod cadmpeg_core
+pub mod cadmpeg_core::bytes
+pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
+pub const fn cadmpeg_core::bytes::assemble_f32_le([u8; 4]) -> f32
+pub const fn cadmpeg_core::bytes::assemble_f64_be([u8; 8]) -> f64
+pub const fn cadmpeg_core::bytes::assemble_f64_le([u8; 8]) -> f64
+pub const fn cadmpeg_core::bytes::assemble_u16_be([u8; 2]) -> u16
+pub const fn cadmpeg_core::bytes::assemble_u16_le([u8; 2]) -> u16
+pub const fn cadmpeg_core::bytes::assemble_u24_be([u8; 3]) -> u32
+pub const fn cadmpeg_core::bytes::assemble_u24_le([u8; 3]) -> u32
+pub const fn cadmpeg_core::bytes::assemble_u32_be([u8; 4]) -> u32
+pub const fn cadmpeg_core::bytes::assemble_u32_le([u8; 4]) -> u32
+pub const fn cadmpeg_core::bytes::assemble_u64_be([u8; 8]) -> u64
+pub const fn cadmpeg_core::bytes::assemble_u64_le([u8; 8]) -> u64
+pub fn cadmpeg_core::bytes::contains(&[u8], &[u8]) -> bool
+pub fn cadmpeg_core::bytes::find(&[u8], &[u8]) -> core::option::Option<usize>
+pub fn cadmpeg_core::bytes::find_from(&[u8], &[u8], usize) -> core::option::Option<usize>
+pub fn cadmpeg_core::bytes::find_in(&[u8], &[u8], usize, usize) -> core::option::Option<usize>
+pub fn cadmpeg_core::bytes::find_iter<'a>(&'a [u8], &'a [u8]) -> impl core::iter::traits::iterator::Iterator<Item = usize> + 'a
 pub mod cadmpeg_core::container
 pub struct cadmpeg_core::container::ContainerEntry
 pub cadmpeg_core::container::ContainerEntry::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -29,6 +47,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::container::Contai
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::container::ContainerEntry
 pub struct cadmpeg_core::container::ContainerSummary
 pub cadmpeg_core::container::ContainerSummary::container_kind: alloc::string::String
+pub cadmpeg_core::container::ContainerSummary::dialects: alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
 pub cadmpeg_core::container::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
 pub cadmpeg_core::container::ContainerSummary::format: alloc::string::String
 pub cadmpeg_core::container::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
@@ -316,6 +335,7 @@ pub fn cadmpeg_core::decode::DecodeContext<'a>::finish_session(self) -> core::re
 pub fn cadmpeg_core::decode::DecodeContext<'a>::from_root_bytes(&'a [u8], &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::policy(&self) -> &cadmpeg_core::decode::DecodePolicy
 pub fn cadmpeg_core::decode::DecodeContext<'a>::read_root(&mut dyn cadmpeg_core::io::ReadSeek, &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::refuse_codec_limit(&self, &'static str, u64, u64, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice_as<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange, impl core::convert::Into<alloc::string::String>) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::reserve_scoped(&self, u64, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<cadmpeg_core::decode::ScopedReservation<'_>, cadmpeg_core::error::CodecError>
@@ -614,17 +634,35 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::SpaceId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::SpaceId
 pub struct cadmpeg_core::decode::View<'a>
 impl cadmpeg_core::decode::View<'_>
+pub fn cadmpeg_core::decode::View<'_>::f32_be(&mut self) -> core::option::Option<f32>
+pub fn cadmpeg_core::decode::View<'_>::f32_be_at(&[u8], usize) -> core::option::Option<f32>
 pub fn cadmpeg_core::decode::View<'_>::f32_le(&mut self) -> core::option::Option<f32>
+pub fn cadmpeg_core::decode::View<'_>::f32_le_at(&[u8], usize) -> core::option::Option<f32>
 pub fn cadmpeg_core::decode::View<'_>::f64_be(&mut self) -> core::option::Option<f64>
+pub fn cadmpeg_core::decode::View<'_>::f64_be_at(&[u8], usize) -> core::option::Option<f64>
 pub fn cadmpeg_core::decode::View<'_>::f64_le(&mut self) -> core::option::Option<f64>
+pub fn cadmpeg_core::decode::View<'_>::f64_le_at(&[u8], usize) -> core::option::Option<f64>
+pub fn cadmpeg_core::decode::View<'_>::i16_be(&mut self) -> core::option::Option<i16>
+pub fn cadmpeg_core::decode::View<'_>::i16_be_at(&[u8], usize) -> core::option::Option<i16>
 pub fn cadmpeg_core::decode::View<'_>::i16_le(&mut self) -> core::option::Option<i16>
+pub fn cadmpeg_core::decode::View<'_>::i16_le_at(&[u8], usize) -> core::option::Option<i16>
+pub fn cadmpeg_core::decode::View<'_>::i32_be(&mut self) -> core::option::Option<i32>
+pub fn cadmpeg_core::decode::View<'_>::i32_be_at(&[u8], usize) -> core::option::Option<i32>
 pub fn cadmpeg_core::decode::View<'_>::i32_le(&mut self) -> core::option::Option<i32>
+pub fn cadmpeg_core::decode::View<'_>::i32_le_at(&[u8], usize) -> core::option::Option<i32>
+pub fn cadmpeg_core::decode::View<'_>::i64_be(&mut self) -> core::option::Option<i64>
+pub fn cadmpeg_core::decode::View<'_>::i64_be_at(&[u8], usize) -> core::option::Option<i64>
 pub fn cadmpeg_core::decode::View<'_>::i64_le(&mut self) -> core::option::Option<i64>
+pub fn cadmpeg_core::decode::View<'_>::i64_le_at(&[u8], usize) -> core::option::Option<i64>
+pub fn cadmpeg_core::decode::View<'_>::req_f32_be(&mut self) -> core::result::Result<f32, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_f32_le(&mut self) -> core::result::Result<f32, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_f64_be(&mut self) -> core::result::Result<f64, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_f64_le(&mut self) -> core::result::Result<f64, cadmpeg_core::decode::ParseError>
+pub fn cadmpeg_core::decode::View<'_>::req_i16_be(&mut self) -> core::result::Result<i16, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_i16_le(&mut self) -> core::result::Result<i16, cadmpeg_core::decode::ParseError>
+pub fn cadmpeg_core::decode::View<'_>::req_i32_be(&mut self) -> core::result::Result<i32, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_i32_le(&mut self) -> core::result::Result<i32, cadmpeg_core::decode::ParseError>
+pub fn cadmpeg_core::decode::View<'_>::req_i64_be(&mut self) -> core::result::Result<i64, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_i64_le(&mut self) -> core::result::Result<i64, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_u16_be(&mut self) -> core::result::Result<u16, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_u16_le(&mut self) -> core::result::Result<u16, cadmpeg_core::decode::ParseError>
@@ -633,11 +671,20 @@ pub fn cadmpeg_core::decode::View<'_>::req_u32_le(&mut self) -> core::result::Re
 pub fn cadmpeg_core::decode::View<'_>::req_u64_be(&mut self) -> core::result::Result<u64, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::req_u64_le(&mut self) -> core::result::Result<u64, cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'_>::u16_be(&mut self) -> core::option::Option<u16>
+pub fn cadmpeg_core::decode::View<'_>::u16_be_at(&[u8], usize) -> core::option::Option<u16>
 pub fn cadmpeg_core::decode::View<'_>::u16_le(&mut self) -> core::option::Option<u16>
+pub fn cadmpeg_core::decode::View<'_>::u16_le_at(&[u8], usize) -> core::option::Option<u16>
 pub fn cadmpeg_core::decode::View<'_>::u32_be(&mut self) -> core::option::Option<u32>
+pub fn cadmpeg_core::decode::View<'_>::u32_be_at(&[u8], usize) -> core::option::Option<u32>
 pub fn cadmpeg_core::decode::View<'_>::u32_le(&mut self) -> core::option::Option<u32>
+pub fn cadmpeg_core::decode::View<'_>::u32_le_at(&[u8], usize) -> core::option::Option<u32>
 pub fn cadmpeg_core::decode::View<'_>::u64_be(&mut self) -> core::option::Option<u64>
+pub fn cadmpeg_core::decode::View<'_>::u64_be_at(&[u8], usize) -> core::option::Option<u64>
 pub fn cadmpeg_core::decode::View<'_>::u64_le(&mut self) -> core::option::Option<u64>
+pub fn cadmpeg_core::decode::View<'_>::u64_le_at(&[u8], usize) -> core::option::Option<u64>
+impl cadmpeg_core::decode::View<'_>
+pub fn cadmpeg_core::decode::View<'_>::u24_be_at(&[u8], usize) -> core::option::Option<u32>
+pub fn cadmpeg_core::decode::View<'_>::u24_le_at(&[u8], usize) -> core::option::Option<u32>
 impl<'a> cadmpeg_core::decode::View<'a>
 pub fn cadmpeg_core::decode::View<'a>::array<const N: usize>(&mut self) -> core::option::Option<[u8; N]>
 pub fn cadmpeg_core::decode::View<'a>::child(self, usize, usize) -> core::option::Option<cadmpeg_core::decode::View<'a>>
@@ -683,6 +730,7 @@ pub fn cadmpeg_core::decode::WorkBudget<'a>::consume_child(&self, &cadmpeg_core:
 pub fn cadmpeg_core::decode::WorkBudget<'a>::consumed(&self) -> usize
 pub fn cadmpeg_core::decode::WorkBudget<'a>::exhaust(&self)
 pub fn cadmpeg_core::decode::WorkBudget<'a>::exhausted(&self) -> bool
+pub fn cadmpeg_core::decode::WorkBudget<'a>::recursion_guard(&self) -> core::option::Option<cadmpeg_core::decode::WorkBudgetRecursionGuard<'_, 'a>>
 pub fn cadmpeg_core::decode::WorkBudget<'a>::refuse(&self, &'static str) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::decode::WorkBudget<'a>::remaining(&self) -> usize
 pub fn cadmpeg_core::decode::WorkBudget<'a>::session_child_slice(&self, usize) -> cadmpeg_core::decode::WorkBudget<'_>
@@ -695,10 +743,101 @@ impl<'a> core::marker::Unpin for cadmpeg_core::decode::WorkBudget<'a>
 impl<'a> core::marker::UnsafeUnpin for cadmpeg_core::decode::WorkBudget<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::WorkBudget<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::WorkBudget<'a>
+pub struct cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+impl core::ops::drop::Drop for cadmpeg_core::decode::WorkBudgetRecursionGuard<'_, '_>
+pub fn cadmpeg_core::decode::WorkBudgetRecursionGuard<'_, '_>::drop(&mut self)
+impl<'budget, 'session> core::fmt::Debug for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+pub fn cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'budget, 'session> core::marker::Freeze for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+impl<'budget, 'session> !core::marker::Send for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+impl<'budget, 'session> !core::marker::Sync for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+impl<'budget, 'session> core::marker::Unpin for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+impl<'budget, 'session> core::marker::UnsafeUnpin for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+impl<'budget, 'session> !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
+impl<'budget, 'session> !core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::WorkBudgetRecursionGuard<'budget, 'session>
 pub fn cadmpeg_core::decode::alloc_filled<T: core::clone::Clone>(usize, T, &'static str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::bounded_len(u64, usize, usize) -> core::option::Option<usize>
 pub fn cadmpeg_core::decode::refuse_local_limit(&'static str, u64, u64, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::decode::resolve_address(&[cadmpeg_core::decode::SpaceDescriptor], cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
+pub mod cadmpeg_core::dialect
+pub enum cadmpeg_core::dialect::Admission
+pub cadmpeg_core::dialect::Admission::Admitted
+pub cadmpeg_core::dialect::Admission::AdmittedUnverified
+pub cadmpeg_core::dialect::Admission::AdmittedUnverified::nearest: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::dialect::Admission::Refused
+impl core::clone::Clone for cadmpeg_core::dialect::Admission
+pub fn cadmpeg_core::dialect::Admission::clone(&self) -> cadmpeg_core::dialect::Admission
+impl core::cmp::Eq for cadmpeg_core::dialect::Admission
+impl core::cmp::PartialEq for cadmpeg_core::dialect::Admission
+pub fn cadmpeg_core::dialect::Admission::eq(&self, &cadmpeg_core::dialect::Admission) -> bool
+impl core::fmt::Debug for cadmpeg_core::dialect::Admission
+pub fn cadmpeg_core::dialect::Admission::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::dialect::Admission
+impl serde_core::ser::Serialize for cadmpeg_core::dialect::Admission
+pub fn cadmpeg_core::dialect::Admission::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::Admission
+pub fn cadmpeg_core::dialect::Admission::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_core::dialect::Admission
+impl core::marker::Send for cadmpeg_core::dialect::Admission
+impl core::marker::Sync for cadmpeg_core::dialect::Admission
+impl core::marker::Unpin for cadmpeg_core::dialect::Admission
+impl core::marker::UnsafeUnpin for cadmpeg_core::dialect::Admission
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::Admission
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::Admission
+pub struct cadmpeg_core::dialect::DialectId(_)
+impl cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::as_str(&self) -> &str
+pub const fn cadmpeg_core::dialect::DialectId::pinned(&'static str) -> Self
+impl core::clone::Clone for cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::clone(&self) -> cadmpeg_core::dialect::DialectId
+impl core::cmp::Eq for cadmpeg_core::dialect::DialectId
+impl core::cmp::PartialEq for cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::eq(&self, &cadmpeg_core::dialect::DialectId) -> bool
+impl core::fmt::Debug for cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for cadmpeg_core::dialect::DialectId
+impl serde_core::ser::Serialize for cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectId::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl core::marker::Freeze for cadmpeg_core::dialect::DialectId
+impl core::marker::Send for cadmpeg_core::dialect::DialectId
+impl core::marker::Sync for cadmpeg_core::dialect::DialectId
+impl core::marker::Unpin for cadmpeg_core::dialect::DialectId
+impl core::marker::UnsafeUnpin for cadmpeg_core::dialect::DialectId
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::DialectId
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::DialectId
+pub struct cadmpeg_core::dialect::DialectMatch
+pub cadmpeg_core::dialect::DialectMatch::admission: cadmpeg_core::dialect::Admission
+pub cadmpeg_core::dialect::DialectMatch::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_core::dialect::DialectMatch::dialect: core::option::Option<cadmpeg_core::dialect::DialectId>
+pub cadmpeg_core::dialect::DialectMatch::format: alloc::string::String
+impl core::clone::Clone for cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::clone(&self) -> cadmpeg_core::dialect::DialectMatch
+impl core::cmp::Eq for cadmpeg_core::dialect::DialectMatch
+impl core::cmp::PartialEq for cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::eq(&self, &cadmpeg_core::dialect::DialectMatch) -> bool
+impl core::fmt::Debug for cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::dialect::DialectMatch
+impl serde_core::ser::Serialize for cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_core::dialect::DialectMatch
+impl core::marker::Send for cadmpeg_core::dialect::DialectMatch
+impl core::marker::Sync for cadmpeg_core::dialect::DialectMatch
+impl core::marker::Unpin for cadmpeg_core::dialect::DialectMatch
+impl core::marker::UnsafeUnpin for cadmpeg_core::dialect::DialectMatch
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::DialectMatch
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::debug_assert_primary_layer(&[cadmpeg_core::dialect::DialectMatch], &str)
+pub fn cadmpeg_core::dialect::holds_primary_layer_invariant(&[cadmpeg_core::dialect::DialectMatch], &str) -> bool
+pub fn cadmpeg_core::dialect::primary_layer<'a>(&'a [cadmpeg_core::dialect::DialectMatch], &str) -> core::option::Option<&'a cadmpeg_core::dialect::DialectMatch>
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
 pub cadmpeg_core::error::CodecError::InvalidInput(alloc::string::String)
@@ -712,8 +851,18 @@ pub cadmpeg_core::error::CodecError::StrictRefusal::message: alloc::string::Stri
 pub cadmpeg_core::error::CodecError::Truncated
 pub cadmpeg_core::error::CodecError::Truncated::context: cadmpeg_core::decode::ErrorContext
 pub cadmpeg_core::error::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation
+pub cadmpeg_core::error::CodecError::UnsupportedDialect
+pub cadmpeg_core::error::CodecError::UnsupportedDialect::dialect_match: alloc::boxed::Box<cadmpeg_core::dialect::DialectMatch>
+pub cadmpeg_core::error::CodecError::UnsupportedDialect::format: alloc::string::String
+pub cadmpeg_core::error::CodecError::UnsupportedDialect::message: alloc::string::String
+pub cadmpeg_core::error::CodecError::UnsupportedTarget
+pub cadmpeg_core::error::CodecError::UnsupportedTarget::available: alloc::string::String
+pub cadmpeg_core::error::CodecError::UnsupportedTarget::format: alloc::string::String
+pub cadmpeg_core::error::CodecError::UnsupportedTarget::reason: alloc::string::String
+pub cadmpeg_core::error::CodecError::UnsupportedTarget::requested: core::option::Option<alloc::string::String>
 pub cadmpeg_core::error::CodecError::WrongFormat(alloc::string::String)
 impl cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::error::CodecError::malformed(impl core::fmt::Display) -> Self
 pub const fn cadmpeg_core::error::CodecError::truncated(cadmpeg_core::decode::SourceLocation, &'static str) -> Self
 impl core::convert::From<cadmpeg_core::decode::ParseError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::decode::ParseError) -> Self
@@ -732,10 +881,12 @@ impl core::marker::Unpin for cadmpeg_core::error::CodecError
 impl core::marker::UnsafeUnpin for cadmpeg_core::error::CodecError
 impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::error::CodecError
 impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_core::error::CodecError
+pub const cadmpeg_core::error::UNRECORDED_SOURCE_DIALECT: &str
 pub mod cadmpeg_core::io
-pub trait cadmpeg_core::io::ReadSeek: alloc::io::read::Read + core::io::seek::Seek
-impl<T: alloc::io::read::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
+pub trait cadmpeg_core::io::ReadSeek: std::io::Read + core::io::seek::Seek
+impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
+pub cadmpeg_core::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::CodecError::Io(core::io::error::Error)
 pub cadmpeg_core::CodecError::Malformed(alloc::string::String)
 pub cadmpeg_core::CodecError::NotImplemented(alloc::string::String)
@@ -746,8 +897,18 @@ pub cadmpeg_core::CodecError::StrictRefusal::message: alloc::string::String
 pub cadmpeg_core::CodecError::Truncated
 pub cadmpeg_core::CodecError::Truncated::context: cadmpeg_core::decode::ErrorContext
 pub cadmpeg_core::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation
+pub cadmpeg_core::CodecError::UnsupportedDialect
+pub cadmpeg_core::CodecError::UnsupportedDialect::dialect_match: alloc::boxed::Box<cadmpeg_core::dialect::DialectMatch>
+pub cadmpeg_core::CodecError::UnsupportedDialect::format: alloc::string::String
+pub cadmpeg_core::CodecError::UnsupportedDialect::message: alloc::string::String
+pub cadmpeg_core::CodecError::UnsupportedTarget
+pub cadmpeg_core::CodecError::UnsupportedTarget::available: alloc::string::String
+pub cadmpeg_core::CodecError::UnsupportedTarget::format: alloc::string::String
+pub cadmpeg_core::CodecError::UnsupportedTarget::reason: alloc::string::String
+pub cadmpeg_core::CodecError::UnsupportedTarget::requested: core::option::Option<alloc::string::String>
 pub cadmpeg_core::CodecError::WrongFormat(alloc::string::String)
 impl cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::error::CodecError::malformed(impl core::fmt::Display) -> Self
 pub const fn cadmpeg_core::error::CodecError::truncated(cadmpeg_core::decode::SourceLocation, &'static str) -> Self
 impl core::convert::From<cadmpeg_core::decode::ParseError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::decode::ParseError) -> Self
@@ -794,6 +955,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::container::Contai
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::container::ContainerEntry
 pub struct cadmpeg_core::ContainerSummary
 pub cadmpeg_core::ContainerSummary::container_kind: alloc::string::String
+pub cadmpeg_core::ContainerSummary::dialects: alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
 pub cadmpeg_core::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
 pub cadmpeg_core::ContainerSummary::format: alloc::string::String
 pub cadmpeg_core::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
@@ -816,5 +978,5 @@ impl core::marker::Unpin for cadmpeg_core::container::ContainerSummary
 impl core::marker::UnsafeUnpin for cadmpeg_core::container::ContainerSummary
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::container::ContainerSummary
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::container::ContainerSummary
-pub trait cadmpeg_core::ReadSeek: alloc::io::read::Read + core::io::seek::Seek
-impl<T: alloc::io::read::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
+pub trait cadmpeg_core::ReadSeek: std::io::Read + core::io::seek::Seek
+impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
