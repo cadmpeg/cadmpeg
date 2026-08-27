@@ -61,8 +61,12 @@ pub struct Identification {
     /// codec in the registry.
     ///
     /// Evidence, never a control input: the dialect is what the bytes obey,
-    /// not what they declare. Empty whenever [`Self::dialect`] is `None`,
-    /// because nothing opened the container to read them.
+    /// not what they declare. Copied from the primary layer together with
+    /// [`Self::dialect`], so it is empty when no inspection ran — below the
+    /// floor, out of budget, or failed. It is independent of whether a
+    /// dialect settled: a layer whose discriminants matched no registry row
+    /// keeps its declarations under `dialect: None`, though the residual
+    /// `<format>:unknown` rows make that combination rare in practice.
     pub declared: BTreeMap<String, String>,
     /// What the capability registry declares cadmpeg does with
     /// [`Self::dialect`].

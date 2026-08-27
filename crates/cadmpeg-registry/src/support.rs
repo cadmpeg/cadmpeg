@@ -224,7 +224,7 @@ struct Support {
 
 /// The two registries, joined by dialect id.
 struct Registries {
-    /// Format ids the identity registry declares, in file order.
+    /// Format ids the identity registry declares, in alphabetical order.
     formats: Vec<String>,
     /// Joined rows in identity-registry order.
     entries: Vec<DialectEntry>,
