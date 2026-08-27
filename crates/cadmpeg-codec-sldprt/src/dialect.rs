@@ -41,29 +41,39 @@
 //! declaration and that string is not one. Parse a version out of an id and
 //! the answer is wrong for exactly the files whose declarations are wrong.
 //!
-//! # Every decodable path is `Admitted`
+//! # The residual row is never `Admitted`
 //!
-//! There is no [`Admission::AdmittedUnverified`] here and no
-//! `SourceDialectUnverified` loss, because there is nothing to name as
-//! `nearest`. Each of the three rows is read with the strategy declared for
-//! that row: the padding filter narrowed to four bytes, narrowed to eight, or
-//! — on `sldprt:unknown` — not applied at all, with the ambiguity resolver
-//! running unconstrained and requiring the two candidate offsets to agree
-//! before it binds an operation code. The unknown row is not a legacy grammar
-//! substituted for a newer one; it is its own declared strategy, so charging a
-//! dialect-unverified loss against it would name a substitution that did not
-//! happen. [`Admission::Refused`] is likewise unreachable: this codec refuses
-//! only on container framing, I/O, and entity-budget grounds, all of which
-//! return [`cadmpeg_core::CodecError`] before any report exists, and none of
-//! which is a dialect judgement.
+//! Admission verifies a *declared* identity, and `sldprt:unknown` is the
+//! absence of one. So the two versioned rows are [`Admission::Admitted`] and
+//! `sldprt:unknown` is [`Admission::AdmittedUnverified`], naming *itself* as
+//! `nearest`: the strategy substituted for the missing declaration is the
+//! row's own declared fallback, and no other row lent its grammar.
+//!
+//! That fallback is well-defined — the padding filter is not applied and the
+//! ambiguity resolver requires the two candidate offsets to agree before it
+//! binds an operation code — and it is tempting to call the result verified on
+//! that basis. It is not: agreement between candidates is *consistency*, not a
+//! declaration. Nothing in the file said which padding it was written with, so
+//! nothing was verified against a declaration, and a part that declares
+//! nothing must stay distinguishable in the ladder from a part whose
+//! declaration was checked. Every golden fixture in this crate is synthetic
+//! and version-less, so every one of them sits on this row; making that
+//! visible is exactly what the totality row is for (design §3.3, B4).
+//!
+//! [`Admission::Refused`] is unreachable: this codec refuses only on container
+//! framing, I/O, and entity-budget grounds, all of which return
+//! [`cadmpeg_core::CodecError`] before any report exists, and none of which is
+//! a dialect judgement.
 //!
 //! Where the padding filter is absent and the candidates disagree, the
 //! resolver binds nothing. That is a loss inside a dialect, expressed through
 //! the ordinary loss vocabulary, not an admission state (design §3.3, B2).
 
 use crate::container::ContainerScan;
+use crate::loss::SldprtLossCode;
 use crate::resolved_features::operations::{form_code_padding, FormCodePadding};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
@@ -129,23 +139,36 @@ impl SldprtDialect {
         }
     }
 
+    /// How a document on this row was admitted.
+    ///
+    /// The one predicate behind both the report's [`Admission`] and
+    /// [`dialect_loss`]: a versioned row carries a declared identity that the
+    /// parse verified, and the residual row carries no declared identity at
+    /// all, so it names itself as the substituted strategy. Neither answer is
+    /// recomputed anywhere else.
+    fn admission(self) -> Admission {
+        match self {
+            Self::SwVersionPre12000 | Self::SwVersion12000Plus => Admission::Admitted,
+            Self::Unknown => Admission::AdmittedUnverified {
+                nearest: Self::Unknown.id(),
+            },
+        }
+    }
+
     /// Classifies one document from its `swVersion` declaration. The single
     /// construction path for a [`DialectMatch`] in this codec, so a
     /// classification bug and the report can never disagree.
-    ///
-    /// Admission is [`Admission::Admitted`] on every row; the module
-    /// documentation states why that is the honest answer rather than a
-    /// missing case.
     pub(crate) fn classify(sw_version: Option<&str>) -> DialectMatch {
         let mut declared = BTreeMap::new();
         if let Some(value) = sw_version {
             declared.insert(DECLARED_SW_VERSION.into(), value.to_owned());
         }
+        let dialect = Self::from_declaration(sw_version);
         DialectMatch {
             format: FORMAT.into(),
-            dialect: Some(Self::from_declaration(sw_version).id()),
+            dialect: Some(dialect.id()),
             declared,
-            admission: Admission::Admitted,
+            admission: dialect.admission(),
         }
     }
 
@@ -157,6 +180,34 @@ impl SldprtDialect {
     /// call [`Self::classify`] instead, so the two never diverge.
     pub(crate) fn classify_scan(scan: &ContainerScan<'_>) -> DialectMatch {
         Self::classify(crate::decode::declared_sw_version(scan).as_deref())
+    }
+}
+
+/// The dialect-unverified loss for a classified layer.
+///
+/// `None` exactly when `matched.admission` is [`Admission::Admitted`], because
+/// this reads that field rather than reclassifying. The biconditional the
+/// decode policy requires is therefore structural: the note charged and the
+/// admission reported come from one value, not from two authors agreeing.
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    match &matched.admission {
+        Admission::Admitted => None,
+        Admission::AdmittedUnverified { nearest } => {
+            let declaration = match matched.declared.get(DECLARED_SW_VERSION) {
+                Some(value) => format!(
+                    "the swSolidWorks swVersion declaration {value:?} does not read as a version \
+                     above zero"
+                ),
+                None => "the document carries no swSolidWorks swVersion declaration".to_owned(),
+            };
+            Some(SldprtLossCode::SourceDialectUnverified.note(format!(
+                "{declaration}, so no declared identity was verified. The document is read on \
+                 {nearest}: the feature-operation form-code padding filter is not applied, and an \
+                 operation code binds only where the four- and eight-byte candidates agree. \
+                 Agreement is consistency, not a declaration."
+            )))
+        }
+        Admission::Refused => None,
     }
 }
 

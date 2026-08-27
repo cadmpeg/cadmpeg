@@ -3326,8 +3326,10 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
+    let dialects = report_dialects(scan);
+    append_dialect_losses(&dialects, &mut losses);
     DecodeReport {
-        dialects: report_dialects(scan),
+        dialects,
         format: crate::dialect::FORMAT.to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -4604,6 +4606,18 @@ fn report_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMa
     dialects
 }
 
+/// Appends the dialect-unverified loss the primary layer's admission charges.
+///
+/// Takes the same `dialects` the report carries, so the note and the reported
+/// admission cannot describe different classifications.
+fn append_dialect_losses(
+    dialects: &[cadmpeg_core::dialect::DialectMatch],
+    losses: &mut Vec<cadmpeg_ir::LossNote>,
+) {
+    let primary = cadmpeg_core::dialect::primary_layer(dialects, crate::dialect::FORMAT);
+    losses.extend(primary.and_then(crate::dialect::dialect_loss));
+}
+
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let parasolid_sources = scan
@@ -4644,9 +4658,11 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
+    let dialects = report_dialects(scan);
+    append_dialect_losses(&dialects, &mut losses);
 
     DecodeReport {
-        dialects: report_dialects(scan),
+        dialects,
         format: crate::dialect::FORMAT.to_string(),
         container_only,
         geometry_transferred: false,

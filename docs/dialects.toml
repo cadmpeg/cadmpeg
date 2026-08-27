@@ -673,11 +673,11 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1113"
 # `crates/cadmpeg-codec-sldprt/src/dialect.rs` pins one enum variant per row
 # below and derives the row from `form_code_padding` itself, so the
 # discriminant the classifier reads and the discriminant the decoder branches
-# on are one expression. Every row's admission is `Admitted`: each is read with
-# its own declared strategy, so no `SourceDialectUnverified` loss exists in
-# this codec and no `nearest` can be named. Refusal is never a dialect
-# judgement here -- this codec refuses only on container framing, I/O, and
-# entity-budget grounds.
+# on are one expression. The two versioned rows are `Admitted`; the residual
+# row is `AdmittedUnverified` and charges `source.dialect-unverified` from the
+# same predicate, so the biconditional holds by construction. Refusal is never
+# a dialect judgement here -- this codec refuses only on container framing,
+# I/O, and entity-budget grounds.
 #
 # The design's §12 question was whether the padding branch is B1 (a dialect)
 # or B2 (within-dialect adaptation). Verified against the code, the honest
@@ -726,11 +726,16 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:
 # part whose stream carries the `swSolidWorks` document therefore classifies
 # by its `swVersion` like any other. The hard-set `0` at container.rs:403 is
 # the outer version word, a different field that no row reads.
-# Disposition: admitted; the padding filter is simply not applied
-# (operations.rs:70, :111) and the ambiguity resolver runs unconstrained
-# (operations.rs:82-91). That unconstrained resolver is this row's own declared
-# strategy, not another row's grammar substituted for it, so no
-# `SourceDialectUnverified` loss is charged and there is no `nearest` to name.
+# Disposition: admitted-unverified, naming itself as `nearest`. The padding
+# filter is simply not applied (operations.rs:70, :111) and the ambiguity
+# resolver runs unconstrained (operations.rs:82-91), so the strategy
+# substituted for the missing declaration is this row's own fallback and no
+# other row lent its grammar. That fallback binds an operation code only where
+# the four- and eight-byte candidates agree, but agreement between candidates
+# is consistency, not a declaration: admission verifies a declared identity and
+# this row is the absence of one. A residual row is therefore never `Admitted`,
+# and the codec charges `source.dialect-unverified` here, which `DecodeMode::
+# Strict` refuses.
 id = "sldprt:unknown"
 title = "SolidWorks part with no usable swVersion declaration"
 discriminants = { sw_version = "absent, not a u32 above zero" }

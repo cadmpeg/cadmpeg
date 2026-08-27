@@ -4,9 +4,10 @@
 //!
 //! No golden fixture carries a `swSolidWorks` block, so no golden exercises a
 //! `swVersion` declaration at all: every frozen `.sldprt` in the tree
-//! classifies as `sldprt:unknown` with an empty `declared` map. The declaration
-//! table below carries that coverage instead, over containers built by
-//! [`crate::test_support::container`].
+//! classifies as `sldprt:unknown` with an empty `declared` map, is
+//! `AdmittedUnverified`, and charges `source.dialect-unverified`. The
+//! declaration table below carries the versioned-row coverage instead, over
+//! containers built by [`crate::test_support::container`].
 
 #![allow(clippy::unwrap_used)]
 
@@ -14,6 +15,7 @@ use super::*;
 use crate::container::scan_bytes;
 use crate::test_support::{make_block, outer_header};
 use cadmpeg_core::dialect::primary_layer;
+use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -192,22 +194,84 @@ fn the_identity_row_never_reads_the_declaration_a_second_time() {
 }
 
 #[test]
-fn admission_is_admitted_on_every_row_because_each_row_runs_its_own_strategy() {
-    // There is no dialect-unverified loss in this codec and nothing to name as
-    // `nearest`: the pre-12000 row narrows the form-code padding filter to four
-    // bytes, the 12000-plus row to eight, and `sldprt:unknown` does not apply
-    // the filter at all and requires the two candidate offsets to agree. None
-    // of the three substitutes another row's grammar. If a future change makes
-    // one row read with another's strategy, this test is the one that has to
-    // change, and the `SourceDialectUnverified` charge lands with it.
+fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
+    // The biconditional the decode policy requires. `dialect_loss` reads the
+    // admission the report carries rather than reclassifying, so this holds
+    // structurally; the test states the contract and fails if either side is
+    // ever given its own predicate.
+    let charged = SldprtLossCode::SourceDialectUnverified
+        .note(String::new())
+        .code;
+
     for case in CASES {
+        let matched = SldprtDialect::classify(case.declaration);
+        let loss = dialect_loss(&matched);
+        let context = format!("swVersion {:?}", case.declaration);
+
         assert_eq!(
-            SldprtDialect::classify(case.declaration).admission,
-            Admission::Admitted,
-            "swVersion {:?}",
-            case.declaration
+            matched.admission == Admission::Admitted,
+            loss.is_none(),
+            "{context}: admission and the dialect-unverified loss must agree"
+        );
+        if let Some(note) = &loss {
+            assert_eq!(note.code, charged, "{context}");
+            assert_eq!(note.severity, Severity::Warning, "{context}");
+        }
+    }
+}
+
+#[test]
+fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
+    // Admission verifies a *declared* identity. A part declaring 11999 or
+    // 12000 is read with the padding its own declaration selects, so it is
+    // `Admitted`. A part declaring nothing usable has no declaration to verify
+    // against, so it is `AdmittedUnverified` naming itself: the fallback
+    // applied is the residual row's own, and no other row lent its grammar.
+    // The pair (`sldprt:unknown`, `Admitted`) must be unreachable.
+    for case in CASES {
+        let matched = SldprtDialect::classify(case.declaration);
+        let context = format!("swVersion {:?}", case.declaration);
+        let residual = matched.dialect.as_ref().map(DialectId::as_str)
+            == Some(SldprtDialect::Unknown.id().as_str());
+
+        let expected = if residual {
+            Admission::AdmittedUnverified {
+                nearest: SldprtDialect::Unknown.id(),
+            }
+        } else {
+            Admission::Admitted
+        };
+        assert_eq!(matched.admission, expected, "{context}");
+        assert_eq!(
+            residual,
+            case.id == "sldprt:unknown",
+            "{context}: the case table and the classifier disagree on the row"
         );
     }
+}
+
+#[test]
+fn the_unverified_note_records_the_declaration_that_failed_to_verify() {
+    // A declaration the padding rule cannot use is named in the note; an
+    // absent one is described as absent. The two are different states and a
+    // reader must be able to tell them apart.
+    let named = dialect_loss(&SldprtDialect::classify(Some("SW2019")))
+        .expect("a non-numeric declaration is unverified");
+    assert!(
+        named.message.contains("\"SW2019\""),
+        "the note must quote the declaration: {}",
+        named.message
+    );
+
+    let absent =
+        dialect_loss(&SldprtDialect::classify(None)).expect("no declaration is unverified");
+    assert!(
+        absent
+            .message
+            .contains("no swSolidWorks swVersion declaration"),
+        "the note must say the declaration is absent: {}",
+        absent.message
+    );
 }
 
 #[test]
@@ -263,7 +327,13 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
         Some("sldprt:unknown")
     );
     assert!(matched.declared.is_empty());
-    assert_eq!(matched.admission, Admission::Admitted);
+    assert_eq!(
+        matched.admission,
+        Admission::AdmittedUnverified {
+            nearest: SldprtDialect::Unknown.id()
+        }
+    );
+    assert!(dialect_loss(&matched).is_some());
 }
 
 #[test]
