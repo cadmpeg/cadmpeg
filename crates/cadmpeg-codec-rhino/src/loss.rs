@@ -120,6 +120,16 @@ pub enum RhinoLossCode {
     /// joining loss code to admission state must be able to tell them apart.
     /// The taxonomy family below is still the right one.
     SourceWriterStampUnverified,
+    /// The archive-version word is outside the declared set, so the document
+    /// was read with the grammar another row declares.
+    ///
+    /// Document level, and the counterpart of the per-record code above:
+    /// charged exactly when the primary-layer `crate::dialect` match is
+    /// `Admission::AdmittedUnverified`, from the same predicate that decides
+    /// the admission. Words 2 through 90 share one chunked grammar, so a word
+    /// no row claims is read with the newest declared chunked row's strategy
+    /// rather than refused; nothing verified that the word means that grammar.
+    SourceDialectUnverified,
     /// Body kind came from the closed-shell gauge or from an unverified stored
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
@@ -165,6 +175,7 @@ impl RhinoLossCode {
         Self::MeshVertexPrecisionReduced,
         Self::MeshNormalPrecisionReduced,
         Self::SourceWriterStampUnverified,
+        Self::SourceDialectUnverified,
         Self::TopologyBodyKindGaugeSubstituted,
     ];
 
@@ -209,6 +220,7 @@ impl RhinoLossCode {
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
         }
     }
@@ -266,7 +278,9 @@ impl RhinoLossCode {
             Self::MeshVertexPrecisionReduced | Self::MeshNormalPrecisionReduced => {
                 LossTaxonomy::MeshVertexPrecision
             }
-            Self::SourceWriterStampUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
     }
@@ -348,6 +362,7 @@ mod tests {
                 "mesh.vertex-precision-reduced",
                 "mesh.normal-precision-reduced",
                 "source.writer-stamp-unverified",
+                "source.dialect-unverified",
                 "topology.body-kind-gauge-substituted",
             ]
         );

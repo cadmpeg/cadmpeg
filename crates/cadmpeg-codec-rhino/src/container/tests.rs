@@ -222,23 +222,21 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
 }
 
 #[test]
-fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
-    for version in ["5", "999"] {
-        let bytes = header(version);
-        let summary = RhinoCodec
-            .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
-            .expect("required invariant");
-        assert!(summary.entries.is_empty());
-        assert_eq!(summary.container_kind, "3dm-chunks");
-        let result = RhinoCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                container_only: true,
-                ..Default::default()
-            },
-        );
-        assert!(matches!(result, Err(CodecError::NotImplemented(_))));
-    }
+fn the_refused_band_inspects_without_scanning_and_does_not_decode() {
+    let bytes = header("5");
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
+        .expect("required invariant");
+    assert!(summary.entries.is_empty());
+    assert_eq!(summary.container_kind, "3dm-chunks");
+    let result = RhinoCodec.decode(
+        &mut Cursor::new(bytes),
+        &DecodeOptions {
+            container_only: true,
+            ..Default::default()
+        },
+    );
+    assert!(matches!(result, Err(CodecError::NotImplemented(_))));
 }
 
 #[test]
@@ -247,11 +245,7 @@ fn a_refused_row_inspects_as_refused_and_a_decoded_row_as_admitted() {
     // are exactly the ones `inspect` reports as `Admission::Refused`, and the
     // word whose flat legacy grammar this codec does implement is admitted on
     // its own row even though inspection stops at the header.
-    for (version, id) in [
-        ("5", "rhino:archive-5"),
-        ("999", "rhino:unknown"),
-        ("1", "rhino:archive-1"),
-    ] {
+    for (version, id) in [("5", "rhino:archive-5"), ("1", "rhino:archive-1")] {
         let bytes = header(version);
         let summary = RhinoCodec
             .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
@@ -289,6 +283,56 @@ fn a_refused_row_inspects_as_refused_and_a_decoded_row_as_admitted() {
             "archive word {version}: the reported admission and the decode refusal must agree"
         );
     }
+}
+
+#[test]
+fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
+    // The residual row runs the chunked route, not a header-only stop: the
+    // scan reaches the tables and the report names the row whose strategy was
+    // substituted.
+    let archive = ArchiveVersion::classify(100);
+    let bytes = minimal_document(
+        "100",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(
+                archive,
+                0x1000_0013,
+                &[object_record(archive, 0x20, [0; 16])],
+            ),
+        ],
+    );
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("an undeclared word scans like the band it shares a grammar with");
+    assert!(
+        !summary.entries.is_empty(),
+        "the scan reached the table sequence"
+    );
+    let [matched] = summary.dialects.as_slice() else {
+        panic!("exactly one layer classifies a 3DM archive");
+    };
+    assert_eq!(
+        matched.admission,
+        cadmpeg_core::dialect::Admission::AdmittedUnverified {
+            nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-90"),
+        }
+    );
+    assert_eq!(matched.declared["archive_version"], "100");
+}
+
+#[test]
+fn an_undeclared_word_over_broken_framing_fails_structurally() {
+    // The attempt is self-limiting: an undeclared word buys the chunked scan,
+    // not a recovery of bytes the scan cannot frame.
+    let error = RhinoCodec
+        .decode(&mut Cursor::new(header("100")), &DecodeOptions::default())
+        .expect_err("a header with no chunk sequence cannot be framed");
+    assert!(
+        !matches!(error, CodecError::NotImplemented(_)),
+        "the residual row is attempted, so its failure is structural: {error}"
+    );
 }
 
 #[test]

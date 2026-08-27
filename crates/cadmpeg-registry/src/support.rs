@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(
             support(&DialectId::pinned("rhino:unknown")),
             Some(Disposition {
-                read: ReadDisposition::Refused,
+                read: ReadDisposition::UnclassifiedRecovered,
                 write: WriteDisposition::None,
             })
         );

@@ -66,7 +66,7 @@ cadmpeg gains a decoder.
 | Autodesk Fusion `.f3d`          | L4    | 1 of >=1 | 3             | 0       |
 | Autodesk Inventor `.ipt`/`.iam` | none  | n/a      | 2             | 0       |
 | SolidWorks `.sldprt`            | none  | n/a      | 3             | 0       |
-| Rhino `.3dm`                    | L1    | 6 of 8   | 11            | 2       |
+| Rhino `.3dm`                    | L1    | 6 of 8   | 11            | 1       |
 | Siemens NX `.prt`               | none  | 0 of >=1 | 3             | 1       |
 | CATIA V5 `.CATPart`             | L1    | 6 of >=6 | 7             | 0       |
 | Creo Parametric `.prt`          | L1    | 2 of >=2 | 4             | 0       |
@@ -251,19 +251,19 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 **Ladder: depth L1, breadth 6 of 8.**
 
-| Dialect            | Read     | Write   | Fixtures |
-| ------------------ | -------- | ------- | -------- |
-| `rhino:archive-1`  | detected | none    | 1        |
-| `rhino:archive-2`  | detected | none    | 0        |
-| `rhino:archive-3`  | L1       | none    | 1        |
-| `rhino:archive-4`  | L1       | none    | 1        |
-| `rhino:archive-5`  | refused  | none    | 0        |
-| `rhino:archive-50` | L1       | emitted | 17       |
-| `rhino:archive-60` | L1       | emitted | 4        |
-| `rhino:archive-70` | L1       | emitted | 1        |
-| `rhino:archive-80` | L1       | emitted | 2        |
-| `rhino:archive-90` | detected | none    | 0        |
-| `rhino:unknown`    | refused  | none    | 0        |
+| Dialect            | Read                   | Write   | Fixtures |
+| ------------------ | ---------------------- | ------- | -------- |
+| `rhino:archive-1`  | detected               | none    | 1        |
+| `rhino:archive-2`  | detected               | none    | 0        |
+| `rhino:archive-3`  | L1                     | none    | 1        |
+| `rhino:archive-4`  | L1                     | none    | 1        |
+| `rhino:archive-5`  | refused                | none    | 0        |
+| `rhino:archive-50` | L1                     | emitted | 17       |
+| `rhino:archive-60` | L1                     | emitted | 4        |
+| `rhino:archive-70` | L1                     | emitted | 1        |
+| `rhino:archive-80` | L1                     | emitted | 2        |
+| `rhino:archive-90` | detected               | none    | 0        |
+| `rhino:unknown`    | unclassified-recovered | none    | 0        |
 
 <!-- /generated: dialects rhino -->
 
