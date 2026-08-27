@@ -182,7 +182,7 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Question.** Which RSe schema, metadata, record-trailer, and carrier variants accompany CFB version 4 or metadata versions other than 8?
 
-**Known.** The compound reader admits valid CFB version 3 and 4 containers. The Inventor semantic envelope is schema 31 and metadata version 8.
+**Known.** The compound reader admits valid CFB version 3 and 4 containers. The Inventor semantic envelope is schema 31 and metadata version 8. Those grammars are applied to every document, whatever it declares; a declaration outside them leaves the document dialect-unverified.
 
 **Need.** Each governing variant requires a separate finite support envelope.
 

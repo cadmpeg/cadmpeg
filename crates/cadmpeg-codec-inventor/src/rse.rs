@@ -199,6 +199,9 @@ impl SegmentKind {
 
 #[derive(Debug)]
 pub(crate) struct SegmentMeta<'a> {
+    /// The marker and version the stream declared, kept verbatim: the grammar
+    /// applied to the body is the version-8 one whatever this says.
+    pub(crate) declared: MetaStreamDeclaration,
     pub(crate) version: MetaStreamVersion,
     pub(crate) header_values: [u16; 8],
     pub(crate) display_name: String,
@@ -213,8 +216,11 @@ pub(crate) struct SegmentMeta<'a> {
 
 #[derive(Debug)]
 pub(crate) enum SegmentMetaState<'a> {
+    /// The body parsed under the version-8 grammar. The declaration it carries
+    /// is not always the verified pair: a foreign marker or version whose body
+    /// obeys the grammar is read, and its declaration is what makes the
+    /// document dialect-unverified.
     Parsed(Box<SegmentMeta<'a>>),
-    Unsupported(MetaStreamDeclaration),
     /// The stream did not parse. `declared` carries the marker and version when
     /// they were read before the failure, and is `None` when the stream ended
     /// or failed inside those two fields — in which case the stream declares no
@@ -228,15 +234,14 @@ pub(crate) enum SegmentMetaState<'a> {
 impl SegmentMetaState<'_> {
     /// The marker and version this stream declared, where it declared them.
     ///
-    /// [`Self::Parsed`] reached its body, which happens only for the verified
-    /// pair, so it reports that pair rather than re-reading the stream.
+    /// [`Self::Parsed`] reports the declaration it was read from, not the
+    /// verified pair: the version-8 grammar is attempted on every stream, so a
+    /// parsed stream is not evidence that it declared version 8, and reporting
+    /// the verified pair here would erase the unverified admission the
+    /// declaration earns.
     pub(crate) fn declaration(&self) -> Option<MetaStreamDeclaration> {
         match self {
-            Self::Parsed(meta) => Some(MetaStreamDeclaration {
-                marker: MetaStreamDeclaration::VERIFIED_MARKER.into(),
-                version: meta.version.value(),
-            }),
-            Self::Unsupported(declared) => Some(declared.clone()),
+            Self::Parsed(meta) => Some(meta.declared.clone()),
             Self::Malformed { declared, .. } => declared.clone(),
         }
     }
@@ -365,9 +370,9 @@ impl<'a> RseInventory<'a> {
                     Ok(DatabaseHeader::Supported(database)) => {
                         (Some(database.schema), ParsedState::Parsed(database))
                     }
-                    Ok(DatabaseHeader::UnsupportedSchema(schema)) => (
+                    Ok(DatabaseHeader::ForeignSchemaUnframed { schema, detail }) => (
                         Some(schema),
-                        ParsedState::Unavailable(DatabaseHeader::unsupported_detail(schema)),
+                        ParsedState::Unavailable(DatabaseHeader::unframed_detail(schema, &detail)),
                     ),
                     Err(error) => (None, ParsedState::Unavailable(crate::issue_detail(error)?)),
                 },
@@ -383,15 +388,16 @@ impl<'a> RseInventory<'a> {
                 state,
             });
         }
-        let schema = coherent_schema(&database_descriptors);
+        // The registry takes the schema-31 grammar whatever the `RSeDb` streams
+        // declared, including when they declared nothing or disagreed. What the
+        // grammar cannot frame degrades here, which is a structural outcome; the
+        // declarations decide the admission, not whether the attempt is made.
         let registry = match snapshot.stream("RSeStorage/RSeSegInfo") {
             None => ParsedState::Absent,
-            Some(_) if schema.is_none() => ParsedState::Unavailable(
-                "RSe database schemas do not select one registry grammar".into(),
-            ),
-            Some(stream) => match snapshot.open(ctx, stream).and_then(|view| {
-                parse_registry(ctx, view.window(), schema.expect("checked schema"))
-            }) {
+            Some(stream) => match snapshot
+                .open(ctx, stream)
+                .and_then(|view| parse_registry(ctx, view.window()))
+            {
                 Ok(value) => ParsedState::Parsed(value),
                 Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
@@ -525,17 +531,6 @@ fn document_kind_for_segments(segments: &[SegmentDescriptor<'_>]) -> DocumentKin
     }
 }
 
-fn coherent_schema(databases: &[DatabaseDescriptor]) -> Option<RseSchema> {
-    let mut schemas = databases
-        .iter()
-        .filter_map(|descriptor| match &descriptor.state {
-            ParsedState::Parsed(database) => Some(database.schema),
-            ParsedState::Absent | ParsedState::Unavailable(_) => None,
-        });
-    let first = schemas.next()?;
-    schemas.all(|schema| schema == first).then_some(first)
-}
-
 fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegistry) {
     for segment in segments {
         let SegmentMetaState::Parsed(meta) = &segment.meta else {
@@ -650,10 +645,10 @@ fn parse_meta_stream<'a>(
     let marker = cursor.length_prefixed_utf8("marker")?;
     let version = cursor.u16("version")?;
     let declared = MetaStreamDeclaration { marker, version };
-    if !declared.is_verified() {
-        return Ok(SegmentMetaState::Unsupported(declared));
-    }
-    match parse_meta_stream_v8(ctx, source, cursor, version) {
+    // The marker and version are a declaration, never a gate: the version-8
+    // grammar is attempted on every stream, and a body that does not obey it is
+    // `Malformed` with the declaration intact.
+    match parse_meta_stream_v8(ctx, source, cursor, declared.clone()) {
         Ok(meta) => Ok(SegmentMetaState::Parsed(Box::new(meta))),
         Err(error) => Ok(SegmentMetaState::Malformed {
             declared: Some(declared),
@@ -666,8 +661,9 @@ fn parse_meta_stream_v8<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
     mut cursor: MetaCursor<'a>,
-    version: u16,
+    declared: MetaStreamDeclaration,
 ) -> Result<SegmentMeta<'a>, CodecError> {
+    let version = declared.version;
     let header_values = cursor.u16_array("header values")?;
     let display_name = cursor.length_prefixed_utf16("display name")?;
     let mut segment_id = [0; 16];
@@ -687,6 +683,7 @@ fn parse_meta_stream_v8<'a>(
     let body = inflate_zlib_exact(ctx, compressed)?;
     let tables = parse_meta_tables(ctx, body)?;
     Ok(SegmentMeta {
+        declared,
         version: MetaStreamVersion(version),
         header_values,
         display_name,

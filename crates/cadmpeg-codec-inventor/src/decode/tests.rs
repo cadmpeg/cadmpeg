@@ -6,8 +6,8 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use super::*;
 use crate::loss::InventorLossCode;
 use crate::test_support::{
-    acis_kernel_stream, fixture, primary_envelope_fixture, primary_envelope_fixture_with_kernel,
-    EnvelopeDeclarations,
+    acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
+    primary_envelope_fixture_with_kernel, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
 
@@ -91,9 +91,13 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
     let native_findings = crate::validate_native(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
-    assert!(native_findings[0]
-        .message
-        .contains("do not select one registry grammar"));
+    // The structural fixture has no readable registry body. The schema-31
+    // grammar is applied to it regardless of what the `RSeDb` streams declared,
+    // so what is reported is where that attempt stopped, not a version verdict.
+    assert!(
+        native_findings[0].message.contains("segment count"),
+        "{native_findings:#?}"
+    );
     assert_eq!(
         decoded
             .ir()
@@ -253,4 +257,48 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
         codes.iter().any(|code| code.contains("dialect-unverified")),
         "{codes:?}"
     );
+}
+
+#[test]
+fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
+    // The recovery is content, not a label: the same records under a band no
+    // `acis:` row verifies decode into the same geometry the verified band
+    // produces. An empty carrier would satisfy the admission assertions above
+    // without reading anything, so this case carries real records.
+    let decode = |save_format_version: u32| {
+        let bytes = primary_envelope_fixture_with_kernel(
+            EnvelopeDeclarations::default(),
+            &acis_sphere_kernel_stream(save_format_version),
+        );
+        InventorCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("the save-format band degrades rather than refuses")
+    };
+
+    let verified = decode(21_800);
+    let unverified = decode(70_000);
+
+    for (label, decoded) in [("verified", &verified), ("unverified", &unverified)] {
+        assert!(decoded.report().geometry_transferred, "{label}");
+        assert_eq!(decoded.ir().model.bodies.len(), 1, "{label}");
+        assert_eq!(decoded.ir().model.faces.len(), 1, "{label}");
+        assert_eq!(decoded.ir().model.surfaces.len(), 1, "{label}");
+    }
+    assert_eq!(
+        unverified.ir().model.surfaces,
+        verified.ir().model.surfaces,
+        "the substituted grammar read the same carriers"
+    );
+
+    // And the recovery is still declared: the unverified band charges, the
+    // verified one does not.
+    let charged = |decoded: &cadmpeg_ir::codec::DecodeResult| {
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
+    };
+    assert!(charged(&unverified));
+    assert!(!charged(&verified));
 }

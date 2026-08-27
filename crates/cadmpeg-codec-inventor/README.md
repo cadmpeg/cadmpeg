@@ -77,6 +77,12 @@ The primary semantic envelope is:
 - versioned RSe metadata tables and B-record trailers;
 - part and assembly document kinds.
 
+These are the grammars the codec implements, not an admission gate. A document
+declaring another `RSeDb` schema, metadata marker, or metadata version is read
+with them anyway; a stream they cannot frame degrades to an unavailable stream
+with its own issue record, and the declaration makes the document
+`inventor:unknown` with a `source.dialect-unverified` charge.
+
 The parser enumerates database candidates, registry and revision records, exact
 M/B token pairs, metadata type and block tables, and every typed bulk record.
 Segment selection is based on registry and metadata identity, not fixed stream

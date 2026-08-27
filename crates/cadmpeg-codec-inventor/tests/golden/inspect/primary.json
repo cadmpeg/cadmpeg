@@ -67,6 +67,7 @@
         "display_name": "PmBRepSegment",
         "expanded_size": "218",
         "inner_framing": "zlib",
+        "meta_marker": "RSe Meta Stream Version 8",
         "meta_stream_version": "8",
         "segment_kind": "pm_brep",
         "start_sector": "10"

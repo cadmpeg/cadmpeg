@@ -131,7 +131,7 @@
           "storage_bands": [],
           "structural_issues": [
             {
-              "detail": "RSe database schemas do not select one registry grammar",
+              "detail": "truncated input during segment count at space 0 offset 0",
               "id": "inventor:rse:structural-issue#segment_registry",
               "scope": "segment_registry"
             }
@@ -277,7 +277,7 @@
           "kind": "source_dialect_unverified",
           "namespace": "inventor"
         },
-        "message": "no RSe database stream declares a schema; no RSe segment metadata stream declares a marker and version; this decode read the document with the only Inventor grammars this codec implements: RSe database schema 31 and RSe segment metadata marker \"RSe Meta Stream Version 8\" version 8",
+        "message": "no RSe database stream declares a schema; no RSe segment metadata stream declares a marker and version; this decode applied the only Inventor grammars this codec implements — RSe database schema 31 and RSe segment metadata marker \"RSe Meta Stream Version 8\" version 8 — to those streams, and what they did not frame is reported as an unavailable stream with its own issue record",
         "severity": "warning"
       },
       {

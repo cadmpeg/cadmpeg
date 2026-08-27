@@ -47,11 +47,21 @@
 //! A document with no `RSeDb` stream declares no schema, and a document with no
 //! readable Meta Stream declaration declares no metadata version. Neither
 //! satisfies a discriminant of `inventor:cfb3-rse31-meta8`, so both land on the
-//! totality row. This is not a technicality: with no `RSeDb` schema the
-//! decoder already refuses to apply the registry grammar
-//! (`rse.rs`, "`RSe` database schemas do not select one registry grammar"), so
-//! reporting the document as the verified dialect would contradict what the
-//! decode did.
+//! totality row.
+//!
+//! # The declaration decides the label, never whether the grammar is applied
+//!
+//! `database::parse_database`, `database::parse_registry`,
+//! `database::parse_revisions`, and `rse::parse_meta_stream` apply the schema-31
+//! and version-8 grammars to every stream, whatever it declared. A stream those
+//! grammars cannot frame degrades to `ParsedState::Unavailable` or
+//! `SegmentMetaState::Malformed` with its own issue record, which is a
+//! structural outcome. So the loss message here states a grammar that was
+//! actually applied, and a foreign declaration that parses is still unverified:
+//! [`SegmentMetaState::declaration`] reports what the stream said, not what the
+//! parse used.
+//!
+//! [`SegmentMetaState::declaration`]: crate::rse::SegmentMetaState::declaration
 
 use std::collections::BTreeMap;
 
@@ -284,8 +294,10 @@ impl DialectRecovery {
             ));
         }
         Some(InventorLossCode::SourceDialectUnverified.note(format!(
-            "{}; this decode read the document with the only Inventor grammars this codec \
-             implements: RSe database schema {} and RSe segment metadata marker {:?} version {}",
+            "{}; this decode applied the only Inventor grammars this codec implements — RSe \
+             database schema {} and RSe segment metadata marker {:?} version {} — to those \
+             streams, and what they did not frame is reported as an unavailable stream with its \
+             own issue record",
             reasons.join("; "),
             RseSchema::SCHEMA_31.value(),
             MetaStreamDeclaration::VERIFIED_MARKER,

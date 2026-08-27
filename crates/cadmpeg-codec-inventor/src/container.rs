@@ -82,6 +82,9 @@ impl<'a> InventorContainer<'a> {
                     entry
                         .attributes
                         .insert("expanded_size".into(), meta.body.window().len().to_string());
+                    entry
+                        .attributes
+                        .insert("meta_marker".into(), meta.declared.marker.clone());
                     entry.attributes.insert(
                         "meta_stream_version".into(),
                         meta.version.value().to_string(),
@@ -92,14 +95,6 @@ impl<'a> InventorContainer<'a> {
                     entry
                         .attributes
                         .insert("display_name".into(), meta.display_name.clone());
-                }
-                SegmentMetaState::Unsupported(declared) => {
-                    entry
-                        .attributes
-                        .insert("meta_marker".into(), declared.marker.clone());
-                    entry
-                        .attributes
-                        .insert("meta_stream_version".into(), declared.version.to_string());
                 }
                 SegmentMetaState::Malformed { detail, .. } => {
                     entry

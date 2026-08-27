@@ -472,6 +472,100 @@ pub(crate) fn acis_kernel_stream(save_format_version: u32) -> Vec<u8> {
     kernel
 }
 
+/// An `ACIS BinaryFile` stream at one save format carrying one loopless closed
+/// sphere face.
+///
+/// The record-bearing counterpart of [`acis_kernel_stream`]: a band test on an
+/// empty stream proves only the label, so the recovery tests need a carrier
+/// whose records decode into geometry. The binary unit is centimetres, so the
+/// 2.5 stored here is a 25 mm radius in the model.
+pub(crate) fn acis_sphere_kernel_stream(save_format_version: u32) -> Vec<u8> {
+    let mut kernel = b"ACIS BinaryFile".to_vec();
+    for value in [save_format_version, 0, 2, 2] {
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel_trailer(&mut kernel, "synthetic ACIS");
+    append_sphere_records(&mut kernel);
+    kernel
+}
+
+/// The six SAB records of the sphere body, at four-byte reference width.
+fn append_sphere_records(bytes: &mut Vec<u8>) {
+    fn ident(bytes: &mut Vec<u8>, tag: u8, name: &str) {
+        bytes.push(tag);
+        bytes.push(name.len() as u8);
+        bytes.extend_from_slice(name.as_bytes());
+    }
+    fn reference(bytes: &mut Vec<u8>, value: i32) {
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    fn long(bytes: &mut Vec<u8>, value: i32) {
+        bytes.push(0x04);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    // asmheader (index 0)
+    ident(bytes, 0x0d, "asmheader");
+    reference(bytes, -1);
+    long(bytes, -1);
+    bytes.extend_from_slice(&[0x07, 13]);
+    bytes.extend_from_slice(b"232.4.0.65535");
+    bytes.push(0x11);
+    // body (1) -> lump 2
+    ident(bytes, 0x0d, "body");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, 2, -1, -1] {
+        reference(bytes, value);
+    }
+    bytes.push(0x11);
+    // lump (2) -> shell 3, owner 1
+    ident(bytes, 0x0d, "lump");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, -1, 3, 1] {
+        reference(bytes, value);
+    }
+    bytes.push(0x11);
+    // shell (3) -> face 4, owner 2
+    ident(bytes, 0x0d, "shell");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, -1, -1, 4, -1, 2] {
+        reference(bytes, value);
+    }
+    bytes.push(0x11);
+    // face (4) -> shell 3, surface 5, loopless
+    ident(bytes, 0x0d, "face");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, -1, -1, 3, -1, 5] {
+        reference(bytes, value);
+    }
+    bytes.extend_from_slice(&[0x0b, 0x0b, 0x11]);
+    // sphere-surface (5): centre, radius 2.5 cm, two axes, uv sense, bounds
+    ident(bytes, 0x0e, "sphere");
+    ident(bytes, 0x0d, "surface");
+    reference(bytes, -1);
+    long(bytes, -1);
+    reference(bytes, -1);
+    bytes.push(0x13);
+    for value in [0.0_f64, 0.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0x06);
+    bytes.extend_from_slice(&2.5_f64.to_le_bytes());
+    for triple in [[1.0_f64, 0.0, 0.0], [0.0, 0.0, 1.0]] {
+        bytes.push(0x14);
+        for value in triple {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[0x0b; 5]);
+    bytes.push(0x11);
+}
+
 /// The product strings and the scale/tolerance triple both headers end with.
 fn kernel_trailer(kernel: &mut Vec<u8>, product: &str) {
     for value in ["Inventor", product, "2000-01-01"] {

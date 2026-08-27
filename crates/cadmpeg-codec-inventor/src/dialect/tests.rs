@@ -303,3 +303,42 @@ fn the_charged_loss_names_the_declaration_that_diverged() {
     );
     assert!(note.message.contains("version 9"), "{note:?}");
 }
+
+/// The coverage counts one decode of `bytes` reported.
+fn coverage(bytes: &[u8]) -> std::collections::BTreeMap<String, usize> {
+    InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes.to_vec()),
+            &DecodeOptions::default(),
+        )
+        .expect("both version gates degrade rather than refuse")
+        .report()
+        .coverage
+        .clone()
+}
+
+#[test]
+fn a_foreign_declaration_is_read_with_the_verified_grammar_not_declined() {
+    // The unverified label is earned by the declaration, and the streams are
+    // still read: every foreign-declaration document covers exactly what the
+    // verified one covers, because the schema-31 and version-8 grammars are
+    // applied to it rather than withheld. A decline would show up here as an
+    // empty registry, empty metadata, or both.
+    let verified = coverage(&primary_envelope_fixture_with(
+        EnvelopeDeclarations::default(),
+    ));
+    assert!(verified["rse_registry_entries"] > 0);
+    assert!(verified["rse_segment_meta"] > 0);
+
+    for case in CASES {
+        if case.admitted || case.declarations.is_none() {
+            continue;
+        }
+        assert_eq!(
+            coverage(&case.bytes()),
+            verified,
+            "{}: the substituted grammar was applied, so the same streams are read",
+            case.label
+        );
+    }
+}

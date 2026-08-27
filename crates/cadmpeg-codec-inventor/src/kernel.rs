@@ -292,6 +292,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::*;
+    use crate::test_support::acis_sphere_kernel_stream;
 
     #[test]
     fn typed_carrier_envelope_selects_family_and_exact_footer() {
@@ -366,22 +367,38 @@ mod tests {
     }
 
     #[test]
-    fn an_acis_carrier_outside_the_verified_band_uses_the_same_decoder() {
+    fn an_acis_carrier_outside_the_verified_band_reads_the_same_records() {
         // The save format bands the label the decode carries, never whether the
-        // carrier is read: this one frames and decodes exactly as 21800 does.
-        let acis = acis_fixture(70_000);
-        let bytes = carrier_fixture(&acis, 17);
-        let arena = DecodeArena::new();
-        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-            .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
-        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
+        // carrier is read. Proved on records, not on an empty stream: the same
+        // sphere body decodes at 70000 as at 21800.
+        let decode = |save_format_version: u32| {
+            let bytes = carrier_fixture(&acis_sphere_kernel_stream(save_format_version), 17);
+            let arena = DecodeArena::new();
+            let (ctx, view) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("synthetic carrier fits policy");
+            let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+            assert_eq!(carrier.family, KernelFamily::Acis);
+            decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
+        };
 
-        assert_eq!(carrier.family, KernelFamily::Acis);
-        assert_eq!(decoded.header.width, 4);
-        assert_eq!(decoded.header.save_format_version, Some(70_000));
-        assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
-        assert!(decoded.brep.unknowns.is_empty());
+        let verified = decode(21_800);
+        let unverified = decode(70_000);
+
+        assert_eq!(unverified.header.width, 4);
+        assert_eq!(unverified.header.save_format_version, Some(70_000));
+        assert_eq!(
+            unverified.header.product_family.as_deref(),
+            Some("Inventor")
+        );
+        assert_eq!(unverified.brep.bodies.len(), 1);
+        assert_eq!(unverified.brep.faces.len(), 1);
+        assert_eq!(
+            unverified.brep.surfaces.len(),
+            verified.brep.surfaces.len(),
+            "the substituted grammar read the same carriers"
+        );
+        assert!(unverified.brep.unknowns.is_empty());
     }
 
     #[test]

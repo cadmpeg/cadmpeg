@@ -761,10 +761,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .filter_map(|segment| {
             let (status, detail) = match &segment.meta {
                 SegmentMetaState::Parsed(_) => return None,
-                SegmentMetaState::Unsupported(declared) => (
-                    "unsupported",
-                    format!("marker {:?}, version {}", declared.marker, declared.version),
-                ),
                 SegmentMetaState::Malformed { detail, .. } => ("malformed", detail.clone()),
             };
             Some(SegmentMetaIssueRecord {
@@ -1640,7 +1636,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         if carrier_read_no_geometry {
             let data = ctx.copy_retained(
                 carrier.bytes.window(),
-                "retain unsupported Inventor ACIS carrier",
+                "retain Inventor kernel carrier that read no geometry",
                 Some(carrier.bytes.location()),
             )?;
             source_fidelity.retain_unknown_records(
