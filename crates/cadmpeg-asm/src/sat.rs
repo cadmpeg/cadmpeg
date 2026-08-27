@@ -25,7 +25,7 @@ use crate::sab::{Record, Token};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dialect {
+pub enum Terminator {
     /// `End-of-ASM-data`.
     Asm,
     /// `End-of-ACIS-data`.
@@ -90,7 +90,7 @@ pub struct TextStream {
     /// lines; the stream does not always begin with `asmheader`.
     pub records: Vec<Record>,
     /// Which terminator line closed the stream.
-    pub dialect: Dialect,
+    pub terminator: Terminator,
 }
 
 /// A parse error with the byte offset where parsing could not continue.
@@ -389,16 +389,16 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
 
     let mut reader = FieldReader { bytes, pos };
     let mut records = Vec::new();
-    let mut dialect = None;
+    let mut terminator = None;
     // Record name field, then payload fields until the terminator.
     'stream: while let Some((rec_start, name)) = reader.next_field()? {
         match name.as_str() {
             "End-of-ASM-data" => {
-                dialect = Some(Dialect::Asm);
+                terminator = Some(Terminator::Asm);
                 break 'stream;
             }
             "End-of-ACIS-data" => {
-                dialect = Some(Dialect::Acis);
+                terminator = Some(Terminator::Acis);
                 break 'stream;
             }
             _ => {}
@@ -447,7 +447,7 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
             len: reader.pos - rec_start,
         });
     }
-    let Some(dialect) = dialect else {
+    let Some(terminator) = terminator else {
         return Err(SatError {
             offset: reader.pos,
             reason: "stream has no End-of-ASM-data or End-of-ACIS-data line".to_string(),
@@ -463,7 +463,7 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
     Ok(TextStream {
         header,
         records,
-        dialect,
+        terminator,
     })
 }
 
@@ -1476,7 +1476,7 @@ mod tests {
     #[test]
     fn both_dialect_headers_parse_and_record_their_terminator() {
         let asm = parse(&asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).expect("asm stream");
-        assert_eq!(asm.dialect, Dialect::Asm);
+        assert_eq!(asm.terminator, Terminator::Asm);
         assert_eq!(asm.header.save_format_version, 23200);
         assert_eq!(asm.header.record_count, 0);
         assert_eq!(asm.header.entity_count, 2);
@@ -1502,7 +1502,7 @@ mod tests {
                     Jul 17 14:48:06 2026 \n25.4 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 \
                     #\nEnd-of-ACIS-data \n";
         let acis = parse(text.as_bytes()).expect("acis stream");
-        assert_eq!(acis.dialect, Dialect::Acis);
+        assert_eq!(acis.terminator, Terminator::Acis);
         assert_eq!(acis.header.save_format_version, 700);
         assert!(approx(acis.header.scale, 25.4));
         // No asmheader record: the first record is `body` at index 0.

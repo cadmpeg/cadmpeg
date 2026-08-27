@@ -149,19 +149,19 @@ pub(crate) fn inspect(
             let parsed = sat::parse(bytes).map(|stream| (stream.header.as_kernel_header(), stream));
             let text = match &parsed {
                 Ok((kernel, stream)) => {
-                    let family = match stream.dialect {
-                        sat::Dialect::Asm => "asm",
-                        sat::Dialect::Acis => "acis",
+                    let family = match stream.terminator {
+                        sat::Terminator::Asm => "asm",
+                        sat::Terminator::Acis => "acis",
                     };
                     header_attributes(kernel, family, &mut attributes);
                     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
                     attributes.insert("records".to_string(), stream.records.len().to_string());
                     attributes.insert(
                         "terminator".to_string(),
-                        terminator_line(stream.dialect).to_string(),
+                        terminator_line(stream.terminator).to_string(),
                     );
                     Some(TextEvidence {
-                        branch: stream.dialect,
+                        branch: stream.terminator,
                         header: kernel,
                     })
                 }

@@ -46,44 +46,20 @@ fn registry_ids() -> BTreeSet<String> {
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = SatDialect::ALL
+    let pinned = StreamKind::ALL
         .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
+        .map(|kind| kind.id().as_str().to_owned())
         .collect::<BTreeSet<_>>();
 
     assert_eq!(
         pinned.len(),
-        SatDialect::ALL.len(),
+        StreamKind::ALL.len(),
         "two variants pin the same id"
     );
     assert_eq!(
         pinned,
         registry_ids(),
-        "docs/dialects.toml and SatDialect disagree; ids are pinned forever, so reconcile the enum"
-    );
-}
-
-#[test]
-fn every_stream_kind_names_its_own_row() {
-    let kinds = [
-        StreamKind::AsmBinary,
-        StreamKind::AcisBinary,
-        StreamKind::Text,
-        StreamKind::Unknown,
-    ];
-    let rows = kinds
-        .iter()
-        .map(|kind| SatDialect::from_stream_kind(*kind))
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        rows.len(),
-        kinds.len(),
-        "two stream kinds share one registry row"
-    );
-    assert_eq!(
-        rows,
-        SatDialect::ALL.into_iter().collect::<BTreeSet<_>>(),
-        "identity here is the detection discriminant and nothing else"
+        "docs/dialects.toml and StreamKind disagree; ids are pinned forever, so reconcile the enum"
     );
 }
 
@@ -124,7 +100,7 @@ fn only_the_acis_branches_are_banded() {
         for asm in [
             StreamEvidence::AsmBinary(Some(&kernel)),
             StreamEvidence::Text(Some(TextEvidence {
-                branch: sat::Dialect::Asm,
+                branch: sat::Terminator::Asm,
                 header: &kernel,
             })),
         ] {
@@ -134,7 +110,7 @@ fn only_the_acis_branches_are_banded() {
         for acis in [
             StreamEvidence::AcisBinary(Some(&kernel)),
             StreamEvidence::Text(Some(TextEvidence {
-                branch: sat::Dialect::Acis,
+                branch: sat::Terminator::Acis,
                 header: &kernel,
             })),
         ] {
@@ -204,11 +180,11 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
         StreamEvidence::AcisBinary(Some(&unverified)),
         StreamEvidence::AcisBinary(None),
         StreamEvidence::Text(Some(TextEvidence {
-            branch: sat::Dialect::Asm,
+            branch: sat::Terminator::Asm,
             header: &unverified,
         })),
         StreamEvidence::Text(Some(TextEvidence {
-            branch: sat::Dialect::Acis,
+            branch: sat::Terminator::Acis,
             header: &unverified,
         })),
         StreamEvidence::Text(None),
@@ -235,7 +211,7 @@ fn the_declared_keys_are_pinned() {
     assert!(!binary.contains_key(DECLARED_TERMINATOR));
 
     let text = classify(&StreamEvidence::Text(Some(TextEvidence {
-        branch: sat::Dialect::Acis,
+        branch: sat::Terminator::Acis,
         header: &kernel,
     })))
     .declared;
@@ -245,7 +221,7 @@ fn the_declared_keys_are_pinned() {
     assert_eq!(text[DECLARED_SAVE_FORMAT_MINOR], "4");
 
     let asm_text = classify(&StreamEvidence::Text(Some(TextEvidence {
-        branch: sat::Dialect::Asm,
+        branch: sat::Terminator::Asm,
         header: &kernel,
     })))
     .declared;
