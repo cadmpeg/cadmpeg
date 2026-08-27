@@ -4,6 +4,7 @@
 use super::*;
 use crate::test_support::{point_file, point_file_with_global};
 use crate::{IgesCodec, IgesEncoder};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::report::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
@@ -289,4 +290,89 @@ fn compressed_ascii_rejects_redundant_directory_specifiers() {
     let lines = [b"D1@1_116@2_1;".as_slice()];
     let error = parse_directory_record(&lines, 0, b';').unwrap_err();
     assert!(error.to_string().contains("Directory field 2 is redundant"));
+}
+
+/// A 26-field Global record carrying `version_flag` in field 23.
+fn compressed_global_with_version_flag(version_flag: &str) -> Vec<u8> {
+    format!(
+        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,\
+         2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{version_flag},0,0H,0H;"
+    )
+    .into_bytes()
+}
+
+/// The one dialect match of a report or summary.
+fn only_match(dialects: &[DialectMatch]) -> &DialectMatch {
+    assert_eq!(dialects.len(), 1, "{dialects:#?}");
+    assert_eq!(dialects[0].format, "iges");
+    &dialects[0]
+}
+
+#[test]
+fn compressed_ascii_classifies_into_its_own_representation_row() {
+    // The registry states Compressed ASCII at IGES 5.3, so a compressed file at
+    // flag 11 names that row rather than the Fixed ASCII one it normalizes to.
+    let source = compressed_points_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+
+    let matched = only_match(&decoded.report().dialects);
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("iges:5.3-compressed-ascii")
+    );
+    assert_eq!(matched.admission, Admission::Admitted);
+    assert_eq!(matched.declared["representation"], "compressed-ascii");
+
+    let source_meta = decoded.ir().source.as_ref().unwrap();
+    assert_eq!(source_meta.dialect, matched.dialect);
+    assert_eq!(source_meta.declared, matched.declared);
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(source),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(only_match(&summary.dialects), matched);
+}
+
+#[test]
+fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() {
+    // The registry declines to invent Compressed ASCII rows below IGES 4.0: the
+    // IGES 3.0 specification would witness them. A compressed file at flag 4
+    // therefore satisfies no row, which is the totality row's whole purpose.
+    let source = compressed_points_file_with_global(&compressed_global_with_version_flag("4"));
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+
+    let matched = only_match(&decoded.report().dialects);
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("iges:unknown")
+    );
+    assert_eq!(
+        matched.admission,
+        Admission::AdmittedUnverified {
+            nearest: DialectId::pinned("iges:5.3-compressed-ascii"),
+        }
+    );
+    assert_eq!(matched.declared["representation"], "compressed-ascii");
+    assert_eq!(matched.declared["version_flag"], "4");
+    assert_eq!(matched.declared["effective_version"], "3.0");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::SourceDialectUnverified.kind()));
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(source),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(only_match(&summary.dialects), matched);
 }
