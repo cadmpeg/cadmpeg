@@ -9,7 +9,10 @@
 //! topology. Detection uses file content because NX and Creo share the `.prt`
 //! extension.
 //!
-//! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+//! <!-- generated: capability -->
+//! Support: depth none, breadth 0 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)).
+//! <!-- /generated: capability -->
+//!
 //! Connected B-rep on selected or terminal-lineage-resolved body images
 //! shows as extras. `RMFastLoad` body selection retains every body
 //! whose complete nonempty topology node-ID set is covered by the active

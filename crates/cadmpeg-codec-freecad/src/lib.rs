@@ -8,8 +8,9 @@
 //! schema-4/file-1 application graphs. Other target bands and edits without a
 //! lossless serializer are rejected explicitly.
 //!
-//! Support level: [L5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! <!-- generated: capability -->
+//! Support: depth L5, breadth 1 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
+//! <!-- /generated: capability -->
 
 mod annotation;
 mod application;

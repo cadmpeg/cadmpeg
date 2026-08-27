@@ -3,9 +3,11 @@
 //! version-specific envelope rules; semantic rules are verified for versions
 //! 5.1, 5.2, and 5.3.
 //!
-//! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-//! for the declared Fixed ASCII mechanical/document envelope, with Compressed
-//! ASCII and Binary read normalization. Bounded
+//! <!-- generated: capability -->
+//! Support: depth L9, breadth 1 of 21 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
+//! <!-- /generated: capability -->
+//!
+//! Compressed ASCII and Binary read normalization is provided. Bounded
 //! semantic writing and independent-producer acceptance are part of the
 //! verified profile.
 

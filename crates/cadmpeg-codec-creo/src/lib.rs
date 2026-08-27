@@ -8,8 +8,9 @@
 //! the geometry, topology, sketches, and design records supported for that
 //! layout.
 //!
-//! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! <!-- generated: capability -->
+//! Support: depth L1, breadth 2 of >=2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
+//! <!-- /generated: capability -->
 //!
 //! # Quick start
 //!

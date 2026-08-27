@@ -14,6 +14,10 @@
 //! same record decoder. Other ACIS binary header bands remain identified but
 //! unsupported. A text stream frames on either branch terminator, and its
 //! decode outcome decides whether the report carries geometry.
+//!
+//! <!-- generated: capability -->
+//! Support: depth none, breadth n/a ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#asmacis-bare-satsmtsmbsab-streams)).
+//! <!-- /generated: capability -->
 
 mod decode;
 mod detect;
