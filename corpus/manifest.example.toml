@@ -17,6 +17,13 @@ filename = "bracket_single_body.f3d"
 # Codec format key: f3d | fcstd | inventor | sldprt | catia | nx | creo | rhino | iges | step | sat.
 format = "f3d"
 
+# Derived, not donor-supplied. Leave it out of a donation: the maintainer runs
+#   UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
+# which classifies the bytes and writes the docs/dialects.toml id here. It is
+# pinned like a golden, so a codec change that reclassifies the file fails a
+# test. `authoring_app_version` below is the producer axis and is unrelated.
+dialect = "f3d:manifest-3-2-0-0"
+
 # The application you authored the file in, and its exact version. Version
 # matters: container layouts and kernel encodings shift between releases.
 authoring_app = "Autodesk Fusion 360"
