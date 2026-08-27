@@ -1,5 +1,19 @@
 {
   "container_kind": "cfb",
+  "dialects": [
+    {
+      "admission": {
+        "admitted_unverified": {
+          "nearest": "inventor:cfb3-rse31-meta8"
+        }
+      },
+      "declared": {
+        "cfb_major_version": "3"
+      },
+      "dialect": "inventor:unknown",
+      "format": "inventor"
+    }
+  ],
   "entries": [
     {
       "attributes": {

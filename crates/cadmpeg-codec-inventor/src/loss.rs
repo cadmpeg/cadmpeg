@@ -87,6 +87,8 @@ pub enum InventorLossCode {
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
     AssemblyPlacementNotTransferred,
+    /// The document was read with a grammar its own declarations do not select.
+    SourceDialectUnverified,
 }
 
 impl InventorLossCode {
@@ -123,6 +125,7 @@ impl InventorLossCode {
         Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
+        Self::SourceDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -161,6 +164,7 @@ impl InventorLossCode {
             Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
         }
     }
 
@@ -209,6 +213,7 @@ impl InventorLossCode {
                 LossTaxonomy::AssemblyComponentsExternal
             }
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
 
@@ -270,6 +275,7 @@ mod tests {
                 "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
+                "source.dialect-unverified",
             ]
         );
     }

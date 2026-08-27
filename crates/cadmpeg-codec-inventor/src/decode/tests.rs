@@ -115,7 +115,14 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .iter()
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
-        [InventorLossCode::ContainerOnlyDecode.kind()]
+        // The structural fixture has no `RSeDb` stream and no segment, so it
+        // declares neither version this codec gates on and is admitted
+        // unverified. That charge is independent of the transfer, so it stands
+        // beside the container-only note.
+        [
+            InventorLossCode::SourceDialectUnverified.kind(),
+            InventorLossCode::ContainerOnlyDecode.kind()
+        ]
     );
     let namespace = container_only
         .ir()
