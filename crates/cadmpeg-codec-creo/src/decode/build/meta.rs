@@ -925,11 +925,16 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
     if let Some(value) = scan.framing.first_quilt_ptr {
         attributes.insert("first_quilt_ptr".to_string(), value.to_string());
     }
+    // The primary-layer match is the source of `dialect` and `declared`. The
+    // `layout` attribute above stays exactly as it was: the duplication is
+    // deliberate for this phase, and retiring the ad-hoc attribute keys is a
+    // later one.
+    let primary = crate::dialect::CreoDialect::classify(scan);
     (
         SourceMeta {
-            declared: BTreeMap::new(),
-            dialect: None,
-            format: "creo".to_string(),
+            declared: primary.declared,
+            dialect: primary.dialect,
+            format: crate::dialect::FORMAT.to_string(),
             attributes,
         },
         coverage,

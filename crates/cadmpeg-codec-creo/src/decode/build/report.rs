@@ -19,6 +19,7 @@ use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
     push_structural_layer_notes,
 };
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_ir::report::DecodeReport;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
@@ -95,6 +96,12 @@ pub(in super::super) fn build_report(
     let placed_plane_count = placed_plane_ids.len();
     let mut losses = Vec::new();
 
+    // The admission charge, first: it describes how the whole document was
+    // read, not what any one record cost. Derived from the same predicate as
+    // the `Admission` in the match above (`crate::dialect::layout_recovery`),
+    // so the report cannot claim a verified admission while charging the loss.
+    losses.extend(crate::dialect::dialect_loss(scan.framing.layout));
+
     if container_only {
         losses.push(
             CreoLossCode::ContainerOnlyDecode
@@ -152,9 +159,11 @@ pub(in super::super) fn build_report(
     push_structural_layer_notes(&mut losses, scan);
     push_coverage_drop_losses(&mut losses, &coverage);
 
+    let dialects = vec![crate::dialect::CreoDialect::classify(scan)];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     DecodeReport {
-        dialects: Vec::new(),
-        format: "creo".to_string(),
+        dialects,
+        format: crate::dialect::FORMAT.to_string(),
         container_only,
         geometry_transferred: has_transferred_geometry(ir),
         coverage,

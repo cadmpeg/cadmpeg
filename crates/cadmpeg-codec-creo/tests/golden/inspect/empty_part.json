@@ -1,5 +1,19 @@
 {
   "container_kind": "psb",
+  "dialects": [
+    {
+      "admission": {
+        "admitted_unverified": {
+          "nearest": "creo:unknown"
+        }
+      },
+      "declared": {
+        "version_line": "#UGC:2 P c"
+      },
+      "dialect": "creo:unknown",
+      "format": "creo"
+    }
+  ],
   "entries": [],
   "format": "creo",
   "notes": [
