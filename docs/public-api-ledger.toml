@@ -1125,3 +1125,17 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::{WriteRequest::Catalog,resolve_catalog_write,source_dialect_displaced_message}"
 reason = "write resolution carries the displaced source DialectId instead of preformatted fidelity prose; codecs charge dialect displacement through pinned loss codes while FidelityResolution remains a sidecar-consumption outcome"
+
+[[change]]
+commit = "3f334cfae5759e557c00abecb9a386ec82121cdf"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::{Inherited,resolve_inherit}"
+reason = "the enum and function had one production caller and exposed an intermediate state that resolve_write_request now handles directly"
+
+[[change]]
+commit = "3f334cfae5759e557c00abecb9a386ec82121cdf"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::{default_target,resolve_catalog_write}"
+reason = "default_target now carries the canonical descriptor directly, and resolve_catalog_write returns that descriptor without reparsing its id through a caller-supplied function"

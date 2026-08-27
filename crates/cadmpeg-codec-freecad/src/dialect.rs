@@ -39,7 +39,8 @@ use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use crate::FcstdWriteOptions;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_ir::codec::{find_target, TargetDescriptor};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -70,17 +71,16 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     default: true,
 }];
 
-/// The write options a catalog id names, or `None` for an id outside it.
-///
-/// Aliases resolve through [`find_target`], so the match below is on the
-/// canonical id only.
-pub(crate) fn target_options(id: &str) -> Option<FcstdWriteOptions> {
-    match find_target(TARGETS, id)?.id {
-        "fcstd:schema-4" => Some(FcstdWriteOptions {
+/// The write options represented by a canonical catalog entry.
+pub(crate) fn target_options(target: &TargetDescriptor) -> Result<FcstdWriteOptions, CodecError> {
+    match target.id {
+        "fcstd:schema-4" => Ok(FcstdWriteOptions {
             schema_version: 4,
             file_version: TARGET_FILE_VERSION,
         }),
-        _ => None,
+        _ => Err(CodecError::Malformed(
+            "FCStd target catalog does not map to write options".into(),
+        )),
     }
 }
 

@@ -20,8 +20,7 @@ pub(crate) fn plan<'a>(
         crate::dialect::TARGETS,
     )? {
         WriteRequest::Catalog { entry, displaced } => {
-            let version = crate::dialect::target_version(entry.id)
-                .expect("the IGES catalog row is a synthesis target");
+            let version = crate::dialect::target_version(entry)?;
             let target = crate::dialect::IgesDialect::fixed_ascii(version).id();
             let replay_declined = if displaced.is_none() {
                 match replay_bytes(input.ir, input.fidelity, &target)? {

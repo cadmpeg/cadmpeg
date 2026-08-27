@@ -164,14 +164,14 @@ impl Encoder for RhinoEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let (version, displaced) = cadmpeg_ir::codec::resolve_catalog_write(
+        let (entry, displaced) = cadmpeg_ir::codec::resolve_catalog_write(
             input.ir,
             request,
             dialect::FORMAT,
             dialect::TARGETS,
-            dialect::target_version,
             OFF_CATALOG_SOURCE_REASON,
         )?;
+        let version = dialect::target_version(entry)?;
         let mut bytes = Vec::new();
         writer::write(input.ir, version.value(), &mut bytes)?;
         let vertex_quantization = version == RhinoArchiveVersion::V5

@@ -1,4 +1,4 @@
-# generated at b614cda6e
+# generated at 3f334cfae
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -518,24 +518,6 @@ impl core::marker::Unpin for cadmpeg_ir::codec::Confidence
 impl core::marker::UnsafeUnpin for cadmpeg_ir::codec::Confidence
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::Confidence
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::Confidence
-pub enum cadmpeg_ir::codec::Inherited<'a>
-pub cadmpeg_ir::codec::Inherited::Fallback(&'static str)
-pub cadmpeg_ir::codec::Inherited::Source(&'a cadmpeg_core::dialect::DialectId)
-impl<'a> core::clone::Clone for cadmpeg_ir::codec::Inherited<'a>
-pub fn cadmpeg_ir::codec::Inherited<'a>::clone(&self) -> cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::cmp::Eq for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::cmp::PartialEq for cadmpeg_ir::codec::Inherited<'a>
-pub fn cadmpeg_ir::codec::Inherited<'a>::eq(&self, &cadmpeg_ir::codec::Inherited<'a>) -> bool
-impl<'a> core::fmt::Debug for cadmpeg_ir::codec::Inherited<'a>
-pub fn cadmpeg_ir::codec::Inherited<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::StructuralPartialEq for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::marker::Freeze for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::marker::Send for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::marker::Sync for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::marker::Unpin for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::Inherited<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::Inherited<'a>
 pub enum cadmpeg_ir::codec::TargetRequest<'a>
 pub cadmpeg_ir::codec::TargetRequest::Explicit(&'a str)
 pub cadmpeg_ir::codec::TargetRequest::Inherit
@@ -717,10 +699,9 @@ impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
-pub fn cadmpeg_ir::codec::default_target(&[cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static str>
+pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
-pub fn cadmpeg_ir::codec::resolve_catalog_write<T>(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor], impl core::ops::function::Fn(&str) -> core::option::Option<T>, &str) -> core::result::Result<(T, core::option::Option<cadmpeg_core::dialect::DialectId>), cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::resolve_inherit<'a>(&'a cadmpeg_ir::document::CadIr, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::Inherited<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::resolve_catalog_write(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::result::Result<(&'static cadmpeg_ir::codec::TargetDescriptor, core::option::Option<cadmpeg_core::dialect::DialectId>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::resolve_write_request<'a>(&'a cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::WriteRequest<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::source_dialect_displaced_message(&cadmpeg_core::dialect::DialectId, &cadmpeg_core::dialect::DialectId) -> alloc::string::String
 pub fn cadmpeg_ir::codec::unrecorded_source_dialect(&str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError

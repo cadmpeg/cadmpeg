@@ -54,7 +54,7 @@ use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::{Exchange, Value};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{find_target, TargetDescriptor};
+use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -121,22 +121,12 @@ impl StepSchema {
     }
 }
 
-/// The schema a target id names, by id or by alias, or `None` when the id is
-/// outside [`TARGETS`].
-///
-/// This is also the inherit-path predicate: a source dialect resolves to the
-/// schema that reproduces it exactly when it is a catalog row.
-///
-/// Total over the catalog: `find_target` resolves an alias to its canonical
-/// `id`, and every canonical id is some [`StepSchema`]'s `target()`. A `None`
-/// from the second step is catalog/enum drift, which
-/// `crate::writer::tests::targets::the_catalog_is_the_schemas_the_writer_emits`
-/// fails on.
-pub(crate) fn target_schema(id: &str) -> Option<StepSchema> {
-    let target = find_target(TARGETS, id)?;
+/// The schema represented by a canonical catalog entry.
+pub(crate) fn target_schema(target: &TargetDescriptor) -> Result<StepSchema, CodecError> {
     StepSchema::ALL
         .into_iter()
         .find(|schema| schema.target() == target.id)
+        .ok_or_else(|| CodecError::Malformed("STEP target catalog does not map to a schema".into()))
 }
 
 /// Key of the `FILE_SCHEMA` identifier the row keys on, in
