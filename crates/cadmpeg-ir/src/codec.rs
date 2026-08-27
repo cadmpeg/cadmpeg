@@ -84,6 +84,9 @@ pub struct DecodeResult {
 
 impl DecodeResult {
     /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
+    ///
+    /// A result whose IR has source metadata requires a primary dialect layer
+    /// for the report format. Debug builds assert this invariant.
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
         cadmpeg_core::dialect::debug_assert_primary_layer(&report.dialects, &report.format);
         if let Some(source) = ir.source.as_mut() {
