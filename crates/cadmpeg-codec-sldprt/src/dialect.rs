@@ -131,7 +131,7 @@ impl SldprtDialect {
     /// boundary value 12000 belongs to the `Eight` arm, and every declaration
     /// the padding rule cannot use — absent, non-numeric, negative,
     /// wider than `u32`, or zero — lands on [`Self::Unknown`].
-    fn from_declaration(sw_version: Option<&str>) -> Self {
+    pub(crate) fn from_declaration(sw_version: Option<&str>) -> Self {
         match form_code_padding(sw_version) {
             Some(FormCodePadding::Four) => Self::SwVersionPre12000,
             Some(FormCodePadding::Eight) => Self::SwVersion12000Plus,

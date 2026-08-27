@@ -349,36 +349,6 @@ pub enum TargetRequest<'a> {
     Explicit(&'a str),
 }
 
-impl TargetRequest<'_> {
-    /// Refuses an explicit id that `targets` does not carry.
-    ///
-    /// The whole request contract for an encoder whose resolution is still its
-    /// current behavior: the id is validated against the catalog it claims, so
-    /// a request can never be silently ignored, while `Inherit` keeps that
-    /// encoder's same-format behavior.
-    pub fn check_explicit(
-        self,
-        format: &str,
-        targets: &[TargetDescriptor],
-    ) -> Result<(), CodecError> {
-        match self {
-            Self::Inherit => Ok(()),
-            Self::Explicit(id) => {
-                if find_target(targets, id).is_some() {
-                    Ok(())
-                } else {
-                    Err(unsupported_target(
-                        format,
-                        id,
-                        "not a target this encoder can synthesize",
-                        targets,
-                    ))
-                }
-            }
-        }
-    }
-}
-
 /// One dialect an encoder can synthesize for any input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TargetDescriptor {
@@ -642,7 +612,18 @@ impl Encoder for CadirEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        request.check_explicit(self.id(), self.targets())?;
+        // The whole of resolution for an encoder with no catalog and no
+        // dialect. `Inherited` never arises: with no synthesis catalog there is
+        // no row to fall back to and no row to preserve, so `Inherit` is the
+        // only writable request and every explicit id is outside the catalog.
+        if let TargetRequest::Explicit(id) = request {
+            return Err(unsupported_target(
+                self.id(),
+                id,
+                "not a target this encoder can synthesize",
+                self.targets(),
+            ));
+        }
         let report = ExportReport {
             target: None,
             format: "cadir".into(),

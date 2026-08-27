@@ -352,15 +352,46 @@ fn f3z_archive_merges_identity_occurrences() {
         .provenance
         .keys()
         .all(|id| id.starts_with(&prefix)));
-    let mut regenerated = Vec::new();
-    let report = F3dCodec
+    // A merged F3Z has no retained image of itself, so there is nothing to
+    // preserve, and `f3d:f3z-multi-document` is not a row the generator can
+    // synthesize. `Inherit` therefore refuses by name rather than quietly
+    // handing back a single-document archive under the F3Z document's identity.
+    let error = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
+        .err()
+        .expect("the F3Z row is not a synthesis target");
+    let cadmpeg_core::CodecError::UnsupportedTarget {
+        requested,
+        available,
+        ..
+    } = &error
+    else {
+        panic!("expected a target refusal, got {error}");
+    };
+    assert_eq!(requested.as_deref(), Some("f3d:f3z-multi-document"));
+    assert!(available.contains("f3d:manifest-3-2-0-0"), "{available}");
+
+    // Naming the row is the escape, and it still regenerates the merged model
+    // as a single-document archive — now with the report saying so.
+    let mut regenerated = Vec::new();
+    let report = F3dCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        )
         .and_then(|plan| plan.write_to(&mut regenerated))
-        .expect("merged F3Z regenerates instead of replaying a member");
+        .expect("merged F3Z regenerates at the named row");
     assert!(!regenerated.is_empty());
+    assert_eq!(
+        report
+            .target
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("f3d:manifest-3-2-0-0")
+    );
     assert!(report
         .notes
         .iter()

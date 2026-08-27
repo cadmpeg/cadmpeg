@@ -908,3 +908,10 @@ crate = "cadmpeg-registry"
 kind = "addition"
 item = "cadmpeg_registry::UnknownFormat"
 reason = "the refusal print_dialects returns after losing its anyhow dependency"
+
+[[change]]
+commit = "pending"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::TargetRequest::check_explicit"
+reason = "it was a resolution mode no encoder is in any more: it validated the id and then let the encoder ignore the request. Every encoder now resolves through find_target and resolve_inherit, and CadirEncoder — no catalog, no dialect — states its one-line refusal inline"

@@ -3186,6 +3186,26 @@ pub(crate) fn declared_sw_version(scan: &ContainerScan) -> Option<String> {
     attributes.remove("sw_version")
 }
 
+/// The `swVersion` one payload declares, or `None` when the payload is not a
+/// `swSolidWorks` XML envelope or declares no version.
+///
+/// The reading [`add_solidworks_xml_metadata`] performs over a scanned
+/// document, applied to a single payload. The writer classifies the envelope it
+/// emits through this, so `ExportReport::target` and a re-decode of the written
+/// bytes read the same attribute through the same parser.
+pub(crate) fn payload_sw_version(payload: &[u8]) -> Option<String> {
+    if container::payload_family(payload) != "xml" {
+        return None;
+    }
+    let text = container::xml_text(payload)?;
+    let document = roxmltree::Document::parse(&text).ok()?;
+    let root = document.root_element();
+    if root.tag_name().name() != "swSolidWorks" {
+        return None;
+    }
+    root.attribute("swVersion").map(str::to_owned)
+}
+
 fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
     let active_configuration_name = container::active_configuration_name(scan);
     for section in scan.sections() {

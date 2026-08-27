@@ -129,13 +129,23 @@ mod tests {
 
     /// An explicit id the catalog does not carry is refused, and the refusal
     /// names the catalog so the caller can correct the request.
+    ///
+    /// Asked of `plan`, not of a request-level helper: catalog membership is
+    /// the first step of every encoder's resolution, so an empty document is
+    /// enough to reach it and the assertion covers the resolution each encoder
+    /// actually runs.
     #[test]
     fn an_unknown_explicit_target_is_refused_with_the_catalog() {
+        let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         for format in Format::ALL {
             let encoder = build_encoder(*format, LossPolicy::Report);
-            let error = TargetRequest::Explicit("nonesuch:dialect")
-                .check_explicit(encoder.id(), encoder.targets())
-                .expect_err("an id outside the catalog is refused");
+            let error = encoder
+                .plan(
+                    cadmpeg_ir::codec::EncodeInput::new(&ir, None),
+                    TargetRequest::Explicit("nonesuch:dialect"),
+                )
+                .err()
+                .expect("an id outside the catalog is refused");
             let CodecError::UnsupportedTarget {
                 requested,
                 available,
