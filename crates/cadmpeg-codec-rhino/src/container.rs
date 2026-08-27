@@ -1190,6 +1190,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     }));
     let dialects = vec![dialect_match(scan)];
     debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
+    losses.extend(dialects.first().and_then(crate::dialect::dialect_loss));
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {
@@ -1210,10 +1211,11 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
 ///
 /// Two disjoint reasons put a version here. Archive 1 has no table sequence and
 /// no mandatory end-of-file chunk, so the chunked scan does not apply to it; its
-/// own flat legacy grammar runs at decode. Archive 5 and the totality row have
-/// no grammar in this codec at all, which is
-/// [`crate::dialect::refuses_decode`] — the predicate that also decides the
-/// [`cadmpeg_core::dialect::Admission`] the report carries.
+/// own flat legacy grammar runs at decode. Archive 5 has no grammar in this
+/// codec at all, which is [`crate::dialect::refuses_decode`] — the predicate
+/// that also decides the [`cadmpeg_core::dialect::Admission`] the report
+/// carries. The totality row is not here: an undeclared word selects the same
+/// chunked scan words 2 through 90 use, so it is scanned in full.
 pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
     crate::dialect::refuses_decode(archive) || matches!(archive, ArchiveVersion::V1)
 }
@@ -1273,6 +1275,7 @@ pub(crate) fn decode(
                 | ArchiveVersion::V7
                 | ArchiveVersion::V8
                 | ArchiveVersion::V9
+                | ArchiveVersion::Other(_)
         )
     {
         return Ok(container_only_result(&scan));

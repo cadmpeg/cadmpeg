@@ -127,20 +127,51 @@ fn admission_is_refused_exactly_where_decode_is_refused() {
             refuses_decode(archive),
             "archive word {word}: admission and the decode refusal must agree"
         );
-        assert_ne!(
+    }
+}
+
+#[test]
+fn the_totality_row_is_read_on_the_newest_declared_chunked_row_and_charges_the_loss() {
+    // The residual row is admitted, not refused: words 2 through 90 are one
+    // chunked grammar, so a word no row claims still selects a scan. It names
+    // `rhino:archive-90` because that is the newest row that declares that
+    // grammar, and the charge comes from the admission itself.
+    for word in OUTSIDE {
+        let matched = classify_word(*word);
+        assert_eq!(
             matched.admission,
             Admission::AdmittedUnverified {
-                nearest: RhinoDialect::Archive80.id()
+                nearest: RhinoDialect::Archive90.id()
             },
-            "archive word {word}: this codec substitutes no row's grammar for another's"
+            "archive word {word}"
+        );
+        let note = dialect_loss(&matched).expect("an unverified admission charges its loss");
+        assert_eq!(
+            note.code,
+            crate::loss::RhinoLossCode::SourceDialectUnverified.kind(),
+            "archive word {word}"
+        );
+        assert!(
+            note.message.contains(&word.to_string()),
+            "archive word {word}: the observed word is reported"
         );
     }
 }
 
 #[test]
-fn only_archive_5_and_the_totality_row_are_refused() {
+fn a_verified_row_and_a_refused_row_charge_no_dialect_loss() {
+    for (word, _) in ENUMERATED {
+        assert!(
+            dialect_loss(&classify_word(*word)).is_none(),
+            "archive word {word}: only the totality row is unverified"
+        );
+    }
+}
+
+#[test]
+fn only_archive_5_is_refused() {
     for dialect in RhinoDialect::ALL {
-        let refused = matches!(dialect, RhinoDialect::Archive5 | RhinoDialect::Unknown);
+        let refused = matches!(dialect, RhinoDialect::Archive5);
         assert_eq!(
             dialect.refuses_decode(),
             refused,

@@ -789,12 +789,16 @@ inside the profile's L1 chunked band, but no archive 90 fixture exists"""
 
 [[support]]
 dialect = "rhino:unknown"
-read = "refused"
+grammar = "chunked"
+read = "unclassified-recovered"
 write = "none"
 fixtures = []
 reason = """
-an archive word outside the declared set; `Admission::Refused`, no decode
-attempted"""
+an archive word outside the declared set is read with the chunked scan words 2
+through 90 share, on the strategy `rhino:archive-90` declares;
+`Admission::AdmittedUnverified` and the `source.dialect-unverified` charge. No
+frozen fixture exists, so the recovery is witnessed by a synthesized archive in
+the codec's own suite, not by this table"""
 
 # --------------------------------------------------------------------------
 # fcstd

@@ -52,7 +52,10 @@ fn dialects_joins_identity_capability_and_the_compiled_catalog() {
                         .unwrap(),
                 )
                 // A read-side row is present and is not marked a target.
-                .and(predicate::str::is_match(r"rhino:unknown\s+refused\s+none\s").unwrap()),
+                .and(
+                    predicate::str::is_match(r"rhino:unknown\s+unclassified-recovered\s+none\s")
+                        .unwrap(),
+                ),
         );
 
     // The bare command covers every format the registry declares, including

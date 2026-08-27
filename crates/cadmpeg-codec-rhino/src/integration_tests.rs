@@ -25,6 +25,7 @@ mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;
 mod settings_userdata;
+mod undeclared_archive_word;
 mod unknown_userdata;
 mod v5_hatch_extra_userdata;
 mod views_userdata;

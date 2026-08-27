@@ -1007,6 +1007,9 @@ impl<'a> DecodeContext<'a> {
                 | ArchiveVersion::V7
                 | ArchiveVersion::V8
                 | ArchiveVersion::V9
+                // The residual row shares the chunked grammar, so the same
+                // semantic pass runs for it under `AdmittedUnverified`.
+                | ArchiveVersion::Other(_)
         ) {
             return;
         }
@@ -2554,6 +2557,9 @@ impl<'a> DecodeContext<'a> {
         source_fidelity.retain_unknown_records("rhino", self.opaque_records);
         let dialects = vec![dialect_match(self.scan)];
         debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
+        // Charged from the reported admission itself, so the document-level
+        // `AdmittedUnverified` and its loss cannot be reported apart.
+        losses.extend(dialects.first().and_then(crate::dialect::dialect_loss));
         DecodeResult::new(
             self.ir,
             DecodeReport {
@@ -3476,6 +3482,9 @@ fn object_geometry_archive(archive: ArchiveVersion) -> bool {
             | ArchiveVersion::V7
             | ArchiveVersion::V8
             | ArchiveVersion::V9
+            // The residual row shares the chunked grammar, so object geometry
+            // is decoded for it under `AdmittedUnverified`.
+            | ArchiveVersion::Other(_)
     )
 }
 

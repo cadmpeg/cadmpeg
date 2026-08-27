@@ -27,17 +27,25 @@
 //!
 //! # Admission is a function of the row alone
 //!
-//! Rhino never reads a document with a grammar declared for a different row.
-//! Either the codec implements the row's grammar, or it declines the row and
-//! reports the header. So [`Admission::AdmittedUnverified`] is unreachable
-//! here, and [`RhinoDialect::refuses_decode`] is the single predicate: it
-//! decides the [`Admission`] this module reports *and* the refusal
+//! Archive words 2 through 90 are one chunked grammar: the value alone selects
+//! the chunk value width and the begin-chunk form, so a word no row claims
+//! still selects a scan. The totality row is therefore read, not refused. It
+//! is read with the strategy `rhino:archive-90` declares — the newest declared
+//! chunked row — which is [`Admission::AdmittedUnverified`] with that row as
+//! `nearest`, and [`dialect_loss`] charges
+//! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] for it.
+//!
+//! Word 5 is the one structural refusal: the pre-chunk grammar it names has no
+//! reader here, so no scan applies to it at all.
+//! [`RhinoDialect::refuses_decode`] is the single predicate: it decides the
+//! [`Admission`] this module reports *and* the refusal
 //! `crate::container::decode` returns, so the two can never disagree.
 
 use crate::chunks::ArchiveVersion;
 use crate::RhinoArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::{find_target, TargetDescriptor};
+use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
@@ -207,22 +215,30 @@ impl RhinoDialect {
     /// [`Admission::Refused`] for exactly those rows, so the refusal and the
     /// reported admission cannot drift apart.
     ///
-    /// Archive word 5 has no grammar in this codec, and the totality row names
-    /// words no grammar was written for. Every other row has one: word 1 the
-    /// flat legacy records, words 2 through 90 the chunked scan.
+    /// Archive word 5 alone has no grammar in this codec: it names the
+    /// pre-chunk archive form, which no reader here implements. Every other row
+    /// has one: word 1 the flat legacy records, words 2 through 90 the chunked
+    /// scan, and the totality row that same chunked scan under
+    /// [`Admission::AdmittedUnverified`].
     pub(crate) const fn refuses_decode(self) -> bool {
-        matches!(self, Self::Archive5 | Self::Unknown)
+        matches!(self, Self::Archive5)
     }
 
     /// How a run admitted a document on this row.
     ///
-    /// Derived from [`Self::refuses_decode`] and from nothing else.
-    /// [`Admission::AdmittedUnverified`] is unreachable: this codec never
-    /// substitutes one row's grammar for another's, so no document is ever read
-    /// with a strategy its own row does not declare.
+    /// The one predicate behind both the report's [`Admission`] and
+    /// [`dialect_loss`]. A declared row that this codec reads carries a
+    /// verified identity; the totality row carries no declared identity at all,
+    /// so it names the row whose strategy was substituted for it; and word 5 is
+    /// refused, which [`Self::refuses_decode`] decides for the decode branch
+    /// too.
     const fn admission(self) -> Admission {
         if self.refuses_decode() {
             Admission::Refused
+        } else if matches!(self, Self::Unknown) {
+            Admission::AdmittedUnverified {
+                nearest: Self::Archive90.id(),
+            }
         } else {
             Admission::Admitted
         }
@@ -248,6 +264,30 @@ impl RhinoDialect {
             admission: dialect.admission(),
         }
     }
+}
+
+/// The dialect-unverified loss for a classified layer.
+///
+/// `None` exactly where `matched.admission` is not
+/// [`Admission::AdmittedUnverified`], because this reads that field rather than
+/// reclassifying. The biconditional the decode policy requires is therefore
+/// structural: the note charged and the admission reported come from one value,
+/// not from two authors agreeing.
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+        return None;
+    };
+    let word = matched
+        .declared
+        .get(DECLARED_ARCHIVE_VERSION)
+        .map_or("absent", String::as_str);
+    Some(
+        crate::loss::RhinoLossCode::SourceDialectUnverified.note(format!(
+        "archive version word {word} has no declared row, so no declared identity was verified. \
+         The document is read on {nearest}: the chunked scan words 2 through 90 share, with the \
+         chunk value width and begin-chunk form the word itself selects."
+    )),
+    )
 }
 
 /// Whether the archive word names a row this codec declines to decode.
