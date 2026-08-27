@@ -23,7 +23,7 @@ use cadmpeg_core::dialect::{primary_layer, DialectId, DialectMatch};
 use cadmpeg_ir::codec::{find_target, TargetDescriptor};
 use serde::Deserialize;
 
-use crate::{build_encoder, Format, InputCatalog, LossPolicy};
+use crate::{write_targets, Format, InputCatalog};
 
 /// The identity registry, embedded.
 const IDENTITY_TOML: &str = include_str!("../../../docs/dialects.toml");
@@ -310,82 +310,84 @@ pub fn support(dialect: &DialectId) -> Option<Disposition> {
 /// The synthesis catalog of `format`'s encoder in this build, or `None` when
 /// this build carries no encoder for it.
 fn catalog_of(format: &str) -> Option<&'static [TargetDescriptor]> {
-    Some(build_encoder(Format::from_name(format)?, LossPolicy::Report).targets())
+    Format::from_name(format).map(write_targets)
 }
 
-/// The `dialect:` line `cadmpeg inspect` prints under `format:`.
+/// What `cadmpeg inspect` knows about the dialect it matched.
 ///
-/// Three sources in one sentence: the classifier's own primary-layer match,
-/// the read disposition the capability registry records for that id, and the
-/// write targets this build's encoder for that format can synthesize. Returns
-/// `None` when the codec reported no dialects at all, which is the honest
-/// output for a codec that does not classify.
-#[must_use]
-pub fn dialect_provenance(dialects: &[DialectMatch], format: &str) -> Option<String> {
-    let entry = primary_layer(dialects, format)?;
-    let id = entry
-        .dialect
-        .as_ref()
-        .map_or_else(|| "<unmatched>".to_owned(), |id| id.as_str().to_owned());
+/// Three sources in one value: the classifier's own primary-layer match, the
+/// read disposition the capability registry records for that id, and the write
+/// targets this build's encoder for that format can synthesize. How they are
+/// rendered belongs to the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectProvenance {
+    /// The matched id, or `None` when the layer matched no declared dialect.
+    pub id: Option<DialectId>,
+    /// The declared read disposition for that id, when the registry has one.
+    pub read: Option<ReadDisposition>,
+    /// The target ids this build can synthesize for the format, in catalog
+    /// order. Empty when the build has no encoder for it, or the encoder has
+    /// no catalog.
+    pub write_targets: Vec<&'static str>,
+}
 
-    let mut clauses = Vec::new();
-    if let Some(read) = entry
-        .dialect
-        .as_ref()
-        .and_then(support)
-        .map(|disposition| disposition.read)
-    {
-        clauses.push(format!("read {read}"));
-    }
-    if let Some(catalog) = catalog_of(format) {
-        let targets = catalog
+/// The provenance of the dialect the codec matched for `format`.
+///
+/// Returns `None` when the codec reported no dialects at all, which is the
+/// honest answer for a codec that does not classify.
+#[must_use]
+pub fn dialect_provenance(dialects: &[DialectMatch], format: &str) -> Option<DialectProvenance> {
+    let entry = primary_layer(dialects, format)?;
+    Some(DialectProvenance {
+        id: entry.dialect.clone(),
+        read: entry
+            .dialect
+            .as_ref()
+            .and_then(support)
+            .map(|disposition| disposition.read),
+        write_targets: catalog_of(format)
+            .unwrap_or(&[])
             .iter()
-            .map(|target| suffix(target.id))
-            .collect::<Vec<_>>();
-        if !targets.is_empty() {
-            clauses.push(format!("write targets {}", targets.join(", ")));
-        }
-    }
-    Some(if clauses.is_empty() {
-        format!("dialect: {id}")
-    } else {
-        format!("dialect: {id} — {}", clauses.join(", "))
+            .map(|target| target.id)
+            .collect(),
     })
 }
 
-/// The part of a dialect id after its format prefix.
-fn suffix(id: &str) -> &str {
-    id.split_once(':').map_or(id, |(_, rest)| rest)
+/// One row of the format table: what this build does with one input format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatRow {
+    /// The format id.
+    pub id: &'static str,
+    /// Whether this build reads it. Every registered input descriptor is
+    /// readable, so this is always true; it is carried so the renderer states
+    /// both halves from data.
+    pub read: bool,
+    /// Whether this build writes it.
+    pub write: bool,
+    /// The extensions the detector accepts for it.
+    pub extensions: &'static [&'static str],
 }
 
-/// Prints the formats this build reads and writes.
+/// The formats this build reads and writes, in catalog order.
 ///
-/// Two columns, because reading and writing differ per format: Inventor,
-/// CATIA, Creo, NX, and SAT are read-only, and one column would have to
-/// misstate one half of each of them.
-pub fn print_formats(inputs: &InputCatalog) {
-    println!("FORMAT     READ   WRITE  EXTENSIONS");
-    for descriptor in inputs.descriptors() {
-        let id = descriptor.format_id();
-        // Every input descriptor is readable. CADIR carries no codec because
-        // the neutral document is parsed, not decoded.
-        println!(
-            "{id:<10} {:<6} {:<6} {}",
-            "yes",
-            yes_no(Format::from_name(id).is_some()),
-            descriptor.extensions.join(", ")
-        );
-    }
-    println!();
-    println!("`cadmpeg dialects [FORMAT]` lists the dialects of each format.");
-}
-
-const fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
+/// Reading and writing differ per format — Inventor, CATIA, Creo, NX, and SAT
+/// are read-only — so the row states both.
+#[must_use]
+pub fn format_rows(inputs: &InputCatalog) -> Vec<FormatRow> {
+    inputs
+        .descriptors()
+        .map(|descriptor| {
+            let id = descriptor.format_id();
+            FormatRow {
+                // Every input descriptor is readable. CADIR carries no codec
+                // because the neutral document is parsed, not decoded.
+                id,
+                read: true,
+                write: Format::from_name(id).is_some(),
+                extensions: descriptor.extensions,
+            }
+        })
+        .collect()
 }
 
 /// A `format` argument that names no section of the identity registry.
@@ -398,8 +400,42 @@ pub struct UnknownFormat {
     known: String,
 }
 
-/// Prints the identity registry crossed with the capability registry.
-pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
+/// One dialect of one format, joined across both registries and this build's
+/// encoder catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectRow {
+    /// The registry id, `<format>:<name>`.
+    pub id: &'static DialectId,
+    /// The declared read disposition, when the capability registry has a row.
+    pub read: Option<ReadDisposition>,
+    /// The declared write disposition, when the capability registry has a row.
+    pub write: Option<WriteDisposition>,
+    /// Whether this build's encoder for the format carries it as a target.
+    pub target: bool,
+    /// The human-facing name.
+    pub title: &'static str,
+}
+
+/// Every declared dialect of one format, with this build's write catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatDialects {
+    /// The format id.
+    pub format: String,
+    /// `None` when this build has no encoder for the format; otherwise the
+    /// encoder's catalog, which is empty for an encoder with no dialects.
+    pub catalog: Option<&'static [TargetDescriptor]>,
+    /// The catalog's default target id, when it declares one.
+    pub default_target: Option<&'static str>,
+    /// The declared dialects, in registry order.
+    pub rows: Vec<DialectRow>,
+}
+
+/// The identity registry crossed with the capability registry.
+///
+/// `format` selects one section; `None` returns every one. The word is
+/// resolved through [`Format::from_name`] first, so an output-format spelling
+/// and a registry section name reach the same rows.
+pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, UnknownFormat> {
     let registries = registries();
     let formats = match format {
         None => registries.formats.clone(),
@@ -416,42 +452,31 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
         }
     };
 
-    for (index, name) in formats.iter().enumerate() {
-        if index > 0 {
-            println!();
-        }
-        let catalog = catalog_of(name);
-        match catalog {
-            Some(targets) if !targets.is_empty() => {
-                let default = targets
-                    .iter()
-                    .find(|target| target.default)
-                    .map_or("none", |target| target.id);
-                println!("{name}  (write targets in this build; default {default})");
+    Ok(formats
+        .into_iter()
+        .map(|name| {
+            let catalog = catalog_of(&name);
+            FormatDialects {
+                catalog,
+                default_target: catalog
+                    .and_then(|targets| targets.iter().find(|target| target.default))
+                    .map(|target| target.id),
+                rows: registries
+                    .rows_of(&name)
+                    .map(|row| DialectRow {
+                        id: &row.id,
+                        read: row.disposition.map(|value| value.read),
+                        write: row.disposition.map(|value| value.write),
+                        target: catalog
+                            .and_then(|targets| find_target(targets, row.id.as_str()))
+                            .is_some(),
+                        title: row.title.as_str(),
+                    })
+                    .collect(),
+                format: name,
             }
-            Some(_) => println!("{name}  (this build writes it, with no dialect catalog)"),
-            None => println!("{name}  (no encoder in this build)"),
-        }
-        println!("  DIALECT                            READ                     WRITE                    TITLE");
-        for row in registries.rows_of(name) {
-            let target = catalog
-                .and_then(|targets| find_target(targets, row.id.as_str()))
-                .is_some();
-            println!(
-                "  {:<34} {:<24} {:<24} {}",
-                row.id.as_str(),
-                row.disposition
-                    .map_or_else(|| "-".to_owned(), |value| value.read.to_string()),
-                match (row.disposition.map(|value| value.write), target) {
-                    (Some(write), true) => format!("{write} (target)"),
-                    (Some(write), false) => write.to_string(),
-                    (None, _) => "-".to_owned(),
-                },
-                row.title
-            );
-        }
-    }
-    Ok(())
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -489,8 +514,7 @@ mod tests {
             .map(|row| row.id.as_str())
             .collect::<std::collections::BTreeSet<_>>();
         for format in Format::ALL {
-            let encoder = build_encoder(*format, LossPolicy::Report);
-            for target in encoder.targets() {
+            for target in write_targets(*format) {
                 assert!(ids.contains(target.id), "{}: not a registry row", target.id);
             }
         }
@@ -540,12 +564,11 @@ mod tests {
         assert!(WriteDisposition::try_from("L4".to_owned()).is_err());
     }
 
-    /// The provenance line names the id, the read disposition, and the
-    /// catalog. It is what `cadmpeg inspect` prints, so a change to any of the
-    /// three sources shows up here.
+    /// The provenance joins the match, the registry, and the catalog. Its
+    /// rendering is the CLI's; the three sources are this crate's.
     #[cfg(feature = "rhino")]
     #[test]
-    fn the_provenance_line_joins_the_match_the_registry_and_the_catalog() {
+    fn the_provenance_joins_the_match_the_registry_and_the_catalog() {
         use cadmpeg_core::dialect::Admission;
 
         let dialects = vec![DialectMatch {
@@ -554,16 +577,40 @@ mod tests {
             declared: BTreeMap::new(),
             admission: Admission::Admitted,
         }];
-        let line = dialect_provenance(&dialects, "rhino").expect("a primary layer exists");
-        assert!(line.starts_with("dialect: rhino:archive-50 — "), "{line}");
-        assert!(line.contains("read "), "{line}");
-        assert!(line.contains("write targets archive-50"), "{line}");
-        assert!(line.contains("archive-80"), "{line}");
+        let provenance = dialect_provenance(&dialects, "rhino").expect("a primary layer exists");
+        assert_eq!(
+            provenance.id.as_ref().map(DialectId::as_str),
+            Some("rhino:archive-50")
+        );
+        assert!(provenance.read.is_some());
+        assert!(provenance.write_targets.contains(&"rhino:archive-50"));
+        assert!(provenance.write_targets.contains(&"rhino:archive-80"));
     }
 
-    /// A codec that classified nothing prints no dialect line.
+    /// A codec that classified nothing has no provenance to report.
     #[test]
-    fn no_dialects_is_no_line() {
+    fn no_dialects_is_no_provenance() {
         assert!(dialect_provenance(&[], "rhino").is_none());
+    }
+
+    /// The format table states reading and writing separately.
+    #[test]
+    fn the_format_table_separates_reading_from_writing() {
+        let rows = format_rows(&InputCatalog::with_builtins());
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|row| row.read));
+        assert!(rows.iter().all(|row| !row.extensions.is_empty()));
+    }
+
+    /// The dialect table refuses a word the identity registry does not carry
+    /// and serves the same rows `dialects` does for one it carries.
+    #[test]
+    fn the_dialect_table_selects_one_format_or_every_one() {
+        assert!(dialect_table(Some("nonesuch")).is_err());
+        let all = dialect_table(None).expect("every declared format");
+        assert!(all.len() > 1);
+        let one = dialect_table(Some(&all[0].format)).expect("a declared format");
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].rows.len(), all[0].rows.len());
     }
 }

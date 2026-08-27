@@ -908,3 +908,31 @@ crate = "cadmpeg-registry"
 kind = "addition"
 item = "cadmpeg_registry::UnknownFormat"
 reason = "the refusal print_dialects returns after losing its anyhow dependency"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::{print_formats,print_dialects}"
+reason = "a library does not own stdout; the registry returns rows and the CLI's `registry_view` renders them, so `cadmpeg formats` and `cadmpeg dialects` keep their exact output while an embedder gets the data"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::dialect_provenance"
+reason = "returns DialectProvenance instead of a pre-rendered String; the three sources are the registry's, the sentence is the CLI's"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::{format_rows,dialect_table,DialectProvenance,FormatRow,FormatDialects,DialectRow}"
+reason = "the data behind the two table commands: what this build reads and writes, and the identity registry crossed with the capability registry and the compiled catalogs"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::write_targets"
+reason = "the catalog is static per format, so reading it needed no encoder instance; `catalog_of` was boxing an encoder with a dummy LossPolicy::Report to reach a 'static table"

@@ -34,12 +34,13 @@ pub use catalog::{
     DetectionOutcome, ForcedInput, InputCatalog, InputDescriptor, ResolveSourceError,
     ResolvedSource,
 };
-pub use encoders::{build_encoder, LossPolicy};
+pub use encoders::{build_encoder, write_targets, LossPolicy};
 pub use format::Format;
 pub use identify::{
     identify, identify_with, Identification, DETECTION_PREFIX_LEN, INSPECTION_FLOOR,
 };
 pub use support::{
-    dialect_provenance, dialects, print_dialects, print_formats, support, DialectEntry,
-    Disposition, ReadDisposition, UnknownDisposition, UnknownFormat, WriteDisposition,
+    dialect_provenance, dialect_table, dialects, format_rows, support, DialectEntry,
+    DialectProvenance, DialectRow, Disposition, FormatDialects, FormatRow, ReadDisposition,
+    UnknownDisposition, UnknownFormat, WriteDisposition,
 };

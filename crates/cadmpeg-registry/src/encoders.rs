@@ -11,7 +11,7 @@
 use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::TargetRequest;
-use cadmpeg_ir::codec::{CadirEncoder, Encoder};
+use cadmpeg_ir::codec::{CadirEncoder, Encoder, TargetDescriptor};
 
 use crate::Format;
 
@@ -64,6 +64,32 @@ pub fn build_encoder(format: Format, losses: LossPolicy) -> Box<dyn Encoder> {
         Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder),
         #[cfg(feature = "iges")]
         Format::Iges => Box::new(cadmpeg_codec_iges::IgesEncoder),
+    }
+}
+
+/// The synthesis catalog of an export format's encoder in this build.
+///
+/// The catalog is static per format and independent of every constructor
+/// knob: per-codec options configure how a target is written, never which
+/// ones exist. Reading it therefore needs no encoder instance, and a caller
+/// that only wants the table does not have to invent a [`LossPolicy`] to get
+/// one.
+#[must_use]
+pub fn write_targets(format: Format) -> &'static [TargetDescriptor] {
+    match format {
+        Format::Cadir => Encoder::targets(&CadirEncoder),
+        #[cfg(feature = "step")]
+        Format::Step => Encoder::targets(&cadmpeg_codec_step::StepCodec::default()),
+        #[cfg(feature = "fcstd")]
+        Format::Fcstd => Encoder::targets(&cadmpeg_codec_freecad::FcstdCodec),
+        #[cfg(feature = "f3d")]
+        Format::F3d => Encoder::targets(&cadmpeg_codec_f3d::F3dCodec),
+        #[cfg(feature = "sldprt")]
+        Format::Sldprt => Encoder::targets(&cadmpeg_codec_sldprt::SldprtCodec),
+        #[cfg(feature = "rhino")]
+        Format::Rhino => Encoder::targets(&cadmpeg_codec_rhino::RhinoEncoder),
+        #[cfg(feature = "iges")]
+        Format::Iges => Encoder::targets(&cadmpeg_codec_iges::IgesEncoder),
     }
 }
 

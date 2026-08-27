@@ -14,8 +14,8 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 use cadmpeg_registry::{
-    build_encoder, dialect_provenance, ForcedInput, Format, InputCatalog, LossPolicy,
-    ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
+    build_encoder, ForcedInput, Format, InputCatalog, LossPolicy, ResolveSourceError,
+    ResolvedSource, DETECTION_PREFIX_LEN,
 };
 
 use crate::application::{
@@ -181,7 +181,7 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
-    if let Some(line) = dialect_provenance(&summary.dialects, &summary.format) {
+    if let Some(line) = crate::registry_view::dialect_line(&summary.dialects, &summary.format) {
         println!("{line}");
     }
     println!();
