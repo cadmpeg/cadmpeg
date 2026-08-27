@@ -711,7 +711,10 @@ fn strict_decode_rejects_noncanonical_complex_partial_order() {
 
 #[test]
 fn strict_decode_rejects_omitted_entity_name_recovery() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    // The schema is a declared dialect so that the refusal this test asserts is
+    // the omitted-name one. A bare 'AP242' declares no registry row and would
+    // refuse first on `source.dialect-unverified`.
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
     let error = StepCodec::default()

@@ -34,6 +34,8 @@ pub enum StepLossCode {
     MetadataStringInvalid,
     /// A `FILE_SCHEMA` object identifier component is out of range.
     SchemaObjectIdentifierOutOfRange,
+    /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
+    SourceDialectUnverified,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
     /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
@@ -304,6 +306,7 @@ impl StepLossCode {
         Self::OpaqueRecordPreserved,
         Self::MetadataStringInvalid,
         Self::SchemaObjectIdentifierOutOfRange,
+        Self::SourceDialectUnverified,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
         Self::ConflictingRepresentationUnits,
@@ -447,6 +450,7 @@ impl StepLossCode {
             Self::SchemaObjectIdentifierOutOfRange => {
                 "metadata.schema-object-identifier-out-of-range"
             }
+            Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
             Self::ConflictingRepresentationUnits => "geometry.conflicting-representation-units",
@@ -662,6 +666,7 @@ impl StepLossCode {
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
             }
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -833,6 +838,7 @@ mod tests {
                 "decode.opaque-record-preserved",
                 "metadata.string-invalid",
                 "metadata.schema-object-identifier-out-of-range",
+                "source.dialect-unverified",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
                 "geometry.conflicting-representation-units",

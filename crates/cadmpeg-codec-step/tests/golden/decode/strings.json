@@ -62,6 +62,11 @@
         "entity_instances": "1",
         "schema": "AP214"
       },
+      "declared": {
+        "file_schema_identifier": "AP214",
+        "implementation_level": "2;1"
+      },
+      "dialect": "step:unknown",
       "format": "step"
     },
     "tolerances": {
@@ -74,9 +79,33 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "step:ap242-e3"
+          }
+        },
+        "declared": {
+          "file_schema_identifier": "AP214",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:unknown",
+        "format": "step"
+      }
+    ],
     "format": "step",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "step"
+        },
+        "message": "FILE_SCHEMA identifier AP214; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "geometry.document-length-unit-unresolved",

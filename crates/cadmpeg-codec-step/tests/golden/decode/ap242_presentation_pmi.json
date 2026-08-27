@@ -136,6 +136,11 @@
         "entity_instances": "10",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
+      "declared": {
+        "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+        "implementation_level": "2;1"
+      },
+      "dialect": "step:ap242",
       "format": "step"
     },
     "tolerances": {
@@ -148,6 +153,17 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap242",
+        "format": "step"
+      }
+    ],
     "format": "step",
     "geometry_transferred": false,
     "losses": [

@@ -316,7 +316,10 @@ witness = "code:crates/cadmpeg-codec-iges/src/dialect.rs"
 #     `allows_edition3_sections` gates ANCHOR/REFERENCE/multi-DATA and
 #     `allows_class3_occurrences` gates class-3 occurrences (parse.rs:445-460).
 #     Crossing this axis with the schema axis would make the rows disjoint at
-#     the cost of ~45 rows, most unwitnessed. The codec owner settles it.
+#     the cost of ~45 rows, most unwitnessed. Settled: the implementation level
+#     stays off the identity axis. `StepDialect::classify`
+#     (crates/cadmpeg-codec-step/src/dialect.rs) records it verbatim in
+#     `DialectMatch.declared` under `implementation_level` and no row reads it.
 #
 # The RFC's draft inventory called the AP schema "a *target* axis, not a read
 # dialect". Code disagrees in one direction: it is not a read *dispatch* axis,
@@ -339,9 +342,15 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap203_sheet.p21"
 [[dialect]]
 # `StepSchema::Ap203Edition2` (options.rs:84). No fixture carries this
 # identifier.
+# The discriminant is the schema name. The arcs the encoder writes,
+# `{ 1 0 10303 403 2 1 2 }`, discriminate nothing: this is the only edition-2
+# AP203 row, and `StepDialect::from_schema_identifier` matches the bare name
+# exactly as `schema_identifier_matches` (parse.rs) does for AP214 and AP203
+# edition 1. Only the AP242 rows key on arcs, because three of them share one
+# name.
 id = "step:ap203-e2"
 title = "STEP AP203 edition 2 (AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF)"
-discriminants = { file_schema_identifier = "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }" }
+discriminants = { file_schema_identifier = "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF" }
 witness = "code:crates/cadmpeg-codec-step/src/options.rs:84"
 
 [[dialect]]
@@ -358,6 +367,24 @@ id = "step:ap214"
 title = "STEP AP214 (AUTOMOTIVE_DESIGN)"
 discriminants = { file_schema_identifier = "AUTOMOTIVE_DESIGN" }
 witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21"
+
+[[dialect]]
+# The AP242 schema name with no object identifier. Part 21 makes the object
+# identifier optional, so this is a complete, legal declaration: it names the
+# schema and leaves the edition unspecified. No `StepSchema` variant writes this
+# form -- the encoder always emits arcs -- but it is the form 13 in-tree
+# fixtures declare, so the region exists whether or not cadmpeg writes it.
+# `StepDialect::Ap242` (crates/cadmpeg-codec-step/src/dialect.rs) is the only
+# row reached with the AP242 name and no arcs.
+# Disposition: admitted. The reader's single Part 21 grammar is this row's
+# declared strategy, and the edition axis is undeclared rather than substituted,
+# so no dialect-unverified loss is charged and `DecodeMode::Strict` accepts
+# these files.
+id = "step:ap242"
+title = "STEP AP242, edition unspecified"
+discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "absent" }
+seam = "the object identifier is optional in Part 21 and is absent here, so edition-gated behaviour cannot be verified against the declaration"
+witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_geometry.p21"
 
 [[dialect]]
 # `StepSchema::Ap242Edition1` (options.rs:86); recognizer arcs
@@ -392,12 +419,15 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:100"
 
 [[dialect]]
 # `is_part28_xml` (codec.rs:416-437), namespaces at codec.rs:441-444.
-# Disposition: `CodecError::NotImplemented("STEP Part 28 XML encoding")`
-# (codec.rs:384-388), reached from `refuse_alternate_encoding` before the
-# ISO-10303-21 magic test. `detect` returns Medium (codec.rs:54-59) so the
+# Disposition: `CodecError::NotImplemented("STEP Part 28 XML encoding")` from
+# `StepDialect::alternate_encoding_refusal` (dialect.rs), returned by
+# `refuse_alternate_encoding` before the ISO-10303-21 magic test. `detect` returns Medium (codec.rs:54-59) so the
 # codec claims the file and refuses it rather than letting another codec
-# mis-decode it. Structurally identified, semantic decode refused --
-# `Admission::Refused`.
+# mis-decode it. Structurally identified, semantic decode refused. The refusal
+# returns before any exchange structure or report exists, so this row and the
+# two below produce no `DialectMatch` today and `Admission::Refused` is
+# unreachable in this codec; `StepDialect::alternate_encoding_refusal`
+# (dialect.rs) is where the three rows and their refusal messages are named.
 id = "step:part28-xml"
 title = "ISO 10303-28 edition 2 XML encoding"
 discriminants = { xml_root_namespace = "urn:oid:1.0.10303.28.2.1.1 | urn:iso:std:iso:10303:-28:ed-2:tech:XMLschema:common | urn:iso.org:standard:10303:part(28):version(2):xmlschema:common" }
@@ -405,8 +435,8 @@ seam = "an XML encoding of the same schemas; no Part-21 exchange structure at al
 witness = "code:crates/cadmpeg-codec-step/src/codec.rs:441"
 
 [[dialect]]
-# `is_ap242_bo_model_xml` (codec.rs:587+), namespaces at codec.rs:605-608.
-# Refused at codec.rs:389-393.
+# `is_ap242_bo_model_xml` (codec.rs), namespaces at codec.rs:605-608.
+# Refused by `refuse_alternate_encoding` (dialect.rs).
 id = "step:ap242-bo-model-xml"
 title = "AP242 Business Object Model XML sidecar"
 discriminants = { xml_root_namespace = "http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model | .../-ed-2/..." }
@@ -414,7 +444,8 @@ witness = "code:crates/cadmpeg-codec-step/src/codec.rs:605"
 
 [[dialect]]
 # HDF5 signature at offset 0 or at doubling offsets from 512
-# (codec.rs:397-414). Refused at codec.rs:379-383.
+# (`is_part26_hdf5`, codec.rs). Refused by `refuse_alternate_encoding`
+# (dialect.rs).
 id = "step:part26-hdf5"
 title = "ISO 10303-26 binary/HDF5 encoding"
 discriminants = { magic = "\\x89HDF\\r\\n\\x1a\\n" }
@@ -422,12 +453,18 @@ witness = "code:crates/cadmpeg-codec-step/src/codec.rs:399"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). A Part-21 exchange whose FILE_SCHEMA
-# identifier matches no `StepSchema` variant is admitted and decoded: the
-# schema string is recorded (reader/mod.rs:1099-1101) and nothing branches on
-# it. In-tree fixtures land here through two identifiers that match no
-# variant ('AP214', 'AUTOMOTIVE_DESIGN_CC2') and through AP242 declarations
-# that lack the object-identifier arcs an edition requires (`ap242_edition`,
-# options.rs:92-104, matches the arc-bearing form only).
+# identifier satisfies no row above is admitted and decoded: the schema string
+# is recorded (reader/mod.rs) and nothing branches on it. Two kinds of
+# declaration reach here:
+#   - an identifier whose schema name matches no row's name. In-tree fixtures:
+#     'AP214' (strings.p21), 'AUTOMOTIVE_DESIGN_CC2'
+#     (noncanonical_solid_angle.p21), and the literal 'AP242'
+#     (ap242_ed3_sections.p21), none of which is a declared schema name.
+#   - the AP242 schema name carrying an object identifier that names no
+#     declared edition (`ap242_edition`, options.rs:92-104), including arcs
+#     that do not read as a numeric object identifier. An edition claim
+#     matching nothing is an unrecognized declaration; making no claim at all
+#     is `step:ap242`.
 # Disposition: admitted-unverified.
 id = "step:unknown"
 title = "ISO 10303-21 exchange with an unrecognized FILE_SCHEMA identifier"

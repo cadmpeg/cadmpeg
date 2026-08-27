@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
@@ -10,6 +11,7 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::FidelityResolution;
 
 use crate::archive;
+use crate::dialect::{refuse_alternate_encoding, StepDialect};
 use crate::export::write_step;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::parse;
@@ -207,8 +209,10 @@ impl CodecBackend for StepCodec {
             .unwrap_or("edition unspecified");
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
+        let dialects = vec![StepDialect::classify(&exchange)];
+        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         Ok(ContainerSummary {
-            dialects: Vec::new(),
+            dialects,
             format: "step".into(),
             container_kind: "iso-10303-21-clear-text".into(),
             entries,
@@ -287,7 +291,7 @@ fn inspect_zip(
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
     let (archive, root_view) = archive::open_root(ctx, root)?;
-    let root_summary = StepCodec::default().inspect_impl(ctx, root_view)?;
+    let mut root_summary = StepCodec::default().inspect_impl(ctx, root_view)?;
     let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
     let entry_count = archive.entries().len();
     let root_entry = archive
@@ -313,10 +317,15 @@ fn inspect_zip(
         format!("root {}", archive::ROOT_NAME),
         format!("archive entries={entry_count}; root data offset={root_data_offset}"),
     ];
-    notes.extend(root_summary.notes);
+    notes.extend(std::mem::take(&mut root_summary.notes));
     notes.extend(resource_notes);
+    // ZIP packaging is a container fact, not an identity axis: the
+    // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
+    // document, so the root's own match is this summary's match.
+    let dialects = std::mem::take(&mut root_summary.dialects);
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(ContainerSummary {
-        dialects: Vec::new(),
+        dialects,
         format: "step".into(),
         container_kind: "iso-10303-21-zip".into(),
         entries,
@@ -366,37 +375,7 @@ fn decode_zip(
     Ok(result)
 }
 
-fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    // CE-03/CE-04: Part 28 marker detection is not UOS conformance or schema
-    // mapping. The caller owns the exact binding, governing EXPRESS schema,
-    // derived XML Schema, identity/reference checks, and validation result;
-    // this codec has no Part 28 adapter and builds no partial graph.
-    // CE-05: HDF5 signature detection is not HDF5 validation or Part 26
-    // mapping. The caller owns the mapping edition, governing EXPRESS schema,
-    // HDF5 and Part 26 validation, resource-local row/reference mapping, and
-    // malformed-input result; this codec builds no partial graph.
-    // CE-06: Part 26 and Part 21 resource graphs have no universal join. The caller
-    // owns the exact resource identities, row-to-occurrence map, schema/unit/context
-    // agreement, conflict policy, and retention of both source graphs.
-    if is_part26_hdf5(bytes) {
-        return Err(CodecError::NotImplemented(
-            "STEP Part 26 binary/HDF5 encoding".into(),
-        ));
-    }
-    if is_part28_xml(bytes) {
-        return Err(CodecError::NotImplemented(
-            "STEP Part 28 XML encoding".into(),
-        ));
-    }
-    if is_ap242_bo_model_xml(bytes) {
-        return Err(CodecError::NotImplemented(
-            "AP242 BO-Model XML sidecar".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn is_part26_hdf5(bytes: &[u8]) -> bool {
+pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {
     const SIGNATURE: &[u8] = b"\x89HDF\r\n\x1a\n";
     if bytes.starts_with(SIGNATURE) {
         return true;
@@ -415,7 +394,7 @@ fn is_part26_hdf5(bytes: &[u8]) -> bool {
     false
 }
 
-fn is_part28_xml(bytes: &[u8]) -> bool {
+pub(crate) fn is_part28_xml(bytes: &[u8]) -> bool {
     let bytes = &bytes[..bytes.len().min(4096)];
     let Some((name, attributes)) = xml_root_start_tag(bytes) else {
         return false;
@@ -586,7 +565,7 @@ fn xml_attribute_value(
     None
 }
 
-fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
+pub(crate) fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
     let bytes = &bytes[..bytes.len().min(4096)];
     let Some((name, attributes)) = xml_root_start_tag(bytes) else {
         return false;
