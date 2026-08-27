@@ -188,13 +188,8 @@ fn parse_carrier<'a>(
 ) -> Result<ActiveCarrier<'a>, CodecError> {
     let bytes = payload.window();
     let footer_len = match segment_version_major {
-        15..=22 => 17,
+        0..=22 => 17,
         23..=u8::MAX => 18,
-        value => {
-            return Err(CodecError::NotImplemented(format!(
-                "Inventor kernel-carrier envelope for segment version {value} is not implemented"
-            )));
-        }
     };
     if bytes.len() < carrier_header::LEN + footer_len {
         return Err(CodecError::Malformed(
@@ -399,6 +394,37 @@ mod tests {
             "the substituted grammar read the same carriers"
         );
         assert!(unverified.brep.unknowns.is_empty());
+    }
+
+    #[test]
+    fn pre_15_segment_version_attempts_the_nearest_footer_and_reads_the_same_records() {
+        let decode = |segment_version_major| {
+            let bytes = carrier_fixture(&acis_sphere_kernel_stream(21_800), segment_version_major);
+            let arena = DecodeArena::new();
+            let (ctx, view) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("synthetic carrier fits policy");
+            let carrier = parse_carrier(view, "token", 7, 100, segment_version_major)
+                .expect("nearest footer frames");
+            decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
+        };
+
+        let in_band = decode(15);
+        let recovered = decode(14);
+        assert_eq!(recovered.brep.bodies.len(), in_band.brep.bodies.len());
+        assert_eq!(recovered.brep.faces.len(), in_band.brep.faces.len());
+        assert_eq!(recovered.brep.surfaces.len(), in_band.brep.surfaces.len());
+    }
+
+    #[test]
+    fn pre_15_segment_version_over_garbage_is_malformed() {
+        let bytes = carrier_fixture(b"not a kernel carrier", 14);
+        with_view(&bytes, |view| {
+            assert!(matches!(
+                parse_carrier(view, "token", 7, 100, 14),
+                Err(CodecError::Malformed(_))
+            ));
+        });
     }
 
     #[test]
