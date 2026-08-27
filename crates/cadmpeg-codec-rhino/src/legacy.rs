@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -26,6 +27,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
+use crate::dialect::RhinoDialect;
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 
@@ -2121,11 +2123,16 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     }
     offset = comment.next_offset;
 
+    // The flat legacy grammar is the strategy `rhino:archive-1` declares, so
+    // this path admits the document on its own row. It reads no properties
+    // table, so no openNURBS writer-version stamp is declared.
+    let primary = RhinoDialect::classify(ArchiveVersion::V1, None);
+
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {
-        declared: BTreeMap::new(),
-        dialect: None,
-        format: "rhino".to_string(),
+        declared: primary.declared.clone(),
+        dialect: primary.dialect.clone(),
+        format: crate::dialect::FORMAT.to_string(),
         attributes: BTreeMap::from([("archive_version".to_string(), "1".to_string())]),
     });
     let mut decoded = 0_usize;
@@ -2428,11 +2435,13 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records("rhino", opaque_records);
+    let dialects = vec![primary];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
-dialects: Vec::new(),
-            format: "rhino".to_string(),
+            dialects,
+            format: crate::dialect::FORMAT.to_string(),
             container_only: false,
             geometry_transferred: decoded > 0
                 || decoded_curves > 0

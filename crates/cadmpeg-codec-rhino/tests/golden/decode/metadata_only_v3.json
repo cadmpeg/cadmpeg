@@ -99,6 +99,10 @@
         "archive_version": "3",
         "container_kind": "3dm-chunks"
       },
+      "declared": {
+        "archive_version": "3"
+      },
+      "dialect": "rhino:archive-3",
       "format": "rhino"
     },
     "tolerances": {
@@ -111,6 +115,16 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "3"
+        },
+        "dialect": "rhino:archive-3",
+        "format": "rhino"
+      }
+    ],
     "format": "rhino",
     "geometry_transferred": false,
     "losses": [

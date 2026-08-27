@@ -1,5 +1,16 @@
 {
   "container_kind": "3dm-chunks",
+  "dialects": [
+    {
+      "admission": "admitted",
+      "declared": {
+        "archive_version": "80",
+        "opennurbs_writer_version": "200712190"
+      },
+      "dialect": "rhino:archive-80",
+      "format": "rhino"
+    }
+  ],
   "entries": [
     {
       "attributes": {

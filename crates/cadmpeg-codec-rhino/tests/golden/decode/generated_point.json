@@ -260,6 +260,11 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
+      "declared": {
+        "archive_version": "80",
+        "opennurbs_writer_version": "200712190"
+      },
+      "dialect": "rhino:archive-80",
       "format": "rhino"
     },
     "tolerances": {
@@ -272,6 +277,17 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "80",
+          "opennurbs_writer_version": "200712190"
+        },
+        "dialect": "rhino:archive-80",
+        "format": "rhino"
+      }
+    ],
     "format": "rhino",
     "geometry_transferred": true,
     "losses": [

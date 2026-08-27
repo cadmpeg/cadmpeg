@@ -23,6 +23,7 @@ pub(crate) mod curve_on_surface;
 pub(crate) mod curves;
 pub(crate) mod decode;
 pub(crate) mod detail;
+pub(crate) mod dialect;
 pub(crate) mod dimensions;
 pub(crate) mod document_data;
 pub(crate) mod extrusion;
