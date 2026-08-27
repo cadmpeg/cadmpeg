@@ -1280,7 +1280,7 @@ fn missing_stamp_promotes_brep_warnings_to_typed_loss_codes() {
     );
     assert!(
         unstamped.report().losses.iter().any(|loss| loss.code
-            == RhinoLossCode::SourceDialectUnverified.kind()
+            == RhinoLossCode::SourceWriterStampUnverified.kind()
             && loss.message.contains("edge domains")),
         "{:?}",
         unstamped.report().losses
@@ -1299,7 +1299,7 @@ fn missing_stamp_promotes_brep_warnings_to_typed_loss_codes() {
     assert!(
         !stamped.report().losses.iter().any(|loss| {
             loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()
-                || loss.code == RhinoLossCode::SourceDialectUnverified.kind()
+                || loss.code == RhinoLossCode::SourceWriterStampUnverified.kind()
         }),
         "{:?}",
         stamped.report().losses

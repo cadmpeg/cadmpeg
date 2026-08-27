@@ -467,8 +467,12 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # with a grammar role inside a dialect -- design §3.4 -- and stays out of the
 # discriminant set. It is recorded verbatim as the `opennurbs_writer_version`
 # declared key on the paths that read the PROPERTIES table, and a missing stamp
-# is charged per record (`RhinoLossCode::SourceDialectUnverified`), never at the
-# archive level.
+# is charged per record as `rhino/source.writer-stamp-unverified`
+# (`RhinoLossCode::SourceWriterStampUnverified`), never at the archive level.
+# That code is deliberately distinct from the document-level
+# `source.dialect-unverified` the other codecs charge when admission is
+# `AdmittedUnverified`: rhino charges the per-record one inside admitted
+# documents, so the two must not share a string.
 [format.rhino]
 complete = true
 

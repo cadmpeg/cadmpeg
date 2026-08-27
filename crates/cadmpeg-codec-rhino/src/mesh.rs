@@ -432,7 +432,7 @@ pub(crate) fn decode(
             decoded.warnings.push(format!(
                 "ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, \
                  double-precision vertices) because {}",
-                crate::loss::DIALECT_UNVERIFIED_MARKER
+                crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
             ));
         }
     }

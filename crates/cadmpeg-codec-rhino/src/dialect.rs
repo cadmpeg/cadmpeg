@@ -20,7 +20,7 @@
 //! The ~235 per-record version words inside an admitted archive never split a
 //! dialect (B2). They are losses inside a dialect, and the openNURBS
 //! writer-version stamp census that charges
-//! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] is exactly that: a
+//! [`crate::loss::RhinoLossCode::SourceWriterStampUnverified`] is exactly that: a
 //! per-record substitution inside an archive whose own version this codec
 //! reads with the grammar declared for it. Archive-level admission is
 //! orthogonal to that census and must never be derived from it.
@@ -60,7 +60,7 @@ const DECLARED_ARCHIVE_VERSION: &str = "archive_version";
 /// reading and the legacy B-rep field layouts — but it is not an admission
 /// discriminant. A stamp-less archive is still read with the grammar its
 /// archive word declares; what it loses is charged per record
-/// ([`crate::loss::RhinoLossCode::SourceDialectUnverified`]), never at the
+/// ([`crate::loss::RhinoLossCode::SourceWriterStampUnverified`]), never at the
 /// archive level.
 const DECLARED_OPENNURBS_WRITER_VERSION: &str = "opennurbs_writer_version";
 

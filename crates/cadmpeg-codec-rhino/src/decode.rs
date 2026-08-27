@@ -2469,7 +2469,7 @@ impl<'a> DecodeContext<'a> {
             if integrity_diagnostic(warning) {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
             } else if dialect_unverified_diagnostic(warning) {
-                RhinoLossCode::SourceDialectUnverified.note(warning.clone())
+                RhinoLossCode::SourceWriterStampUnverified.note(warning.clone())
             } else if warning.contains(" has invalid color source ") {
                 RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
             } else if brep_mesh_cache_diagnostic(warning) {
@@ -2489,7 +2489,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             if dialect_unverified_diagnostic(warning) {
-                losses.push(RhinoLossCode::SourceDialectUnverified.note(warning.clone()));
+                losses.push(RhinoLossCode::SourceWriterStampUnverified.note(warning.clone()));
                 continue;
             }
             if brep_mesh_cache_diagnostic(warning) {
@@ -3390,7 +3390,7 @@ impl<'a> DecodeContext<'a> {
                             );
                         } else if dialect_unverified_diagnostic(&warning) {
                             self.typed_losses
-                                .push(RhinoLossCode::SourceDialectUnverified.note(&warning));
+                                .push(RhinoLossCode::SourceWriterStampUnverified.note(&warning));
                         } else if let Some(cause) = warning.strip_prefix("Brep topology fallback: ")
                         {
                             self.typed_losses.push(
@@ -3497,7 +3497,7 @@ fn redundant_field_diagnostic(message: &str) -> bool {
 
 /// True for a diagnostic raised because the archive carries no writer stamp.
 fn dialect_unverified_diagnostic(message: &str) -> bool {
-    message.contains(crate::loss::DIALECT_UNVERIFIED_MARKER)
+    message.contains(crate::loss::WRITER_STAMP_UNVERIFIED_MARKER)
 }
 
 fn brep_mesh_cache_diagnostic(message: &str) -> bool {
@@ -4641,7 +4641,7 @@ fn brep_body_kind(
                     "{BODY_KIND_GAUGE_PREFIX}stored solid flag {} was trusted over the \
                      closed-shell gauge because {}",
                     raw.is_solid.unwrap_or(-1),
-                    crate::loss::DIALECT_UNVERIFIED_MARKER
+                    crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
                 )
             },
         );

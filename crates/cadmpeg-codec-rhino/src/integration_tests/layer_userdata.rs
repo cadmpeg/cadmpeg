@@ -207,7 +207,7 @@ fn unstamped_layer_promotes_the_parent_link_warning_to_a_typed_loss_code() {
     let unstamped = decode(document_with_stamp(archive, layer.clone(), None));
     assert!(
         unstamped.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::SourceDialectUnverified.kind()
+            loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()
                 && loss.message.contains("layer parent link")
         }),
         "{:?}",
@@ -224,7 +224,7 @@ fn unstamped_layer_promotes_the_parent_link_warning_to_a_typed_loss_code() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == crate::loss::RhinoLossCode::SourceDialectUnverified.kind()),
+            .any(|loss| loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()),
         "{:?}",
         stamped.report().losses
     );
