@@ -457,3 +457,47 @@ pub fn export_target(
         selection,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::codec::CadirEncoder;
+
+    /// Flag absence is read against the source, not against the format table.
+    ///
+    /// Within one format it inherits, which is what keeps a no-op round trip
+    /// byte-identical. Across formats there is nothing to inherit, so it is the
+    /// catalog default. An encoder with no catalog inherits either way.
+    #[test]
+    fn flag_absence_inherits_only_within_one_format() {
+        #[cfg(feature = "iges")]
+        {
+            let iges = cadmpeg_codec_iges::IgesEncoder::default();
+            assert_eq!(
+                TargetSelection::Unstated.request(&iges, Some("iges")),
+                TargetRequest::Inherit
+            );
+            assert_eq!(
+                TargetSelection::Unstated.request(&iges, Some("step")),
+                TargetRequest::Explicit("iges:5.3-fixed-ascii")
+            );
+            assert_eq!(
+                TargetSelection::Unstated.request(&iges, None),
+                TargetRequest::Explicit("iges:5.3-fixed-ascii")
+            );
+            let named = TargetSelection::Explicit("iges:5.1-fixed-ascii".to_owned());
+            assert_eq!(
+                named.request(&iges, Some("iges")),
+                TargetRequest::Explicit("iges:5.1-fixed-ascii")
+            );
+        }
+        assert_eq!(
+            TargetSelection::Unstated.request(&CadirEncoder, Some("iges")),
+            TargetRequest::Inherit
+        );
+        assert_eq!(
+            TargetSelection::Unstated.request(&CadirEncoder, Some("cadir")),
+            TargetRequest::Inherit
+        );
+    }
+}

@@ -90,10 +90,17 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 /// the replay law's compare: byte replay is eligible exactly when `id` is the
 /// source's dialect.
 ///
-/// `Inherit` still resolves to the encoder's configured target. Preservation of
-/// a source dialect the semantic writer cannot synthesize is this codec's own
-/// resolution step and lands next; the request now reaches the encoder, which is
-/// what that step needs.
+/// `Inherit` asks for preservation instead: a valid retained baseline replays
+/// whatever dialect the source is, Compressed ASCII and Binary included, which
+/// the semantic writer could never synthesize. Where the baseline is not usable,
+/// `Inherit` synthesizes the source's own dialect, and refuses when that dialect
+/// is not a target. There is no fall-through to the catalog default: a
+/// same-format conversion never silently changes what the file is.
+///
+/// `options` supplies the target only when there is nothing to inherit: the
+/// document is not an IGES document, or it records no dialect. Neither case is
+/// reachable from the command line, which builds `Inherit` only for an IGES
+/// source.
 pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     options: crate::IgesWriteOptions,
@@ -111,7 +118,7 @@ pub(crate) fn plan<'a>(
             })?;
             plan_explicit(input, version)
         }
-        TargetRequest::Inherit => plan_explicit(input, options.version),
+        TargetRequest::Inherit => plan_inherited(input, options.version),
     }
 }
 
@@ -125,6 +132,38 @@ fn plan_explicit(
     match replay_bytes(input.ir, input.fidelity, Some(&target))? {
         Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
         Replay::Declined { reason } => synthesized_plan(input, version, reason),
+    }
+}
+
+/// Plan a write that preserves the source's dialect.
+fn plan_inherited(
+    input: EncodeInput<'_>,
+    fallback: crate::IgesVersion,
+) -> Result<ExportPlan<'_>, CodecError> {
+    let Some(source_dialect) = input
+        .ir
+        .source
+        .as_ref()
+        .filter(|source| source.format == crate::dialect::FORMAT)
+        .and_then(|source| source.dialect.clone())
+    else {
+        // Nothing to inherit: no IGES source, or one that records no dialect.
+        return plan_explicit(input, fallback);
+    };
+    match replay_bytes(input.ir, input.fidelity, None)? {
+        Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
+        Replay::Declined { reason } => {
+            let Some(version) = crate::dialect::target_version(source_dialect.as_str()) else {
+                return Err(unsupported_target(
+                    crate::dialect::FORMAT,
+                    source_dialect.as_str(),
+                    "its retained source image is unavailable for byte replay and the semantic \
+                     writer cannot synthesize it",
+                    crate::dialect::TARGETS,
+                ));
+            };
+            synthesized_plan(input, version, reason)
+        }
     }
 }
 

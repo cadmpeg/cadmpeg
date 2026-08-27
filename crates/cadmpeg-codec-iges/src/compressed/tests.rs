@@ -157,11 +157,10 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .notes
         .contains(&"normalized_representation=compressed-ascii".into()));
 
-    // Compressed ASCII is not the dialect this writer synthesizes, so the
-    // replay gate declines and the report names both dialects. The gate used to
-    // compare the version alone and replayed the compressed bytes while the plan
-    // claimed Fixed ASCII. `TargetRequest::Inherit` (design section 8.1) is what
-    // asks for preservation; the encoder trait does not carry it yet.
+    // Compressed ASCII is not the dialect this writer synthesizes, so an
+    // explicit Fixed ASCII target declines replay and the report names both
+    // dialects. The gate used to compare the version alone and replayed the
+    // compressed bytes while the plan claimed Fixed ASCII.
     let plan = IgesEncoder::default()
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
@@ -182,6 +181,40 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         }
         other => panic!("a representation mismatch must degrade: {other:?}"),
     }
+}
+
+/// Preservation is not synthesis: a Compressed ASCII source replays its own
+/// bytes under an inherit request even though no input makes the semantic
+/// writer emit Compressed ASCII.
+///
+/// The retained image is the original bytes, so the resolved dialect is the
+/// source's by construction and the replay law admits the copy. This is the
+/// capability an explicit Fixed ASCII target cannot ask for.
+#[test]
+fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
+    let source = compressed_points_file();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    let plan = IgesEncoder::default()
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+
+    assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
+    assert_eq!(
+        plan.report().target.as_ref().map(ToString::to_string),
+        Some("iges:5.3-compressed-ascii".to_owned())
+    );
+    assert!(matches!(
+        plan.fidelity_resolution(),
+        FidelityResolution::Replayed
+    ));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
 }
 
 #[test]

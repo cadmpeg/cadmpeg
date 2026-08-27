@@ -560,36 +560,57 @@ item = "cadmpeg_ir::diff::{SourceDiff::dialect_change,SourceDiff::declared}"
 reason = "the source differ saw only attributes, so a dialect divergence would have compared as agreement"
 
 [[change]]
-commit = "TRAIT_SPINE"
+commit = "b3b71f647"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::Encoder::plan"
 reason = "plan takes the caller's TargetRequest; resolution needs the request and the source together, and an encoder that cannot see the request cannot refuse a target it does not write"
 
 [[change]]
-commit = "TRAIT_SPINE"
+commit = "b3b71f647"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::Encoder::targets"
 reason = "the static synthesis catalog moves into the encoder; the five scattered CLI-side defaults collapse to one catalog entry per format"
 
 [[change]]
-commit = "TRAIT_SPINE"
+commit = "b3b71f647"
 crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::CodecError::UnsupportedTarget"
 reason = "the write-side refusal, naming the requested dialect and the catalog; CodecError is non_exhaustive so no exhaustive match breaks"
 
 [[change]]
-commit = "TRAIT_SPINE"
+commit = "b3b71f647"
 crate = "cadmpeg"
 kind = "field"
 item = "cadmpeg::application::ExportTarget::selection"
 reason = "flag absence is not a target: whether it means preservation or the catalog default is only known once the source is read"
 
 [[change]]
-commit = "TRAIT_SPINE"
+commit = "b3b71f647"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::EncodeInput::new"
 reason = "one construction path for the borrowed export input, now that every call site also passes a request"
+
+[[change]]
+commit = "b3b71f647"
+crate = "cadmpeg-codec-iges"
+kind = "signature"
+item = "cadmpeg_codec_iges::IgesVersion::target"
+reason = "the registry dialect id a write version names, so a caller spells the request the same way the report answers it"
+
+[[change]]
+commit = "b3b71f647"
+crate = "cadmpeg-codec-rhino"
+kind = "signature"
+item = "cadmpeg_codec_rhino::RhinoArchiveVersion::target"
+reason = "the registry dialect id an archive version names, for the same reason"
+
+[[change]]
+commit = "b3b71f647"
+crate = "cadmpeg-codec-step"
+kind = "signature"
+item = "cadmpeg_codec_step::StepSchema::target"
+reason = "the registry dialect id a schema names, for the same reason"
