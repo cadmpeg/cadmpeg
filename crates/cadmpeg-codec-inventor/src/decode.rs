@@ -1317,19 +1317,25 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
 
     // The kernel layer, classified from the carrier's own header. Non-primary:
     // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
-    let kernel_layer = match &container.rse.active_carrier {
-        ActiveCarrierState::Selected(carrier) => kernel_layer(carrier),
-        _ => None,
-    };
+    let mut kernel_match = None;
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => {
-            match crate::kernel::decode_kernel_carrier(ctx, carrier) {
-                Ok(decoded) => {
-                    apply_kernel_header(&mut ir, carrier.family, &decoded.header);
-                    Some(decoded.brep)
+            match crate::kernel::parse_kernel_header(carrier) {
+                Ok(header) => {
+                    kernel_match = Some(kernel_layer(carrier.family, &header));
+                    match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
+                        Ok(decoded) => {
+                            apply_kernel_header(&mut ir, carrier.family, &decoded.header);
+                            Some(decoded.brep)
+                        }
+                        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                        Err(error) => {
+                            geometry_failure = Some(error.to_string());
+                            None
+                        }
+                    }
                 }
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     geometry_failure = Some(error.to_string());
                     None
@@ -1414,7 +1420,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
     losses.extend(recovery.dialect_loss(&primary));
-    losses.extend(kernel_layer.as_ref().and_then(kernel_dialect_loss));
+    losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
     if ctx.container_only() {
         losses.push(
             InventorLossCode::ContainerOnlyDecode.note("Container-only decode was requested."),
@@ -1675,7 +1681,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let mut dialects = vec![primary];
-    dialects.extend(kernel_layer);
+    dialects.extend(kernel_match);
     debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(DecodeResult::new(
         ir,
