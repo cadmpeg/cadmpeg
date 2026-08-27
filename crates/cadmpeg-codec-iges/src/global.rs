@@ -3,7 +3,6 @@
 
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
-use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 
@@ -304,7 +303,7 @@ const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
 
 const FALLBACK_SIGNIFICANCE: u32 = 17;
 const FALLBACK_MINIMUM_RESOLUTION: f64 = 0.0;
-const VERIFIED_VERSIONS: [&str; 5] = ["4.0", "5.0", "5.1", "5.2", "5.3"];
+pub(crate) const VERIFIED_VERSIONS: [&str; 5] = ["4.0", "5.0", "5.1", "5.2", "5.3"];
 
 const METADATA_CONSEQUENCE: &str = "its value was not transferred";
 const SIGNIFICANCE_CONSEQUENCE: &str =
@@ -1458,8 +1457,9 @@ impl ResolvedGlobal {
     /// the version its field 23 declares.
     ///
     /// The single predicate behind two facts that must never disagree: the
-    /// [`IgesLossCode::SourceDialectUnverified`] charge in [`Self::dialect_loss`]
-    /// and the `Admission` in `crate::dialect`. Both call this; neither
+    /// [`IgesLossCode::SourceDialectUnverified`] charge in
+    /// [`crate::dialect::dialect_loss`] and the `Admission` in
+    /// `crate::dialect`. Both call this; neither
     /// recomputes it. `Verified` is the only state that charges no loss and the
     /// only state admitted as `Admission::Admitted`, so the biconditional the
     /// decode policy requires holds by construction rather than by two authors
@@ -1518,40 +1518,6 @@ impl ResolvedGlobal {
             ));
         }
         losses
-    }
-
-    /// The loss charged when field 23 does not name a verified specification version.
-    ///
-    /// `None` exactly when [`Self::dialect_recovery`] is
-    /// [`DialectRecovery::Verified`], which is also exactly when `crate::dialect`
-    /// reports `Admission::Admitted`.
-    pub(crate) fn dialect_loss(&self, matched: &DialectMatch) -> Option<LossNote> {
-        let Admission::AdmittedUnverified { .. } = &matched.admission else {
-            return None;
-        };
-        let recovery = self.dialect_recovery();
-        let declared = self.declared_version_flag;
-        let effective = self.effective_version_flag();
-        let version = self.version();
-        let clamped = recovery == DialectRecovery::Clamped;
-        let unreadable = self.unreadable_version_declaration();
-        let declaration = match unreadable {
-            Some(text) => format!(
-                "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
-            ),
-            None => format!("IGES Global version flag {declared}"),
-        };
-        let clamp = if clamped {
-            format!(
-                " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
-            )
-        } else {
-            String::new()
-        };
-        Some(IgesLossCode::SourceDialectUnverified.note(format!(
-            "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
-            VERIFIED_VERSIONS.join(", ")
-        )))
     }
 
     pub(crate) fn summary_notes(&self) -> Vec<String> {

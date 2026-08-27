@@ -195,7 +195,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
 
     fn admission_losses(&self, primary: &DialectMatch) -> Vec<LossNote> {
         let mut losses = Vec::new();
-        losses.extend(self.global.dialect_loss(primary));
+        losses.extend(crate::dialect::dialect_loss(&self.global, primary));
         losses.extend(self.global_losses.iter().cloned());
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
