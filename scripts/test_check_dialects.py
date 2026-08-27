@@ -169,6 +169,12 @@ class TestRowShape(RegistryCase):
     def test_seam_must_be_a_string(self):
         self.assertFires(_registry(GOOD_ROW + "seam = 3\n"), "seam must be a string")
 
+    def test_pinned_must_be_a_boolean(self):
+        self.assertFires(_registry(GOOD_ROW + 'pinned = "no"\n'), "pinned must be a boolean")
+
+    def test_pinned_false_is_valid(self):
+        self.assertClean(_registry(GOOD_ROW + "pinned = false\n"))
+
     def test_discriminants_must_be_a_table(self):
         self.assertFires(
             _registry(GOOD_ROW.replace('{ marker = "0x01" }', '"marker"')),

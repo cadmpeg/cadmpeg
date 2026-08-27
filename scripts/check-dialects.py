@@ -37,7 +37,17 @@ SELF_TEST_REL = Path("scripts") / "test_check_dialects.py"
 # The schema keys a `[[dialect]]` row may carry. Anything else is a typo or an
 # unreviewed schema extension; both are failures.
 ROW_KEYS = frozenset(
-    {"id", "title", "discriminants", "witness", "seam", "supersedes", "adds", "subtracts"}
+    {
+        "id",
+        "title",
+        "discriminants",
+        "witness",
+        "seam",
+        "supersedes",
+        "adds",
+        "subtracts",
+        "pinned",
+    }
 )
 REQUIRED_ROW_KEYS = ("id", "title", "discriminants", "witness")
 
@@ -199,6 +209,9 @@ def check_row(row: object, index: int, formats: dict, root: Path, failures: list
 
     if "seam" in row and not isinstance(row["seam"], str):
         failures.append(f"{label}: seam must be a string")
+
+    if "pinned" in row and not isinstance(row["pinned"], bool):
+        failures.append(f"{label}: pinned must be a boolean")
 
     discriminants = row.get("discriminants")
     if "discriminants" in row:

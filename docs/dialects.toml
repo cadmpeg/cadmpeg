@@ -21,6 +21,8 @@
 #                                    or `code:<file>:<line>`.
 #                      seam          why this boundary exists, where it needs
 #                                    saying.
+#                      pinned        false when a descriptive identity row has
+#                                    no owning producer. Omitted means true.
 #                      supersedes /  the lattice. A dialect's admitted set is
 #                      adds /        (expansion of `supersedes` union `adds`)
 #                      subtracts     minus `subtracts`. Admitted only where the
@@ -1392,14 +1394,10 @@ witness = "code:crates/cadmpeg-asm/src/asm_header.rs:60"
 # --------------------------------------------------------------------------
 # Parasolid kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
-# CONFLICT with the migration brief: Parasolid is NOT owned by `cadmpeg-asm`.
-# That crate's module list is acis_header, asm_header, brep, edit, ids,
-# kernel_header, layout, nurbs, sab, sat (crates/cadmpeg-asm/src/lib.rs:15-25)
-# and contains no Parasolid code. Parasolid lives entirely in
-# `crates/cadmpeg-codec-sldprt/src/parasolid.rs`, and NX carries its own
-# reader at `crates/cadmpeg-codec-nx/src/parasolid.rs`. Two readers, one
-# namespace, no shared owner -- this namespace needs an owning crate before
-# the ids can be cited by both hosts.
+# The namespace is declared but has no producer. No owning crate exists:
+# SLDPRT and NX each carry a host-local reader, and neither emits a
+# `parasolid:` identity. These rows describe stream identity but do not pin
+# producer vocabulary. The hosts record the schema token as an attribute.
 #
 # The discriminant is the schema token in the transmit-stream header, of the
 # form `SCH_<modeller>_<schema>_<format>`. `stream_header`
@@ -1426,6 +1424,7 @@ complete = false
 # is not greppable in the fixture; it is verified post-inflate in
 # tests/golden/decode/document_envelope.json.
 id = "parasolid:sch-sw-33103"
+pinned = false
 title = "Parasolid SolidWorks schema 33103, transmit format 11000"
 discriminants = { schema = "SCH_SW_33103_11000" }
 witness = "corpus:crates/cadmpeg-codec-sldprt/tests/golden/fixtures/document_envelope.sldprt"
@@ -1441,6 +1440,7 @@ witness = "corpus:crates/cadmpeg-codec-sldprt/tests/golden/fixtures/document_env
 # Per B3 the sheet-body test is a within-dialect emission rule, never a
 # selectable target. No read-side fixture carries this token.
 id = "parasolid:sch-sw-32001"
+pinned = false
 title = "Parasolid SolidWorks schema 32001, transmit format 11000"
 discriminants = { schema = "SCH_SW_32001_11000" }
 witness = "code:crates/cadmpeg-codec-sldprt/src/writer.rs:127"
@@ -1451,6 +1451,7 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/writer.rs:127"
 # (parasolid.rs:338-341). Modeller-independent -- the in-tree example is
 # `SCH_3201255_32001_13006`.
 id = "parasolid:format-13006"
+pinned = false
 title = "Parasolid mesh/tessellation transmit format 13006"
 discriminants = { schema_format_suffix = "_13006" }
 seam = "the mesh stream grammar; the only schema value the decoder tests"
@@ -1464,6 +1465,7 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/parasolid.rs:339"
 # schema and description (decode.rs:2091-2096) -- a consistency test, not an
 # allowlist. `SCH_SW_33104_12000` is an in-tree example.
 id = "parasolid:unknown"
+pinned = false
 title = "Parasolid stream with an unrecognized schema token"
 discriminants = { schema = "any other SCH_ token" }
 witness = "code:crates/cadmpeg-codec-sldprt/src/parasolid.rs:313"

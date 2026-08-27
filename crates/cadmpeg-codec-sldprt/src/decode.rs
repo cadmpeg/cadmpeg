@@ -4619,9 +4619,9 @@ fn preserve_source_image(
 /// The primary-layer match for a report, as the one-entry list the reports
 /// carry.
 ///
-/// `.sldprt` embeds Parasolid, so the list is a `Vec`, but the embedded kernel
-/// layer is not classified here: `cadmpeg-asm` declares the Parasolid rows once
-/// and the hosts cite them. Until then the primary layer is the whole list.
+/// `.sldprt` embeds Parasolid, but no crate owns or emits the `parasolid:`
+/// namespace. This host records the schema token as an attribute instead of a
+/// kernel-layer dialect match, so the primary layer is the whole list.
 fn report_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMatch> {
     let dialects = vec![crate::dialect::SldprtDialect::classify_scan(scan)];
     cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);

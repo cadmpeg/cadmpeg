@@ -82,6 +82,12 @@ pub fn acis_binary_row(save_format_major: Option<u32>) -> DialectId {
 pub const ACIS_ASM_BINARYFILE_4: DialectId = DialectId::pinned("acis:asm-binaryfile-4");
 /// Registry row of an ASM binary stream at eight-byte reference width.
 pub const ACIS_ASM_BINARYFILE_8: DialectId = DialectId::pinned("acis:asm-binaryfile-8");
+/// Registry row of a text stream terminated by `End-of-ASM-data`.
+pub const ACIS_TEXT_ASM: DialectId = DialectId::pinned("acis:text-asm");
+/// Registry row of a text stream terminated by `End-of-ACIS-data`.
+pub const ACIS_TEXT_ACIS: DialectId = DialectId::pinned("acis:text-acis");
+/// Registry row of a kernel stream matching no ACIS or ASM framing.
+pub const ACIS_UNKNOWN: DialectId = DialectId::pinned("acis:unknown");
 
 /// The `acis:` ASM binary row one reference width satisfies.
 ///
