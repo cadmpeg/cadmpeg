@@ -294,6 +294,13 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
 
+    // The legacy CFB container. Every other input here is a SPLMSSTR image, so
+    // this is the only golden that pins the `nx:legacy-cfb` row, its `cfb`
+    // container kind, and a decode that retains records without transferring
+    // geometry. The payload is uncompressed, so this snapshot pins no
+    // compressor output.
+    f.push(("legacy_cfb_with_ug_part", legacy_cfb_with_ug_part()));
+
     // Self-contained `.prt` images.
     f.push(("single_part_prt", single_part_prt()));
     f.push(("topology_part_prt", topology_part_prt()));

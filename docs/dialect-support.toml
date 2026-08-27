@@ -993,8 +993,15 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-decoded through the same bounded entry interface, asserted only in
-`integration_tests/dialect.rs`; no legacy CFB file on disk"""
+decoded through the same bounded entry interface. The golden
+`legacy_cfb_with_ug_part` now pins the row at both inspect and decode:
+`container_kind = "cfb"`, the note `legacy CFB container: UGII payload
+version 0x32, 2 directory entries`, three entries at the roles `directory`,
+`part-payload`, and `parasolid-stream`, one retained record, and a blocking
+`geometry.not-transferred` loss. That is what L1 asks for, but the cell
+stays `detected`: the fixture gate counts files on disk, and this input is
+code-built like every other NX golden, so there is no path the `fixtures`
+column could name"""
 
 [[support]]
 dialect = "nx:unknown"
