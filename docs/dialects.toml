@@ -693,20 +693,14 @@ discriminants = { schema_version = "4" }
 witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
 
 [[dialect]]
-# Mandatory `unknown` row (B4). Disposition is split by decode mode:
-#   full decode      refused, `CodecError::NotImplemented`
-#                    (lib.rs:1114-1121, persistence.rs:55-59)
-#   container-only   admitted-unverified, charging
-#                    `fcstd/source.dialect-unverified`, with `schema_version`,
-#                    `file_version`, `document_root`, and `object_count`
-#                    attributes (lib.rs:1123-1133); the container scan builds
-#                    `DocumentFacts` for any value using the Object envelope
-#                    because container.rs:224-237 tests `== "2"` with an
-#                    `else`, not a "3"|"4" whitelist.
-#   inspect          admitted-unverified; `ContainerSummary` carries no losses.
-# `Admission::AdmittedUnverified` names `fcstd:schema-4` as the nearest row:
-# schema 4 is the newer of the two rows sharing the Object envelope and the one
-# the writer's default follows.
+# Mandatory `unknown` row (B4). Every undeclared unsigned schema version is
+# decoded with the Objects/ObjectData/Object vocabulary because both full and
+# container decode test only `schema_version == "2"` and use that vocabulary
+# for the `else` branch (persistence.rs:52-60, container.rs:224-237).
+# `FcstdDialect::classify` returns `Admission::AdmittedUnverified`, names
+# `fcstd:schema-4` as the nearest row, and full decode charges
+# `fcstd/source.dialect-unverified` (dialect.rs:169-220). Schema 4 is the newer
+# row with that vocabulary and the writer's default.
 id = "fcstd:unknown"
 title = "FreeCAD FCStd document schema outside 2, 3, 4"
 discriminants = { schema_version = "any other" }
@@ -1161,11 +1155,13 @@ seam = "no binary manifest and no version field; the document set is named by JS
 witness = "code:crates/cadmpeg-codec-f3d/src/container.rs"
 
 [[dialect]]
-# Mandatory `unknown` row (B4). Disposition: refused with
-# `CodecError::NotImplemented` naming the observed version, before any report
-# exists; structural corruption stays `Malformed`. The row is therefore pinned
-# in `F3dDialect` with no runtime producer: no `DialectMatch` carries it. This
-# row is the first `UnsupportedDialect` migration target.
+# Mandatory `unknown` row (B4). `manifest::parse_top_level` applies the
+# `3-2-0-0` layout to every readable version. When that layout fits,
+# `F3dDialect::classify_document` returns this row with
+# `Admission::AdmittedUnverified`, names `f3d:manifest-3-2-0-0` as the applied
+# strategy, and decode charges `f3d/source.dialect-unverified`
+# (dialect.rs:140-207). A manifest whose structure does not fit is refused as
+# structural failure; the declared version itself is not an allowlist gate.
 id = "f3d:unknown"
 title = "Fusion .f3d archive with an unrecognized top-level manifest version"
 discriminants = { top_level_manifest_version = "any other" }
