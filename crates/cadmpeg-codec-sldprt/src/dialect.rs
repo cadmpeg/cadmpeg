@@ -73,11 +73,25 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::resolved_features::operations::{form_code_padding, FormCodePadding};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "sldprt";
+
+/// The one dialect this writer synthesizes.
+///
+/// `writer::generated_solidworks_xml` emits a `swSolidWorks` block with no
+/// `swVersion` attribute, so a synthesized part carries no version declaration
+/// and classifies into the registry's totality row. Every versioned row is
+/// reachable only by preserving a retained part.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
+    id: "sldprt:unknown",
+    label: "SolidWorks part with no swVersion declaration",
+    aliases: &[],
+    default: true,
+}];
 
 /// Key of the `swSolidWorks` `swVersion` attribute in
 /// [`DialectMatch::declared`].

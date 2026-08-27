@@ -1,0 +1,183 @@
+// SPDX-License-Identifier: Apache-2.0
+//! SLDPRT target resolution, write dispatch, and honesty checking.
+
+use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{
+    find_target, unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest,
+};
+use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
+
+use crate::dialect;
+use crate::loss::SldprtLossCode;
+use crate::{source_records, SldprtCodec, Written, SOURCE_IMAGE_ID};
+
+/// Resolve the request against the source, then plan the export it names
+/// (design §8.2).
+///
+/// `Explicit(id)` refuses an id outside the synthesis catalog, and is
+/// otherwise the replay law's compare: replaying the retained image is
+/// eligible exactly when `id` is the source's dialect.
+///
+/// `Inherit` asks for preservation instead: a valid retained image replays
+/// whatever dialect the source is, every versioned row included, which this
+/// writer could never synthesize. Where the image is not usable the semantic
+/// writer still preserves the dialect whenever the retained blocks carry the
+/// source's own `swSolidWorks` envelope, because that envelope is passed
+/// through unchanged. Where neither holds, the write lands on the totality row
+/// and the request is refused by name. There is no fall-through to the catalog
+/// default: a same-format conversion never silently changes what the file is.
+///
+/// The catalog default supplies the target only when there is nothing to
+/// inherit: the document has no source, or a source of another format.
+pub(crate) fn plan<'a>(
+    input: EncodeInput<'a>,
+    request: TargetRequest<'_>,
+) -> Result<ExportPlan<'a>, CodecError> {
+    let target = resolve(input, request)?;
+    let (written, bytes) = write(input, &target)?;
+    check_honesty(&target, &written)?;
+    Ok(finish(input, target, &written, bytes))
+}
+
+/// Resolve an explicit catalog request or inherit the same-format source row.
+fn resolve(input: EncodeInput<'_>, request: TargetRequest<'_>) -> Result<DialectId, CodecError> {
+    match request {
+        TargetRequest::Explicit(id) => {
+            let entry = find_target(dialect::TARGETS, id).ok_or_else(|| {
+                unsupported_target(
+                    dialect::FORMAT,
+                    id,
+                    "not a target this encoder can synthesize",
+                    dialect::TARGETS,
+                )
+            })?;
+            Ok(DialectId::pinned(entry.id))
+        }
+        TargetRequest::Inherit => {
+            match cadmpeg_ir::codec::resolve_inherit(input.ir, dialect::FORMAT, dialect::TARGETS)? {
+                Inherited::Fallback(id) => Ok(DialectId::pinned(id)),
+                Inherited::Source(value) => Ok(value.clone()),
+            }
+        }
+    }
+}
+
+/// Run replay when the target equals the source row; otherwise run the
+/// semantic writer and let its emitted envelope state the resulting row.
+fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>), CodecError> {
+    let source_dialect = input
+        .ir
+        .source
+        .as_ref()
+        .filter(|source| source.format == dialect::FORMAT)
+        .and_then(|source| source.dialect.as_ref());
+    let replay_eligible = source_dialect == Some(target);
+    let mut bytes = Vec::new();
+    let written = match input.fidelity {
+        Some(value) => {
+            let records = source_records(input.ir, value)?;
+            if replay_eligible {
+                SldprtCodec::write_preserved_with_annotations(
+                    input.ir,
+                    &value.annotations,
+                    &records,
+                    &mut bytes,
+                )?
+            } else {
+                SldprtCodec::write_semantic(input.ir, &value.annotations, &records, &mut bytes)?
+            }
+        }
+        None => SldprtCodec::write_semantic(input.ir, &Annotations::default(), &[], &mut bytes)?,
+    };
+    Ok((written, bytes))
+}
+
+/// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land
+/// on the resolved target.
+fn check_honesty(target: &DialectId, written: &Written) -> Result<(), CodecError> {
+    let Written::Semantic { dialect: got, .. } = written else {
+        return Ok(());
+    };
+    if got == target {
+        return Ok(());
+    }
+    Err(unsupported_target(
+        dialect::FORMAT,
+        target.as_str(),
+        &format!(
+            "the retained document blocks decide the swSolidWorks envelope this writer emits, \
+             and from this input that envelope is {got}"
+        ),
+        dialect::TARGETS,
+    ))
+}
+
+fn finish<'a>(
+    input: EncodeInput<'a>,
+    target: DialectId,
+    written: &Written,
+    bytes: Vec<u8>,
+) -> ExportPlan<'a> {
+    let write_path = written.path();
+    let source_dialect = input
+        .ir
+        .source
+        .as_ref()
+        .filter(|source| source.format == dialect::FORMAT)
+        .and_then(|source| source.dialect.as_ref());
+    let replay_eligible = source_dialect == Some(&target);
+    let expects_preserved_source = input
+        .ir
+        .source
+        .as_ref()
+        .is_some_and(|source| source.format == dialect::FORMAT);
+    let replayed = replay_eligible
+        && input
+            .fidelity
+            .and_then(|value| value.retained_record(SOURCE_IMAGE_ID))
+            .is_some();
+    let fidelity = match (
+        input.fidelity.is_some() || expects_preserved_source,
+        replayed,
+    ) {
+        (_, true) => FidelityResolution::Replayed,
+        (true, false) => FidelityResolution::Degraded {
+            reason: "preserved SLDPRT source image is unavailable".into(),
+        },
+        (false, false) => FidelityResolution::NotProvided,
+    };
+    let losses = matches!(fidelity, FidelityResolution::Degraded { .. })
+        .then(|| {
+            SldprtLossCode::SourcePreservedImageUnavailable
+                .note("preserved SLDPRT source image is unavailable; regenerated from IR")
+        })
+        .into_iter()
+        .collect();
+    ExportPlan::buffered(
+        ExportReport {
+            target: Some(target),
+            format: dialect::FORMAT.into(),
+            census: cadmpeg_ir::EntityCensus {
+                basis: cadmpeg_ir::CensusBasis::IrArenas,
+                counts: input.ir.census(),
+            },
+            fidelity,
+            write_path,
+            losses,
+            notes: vec![
+                match write_path {
+                    WritePath::VerbatimReplay => "preserved source container replayed verbatim",
+                    WritePath::Patched => {
+                        "preserved source container replayed with semantic patches"
+                    }
+                    WritePath::Synthesized => "source container regenerated from IR",
+                }
+                .into(),
+                "entity counts are derived from the IR".into(),
+            ],
+        },
+        bytes,
+    )
+}

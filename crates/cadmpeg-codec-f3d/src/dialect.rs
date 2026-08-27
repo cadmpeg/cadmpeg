@@ -35,6 +35,7 @@
 //! `crate::manifest::parse_top_level`, and no version is on an allowlist.
 //!
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -43,6 +44,19 @@ use crate::manifest::TOP_LEVEL_MANIFEST_VERSION;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "f3d";
+
+/// The one dialect this writer synthesizes.
+///
+/// `manifest::write` pins the top-level manifest version to
+/// `TOP_LEVEL_MANIFEST_VERSION`, so a generated archive can be no other row.
+/// The multi-document F3Z row is reachable only by replaying a retained
+/// archive, which is preservation, not synthesis.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
+    id: "f3d:manifest-3-2-0-0",
+    label: "Fusion 360 archive with top-level manifest 3-2-0-0",
+    aliases: &["3-2-0-0"],
+    default: true,
+}];
 
 /// Key of the top-level `Manifest.dat` version field in
 /// [`DialectMatch::declared`], recorded as the manifest cursor read it.

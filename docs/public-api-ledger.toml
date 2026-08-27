@@ -992,3 +992,17 @@ crate = "cadmpeg-registry"
 kind = "signature"
 item = "cadmpeg_registry::ResolveSourceError::Ambiguous Display"
 reason = "the message states the ambiguity and stops; `pass --input-format` names a flag only the CLI has, and the CLI appends it in `loader::detection_failure`"
+
+[[change]]
+commit = "4b5aed14a82561587eea3d0f633d2a272b217d7c"
+crate = "cadmpeg-codec-f3d"
+kind = "visibility"
+item = "cadmpeg_codec_f3d::F3dCodec::write_preserved_with_source_fidelity"
+reason = "the method bypasses TargetRequest and is used only by crate-owned replay tests; external writes must resolve through Encoder::plan"
+
+[[change]]
+commit = "4b5aed14a82561587eea3d0f633d2a272b217d7c"
+crate = "cadmpeg-codec-sldprt"
+kind = "visibility"
+item = "cadmpeg_codec_sldprt::SldprtCodec::write_preserved_with_source_fidelity"
+reason = "the method bypasses TargetRequest and is used only by crate-owned replay tests; external writes must resolve through Encoder::plan"
