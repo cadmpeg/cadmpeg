@@ -1184,12 +1184,14 @@ same streams"""
 [[support]]
 dialect = "parasolid:sch-sw-33103"
 read = "detected"
-write = "none"
+write = "emitted"
 fixtures = []
 reason = """
-no code emits this id: the `parasolid:` namespace has no owning crate, and
-the schema token is read as an attribute inside the sldprt and nx readers
-rather than classified"""
+the `parasolid:` namespace has no owning crate, so no code classifies this
+id on the read side: the schema token is read as an attribute inside the
+sldprt and nx readers. It is synthesized, though. The sldprt writer stamps
+`SCH_SW_33103_11000` on every Parasolid stream it generates whose bodies are
+all solid (writer.rs:126-130), which is the default branch"""
 
 [[support]]
 dialect = "parasolid:sch-sw-32001"
@@ -1197,10 +1199,11 @@ read = "detected"
 write = "emitted"
 fixtures = []
 reason = """
-no code emits this id: the `parasolid:` namespace has no owning crate, and
-the schema token is read as an attribute inside the sldprt and nx readers
-rather than classified; the sldprt writer stamps this schema token on the
-Parasolid stream it generates"""
+the `parasolid:` namespace has no owning crate, so no code classifies this
+id on the read side: the schema token is read as an attribute inside the
+sldprt and nx readers. It is synthesized, though. The sldprt writer stamps
+`SCH_SW_32001_11000` on a generated Parasolid stream when any body is a
+sheet (writer.rs:120-130)"""
 
 [[support]]
 dialect = "parasolid:format-13006"
