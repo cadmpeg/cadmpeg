@@ -1111,3 +1111,10 @@ crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::dialect::{ACIS_TEXT_ASM,ACIS_TEXT_ACIS,ACIS_UNKNOWN}"
 reason = "the shared ACIS kernel namespace owns and pins the three text or unframed identity rows even though host codecs do not emit a separate kernel-layer match"
+
+[[change]]
+commit = "4c12cca4ea3caa1952672b8491f1a5ab888f91e3"
+crate = "cadmpeg-asm"
+kind = "addition"
+item = "cadmpeg_asm::dialect::{KernelHeaderRef,classify}"
+reason = "classify already-parsed ACIS and ASM headers through one canonical kernel-layer match constructor shared by host codecs"

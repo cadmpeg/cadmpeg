@@ -1,4 +1,4 @@
-# generated at d0abbc3d0
+# generated at 4c12cca4e
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -566,6 +566,21 @@ pub fn cadmpeg_asm::brep::remap_owned_ids(&mut serde_value::Value, &std::collect
 pub fn cadmpeg_asm::brep::retain_root_entities(&mut serde_value::Value, &std::collections::hash::set::HashSet<alloc::string::String>)
 pub fn cadmpeg_asm::brep::value_string(&serde_value::Value) -> core::option::Option<&str>
 pub mod cadmpeg_asm::dialect
+pub enum cadmpeg_asm::dialect::KernelHeaderRef<'a>
+pub cadmpeg_asm::dialect::KernelHeaderRef::Acis(&'a cadmpeg_asm::kernel_header::KernelHeader)
+pub cadmpeg_asm::dialect::KernelHeaderRef::Asm(&'a cadmpeg_asm::kernel_header::KernelHeader)
+impl<'a> core::clone::Clone for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+pub fn cadmpeg_asm::dialect::KernelHeaderRef<'a>::clone(&self) -> cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::fmt::Debug for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+pub fn cadmpeg_asm::dialect::KernelHeaderRef<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::marker::Freeze for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::marker::Send for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::marker::Sync for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::marker::Unpin for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::dialect::KernelHeaderRef<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::dialect::KernelHeaderRef<'a>
 pub const cadmpeg_asm::dialect::ACIS_ASM_BINARYFILE_4: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_ASM_BINARYFILE_8: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_217: cadmpeg_core::dialect::DialectId
@@ -579,6 +594,7 @@ pub fn cadmpeg_asm::dialect::acis_admission(core::option::Option<u32>) -> cadmpe
 pub fn cadmpeg_asm::dialect::acis_band_verified(core::option::Option<u32>) -> bool
 pub fn cadmpeg_asm::dialect::acis_binary_row(core::option::Option<u32>) -> cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_asm::dialect::asm_binary_row(u8) -> cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef<'_>) -> cadmpeg_core::dialect::DialectMatch
 pub fn cadmpeg_asm::dialect::nearest_verified_acis(core::option::Option<u32>) -> cadmpeg_core::dialect::DialectId
 pub mod cadmpeg_asm::edit
 pub struct cadmpeg_asm::edit::AsmEditSet
