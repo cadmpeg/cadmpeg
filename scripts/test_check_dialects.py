@@ -344,6 +344,14 @@ class TestExtensionPoints(unittest.TestCase):
             ["demo:fabricated: no string literal under crates/*/src"],
         )
 
+    def test_id_present_only_in_line_comment_fails(self):
+        for source in ('// "demo:one"', '/// "demo:one"'):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    self.emitted_id_failures(GOOD_ROW, source),
+                    ["demo:one: no string literal under crates/*/src"],
+                )
+
     def test_explicitly_unpinned_row_is_exempt(self):
         self.assertEqual(self.emitted_id_failures(GOOD_ROW + "pinned = false\n"), [])
 
