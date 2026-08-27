@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 //! End-to-end contracts over synthesized `OpenNURBS` archives.
 
-use cadmpeg_ir::codec::EncodeInput;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Cursor;
@@ -10,14 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, TargetRequest};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
-use cadmpeg_ir::Encoder;
 
 use crate::chunks::ArchiveVersion;
 use crate::test_support as support;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 mod angular_dimension_userdata;
 mod annotations_userdata;
 mod dimension_userdata;
@@ -189,8 +187,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         crate::RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        crate::RhinoEncoder::new(version)
-            .plan(EncodeInput::new(&point_ir, None), TargetRequest::Inherit)
+        crate::test_support::plan_at(version, &point_ir)
             .and_then(|plan| plan.write_to(&mut bytes))
             .unwrap();
         let result = decode(bytes);
@@ -219,8 +216,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         point.source_object = None;
     }
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(&sheet, None), TargetRequest::Inherit)
+    crate::test_support::plan_at(RhinoArchiveVersion::V8, &sheet)
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let result = decode(bytes);
@@ -1970,8 +1966,7 @@ fn opennurbs_object_walk_and_transfer_floor() {
             source_object: None,
         });
         let mut bytes = Vec::new();
-        RhinoEncoder::new(archive_version)
-            .plan(EncodeInput::new(&point_ir, None), TargetRequest::Inherit)
+        crate::test_support::plan_at(archive_version, &point_ir)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("write codec point witness");
         let path = generated.join(format!("codec-writer-v{version}-point.3dm"));

@@ -36,7 +36,7 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "f3d");
-    assert_eq!(requested, "f3d:nonesuch");
+    assert_eq!(requested.as_deref(), Some("f3d:nonesuch"));
     for target in Encoder::targets(&F3dCodec) {
         assert!(available.contains(target.id), "{available}");
     }

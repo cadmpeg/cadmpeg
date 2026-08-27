@@ -418,6 +418,89 @@ pub fn unsupported_target(
     reason: &str,
     targets: &[TargetDescriptor],
 ) -> CodecError {
+    refusal(format, Some(requested.to_owned()), reason, targets)
+}
+
+/// Why every encoder refuses `Inherit` over a same-format source that records
+/// no dialect (design §8.2).
+///
+/// Preservation needs something to preserve. With no recorded dialect the
+/// identity default cannot know what the file is, so writing any catalog row
+/// would be choosing an identity the source never declared. An explicit target
+/// is the escape.
+pub const UNRECORDED_SOURCE_DIALECT_REASON: &str =
+    "the source records no dialect, so there is nothing to preserve; name a target to write one";
+
+/// The typed write refusal for `Inherit` over a same-format source that records
+/// no dialect.
+///
+/// Distinct from [`unsupported_target`] in that no dialect id was asked for and
+/// the source declares none, so the refusal names no id at all rather than
+/// putting a format id in a dialect-id field.
+#[must_use]
+pub fn unrecorded_source_dialect(format: &str, targets: &[TargetDescriptor]) -> CodecError {
+    refusal(format, None, UNRECORDED_SOURCE_DIALECT_REASON, targets)
+}
+
+/// What an [`TargetRequest::Inherit`] request names, before any encoder-specific
+/// preservation attempt (design §8.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Inherited<'a> {
+    /// The source's own dialect. Preserve it, synthesize it, or refuse it by
+    /// name; never write a different one.
+    Source(&'a cadmpeg_core::dialect::DialectId),
+    /// There was nothing to inherit: no source at all, or one of another
+    /// format. The catalog default stands in, which is the request the
+    /// application layer builds for a cross-format conversion anyway.
+    Fallback(&'static str),
+}
+
+/// The common half of every encoder's `Inherit` resolution.
+///
+/// Three outcomes, one shape in every codec:
+///
+/// - no source, or a source of another format — nothing to inherit, so the
+///   catalog default stands in. This is the cross-format path, and a legitimate
+///   direct-library path; it is not a same-format conversion, so it changes
+///   nothing about what an existing file is.
+/// - a same-format source that records no dialect — refuse. There is nothing to
+///   preserve, and the identity default cannot know what it would be
+///   preserving, so any catalog row it picked could change what the file is.
+/// - a same-format source with a recorded dialect — that dialect, for the
+///   encoder to preserve, synthesize, or refuse by name.
+///
+/// The encoder's own constructor state is not consulted at any of the three:
+/// per-codec knobs configure how a target is written, never which one.
+pub fn resolve_inherit<'a>(
+    ir: &'a CadIr,
+    format: &str,
+    targets: &'static [TargetDescriptor],
+) -> Result<Inherited<'a>, CodecError> {
+    let Some(source) = ir.source.as_ref().filter(|source| source.format == format) else {
+        return default_target(targets)
+            .map(Inherited::Fallback)
+            .ok_or_else(|| {
+                refusal(
+                    format,
+                    None,
+                    "there is nothing to inherit and this encoder has no synthesis catalog",
+                    targets,
+                )
+            });
+    };
+    source
+        .dialect
+        .as_ref()
+        .map(Inherited::Source)
+        .ok_or_else(|| unrecorded_source_dialect(format, targets))
+}
+
+fn refusal(
+    format: &str,
+    requested: Option<String>,
+    reason: &str,
+    targets: &[TargetDescriptor],
+) -> CodecError {
     let available = targets
         .iter()
         .map(|target| target.id)
@@ -425,7 +508,7 @@ pub fn unsupported_target(
         .join(", ");
     CodecError::UnsupportedTarget {
         format: format.to_owned(),
-        requested: requested.to_owned(),
+        requested,
         reason: reason.to_owned(),
         available: if available.is_empty() {
             "none".to_owned()

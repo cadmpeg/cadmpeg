@@ -16,22 +16,19 @@ use crate::Format;
 pub enum EncoderRequest {
     /// Neutral encoder with no format-specific options.
     Neutral,
-    /// STEP header and schema options.
+    /// STEP header metadata and loss policy.
+    ///
+    /// Not the schema: `--step-target` travels in `TargetSelection`, and the
+    /// encoder resolves the request against the source.
     #[cfg(feature = "step")]
     Step(cadmpeg_codec_step::StepWriteOptions),
-    /// IGES specification version.
-    #[cfg(feature = "iges")]
-    Iges(cadmpeg_codec_iges::IgesWriteOptions),
 }
 
 /// Builds the encoder for an export format from an already-selected request.
 ///
 /// Cadir and STEP options are distinct request variants, so they are not
 /// representable together.
-#[cfg_attr(
-    not(any(feature = "step", feature = "iges")),
-    allow(clippy::needless_pass_by_value)
-)]
+#[cfg_attr(not(feature = "step"), allow(clippy::needless_pass_by_value))]
 pub fn build_encoder(
     format: Format,
     request: EncoderRequest,
@@ -46,7 +43,7 @@ pub fn build_encoder(
             EncoderRequest::Step(options) => {
                 Ok(Box::new(cadmpeg_codec_step::StepCodec { options }))
             }
-            _ => Err(CodecError::Malformed(
+            EncoderRequest::Neutral => Err(CodecError::Malformed(
                 "STEP encoder requires STEP target options".into(),
             )),
         },
@@ -72,26 +69,23 @@ pub fn build_encoder(
         #[cfg(feature = "rhino")]
         Format::Rhino => {
             require_neutral(&request, "rhino")?;
-            Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder::default()))
+            Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder))
         }
+        // `--iges-target` already travels in `selection` as an explicit
+        // target. Repeating it here as encoder state gave the encoder a fourth
+        // answer to "which dialect", and the one that won when a request had
+        // nothing to inherit — the same defect Rhino's `--rhino-target` had.
         #[cfg(feature = "iges")]
-        Format::Iges => match request {
-            EncoderRequest::Iges(options) => {
-                Ok(Box::new(cadmpeg_codec_iges::IgesEncoder::new(options)))
-            }
-            _ => Err(CodecError::Malformed(
-                "IGES encoder requires IGES target options".into(),
-            )),
-        },
+        Format::Iges => {
+            require_neutral(&request, "iges")?;
+            Ok(Box::new(cadmpeg_codec_iges::IgesEncoder))
+        }
     }
 }
 
 // When no option-bearing codec feature is on, Neutral is the only
 // EncoderRequest variant: the Err path is absent and Result is always Ok.
-#[cfg_attr(
-    not(any(feature = "step", feature = "iges")),
-    allow(clippy::unnecessary_wraps)
-)]
+#[cfg_attr(not(feature = "step"), allow(clippy::unnecessary_wraps))]
 fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError> {
     match request {
         EncoderRequest::Neutral => {
@@ -101,7 +95,7 @@ fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError>
         // Non-Neutral variants exist only when their codec features are on.
         // With `--features sldprt` alone, Neutral is the sole variant and this
         // arm must not compile, or `-D unreachable-patterns` fails the gate.
-        #[cfg(any(feature = "step", feature = "iges"))]
+        #[cfg(feature = "step")]
         _ => Err(CodecError::malformed(format_args!(
             "target options do not belong to the {id} encoder"
         ))),
@@ -185,7 +179,7 @@ mod tests {
             else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
-            assert_eq!(requested, "nonesuch:dialect");
+            assert_eq!(requested.as_deref(), Some("nonesuch:dialect"));
             for target in encoder.targets() {
                 assert!(
                     available.contains(target.id),
@@ -214,10 +208,7 @@ mod tests {
             #[cfg(feature = "rhino")]
             (Format::Rhino, EncoderRequest::Neutral),
             #[cfg(feature = "iges")]
-            (
-                Format::Iges,
-                EncoderRequest::Iges(cadmpeg_codec_iges::IgesWriteOptions::default()),
-            ),
+            (Format::Iges, EncoderRequest::Neutral),
         ]
     }
 

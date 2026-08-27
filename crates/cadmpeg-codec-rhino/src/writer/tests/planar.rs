@@ -56,8 +56,11 @@ fn planar_sheet_round_trips_object_attributes() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        RhinoEncoder
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.target()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -100,8 +103,11 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        RhinoEncoder
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.target()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -165,8 +171,11 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        RhinoEncoder
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.target()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -236,8 +245,11 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        RhinoEncoder
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.target()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -302,8 +314,11 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        RhinoEncoder
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.target()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -335,8 +350,11 @@ fn open_planar_solid_is_rejected_before_output() {
     let mut ir = adjacent_quad_sheet();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+    let error = RhinoEncoder
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("incidence"));

@@ -356,7 +356,7 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "cadir");
-    assert_eq!(requested, "cadir:nonesuch");
+    assert_eq!(requested.as_deref(), Some("cadir:nonesuch"));
     assert_eq!(available, "none");
     assert!(Encoder::targets(&CadirEncoder).is_empty());
 }

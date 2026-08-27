@@ -7,7 +7,7 @@ use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
     find_target, unsupported_target, CodecBackend, Confidence, DecodeOptions, DecodeResult,
-    EncodeInput, Encoder, ExportPlan, TargetDescriptor, TargetRequest,
+    EncodeInput, Encoder, ExportPlan, Inherited, TargetDescriptor, TargetRequest,
 };
 use cadmpeg_ir::{CadIr, FidelityResolution};
 
@@ -81,49 +81,82 @@ fn catalog_schema(id: &str) -> Option<StepSchema> {
         .find(|schema| schema.target() == target.id)
 }
 
+/// What resolving a [`TargetRequest`] against the source decided (design §8.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Resolution {
+    /// The schema to declare in `FILE_SCHEMA`.
+    schema: StepSchema,
+    /// Why the source's own dialect is not what gets written, when it is not.
+    /// `None` where the write keeps the source's dialect, and `None` where
+    /// there is no STEP source at all: nothing was preserved, so nothing was
+    /// lost.
+    declined: Option<String>,
+}
+
 impl StepCodec {
     /// The design §8.2 resolution: which schema this export writes.
-    fn resolve(&self, ir: &CadIr, request: TargetRequest<'_>) -> Result<StepSchema, CodecError> {
-        match request {
-            TargetRequest::Explicit(id) => catalog_schema(id).ok_or_else(|| {
-                unsupported_target(
-                    crate::dialect::FORMAT,
-                    id,
-                    "not a schema this encoder can synthesize",
-                    STEP_TARGETS,
-                )
-            }),
+    ///
+    /// The encoder's own `options.schema` is not consulted. Which schema an
+    /// export declares is the request's answer, resolved against the source;
+    /// `options` says how a schema is written — header metadata and loss
+    /// policy — never which one.
+    fn resolve(ir: &CadIr, request: TargetRequest<'_>) -> Result<Resolution, CodecError> {
+        let id = match request {
+            TargetRequest::Explicit(id) => id,
             TargetRequest::Inherit => {
-                let Some(source) = ir
-                    .source
-                    .as_ref()
-                    .filter(|source| source.format == crate::dialect::FORMAT)
-                else {
+                return match cadmpeg_ir::codec::resolve_inherit(
+                    ir,
+                    crate::dialect::FORMAT,
+                    STEP_TARGETS,
+                )? {
                     // Nothing to inherit: no source, or one of another format.
-                    return Ok(self.options.schema);
+                    // The catalog default stands in; no existing file's
+                    // identity is at stake.
+                    Inherited::Fallback(id) => Ok(Resolution {
+                        schema: catalog_schema(id)
+                            .expect("the STEP catalog default is a synthesizable schema"),
+                        declined: None,
+                    }),
+                    Inherited::Source(dialect) => catalog_schema(dialect.as_str())
+                        .map(|schema| Resolution {
+                            schema,
+                            declined: None,
+                        })
+                        .ok_or_else(|| {
+                            unsupported_target(
+                                crate::dialect::FORMAT,
+                                dialect.as_str(),
+                                "the semantic writer cannot synthesize it, and writing another \
+                                 schema would change what the file declares; name a target to \
+                                 choose one",
+                                STEP_TARGETS,
+                            )
+                        }),
                 };
-                let Some(dialect) = source.dialect.as_ref() else {
-                    // A STEP source that records no dialect. Choosing a schema
-                    // for it would be choosing an identity it never declared.
-                    return Err(unsupported_target(
-                        crate::dialect::FORMAT,
-                        crate::dialect::FORMAT,
-                        "the source is a STEP document that records no dialect, so there is no \
-                         schema to preserve; name a target to write one",
-                        STEP_TARGETS,
-                    ));
-                };
-                catalog_schema(dialect.as_str()).ok_or_else(|| {
-                    unsupported_target(
-                        crate::dialect::FORMAT,
-                        dialect.as_str(),
-                        "the semantic writer cannot synthesize it, and writing another schema \
-                         would change what the file declares; name a target to choose one",
-                        STEP_TARGETS,
-                    )
-                })
             }
-        }
+        };
+        let schema = catalog_schema(id).ok_or_else(|| {
+            unsupported_target(
+                crate::dialect::FORMAT,
+                id,
+                "not a schema this encoder can synthesize",
+                STEP_TARGETS,
+            )
+        })?;
+        let target = schema.target();
+        let declined = ir
+            .source
+            .as_ref()
+            .filter(|source| source.format == crate::dialect::FORMAT)
+            .and_then(|source| source.dialect.as_ref())
+            .filter(|dialect| dialect.as_str() != target)
+            .map(|dialect| {
+                format!(
+                    "source is {dialect}, target is {target}; the schema the source declared is \
+                     not what this export writes"
+                )
+            });
+        Ok(Resolution { schema, declined })
     }
 }
 
@@ -155,16 +188,21 @@ impl Encoder for StepCodec {
     /// this writer emits stamps object-identifier arcs the source never
     /// declared. An explicit target is the escape.
     ///
-    /// `self.options.schema` supplies the target only when there is nothing to
-    /// inherit: the document has no source, or a source of another format.
-    /// Neither is reachable from the command line, which builds `Inherit` only
-    /// for a STEP source.
+    /// A STEP source that records no dialect is refused too: there is nothing
+    /// to preserve, and choosing a schema for it would be choosing an identity
+    /// it never declared.
+    ///
+    /// The catalog default supplies the target only when there is nothing to
+    /// inherit: the document has no source, or a source of another format. That
+    /// is the cross-format path, where the application layer would have built
+    /// `Explicit(catalog default)` itself. `self.options.schema` supplies
+    /// nothing: it is overwritten on every path.
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let schema = self.resolve(input.ir, request)?;
+        let Resolution { schema, declined } = Self::resolve(input.ir, request)?;
         let options = StepWriteOptions {
             schema,
             ..self.options.clone()
@@ -173,11 +211,13 @@ impl Encoder for StepCodec {
         let mut report = write_step(input.ir, &mut bytes, &options).map_err(CodecError::from)?;
         // `write_step` takes no fidelity sidecar, so the report it returns
         // states the only resolution it can see. Whether the caller supplied
-        // one is known here, and only here.
-        report.fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
+        // one, and whether the source's own schema survived, are known here and
+        // only here. A write that changes the declared schema charges the
+        // fidelity, naming both dialects.
+        report.fidelity = match declined {
+            Some(reason) => FidelityResolution::Degraded { reason },
+            None if input.fidelity.is_some() => FidelityResolution::NotConsumed,
+            None => FidelityResolution::NotProvided,
         };
         Ok(ExportPlan::buffered(report, bytes))
     }

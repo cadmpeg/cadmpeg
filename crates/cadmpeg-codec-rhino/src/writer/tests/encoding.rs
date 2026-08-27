@@ -62,8 +62,11 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+    RhinoEncoder
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -88,8 +91,11 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+    let error = RhinoEncoder
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("user-string metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
@@ -105,8 +111,11 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+    RhinoEncoder
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -131,8 +140,11 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+    let error = RhinoEncoder
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("mesh modifier metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
@@ -148,8 +160,11 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+    RhinoEncoder
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -178,8 +193,11 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+    let error = RhinoEncoder
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("layer metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));

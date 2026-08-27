@@ -451,8 +451,10 @@ pub fn export_target(
         // only asked to round-trip. The encoder resolves the request instead.
         #[cfg(feature = "rhino")]
         Format::Rhino => crate::application::EncoderRequest::Neutral,
+        // `--iges-target` already travels in `selection` above, as an explicit
+        // target, exactly as `--rhino-target` does.
         #[cfg(feature = "iges")]
-        Format::Iges => crate::application::EncoderRequest::Iges(iges_options.unwrap_or_default()),
+        Format::Iges => crate::application::EncoderRequest::Neutral,
     };
     let encoder = crate::application::build_encoder(format, request).map_err(|error| {
         ConversionRefusal::UnsupportedTarget {
@@ -480,7 +482,7 @@ mod tests {
     fn flag_absence_inherits_only_within_one_format() {
         #[cfg(feature = "iges")]
         {
-            let iges = cadmpeg_codec_iges::IgesEncoder::default();
+            let iges = cadmpeg_codec_iges::IgesEncoder;
             assert_eq!(
                 TargetSelection::Unstated.request(&iges, Some("iges")),
                 TargetRequest::Inherit
@@ -531,7 +533,7 @@ mod tests {
 
         let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut archive_50 = Vec::new();
-        cadmpeg_codec_rhino::RhinoEncoder::new(cadmpeg_codec_rhino::RhinoArchiveVersion::V5)
+        cadmpeg_codec_rhino::RhinoEncoder
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit("rhino:archive-50"),

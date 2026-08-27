@@ -6,7 +6,7 @@ use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::{ExportReport, FidelityResolution};
@@ -22,30 +22,39 @@ pub(crate) trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
 /// What resolving a [`TargetRequest`] against the source decided (design §8.2).
+///
+/// One field, because this writer has one capability. It patches the retained
+/// `Document.xml` and regenerates none, so the only dialect it can deliver is
+/// the one the retained document already declares. Every other resolution is a
+/// refusal, not a degraded write: there is no synthesis path to degrade to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Resolution {
-    /// The persistence band to write.
+    /// The persistence band to write. Always the one the retained document
+    /// graph carries.
     options: FcstdWriteOptions,
-    /// Why the source's own dialect is not what gets written, when it is not.
-    /// `None` on the preservation path, and `None` when there is no `fcstd`
-    /// source at all: nothing was preserved, so nothing was lost.
-    declined: Option<String>,
 }
 
 /// Resolve the request against the source, then plan the export it names.
 ///
 /// `Explicit(id)` refuses an id outside the synthesis catalog. It is otherwise
 /// the replay law's compare: the retained document is written back exactly when
-/// `id` is the source's dialect, and any other id is a transcode the writer
-/// declines below.
+/// the retained graph can deliver `id`, and any other id is a transcode this
+/// writer cannot perform, refused by name with the catalog.
 ///
 /// `Inherit` asks for preservation instead. This writer repacks the retained
 /// entry set and patches `Document.xml` inside it, which reproduces whatever
 /// schema the source declared — schema 2 and schema 3 included, neither of which
 /// is a synthesis target. Where the retained document graph cannot carry the
-/// source's dialect, `Inherit` falls to synthesizing that dialect, and refuses
-/// when it is not in the catalog. There is no fall-through to the catalog
-/// default: a same-format conversion never silently changes what the file is.
-/// `fcstd:schema-2` is the canonical case, and an explicit `--to` is the escape.
+/// source's dialect, `Inherit` refuses, naming that dialect and the catalog.
+/// There is no fall-through to the catalog default: a same-format conversion
+/// never silently changes what the file is. `fcstd:schema-2` is the canonical
+/// case, and an explicit `--to` is the escape — from the inherit refusal, not
+/// from the deliverability one, which no request can talk this writer out of.
+///
+/// An `FCStd` source that records no dialect is refused too: there is nothing to
+/// preserve, and no identity to default to. The catalog default supplies the
+/// target only when there is nothing to inherit at all — no source, or one of
+/// another format.
 pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
@@ -54,24 +63,21 @@ pub(crate) fn plan<'a>(
     let mut bytes = Vec::new();
     let mut report = write(input.ir, &mut bytes, resolution.options)?;
     // `write` takes no fidelity sidecar, so the report it returns states the
-    // only resolution it can see. Whether the caller supplied one, and whether
-    // the source's own dialect survived, are known here and only here.
-    report.fidelity = match resolution.declined {
-        Some(reason) => FidelityResolution::Degraded { reason },
-        None if input.fidelity.is_some() => FidelityResolution::NotConsumed,
-        None => FidelityResolution::NotProvided,
+    // only resolution it can see. Whether the caller supplied one is known
+    // here, and only here. There is no degraded arm: a write that would change
+    // the source's dialect does not reach this point, because this writer
+    // cannot perform one and `resolve` refuses it by name.
+    report.fidelity = if input.fidelity.is_some() {
+        FidelityResolution::NotConsumed
+    } else {
+        FidelityResolution::NotProvided
     };
     Ok(ExportPlan::buffered(report, bytes))
 }
 
 /// Decide what to write, from the request and the source (design §8.2).
 fn resolve(ir: &CadIr, request: TargetRequest<'_>) -> Result<Resolution, CodecError> {
-    let source_dialect = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == dialect::FORMAT)
-        .and_then(|source| source.dialect.clone());
-    match request {
+    let target = match request {
         TargetRequest::Explicit(id) => {
             let options = dialect::target_options(id).ok_or_else(|| {
                 unsupported_target(
@@ -81,52 +87,40 @@ fn resolve(ir: &CadIr, request: TargetRequest<'_>) -> Result<Resolution, CodecEr
                     dialect::TARGETS,
                 )
             })?;
-            let target = dialect::written_dialect(options);
-            let declined = match &source_dialect {
-                Some(source) if *source == target => None,
-                Some(source) => Some(format!(
-                    "source is {source}, target is {target}; the retained FCStd document is not written back"
-                )),
-                // No FCStd source: a constructed graph, or another format's
-                // document. There is no source dialect to lose, so the write is
-                // not a degraded one.
-                None => None,
-            };
-            Ok(Resolution { options, declined })
+            dialect::written_dialect(options)
         }
         TargetRequest::Inherit => {
-            let Some(source_dialect) = source_dialect else {
-                // Nothing to inherit: no FCStd source, or one that records no
-                // dialect. Neither is reachable from the command line, which
-                // builds `Inherit` only for an FCStd source.
-                return Ok(Resolution {
-                    options: FcstdWriteOptions::default(),
-                    declined: None,
-                });
-            };
-            if let Some(options) = retained_baseline(ir, &source_dialect) {
-                return Ok(Resolution {
-                    options,
-                    declined: None,
-                });
+            match cadmpeg_ir::codec::resolve_inherit(ir, dialect::FORMAT, dialect::TARGETS)? {
+                // Nothing to inherit: no source, or one of another format. The
+                // catalog default stands in; no existing file's identity is at
+                // stake. The deliverability check below still applies — this writer
+                // needs a retained graph whatever the request was.
+                Inherited::Fallback(id) => dialect::written_dialect(
+                    dialect::target_options(id)
+                        .expect("the FCStd catalog default is a synthesis target"),
+                ),
+                Inherited::Source(dialect) => dialect.clone(),
             }
-            let Some(options) = dialect::target_options(source_dialect.as_str()) else {
-                return Err(unsupported_target(
-                    dialect::FORMAT,
-                    source_dialect.as_str(),
-                    "its retained document graph cannot be written back and this encoder cannot \
-                     synthesize it",
-                    dialect::TARGETS,
-                ));
-            };
-            Ok(Resolution {
-                options,
-                declined: Some(format!(
-                    "the retained FCStd document graph does not carry {source_dialect}"
-                )),
-            })
         }
-    }
+    };
+    // Deliverability, not preference. This writer patches the retained
+    // `Document.xml` and regenerates none, so the resolved target is reachable
+    // exactly when the retained graph already declares it — §8.1's "a
+    // patch-only writer's row is reachable only from a retained source of that
+    // flavor, and the plan refuses by name where it cannot deliver". The
+    // refusal is typed and carries the catalog, like every other write refusal;
+    // it used to surface as a bare message string from deep inside `write`.
+    retained_baseline(ir, &target)
+        .map(|options| Resolution { options })
+        .ok_or_else(|| {
+            unsupported_target(
+                dialect::FORMAT,
+                target.as_str(),
+                "the retained FCStd document graph does not declare it, and this writer \
+                 regenerates no Document.xml, so it cannot be written",
+                dialect::TARGETS,
+            )
+        })
 }
 
 /// The write options that reproduce `source_dialect` from the retained document
@@ -755,12 +749,24 @@ pub(crate) mod tests {
             .expect_err("unsupported target must fail");
         assert!(unsupported.to_string().contains("SchemaVersion=3"));
 
+        // A document with no retained graph has nothing this writer can patch,
+        // so `plan` refuses by name with the catalog rather than failing deep
+        // inside `write`. The request is irrelevant to the outcome: with
+        // nothing to inherit the catalog default stands in, and the retained
+        // graph cannot deliver that either.
         let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         let missing_graph = FcstdCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut Vec::new()))
             .expect_err("missing graph must fail");
-        assert!(missing_graph.to_string().contains("source-less"));
+        let CodecError::UnsupportedTarget {
+            format, requested, ..
+        } = &missing_graph
+        else {
+            panic!("expected a target refusal, got {missing_graph}");
+        };
+        assert_eq!(format, "fcstd");
+        assert_eq!(requested.as_deref(), Some("fcstd:schema-4"));
     }
 
     #[test]
@@ -862,7 +868,7 @@ pub(crate) mod tests {
             panic!("expected a target refusal, got {error}");
         };
         assert_eq!(format, "fcstd");
-        assert_eq!(requested, "fcstd:nonesuch");
+        assert_eq!(requested.as_deref(), Some("fcstd:nonesuch"));
         for target in Encoder::targets(&FcstdCodec) {
             assert!(available.contains(target.id), "{available}");
         }
@@ -1018,33 +1024,33 @@ pub(crate) mod tests {
             panic!("expected a target refusal, got {error}");
         };
         assert_eq!(format, "fcstd");
-        assert_eq!(requested, "fcstd:schema-2");
+        assert_eq!(requested.as_deref(), Some("fcstd:schema-2"));
         assert!(available.contains("fcstd:schema-4"), "{available}");
     }
 
-    /// An explicit `--to` is the escape from the inherit refusal, and it is
-    /// where this codec's synthesis gap becomes visible.
+    /// An explicit `--to` is the escape from the inherit refusal only where the
+    /// retained graph can deliver the target. Where it cannot, `plan` refuses
+    /// by name, with the catalog, before any byte is written.
     ///
-    /// The request is in the catalog, so `plan` admits it and declines
-    /// preservation with a reason naming both dialects. The write then fails:
-    /// this writer patches the retained `Document.xml` and regenerates none, so
-    /// schema 2 to schema 4 is a transcode it cannot perform. The refusal names
-    /// both sides rather than emitting a schema-4 archive built from schema-2
-    /// records.
+    /// This is where the codec's synthesis gap is visible: it patches the
+    /// retained `Document.xml` and regenerates none, so schema 2 to schema 4 is
+    /// a transcode it cannot perform at any request. A degraded schema-4 write
+    /// built from schema-2 records is not the alternative — there is no
+    /// synthesis path to degrade to, so the honest answer is the same typed
+    /// refusal every sibling gives, not a bare message string from deep inside
+    /// `write`.
     #[test]
-    fn an_explicit_schema_four_target_declines_a_schema_two_source_by_name() {
+    fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
         let decoded = FcstdCodec
             .decode(
                 &mut Cursor::new(schema_two_archive()),
                 &DecodeOptions::default(),
             )
             .expect("decode schema 2");
-        let resolution = resolve(decoded.ir(), TargetRequest::Explicit("fcstd:schema-4"))
-            .expect("schema 4 is in the catalog");
-        assert_eq!(resolution.options, FcstdWriteOptions::default());
-        let declined = resolution.declined.expect("preservation is declined");
-        assert!(declined.contains("fcstd:schema-2"), "{declined}");
-        assert!(declined.contains("fcstd:schema-4"), "{declined}");
+        assert!(
+            resolve(decoded.ir(), TargetRequest::Explicit("fcstd:schema-4")).is_err(),
+            "the retained schema-2 graph cannot deliver schema 4"
+        );
 
         let error = Encoder::plan(
             &FcstdCodec,
@@ -1053,8 +1059,50 @@ pub(crate) mod tests {
         )
         .err()
         .expect("this writer regenerates no Document.xml");
-        let message = error.to_string();
-        assert!(message.contains("fcstd:schema-2"), "{message}");
-        assert!(message.contains("fcstd:schema-4"), "{message}");
+        let CodecError::UnsupportedTarget {
+            format,
+            requested,
+            available,
+            ..
+        } = &error
+        else {
+            panic!("expected a target refusal, got {error}");
+        };
+        assert_eq!(format, "fcstd");
+        assert_eq!(requested.as_deref(), Some("fcstd:schema-4"));
+        assert!(available.contains("fcstd:schema-4"), "{available}");
+    }
+
+    /// An `FCStd` source that records no dialect refuses `Inherit`, uniformly
+    /// with every other encoder, and quotes no dialect id because none exists.
+    #[test]
+    fn inherit_refuses_a_source_that_records_no_dialect() {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(CORE_DESIGN_PRODUCT),
+                &DecodeOptions::default(),
+            )
+            .expect("decode source");
+        let (mut ir, _, _) = decoded.into_parts();
+        ir.source
+            .as_mut()
+            .expect("the decode records a source")
+            .dialect = None;
+
+        let error = inherit(&ir)
+            .err()
+            .expect("a source with no recorded dialect is refused");
+        let CodecError::UnsupportedTarget {
+            format,
+            requested,
+            available,
+            ..
+        } = &error
+        else {
+            panic!("expected a target refusal, got {error}");
+        };
+        assert_eq!(format, "fcstd");
+        assert_eq!(*requested, None);
+        assert!(available.contains("fcstd:schema-4"), "{available}");
     }
 }

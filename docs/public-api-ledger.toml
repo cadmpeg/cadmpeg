@@ -698,3 +698,31 @@ crate = "cadmpeg-codec-rhino"
 kind = "trait_impl"
 item = "impl Default for cadmpeg_codec_rhino::RhinoEncoder"
 reason = "the catalog default archive version, so a caller with no version to state does not have to name one; the constructor version is now only the fallback for a request with nothing to inherit"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::CodecError::UnsupportedTarget::requested: String -> Option<String>"
+reason = "an inherit refusal over a source that records no dialect has no id to quote; the field carried the bare format id in a dialect-id slot"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::{Inherited,resolve_inherit,unrecorded_source_dialect,UNRECORDED_SOURCE_DIALECT_REASON}"
+reason = "one shape for the Inherit half of every encoder's resolution: refuse an unrecorded same-format dialect, fall to the catalog default only with nothing to inherit"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-codec-iges"
+kind = "deletion"
+item = "cadmpeg_codec_iges::IgesEncoder::new"
+reason = "IgesEncoder holds no target state; TargetRequest decides the dialect and the catalog default is the only fallback"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-codec-rhino"
+kind = "deletion"
+item = "cadmpeg_codec_rhino::RhinoEncoder::new"
+reason = "RhinoEncoder holds no target state; the constructor version was a fourth answer to which dialect and overrode the other three"

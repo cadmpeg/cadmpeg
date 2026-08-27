@@ -110,8 +110,12 @@ impl StepOutputArgs {
     }
 
     fn options(&self) -> cadmpeg_codec_step::StepWriteOptions {
+        // `schema` is deliberately left at its default. `--step-target`
+        // travels in `TargetSelection` as an explicit target, and the encoder
+        // resolves the request against the source. Restating it here as
+        // encoder state — with AP214 standing in for flag absence — is the
+        // same defect `--rhino-target` had.
         cadmpeg_codec_step::StepWriteOptions {
-            schema: self.step_target.unwrap_or_default().schema(),
             unsupported: if self.reject_step_losses {
                 cadmpeg_codec_step::StepUnsupportedPolicy::Reject
             } else {

@@ -96,7 +96,7 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
         .ok()?;
     let mut encoded = Vec::new();
     let written = Encoder::plan(
-        &RhinoEncoder::new(version),
+        &RhinoEncoder,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
         TargetRequest::Explicit(version.target()),
     )

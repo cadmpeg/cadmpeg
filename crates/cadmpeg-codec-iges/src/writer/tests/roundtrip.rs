@@ -19,7 +19,7 @@ use crate::test_support::{
     placed_tabulated_line_file, polynomial_nurbs_curve_file, tabulated_hyperbola_file,
     trimmed_surface_of_revolution_file,
 };
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
 const FIXTURE_EXTENSION: &str = "igs";
@@ -38,7 +38,7 @@ fn try_lossless_round_trip(
     fidelity: Option<&SourceFidelity>,
 ) -> bool {
     let Ok(plan) = Encoder::plan(
-        &IgesEncoder::default(),
+        &IgesEncoder,
         EncodeInput { ir, fidelity },
         TargetRequest::Explicit(IgesVersion::V5_3.target()),
     ) else {
@@ -107,7 +107,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             )
             .expect("line revolution fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
+            &IgesEncoder,
             EncodeInput::new(original.ir(), None),
             TargetRequest::Explicit(version.target()),
         )
@@ -255,7 +255,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
+            &IgesEncoder,
             EncodeInput::new(original.ir(), None),
             TargetRequest::Explicit(version.target()),
         )
@@ -390,7 +390,7 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
 
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
+            &IgesEncoder,
             EncodeInput::new(original.ir(), None),
             TargetRequest::Explicit(version.target()),
         )
@@ -448,7 +448,7 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
 
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
+            &IgesEncoder,
             EncodeInput::new(original.ir(), None),
             TargetRequest::Explicit(version.target()),
         )
@@ -524,7 +524,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             )
             .expect("hyperbola tabulated fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
+            &IgesEncoder,
             EncodeInput::new(original.ir(), None),
             TargetRequest::Explicit(version.target()),
         )
@@ -679,7 +679,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             )
             .expect("placed hyperbola tabulated fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
+            &IgesEncoder,
             EncodeInput::new(original.ir(), None),
             TargetRequest::Explicit(version.target()),
         )
@@ -819,7 +819,7 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             )
             .expect("placed line tabulated fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
+            &IgesEncoder,
             EncodeInput::new(original.ir(), None),
             TargetRequest::Explicit(version.target()),
         )
@@ -878,7 +878,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
         )
         .expect("hyperbola revolution fixture decodes");
     let plan = Encoder::plan(
-        &IgesEncoder::new(IgesWriteOptions { version }),
+        &IgesEncoder,
         EncodeInput::new(original.ir(), None),
         TargetRequest::Explicit(version.target()),
     )

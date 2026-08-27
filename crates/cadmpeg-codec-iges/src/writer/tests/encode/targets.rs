@@ -20,7 +20,7 @@ fn inherit<'a>(
     ir: &'a CadIr,
     fidelity: Option<&'a cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, CodecError> {
-    IgesEncoder::default().plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+    IgesEncoder.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
 }
 
 /// The flagship case: `convert in.igs -o out.igs` on a file that is not the
@@ -113,7 +113,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "iges");
-    assert_eq!(requested, "iges:1.0-fixed-ascii");
+    assert_eq!(requested.as_deref(), Some("iges:1.0-fixed-ascii"));
     assert!(available.contains("iges:5.3-fixed-ascii"), "{available}");
 }
 
@@ -143,7 +143,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
-    let error = IgesEncoder::default()
+    let error = IgesEncoder
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Explicit("step:ap242-e3"),
@@ -158,7 +158,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(requested, "step:ap242-e3");
+    assert_eq!(requested.as_deref(), Some("step:ap242-e3"));
     for version in IgesVersion::ALL {
         assert!(available.contains(version.target()), "{available}");
     }
@@ -170,7 +170,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
 /// written by preserving a source image instead.
 #[test]
 fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
-    let targets = IgesEncoder::default().targets();
+    let targets = IgesEncoder.targets();
     assert_eq!(targets.len(), IgesVersion::ALL.len());
     for version in IgesVersion::ALL {
         assert!(find_target(targets, version.target()).is_some());
