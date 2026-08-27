@@ -4752,25 +4752,20 @@ fn source_and_tolerances(
     (source_meta(scan, attributes), tolerances)
 }
 
-/// The archive's primary `f3d` layer and its embedded ACIS layers.
-fn primary_layer_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMatch> {
-    let mut dialects = vec![scan.dialect.clone()];
-    dialects.extend(crate::dialect::kernel_layers(scan));
-    cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
-    dialects
-}
-
 /// The recovery charge for the archive's primary layer, if the layer was read
 /// with a strategy its own declaration does not name.
 ///
 /// Every `DecodeReport` this codec builds appends this, so the charge and
 /// `DecodeReport::dialects` come from the same match and cannot disagree.
-fn dialect_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::LossNote> {
+fn dialect_losses(
+    scan: &ContainerScan,
+    kernel_layers: &[cadmpeg_core::dialect::DialectMatch],
+) -> Vec<cadmpeg_ir::report::LossNote> {
     let mut losses = crate::dialect::dialect_loss(&scan.dialect)
         .into_iter()
         .collect::<Vec<_>>();
     losses.extend(
-        crate::dialect::kernel_layers(scan)
+        kernel_layers
             .iter()
             .filter_map(crate::dialect::kernel_dialect_loss),
     );
@@ -4804,6 +4799,8 @@ fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> Str
 }
 
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
+    let summary = container::summarize(scan);
+    let kernel_layers = &summary.dialects[1..];
     let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
@@ -4885,17 +4882,17 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         "Materials/appearances (.protein assets, ACT/design assignments) were not \
          transferred.",
     ));
-    losses.extend(dialect_losses(scan));
+    losses.extend(dialect_losses(scan, kernel_layers));
 
     DecodeReport {
-        dialects: primary_layer_dialects(scan),
+        dialects: summary.dialects,
         format: crate::dialect::FORMAT.to_string(),
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
-        notes: container::summarize(scan)
+        notes: summary
             .notes
             .into_iter()
             .filter(|note| !note.starts_with("container-level inspection only"))
@@ -4963,6 +4960,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 /// decode-failure note. Each remaining state gets its own loss description.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
+    let kernel_layers = &summary.dialects[1..];
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);
@@ -5045,10 +5043,10 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         ));
     }
 
-    losses.extend(dialect_losses(scan));
+    losses.extend(dialect_losses(scan, kernel_layers));
 
     DecodeReport {
-        dialects: primary_layer_dialects(scan),
+        dialects: summary.dialects,
         format: crate::dialect::FORMAT.to_string(),
         container_only,
         geometry_transferred: false,
