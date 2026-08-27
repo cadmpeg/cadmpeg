@@ -195,6 +195,7 @@
         "variant": "fbb_only",
         "vertex_records": "3"
       },
+      "dialect": "catia:fbb-only",
       "format": "catia"
     },
     "tolerances": {
@@ -594,6 +595,13 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "dialect": "catia:fbb-only",
+        "format": "catia"
+      }
+    ],
     "format": "catia",
     "geometry_transferred": true,
     "losses": [

@@ -404,6 +404,7 @@
         "preview_count": "0",
         "variant": "zero_entity"
       },
+      "dialect": "catia:zero-entity",
       "format": "catia"
     },
     "tolerances": {
@@ -758,6 +759,13 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "dialect": "catia:zero-entity",
+        "format": "catia"
+      }
+    ],
     "format": "catia",
     "geometry_transferred": true,
     "losses": [

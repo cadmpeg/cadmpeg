@@ -42,6 +42,7 @@ pub(crate) mod container;
 pub(crate) mod coverage;
 pub(crate) mod decode;
 pub(crate) mod design_feature;
+pub(crate) mod dialect;
 pub(crate) mod entity_table;
 pub(crate) mod families;
 pub(crate) mod formula;

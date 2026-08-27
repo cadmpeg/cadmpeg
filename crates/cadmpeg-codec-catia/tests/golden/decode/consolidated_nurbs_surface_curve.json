@@ -796,6 +796,7 @@
         "variant": "standard_nested",
         "vertex_records": "3"
       },
+      "dialect": "catia:standard-nested",
       "format": "catia"
     },
     "tolerances": {
@@ -1195,6 +1196,13 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "dialect": "catia:standard-nested",
+        "format": "catia"
+      }
+    ],
     "format": "catia",
     "geometry_transferred": true,
     "losses": [
