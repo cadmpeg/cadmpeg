@@ -4,8 +4,7 @@
 
 The registry pins format-identity names: an id chosen once is an id forever.
 This checker is its oracle for registry-internal rules -- schema, id grammar,
-witness form, the IGES admission lattice, and pinned-id presence in codec
-source.
+witness form, supersession, and pinned-id presence in codec source.
 
 Rendered support tables are checked by ``scripts/render-format-support.py
 --check``, which regenerates every published table from this registry and
@@ -43,31 +42,20 @@ ROW_KEYS = frozenset(
         "witness",
         "seam",
         "supersedes",
-        "adds",
-        "subtracts",
         "pinned",
     }
 )
 REQUIRED_ROW_KEYS = ("id", "title", "discriminants", "witness")
 
-# `supersedes`/`adds`/`subtracts` are admitted only where the checker consumes
-# them (consumer law, design section 5). IGES is the one consumer today.
-LATTICE_KEYS = ("supersedes", "adds", "subtracts")
-LATTICE_FORMATS = frozenset({"iges"})
+# `supersedes` is admitted only where the checker consumes it. IGES is the one
+# consumer today.
+SUPERSEDES_FORMATS = frozenset({"iges"})
 
 WITNESS_PREFIXES = ("spec:", "corpus:", "code:")
 
 FORMAT_ID = re.compile(r"[a-z0-9]+")
 # Dots are legal in a dialect name: `iges:5.3-fixed-ascii`.
 DIALECT_NAME = re.compile(r"[a-z0-9.-]+")
-# `subtracts` is a list of single (type, form) admissions.
-ADMISSION = re.compile(r"(\d+):(\d+)")
-# `adds` also accepts a closed form range, because the additive half of the
-# IGES 5.0 table includes the implementor-defined band 5001..=9999
-# (crates/cadmpeg-codec-iges/src/profile.rs:101 via profile.rs:124).
-ADMISSION_RANGE = re.compile(r"(\d+):(\d+)(?:-(\d+))?")
-
-
 def _is_table(value: object) -> bool:
     return isinstance(value, dict)
 
@@ -140,30 +128,18 @@ def check_witness(label: str, witness: object, root: Path, failures: list[str]) 
     return False
 
 
-def check_lattice_shape(label: str, fmt: str, row: dict, failures: list[str]) -> None:
-    """Validate the lattice keys on one row, except cross-row id resolution."""
-    for key in LATTICE_KEYS:
-        if key not in row:
-            continue
-        if fmt not in LATTICE_FORMATS:
-            failures.append(f"{label}: {key} is admitted only on {'/'.join(sorted(LATTICE_FORMATS))} rows")
-            continue
-        entries = row[key]
-        if not isinstance(entries, list) or not all(isinstance(e, str) for e in entries):
-            failures.append(f"{label}: {key} must be a list of strings")
-            continue
-        if key == "supersedes":
-            continue
-        pattern = ADMISSION_RANGE if key == "adds" else ADMISSION
-        shape = "type:form or type:low-high" if key == "adds" else "type:form"
-        for entry in entries:
-            match = pattern.fullmatch(entry)
-            if match is None:
-                failures.append(f"{label}: {key} entry {entry!r} is not {shape}")
-                continue
-            high = match.group(3) if key == "adds" else None
-            if high is not None and int(high) < int(match.group(2)):
-                failures.append(f"{label}: {key} entry {entry!r} has an inverted form range")
+def check_supersedes_shape(label: str, fmt: str, row: dict, failures: list[str]) -> None:
+    """Validate one supersession list, except cross-row id resolution."""
+    if "supersedes" not in row:
+        return
+    if fmt not in SUPERSEDES_FORMATS:
+        failures.append(
+            f"{label}: supersedes is admitted only on {'/'.join(sorted(SUPERSEDES_FORMATS))} rows"
+        )
+        return
+    entries = row["supersedes"]
+    if not isinstance(entries, list) or not all(isinstance(entry, str) for entry in entries):
+        failures.append(f"{label}: supersedes must be a list of strings")
 
 
 def check_row(row: object, index: int, formats: dict, root: Path, failures: list[str]):
@@ -225,7 +201,7 @@ def check_row(row: object, index: int, formats: dict, root: Path, failures: list
 
     code_debt = check_witness(label, row["witness"], root, failures) if "witness" in row else False
 
-    check_lattice_shape(label, fmt or "", row, failures)
+    check_supersedes_shape(label, fmt or "", row, failures)
     return dialect_id, fmt, code_debt
 
 
