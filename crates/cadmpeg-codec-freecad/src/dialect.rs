@@ -37,12 +37,60 @@
 
 use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
+use crate::FcstdWriteOptions;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::codec::{find_target, TargetDescriptor};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "fcstd";
+
+/// The `FileVersion` every synthesis target declares.
+///
+/// `FileVersion` is not part of a dialect id ("`FileVersion` is provenance, not
+/// evidence", below), so a catalog id cannot carry one and the writer's gate
+/// still compares it. This is the value the catalog means.
+const TARGET_FILE_VERSION: u32 = 1;
+
+/// The synthesis catalog: the dialects this encoder produces for an input whose
+/// retained document graph already declares them.
+///
+/// Preservation is not listed here (design §8.2). [`crate::writer`] repacks the
+/// retained entry set and patches `Document.xml` in place, so it preserves every
+/// schema this codec reads — schema 2 included — while it regenerates none. The
+/// catalog is what an explicit `--to` may name; [`TargetRequest::Inherit`] asks
+/// for the retained document's own dialect instead, whatever that is.
+///
+/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::TargetRequest::Inherit
+pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
+    id: "fcstd:schema-4",
+    label: "FreeCAD Document.xml schema version 4",
+    aliases: &["4"],
+    default: true,
+}];
+
+/// The write options a catalog id names, or `None` for an id outside it.
+///
+/// Aliases resolve through [`find_target`], so the match below is on the
+/// canonical id only.
+pub(crate) fn target_options(id: &str) -> Option<FcstdWriteOptions> {
+    match find_target(TARGETS, id)?.id {
+        "fcstd:schema-4" => Some(FcstdWriteOptions {
+            schema_version: 4,
+            file_version: TARGET_FILE_VERSION,
+        }),
+        _ => None,
+    }
+}
+
+/// The dialect a write at `options` produces.
+///
+/// The one place that maps write options onto a registry row, so the writer's
+/// target gate and the dialect the report states can never disagree.
+pub(crate) fn written_dialect(options: FcstdWriteOptions) -> DialectId {
+    FcstdDialect::from_schema_version(&options.schema_version.to_string()).id()
+}
 
 /// Key of `Document/@SchemaVersion` in [`DialectMatch::declared`].
 ///
@@ -101,7 +149,7 @@ impl FcstdDialect {
     /// Keyed on the declared string rather than on a parsed integer, because
     /// the registry's discriminants are strings and a row matches only when its
     /// own discriminant matches.
-    fn from_schema_version(declared: &str) -> Self {
+    pub(crate) fn from_schema_version(declared: &str) -> Self {
         match declared {
             "2" => Self::Schema2,
             "3" => Self::Schema3,
