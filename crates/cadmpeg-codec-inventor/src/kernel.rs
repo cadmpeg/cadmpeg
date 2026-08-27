@@ -65,16 +65,26 @@ pub(crate) struct DecodedKernelCarrier {
     pub(crate) brep: AsmBrep,
 }
 
+pub(crate) fn parse_kernel_header(carrier: &ActiveCarrier<'_>) -> Result<KernelHeader, CodecError> {
+    let bytes = carrier.bytes.window();
+    match carrier.family {
+        KernelFamily::Asm => asm_header::parse(bytes).ok_or_else(|| {
+            CodecError::Malformed("Inventor ASM carrier has no parseable header".into())
+        }),
+        KernelFamily::Acis => acis_header::parse(bytes).ok_or_else(|| {
+            CodecError::Malformed("Inventor ACIS carrier has no parseable header".into())
+        }),
+    }
+}
+
 pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
+    header: KernelHeader,
 ) -> Result<DecodedKernelCarrier, CodecError> {
     let bytes = carrier.bytes.window();
-    let (header, start, solved_limit) = match carrier.family {
+    let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
-            asm_header::parse(bytes).ok_or_else(|| {
-                CodecError::Malformed("Inventor ASM carrier has no parseable header".into())
-            })?,
             asm_header::record_stream_start(bytes).ok_or_else(|| {
                 CodecError::Malformed("Inventor ASM carrier has no record stream".into())
             })?,
@@ -85,11 +95,7 @@ pub(crate) fn decode_kernel_carrier(
             // moves the carrier's `acis:` admission and its
             // source.kernel-dialect-unverified mark (`dialect::kernel_layer`), never
             // whether the records are read.
-            let header = acis_header::parse(bytes).ok_or_else(|| {
-                CodecError::Malformed("Inventor ACIS carrier has no parseable header".into())
-            })?;
             (
-                header,
                 acis_header::record_stream_start(bytes).ok_or_else(|| {
                     CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
                 })?,
@@ -289,6 +295,14 @@ mod tests {
     use super::*;
     use crate::test_support::acis_sphere_kernel_stream;
 
+    fn decode_test_carrier(
+        ctx: &DecodeContext<'_>,
+        carrier: &ActiveCarrier<'_>,
+    ) -> Result<DecodedKernelCarrier, CodecError> {
+        let header = parse_kernel_header(carrier)?;
+        decode_kernel_carrier(ctx, carrier, header)
+    }
+
     #[test]
     fn typed_carrier_envelope_selects_family_and_exact_footer() {
         let bytes = carrier_fixture(b"ASM BinaryFile4 synthetic", 18);
@@ -334,7 +348,7 @@ mod tests {
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
         let carrier = parse_carrier(view, "token", 7, 100, 23).expect("carrier parses");
-        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ASM carrier decodes");
+        let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
         assert_eq!(decoded.header.width, 4);
         assert_eq!(decoded.header.save_format_version, Some(700));
@@ -351,7 +365,7 @@ mod tests {
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
         let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
-        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
+        let decoded = decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
 
         assert_eq!(carrier.family, KernelFamily::Acis);
         assert_eq!(decoded.header.width, 4);
@@ -374,7 +388,7 @@ mod tests {
                     .expect("synthetic carrier fits policy");
             let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
             assert_eq!(carrier.family, KernelFamily::Acis);
-            decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
+            decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
 
         let verified = decode(21_800);
@@ -406,7 +420,7 @@ mod tests {
                     .expect("synthetic carrier fits policy");
             let carrier = parse_carrier(view, "token", 7, 100, segment_version_major)
                 .expect("nearest footer frames");
-            decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
+            decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
 
         let in_band = decode(15);
@@ -439,7 +453,7 @@ mod tests {
             .expect("synthetic carrier fits policy");
         let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
         assert!(matches!(
-            decode_kernel_carrier(&ctx, &carrier),
+            decode_test_carrier(&ctx, &carrier),
             Err(CodecError::Malformed(_))
         ));
     }

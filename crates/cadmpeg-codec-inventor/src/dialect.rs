@@ -70,7 +70,7 @@ use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
 use crate::database::RseSchema;
-use crate::kernel::{ActiveCarrier, KernelFamily};
+use crate::kernel::KernelFamily;
 use crate::loss::InventorLossCode;
 use crate::rse::MetaStreamDeclaration;
 
@@ -298,39 +298,16 @@ impl DialectRecovery {
     }
 }
 
-/// The `acis:` kernel-layer match for one active carrier.
-pub(crate) fn kernel_layer(carrier: &ActiveCarrier<'_>) -> Option<DialectMatch> {
-    let bytes = carrier.bytes.window();
-    let (header, dialect, admission) = match carrier.family {
-        KernelFamily::Asm => {
-            let header = cadmpeg_asm::asm_header::parse(bytes)?;
-            let dialect = cadmpeg_asm::dialect::asm_binary_row(header.width);
-            (header, dialect, Admission::Admitted)
-        }
-        KernelFamily::Acis => {
-            let header = cadmpeg_asm::acis_header::parse(bytes)?;
-            let major = header.save_format_major();
-            (
-                header,
-                cadmpeg_asm::dialect::acis_binary_row(major),
-                cadmpeg_asm::dialect::acis_admission(major),
-            )
-        }
+/// The `acis:` kernel-layer match for one parsed active carrier.
+pub(crate) fn kernel_layer(
+    family: KernelFamily,
+    header: &cadmpeg_asm::kernel_header::KernelHeader,
+) -> DialectMatch {
+    let header = match family {
+        KernelFamily::Asm => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
+        KernelFamily::Acis => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
     };
-    let mut declared = BTreeMap::new();
-    if let Some(major) = header.save_format_major() {
-        declared.insert("save_format_major".to_owned(), major.to_string());
-    }
-    if let Some(minor) = header.save_format_minor() {
-        declared.insert("save_format_minor".to_owned(), minor.to_string());
-    }
-    declared.insert("reference_width".to_owned(), header.width.to_string());
-    Some(DialectMatch {
-        format: "acis".to_owned(),
-        dialect: Some(dialect),
-        declared,
-        admission,
-    })
+    cadmpeg_asm::dialect::classify(header)
 }
 
 /// The recovery loss the kernel layer charges, if it recovered.
