@@ -31,6 +31,8 @@ pub enum FreecadLossCode {
     SketchNativeConstraint,
     /// Topology color values were retained because their count did not match mapped topology.
     AppearanceTopologyColorCountMismatch,
+    /// The declared persistence schema names no dialect this codec has a strategy for.
+    SourceDialectUnverified,
 }
 
 impl FreecadLossCode {
@@ -42,6 +44,7 @@ impl FreecadLossCode {
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
         Self::AppearanceTopologyColorCountMismatch,
+        Self::SourceDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -55,6 +58,7 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
+            Self::SourceDialectUnverified => "source.dialect-unverified",
         }
     }
 
@@ -66,7 +70,9 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
-            Self::AppearanceTopologyColorCountMismatch => Severity::Warning,
+            Self::AppearanceTopologyColorCountMismatch | Self::SourceDialectUnverified => {
+                Severity::Warning
+            }
         }
     }
 
@@ -79,6 +85,7 @@ impl FreecadLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
 
@@ -116,6 +123,7 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.native-constraint",
                 "appearance.topology-color-count-mismatch",
+                "source.dialect-unverified",
             ]
         );
     }

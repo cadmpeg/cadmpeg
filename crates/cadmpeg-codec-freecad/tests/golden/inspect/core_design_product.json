@@ -1,5 +1,17 @@
 {
   "container_kind": "zip",
+  "dialects": [
+    {
+      "admission": "admitted",
+      "declared": {
+        "file_version": "1",
+        "program_version": "1.1R20260414 (Git shallow)",
+        "schema_version": "4"
+      },
+      "dialect": "fcstd:schema-4",
+      "format": "fcstd"
+    }
+  ],
   "entries": [
     {
       "attributes": {

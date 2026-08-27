@@ -2133,6 +2133,12 @@
         "program_version": "1.1R20260414 (Git shallow)",
         "schema_version": "4"
       },
+      "declared": {
+        "file_version": "1",
+        "program_version": "1.1R20260414 (Git shallow)",
+        "schema_version": "4"
+      },
+      "dialect": "fcstd:schema-4",
       "format": "fcstd"
     },
     "tolerances": {
@@ -2145,6 +2151,18 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260414 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4",
+        "format": "fcstd"
+      }
+    ],
     "format": "fcstd",
     "geometry_transferred": true,
     "losses": [],
