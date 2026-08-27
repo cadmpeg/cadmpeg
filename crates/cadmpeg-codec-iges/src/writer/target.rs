@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
-pub(super) fn plan<'a>(
+pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {

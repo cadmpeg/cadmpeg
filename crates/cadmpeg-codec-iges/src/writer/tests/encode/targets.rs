@@ -134,6 +134,17 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         plan.report().target.as_ref().map(ToString::to_string),
         Some("iges:5.3-fixed-ascii".to_owned())
     );
+    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotProvided);
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind()));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != IgesLossCode::PreservedSourceUnavailable.kind()));
 }
 
 /// An explicit id outside the catalog is refused with the catalog, so the
