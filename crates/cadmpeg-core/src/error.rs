@@ -135,7 +135,7 @@ mod tests {
             format: "acis".into(),
             dialect_match: Box::new(DialectMatch {
                 format: "acis".into(),
-                dialect: Some(DialectId::pinned("acis:save-format-700")),
+                dialect: Some(DialectId::pinned("acis:save-format-binary-other")),
                 declared: BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
                 admission: Admission::Refused,
             }),
@@ -151,7 +151,7 @@ mod tests {
         };
         assert_eq!(
             dialect_match.dialect.as_ref().map(DialectId::as_str),
-            Some("acis:save-format-700")
+            Some("acis:save-format-binary-other")
         );
         assert_eq!(dialect_match.declared["save_format"], "700");
     }
