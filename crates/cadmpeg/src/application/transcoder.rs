@@ -39,9 +39,10 @@ pub struct ExportTarget {
 /// The target the command line named, before the source is known.
 ///
 /// `--to` names a dialect outright. A `--to` that names only a format, or no
-/// `--to` at all, is not a target: it means "the same kind of file", which is
-/// preservation within one format and the catalog default across formats — and
-/// which of the two applies is only known once the source has been read.
+/// `--to` at all, is not a target: it means "the same kind of file", and which
+/// file that is depends on the source, which the encoder reads. This type is
+/// an owned-string adapter for the explicit case and nothing more; it decides
+/// no default.
 #[derive(Debug, Clone)]
 pub enum TargetSelection {
     /// `--to` named this dialect, as a registry id or a catalog alias.
@@ -51,38 +52,21 @@ pub enum TargetSelection {
 }
 
 impl TargetSelection {
-    /// Builds the encoder request for a source in `source_format`.
+    /// Builds the encoder request.
     ///
-    /// Flag absence within one format is [`TargetRequest::Inherit`], the
-    /// identity default: a no-op round trip keeps the dialect the file already
-    /// is instead of silently rewriting it as the encoder's newest. Across
-    /// formats there is nothing to inherit, so it is the catalog default. An
-    /// encoder with no synthesis catalog — CADIR, which has no dialect at all —
-    /// takes `Inherit` either way.
-    fn request<'a>(
-        &'a self,
-        encoder: &dyn Encoder,
-        source_format: Option<&str>,
-    ) -> TargetRequest<'a> {
+    /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
+    /// resolves to is the encoder's answer, not the command line's:
+    /// `resolve_inherit` preserves the source's dialect within one format and
+    /// falls back to the catalog default when there is nothing to inherit —
+    /// no source, a source of another format, or an encoder with no synthesis
+    /// catalog. Deciding the cross-format default here as well would be the
+    /// same rule written twice, in two places that can drift.
+    fn request(&self) -> TargetRequest<'_> {
         match self {
             Self::Explicit(id) => TargetRequest::Explicit(id),
-            Self::Unstated => {
-                if source_format == Some(encoder.id()) {
-                    return TargetRequest::Inherit;
-                }
-                match cadmpeg_ir::codec::default_target(encoder.targets()) {
-                    Some(id) => TargetRequest::Explicit(id),
-                    None => TargetRequest::Inherit,
-                }
-            }
+            Self::Unstated => TargetRequest::Inherit,
         }
     }
-}
-
-/// The format the document came from, which decides whether flag absence
-/// inherits.
-fn source_format(ir: &CadIr) -> Option<&str> {
-    ir.source.as_ref().map(|source| source.format.as_str())
 }
 
 /// Policy controlling validation, loss refusal, and destination rules.
@@ -211,9 +195,7 @@ impl<'a> Transcoder<'a> {
             .into());
         }
 
-        let request = target
-            .selection
-            .request(target.encoder.as_ref(), source_format(&loaded.ir));
+        let request = target.selection.request();
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
@@ -263,9 +245,7 @@ impl<'a> Transcoder<'a> {
 impl PreparedConversion {
     /// Writes the destination artifact and optional CADIR sidecar.
     pub fn write(self) -> Result<ExportReport> {
-        let request = self
-            .selection
-            .request(self.encoder.as_ref(), source_format(&self.document.ir));
+        let request = self.selection.request();
         let plan = self.encoder.plan(
             EncodeInput::new(&self.document.ir, self.document.fidelity()),
             request,
@@ -460,42 +440,50 @@ mod tests {
     use super::*;
     use cadmpeg_ir::codec::CadirEncoder;
 
-    /// Flag absence is read against the source, not against the format table.
+    /// Flag absence is always `Inherit`; the encoder decides what that means.
     ///
-    /// Within one format it inherits, which is what keeps a no-op round trip
-    /// byte-identical. Across formats there is nothing to inherit, so it is the
-    /// catalog default. An encoder with no catalog inherits either way.
+    /// The selection is an owned-string adapter and nothing else. The
+    /// cross-format catalog default is `resolve_inherit`'s `Fallback` arm, so
+    /// the command line does not decide it a second time.
     #[test]
-    fn flag_absence_inherits_only_within_one_format() {
-        #[cfg(feature = "iges")]
-        {
-            let iges = cadmpeg_codec_iges::IgesEncoder;
-            assert_eq!(
-                TargetSelection::Unstated.request(&iges, Some("iges")),
-                TargetRequest::Inherit
-            );
-            assert_eq!(
-                TargetSelection::Unstated.request(&iges, Some("step")),
-                TargetRequest::Explicit("iges:5.3-fixed-ascii")
-            );
-            assert_eq!(
-                TargetSelection::Unstated.request(&iges, None),
-                TargetRequest::Explicit("iges:5.3-fixed-ascii")
-            );
-            let named = TargetSelection::Explicit("iges:5.1-fixed-ascii".to_owned());
-            assert_eq!(
-                named.request(&iges, Some("iges")),
-                TargetRequest::Explicit("iges:5.1-fixed-ascii")
-            );
-        }
+    fn flag_absence_is_always_an_inherit_request() {
+        assert_eq!(TargetSelection::Unstated.request(), TargetRequest::Inherit);
+        let named = TargetSelection::Explicit("iges:5.1-fixed-ascii".to_owned());
         assert_eq!(
-            TargetSelection::Unstated.request(&CadirEncoder, Some("iges")),
-            TargetRequest::Inherit
+            named.request(),
+            TargetRequest::Explicit("iges:5.1-fixed-ascii")
         );
+    }
+
+    /// The cross-format default still lands on the catalog default.
+    ///
+    /// A source of another format has nothing to inherit, so `resolve_inherit`
+    /// falls back. This is the behavior the command line used to compute for
+    /// itself.
+    #[cfg(feature = "iges")]
+    #[test]
+    fn a_cross_format_convert_writes_the_catalog_default() {
+        use cadmpeg_ir::codec::{resolve_inherit, Inherited};
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.source = Some(cadmpeg_ir::SourceMeta {
+            format: "step".into(),
+            ..Default::default()
+        });
+        let encoder = cadmpeg_codec_iges::IgesEncoder;
         assert_eq!(
-            TargetSelection::Unstated.request(&CadirEncoder, Some("cadir")),
-            TargetRequest::Inherit
+            resolve_inherit(&ir, encoder.id(), encoder.targets()).expect("the fallback resolves"),
+            Inherited::Fallback("iges:5.3-fixed-ascii")
         );
+    }
+
+    /// CADIR has no catalog, so it takes `Inherit` either way.
+    #[test]
+    fn cadir_takes_inherit() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        assert!(CadirEncoder
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .is_ok());
     }
 
     /// `convert old.3dm -o new.3dm` with no target flag writes the archive
@@ -536,9 +524,7 @@ mod tests {
             .expect("the archive decodes");
 
         let target = export_target(Format::Rhino, None, LossPolicy::Report);
-        let request = target
-            .selection
-            .request(target.encoder.as_ref(), source_format(decoded.ir()));
+        let request = target.selection.request();
         assert_eq!(request, TargetRequest::Inherit);
 
         let plan = target
@@ -569,18 +555,11 @@ mod tests {
             "{:?}",
             target.selection
         );
-        assert_eq!(
-            target
-                .selection
-                .request(target.encoder.as_ref(), Some("step")),
-            TargetRequest::Inherit
-        );
+        assert_eq!(target.selection.request(), TargetRequest::Inherit);
 
         let named = export_target(Format::Step, Some("step:ap242-e3"), LossPolicy::Reject);
         assert_eq!(
-            named
-                .selection
-                .request(named.encoder.as_ref(), Some("step")),
+            named.selection.request(),
             TargetRequest::Explicit("step:ap242-e3")
         );
     }
@@ -600,7 +579,7 @@ mod tests {
         for spelling in ["rhino:archive-60", "60"] {
             let target = export_target(Format::Rhino, Some(spelling), LossPolicy::Report);
             assert_eq!(
-                target.selection.request(target.encoder.as_ref(), None),
+                target.selection.request(),
                 TargetRequest::Explicit(spelling)
             );
             let plan = target
