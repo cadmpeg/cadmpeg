@@ -5,9 +5,13 @@
 The registry pins format-identity names: an id chosen once is an id forever.
 This checker is its oracle. Version 1 is registry-internal only -- schema,
 id grammar, witness form, and the IGES admission lattice. The cross-checks
-against codec behaviour (emitted ids, fixture gating, rendered support
-tables) arrive with later phases and are stubbed at the bottom of this file
-so their wiring point is fixed now.
+against codec behaviour (emitted ids, rendered support tables) arrive with
+later phases and are stubbed at the bottom of this file so their wiring
+point is fixed now.
+
+Capability -- what cadmpeg does with each dialect, including fixture gating
+-- lives in ``docs/dialect-support.toml`` and is checked by the sibling
+``scripts/check-dialect-support.py``.
 
 Run ``--self-test`` to execute the synthesized-violation suite in
 ``scripts/test_check_dialects.py``; every rule below fires there.
@@ -318,16 +322,6 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
     can actually emit at runtime and compare the two sets. A registry id no
     codec emits is a dead name; an emitted id absent from the registry is an
     unpinned name. Both are failures once a codec emits ids at all.
-    """
-    return ["not yet enforced"]
-
-
-def check_fixture_gating(root: Path) -> list[str]:
-    """Fixture gating over ``docs/dialect-support.toml`` (not yet written).
-
-    Contract: a support row may not claim a read score above ``detected``
-    with zero fixtures, and the count is self-verifying -- decode each
-    fixture and read back the emitted dialect id.
     """
     return ["not yet enforced"]
 
