@@ -1579,7 +1579,7 @@ fn unstamped_legacy_layout(
     (archive.value() >= 3 && writer_version.is_none() && count > 0).then(|| {
         format!(
             "Brep {field} read with the pre-2002 layout for {count} records because {}",
-            crate::loss::DIALECT_UNVERIFIED_MARKER
+            crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
         )
     })
 }

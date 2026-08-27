@@ -2178,7 +2178,7 @@ fn parse_layer(
     if version.1 >= 6 && writer_version.is_none() {
         warnings.push(format!(
             "layer parent link and expanded state were not read because {}",
-            crate::loss::DIALECT_UNVERIFIED_MARKER
+            crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
         ));
     }
     let parent_id = if version.1 >= 6 && parent_compatible {

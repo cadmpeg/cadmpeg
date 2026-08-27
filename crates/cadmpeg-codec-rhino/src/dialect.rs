@@ -13,14 +13,14 @@
 //! The archive-version word occupies bytes 24..32 of the 32-byte start section
 //! and is the sole read discriminant of this format
 //! ([`ArchiveVersion::classify`]). It is exact-equality: word 51 is not
-//! "archive 50 with extras", it is [`RhinoDialect::UnknownArchive`]. Ten words
+//! "archive 50 with extras", it is [`RhinoDialect::Unknown`]. Ten words
 //! carry their own row and every other positive word lands on the mandatory
 //! totality row (design §3.3, B4).
 //!
 //! The ~235 per-record version words inside an admitted archive never split a
 //! dialect (B2). They are losses inside a dialect, and the openNURBS
 //! writer-version stamp census that charges
-//! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] is exactly that: a
+//! [`crate::loss::RhinoLossCode::SourceWriterStampUnverified`] is exactly that: a
 //! per-record substitution inside an archive whose own version this codec
 //! reads with the grammar declared for it. Archive-level admission is
 //! orthogonal to that census and must never be derived from it.
@@ -60,7 +60,7 @@ const DECLARED_ARCHIVE_VERSION: &str = "archive_version";
 /// reading and the legacy B-rep field layouts — but it is not an admission
 /// discriminant. A stamp-less archive is still read with the grammar its
 /// archive word declares; what it loses is charged per record
-/// ([`crate::loss::RhinoLossCode::SourceDialectUnverified`]), never at the
+/// ([`crate::loss::RhinoLossCode::SourceWriterStampUnverified`]), never at the
 /// archive level.
 const DECLARED_OPENNURBS_WRITER_VERSION: &str = "opennurbs_writer_version";
 
@@ -82,7 +82,7 @@ pub(crate) enum RhinoDialect {
     Archive90,
     /// The mandatory totality row: any positive archive word that is not one of
     /// the ten literals above.
-    UnknownArchive,
+    Unknown,
 }
 
 impl RhinoDialect {
@@ -103,7 +103,7 @@ impl RhinoDialect {
         Self::Archive70,
         Self::Archive80,
         Self::Archive90,
-        Self::UnknownArchive,
+        Self::Unknown,
     ];
 
     /// The pinned registry id. The only string boundary this enum has.
@@ -119,7 +119,7 @@ impl RhinoDialect {
             Self::Archive70 => "rhino:archive-70",
             Self::Archive80 => "rhino:archive-80",
             Self::Archive90 => "rhino:archive-90",
-            Self::UnknownArchive => "rhino:unknown-archive",
+            Self::Unknown => "rhino:unknown",
         })
     }
 
@@ -139,7 +139,7 @@ impl RhinoDialect {
             ArchiveVersion::V7 => Self::Archive70,
             ArchiveVersion::V8 => Self::Archive80,
             ArchiveVersion::V9 => Self::Archive90,
-            ArchiveVersion::Other(_) => Self::UnknownArchive,
+            ArchiveVersion::Other(_) => Self::Unknown,
         }
     }
 
@@ -154,7 +154,7 @@ impl RhinoDialect {
     /// words no grammar was written for. Every other row has one: word 1 the
     /// flat legacy records, words 2 through 90 the chunked scan.
     pub(crate) const fn refuses_decode(self) -> bool {
-        matches!(self, Self::Archive5 | Self::UnknownArchive)
+        matches!(self, Self::Archive5 | Self::Unknown)
     }
 
     /// How a run admitted a document on this row.

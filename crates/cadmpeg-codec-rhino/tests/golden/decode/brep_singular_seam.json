@@ -517,7 +517,7 @@
       },
       {
         "code": {
-          "code": "source.dialect-unverified",
+          "code": "source.writer-stamp-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "rhino"
         },
@@ -526,7 +526,7 @@
       },
       {
         "code": {
-          "code": "source.dialect-unverified",
+          "code": "source.writer-stamp-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "rhino"
         },

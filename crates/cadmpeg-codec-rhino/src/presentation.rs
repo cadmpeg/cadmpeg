@@ -1931,10 +1931,10 @@ fn parse_material(
         if writer_version.is_some_and(|version| version < 200_912_010) {
             transparent = diffuse;
         } else if writer_version.is_none() && diffuse != transparent {
-            losses.push(RhinoLossCode::SourceDialectUnverified.note(format!(
+            losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format!(
                 "legacy material at offset {source_offset} kept its stored transparent color \
                  instead of the pre-2009 diffuse substitution because {}",
-                crate::loss::DIALECT_UNVERIFIED_MARKER
+                crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
             )));
         }
     }
@@ -3720,10 +3720,10 @@ fn parse_text_style(
             description.clone()
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
-                losses.push(RhinoLossCode::SourceDialectUnverified.note(format!(
+                losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format!(
                     "legacy text style at offset {source_offset} dropped the PostScript font \
                      name \"{description}\" because {}",
-                    crate::loss::DIALECT_UNVERIFIED_MARKER
+                    crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
                 )));
             }
             String::new()
@@ -5020,7 +5020,7 @@ mod tests {
         assert_eq!(losses.len(), 1, "{losses:?}");
         assert_eq!(
             losses[0].code.local_code(),
-            RhinoLossCode::SourceDialectUnverified.code()
+            RhinoLossCode::SourceWriterStampUnverified.code()
         );
 
         let mut stamped_losses = Vec::new();
@@ -5549,7 +5549,7 @@ mod tests {
         assert_eq!(losses.len(), 1, "{losses:?}");
         assert_eq!(
             losses[0].code.local_code(),
-            RhinoLossCode::SourceDialectUnverified.code()
+            RhinoLossCode::SourceWriterStampUnverified.code()
         );
 
         let mut stamped_losses = Vec::new();
