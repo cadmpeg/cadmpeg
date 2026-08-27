@@ -472,8 +472,8 @@ pub enum WriteRequest<'a> {
     Catalog {
         /// The canonical catalog entry.
         entry: &'static TargetDescriptor,
-        /// Why a same-format source dialect was declined, when applicable.
-        declined: Option<String>,
+        /// The same-format source dialect displaced by this target, if any.
+        displaced: Option<cadmpeg_core::dialect::DialectId>,
     },
     /// `Inherit` names a same-format source dialect outside the catalog.
     OffCatalog {
@@ -510,20 +510,25 @@ pub fn resolve_write_request<'a>(
             }
         },
     };
-    let declined = ir
+    let displaced = ir
         .source
         .as_ref()
         .filter(|source| source.format == format)
         .and_then(|source| source.dialect.as_ref())
         .filter(|dialect| dialect.as_str() != entry.id)
-        .map(|dialect| {
-            format!(
-                "source is {dialect}, target is {}; the dialect the source declared is not what \
-                 this export writes",
-                entry.id
-            )
-        });
-    Ok(WriteRequest::Catalog { entry, declined })
+        .cloned();
+    Ok(WriteRequest::Catalog { entry, displaced })
+}
+
+/// State that a write displaced the source dialect with another target.
+#[must_use]
+pub fn source_dialect_displaced_message(
+    displaced: &cadmpeg_core::dialect::DialectId,
+    target: &cadmpeg_core::dialect::DialectId,
+) -> String {
+    format!(
+        "source dialect {displaced} was displaced by target dialect {target}; the source dialect identity is not preserved"
+    )
 }
 
 /// The whole write resolution of a synthesis-only encoder (design §8.2): the
@@ -546,11 +551,9 @@ pub fn resolve_write_request<'a>(
 /// source dialect the catalog does not carry — the one sentence that is
 /// genuinely per-codec, because the reason is the codec's own write model.
 ///
-/// The returned `Option<String>` is the declined sentence: `Some` exactly when
-/// a same-format source declared a dialect that this export does not write, so
-/// the caller charges [`crate::FidelityResolution::Degraded`] with it. `None`
-/// where the write keeps the source's dialect, and `None` where there is no
-/// same-format source at all: nothing was preserved, so nothing was lost.
+/// The returned dialect is the same-format source dialect displaced by the
+/// selected catalog row. It is absent when the write keeps the source dialect
+/// or when there is no same-format source.
 ///
 /// Not for a codec that preserves off-catalog dialects by patch or replay
 /// (`FCStd`, IGES). There a source dialect outside the catalog is written back
@@ -563,12 +566,12 @@ pub fn resolve_catalog_write<T>(
     targets: &'static [TargetDescriptor],
     parse: impl Fn(&str) -> Option<T>,
     off_catalog_source_reason: &str,
-) -> Result<(T, Option<String>), CodecError> {
+) -> Result<(T, Option<cadmpeg_core::dialect::DialectId>), CodecError> {
     match resolve_write_request(ir, request, format, targets)? {
-        WriteRequest::Catalog { entry, declined } => Ok((
+        WriteRequest::Catalog { entry, displaced } => Ok((
             parse(entry.id)
                 .unwrap_or_else(|| panic!("the {format} catalog row is a synthesis target")),
-            declined,
+            displaced,
         )),
         WriteRequest::OffCatalog { dialect } => Err(unsupported_target(
             format,

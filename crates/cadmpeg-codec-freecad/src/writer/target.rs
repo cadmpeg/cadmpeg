@@ -16,6 +16,7 @@ use cadmpeg_ir::report::FidelityResolution;
 
 use super::write;
 use crate::dialect;
+use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use crate::FcstdWriteOptions;
 
@@ -29,11 +30,12 @@ use crate::FcstdWriteOptions;
 /// is a proof that the retained document graph delivers the options it carries.
 /// [`write_seekable`] takes that proof instead of raw options, which is why it
 /// needs no target gate of its own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Resolution {
     /// The persistence band to write. Always the one the retained document
     /// graph carries.
     options: FcstdWriteOptions,
+    displaced: Option<DialectId>,
 }
 
 impl Resolution {
@@ -102,6 +104,7 @@ pub(crate) fn plan_options(
 /// Write the resolved export and state what the fidelity sidecar did.
 fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'_>, CodecError> {
     let mut bytes = Vec::new();
+    let displaced = resolution.displaced.clone();
     let mut report = write(input.ir, &mut bytes, resolution)?;
     // `write` takes no fidelity sidecar, so the report it returns states the
     // only resolution it can see. Whether the caller supplied one is known
@@ -113,6 +116,17 @@ fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'
     } else {
         FidelityResolution::NotProvided
     };
+    if let Some(source) = displaced.as_ref() {
+        let target = report
+            .target
+            .as_ref()
+            .expect("FCStd writes name their target");
+        report
+            .losses
+            .push(FreecadLossCode::SourceDialectDisplaced.note(
+                cadmpeg_ir::codec::source_dialect_displaced_message(source, target),
+            ));
+    }
     Ok(ExportPlan::buffered(report, bytes))
 }
 
@@ -121,16 +135,20 @@ pub(in crate::writer) fn resolve(
     ir: &CadIr,
     request: TargetRequest<'_>,
 ) -> Result<Resolution, CodecError> {
-    let target = match cadmpeg_ir::codec::resolve_write_request(
+    let (target, displaced) = match cadmpeg_ir::codec::resolve_write_request(
         ir,
         request,
         dialect::FORMAT,
         dialect::TARGETS,
     )? {
-        cadmpeg_ir::codec::WriteRequest::Catalog { entry, .. } => dialect::written_dialect(
-            dialect::target_options(entry.id).expect("the FCStd catalog row is a synthesis target"),
+        cadmpeg_ir::codec::WriteRequest::Catalog { entry, displaced } => (
+            dialect::written_dialect(
+                dialect::target_options(entry.id)
+                    .expect("the FCStd catalog row is a synthesis target"),
+            ),
+            displaced,
         ),
-        cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect } => dialect.clone(),
+        cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect } => (dialect.clone(), None),
     };
     // Deliverability, not preference. This writer patches the retained
     // `Document.xml` and regenerates none, so the resolved target is reachable
@@ -140,7 +158,7 @@ pub(in crate::writer) fn resolve(
     // refusal is typed and carries the catalog, like every other write refusal;
     // it used to surface as a bare message string from deep inside `write`.
     retained_baseline(ir, &target)
-        .map(|options| Resolution { options })
+        .map(|options| Resolution { options, displaced })
         .ok_or_else(|| {
             unsupported_target(
                 dialect::FORMAT,

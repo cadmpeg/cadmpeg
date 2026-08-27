@@ -130,6 +130,8 @@ pub enum RhinoLossCode {
     /// no row claims is read with the newest declared chunked row's strategy
     /// rather than refused; nothing verified that the word means that grammar.
     SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
     /// Body kind came from the closed-shell gauge or from an unverified stored
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
@@ -176,6 +178,7 @@ impl RhinoLossCode {
         Self::MeshNormalPrecisionReduced,
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
         Self::TopologyBodyKindGaugeSubstituted,
     ];
 
@@ -221,6 +224,7 @@ impl RhinoLossCode {
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
         }
     }
@@ -278,9 +282,9 @@ impl RhinoLossCode {
             Self::MeshVertexPrecisionReduced | Self::MeshNormalPrecisionReduced => {
                 LossTaxonomy::MeshVertexPrecision
             }
-            Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
-                LossTaxonomy::SourceDialectUnverified
-            }
+            Self::SourceWriterStampUnverified
+            | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectUnverified,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
     }
@@ -363,6 +367,7 @@ mod tests {
                 "mesh.normal-precision-reduced",
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
                 "topology.body-kind-gauge-substituted",
             ]
         );

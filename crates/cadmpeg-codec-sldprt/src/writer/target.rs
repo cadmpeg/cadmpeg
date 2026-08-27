@@ -35,19 +35,19 @@ pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    let (target, declined) = resolve(input, request)?;
+    let (target, displaced) = resolve(input, request)?;
     let (written, bytes) = write(input, &target)?;
     check_honesty(&target, &written)?;
-    Ok(finish(input, target, declined, &written, bytes))
+    Ok(finish(input, target, displaced.as_ref(), &written, bytes))
 }
 
 /// Resolve an explicit catalog request or inherit the same-format source row.
 fn resolve(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<(DialectId, Option<String>), CodecError> {
+) -> Result<(DialectId, Option<DialectId>), CodecError> {
     match resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)? {
-        WriteRequest::Catalog { entry, declined } => Ok((DialectId::pinned(entry.id), declined)),
+        WriteRequest::Catalog { entry, displaced } => Ok((DialectId::pinned(entry.id), displaced)),
         WriteRequest::OffCatalog { dialect } => Ok((dialect.clone(), None)),
     }
 }
@@ -105,7 +105,7 @@ fn check_honesty(target: &DialectId, written: &Written) -> Result<(), CodecError
 fn finish<'a>(
     input: EncodeInput<'a>,
     target: DialectId,
-    declined: Option<String>,
+    displaced: Option<&DialectId>,
     written: &Written,
     bytes: Vec<u8>,
 ) -> ExportPlan<'a> {
@@ -129,8 +129,12 @@ fn finish<'a>(
             .is_some();
     let fidelity = if replayed {
         FidelityResolution::Replayed
-    } else if let Some(reason) = declined {
-        FidelityResolution::Degraded { reason }
+    } else if displaced.is_some() {
+        if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        }
     } else if input.fidelity.is_some() || expects_preserved_source {
         FidelityResolution::Degraded {
             reason: "preserved SLDPRT source image is unavailable".into(),
@@ -138,13 +142,19 @@ fn finish<'a>(
     } else {
         FidelityResolution::NotProvided
     };
-    let losses = (matches!(fidelity, FidelityResolution::Degraded { .. }) && replay_eligible)
+    let mut losses: Vec<_> = (matches!(fidelity, FidelityResolution::Degraded { .. })
+        && replay_eligible)
         .then(|| {
             SldprtLossCode::SourcePreservedImageUnavailable
                 .note("preserved SLDPRT source image is unavailable; regenerated from IR")
         })
         .into_iter()
         .collect();
+    if let Some(source) = displaced.as_ref() {
+        losses.push(SldprtLossCode::SourceDialectDisplaced.note(
+            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
+        ));
+    }
     ExportPlan::buffered(
         ExportReport {
             target: Some(target),

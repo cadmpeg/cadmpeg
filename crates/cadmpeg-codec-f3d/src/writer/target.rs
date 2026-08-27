@@ -40,14 +40,14 @@ pub(crate) fn plan<'a>(
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     match resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)? {
-        WriteRequest::Catalog { entry, declined } => {
+        WriteRequest::Catalog { entry, displaced } => {
             let target = DialectId::pinned(entry.id);
-            if declined.is_none() {
+            if displaced.is_none() {
                 if let Preservation::Written { bytes, write_path } = preserve(input, &target)? {
                     return Ok(preserved_plan(input.ir, target, write_path, bytes));
                 }
             }
-            synthesized_plan(input, &target, declined)
+            synthesized_plan(input, &target, displaced.as_ref())
         }
         WriteRequest::OffCatalog { dialect: source } => match preserve(input, source)? {
             Preservation::Written { bytes, write_path } => {
@@ -127,7 +127,7 @@ fn preserved_plan(
 fn synthesized_plan<'a>(
     input: EncodeInput<'a>,
     target: &DialectId,
-    declined: Option<String>,
+    displaced: Option<&DialectId>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     if target.as_str() != SYNTHESIS_TARGET {
         return Err(unsupported_target(
@@ -144,8 +144,12 @@ fn synthesized_plan<'a>(
         .source
         .as_ref()
         .is_some_and(|source| source.format == dialect::FORMAT);
-    let fidelity = if let Some(reason) = declined {
-        FidelityResolution::Degraded { reason }
+    let fidelity = if displaced.is_some() {
+        if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        }
     } else if input.fidelity.is_some() || expects_preserved_source {
         FidelityResolution::Degraded {
             reason: "preserved F3D source image is unavailable".into(),
@@ -153,7 +157,7 @@ fn synthesized_plan<'a>(
     } else {
         FidelityResolution::NotProvided
     };
-    let losses = (matches!(fidelity, FidelityResolution::Degraded { .. })
+    let mut losses: Vec<_> = (matches!(fidelity, FidelityResolution::Degraded { .. })
         && input.ir.source.as_ref().is_some_and(|source| {
             source.format == dialect::FORMAT && source.dialect.as_ref() == Some(target)
         }))
@@ -163,6 +167,11 @@ fn synthesized_plan<'a>(
     })
     .into_iter()
     .collect();
+    if let Some(source) = displaced.as_ref() {
+        losses.push(F3dLossCode::SourceDialectDisplaced.note(
+            cadmpeg_ir::codec::source_dialect_displaced_message(source, target),
+        ));
+    }
     Ok(ExportPlan::buffered(
         report(
             input.ir,

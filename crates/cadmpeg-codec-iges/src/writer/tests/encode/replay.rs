@@ -15,7 +15,7 @@ fn degraded_reason(plan: &cadmpeg_ir::codec::ExportPlan<'_>, context: &str) -> S
 }
 
 #[test]
-fn encode_reports_a_version_mismatch_as_degraded_fidelity() {
+fn encode_reports_a_version_mismatch_as_dialect_displacement() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
@@ -35,15 +35,15 @@ fn encode_reports_a_version_mismatch_as_degraded_fidelity() {
         .unwrap();
 
     assert_eq!(plan.write_path(), WritePath::Synthesized);
-    let reason = degraded_reason(&plan, "a version mismatch must degrade");
-    assert!(
-        reason.contains(&format!("source is {source_dialect}")),
-        "{reason}"
-    );
-    assert!(
-        reason.contains("target is iges:5.2-fixed-ascii"),
-        "{reason}"
-    );
+    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotConsumed);
+    let displacement = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .expect("version displacement is charged");
+    assert!(displacement.message.contains(source_dialect.as_str()));
+    assert!(displacement.message.contains("iges:5.2-fixed-ascii"));
 }
 
 #[test]

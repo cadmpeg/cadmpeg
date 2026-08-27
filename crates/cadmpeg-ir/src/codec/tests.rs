@@ -393,7 +393,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
 fn resolve_test_catalog<'a>(
     ir: &'a CadIr,
     request: TargetRequest<'a>,
-) -> Result<(&'static str, Option<String>), CodecError> {
+) -> Result<(&'static str, Option<DialectId>), CodecError> {
     resolve_catalog_write(
         ir,
         request,
@@ -460,16 +460,17 @@ fn catalog_write_inherit_refuses_a_same_format_off_catalog_source() {
 }
 
 #[test]
-fn catalog_write_explicit_difference_returns_the_declined_sentence() {
+fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
-    let (target, declined) =
+    let (target, displaced) =
         resolve_test_catalog(&ir, TargetRequest::Explicit("test:new")).unwrap();
     assert_eq!(target, "test:new");
+    assert_eq!(displaced.as_ref(), Some(&DialectId::pinned("test:old")));
     assert_eq!(
-        declined.as_deref(),
-        Some(
-            "source is test:old, target is test:new; the dialect the source declared is not what \
-             this export writes"
-        )
+        source_dialect_displaced_message(
+            displaced.as_ref().expect("the source dialect differs"),
+            &DialectId::pinned(target),
+        ),
+        "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved"
     );
 }

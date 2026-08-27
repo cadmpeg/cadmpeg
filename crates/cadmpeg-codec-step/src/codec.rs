@@ -52,7 +52,7 @@ impl Encoder for StepCodec {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let (schema, declined) = resolve_catalog_write(
+        let (schema, displaced) = resolve_catalog_write(
             input.ir,
             request,
             crate::dialect::FORMAT,
@@ -63,15 +63,22 @@ impl Encoder for StepCodec {
         let mut bytes = Vec::new();
         let mut report =
             write_step(input.ir, &mut bytes, schema, &self.options).map_err(CodecError::from)?;
-        // `write_step` takes no fidelity sidecar, so the report it returns
-        // states the only resolution it can see. Whether the caller supplied
-        // one, and whether the source's own schema survived, are known here and
-        // only here. A write that changes the declared schema charges the
-        // fidelity, naming both dialects.
-        report.fidelity = match declined {
-            Some(reason) => FidelityResolution::Degraded { reason },
-            None if input.fidelity.is_some() => FidelityResolution::NotConsumed,
-            None => FidelityResolution::NotProvided,
+        let target = report
+            .target
+            .as_ref()
+            .expect("STEP writes name their target");
+        if let Some(source) = displaced.as_ref() {
+            report
+                .losses
+                .push(crate::loss::StepLossCode::SourceDialectDisplaced.note(
+                    cadmpeg_ir::codec::source_dialect_displaced_message(source, target),
+                ));
+        }
+        // `write_step` does not consume the optional fidelity sidecar.
+        report.fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
         };
         Ok(ExportPlan::buffered(report, bytes))
     }

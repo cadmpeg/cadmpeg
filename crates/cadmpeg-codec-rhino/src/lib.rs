@@ -164,7 +164,7 @@ impl Encoder for RhinoEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let (version, declined) = cadmpeg_ir::codec::resolve_catalog_write(
+        let (version, displaced) = cadmpeg_ir::codec::resolve_catalog_write(
             input.ir,
             request,
             dialect::FORMAT,
@@ -198,6 +198,12 @@ impl Encoder for RhinoEncoder {
                     || f64::from(normal.z as f32) != normal.z
             });
         let mut losses = Vec::new();
+        let target = cadmpeg_core::dialect::DialectId::pinned(version.target());
+        if let Some(source) = displaced.as_ref() {
+            losses.push(loss::RhinoLossCode::SourceDialectDisplaced.note(
+                cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
+            ));
+        }
         if vertex_quantization {
             losses.push(loss::RhinoLossCode::MeshVertexPrecisionReduced.note(
                 "archive version 50 stores standalone mesh vertices as f32; \
@@ -212,20 +218,18 @@ impl Encoder for RhinoEncoder {
             ));
         }
         let report = ExportReport {
-            target: Some(cadmpeg_core::dialect::DialectId::pinned(version.target())),
+            target: Some(target),
             format: "rhino".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: input.ir.census(),
             },
-            // A write that changes the source's archive version charges the
-            // fidelity, naming both dialects. It is not "fidelity was never
-            // offered": an identity the source carried is gone, and the report
-            // is where that is stated.
-            fidelity: match declined {
-                Some(reason) => FidelityResolution::Degraded { reason },
-                None if input.fidelity.is_some() => FidelityResolution::NotConsumed,
-                None => FidelityResolution::NotProvided,
+            // Dialect displacement is an export loss. Fidelity states only
+            // whether the optional sidecar was consumed by this writer.
+            fidelity: if input.fidelity.is_some() {
+                FidelityResolution::NotConsumed
+            } else {
+                FidelityResolution::NotProvided
             },
             // The 3DM writer builds every chunk from the neutral IR; it has no
             // retained-source branch.

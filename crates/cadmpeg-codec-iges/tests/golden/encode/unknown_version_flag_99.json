@@ -8,19 +8,18 @@
       }
     },
     "fidelity": {
-      "reason": "preserved IGES source image is unavailable",
-      "status": "degraded"
+      "status": "not_provided"
     },
     "format": "iges",
     "losses": [
       {
         "code": {
-          "code": "source.preserved-image-unavailable",
-          "kind": "preserved_source_unavailable",
+          "code": "target.source-dialect-displaced",
+          "kind": "source_dialect_unverified",
           "namespace": "iges"
         },
-        "message": "preserved IGES source image is unavailable; semantic regeneration is required",
-        "severity": "blocking"
+        "message": "source dialect iges:unknown was displaced by target dialect iges:5.3-fixed-ascii; the source dialect identity is not preserved",
+        "severity": "warning"
       },
       {
         "code": {
