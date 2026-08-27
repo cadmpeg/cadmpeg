@@ -205,6 +205,10 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
+      "declared": {
+        "archive_version": "60"
+      },
+      "dialect": "rhino:archive-60",
       "format": "rhino"
     },
     "tolerances": {
@@ -217,6 +221,16 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "60"
+        },
+        "dialect": "rhino:archive-60",
+        "format": "rhino"
+      }
+    ],
     "format": "rhino",
     "geometry_transferred": false,
     "losses": [

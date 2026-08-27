@@ -2,6 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
 use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -2551,11 +2552,13 @@ impl<'a> DecodeContext<'a> {
             .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");
         source_fidelity.retain_unknown_records("rhino", self.opaque_records);
+        let dialects = vec![dialect_match(self.scan)];
+        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         DecodeResult::new(
             self.ir,
             DecodeReport {
-                dialects: Vec::new(),
-                format: "rhino".to_string(),
+                dialects,
+                format: crate::dialect::FORMAT.to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
@@ -5625,7 +5628,16 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
     ir
 }
 
+/// Classifies a scanned archive.
+///
+/// The full decode's report and its source metadata both read this, so they
+/// carry the same match.
+fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
+    crate::dialect::RhinoDialect::classify(scan.archive, scan.metadata.properties.writer_version)
+}
+
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {
+    let primary = dialect_match(scan);
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
@@ -5738,9 +5750,9 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
         }
     }
     SourceMeta {
-        declared: BTreeMap::new(),
-        dialect: None,
-        format: "rhino".to_string(),
+        declared: primary.declared,
+        dialect: primary.dialect,
+        format: crate::dialect::FORMAT.to_string(),
         attributes,
     }
 }

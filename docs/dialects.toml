@@ -438,36 +438,43 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # Rhino 3DM
 # --------------------------------------------------------------------------
 # One discriminant: the archive-version word, right-justified ASCII decimal in
-# header bytes 24..32 (`file_header::ARCHIVE_VERSION = 24`,
-# crates/cadmpeg-codec-rhino/src/layout.rs:46). `ArchiveVersion::classify`
-# (crates/cadmpeg-codec-rhino/src/chunks.rs:62-75) is an exact-equality match
-# on ten literal integers; there are no bands. Word 0 is refused at the header
-# layer (chunks.rs:203-205); every other positive integer becomes
+# header bytes 24..32 (`file_header::ARCHIVE_VERSION`,
+# crates/cadmpeg-codec-rhino/src/layout.rs). `ArchiveVersion::classify`
+# (crates/cadmpeg-codec-rhino/src/chunks.rs) is an exact-equality match on ten
+# literal integers; there are no bands. Word 0 is refused at the header layer
+# (`parse_header`); every other positive integer becomes
 # `ArchiveVersion::Other(_)`.
+#
+# `crates/cadmpeg-codec-rhino/src/dialect.rs` maps that partition onto the rows
+# below: `RhinoDialect::from_archive` is the row, `RhinoDialect::classify` is
+# the sole `DialectMatch` construction path, and `RhinoDialect::refuses_decode`
+# is the sole disposition predicate -- it decides both the reported
+# `Admission` and the refusal `container::decode` returns.
 #
 # The design's open question -- whether archives 2-4 and 50-90 are one read
 # grammar or two -- is a grammar question, not an identity question, and is
 # left open here. Verified for the record: they are one grammar today.
-# `scan_with_record_limit` (container.rs:820-1052) is the single path for
-# V2..V9; the version-dependence inside it is field-width and checksum
-# parameterization, not a second parser
-# (`uses_eight_byte_values` = value >= 50, chunks.rs:96-98; `checksum_kind`,
-# chunks.rs:435-452). V1 alone is a separate grammar
-# (`legacy::decode_v1`, container.rs:1223-1225).
+# `scan_with_record_limit` (container.rs) is the single path for V2..V9; the
+# version-dependence inside it is field-width and checksum parameterization,
+# not a second parser (`ArchiveVersion::uses_eight_byte_values` = value >= 50;
+# `checksum_kind`). V1 alone is a separate grammar (`legacy::decode_v1`).
 #
 # The openNURBS writer-version stamp (TCODE_WRITER_VERSION 0xa0000026,
-# container.rs:67) is NOT a classification discriminant: it is read out of the
-# PROPERTIES table only when an OBJECTS table follows (container.rs:910-921)
-# and gates field presence inside records (mesh.rs:347-348, brep.rs:1571,
-# chunks.rs:341-344). It reaches no source attribute (container.rs:1124-1140).
-# It is provenance-shaped evidence with a grammar role inside a dialect --
-# design §3.4 -- and stays out of the discriminant set.
+# container.rs) is NOT a classification discriminant: it is read out of the
+# PROPERTIES table only when an OBJECTS table follows (`scan_with_record_limit`)
+# and gates field presence inside records (mesh.rs, brep.rs,
+# `BoundedReader::bool_with_writer_version`). It is provenance-shaped evidence
+# with a grammar role inside a dialect -- design §3.4 -- and stays out of the
+# discriminant set. It is recorded verbatim as the `opennurbs_writer_version`
+# declared key on the paths that read the PROPERTIES table, and a missing stamp
+# is charged per record (`RhinoLossCode::SourceDialectUnverified`), never at the
+# archive level.
 [format.rhino]
 complete = true
 
 [[dialect]]
-# `ArchiveVersion::V1` (chunks.rs:64). Flat-chunk grammar, optional EOF
-# marker (`allows_optional_eof`, chunks.rs:101-103). Fixture verified: header
+# `ArchiveVersion::V1`. Flat-chunk grammar, optional EOF marker
+# (`ArchiveVersion::allows_optional_eof`). Fixture verified: header
 # bytes 24..32 are `       1`.
 id = "rhino:archive-1"
 title = "Rhino 3DM archive version 1 (flat legacy records)"
@@ -476,14 +483,14 @@ seam = "flat-chunk grammar with its own typecode table; no table sequence, and t
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v1.3dm"
 
 [[dialect]]
-# `ArchiveVersion::V2` (chunks.rs:65). Fixture verified: `       2`.
+# `ArchiveVersion::V2`. Fixture verified: `       2`.
 id = "rhino:archive-2"
 title = "Rhino 3DM archive version 2"
 discriminants = { archive_version = "2" }
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v2.3dm"
 
 [[dialect]]
-# `ArchiveVersion::V3` (chunks.rs:66). Fixture verified: `       3`; the
+# `ArchiveVersion::V3`. Fixture verified: `       3`; the
 # golden decode snapshot pins `archive_version` = "3".
 id = "rhino:archive-3"
 title = "Rhino 3DM archive version 3"
@@ -491,18 +498,18 @@ discriminants = { archive_version = "3" }
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v3.3dm"
 
 [[dialect]]
-# `ArchiveVersion::V4` (chunks.rs:67). Fixture verified: `       4`.
+# `ArchiveVersion::V4`. Fixture verified: `       4`.
 id = "rhino:archive-4"
 title = "Rhino 3DM archive version 4"
 discriminants = { archive_version = "4" }
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v4.3dm"
 
 [[dialect]]
-# `ArchiveVersion::LegacyV5` (chunks.rs:68). Word 5 and word 50 are distinct
-# (layout.rs:36). Word 5 is a four-byte-value archive
-# (`uses_eight_byte_values` is value >= 50, chunks.rs:96-98) and is
-# decode-refused (`header_only`, container.rs:1190-1196; refusal at
-# container.rs:1226-1231).
+# `ArchiveVersion::LegacyV5`. Word 5 and word 50 are distinct. Word 5 is a
+# four-byte-value archive (`ArchiveVersion::uses_eight_byte_values` is
+# value >= 50) and is decode-refused: `RhinoDialect::refuses_decode` holds, so
+# inspection reports the header with `Admission::Refused` and
+# `container::decode` returns `CodecError::NotImplemented`.
 #
 # No fixture carries word 5. The design's example witness
 # `corpus:rhino/legacy_v5_header.3dm` names a file that does not exist in this
@@ -511,10 +518,10 @@ id = "rhino:archive-5"
 title = "Rhino 3DM archive version 5 (pre-chunk legacy)"
 discriminants = { archive_version = "5" }
 seam = "chunk value width and grammar differ from archive 50"
-witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs:68"
+witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 
 [[dialect]]
-# `ArchiveVersion::V5` (chunks.rs:69). The eight-byte-value boundary starts
+# `ArchiveVersion::V5`. The eight-byte-value boundary starts
 # here. Fixture verified: `      50`; golden decode pins `archive_version` =
 # "50".
 id = "rhino:archive-50"
@@ -524,41 +531,44 @@ seam = "chunk value and EOF file-size fields widen from four bytes to eight at w
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/brep.3dm"
 
 [[dialect]]
-# `ArchiveVersion::V6` (chunks.rs:70). Fixture verified: `      60`.
+# `ArchiveVersion::V6`. Fixture verified: `      60`.
 id = "rhino:archive-60"
 title = "Rhino 3DM archive version 60 (Rhino 6)"
 discriminants = { archive_version = "60" }
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v60.3dm"
 
 [[dialect]]
-# `ArchiveVersion::V7` (chunks.rs:71). Fixture verified: `      70`.
+# `ArchiveVersion::V7`. Fixture verified: `      70`.
 id = "rhino:archive-70"
 title = "Rhino 3DM archive version 70 (Rhino 7)"
 discriminants = { archive_version = "70" }
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v70.3dm"
 
 [[dialect]]
-# `ArchiveVersion::V8` (chunks.rs:72). Fixture verified: `      80`.
+# `ArchiveVersion::V8`. Fixture verified: `      80`.
 id = "rhino:archive-80"
 title = "Rhino 3DM archive version 80 (Rhino 8)"
 discriminants = { archive_version = "80" }
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v80.3dm"
 
 [[dialect]]
-# `ArchiveVersion::V9` (chunks.rs:73). Decoded but not emittable: the encoder
-# catalog is 50/60/70/80 (`RhinoArchiveVersion`,
-# crates/cadmpeg-codec-rhino/src/lib.rs:61-81). No fixture carries word 90.
+# `ArchiveVersion::V9`. Decoded but not emittable: the encoder catalog is
+# 50/60/70/80 (`RhinoArchiveVersion`, crates/cadmpeg-codec-rhino/src/lib.rs).
+# No fixture carries word 90.
 id = "rhino:archive-90"
 title = "Rhino 3DM archive version 90 (Rhino 9)"
 discriminants = { archive_version = "90" }
-witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs:73"
+witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 
 [[dialect]]
-# `ArchiveVersion::Other(u64)` (chunks.rs:74). B4 totality: any positive
-# archive word that is not one of the ten literals classifies here, including
-# 51 and 61 -- `classify` does not fold near-misses into a band.
-# Disposition today: header-only inspection, decode refused with
-# `CodecError::NotImplemented` (container.rs:1226-1231).
+# `ArchiveVersion::Other(u64)`, mapped by `RhinoDialect::from_archive`. B4
+# totality: any positive archive word that is not one of the ten literals
+# classifies here, including 51 and 61 -- `ArchiveVersion::classify` does not
+# fold near-misses into a band. Disposition today: recovery is not attempted.
+# `RhinoDialect::refuses_decode` holds, so inspection reports the header with
+# `Admission::Refused` and `container::decode` returns
+# `CodecError::NotImplemented`. No document is read with a grammar declared for
+# another row, so `Admission::AdmittedUnverified` is unreachable in this codec.
 #
 # Judgment call for the registry owner: this row exists under
 # `complete = true` because B4 requires classification to be total, while the
@@ -568,7 +578,7 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs:73"
 id = "rhino:unknown-archive"
 title = "Rhino 3DM archive version outside the enumerated words"
 discriminants = { archive_version = "any positive integer other than 1, 2, 3, 4, 5, 50, 60, 70, 80, 90" }
-witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs:74"
+witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 
 # --------------------------------------------------------------------------
 # FreeCAD FCStd

@@ -2,7 +2,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
-//! Support level: [L0](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+//! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) for the archive 2/3/4/50/60/70/80/90 chunked band.
 //! Archive 2/3/4/50/60/70/80/90 and V2–V4 open at L1 and show as extras.
 //! V1 and archive version 5 remain L0. The codec provides bounded 3DM
 //! container inspection, partial typed decoding, and explicitly versioned
@@ -23,6 +23,7 @@ pub(crate) mod curve_on_surface;
 pub(crate) mod curves;
 pub(crate) mod decode;
 pub(crate) mod detail;
+pub(crate) mod dialect;
 pub(crate) mod dimensions;
 pub(crate) mod document_data;
 pub(crate) mod extrusion;
