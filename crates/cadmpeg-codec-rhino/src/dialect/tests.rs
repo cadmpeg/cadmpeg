@@ -131,17 +131,17 @@ fn admission_is_refused_exactly_where_decode_is_refused() {
 }
 
 #[test]
-fn the_totality_row_is_read_on_the_newest_declared_chunked_row_and_charges_the_loss() {
+fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
     // The residual row is admitted, not refused: words 2 through 90 are one
     // chunked grammar, so a word no row claims still selects a scan. It names
-    // `rhino:archive-90` because that is the newest row that declares that
-    // grammar, and the charge comes from the admission itself.
-    for word in OUTSIDE {
-        let matched = classify_word(*word);
+    // the newest declared row with the width the word selected, and the charge
+    // comes from the admission itself.
+    for (word, nearest) in [(49, RhinoDialect::Archive4), (51, RhinoDialect::Archive90)] {
+        let matched = classify_word(word);
         assert_eq!(
             matched.admission,
             Admission::AdmittedUnverified {
-                nearest: RhinoDialect::Archive90.id()
+                nearest: nearest.id()
             },
             "archive word {word}"
         );

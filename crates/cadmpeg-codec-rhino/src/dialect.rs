@@ -25,14 +25,15 @@
 //! reads with the grammar declared for it. Archive-level admission is
 //! orthogonal to that census and must never be derived from it.
 //!
-//! # Admission is a function of the row alone
+//! # Admission follows the selected chunk width
 //!
 //! Archive words 2 through 90 are one chunked grammar: the value alone selects
 //! the chunk value width and the begin-chunk form, so a word no row claims
 //! still selects a scan. The totality row is therefore read, not refused. It
-//! is read with the strategy `rhino:archive-90` declares — the newest declared
-//! chunked row — which is [`Admission::AdmittedUnverified`] with that row as
-//! `nearest`, and [`dialect_loss`] charges
+//! is read with the strategy selected by its chunk width: `rhino:archive-4`
+//! below word 50 and `rhino:archive-90` at or above word 50. Admission is
+//! [`Admission::AdmittedUnverified`] with that row as `nearest`, and
+//! [`dialect_loss`] charges
 //! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] for it.
 //!
 //! Word 5 is the one structural refusal: the pre-chunk grammar it names has no
@@ -232,12 +233,16 @@ impl RhinoDialect {
     /// so it names the row whose strategy was substituted for it; and word 5 is
     /// refused, which [`Self::refuses_decode`] decides for the decode branch
     /// too.
-    const fn admission(self) -> Admission {
+    fn admission(self, archive: ArchiveVersion) -> Admission {
         if self.refuses_decode() {
             Admission::Refused
         } else if matches!(self, Self::Unknown) {
             Admission::AdmittedUnverified {
-                nearest: Self::Archive90.id(),
+                nearest: if archive.uses_eight_byte_values() {
+                    Self::Archive90.id()
+                } else {
+                    Self::Archive4.id()
+                },
             }
         } else {
             Admission::Admitted
@@ -261,7 +266,7 @@ impl RhinoDialect {
             format: FORMAT.into(),
             dialect: Some(dialect.id()),
             declared,
-            admission: dialect.admission(),
+            admission: dialect.admission(archive),
         }
     }
 }
@@ -284,8 +289,8 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     Some(
         crate::loss::RhinoLossCode::SourceDialectUnverified.note(format!(
         "archive version word {word} has no declared row, so no declared identity was verified. \
-         The document is read on {nearest}: the chunked scan words 2 through 90 share, with the \
-         chunk value width and begin-chunk form the word itself selects."
+         The document is read on {nearest}, which uses the chunk value width selected by the \
+         archive word."
     )),
     )
 }
