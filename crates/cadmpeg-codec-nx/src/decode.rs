@@ -12,6 +12,7 @@
 
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::CadIr;
@@ -21,6 +22,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::{self, Container, EntryContent};
+use crate::dialect::NxDialect;
 use crate::loss::NxLossCode;
 use crate::parasolid::{self, Stream, StreamKind};
 
@@ -486,9 +488,11 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         );
     }
 
+    let dialects = vec![NxDialect::classify(&scan.container)];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     DecodeReport {
-        dialects: Vec::new(),
-        format: "nx".to_string(),
+        dialects,
+        format: crate::dialect::FORMAT.to_string(),
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),

@@ -1179,7 +1179,14 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
     }
 }
 
+/// Builds the source metadata, mirroring the primary-layer match into
+/// [`SourceMeta::dialect`] and [`SourceMeta::declared`].
+///
+/// The `splmsstr_version`, `product_version`, and `ugii_version` attributes
+/// stay. They duplicate the declared keys of the arm that ran; retiring the
+/// ad-hoc attribute keys is a later phase.
 pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
+    let primary = crate::dialect::NxDialect::classify(&scan.container);
     let mut attributes = BTreeMap::new();
     let legacy_cfb = scan.container.is_legacy_cfb();
     attributes.insert(
@@ -1365,9 +1372,9 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         }
     }
     SourceMeta {
-        declared: BTreeMap::new(),
-        dialect: None,
-        format: "nx".to_string(),
+        declared: primary.declared,
+        dialect: primary.dialect,
+        format: crate::dialect::FORMAT.to_string(),
         attributes,
     }
 }

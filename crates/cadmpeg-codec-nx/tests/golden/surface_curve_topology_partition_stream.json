@@ -200,6 +200,10 @@
           "plain_streams": "0",
           "splmsstr_version": "6"
         },
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
         "format": "nx"
       },
       "tolerances": {
@@ -212,6 +216,16 @@
     },
     "report": {
       "container_only": false,
+      "dialects": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      ],
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -366,6 +380,16 @@
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    ],
     "entries": [
       {
         "attributes": {
