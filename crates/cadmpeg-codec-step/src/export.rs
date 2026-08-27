@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
+use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -4454,6 +4455,10 @@ impl<'a> Builder<'a> {
 
     fn finish_report(&self) -> ExportReport {
         ExportReport {
+            // The schema this builder emitted, read back from the builder
+            // rather than from the caller's request, so the reported target
+            // and the `FILE_SCHEMA` record cannot disagree.
+            target: Some(DialectId::pinned(self.schema.target())),
             format: "step".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::TargetRecords,

@@ -5,11 +5,13 @@
 //! source image byte for byte. Otherwise the semantic writer emits the current
 //! supported neutral profile and refuses unsupported models or native records.
 
+use crate::dialect::IgesDialect;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
+use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
@@ -82,30 +84,118 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
     194, 196, 198, 502, 504, 508, 510, 514,
 ];
 
-/// Plan an IGES export, selecting replay only after checking the document
-/// baseline and retained source-image integrity.
-pub(crate) fn plan(
-    input: EncodeInput<'_>,
-    options: crate::IgesWriteOptions,
-) -> Result<ExportPlan<'_>, CodecError> {
-    if let Some(bytes) = replay_bytes(input.ir, input.fidelity, options.version)? {
-        return Ok(ExportPlan::buffered(
-            report(
-                FidelityResolution::Replayed,
-                WritePath::VerbatimReplay,
-                Vec::new(),
-                "preserved source container replayed verbatim",
-                counts_for_ir(input.ir),
-            ),
-            bytes,
-        ));
+/// Resolve the request against the source, then plan the export it names.
+///
+/// `Explicit(id)` refuses an id outside the synthesis catalog, and is otherwise
+/// the replay law's compare: byte replay is eligible exactly when `id` is the
+/// source's dialect.
+///
+/// `Inherit` asks for preservation instead: a valid retained baseline replays
+/// whatever dialect the source is, Compressed ASCII and Binary included, which
+/// the semantic writer could never synthesize. Where the baseline is not usable,
+/// `Inherit` synthesizes the source's own dialect, and refuses when that dialect
+/// is not a target. There is no fall-through to the catalog default: a
+/// same-format conversion never silently changes what the file is. An IGES
+/// source that records no dialect is refused for the same reason — there is
+/// nothing to preserve, and no identity to default to.
+///
+/// The catalog default supplies the target only when there is nothing to
+/// inherit: the document has no source, or a source of another format. That is
+/// the cross-format path, where the application layer would have built
+/// `Explicit(catalog default)` itself.
+pub(crate) fn plan<'a>(
+    input: EncodeInput<'a>,
+    request: TargetRequest<'_>,
+) -> Result<ExportPlan<'a>, CodecError> {
+    match request {
+        TargetRequest::Explicit(id) => {
+            let version = crate::dialect::target_version(id).ok_or_else(|| {
+                unsupported_target(
+                    crate::dialect::FORMAT,
+                    id,
+                    "not a target this encoder can synthesize",
+                    crate::dialect::TARGETS,
+                )
+            })?;
+            plan_explicit(input, version)
+        }
+        TargetRequest::Inherit => plan_inherited(input),
     }
+}
 
+/// Plan a write at one synthesis target: replay when the source is already in
+/// that dialect, otherwise synthesize it.
+fn plan_explicit(
+    input: EncodeInput<'_>,
+    version: crate::IgesVersion,
+) -> Result<ExportPlan<'_>, CodecError> {
+    let target = IgesDialect::fixed_ascii(version).id();
+    match replay_bytes(input.ir, input.fidelity, &target)? {
+        Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
+        Replay::Declined { reason } => synthesized_plan(input, version, reason),
+    }
+}
+
+/// Plan a write that preserves the source's dialect.
+fn plan_inherited(input: EncodeInput<'_>) -> Result<ExportPlan<'_>, CodecError> {
+    let source_dialect = match cadmpeg_ir::codec::resolve_inherit(
+        input.ir,
+        crate::dialect::FORMAT,
+        crate::dialect::TARGETS,
+    )? {
+        // Nothing to inherit: no source, or one of another format. The catalog
+        // default stands in; no existing file's identity is at stake.
+        Inherited::Fallback(id) => {
+            let version = crate::dialect::target_version(id)
+                .expect("the IGES catalog default is a synthesis target");
+            return plan_explicit(input, version);
+        }
+        Inherited::Source(dialect) => dialect.clone(),
+    };
+    match replay_bytes(input.ir, input.fidelity, &source_dialect)? {
+        Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
+        Replay::Declined { reason } => {
+            let Some(version) = crate::dialect::target_version(source_dialect.as_str()) else {
+                return Err(unsupported_target(
+                    crate::dialect::FORMAT,
+                    source_dialect.as_str(),
+                    "its retained source image is unavailable for byte replay and the semantic \
+                     writer cannot synthesize it",
+                    crate::dialect::TARGETS,
+                ));
+            };
+            synthesized_plan(input, version, reason)
+        }
+    }
+}
+
+fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'_> {
+    ExportPlan::buffered(
+        report(
+            dialect,
+            FidelityResolution::Replayed,
+            WritePath::VerbatimReplay,
+            Vec::new(),
+            "preserved source container replayed verbatim",
+            counts_for_ir(ir),
+        ),
+        bytes,
+    )
+}
+
+/// Plan a semantic write at `version`, charging the loss for a preserved source
+/// image this export could not use.
+fn synthesized_plan(
+    input: EncodeInput<'_>,
+    version: crate::IgesVersion,
+    declined: Option<String>,
+) -> Result<ExportPlan<'_>, CodecError> {
+    let target = IgesDialect::fixed_ascii(version).id();
     let source_expected = input
         .ir
         .source
         .as_ref()
-        .is_some_and(|source| source.format == "iges");
+        .is_some_and(|source| source.format == crate::dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
@@ -118,12 +208,14 @@ pub(crate) fn plan(
             ),
         );
     }
-    let synthesis = synthesize(input.ir, options.version)?;
+    let synthesis = synthesize(input.ir, version)?;
     losses.extend(synthesis.losses.clone());
     let fidelity = if source_expected && !source_available {
         FidelityResolution::Degraded {
             reason: "preserved IGES source image is unavailable".into(),
         }
+    } else if let Some(reason) = declined {
+        FidelityResolution::Degraded { reason }
     } else if input.fidelity.is_some() {
         FidelityResolution::NotConsumed
     } else {
@@ -131,6 +223,7 @@ pub(crate) fn plan(
     };
     Ok(ExportPlan::buffered(
         report(
+            target,
             fidelity,
             WritePath::Synthesized,
             losses,
@@ -141,33 +234,90 @@ pub(crate) fn plan(
     ))
 }
 
+/// Outcome of the replay decision. A decline carries the specific cause when
+/// the source is an IGES document, so the export report can name it.
+enum Replay {
+    /// The preserved bytes, and the dialect they are in. Replay reproduces the
+    /// source's dialect, so the report states that rather than the synthesis
+    /// target.
+    Replayed {
+        bytes: Vec<u8>,
+        dialect: DialectId,
+    },
+    Declined {
+        reason: Option<String>,
+    },
+}
+
+impl Replay {
+    fn declined() -> Self {
+        Self::Declined { reason: None }
+    }
+
+    fn declined_because(reason: impl Into<String>) -> Self {
+        Self::Declined {
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+/// Decides byte replay against five conditions, in order: the source is an IGES
+/// document, it carries a document baseline, its dialect is the one this export
+/// targets, the decoded model still matches the baseline, and the retained image
+/// is present and intact.
+///
+/// `target` is the replay law's compare, and it is the full typed identity, not
+/// the version alone. A version-only compare is blind to the physical
+/// representation, so a Compressed ASCII or Binary source at the target version
+/// replayed its own bytes while the plan claimed Fixed ASCII. The semantic
+/// writer emits Fixed ASCII only, so a preserved non-Fixed-ASCII image is a
+/// different dialect from any synthesis target and declines to a degraded
+/// synthesis.
+///
+/// `None` is a preservation request, where the compare is satisfied by
+/// construction: the export's dialect is defined as whatever the source is, so
+/// every dialect replays, Compressed ASCII and Binary included.
 fn replay_bytes(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
-    version: crate::IgesVersion,
-) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(expected) = ir
+    target: &DialectId,
+) -> Result<Replay, CodecError> {
+    let Some(source) = ir
         .source
         .as_ref()
-        .filter(|source| source.format == "iges")
-        .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
+        .filter(|source| source.format == crate::dialect::FORMAT)
     else {
-        return Ok(None);
+        return Ok(Replay::declined());
     };
-    if ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("iges_version"))
-        .is_none_or(|source_version| source_version != version.name())
-    {
-        return Ok(None);
-    }
+    let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
+        return Ok(Replay::declined_because(format!(
+            "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
+        )));
+    };
+    // The replay law, with the reason naming both sides wherever the two
+    // dialects differ. `Inherit` passes the source's own dialect as the target,
+    // so only the explicit path reaches the mismatch arms.
+    let source_dialect = match source.dialect.as_ref() {
+        None => {
+            return Ok(Replay::declined_because(format!(
+                "preserved IGES source records no dialect, target is {target}; byte replay skipped"
+            )));
+        }
+        Some(dialect) if dialect != target => {
+            return Ok(Replay::declined_because(format!(
+                "source is {dialect}, target is {target}; byte replay skipped"
+            )));
+        }
+        Some(dialect) => dialect.clone(),
+    };
     if crate::document_digest(ir) != *expected {
-        return Ok(None);
+        return Ok(Replay::declined_because(
+            "decoded model no longer matches the preserved IGES source digest; byte replay skipped",
+        ));
     }
     let Some(record) = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID))
     else {
-        return Ok(None);
+        return Ok(Replay::declined());
     };
     let Some(data) = record.data.as_deref() else {
         return Err(CodecError::Malformed(
@@ -179,10 +329,14 @@ fn replay_bytes(
             "retained IGES source image failed integrity validation".into(),
         ));
     }
-    Ok(Some(data.to_vec()))
+    Ok(Replay::Replayed {
+        bytes: data.to_vec(),
+        dialect: source_dialect,
+    })
 }
 
 fn report(
+    target: DialectId,
     fidelity: FidelityResolution,
     write_path: WritePath,
     losses: Vec<LossNote>,
@@ -190,7 +344,8 @@ fn report(
     counts: BTreeMap<String, usize>,
 ) -> ExportReport {
     ExportReport {
-        format: "iges".into(),
+        target: Some(target),
+        format: crate::dialect::FORMAT.into(),
         census: EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts,

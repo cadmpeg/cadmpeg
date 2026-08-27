@@ -14,6 +14,8 @@ const MAX_REGISTRY_ENTRIES: usize = 64;
 const MAX_ASSET_FOLDERS: usize = 64;
 const MAX_TOP_LEVEL_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
+/// The only top-level manifest version this codec parses.
+const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
 
 pub(crate) const GENERATED_DESIGN_ASSET_BASE: &str = "FusionAssetName";
 pub(crate) const GENERATED_DESIGN_ASSET_FOLDER: &str = "FusionAssetName[Active]";
@@ -27,7 +29,21 @@ const GENERATED_PHYSICAL_CHANGE_GUID: &str = "00000000-0000-4000-8000-0000000000
 /// Fields from the top-level manifest that govern asset-folder ownership.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TopLevelManifest {
+    /// Leading length-prefixed ASCII version field, as the cursor read it.
+    ///
+    /// [`parse_top_level`] admits one value and refuses every other, so this is
+    /// the reading rather than a range. It is the evidence the dialect match
+    /// records, kept beside the parse instead of re-derived at the report
+    /// boundary.
+    version: String,
     asset_folder_bases: Vec<String>,
+}
+
+impl TopLevelManifest {
+    /// The version field the top-level manifest declared, verbatim.
+    pub(crate) fn declared_version(&self) -> &str {
+        &self.version
+    }
 }
 
 /// Prefix fields that identify one asset manifest.
@@ -185,7 +201,15 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
         ));
     }
     let mut cursor = Cursor::new(bytes);
-    cursor.expect_ascii("top-level manifest version", "3-2-0-0")?;
+    let version = cursor.ascii("top-level manifest version")?;
+    if version != TOP_LEVEL_MANIFEST_VERSION {
+        // A readable version that names another writer generation is a
+        // recognized document this codec does not parse, not corrupt bytes.
+        return Err(CodecError::NotImplemented(format!(
+            "F3D manifest version {version} is not supported \
+             (expected {TOP_LEVEL_MANIFEST_VERSION})"
+        )));
+    }
     cursor.expect_ascii("top-level manifest kind", "FusionDocType")?;
     cursor.expect_utf16("top-level manifest extension", ".f3d")?;
     let _display_name = cursor.utf16("top-level manifest display name")?;
@@ -224,10 +248,15 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
         let _value = cursor.u32(&format!("top-level manifest registry value {ordinal}"))?;
     }
 
-    parse_asset_tail(bytes, cursor.position())
+    let asset_folder_bases = parse_asset_tail(bytes, cursor.position())?;
+    Ok(TopLevelManifest {
+        version,
+        asset_folder_bases,
+    })
 }
 
-fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<TopLevelManifest, CodecError> {
+/// The asset-folder base run of the one exact tail framing.
+fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<String>, CodecError> {
     let mut selected = None;
     for at in start..bytes.len().saturating_sub(3) {
         if bytes.get(at..at + 4) != Some(36_u32.to_le_bytes().as_slice()) {
@@ -251,7 +280,7 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<TopLevelManifest, Code
     })
 }
 
-fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, CodecError> {
+fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<String>, CodecError> {
     let mut cursor = Cursor::from_offset(bytes, at)?;
     let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
     let asset_folder_count = bounded_nonzero_count(
@@ -274,7 +303,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
     }
     cursor.expect_u32("top-level manifest terminal word", 0)?;
     if cursor.exhausted() {
-        return Ok(TopLevelManifest { asset_folder_bases });
+        return Ok(asset_folder_bases);
     }
     match cursor.u8("top-level manifest terminal byte")? {
         0 => {
@@ -312,7 +341,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
     }
     cursor.finish("top-level manifest")?;
 
-    Ok(TopLevelManifest { asset_folder_bases })
+    Ok(asset_folder_bases)
 }
 
 /// Resolve the unique Design archive folder through the top-level folder run
@@ -541,7 +570,7 @@ pub(crate) fn encode_top_level(
     }
 
     let mut out = Vec::new();
-    push_ascii(&mut out, "3-2-0-0")?;
+    push_ascii(&mut out, TOP_LEVEL_MANIFEST_VERSION)?;
     push_ascii(&mut out, "FusionDocType")?;
     push_utf16(&mut out, ".f3d")?;
     push_utf16(&mut out, "Fusion Document")?;
@@ -876,6 +905,43 @@ mod tests {
         })
         .unwrap();
         assert_eq!(folder, "Design Base");
+    }
+
+    #[test]
+    fn unsupported_top_level_manifest_version_is_not_corruption() {
+        let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+        let mut supported = Vec::new();
+        push_ascii(&mut supported, TOP_LEVEL_MANIFEST_VERSION).unwrap();
+        assert!(bytes.starts_with(&supported));
+        let mut replacement = Vec::new();
+        push_ascii(&mut replacement, "3-3-0-0").unwrap();
+        bytes.splice(0..supported.len(), replacement);
+
+        let error = parse_top_level(&bytes).unwrap_err();
+        assert!(
+            matches!(&error, CodecError::NotImplemented(message) if message.contains("3-3-0-0")
+                && message.contains(TOP_LEVEL_MANIFEST_VERSION)),
+            "expected an unsupported-version refusal, found {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_broken_top_level_manifest_version_field_stays_malformed() {
+        let complete = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+
+        let truncated = parse_top_level(&complete[..6]).unwrap_err();
+        assert!(
+            matches!(truncated, CodecError::Malformed(_)),
+            "expected a malformed truncation, found {truncated:?}"
+        );
+
+        let mut non_ascii = complete.clone();
+        non_ascii[4] = 0x01;
+        let error = parse_top_level(&non_ascii).unwrap_err();
+        assert!(
+            matches!(error, CodecError::Malformed(_)),
+            "expected a malformed non-ASCII version, found {error:?}"
+        );
     }
 
     #[test]

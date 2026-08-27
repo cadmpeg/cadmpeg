@@ -89,9 +89,36 @@ fn an_unadmitted_acis_binary_band_is_identified_and_reported() {
 }
 
 #[test]
-fn a_geometry_less_text_stream_reports_uncovered_coverage() {
+fn an_unadmitted_acis_text_band_is_identified_and_reported() {
     let mut text = String::new();
     text.push_str("700 0 1 0 \n");
+    text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
+    text.push_str("1 1e-06 1.0e-10 \n");
+    text.push_str("body $-1 -1 $-1 $-1 $-1 $-1 #\n");
+    text.push_str("End-of-ACIS-data \n");
+    let result = decode_bytes(text.as_bytes());
+    assert!(!result.report().geometry_transferred);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code == SatLossCode::ContainerAcisSaveFormatUnsupported.kind()));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("Spatial ACIS text stream")));
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(source.attributes["kernel_family"], "acis");
+    assert_eq!(source.attributes["acis_save_format_version"], "700");
+    assert_eq!(source.attributes["encoding"], "text");
+    assert!(result.ir().model.bodies.is_empty());
+}
+
+#[test]
+fn a_geometry_less_text_stream_reports_uncovered_coverage() {
+    let mut text = String::new();
+    text.push_str("21800 0 1 0 \n");
     text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
     text.push_str("1 1e-06 1.0e-10 \n");
     text.push_str("mystery_record $-1 -1 42 #\n");

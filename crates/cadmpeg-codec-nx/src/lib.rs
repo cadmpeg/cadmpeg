@@ -74,6 +74,7 @@
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod deltas;
+mod dialect;
 pub(crate) mod evaluation;
 mod framing;
 pub(crate) mod geometry;
@@ -101,6 +102,7 @@ pub use evaluation::{saved_body_census_evidence, BodyCensusEvidence};
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 
@@ -288,14 +290,14 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
+    let dialects = vec![dialect::NxDialect::classify(&scan.container)];
+    debug_assert_primary_layer(&dialects, dialect::FORMAT);
     ContainerSummary {
-        format: "nx".to_string(),
-        container_kind: if scan.container.is_legacy_cfb() {
-            "cfb"
-        } else {
-            "splmsstr"
-        }
-        .to_string(),
+        dialects,
+        format: dialect::FORMAT.to_string(),
+        container_kind: dialect::NxDialect::of_container(&scan.container)
+            .container_kind()
+            .to_string(),
         entries,
         notes: decode::summary_notes(scan),
     }

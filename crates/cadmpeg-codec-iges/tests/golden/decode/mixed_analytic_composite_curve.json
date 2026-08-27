@@ -85,7 +85,7 @@
                 "z": 0.0
               },
               {
-                "x": 6.123233995736766e-17,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2293,6 +2293,12 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
+      "declared": {
+        "effective_version": "5.3",
+        "representation": "fixed-ascii",
+        "version_flag": "11"
+      },
+      "dialect": "iges:5.3-fixed-ascii",
       "format": "iges"
     },
     "tolerances": {
@@ -2305,6 +2311,18 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "effective_version": "5.3",
+          "representation": "fixed-ascii",
+          "version_flag": "11"
+        },
+        "dialect": "iges:5.3-fixed-ascii",
+        "format": "iges"
+      }
+    ],
     "format": "iges",
     "geometry_transferred": true,
     "losses": [],

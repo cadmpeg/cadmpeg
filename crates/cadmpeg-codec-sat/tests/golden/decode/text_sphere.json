@@ -150,6 +150,13 @@
         "scale": "1",
         "terminator": "End-of-ASM-data"
       },
+      "declared": {
+        "encoding": "text",
+        "save_format_major": "232",
+        "save_format_minor": "0",
+        "terminator": "End-of-ASM-data"
+      },
+      "dialect": "sat:text",
       "format": "sat"
     },
     "tolerances": {
@@ -166,6 +173,19 @@
       "unknown_records": 0,
       "unknown_surface_faces": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "encoding": "text",
+          "save_format_major": "232",
+          "save_format_minor": "0",
+          "terminator": "End-of-ASM-data"
+        },
+        "dialect": "sat:text",
+        "format": "sat"
+      }
+    ],
     "format": "sat",
     "geometry_transferred": true,
     "losses": [],

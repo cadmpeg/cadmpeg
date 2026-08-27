@@ -2,6 +2,15 @@
 //! Errors returned by codec parsing and resource enforcement.
 
 use crate::decode::{ErrorContext, ResourceLimit, SourceLocation};
+use crate::dialect::DialectMatch;
+
+/// What [`CodecError::UnsupportedTarget`] renders where its `requested` field
+/// is `None`.
+///
+/// A same-format source that records no dialect gives the refusal nothing to
+/// quote: no id was asked for, and the source declares none. The message says
+/// so in words rather than putting a bare format id in a dialect-id slot.
+pub const UNRECORDED_SOURCE_DIALECT: &str = "an unrecorded source dialect";
 
 /// Errors a codec can raise.
 ///
@@ -55,6 +64,53 @@ pub enum CodecError {
         /// The refusing loss's own message, without any refusal prefix.
         message: String,
     },
+    /// The document was identified, and its dialect is not supported.
+    ///
+    /// Never reported as [`CodecError::WrongFormat`]: the bytes are this
+    /// codec's format, and the codec says so by carrying the identification it
+    /// made. Identity survives refusal, so a caller can name what it was handed
+    /// even though nothing was decoded.
+    ///
+    /// The identification is boxed: it is the widest payload any variant of
+    /// this enum carries, and every `Result<_, CodecError>` in the workspace
+    /// would otherwise grow to its width.
+    #[error("unsupported {format} dialect: {message}")]
+    UnsupportedDialect {
+        /// Format layer that refused.
+        format: String,
+        /// The identification made before the refusal.
+        dialect_match: Box<DialectMatch>,
+        /// Why the identified dialect is not supported.
+        message: String,
+    },
+    /// The encoder cannot write the dialect the caller asked for.
+    ///
+    /// The write-side counterpart of [`CodecError::UnsupportedDialect`]. It
+    /// carries no [`DialectMatch`]: nothing is being classified, and the
+    /// requested id can name no declared dialect at all. Three write refusals
+    /// use it: an explicit target outside the synthesis catalog, an inherit
+    /// request whose source dialect can be neither preserved nor synthesized,
+    /// and an inherit request over a same-format source that records no
+    /// dialect at all.
+    #[error("{format} cannot write {}: {reason}; available targets: {available}", .requested.as_deref().unwrap_or(UNRECORDED_SOURCE_DIALECT))]
+    UnsupportedTarget {
+        /// Format layer that refused.
+        format: String,
+        /// The dialect asked for: an explicit id, or the source's dialect
+        /// under an inherit request.
+        ///
+        /// `None` where no dialect id exists to name: the request was
+        /// `Inherit` over a same-format source that records no dialect, so
+        /// there is nothing to preserve and nothing to quote back. The field
+        /// carries a dialect id or nothing; it never carries a bare format id
+        /// standing in for one. [`UNRECORDED_SOURCE_DIALECT`] is what the
+        /// message renders in its place.
+        requested: Option<String>,
+        /// Why that dialect is unavailable.
+        reason: String,
+        /// The synthesis catalog, comma separated, in catalog order.
+        available: String,
+    },
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),
@@ -83,7 +139,10 @@ impl CodecError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::CodecError;
+    use crate::dialect::{Admission, DialectId, DialectMatch};
 
     #[test]
     fn malformed_constructor_formats_the_message_once() {
@@ -104,5 +163,32 @@ mod tests {
             "strict mode rejects step/parse.noncanonical-syntax: complex partial \
              records are not alphabetical"
         );
+    }
+
+    #[test]
+    fn a_dialect_refusal_keeps_the_identification_it_refused() {
+        let error = CodecError::UnsupportedDialect {
+            format: "acis".into(),
+            dialect_match: Box::new(DialectMatch {
+                format: "acis".into(),
+                dialect: Some(DialectId::pinned("acis:save-format-binary-other")),
+                declared: BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
+                admission: Admission::Refused,
+            }),
+            message: "save format 700 has no read grammar".into(),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "unsupported acis dialect: save format 700 has no read grammar"
+        );
+        let CodecError::UnsupportedDialect { dialect_match, .. } = &error else {
+            panic!("the variant just built is the one matched");
+        };
+        assert_eq!(
+            dialect_match.dialect.as_ref().map(DialectId::as_str),
+            Some("acis:save-format-binary-other")
+        );
+        assert_eq!(dialect_match.declared["save_format"], "700");
     }
 }

@@ -68,7 +68,7 @@ Export-side refusal has two owners, and the `Encoder` trait is neither. The conv
 | `cadmpeg-codec-nx`       | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and conditional topology.                                                         |
 | `cadmpeg-codec-creo`     | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
 | `cadmpeg-codec-sat`      | Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` stream inspection and B-rep transfer outside any container.                                  |
-| `cadmpeg-codec-iges`     | IGES 5.1/5.2/5.3 Fixed ASCII read and bounded semantic write for the mechanical/document envelope.                                     |
+| `cadmpeg-codec-iges`     | IGES 4.0/5.0/5.1/5.2/5.3 Fixed ASCII read and bounded semantic write for the mechanical/document envelope.                                     |
 | `cadmpeg-codec-step`     | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
 | `cadmpeg-fuzz`           | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 

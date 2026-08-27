@@ -66,6 +66,30 @@ pub(crate) enum Dialect {
     V5_3,
 }
 
+/// Whether field 23 selected a Global table this codec verified for the version
+/// the source declared, and if not, why not.
+///
+/// Distinct from [`Dialect`], which names the table actually used. This names
+/// the relationship between that table and the declaration: a decode can read a
+/// file with the 5.3 table because the file says 5.3 ([`Self::Verified`]),
+/// because the file says 5.1 and the tables coincide, because field 23 was
+/// unreadable, or because field 23 named a value the version table does not
+/// contain at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DialectRecovery {
+    /// Field 23 names a version whose Global table this codec verified against
+    /// that version's own specification. The only state that charges no loss.
+    Verified,
+    /// Field 23 does not read as an integer; the specification default stood in.
+    UnreadableDeclaration,
+    /// Field 23 names a value outside the version table, moved by the
+    /// postprocessor clamp of IGES 5.3 section 2.2.4.3.23.
+    Clamped,
+    /// Field 23 names a version whose own specification this codec has not
+    /// verified its Global table against.
+    UnverifiedVersion,
+}
+
 impl Dialect {
     const fn from_effective_flag(flag: i64) -> Self {
         match flag {
@@ -1406,13 +1430,37 @@ impl ResolvedGlobal {
     }
 
     /// The declaration text of a field 23 that does not read as an integer.
-    fn unreadable_version_declaration(&self) -> Option<&str> {
+    pub(crate) fn unreadable_version_declaration(&self) -> Option<&str> {
         self.unreadable_version_declaration.as_deref()
     }
 
     /// The declared version flag after the specification's postprocessor clamp.
-    fn effective_version_flag(&self) -> i64 {
+    pub(crate) fn effective_version_flag(&self) -> i64 {
         effective_version(self.declared_version_flag).0
+    }
+
+    /// Why this decode did not read the file with a Global table verified for
+    /// the version its field 23 declares.
+    ///
+    /// The single predicate behind two facts that must never disagree: the
+    /// [`IgesLossCode::SourceDialectUnverified`] charge in [`Self::dialect_loss`]
+    /// and the `Admission` in `crate::dialect`. Both call this; neither
+    /// recomputes it. `Verified` is the only state that charges no loss and the
+    /// only state admitted as `Admission::Admitted`, so the biconditional the
+    /// decode policy requires holds by construction rather than by two authors
+    /// agreeing.
+    pub(crate) fn dialect_recovery(&self) -> DialectRecovery {
+        if self.unreadable_version_declaration.is_some() {
+            // A malformed field 23 is replaced by the specification default, so
+            // it never also reads as clamped; the arms stay disjoint.
+            DialectRecovery::UnreadableDeclaration
+        } else if self.declared_version_flag != self.effective_version_flag() {
+            DialectRecovery::Clamped
+        } else if VERIFIED_VERSIONS.contains(&self.version()) {
+            DialectRecovery::Verified
+        } else {
+            DialectRecovery::UnverifiedVersion
+        }
     }
 
     pub(crate) fn version(&self) -> &'static str {
@@ -1459,17 +1507,19 @@ impl ResolvedGlobal {
 
     /// The loss charged when field 23 does not name a verified specification version.
     ///
-    /// It is `None` only for a readable, unclamped flag whose effective version
-    /// is one this codec verified against that version's own specification.
+    /// `None` exactly when [`Self::dialect_recovery`] is
+    /// [`DialectRecovery::Verified`], which is also exactly when `crate::dialect`
+    /// reports `Admission::Admitted`.
     pub(crate) fn dialect_loss(&self) -> Option<LossNote> {
+        let recovery = self.dialect_recovery();
+        if recovery == DialectRecovery::Verified {
+            return None;
+        }
         let declared = self.declared_version_flag;
         let effective = self.effective_version_flag();
         let version = self.version();
-        let clamped = declared != effective;
+        let clamped = recovery == DialectRecovery::Clamped;
         let unreadable = self.unreadable_version_declaration();
-        if !clamped && unreadable.is_none() && VERIFIED_VERSIONS.contains(&version) {
-            return None;
-        }
         let declaration = match unreadable {
             Some(text) => format!(
                 "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"

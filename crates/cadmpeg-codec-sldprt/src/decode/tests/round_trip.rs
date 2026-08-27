@@ -2,6 +2,8 @@
 //! Decode/encode equivariance and fixpoint tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -51,10 +53,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     base.model.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &base,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&base, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut base_bytes))
         .unwrap();
     let reference = SldprtCodec
@@ -74,10 +73,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         moved.model.bodies[0].transform = Some(Transform { rows });
         let mut bytes = Vec::new();
         SldprtCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &moved,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&moved, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .unwrap();
         let decoded = SldprtCodec
@@ -115,10 +111,10 @@ fn decode_encode_decode_reaches_fixpoint() {
 
     let mut reencoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: first.ir(),
-            fidelity: Some(first.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(first.ir(), Some(first.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut reencoded))
         .expect("re-encode");
 

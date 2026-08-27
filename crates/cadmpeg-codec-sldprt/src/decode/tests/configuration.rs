@@ -106,7 +106,9 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        ..Default::default()
+        declared: BTreeMap::new(),
+        dialect: None,
+        format: String::new(),
     });
     let body = BodyId("body:active".into());
 
@@ -120,6 +122,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     assert_eq!(configuration.bodies, vec![body]);
 
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -146,7 +149,9 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        ..Default::default()
+        declared: BTreeMap::new(),
+        dialect: None,
+        format: String::new(),
     });
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
@@ -173,6 +178,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     assert!(configuration.active.is_active());
 
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: false,
@@ -209,6 +215,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
         });
     }
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -249,6 +256,7 @@ fn incomplete_configuration_names_are_reported() {
         });
     }
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -270,6 +278,8 @@ fn incomplete_configuration_names_are_reported() {
 fn active_configuration_partition_disagreement_is_reported() {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(cadmpeg_ir::document::SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "sldprt".into(),
         attributes: BTreeMap::from([(
             "active_parasolid_block".into(),
@@ -292,6 +302,7 @@ fn active_configuration_partition_disagreement_is_reported() {
         native_ref: Some("native:configuration".into()),
     });
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -342,6 +353,7 @@ fn incoherent_configuration_bodies_are_reported() {
         configuration("unresolved", 2, cadmpeg_ir::ConfigurationBodies::Unresolved),
     ];
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -391,6 +403,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         native_ref: Some("native:configuration".into()),
     });
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -457,6 +470,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         native_ref: Some("native:configuration".into()),
     });
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,

@@ -25,6 +25,9 @@ pub enum CreoLossCode {
     ContainerOnlyDecode,
     /// PSB section census and prototype/instance transfer summary.
     ContainerCensus,
+    /// No persistence-layout discriminant matched, so no layout-specific
+    /// decode strategy was applied.
+    SourceDialectUnverified,
     /// Legacy type-2 real row did not form a complete finite scalar or array.
     LegacyRealValueUnresolved,
     /// Legacy type-1 integer row did not form a signed 32-bit scalar or array.
@@ -158,6 +161,7 @@ impl CreoLossCode {
     pub const ALL: &'static [CreoLossCode] = &[
         Self::ContainerOnlyDecode,
         Self::ContainerCensus,
+        Self::SourceDialectUnverified,
         Self::LegacyRealValueUnresolved,
         Self::LegacyIntegerValueUnresolved,
         Self::LegacyContinuationFormUndefined,
@@ -229,6 +233,7 @@ impl CreoLossCode {
         match self {
             Self::ContainerOnlyDecode => "container.decode-skipped",
             Self::ContainerCensus => "container.census",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
             Self::LegacyIntegerValueUnresolved => "legacy.integer-value-unresolved",
             Self::LegacyContinuationFormUndefined => "legacy.continuation-form-undefined",
@@ -335,6 +340,7 @@ impl CreoLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::ContainerOnlyDecode => LossTaxonomy::ContainerOnly,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerCensus
             | Self::CarrierVisibGeomPlanes
             | Self::CarrierTopologyBoundPlanes
@@ -433,6 +439,7 @@ mod tests {
             [
                 "container.decode-skipped",
                 "container.census",
+                "source.dialect-unverified",
                 "legacy.real-value-unresolved",
                 "legacy.integer-value-unresolved",
                 "legacy.continuation-form-undefined",

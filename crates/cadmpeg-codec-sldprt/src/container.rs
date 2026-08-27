@@ -821,6 +821,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     );
 
     ContainerSummary {
+        dialects: Vec::new(),
         format: "sldprt".to_string(),
         container_kind: if scan.compound_streams.is_empty() {
             "sldprt-blocks"

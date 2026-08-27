@@ -111,6 +111,8 @@
         "variant": "float_packed_inner_no_fbb",
         "vertex_records": "3"
       },
+      "declared": {},
+      "dialect": "catia:float-packed-inner-no-fbb",
       "format": "catia"
     },
     "tolerances": {
@@ -457,6 +459,13 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "dialect": "catia:float-packed-inner-no-fbb",
+        "format": "catia"
+      }
+    ],
     "format": "catia",
     "geometry_transferred": false,
     "losses": [

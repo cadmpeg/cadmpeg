@@ -16,7 +16,7 @@ use std::path::Path;
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
@@ -164,10 +164,8 @@ fn encode_once(bytes: &[u8]) -> Result<(cadmpeg_ir::ExportReport, Vec<u8>), Stri
     let mut produced = Vec::new();
     let report = Encoder::plan(
         &FcstdCodec,
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut produced))
     .map_err(|error| error.to_string())?;
@@ -225,10 +223,8 @@ fn step_snapshot(bytes: &[u8]) -> String {
     let mut exported = Vec::new();
     match Encoder::plan(
         &StepCodec::default(),
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut exported))
     {

@@ -1,0 +1,1464 @@
+# Draft naming contract for the dialect migration; enforced by
+# scripts/check-dialects.py when it lands. Ids are pinned from this commit
+# onward.
+#
+# This file describes formats, not cadmpeg. It changes when a vendor ships,
+# never when cadmpeg gains a decoder. Capability lives in
+# `docs/dialect-support.toml` (not yet written). See
+# `~/side2/cadmpeg-dialects-design.md` §3 and §5 for the model.
+#
+# Schema
+#   [format.<id>]      complete = true when the discriminant space is
+#                      enumerable from the format's own documentation.
+#                      complete = false means the rows are grammar classes
+#                      plus a mandatory `unknown` row, and breadth
+#                      denominators report as `n of >=m`.
+#   [[dialect]]        id            `<format>:<name>`, lowercase-hyphenated,
+#                                    stable forever.
+#                      title         human-facing name.
+#                      discriminants the fields read from the bytes that
+#                                    select this row.
+#                      witness       `spec:...`, `corpus:<repo-relative path>`,
+#                                    or `code:<file>:<line>`.
+#                      seam          why this boundary exists, where it needs
+#                                    saying.
+#                      supersedes /  the lattice. A dialect's admitted set is
+#                      adds /        (expansion of `supersedes` union `adds`)
+#                      subtracts     minus `subtracts`. Admitted only where the
+#                                    checker consumes them; IGES is the only
+#                                    consumer today. `subtracts` entries are
+#                                    single `type:form` admissions; `adds`
+#                                    entries are `type:form` or `type:low-high`,
+#                                    because the additive half of the IGES 5.0
+#                                    table includes the implementor-defined
+#                                    form band 5001-9999.
+#
+# Witness rule. Every row carries a witness. A `code:` witness is a
+# placeholder: it proves the discriminant value is read, not that a file
+# carrying it was observed. Every `code:` witness must upgrade to a `spec:` or
+# `corpus:` witness before the checker enforces witness quality. Rows on
+# `code:` witnesses do not count toward a published breadth denominator.
+#
+# Corpus witnesses. `corpus/manifest.toml` covers only the FreeCAD fixtures.
+# Every other `corpus:` path below is a repository-authored golden fixture:
+# it carries the discriminant value in its bytes, verified by reading them,
+# but it was not captured from vendor output. It witnesses that the row is
+# real; it does not witness vendor production of that dialect.
+#
+# Each row's comment cites the classification code that was read to verify its
+# discriminants. Where the superseded RFC's draft inventory disagrees with the
+# code, the code wins and the comment says so.
+
+# --------------------------------------------------------------------------
+# IGES
+# --------------------------------------------------------------------------
+# The discriminant space is a cross product of two axes, both enumerated by
+# the IGES 5.3 specification itself:
+#   representation     `representation.rs` `Representation::classify_prefix`
+#                      (crates/cadmpeg-codec-iges/src/representation.rs:47-57)
+#                      Compressed ASCII: byte 73 == 'C' over a printable
+#                      80-byte flag record (representation.rs:20-25).
+#                      Binary: the Binary Flag Section (representation.rs:27-45).
+#                      Fixed ASCII: `card::detect_fixed_ascii` at High.
+#                      `Representation::Unknown` yields `Confidence::No`
+#                      (representation.rs:59-66), so it is outside the
+#                      detect() domain and needs no row: B4 totality holds
+#                      without one.
+#   effective_version  Global field 23, clamped by `effective_version`
+#                      (crates/cadmpeg-codec-iges/src/global.rs:706-720) as
+#                      IGES 5.3 section 2.2.4.3.23 requires of a
+#                      postprocessor. The clamp is total: a flag below 1 maps
+#                      to 3 and a flag at or above 11 maps to 11, so every
+#                      declared value classifies.
+# The declared flag survives verbatim in the match as evidence; the row
+# reflects the effective version (design §3.4).
+[format.iges]
+complete = true
+
+# Version-flag values 1, 2, 3, 4, 5, and 7 select Global tables this codec has
+# not verified against their own specifications; `Dialect::from_effective_flag`
+# groups them as `Dialect::Legacy` (global.rs:70-79) and decode charges
+# `iges/source.dialect-unverified` (global.rs:1464-1490). They are still
+# distinct identity rows: identity is exogenous, grammar is endogenous
+# (design §3.2). `VERIFIED_VERSIONS` is ["4.0","5.0","5.1","5.2","5.3"]
+# (global.rs:282).
+#
+# Compressed ASCII and Binary rows exist only for the version values whose
+# specifications this repository cites for those representations:
+# IGES 4.0 section 2.3.1 and IGES 5.3 section 2.3.1 for Compressed ASCII,
+# IGES 4.0 section 2.4.1 and IGES 5.3 Appendix H for Binary
+# (docs/formats/iges.md lines 15-21). Pre-4.0 Compressed ASCII and Binary
+# combinations are omitted rather than invented; the IGES 3.0 specification
+# would witness them.
+
+[[dialect]]
+# global.rs:718 `_ => (3, "2.0")` also absorbs an unreadable or sub-1 flag.
+id = "iges:1.0-fixed-ascii"
+title = "IGES 1.0, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "1.0", version_flag = "1" }
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+id = "iges:ansi-y14.26m-1981-fixed-ascii"
+title = "ANSI Y14.26M-1981, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "ANSI-Y14.26M-1981", version_flag = "2" }
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+# The specification default for an absent field 23, and the clamp target for
+# every flag below 1 (global.rs:718).
+id = "iges:2.0-fixed-ascii"
+title = "IGES 2.0, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "2.0", version_flag = "3" }
+seam = "the default and the low clamp target; an absent or unreadable field 23 lands here"
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+id = "iges:3.0-fixed-ascii"
+title = "IGES 3.0, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "3.0", version_flag = "4" }
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+id = "iges:asme-ansi-y14.26m-1987-fixed-ascii"
+title = "ASME/ANSI Y14.26M-1987, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "ASME-ANSI-Y14.26M-1987", version_flag = "5" }
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+# `Dialect::V4_0` (global.rs:72). Its Global table stops at field 24
+# (global.rs:81-87).
+id = "iges:4.0-fixed-ascii"
+title = "IGES 4.0, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "4.0", version_flag = "6" }
+seam = "the Global table stops at field 24 and the entity/form table is the 4.0 table"
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+id = "iges:asme-y14.26m-1989-fixed-ascii"
+title = "ASME Y14.26M-1989, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "ASME-Y14.26M-1989", version_flag = "7" }
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+# `Dialect::V5_0` (global.rs:73). The lattice below matches
+# `envelope_a_v5_0_admits` (crates/cadmpeg-codec-iges/src/profile.rs:87-112):
+# it returns true for everything `envelope_a_v4_admits` admits (profile.rs:92)
+# except the Appendix-I compatibility forms rejected first
+# (profile.rs:88-90, table at profile.rs:115-117).
+#
+# The additive half is `adds`, transcribed from the fall-through match at
+# profile.rs:96-111: eighteen entity types, one entry each. `228:5001-9999` is
+# `implementor_defined_form` (profile.rs:101, defined at profile.rs:124).
+id = "iges:5.0-fixed-ascii"
+title = "IGES 5.0, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "5.0", version_flag = "8" }
+seam = "the Global table stops at field 25; the 4.0 Appendix-I compatibility forms are obsolete here"
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+supersedes = ["iges:4.0-fixed-ascii"]
+subtracts = ["402:6", "402:8", "402:10", "402:11", "406:4"]
+# profile.rs:97-109, in source order.
+adds = [
+  "141:0", "143:0", "182:0", "204:0", "213:0", "316:0",
+  "214:12", "216:1-2", "218:1", "228:5001-9999", "230:1", "402:19",
+  "404:1", "406:19-26", "410:1", "416:3", "322:0-2", "422:0-1",
+]
+
+[[dialect]]
+# `Dialect::V5_1` (global.rs:74). 5.1, 5.2, and 5.3 take the unrestricted
+# `_ => true` arm of `envelope_a_admits` (profile.rs:51), so they re-admit the
+# Appendix-I forms that 5.0 subtracts: the lattice is non-monotone and these
+# rows carry no `supersedes`.
+id = "iges:5.1-fixed-ascii"
+title = "IGES 5.1, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "5.1", version_flag = "9" }
+seam = "26-field Global table; re-admits the (402,6/8/10/11) and (406,4) forms 5.0 removed"
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+id = "iges:5.2-fixed-ascii"
+title = "IGES 5.2, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "5.2", version_flag = "10" }
+witness = "spec:IGES 5.3 section 2.2.4.3.23"
+
+[[dialect]]
+# The high clamp target: every flag at or above 11 lands here (global.rs:717).
+# Fixture verified: Global field 23 is 11 and the Global section carries 26
+# fields in all 78 IGES golden fixtures.
+id = "iges:5.3-fixed-ascii"
+title = "IGES 5.3, Fixed ASCII"
+discriminants = { representation = "fixed-ascii", effective_version = "5.3", version_flag = "11" }
+seam = "the high clamp target; a flag above 11 is read as 5.3"
+witness = "corpus:crates/cadmpeg-codec-iges/tests/golden/fixtures/line.igs"
+
+[[dialect]]
+id = "iges:4.0-compressed-ascii"
+title = "IGES 4.0, Compressed ASCII"
+discriminants = { representation = "compressed-ascii", effective_version = "4.0", version_flag = "6" }
+witness = "spec:IGES 4.0 section 2.3.1"
+
+[[dialect]]
+id = "iges:5.0-compressed-ascii"
+title = "IGES 5.0, Compressed ASCII"
+discriminants = { representation = "compressed-ascii", effective_version = "5.0", version_flag = "8" }
+witness = "spec:IGES 5.3 section 2.3.1"
+supersedes = ["iges:4.0-compressed-ascii"]
+subtracts = ["402:6", "402:8", "402:10", "402:11", "406:4"]
+# profile.rs:97-109, in source order.
+adds = [
+  "141:0", "143:0", "182:0", "204:0", "213:0", "316:0",
+  "214:12", "216:1-2", "218:1", "228:5001-9999", "230:1", "402:19",
+  "404:1", "406:19-26", "410:1", "416:3", "322:0-2", "422:0-1",
+]
+
+[[dialect]]
+id = "iges:5.1-compressed-ascii"
+title = "IGES 5.1, Compressed ASCII"
+discriminants = { representation = "compressed-ascii", effective_version = "5.1", version_flag = "9" }
+witness = "spec:IGES 5.3 section 2.3.1"
+
+[[dialect]]
+id = "iges:5.2-compressed-ascii"
+title = "IGES 5.2, Compressed ASCII"
+discriminants = { representation = "compressed-ascii", effective_version = "5.2", version_flag = "10" }
+witness = "spec:IGES 5.3 section 2.3.1"
+
+[[dialect]]
+id = "iges:5.3-compressed-ascii"
+title = "IGES 5.3, Compressed ASCII"
+discriminants = { representation = "compressed-ascii", effective_version = "5.3", version_flag = "11" }
+seam = "Directory Entry and Parameter Data combine into Data records; Start, Global, and Terminate keep the fixed cards"
+witness = "spec:IGES 5.3 section 2.3.1"
+
+[[dialect]]
+id = "iges:4.0-binary"
+title = "IGES 4.0, Binary"
+discriminants = { representation = "binary", effective_version = "4.0", version_flag = "6" }
+witness = "spec:IGES 4.0 section 2.4.1"
+
+[[dialect]]
+id = "iges:5.0-binary"
+title = "IGES 5.0, Binary"
+discriminants = { representation = "binary", effective_version = "5.0", version_flag = "8" }
+witness = "spec:IGES 5.3 Appendix H.1"
+supersedes = ["iges:4.0-binary"]
+subtracts = ["402:6", "402:8", "402:10", "402:11", "406:4"]
+# profile.rs:97-109, in source order.
+adds = [
+  "141:0", "143:0", "182:0", "204:0", "213:0", "316:0",
+  "214:12", "216:1-2", "218:1", "228:5001-9999", "230:1", "402:19",
+  "404:1", "406:19-26", "410:1", "416:3", "322:0-2", "422:0-1",
+]
+
+[[dialect]]
+id = "iges:5.1-binary"
+title = "IGES 5.1, Binary"
+discriminants = { representation = "binary", effective_version = "5.1", version_flag = "9" }
+witness = "spec:IGES 5.3 Appendix H.1"
+
+[[dialect]]
+id = "iges:5.2-binary"
+title = "IGES 5.2, Binary"
+discriminants = { representation = "binary", effective_version = "5.2", version_flag = "10" }
+witness = "spec:IGES 5.3 Appendix H.1"
+
+[[dialect]]
+id = "iges:5.3-binary"
+title = "IGES 5.3, Binary"
+discriminants = { representation = "binary", effective_version = "5.3", version_flag = "11" }
+seam = "Binary Flag Section plus per-section identifier/count headers; a deprecated physical representation with no writer"
+witness = "spec:IGES 5.3 Appendix H.1"
+
+[[dialect]]
+# The mandatory totality row (design §3.3, B4). The Fixed ASCII block above
+# covers every value of the clamped version flag, but the Compressed ASCII and
+# Binary blocks stop at the flags whose representation this repository can cite
+# a specification for: 6, 8, 9, 10, and 11. A Compressed ASCII or Binary file
+# whose clamped flag is 1, 2, 3, 4, 5, or 7 therefore matches no row above, and
+# without this row the classification would not be total. The missing rows are
+# not invented here: the IGES 3.0 specification would witness them, and each
+# one that gains a witness leaves this row and enters the enumeration.
+#
+# `complete = true` still holds for the format. The version-flag space is
+# enumerable from IGES 5.3 section 2.2.4.3.23 and is enumerated above; what
+# this row absorbs is a representation/version product the registry declines to
+# assert, not an unbounded document space.
+#
+# The witness is `code:` and stays `code:`: totality is a property of the
+# classifier, not an observation of a file, so no specification or corpus file
+# can witness it. Breadth denominators count the enumerated rows; this row is
+# outside them.
+id = "iges:unknown"
+title = "IGES, unclassified representation and version pair"
+discriminants = { residual = "any Confidence >= Low IGES document matching no row above" }
+seam = "no declared row states this representation at this version; decode uses the nearest verified Global table and charges iges/source.dialect-unverified"
+witness = "code:crates/cadmpeg-codec-iges/src/dialect.rs"
+
+# --------------------------------------------------------------------------
+# STEP
+# --------------------------------------------------------------------------
+# STEP has two independent document-wide discriminants and this registry uses
+# only one of them as the identity axis. Recorded as an open question rather
+# than decided (design §12, "STEP read basis"):
+#
+#   FILE_SCHEMA identifier -- the identity axis used below. It is what the
+#     encoder's write targets name (`StepSchema::file_schema`,
+#     crates/cadmpeg-codec-step/src/options.rs:81-90) and what the design
+#     pins as `step:ap242-e3`. Decode never branches on it: it is read after
+#     the parse, for reporting (reader/mod.rs:1076-1101) and for DATA-section
+#     name matching (parse.rs:790-797).
+#
+#   FILE_DESCRIPTION implementation level -- the real B1 boundary. It is read
+#     before the parse strategy is chosen and selects the section grammar:
+#     "1"|"2"|"2;1"|"2;2" -> LegacyEdition1, "3;1"|"3;2" -> LegacyEdition2,
+#     "4;1" -> Edition3Class1, "4;2" -> Edition3Class2, "4;3" ->
+#     Edition3Class3 (parse.rs:1416-1421, enum at parse.rs:436-443).
+#     `allows_edition3_sections` gates ANCHOR/REFERENCE/multi-DATA and
+#     `allows_class3_occurrences` gates class-3 occurrences (parse.rs:445-460).
+#     Crossing this axis with the schema axis would make the rows disjoint at
+#     the cost of ~45 rows, most unwitnessed. Settled: the implementation level
+#     stays off the identity axis. `StepDialect::classify`
+#     (crates/cadmpeg-codec-step/src/dialect.rs) records it verbatim in
+#     `DialectMatch.declared` under `implementation_level` and no row reads it.
+#
+# The RFC's draft inventory called the AP schema "a *target* axis, not a read
+# dialect". Code disagrees in one direction: it is not a read *dispatch* axis,
+# but the encoder's targets are dialect ids under design §8.1, so the schema
+# rows must exist. The RFC's `part21-clear-text` / `zip-packaged` /
+# `part28-xml` triple is not a partition: ZIP packaging is a container fact
+# whose `ISO-10303.p21` root still carries a FILE_SCHEMA and classifies into a
+# schema row (archive.rs:11, codec.rs:224-226), so it is not an identity row.
+[format.step]
+complete = false
+
+[[dialect]]
+# `StepSchema::Ap203Edition1` (options.rs:83). Fixture verified: line 5 of
+# ap203_sheet.p21 is FILE_SCHEMA(('CONFIG_CONTROL_DESIGN')).
+id = "step:ap203-e1"
+title = "STEP AP203 edition 1 (CONFIG_CONTROL_DESIGN)"
+discriminants = { file_schema_identifier = "CONFIG_CONTROL_DESIGN" }
+witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap203_sheet.p21"
+
+[[dialect]]
+# `StepSchema::Ap203Edition2` (options.rs:84). No fixture carries this
+# identifier.
+# The discriminant is the schema name. The arcs the encoder writes,
+# `{ 1 0 10303 403 2 1 2 }`, discriminate nothing: this is the only edition-2
+# AP203 row, and `StepDialect::from_schema_identifier` matches the bare name
+# exactly as `schema_identifier_matches` (parse.rs) does for AP214 and AP203
+# edition 1. Only the AP242 rows key on arcs, because three of them share one
+# name.
+id = "step:ap203-e2"
+title = "STEP AP203 edition 2 (AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF)"
+discriminants = { file_schema_identifier = "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF" }
+witness = "code:crates/cadmpeg-codec-step/src/options.rs:84"
+
+[[dialect]]
+# `StepSchema::Ap214` (options.rs:85). Fixture verified: ap214_sheet.p21 line
+# 5 is FILE_SCHEMA(('AUTOMOTIVE_DESIGN')). Two more fixture identifiers,
+# 'AP214' and 'AUTOMOTIVE_DESIGN_CC2', match no `StepSchema` variant and
+# classify into `step:unknown`.
+# The reader admits the bare name or the arc-bearing form
+# (`schema_identifier_matches`, parse.rs:1995-2002); the encoder writes
+# `AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }` (options.rs:85). The
+# discriminant is the name; arcs discriminate nothing here, unlike the
+# AP242 editions where they select the row.
+id = "step:ap214"
+title = "STEP AP214 (AUTOMOTIVE_DESIGN)"
+discriminants = { file_schema_identifier = "AUTOMOTIVE_DESIGN" }
+witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21"
+
+[[dialect]]
+# The AP242 schema name with no object identifier. Part 21 makes the object
+# identifier optional, so this is a complete, legal declaration: it names the
+# schema and leaves the edition unspecified. No `StepSchema` variant writes this
+# form -- the encoder always emits arcs -- but it is the form 13 in-tree
+# fixtures declare, so the region exists whether or not cadmpeg writes it.
+# `StepDialect::Ap242` (crates/cadmpeg-codec-step/src/dialect.rs) is the only
+# row reached with the AP242 name and no arcs.
+# Disposition: admitted. The reader's single Part 21 grammar is this row's
+# declared strategy, and the edition axis is undeclared rather than substituted,
+# so no dialect-unverified loss is charged and `DecodeMode::Strict` accepts
+# these files.
+id = "step:ap242"
+title = "STEP AP242, edition unspecified"
+discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "absent" }
+seam = "the object identifier is optional in Part 21 and is absent here, so edition-gated behaviour cannot be verified against the declaration"
+witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_geometry.p21"
+
+[[dialect]]
+# `StepSchema::Ap242Edition1` (options.rs:86); recognizer arcs
+# [1,0,10303,442,1,1,4] (options.rs:98). The edition lives in the fifth arc,
+# not the seventh (options.rs:60-62).
+id = "step:ap242-e1"
+title = "STEP AP242 edition 1"
+discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "1 0 10303 442 1 1 4" }
+witness = "code:crates/cadmpeg-codec-step/src/options.rs:98"
+
+[[dialect]]
+# `StepSchema::Ap242Edition2` (options.rs:87); arcs [1,0,10303,442,3,1,4]
+# (options.rs:99). Fixture verified: ap242_minimal.p21 line 5 carries
+# `... { 1 0 10303 442 3 1 4 }`, so the file named "minimal" is an edition-2
+# file, not an edition-1 file.
+id = "step:ap242-e2"
+title = "STEP AP242 edition 2"
+discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "1 0 10303 442 3 1 4" }
+witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_minimal.p21"
+
+[[dialect]]
+# `StepSchema::Ap242Edition3` (options.rs:88); arcs [1,0,10303,442,4,1,4]
+# (options.rs:100). No fixture carries these arcs.
+# ap242_ed3_sections.p21 is a genuine Part-21 edition-3 file (implementation
+# level "4;2") but declares the bare name 'AP242', so `ap242_edition` returns
+# None and it reports "edition unspecified" (codec.rs:202-204). That file
+# witnesses the implementation-level axis, not this row.
+id = "step:ap242-e3"
+title = "STEP AP242 edition 3"
+discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "1 0 10303 442 4 1 4" }
+witness = "code:crates/cadmpeg-codec-step/src/options.rs:100"
+
+[[dialect]]
+# `is_part28_xml` (codec.rs:416-437), namespaces at codec.rs:441-444.
+# Disposition: `CodecError::NotImplemented("STEP Part 28 XML encoding")` from
+# `StepDialect::alternate_encoding_refusal` (dialect.rs), returned by
+# `refuse_alternate_encoding` before the ISO-10303-21 magic test. `detect` returns Medium (codec.rs:54-59) so the
+# codec claims the file and refuses it rather than letting another codec
+# mis-decode it. Structurally identified, semantic decode refused. The refusal
+# returns before any exchange structure or report exists, so this row and the
+# two below produce no `DialectMatch` today and `Admission::Refused` is
+# unreachable in this codec; `StepDialect::alternate_encoding_refusal`
+# (dialect.rs) is where the three rows and their refusal messages are named.
+id = "step:part28-xml"
+title = "ISO 10303-28 edition 2 XML encoding"
+discriminants = { xml_root_namespace = "urn:oid:1.0.10303.28.2.1.1 | urn:iso:std:iso:10303:-28:ed-2:tech:XMLschema:common | urn:iso.org:standard:10303:part(28):version(2):xmlschema:common" }
+seam = "an XML encoding of the same schemas; no Part-21 exchange structure at all"
+witness = "code:crates/cadmpeg-codec-step/src/codec.rs:441"
+
+[[dialect]]
+# `is_ap242_bo_model_xml` (codec.rs), namespaces at codec.rs:605-608.
+# Refused by `refuse_alternate_encoding` (dialect.rs).
+id = "step:ap242-bo-model-xml"
+title = "AP242 Business Object Model XML sidecar"
+discriminants = { xml_root_namespace = "http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model | .../-ed-2/..." }
+witness = "code:crates/cadmpeg-codec-step/src/codec.rs:605"
+
+[[dialect]]
+# HDF5 signature at offset 0 or at doubling offsets from 512
+# (`is_part26_hdf5`, codec.rs). Refused by `refuse_alternate_encoding`
+# (dialect.rs).
+id = "step:part26-hdf5"
+title = "ISO 10303-26 binary/HDF5 encoding"
+discriminants = { magic = "\\x89HDF\\r\\n\\x1a\\n" }
+witness = "code:crates/cadmpeg-codec-step/src/codec.rs:399"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). A Part-21 exchange whose FILE_SCHEMA
+# identifier satisfies no row above is admitted and decoded: the schema string
+# is recorded (reader/mod.rs) and nothing branches on it. Two kinds of
+# declaration reach here:
+#   - an identifier whose schema name matches no row's name. In-tree fixtures:
+#     'AP214' (strings.p21), 'AUTOMOTIVE_DESIGN_CC2'
+#     (noncanonical_solid_angle.p21), and the literal 'AP242'
+#     (ap242_ed3_sections.p21), none of which is a declared schema name.
+#   - the AP242 schema name carrying an object identifier that names no
+#     declared edition (`ap242_edition`, options.rs:92-104), including arcs
+#     that do not read as a numeric object identifier. An edition claim
+#     matching nothing is an unrecognized declaration; making no claim at all
+#     is `step:ap242`.
+# Disposition: admitted-unverified.
+id = "step:unknown"
+title = "ISO 10303-21 exchange with an unrecognized FILE_SCHEMA identifier"
+discriminants = { magic = "ISO-10303-21;", file_schema_identifier = "any other" }
+witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p21"
+
+# --------------------------------------------------------------------------
+# Rhino 3DM
+# --------------------------------------------------------------------------
+# One discriminant: the archive-version word, right-justified ASCII decimal in
+# header bytes 24..32 (`file_header::ARCHIVE_VERSION`,
+# crates/cadmpeg-codec-rhino/src/layout.rs). `ArchiveVersion::classify`
+# (crates/cadmpeg-codec-rhino/src/chunks.rs) is an exact-equality match on ten
+# literal integers; there are no bands. Word 0 is refused at the header layer
+# (`parse_header`); every other positive integer becomes
+# `ArchiveVersion::Other(_)`.
+#
+# `crates/cadmpeg-codec-rhino/src/dialect.rs` maps that partition onto the rows
+# below: `RhinoDialect::from_archive` is the row, `RhinoDialect::classify` is
+# the sole `DialectMatch` construction path, and `RhinoDialect::refuses_decode`
+# is the sole disposition predicate -- it decides both the reported
+# `Admission` and the refusal `container::decode` returns.
+#
+# The design's open question -- whether archives 2-4 and 50-90 are one read
+# grammar or two -- is a grammar question, not an identity question, and is
+# left open here. Verified for the record: they are one grammar today.
+# `scan_with_record_limit` (container.rs) is the single path for V2..V9; the
+# version-dependence inside it is field-width and checksum parameterization,
+# not a second parser (`ArchiveVersion::uses_eight_byte_values` = value >= 50;
+# `checksum_kind`). V1 alone is a separate grammar (`legacy::decode_v1`).
+#
+# The openNURBS writer-version stamp (TCODE_WRITER_VERSION 0xa0000026,
+# container.rs) is NOT a classification discriminant: it is read out of the
+# PROPERTIES table only when an OBJECTS table follows (`scan_with_record_limit`)
+# and gates field presence inside records (mesh.rs, brep.rs,
+# `BoundedReader::bool_with_writer_version`). It is provenance-shaped evidence
+# with a grammar role inside a dialect -- design §3.4 -- and stays out of the
+# discriminant set. It is recorded verbatim as the `opennurbs_writer_version`
+# declared key on the paths that read the PROPERTIES table, and a missing stamp
+# is charged per record as `rhino/source.writer-stamp-unverified`
+# (`RhinoLossCode::SourceWriterStampUnverified`), never at the archive level.
+# That code is deliberately distinct from the document-level
+# `source.dialect-unverified` the other codecs charge when admission is
+# `AdmittedUnverified`: rhino charges the per-record one inside admitted
+# documents, so the two must not share a string.
+[format.rhino]
+complete = true
+
+[[dialect]]
+# `ArchiveVersion::V1`. Flat-chunk grammar, optional EOF marker
+# (`ArchiveVersion::allows_optional_eof`). Fixture verified: header
+# bytes 24..32 are `       1`.
+id = "rhino:archive-1"
+title = "Rhino 3DM archive version 1 (flat legacy records)"
+discriminants = { archive_version = "1" }
+seam = "flat-chunk grammar with its own typecode table; no table sequence, and the end-of-file chunk is optional"
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v1.3dm"
+
+[[dialect]]
+# `ArchiveVersion::V2`. Fixture verified: `       2`.
+id = "rhino:archive-2"
+title = "Rhino 3DM archive version 2"
+discriminants = { archive_version = "2" }
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v2.3dm"
+
+[[dialect]]
+# `ArchiveVersion::V3`. Fixture verified: `       3`; the
+# golden decode snapshot pins `archive_version` = "3".
+id = "rhino:archive-3"
+title = "Rhino 3DM archive version 3"
+discriminants = { archive_version = "3" }
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v3.3dm"
+
+[[dialect]]
+# `ArchiveVersion::V4`. Fixture verified: `       4`.
+id = "rhino:archive-4"
+title = "Rhino 3DM archive version 4"
+discriminants = { archive_version = "4" }
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v4.3dm"
+
+[[dialect]]
+# `ArchiveVersion::LegacyV5`. Word 5 and word 50 are distinct. Word 5 is a
+# four-byte-value archive (`ArchiveVersion::uses_eight_byte_values` is
+# value >= 50) and is decode-refused: `RhinoDialect::refuses_decode` holds, so
+# inspection reports the header with `Admission::Refused` and
+# `container::decode` returns `CodecError::NotImplemented`.
+#
+# No fixture carries word 5. The design's example witness
+# `corpus:rhino/legacy_v5_header.3dm` names a file that does not exist in this
+# repository; this row rests on code until one is added.
+id = "rhino:archive-5"
+title = "Rhino 3DM archive version 5 (pre-chunk legacy)"
+discriminants = { archive_version = "5" }
+seam = "chunk value width and grammar differ from archive 50"
+witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
+
+[[dialect]]
+# `ArchiveVersion::V5`. The eight-byte-value boundary starts
+# here. Fixture verified: `      50`; golden decode pins `archive_version` =
+# "50".
+id = "rhino:archive-50"
+title = "Rhino 3DM archive version 50 (Rhino 5)"
+discriminants = { archive_version = "50" }
+seam = "chunk value and EOF file-size fields widen from four bytes to eight at word 50"
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/brep.3dm"
+
+[[dialect]]
+# `ArchiveVersion::V6`. Fixture verified: `      60`.
+id = "rhino:archive-60"
+title = "Rhino 3DM archive version 60 (Rhino 6)"
+discriminants = { archive_version = "60" }
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v60.3dm"
+
+[[dialect]]
+# `ArchiveVersion::V7`. Fixture verified: `      70`.
+id = "rhino:archive-70"
+title = "Rhino 3DM archive version 70 (Rhino 7)"
+discriminants = { archive_version = "70" }
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v70.3dm"
+
+[[dialect]]
+# `ArchiveVersion::V8`. Fixture verified: `      80`.
+id = "rhino:archive-80"
+title = "Rhino 3DM archive version 80 (Rhino 8)"
+discriminants = { archive_version = "80" }
+witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v80.3dm"
+
+[[dialect]]
+# `ArchiveVersion::V9`. Decoded but not emittable: the encoder catalog is
+# 50/60/70/80 (`RhinoArchiveVersion`, crates/cadmpeg-codec-rhino/src/lib.rs).
+# No fixture carries word 90.
+id = "rhino:archive-90"
+title = "Rhino 3DM archive version 90 (Rhino 9)"
+discriminants = { archive_version = "90" }
+witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
+
+[[dialect]]
+# `ArchiveVersion::Other(u64)`, mapped by `RhinoDialect::from_archive`. B4
+# totality: any positive archive word that is not one of the ten literals
+# classifies here, including 51 and 61 -- `ArchiveVersion::classify` does not
+# fold near-misses into a band. Disposition today: recovery is not attempted.
+# `RhinoDialect::refuses_decode` holds, so inspection reports the header with
+# `Admission::Refused` and `container::decode` returns
+# `CodecError::NotImplemented`. No document is read with a grammar declared for
+# another row, so `Admission::AdmittedUnverified` is unreachable in this codec.
+#
+# Judgment call for the registry owner: this row exists under
+# `complete = true` because B4 requires classification to be total, while the
+# enumerable rows above are the ones a breadth denominator counts. If the
+# checker reads `complete = true` as "no unknown row", this row must move or
+# the rule must gain the exception.
+id = "rhino:unknown"
+title = "Rhino 3DM archive version outside the enumerated words"
+discriminants = { archive_version = "any positive integer other than 1, 2, 3, 4, 5, 50, 60, 70, 80, 90" }
+witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
+
+# --------------------------------------------------------------------------
+# FreeCAD FCStd
+# --------------------------------------------------------------------------
+# One discriminant: the `SchemaVersion` attribute on the `<Document>` root of
+# `Document.xml` inside the ZIP
+# (crates/cadmpeg-codec-freecad/src/container.rs:214-215; re-read
+# independently at persistence.rs:48-51). The lowercase alias `schemaVersion`
+# alone is refused, and carrying both spellings is refused
+# (container.rs:168-182). `GuiDocument.xml` carries its own unrelated
+# `SchemaVersion`; it is not run through this dispatch.
+#
+# `complete = false`: FreeCAD publishes no enumeration of its schema versions
+# in a specification. The space is enumerable from FreeCAD's own source
+# (`Document.cpp`), which the codec owner can cite to flip this to true.
+#
+# The codec's pinned-id surface is `FcstdDialect` (dialect.rs), one variant per
+# row below. `FcstdDialect::classify` is the single construction path for the
+# `DialectMatch` that `ContainerSummary.dialects`, `DecodeReport.dialects`, and
+# the `SourceMeta.dialect` / `SourceMeta.declared` mirror all carry. The
+# declared keys are `schema_version`, `file_version`, and `program_version`,
+# recorded verbatim.
+#
+# `FileVersion` is read (container.rs:216-217, defaulting to "0") and is a
+# write-target component -- `FcstdWriteOptions { schema_version, file_version }`
+# with `Default` (4, 1) (lib.rs:66-81) and a hard writer gate on exactly (4, 1)
+# (writer.rs:37-42) -- but no decode path branches on it, so it is not a read
+# discriminant. It travels in `declared` as evidence.
+[format.fcstd]
+complete = false
+
+[[dialect]]
+# persistence.rs:52-60, the `"2"` arm: element vocabulary
+# Features/FeatureData/Feature. Schema 2 additionally forbids the dependency
+# envelope (persistence.rs:78-82) and never parses `ObjectDeps`
+# (persistence.rs:84). The same 2-vs-rest split is duplicated in the container
+# scan (container.rs:224, 229, 234).
+#
+# A strategy is declared for this row, so a schema 2 document is
+# `Admission::Admitted`.
+#
+# No fixture. `corpus/freecad_fcstd/fixtures/` is schema 4 throughout.
+id = "fcstd:schema-2"
+title = "FreeCAD FCStd document schema 2"
+discriminants = { schema_version = "2" }
+seam = "a different XML element vocabulary: Features/FeatureData/Feature instead of Objects/ObjectData/Object, and no object dependencies"
+witness = "code:crates/cadmpeg-codec-freecad/src/persistence.rs:53"
+
+[[dialect]]
+# persistence.rs:52-60, the `"3" | "4"` arm. Schema 3 and schema 4 share one
+# parse path: no `== "3"` or `== "4"` test exists anywhere in the crate. They
+# are still separate identity rows -- identity is exogenous (design §3.2) --
+# and one grammar class. That grammar is declared for both rows, so schema 3
+# and schema 4 documents are both `Admission::Admitted`.
+id = "fcstd:schema-3"
+title = "FreeCAD FCStd document schema 3"
+discriminants = { schema_version = "3" }
+witness = "code:crates/cadmpeg-codec-freecad/src/persistence.rs:54"
+
+[[dialect]]
+# persistence.rs:52-60, same arm as schema 3. Fixture verified: every archive
+# in `corpus/freecad_fcstd/fixtures/` opens
+# `<Document SchemaVersion="4" ProgramVersion="1.1R20260414 (Git shallow)"
+# FileVersion="1" StringHasher="1">`. `ProgramVersion` is metadata; nothing
+# branches on it.
+id = "fcstd:schema-4"
+title = "FreeCAD FCStd document schema 4"
+discriminants = { schema_version = "4" }
+witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). Disposition is split by decode mode:
+#   full decode      refused, `CodecError::NotImplemented`
+#                    (lib.rs:1114-1121, persistence.rs:55-59)
+#   container-only   admitted-unverified, charging
+#                    `fcstd/source.dialect-unverified`, with `schema_version`,
+#                    `file_version`, `document_root`, and `object_count`
+#                    attributes (lib.rs:1123-1133); the container scan builds
+#                    `DocumentFacts` for any value using the Object envelope
+#                    because container.rs:224-237 tests `== "2"` with an
+#                    `else`, not a "3"|"4" whitelist.
+#   inspect          admitted-unverified; `ContainerSummary` carries no losses.
+# `Admission::AdmittedUnverified` names `fcstd:schema-4` as the nearest row:
+# schema 4 is the newer of the two rows sharing the Object envelope and the one
+# the writer's default follows.
+id = "fcstd:unknown"
+title = "FreeCAD FCStd document schema outside 2, 3, 4"
+discriminants = { schema_version = "any other" }
+witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
+
+# --------------------------------------------------------------------------
+# SolidWorks SLDPRT
+# --------------------------------------------------------------------------
+# Two document-wide discriminants exist. `swVersion` is the identity axis;
+# the container branch is provenance:
+#
+#   container branch -- the real pre-parse dispatch, and the only one that is
+#     read from the leading bytes. `looks_like_sldprt`
+#     (crates/cadmpeg-codec-sldprt/src/container.rs:270-288) takes the CFB
+#     branch when the prefix carries the compound-file magic AND a directory
+#     entry whose last component is `ISolidWorksInformation`
+#     (container.rs:278), and the native block-envelope branch when the
+#     6-byte marker [0x14,0x00,0x06,0x00,0x08,0x00] appears from offset 8
+#     (container.rs:282-287, layout.rs:98). `scan` then hard-sets the version
+#     word to 0 on the CFB branch (container.rs:403) and reads a big-endian
+#     u32 at offset 4 on the native branch (container.rs:334-338).
+#     That outer version word is NEVER compared to anything: its only uses are
+#     stringification into an `outer_version` attribute (container.rs:802,
+#     decode.rs:3059, decode.rs:3349). It is provenance, not evidence.
+#
+#   sw_version band -- the identity axis, because it is the only one that
+#     selects a byte layout. It is not read from the container header: it is
+#     the `swVersion` attribute of a `swSolidWorks` XML payload extracted after
+#     the scan (decode.rs:3172-3191) into `SourceMeta.attributes["sw_version"]`
+#     and, verbatim, into the match's `sw_version` declared key.
+#
+# `crates/cadmpeg-codec-sldprt/src/dialect.rs` pins one enum variant per row
+# below and derives the row from `form_code_padding` itself, so the
+# discriminant the classifier reads and the discriminant the decoder branches
+# on are one expression. The two versioned rows are `Admitted`; the residual
+# row is `AdmittedUnverified` and charges `source.dialect-unverified` from the
+# same predicate, so the biconditional holds by construction. Refusal is never
+# a dialect judgement here -- this codec refuses only on container framing,
+# I/O, and entity-budget grounds.
+#
+# The design's §12 question was whether the padding branch is B1 (a dialect)
+# or B2 (within-dialect adaptation). Verified against the code, the honest
+# answer leans B2: `form_code_padding` does not select a parse strategy for
+# the document. It supplies a filter that narrows a candidate list of two
+# byte offsets ([8, 4], operations.rs:65-81 and :104-118), and when the
+# version is absent the resolver still binds an operation code by requiring
+# the candidates to agree (operations.rs:82-91). That is disambiguation
+# inside a grammar, not selection of one. The identity rows stand regardless.
+#
+# `complete = false`: the SolidWorks release space is not enumerable from any
+# published document.
+[format.sldprt]
+complete = false
+
+[[dialect]]
+# `form_code_padding` (crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:31-38):
+# `(version > 0).then_some(if version >= 12_000 { Eight } else { Four })`.
+# The exact comparison is `>= 12_000` at operations.rs:33.
+id = "sldprt:sw-version-pre-12000"
+title = "SolidWorks part with swVersion below 12000"
+discriminants = { sw_version = "1..11999" }
+seam = "four-byte feature-operation form-code padding, shifting every feature-operation read"
+witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:33"
+
+[[dialect]]
+# Same site, the `Eight` arm. The boundary value 12000 itself belongs to this
+# row.
+id = "sldprt:sw-version-12000-plus"
+title = "SolidWorks part with swVersion 12000 or above"
+discriminants = { sw_version = ">= 12000" }
+seam = "eight-byte feature-operation form-code padding"
+witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:33"
+
+[[dialect]]
+# Mandatory `unknown` row (B4), and the only row any golden fixture reaches:
+# no golden carries a `swSolidWorks` block, so all twenty classify here.
+# A part reaches it when `swVersion` is absent or does not read as a `u32`
+# above zero (operations.rs:32-33 returns `None` for an absent attribute, for
+# a `parse::<u32>()` failure -- which is every non-numeric, negative, or
+# over-wide declaration -- and for zero).
+# The container branch does not decide this row. `add_solidworks_xml_metadata`
+# (decode.rs:3172-3191) walks `ContainerScan::sections`, which chains blocks
+# AND compound streams (container.rs:256-261), and `payload_family` returns
+# "xml" for any payload starting `<?xml` (container.rs:63-67). A compound-file
+# part whose stream carries the `swSolidWorks` document therefore classifies
+# by its `swVersion` like any other. The hard-set `0` at container.rs:403 is
+# the outer version word, a different field that no row reads.
+# Disposition: admitted-unverified, naming itself as `nearest`. The padding
+# filter is simply not applied (operations.rs:70, :111) and the ambiguity
+# resolver runs unconstrained (operations.rs:82-91), so the strategy
+# substituted for the missing declaration is this row's own fallback and no
+# other row lent its grammar. That fallback binds an operation code only where
+# the four- and eight-byte candidates agree, but agreement between candidates
+# is consistency, not a declaration: admission verifies a declared identity and
+# this row is the absence of one. A residual row is therefore never `Admitted`,
+# and the codec charges `source.dialect-unverified` here, which `DecodeMode::
+# Strict` refuses.
+id = "sldprt:unknown"
+title = "SolidWorks part with no usable swVersion declaration"
+discriminants = { sw_version = "absent, not a u32 above zero" }
+witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:32"
+
+# --------------------------------------------------------------------------
+# CATIA V5 CATPart
+# --------------------------------------------------------------------------
+# `Variant` (crates/cadmpeg-codec-catia/src/variant.rs:12-33) promoted as-is;
+# the design calls it an instance of the general concept (§3.1). The pinned-id
+# surface is an inherent impl on that same enum in
+# `crates/cadmpeg-codec-catia/src/dialect.rs`, not a second enum: `Variant::id`
+# maps each variant to the row below, and `dialect::classify` is the only
+# construction path for a `DialectMatch` in the crate.
+#
+# `DialectMatch.declared` carries the `LastSaveVersion` tuple under the keys
+# `last_save_version`, `last_save_release`, `last_save_service_pack`,
+# `last_save_hot_fix`, and `last_save_build_date`. Those keys are pinned in
+# `dialect.rs` beside the enum, not here: the identity registry stays free of
+# producer-side key vocabularies (§4).
+#
+# `identify_variant` (container.rs:1248-1280) is one `match (inner, brep)` over
+# structural evidence read before any parse strategy is chosen: the presence
+# of a nested `V5_CFV2` sub-container with a `CATIA_V5 CB0001` stream
+# directory (`parse_stream_directory`, container.rs:818-835), the uniquely
+# largest `MainDataStream` and `SurfacicReps` directory descriptors
+# (`brep_stream`, container.rs:1195-1204), a marker census over the
+# reconstructed streams (container.rs:1319-1338), and a coherent `E5 0D 03`
+# record walk (container.rs:1344-1346).
+#
+# These are B1 boundaries, not B3 content subsets: every input is a stream
+# name or a fixed marker signature read to choose the record grammar, and the
+# census counts markers rather than model content.
+#
+# The `LastSaveVersion` release tuple (container.rs:76-88, parsed at
+# container.rs:293-314) is provenance: it is not an argument to
+# `identify_variant` and appears in no conditional in the crate. It surfaces
+# only as report text (container.rs:1533-1541) and IR attributes
+# (assemble.rs:426-435). The numbers 276 and 288 in the design's §13.7 doc
+# corrections are cadmpeg's own native-namespace schema version
+# (`CATIA_NATIVE_VERSION`, native.rs:25), not a file version; they do not
+# belong in this registry.
+#
+# `complete = false`: the CATIA V5 storage-family space is not published.
+[format.catia]
+complete = false
+
+[[dialect]]
+# `Variant::StandardNested` (variant.rs:16), selected when
+# `standard_edge_count` admits the complete nested FBB spine
+# (container.rs:1283-1285). An admitted standard edge-table grammar owns route
+# selection even when a coherent E5 walk coexists (container.rs:1238-1247).
+id = "catia:standard-nested"
+title = "CATIA V5 standard nested V5_CFV2 storage"
+discriminants = { inner_v5_cfv2 = "present", brep_streams = "MainDataStream + SurfacicReps uniquely largest", fbb_runs = "> 0", standard_edge_tables = "admitted" }
+seam = "inner-body BREP spine with a standard edge-table delimiter; the complete spine outranks a coexisting E5 walk"
+witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/standard_part.catpart"
+
+[[dialect]]
+# `Variant::FbbOnly` (variant.rs:20), from the grammar test at
+# container.rs:1286-1288 or the census fallback at container.rs:1289-1290
+# (`edge_delimiters == 0 && vertex_markers > 0`). A coherent E5 walk
+# supersedes this partial spine (container.rs:1260-1261).
+id = "catia:fbb-only"
+title = "CATIA V5 FBB-only partial spine"
+discriminants = { inner_v5_cfv2 = "present", fbb_runs = "> 0", standard_edge_tables = "not admitted", fbb_only_edge_tables = "admitted or no delimiter with vertices", coherent_e5 = "false" }
+seam = "post-FBB edge rows and trim handles share one selected width W in {1,2,3}; widths 1 and 3 reuse the standard delimiter bytes, so the delimiter alone does not select the variant"
+witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/fbb_only_fallthrough.catpart"
+
+[[dialect]]
+# `Variant::E5Stream` (variant.rs:27). Two entry points: the override at
+# container.rs:1260-1261 and the primary arm `_ if coherent_e5` at
+# container.rs:1267. "Coherent" is a completed record walk
+# (`e5_record_stream_in_segments`), not marker presence -- marker counts alone
+# never select a variant.
+id = "catia:e5-stream"
+title = "CATIA V5 E5 0D 03 record stream"
+discriminants = { coherent_e5 = "true", standard_edge_tables = "not admitted" }
+seam = "a self-describing record stream in the preamble or a FINJPL segment; framing is E5 0D 03 <cls> <sub> <size:u16le> 00 00 00 <id:u32le>"
+witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/e5_circle.catpart"
+
+[[dialect]]
+# `Variant::ZeroEntity` (variant.rs:22), the `(None, _)` arm with
+# `census.a9_records > 0` (container.rs:1269-1271).
+id = "catia:zero-entity"
+title = "CATIA V5 zero-entity a9 03 outer preamble"
+discriminants = { inner_v5_cfv2 = "absent", coherent_e5 = "false", a9_03_records = "> 0" }
+seam = "no nested container at all; geometry lives in the outer preamble record stream"
+witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/zero_entity_cylinder.catpart"
+
+[[dialect]]
+# `Variant::FloatPackedInnerNoFbb` (variant.rs:25), the `(Some(_), Some(_))`
+# arm reached only when `census.fbb_runs == 0` (container.rs:1278).
+id = "catia:float-packed-inner-no-fbb"
+title = "CATIA V5 float-packed inner body with no FBB spine"
+discriminants = { inner_v5_cfv2 = "present", brep_streams = "present", fbb_runs = "0" }
+seam = "object-stream b5/a8 records carry topology; surface-kind markers only in the pure-marker case"
+witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_b5_topology.catpart"
+
+[[dialect]]
+# `Variant::InnerNoDirectory` (variant.rs:30), the `(Some(_), None)` arm
+# (container.rs:1277).
+id = "catia:inner-no-directory"
+title = "CATIA V5 inner body without a BREP directory"
+discriminants = { inner_v5_cfv2 = "present", brep_streams = "absent", coherent_e5 = "false" }
+seam = "the body occupies the contiguous region before the directory instead of a catalogued stream"
+witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_directory_b2_cylinder.catpart"
+
+[[dialect]]
+# `Variant::Unknown` (variant.rs:32), reached at container.rs:1273 (no inner
+# container and no a9 records) and container.rs:1292 (an FBB region neither
+# edge-table grammar admits).
+# Disposition: ADMITTED, not refused. No route in families/mod.rs:46-68
+# matches `Unknown`, so decode falls through to `build_metadata_ir` +
+# `build_container_report(..., false)` (decode.rs:75-77), retains the file as
+# an `UnknownRecord` (assemble.rs:580-601), and charges
+# `GeometryBrepNotTransferred` (assemble.rs:665) and `TopologyGraphNotBuilt`
+# (assemble.rs:679). This is the `unknown: admitted-unverified` line B4 exists
+# to force into the open.
+#
+# Those two are geometry and topology losses, not dialect losses. The dialect
+# loss this row carries is `catia/source.dialect-unverified`
+# (`CatiaLossCode::SourceDialectUnverified`), charged from the same predicate
+# that produces the admission (`dialect::admission`), so the two cannot
+# disagree.
+#
+# `Admission::AdmittedUnverified.nearest` names this row itself. The strategy
+# applied is the metadata-IR fallback, which is no other CATIA dialect's
+# declared strategy; `nearest` is typed as a `DialectId` and can only name a
+# dialect, so the self-reference is the only honest referent available. This is
+# a template conflict, recorded rather than resolved by naming a family whose
+# grammar was never applied.
+id = "catia:unknown"
+title = "CATIA V5 unrecognized storage layout"
+discriminants = { variant = "no admitted family" }
+witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directory_only.catpart"
+
+# --------------------------------------------------------------------------
+# Siemens NX
+# --------------------------------------------------------------------------
+# Two container parsers, dispatched at
+# crates/cadmpeg-codec-nx/src/decode.rs:215-223. There is no third arm: what
+# is not SPLMSSTR goes to `scan_legacy`, which errors if the CFB evidence is
+# absent.
+#
+# The container version byte is provenance, and this is the design's §13.5
+# defect stated exactly. It is a u8 at file offset 8
+# (`splmsstr_header::VERSION_TAG`, crates/cadmpeg-codec-nx/src/layout.rs:74),
+# read with `unwrap_or(0)` (container.rs:957) and stored on
+# `Container::version` (container.rs:815-817). Its consumers are all
+# formatting and identity: two report notes (decode.rs:511, :522), the
+# legacy-arm `ugii_version` attribute (decode/emit.rs:1206-1209), and the
+# modern-arm `splmsstr_version` and `product_version` attributes
+# (decode/emit.rs:1211-1217, the latter from the first OM store section
+# carrying a `store_version` record). It is never compared to anything.
+#
+# The product string is provenance too. `product_record_layout`
+# (om.rs:8992-9011) requires the text to start with `NX ` (om.rs:9001) and
+# accepts two framings (`ProductRecordForm::Modern` / `LegacyFeature`,
+# om.rs:8986-8990), but the extracted text is only carried as an opaque
+# `String` into native records (native/om.rs:42, :1850). Nothing parses a
+# release number from it. Cardinality is used structurally
+# (`product_record_count != 1` rejects a candidate, om.rs:9336-9341); content
+# is not.
+#
+# Embedded layers. NX carries TWO kernels, not one: Parasolid streams
+# (`PS\0\0` prologue after inflation, parasolid.rs:1421-1424; schema token by
+# `read_schema`, parasolid.rs:1436-1445) and JT documents under
+# `/Root/UG_PART/DisplayJT` (`Version ` header, native/display_jt.rs:1303).
+# The JT major version IS a real dialect branch -- common node data encodes
+# its version as u16 below major 10 and u8 at 10 and above, and the
+# partition/group node grammar is gated the same way. This registry has no
+# `jt:` namespace and needs one before `DecodeReport.dialects` can state the
+# JT layer honestly.
+[format.nx]
+complete = false
+
+[[dialect]]
+# `looks_like_nx` (crates/cadmpeg-codec-nx/src/container.rs:912-915), hard
+# check at container.rs:952-956. Two further structural markers are required:
+# ASCII `HEADER` at offset 25 (layout.rs:83-86) and ASCII `FOOTER` at the
+# 48-bit footer offset (container.rs:975-982).
+# Fixture verified: nx_topology_part.prt is `SPLMSSTR` at byte 0, version tag
+# 0x06 at byte 8, footer offset 340, `HEADER` at 25, `FOOTER` at 340. Its one
+# entry is `/Root/UG_PART/UG_PART` with a zlib payload, so no `SCH_` or `NX `
+# literal is visible before inflation.
+id = "nx:splmsstr"
+title = "Siemens NX SPLMSSTR container"
+discriminants = { magic = "SPLMSSTR", header_marker = "HEADER at offset 25", footer_marker = "FOOTER at footer_offset" }
+seam = "a name-to-stream table with zlib-compressed members; the legacy CFB envelope stores clear Parasolid sections instead"
+witness = "corpus:crates/cadmpeg/tests/fixtures/nx_topology_part.prt"
+
+[[dialect]]
+# `looks_like_legacy_nx` (container.rs:918-930): the CFB signature
+# (crates/cadmpeg-container/src/compound.rs:11) PLUS a directory path
+# `UG_PART/UG_PART`, because the CFB envelope alone is shared with Inventor.
+# The opened stream must then begin `\x0d\x01UGII  ` (container.rs:31,
+# enforced at container.rs:1046-1050).
+id = "nx:legacy-cfb"
+title = "Siemens NX legacy Compound File container"
+discriminants = { cfb_magic = "present", directory_path = "UG_PART/UG_PART", payload_prefix = "0d 01 'UGII  '" }
+seam = "clear Parasolid sections in one CFB stream rather than a compressed member table"
+witness = "code:crates/cadmpeg-codec-nx/src/container.rs:918"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). Neither predicate holds: detect returns
+# `Confidence::No` (lib.rs:116-122) and a forced scan returns
+# `CodecError::WrongFormat` (container.rs:953, :1036, :1047). Unlike CATIA and
+# Creo, NX refuses at the container boundary rather than admitting unverified.
+id = "nx:unknown"
+title = "Part file matching neither NX container"
+discriminants = { magic = "neither SPLMSSTR nor CFB with UG_PART/UG_PART" }
+witness = "code:crates/cadmpeg-codec-nx/src/container.rs:953"
+
+# --------------------------------------------------------------------------
+# Creo Parametric
+# --------------------------------------------------------------------------
+# CONFLICT with the RFC's draft inventory, which listed `ugc2` and
+# `legacy-ascii (?)`. `#UGC:2` is not a layout discriminant: it is the
+# crate-level format gate (`MAGIC = b"#UGC:2"`,
+# crates/cadmpeg-codec-creo/src/container.rs:53; `looks_like_creo`,
+# container.rs:478-480), tested only in `detect` (lib.rs:100-108) and never
+# re-checked by `scan_bytes`. Every admitted Creo file carries it, so it
+# partitions nothing.
+#
+# `identify_layout` (container.rs:922, called once at container.rs:2379)
+# decides the layout from the enumerated section table alone. It returns four
+# variants (`Layout`, container.rs:108-117) and cannot fail: `scan_bytes`
+# returns no `Result`.
+#
+# Evaluation order is load-bearing (doc comment at container.rs:917-921):
+# `DEPDB_DATA` presence is tested first and exclusively, because a persistence
+# payload can carry embedded names bearing the `ND:` decoration that would
+# otherwise force a false `Nd`.
+#
+# The unix-compress magic 1f 9d is NOT a layout discriminant either. It is a
+# per-section payload encoding checked in `expanded_sections`
+# (container.rs:817-819, decoder at compress.rs:10-17), orthogonal to layout:
+# `unix_compress_solidprimdata.prt` is `Unknown` with fully expanded sections.
+[format.creo]
+complete = false
+
+[[dialect]]
+# container.rs:938-940: a section named `DEPDB_DATA` whose payload begins
+# `DEPDB_ROOT_RECORD` = `e0 00 'p_dep_db' 00 e3` (const at container.rs:856,
+# test `has_depdb_root` at container.rs:923-935).
+id = "creo:depdb"
+title = "Creo PSB part, DEPDB persistence layout"
+discriminants = { section = "DEPDB_DATA", payload_prefix = "e0 00 'p_dep_db' 00 e3" }
+seam = "sparse PSB views with embedded geometry namespaces and feature-definition records"
+witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/depdb_recipe_history.prt"
+
+[[dialect]]
+# container.rs:944-945: no `DEPDB_DATA` section, and some section's RAW
+# (undenormalized) name starts with ASCII `ND:` (`has_nd_decoration`,
+# container.rs:937).
+id = "creo:nd"
+title = "Creo PSB part, ND section layout"
+discriminants = { section = "no DEPDB_DATA", raw_section_name_prefix = "ND:" }
+witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/nd_visibgeom_layout.prt"
+
+[[dialect]]
+# container.rs:946-947, gated on a complete legacy ASCII frame validated by
+# `legacy_ascii_framing` (container.rs:879-915): `#-END_OF_UGC_HEADER`
+# (container.rs:56) then a newline, then `#P_OBJECT ` (container.rs:62) with
+# an all-digit schema token, then `#END_OF_P_OBJECT` (container.rs:64)
+# followed by the `#Pro/ENGINEER` banner (container.rs:66). The same marker
+# bytes later in a payload do not select the layout.
+#
+# No golden fixture exercises this layout: the fixture set splits across
+# ND, DEPDB, and unknown with zero legacy-ascii, despite dedicated decode
+# machinery
+# (`legacy.rs`, `legacy_geometry.rs`, `legacy_feature.rs`, `legacy_family.rs`)
+# and eight layout gates. This row is the clearest fixture gap in the file.
+id = "creo:legacy-ascii"
+title = "Creo/Pro-ENGINEER PSB part, legacy ASCII P_OBJECT layout"
+discriminants = { header_adjacent_frame = "#P_OBJECT <digits> ... #END_OF_P_OBJECT + #Pro/ENGINEER" }
+seam = "an ASCII object body with @<name> field declarations and value rows, not a binary section table"
+witness = "code:crates/cadmpeg-codec-creo/src/container.rs:946"
+
+[[dialect]]
+# Mandatory `unknown` row (B4), and the majority of the fixture set.
+# Two distinct causes collapse into it, which is worth recording because the
+# inspect note cannot tell them apart:
+#   container.rs:941-943  a `DEPDB_DATA` section IS present but its payload
+#                         does not start with the root record. This is a hard
+#                         Unknown: it does not fall through to the ND or
+#                         legacy-ASCII tests, and container.rs:2386-2390 then
+#                         discards a successfully parsed legacy-ASCII framing.
+#   container.rs:948-949  none of the three signatures matched.
+# Disposition: admitted-unverified. `Layout::Unknown` is an error nowhere;
+# decode proceeds and every layout-conditional path is a positive gate on a
+# known variant, so Unknown simply skips them. The value is recorded as the
+# `layout` source attribute (decode/build/meta.rs:26-29) and an inspect note
+# (container.rs:2817-2820).
+id = "creo:unknown"
+title = "Creo PSB part with no layout discriminator"
+discriminants = { section = "no DEPDB_DATA root record, no ND: decoration, no P_OBJECT frame" }
+witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt"
+
+# --------------------------------------------------------------------------
+# Autodesk Fusion F3D
+# --------------------------------------------------------------------------
+# The discriminant is the leading length-prefixed ASCII field of the ZIP-root
+# `Manifest.dat`, compared for exact equality against "3-2-0-0"
+# (`parse_top_level`, crates/cadmpeg-codec-f3d/src/manifest.rs; routing in
+# `container::scan`). Two co-discriminants follow immediately and are equally
+# exact: the ASCII kind "FusionDocType" and the UTF-16 extension ".f3d".
+#
+# The classification lives in crates/cadmpeg-codec-f3d/src/dialect.rs and runs
+# inside `container::scan`, beside the branch that chooses the parse strategy.
+#
+# Open grammar question, not decided here. Two further document-wide forks
+# live inside the same manifest and would each be a B1 boundary if the codec
+# owner reads them that way:
+#   generation sentinel -- `generation == 1234` selects a three-extra-word
+#     layout (major/minor/flags); any other value selects a one-extra-word
+#     legacy layout (manifest.rs:206-217). BOTH branches are admitted: this is
+#     a real fork, not a gate. All four components are parsed and discarded.
+#   asset-manifest revision -- `parse_asset_header` (manifest.rs:400-431)
+#     admits revisions 0, 10, 11, 12, 13, 14, 15, 19, and 20 through three
+#     genuinely distinct grammars (dispatch at manifest.rs:415-426;
+#     `parse_revision_zero_design_asset` :471, `parse_revision_ten_design_asset`
+#     :485, `parse_current_design_asset` for the rest), and REFUSES 16, 17,
+#     18, and everything at 21 or above. The refused band is a gap in the
+#     middle of the admitted range, not a ceiling.
+# Every in-tree fixture is the single point {version "3-2-0-0", generation
+# 1234, asset revision 20}, so splitting on either fork would produce
+# unwitnessable rows today.
+#
+# `complete = false`: Autodesk publishes no manifest-version enumeration.
+[format.f3d]
+complete = false
+
+[[dialect]]
+# `parse_top_level`. Fixture verified: the top-level `Manifest.dat` of
+# attributes.f3d opens `07 00 00 00` + "3-2-0-0", then "FusionDocType", then
+# UTF-16 ".f3d"; generation 1234; asset revision 20.
+id = "f3d:manifest-3-2-0-0"
+title = "Fusion .f3d archive, top-level manifest version 3-2-0-0"
+discriminants = { top_level_manifest_version = "3-2-0-0", top_level_manifest_kind = "FusionDocType", extension_field = ".f3d" }
+witness = "corpus:crates/cadmpeg-codec-f3d/tests/golden/fixtures/attributes.f3d"
+
+[[dialect]]
+# `container::scan`. Reached when the ZIP has no root `Manifest.dat` but does
+# have `Manifest.json`, `DesignDescription.json`, and a root-level `*.f3d`.
+# This branch performs NO version check at all -- it is a filename-presence
+# test -- so it is a distinct identity row with an unbounded interior. The
+# root-level `*.f3d` clause is part of the discriminant: the two JSON members
+# alone do not select this branch.
+id = "f3d:f3z-multi-document"
+title = "Fusion multi-document archive (F3Z manifest set)"
+discriminants = { root_manifest_dat = "absent", manifest_json = "present", design_description_json = "present", root_f3d_member = "present" }
+seam = "no binary manifest and no version field; the document set is named by JSON"
+witness = "code:crates/cadmpeg-codec-f3d/src/container.rs"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). Disposition: refused with
+# `CodecError::NotImplemented` naming the observed version, before any report
+# exists; structural corruption stays `Malformed`. The row is therefore pinned
+# in `F3dDialect` with no runtime producer: no `DialectMatch` carries it. This
+# row is the first `UnsupportedDialect` migration target.
+id = "f3d:unknown"
+title = "Fusion .f3d archive with an unrecognized top-level manifest version"
+discriminants = { top_level_manifest_version = "any other" }
+witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs"
+
+# --------------------------------------------------------------------------
+# Autodesk Inventor
+# --------------------------------------------------------------------------
+# The design's id `inventor:cfb3-rse31-meta8` is pinned and used verbatim, but
+# it names three things the code does not do together. Recorded, not silently
+# corrected:
+#
+#   cfb3   The Inventor codec never tests the CFB major version. The shared
+#          parser accepts 3 or 4 (`crates/cadmpeg-container/src/compound.rs:609`,
+#          `(3, 9) | (4, 12)`), and the Inventor crate only reports the value
+#          as a `cfb_major_version` attribute (decode.rs:87-89). A CFB v4
+#          Inventor file would be admitted.
+#   rse31  Real, but it is the u32 `schema` field inside an `RSeDb` stream
+#          (`RseSchema::SCHEMA_31`, database.rs:11; enforced at
+#          database.rs:105-111 and :131-136), NOT the `V<n>` storage-band
+#          number in the path. `StorageBand::parse` accepts any digits
+#          (rse.rs:24-33) and the code-built fixture uses `V1` with schema 31.
+#   meta8  Real: the marker string "RSe Meta Stream Version 8" AND the u16
+#          literal 8 must both match (rse.rs:577-581).
+#
+# What actually admits a file is a three-conjunct detect: CFB directory
+# evidence (lib.rs:56-59), a path equal to `RSeStorage` (container.rs:152-154),
+# and either `RSeStorage/RSeSegInfo` or `RSeStorage/V<digits>/RSeDb`
+# (container.rs:155-157). The two version gates do NOT refuse: a schema
+# mismatch becomes `ParsedState::Unavailable` (rse.rs:313-317, with
+# `issue_detail` re-raising only `ResourceLimit`, lib.rs:38-44) and a meta
+# mismatch becomes `SegmentMetaState::Unsupported` (rse.rs:580). Decode
+# continues either way.
+#
+# No `.ipt`, `.iam`, `.idw`, or `.ipn` file exists in this repository; the
+# goldens are code-built. Both rows rest on code.
+[format.inventor]
+complete = false
+
+[[dialect]]
+id = "inventor:cfb3-rse31-meta8"
+title = "Inventor CFB document, RSe database schema 31, Meta Stream version 8"
+discriminants = { cfb_storage = "RSeStorage", corroboration = "RSeStorage/RSeSegInfo or RSeStorage/V<digits>/RSeDb", rse_db_schema = "31", meta_stream_marker = "RSe Meta Stream Version 8", meta_stream_version = "8" }
+seam = "schema 31 selects the supported registry grammar; the Meta Stream marker and version select the segment metadata layout"
+witness = "code:crates/cadmpeg-codec-inventor/src/database.rs:105"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). Disposition: admitted and degraded, never
+# refused. A non-31 `RSeDb` schema emits a `DatabaseIssueRecord`
+# (decode.rs:591) and a non-8 Meta Stream emits a `SegmentMetaIssueRecord`
+# with `status: "unsupported"` (decode.rs:755-769); segment kind then falls
+# back to display-name classification with "segment registry is unavailable"
+# in `identity_issues` (rse.rs:389-398). A registry that treated these as
+# admission gates would overstate the codec's strictness.
+id = "inventor:unknown"
+title = "Inventor CFB document with another RSe schema or Meta Stream version"
+discriminants = { cfb_storage = "RSeStorage", rse_db_schema = "any other", meta_stream_version = "any other" }
+witness = "code:crates/cadmpeg-codec-inventor/src/rse.rs:580"
+
+# --------------------------------------------------------------------------
+# Bare ACIS/ASM streams (.sat/.sab/.smt/.smb)
+# --------------------------------------------------------------------------
+# The host layer is the kernel stream itself. These rows are the stream kinds
+# the SAT codec's own classifier returns; the finer save-format granularity
+# lives in the `acis` kernel namespace below, and each row's kernel twin is
+# named in its seam.
+#
+# `StreamKind` (crates/cadmpeg-codec-sat/src/detect.rs:22-31) and `classify`
+# (detect.rs:33-44), which tries ASM magic, then ACIS magic, then text, then
+# Unknown. Stream content selects the decoder; the file extension does not.
+#
+# `SatDialect` (crates/cadmpeg-codec-sat/src/dialect.rs:83-88) pins one id per
+# stream kind, and `dialect::classify` (dialect.rs:244) is the codec's single
+# construction path for a `DialectMatch`.
+[format.sat]
+complete = false
+
+[[dialect]]
+# `StreamKind::AsmBinary`. Magic prefix `ASM BinaryFile`
+# (crates/cadmpeg-asm/src/asm_header.rs:30) with byte 14 in {'4','8'}
+# (asm_header.rs:36).
+id = "sat:asm-binary"
+title = "Bare ASM binary stream"
+discriminants = { magic = "ASM BinaryFile4 | ASM BinaryFile8" }
+seam = "admitted at any save format: the ASM binary path performs no save-format comparison (crates/cadmpeg-codec-sat/src/decode.rs:36-71, crates/cadmpeg-codec-sat/src/dialect.rs:182-191). Kernel layer: acis:asm-binaryfile-4 or acis:asm-binaryfile-8"
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
+
+[[dialect]]
+# `StreamKind::AcisBinary`. Magic `ACIS BinaryFile`
+# (crates/cadmpeg-asm/src/acis_header.rs:15).
+id = "sat:acis-binary"
+title = "Bare Spatial ACIS binary stream"
+discriminants = { magic = "ACIS BinaryFile" }
+seam = "the only version-banded admission in the codec: majors 217 and 218 decode, everything else is soft-refused. The band is one predicate, `dialect::admits_semantic_decode` (crates/cadmpeg-codec-sat/src/dialect.rs:182), which sets `Admission::Refused`; the decode path branches on that admission (crates/cadmpeg-codec-sat/src/decode.rs:85-95) and charges container.acis-save-format-unsupported on an empty-IR result. Kernel layer: acis:save-format-217, acis:save-format-218, or acis:save-format-binary-other"
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
+
+[[dialect]]
+# `StreamKind::Text`. Header line 1 must be exactly four whitespace-separated
+# `i64` fields and line 2 must start with an ASCII digit
+# (detect.rs:48-64, strengthening `sat::has_text_magic`,
+# crates/cadmpeg-asm/src/sat.rs:115-118).
+id = "sat:text"
+title = "Bare ACIS/ASM text stream (SAT/SMT)"
+discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
+seam = "the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and gates ACIS-terminated streams to majors 217 and 218 through the same predicate as the ACIS binary path, `dialect::admits_semantic_decode` (crates/cadmpeg-codec-sat/src/dialect.rs:182); the decode path branches on the resulting admission (crates/cadmpeg-codec-sat/src/decode.rs:137-147). The gate keys on the terminator-derived branch, not on the product family the header names, so ASM-terminated text streams are admitted at any save format. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). `StreamKind::Unknown` (detect.rs:43) is
+# returned when no magic matches; detection then reports no confidence and
+# both entry points return a malformed error before classification, so this
+# row is unreachable through the normal catalog and exists to keep
+# classification total. Its disposition is refusal: `classify` never pairs it
+# with an admitted admission.
+id = "sat:unknown"
+title = "Stream matching no ASM, ACIS, or text magic"
+discriminants = { magic = "none" }
+witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
+
+# --------------------------------------------------------------------------
+# ACIS / ASM kernel namespace (embedded layer)
+# --------------------------------------------------------------------------
+# Owned by `cadmpeg-asm`, cited by `sat`, `f3d`, and `inventor`. These ids are
+# never targets of a host encoder (design §8.1); they appear as
+# `ExportReport.emitted_layers` facts and as non-primary `DialectMatch`
+# entries.
+#
+# Rows are disjoint on the leading magic, then on the save-format major.
+# `save_format_version` is `major * 100 + minor` and is read at four sites,
+# all as a little-endian u32 at offset 15 for the binary branches
+# (asm_header.rs:80, :85; acis_header.rs:30) and as the first header field on
+# the text branch (crates/cadmpeg-asm/src/sat.rs:304). Accessors
+# `save_format_major` / `save_format_minor` at kernel_header.rs:43-50.
+#
+# `complete = false`: Spatial publishes no enumeration of save-format bands.
+[format.acis]
+complete = false
+
+[[dialect]]
+# `ASM BinaryFile4`: four u32 LE words at 15/19/23/27, strings from 31
+# (asm_header.rs:16-19; `asmheader_binaryfile4` in layout.rs, LEN = 31).
+# Carries a `record_count` word that BinaryFile8 does not.
+# Both widths occur among the F3D golden fixtures' archive members;
+# nearly all carry `ASM BinaryFile8`.
+id = "acis:asm-binaryfile-4"
+title = "Autodesk ShapeManager binary stream, 4-byte reference width"
+discriminants = { magic = "ASM BinaryFile4", width_digit = "4" }
+seam = "integer and entity-reference chunks are 5 bytes (tag + 4-byte LE); every record offset in the stream scales with it"
+witness = "corpus:crates/cadmpeg-codec-f3d/tests/golden/fixtures/binaryfile4.f3d"
+
+[[dialect]]
+# `ASM BinaryFile8`: u32 LE save format at 15, u64 LE entity count at 31,
+# u64 LE flags at 39, strings from 47 (asm_header.rs:9-14). The default when
+# the width is unreadable (asm_header.rs:42-44).
+id = "acis:asm-binaryfile-8"
+title = "Autodesk ShapeManager binary stream, 8-byte reference width"
+discriminants = { magic = "ASM BinaryFile8", width_digit = "8" }
+seam = "integer and entity-reference chunks are 9 bytes (tag + low u32 + high u32); doubles stay 8 bytes in both widths"
+witness = "corpus:crates/cadmpeg-codec-f3d/tests/golden/fixtures/topology_base.f3d"
+
+[[dialect]]
+# `ACIS BinaryFile` (acis_header.rs:15) with `save_format_major` 217. Width is
+# hard-coded to 4 (acis_header.rs:29, :68) -- there is no width digit in this
+# magic. Admission gate at crates/cadmpeg-codec-sat/src/decode.rs:80 (soft
+# refusal) and crates/cadmpeg-codec-inventor/src/kernel.rs:87-92 (hard
+# `CodecError::NotImplemented`).
+id = "acis:save-format-217"
+title = "Spatial ACIS binary stream, save format 217"
+discriminants = { magic = "ACIS BinaryFile", save_format_major = "217" }
+witness = "code:crates/cadmpeg-codec-sat/src/decode.rs:80"
+
+[[dialect]]
+# Same magic, `save_format_major` 218. Same gate.
+id = "acis:save-format-218"
+title = "Spatial ACIS binary stream, save format 218"
+discriminants = { magic = "ACIS BinaryFile", save_format_major = "218" }
+witness = "code:crates/cadmpeg-codec-sat/src/decode.rs:80"
+
+[[dialect]]
+# Same magic, any other major. Disposition: soft refusal -- a `DecodeResult`
+# with `geometry_transferred: false` and
+# `SatLossCode::ContainerAcisSaveFormatUnsupported`
+# (crates/cadmpeg-codec-sat/src/decode.rs:80-88, :209-225), not an `Err`.
+# Mirrored as an inspect note at detect.rs:121-122.
+id = "acis:save-format-binary-other"
+title = "Spatial ACIS binary stream outside save formats 217 and 218"
+discriminants = { magic = "ACIS BinaryFile", save_format_major = "any other" }
+seam = "structurally identified and semantically refused; a Refused admission, not a decode failure"
+witness = "code:crates/cadmpeg-codec-sat/src/decode.rs:82"
+
+[[dialect]]
+# `sat::Dialect::Asm` (crates/cadmpeg-asm/src/sat.rs:27-33). The text branch
+# is decided by the TERMINATOR line, not the header: `End-of-ASM-data`.
+# Modern save formats use this terminator and the modern subtype spellings.
+id = "acis:text-asm"
+title = "ACIS/ASM text stream terminated End-of-ASM-data"
+discriminants = { header_line_1 = "four integer fields", terminator = "End-of-ASM-data" }
+witness = "code:crates/cadmpeg-asm/src/sat.rs:29"
+
+[[dialect]]
+# `sat::Dialect::Acis` (sat.rs:27-33), terminator `End-of-ACIS-data`. Save
+# format 700 streams use this terminator, store no `asmheader` record, and
+# use three topology record layouts with fewer fields. The code reaches those
+# layouts by token shape rather than by comparing 700
+# (`vertex_point_ref` / `coedge_pcurve_ref`,
+# crates/cadmpeg-asm/src/brep/geometry.rs:189-203), so 700 is not a separate
+# admission row here.
+id = "acis:text-acis"
+title = "ACIS text stream terminated End-of-ACIS-data"
+discriminants = { header_line_1 = "four integer fields", terminator = "End-of-ACIS-data" }
+seam = "the legacy subtype spellings and the save-format-700 record layouts travel with this terminator"
+witness = "code:crates/cadmpeg-asm/src/sat.rs:30"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). No magic and no valid four-field header line.
+id = "acis:unknown"
+title = "Kernel stream matching no ACIS or ASM framing"
+discriminants = { magic = "none", header_line_1 = "not four integer fields" }
+witness = "code:crates/cadmpeg-asm/src/asm_header.rs:60"
+
+# --------------------------------------------------------------------------
+# Parasolid kernel namespace (embedded layer)
+# --------------------------------------------------------------------------
+# CONFLICT with the migration brief: Parasolid is NOT owned by `cadmpeg-asm`.
+# That crate's module list is acis_header, asm_header, brep, edit, ids,
+# kernel_header, layout, nurbs, sab, sat (crates/cadmpeg-asm/src/lib.rs:15-25)
+# and contains no Parasolid code. Parasolid lives entirely in
+# `crates/cadmpeg-codec-sldprt/src/parasolid.rs`, and NX carries its own
+# reader at `crates/cadmpeg-codec-nx/src/parasolid.rs`. Two readers, one
+# namespace, no shared owner -- this namespace needs an owning crate before
+# the ids can be cited by both hosts.
+#
+# The discriminant is the schema token in the transmit-stream header, of the
+# form `SCH_<modeller>_<schema>_<format>`. `stream_header`
+# (crates/cadmpeg-codec-sldprt/src/parasolid.rs:295-322) requires the `PS\0\0`
+# signature, a big-endian u16 length-prefixed description, then the literal
+# `SCH_` within a 64-byte window after the description, with the token length
+# in the byte immediately preceding it. Absence of `SCH_` fails the whole
+# header parse (parasolid.rs:276-278); no token VALUE ever causes rejection.
+#
+# There is no Parasolid transmit-file (.x_t/.x_b) support anywhere in the
+# workspace: Parasolid is reached only as an embedded stream.
+#
+# `complete = false`: Siemens publishes no schema-token enumeration, and the
+# ids below follow the design's pinned `parasolid:sch-sw-33103` shape, which
+# truncates the format suffix. The full token is in `discriminants`.
+[format.parasolid]
+complete = false
+
+[[dialect]]
+# The only token observed on the read side. Recorded as the
+# `parasolid_schema` attribute (crates/cadmpeg-codec-sldprt/src/decode.rs:3084,
+# :3367, container.rs:736) and pinned in all 20 SLDPRT golden decode
+# snapshots. The token sits inside a deflate-compressed block payload, so it
+# is not greppable in the fixture; it is verified post-inflate in
+# tests/golden/decode/document_envelope.json.
+id = "parasolid:sch-sw-33103"
+title = "Parasolid SolidWorks schema 33103, transmit format 11000"
+discriminants = { schema = "SCH_SW_33103_11000" }
+witness = "corpus:crates/cadmpeg-codec-sldprt/tests/golden/fixtures/document_envelope.sldprt"
+
+[[dialect]]
+# Emitted by the SLDPRT writer when any body in the scope is
+# `BodyKind::Sheet` (writer.rs:120-134 at the top level, writer.rs:747-761
+# inside `configuration_partitions`), so one file can carry both schemas --
+# which is why `ExportReport.emitted_layers` is a Vec (design §8.3). The token
+# is not cosmetic: it changes emitted discriminants (face-list head 0x0015 vs
+# 0x0013 at writer.rs:2677; face attribute 0x001f vs 0x0015 at
+# writer.rs:2733-2736).
+# Per B3 the sheet-body test is a within-dialect emission rule, never a
+# selectable target. No read-side fixture carries this token.
+id = "parasolid:sch-sw-32001"
+title = "Parasolid SolidWorks schema 32001, transmit format 11000"
+discriminants = { schema = "SCH_SW_32001_11000" }
+witness = "code:crates/cadmpeg-codec-sldprt/src/writer.rs:127"
+
+[[dialect]]
+# The one token family the read path branches on: a case-insensitive `_13006`
+# format suffix gates mesh-polyline decoding
+# (parasolid.rs:338-341). Modeller-independent -- the in-tree example is
+# `SCH_3201255_32001_13006`.
+id = "parasolid:format-13006"
+title = "Parasolid mesh/tessellation transmit format 13006"
+discriminants = { schema_format_suffix = "_13006" }
+seam = "the mesh stream grammar; the only schema value the decoder tests"
+witness = "code:crates/cadmpeg-codec-sldprt/src/parasolid.rs:339"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). There is no allowlist, match arm, or table of
+# schema tokens on the read side: any other `SCH_*` token is admitted,
+# recorded verbatim, and branched on nowhere. The only value-sensitive check
+# is an equality test that all decoded sites in one document share the same
+# schema and description (decode.rs:2091-2096) -- a consistency test, not an
+# allowlist. `SCH_SW_33104_12000` is an in-tree example.
+id = "parasolid:unknown"
+title = "Parasolid stream with an unrecognized schema token"
+discriminants = { schema = "any other SCH_ token" }
+witness = "code:crates/cadmpeg-codec-sldprt/src/parasolid.rs:313"

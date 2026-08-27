@@ -20,6 +20,15 @@
 
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
+/// The phrase every missing-writer-stamp diagnostic carries.
+///
+/// Parsers deep in the crate report a substituted reading as a warning string;
+/// decode promotes any warning containing this phrase to
+/// [`RhinoLossCode::SourceWriterStampUnverified`] instead of the generic
+/// container/decode diagnostic, the same way integrity and redundant-field
+/// diagnostics are promoted.
+pub(crate) const WRITER_STAMP_UNVERIFIED_MARKER: &str = "the archive has no writer-version stamp";
+
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -99,6 +108,21 @@ pub enum RhinoLossCode {
     MeshVertexPrecisionReduced,
     /// Mesh normals are written at reduced (f32) precision.
     MeshNormalPrecisionReduced,
+    /// A field was read under the legacy reading because the archive carries no
+    /// openNURBS writer-version stamp to verify that record against.
+    ///
+    /// Per record, inside a dialect the archive word already identified and
+    /// whose grammar this codec verified. It is deliberately *not*
+    /// `source.dialect-unverified`: the other codecs pin that string for the
+    /// document-level statement "the dialect itself was not verified", which
+    /// holds exactly when `Admission::AdmittedUnverified` is reported. Rhino
+    /// charges this one inside `Admission::Admitted` documents, so a consumer
+    /// joining loss code to admission state must be able to tell them apart.
+    /// The taxonomy family below is still the right one.
+    SourceWriterStampUnverified,
+    /// Body kind came from the closed-shell gauge or from an unverified stored
+    /// solid flag rather than from a flag the writer stamp vouches for.
+    TopologyBodyKindGaugeSubstituted,
 }
 
 impl RhinoLossCode {
@@ -140,6 +164,8 @@ impl RhinoLossCode {
         Self::HistoryGeometryNotTransferred,
         Self::MeshVertexPrecisionReduced,
         Self::MeshNormalPrecisionReduced,
+        Self::SourceWriterStampUnverified,
+        Self::TopologyBodyKindGaugeSubstituted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -182,6 +208,8 @@ impl RhinoLossCode {
             Self::HistoryGeometryNotTransferred => "history.geometry-not-transferred",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
+            Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
+            Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
         }
     }
 
@@ -238,6 +266,8 @@ impl RhinoLossCode {
             Self::MeshVertexPrecisionReduced | Self::MeshNormalPrecisionReduced => {
                 LossTaxonomy::MeshVertexPrecision
             }
+            Self::SourceWriterStampUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
     }
 
@@ -317,6 +347,8 @@ mod tests {
                 "history.geometry-not-transferred",
                 "mesh.vertex-precision-reduced",
                 "mesh.normal-precision-reduced",
+                "source.writer-stamp-unverified",
+                "topology.body-kind-gauge-substituted",
             ]
         );
     }

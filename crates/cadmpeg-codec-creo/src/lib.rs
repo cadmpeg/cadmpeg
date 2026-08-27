@@ -63,6 +63,7 @@ pub(crate) mod coverage;
 pub(crate) mod curve;
 pub(crate) mod datum;
 pub(crate) mod decode;
+pub(crate) mod dialect;
 pub(crate) mod feature;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
 pub(crate) mod layout;

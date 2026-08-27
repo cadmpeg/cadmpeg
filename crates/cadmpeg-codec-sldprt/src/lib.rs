@@ -57,6 +57,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
+//! use cadmpeg_ir::codec::TargetRequest;
 //! use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -67,7 +68,7 @@
 //!     .plan(cadmpeg_ir::codec::EncodeInput {
 //!         ir: decoded.ir(),
 //!         fidelity: Some(decoded.source_fidelity()),
-//!     })?
+//!     }, TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -100,6 +101,7 @@ mod classification;
 pub(crate) mod container;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
 pub(crate) mod decode;
+mod dialect;
 mod feature_schema;
 #[doc(hidden)]
 pub mod fuzz;
@@ -126,7 +128,10 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use std::io::Write;
 
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{
+    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor,
+    TargetRequest,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
@@ -248,7 +253,12 @@ impl CodecBackend for SldprtCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        Ok(container::summarize(&scan))
+        let mut summary = container::summarize(&scan);
+        summary
+            .dialects
+            .push(dialect::SldprtDialect::classify_scan(&scan));
+        cadmpeg_core::dialect::debug_assert_primary_layer(&summary.dialects, &summary.format);
+        Ok(summary)
     }
 
     fn decode_impl(
@@ -260,12 +270,36 @@ impl CodecBackend for SldprtCodec {
     }
 }
 
+/// The one dialect this writer synthesizes.
+///
+/// `writer::generated_solidworks_xml` emits a `swSolidWorks` block with no
+/// `swVersion` attribute, so a synthesized part carries no version declaration
+/// and classifies into the registry's totality row. Naming it here is the
+/// honest catalog: re-decoding this writer's output lands on exactly this id.
+/// Every versioned row is reachable by replaying a retained part, which is
+/// preservation, not synthesis.
+const SLDPRT_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
+    id: "sldprt:unknown",
+    label: "SolidWorks part with no swVersion declaration",
+    aliases: &[],
+    default: true,
+}];
+
 impl Encoder for SldprtCodec {
     fn id(&self) -> &'static str {
         "sldprt"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        SLDPRT_TARGETS
+    }
+
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        request.check_explicit(Encoder::id(self), self.targets())?;
         let mut bytes = Vec::new();
         let mut report = match input.fidelity {
             Some(value) => Self::encode_with_fidelity(input.ir, value, &mut bytes)?,
@@ -317,6 +351,7 @@ impl SldprtCodec {
     ) -> Result<ExportReport, CodecError> {
         let write_path = Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         Ok(ExportReport {
+            target: None,
             format: "sldprt".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,

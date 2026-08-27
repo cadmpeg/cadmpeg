@@ -1,5 +1,16 @@
 {
   "container_kind": "v5-cfv2",
+  "dialects": [
+    {
+      "admission": {
+        "admitted_unverified": {
+          "nearest": "catia:unknown"
+        }
+      },
+      "dialect": "catia:unknown",
+      "format": "catia"
+    }
+  ],
   "entries": [
     {
       "attributes": {

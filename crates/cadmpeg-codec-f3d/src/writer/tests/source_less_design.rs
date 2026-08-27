@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -69,20 +71,14 @@ fn generated_source_less_writes_design_type_metastream() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design MetaStream encode");
     let mut guid_module = source_less.clone();
     f3d_native_mut(&mut guid_module).design_types[2].module =
         "11111111-2222-3333-4444-555555555555".into();
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &guid_module,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&guid_module, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("a GUID-shaped Design module name must not be emitted");
     assert!(error
@@ -91,10 +87,7 @@ fn generated_source_less_writes_design_type_metastream() {
     f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
         Some("22222222-3333-4444-5555-666666666666".into());
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("a cyclic Design type hierarchy must not be emitted");
     assert!(error
@@ -200,18 +193,12 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design BulkStream encode");
     f3d_native_mut(&mut source_less).construction_recipes[0].recipe_index = 1;
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("recipe group indices must not be renumbered");
     assert!(error
@@ -388,19 +375,13 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design ownership encode");
     f3d_native_mut(&mut source_less).design_entity_headers[0].declared_reference_count = Some(3);
     let mut normalized = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut normalized))
         .expect("source sketch reference count is regenerated");
     let normalized = F3dCodec
@@ -416,10 +397,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         native.design_entity_headers[0].module = Some("Body".to_owned());
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("cross-stream modules must not diverge");
     assert!(error
@@ -690,10 +668,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sketch BulkStream encode");
     let mut extended_source_less = source_less.clone();
@@ -720,10 +695,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = None;
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require their direct owner backlink");
     assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
@@ -732,20 +704,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .entity_ids
         .clear();
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require a registered inverse companion");
     assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
     f3d_native_mut(&mut source_less).design_types[6].entity_ids = vec![101];
     f3d_native_mut(&mut source_less).design_types[2].version = 10;
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require the current writable class version");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -757,10 +723,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     let mut variable_relation = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut variable_relation))
         .expect("source-less variable-width sketch relation encode");
     let variable_round_trip = F3dCodec
@@ -786,10 +749,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("relations with missing sketch owners must not disappear");
     assert!(error
@@ -801,10 +761,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         native.sketch_points[0].record_index = 600;
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate typed sketch indices must not be deduplicated");
     assert!(error.to_string().contains("share record index 600"));
@@ -812,10 +769,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).sketch_relations[0].constraint_kinds =
         vec![SketchConstraintKind::Horizontal];
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("inconsistent generated sketch constraint mask must be rejected");
     assert!(error
@@ -925,10 +879,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     let mut extended_encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &extended_source_less,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&extended_source_less, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut extended_encoded))
         .expect("source-less extended sketch point encode");
     let extended_round_trip = F3dCodec

@@ -198,7 +198,7 @@ When present, native namespace versions are:
 | `native.nx`       | 189     |
 | `native.inventor` | 25      |
 | `native.fcstd`    | 22      |
-| `native.catia`    | 276     |
+| `native.catia`    | 288     |
 | `native.creo`     | 1       |
 | `native.rhino`    | 2       |
 | `native.iges`     | 5       |

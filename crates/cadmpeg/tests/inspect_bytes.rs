@@ -970,7 +970,7 @@ fn container_json_lists_entries_under_the_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "inspect container");
     assert_eq!(value["container_kind"], "zip");
     let entries = value["entries"].as_array().unwrap();
@@ -1002,7 +1002,7 @@ fn container_lists_cfb_directory_rows() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "inspect container");
     assert_eq!(value["container_kind"], "cfb");
 }

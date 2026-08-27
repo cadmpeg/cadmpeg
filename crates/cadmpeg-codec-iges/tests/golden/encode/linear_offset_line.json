@@ -63,6 +63,7 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
+    "target": "iges:5.3-fixed-ascii",
     "write_path": "synthesized"
   }
 }

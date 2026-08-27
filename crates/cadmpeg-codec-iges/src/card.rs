@@ -599,6 +599,7 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
         });
     }
     ContainerSummary {
+        dialects: Vec::new(),
         format: "iges".into(),
         container_kind: "fixed-ascii".into(),
         entries,

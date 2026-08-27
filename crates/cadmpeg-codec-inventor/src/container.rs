@@ -3,6 +3,7 @@
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerSummary};
 
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
@@ -92,18 +93,18 @@ impl<'a> InventorContainer<'a> {
                         .attributes
                         .insert("display_name".into(), meta.display_name.clone());
                 }
-                SegmentMetaState::Unsupported { marker, version } => {
+                SegmentMetaState::Unsupported(declared) => {
                     entry
                         .attributes
-                        .insert("meta_marker".into(), marker.clone());
+                        .insert("meta_marker".into(), declared.marker.clone());
                     entry
                         .attributes
-                        .insert("meta_stream_version".into(), version.to_string());
+                        .insert("meta_stream_version".into(), declared.version.to_string());
                 }
-                SegmentMetaState::Malformed(error) => {
+                SegmentMetaState::Malformed { detail, .. } => {
                     entry
                         .attributes
-                        .insert("framing_error".into(), error.clone());
+                        .insert("framing_error".into(), detail.clone());
                 }
             }
             let bulk_directory_id = segment.pair.bulk.directory_id().to_string();
@@ -134,8 +135,11 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
+        let dialects = vec![crate::dialect::DialectRecovery::of(self).dialect_match()];
+        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         ContainerSummary {
-            format: "inventor".into(),
+            dialects,
+            format: crate::dialect::FORMAT.into(),
             container_kind: "cfb".into(),
             entries,
             notes: vec![format!(

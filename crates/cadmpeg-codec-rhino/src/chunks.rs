@@ -59,7 +59,9 @@ pub(crate) enum ArchiveVersion {
 }
 
 impl ArchiveVersion {
-    fn classify(value: u64) -> Self {
+    /// Partitions the archive-version word. The sole read discriminant of this
+    /// format; `crate::dialect` maps the result onto its registry row.
+    pub(crate) fn classify(value: u64) -> Self {
         match value {
             1 => Self::V1,
             2 => Self::V2,

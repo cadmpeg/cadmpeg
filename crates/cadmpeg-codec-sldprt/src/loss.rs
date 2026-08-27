@@ -103,6 +103,17 @@ pub enum SldprtLossCode {
     ContainerNoParasolidStream,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
+    /// The document carries no usable `swVersion`, so no declared identity was
+    /// verified.
+    ///
+    /// Charged exactly when the primary-layer [`crate::dialect`] match is
+    /// `Admission::AdmittedUnverified`, from the same predicate that decides
+    /// the admission. A residual `unknown` row is the absence of a declared
+    /// identity, and admission verifies a declared identity, so the pair
+    /// (`sldprt:unknown`, `Admitted`) is unreachable: a part that declares
+    /// nothing must be distinguishable from one whose declaration was
+    /// verified.
+    SourceDialectUnverified,
 }
 
 impl SldprtLossCode {
@@ -149,6 +160,7 @@ impl SldprtLossCode {
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
         Self::SourcePreservedImageUnavailable,
+        Self::SourceDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -196,6 +208,7 @@ impl SldprtLossCode {
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
         }
     }
 
@@ -215,6 +228,7 @@ impl SldprtLossCode {
         match self {
             Self::ContainerNoParasolidStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
                 LossTaxonomy::TopologyGaugeSubstituted
             }
@@ -305,6 +319,7 @@ mod tests {
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
                 "source.preserved-image-unavailable",
+                "source.dialect-unverified",
             ]
         );
     }

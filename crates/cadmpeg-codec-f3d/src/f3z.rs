@@ -12,6 +12,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_value::Value;
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
@@ -111,6 +112,12 @@ pub fn decode(
     root.report_mut().notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
+    // The inner decode classified the root member, which is an `f3d:` document
+    // in its own right. The file handed to the codec is the outer archive, so
+    // the report states the outer archive's row. Restated before the
+    // container-only return and before the digest stamp below, so both paths
+    // carry it.
+    restate_outer_dialect(&mut root, scan);
     if ctx.container_only() {
         return Ok(root);
     }
@@ -140,6 +147,23 @@ pub fn decode(
     }
     let (ir, report, fidelity) = root.into_parts();
     Ok(DecodeResult::new(ir, report, fidelity))
+}
+
+/// Replace the root member's dialect match with the outer archive's.
+///
+/// [`crate::decode::decode`] runs on the root `.f3d` member and classifies that
+/// member as `f3d:manifest-3-2-0-0`. The document under decode is the `.f3z`
+/// archive, whose own scan classified it as `f3d:f3z-multi-document`, so the
+/// report and [`cadmpeg_ir::document::SourceMeta`] state that row. Exactly one
+/// entry either way: both rows are the `f3d` primary layer.
+fn restate_outer_dialect(root: &mut DecodeResult, scan: &ContainerScan<'_>) {
+    let dialects = vec![scan.dialect.clone()];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
+    root.report_mut().dialects = dialects;
+    if let Some(source) = &mut root.ir_mut().source {
+        source.dialect.clone_from(&scan.dialect.dialect);
+        source.declared.clone_from(&scan.dialect.declared);
+    }
 }
 
 fn model_root_member(

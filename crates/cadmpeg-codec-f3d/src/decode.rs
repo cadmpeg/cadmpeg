@@ -4749,13 +4749,35 @@ fn source_and_tolerances(
         }
     }
 
-    (
-        SourceMeta {
-            format: "f3d".to_string(),
-            attributes,
-        },
-        tolerances,
-    )
+    (source_meta(scan, attributes), tolerances)
+}
+
+/// The archive's dialect matches: exactly the primary `f3d` layer.
+///
+/// The embedded ACIS layer of the B-rep streams is a second format layer and
+/// gets its own match once `cadmpeg-asm` declares those rows. This codec
+/// declares only the layer it owns.
+fn primary_layer_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMatch> {
+    let dialects = vec![scan.dialect.clone()];
+    cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
+    dialects
+}
+
+/// Source metadata carrying `attributes`, with the primary-layer match mirrored
+/// into [`SourceMeta::dialect`] and [`SourceMeta::declared`].
+///
+/// The existing attribute keys stay. Retiring the ad-hoc keys that duplicate a
+/// declared key is a later phase.
+fn source_meta(
+    scan: &ContainerScan,
+    attributes: std::collections::BTreeMap<String, String>,
+) -> SourceMeta {
+    SourceMeta {
+        declared: scan.dialect.declared.clone(),
+        dialect: scan.dialect.dialect.clone(),
+        format: crate::dialect::FORMAT.to_string(),
+        attributes,
+    }
 }
 
 /// Loss report for a successful geometry decode.
@@ -4851,7 +4873,8 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     ));
 
     DecodeReport {
-        format: "f3d".to_string(),
+        dialects: primary_layer_dialects(scan),
+        format: crate::dialect::FORMAT.to_string(),
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
@@ -4915,10 +4938,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
         });
     }
 
-    ir.source = Some(SourceMeta {
-        format: "f3d".to_string(),
-        attributes,
-    });
+    ir.source = Some(source_meta(scan, attributes));
     (ir, unknowns)
 }
 
@@ -5011,7 +5031,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     }
 
     DecodeReport {
-        format: "f3d".to_string(),
+        dialects: primary_layer_dialects(scan),
+        format: crate::dialect::FORMAT.to_string(),
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),

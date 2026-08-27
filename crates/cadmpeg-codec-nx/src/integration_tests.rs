@@ -10,6 +10,8 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use super::*;
 use crate::test_support::*;
 
+mod dialect;
+
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     NxCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -679,6 +681,20 @@ fn document_pipeline_retains_configurations_attributes_external_links_and_opaque
         loss.message.contains("ExternalReferences") || loss.message.contains("vendor/private")
     }));
     assert_valid(&opaque);
+}
+
+#[test]
+fn splmsstr_container_and_product_version_reach_source_attributes() {
+    let modern = decode(prt_with_indexed_om_section());
+    let attributes = &modern.ir().source.as_ref().unwrap().attributes;
+    assert_eq!(attributes["splmsstr_version"], "6");
+    assert_eq!(attributes["product_version"], "NX 2027.3102");
+    assert!(!attributes.contains_key("ugii_version"));
+
+    let legacy = decode(legacy_cfb_with_ug_part());
+    let attributes = &legacy.ir().source.as_ref().unwrap().attributes;
+    assert!(attributes.contains_key("ugii_version"));
+    assert!(!attributes.contains_key("splmsstr_version"));
 }
 
 #[test]

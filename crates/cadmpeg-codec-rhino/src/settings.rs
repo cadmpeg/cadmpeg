@@ -2175,6 +2175,12 @@ fn parse_layer(
     };
     let id = (version.1 >= 5).then(|| uuid(&mut reader)).transpose()?;
     let parent_compatible = writer_version.is_some_and(|version| version > 200_505_110);
+    if version.1 >= 6 && writer_version.is_none() {
+        warnings.push(format!(
+            "layer parent link and expanded state were not read because {}",
+            crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
+        ));
+    }
     let parent_id = if version.1 >= 6 && parent_compatible {
         Some(uuid(&mut reader)?)
     } else {

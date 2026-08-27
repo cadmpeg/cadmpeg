@@ -929,6 +929,7 @@ pub(crate) fn try_decode_zero_entity(
     Some(FamilyOutput {
         ir,
         report: DecodeReport {
+            dialects: Vec::new(),
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,

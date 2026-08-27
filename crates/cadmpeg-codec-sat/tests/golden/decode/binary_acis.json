@@ -148,6 +148,12 @@
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic"
       },
+      "declared": {
+        "encoding": "binary",
+        "save_format_major": "218",
+        "save_format_minor": "0"
+      },
+      "dialect": "sat:acis-binary",
       "format": "sat"
     },
     "tolerances": {
@@ -164,6 +170,18 @@
       "unknown_records": 0,
       "unknown_surface_faces": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "encoding": "binary",
+          "save_format_major": "218",
+          "save_format_minor": "0"
+        },
+        "dialect": "sat:acis-binary",
+        "format": "sat"
+      }
+    ],
     "format": "sat",
     "geometry_transferred": true,
     "losses": [],

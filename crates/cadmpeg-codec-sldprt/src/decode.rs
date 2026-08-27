@@ -3089,8 +3089,26 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
     }
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes);
+    source_meta_with_dialect(attributes)
+}
+
+/// Mirrors the primary-layer match into [`SourceMeta::dialect`] and
+/// [`SourceMeta::declared`].
+///
+/// The declaration comes from `attributes["sw_version"]`, which
+/// [`add_solidworks_xml_metadata`] has already written, so the mirror and the
+/// report entry classify the same string. The `sw_version` attribute stays
+/// where it is, and so does every other key: absence in this map is
+/// load-bearing at the sites that read it, `sw_name` and
+/// `sldprt_active_partition_unresolved` gate the writer, and these fields are
+/// additive. Retiring the ad-hoc keys is a later phase.
+fn source_meta_with_dialect(attributes: BTreeMap<String, String>) -> SourceMeta {
+    let primary =
+        crate::dialect::SldprtDialect::classify(attributes.get("sw_version").map(String::as_str));
     SourceMeta {
-        format: "sldprt".to_string(),
+        declared: primary.declared,
+        dialect: primary.dialect,
+        format: crate::dialect::FORMAT.to_string(),
         attributes,
     }
 }
@@ -3153,6 +3171,19 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
     }
     attributes.insert("png_preview_count".into(), png_index.to_string());
     attributes.insert("bmp_thumbnail_count".into(), bmp_index.to_string());
+}
+
+/// The `swSolidWorks` `swVersion` declaration of a scanned document, verbatim.
+///
+/// One predicate, not two: it runs [`add_solidworks_xml_metadata`] and takes
+/// the key that function writes, so the declaration this returns is by
+/// construction the string that reaches
+/// `SourceMeta::attributes["sw_version"]`. Callers that already hold those
+/// attributes read the key directly instead of calling this.
+pub(crate) fn declared_sw_version(scan: &ContainerScan) -> Option<String> {
+    let mut attributes = BTreeMap::new();
+    add_solidworks_xml_metadata(scan, &mut attributes);
+    attributes.remove("sw_version")
 }
 
 fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
@@ -3295,8 +3326,11 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
+    let dialects = report_dialects(scan);
+    append_dialect_losses(&dialects, &mut losses);
     DecodeReport {
-        format: "sldprt".to_string(),
+        dialects,
+        format: crate::dialect::FORMAT.to_string(),
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
@@ -3383,10 +3417,7 @@ fn build_metadata_ir(
         });
     }
 
-    ir.source = Some(SourceMeta {
-        format: "sldprt".to_string(),
-        attributes,
-    });
+    ir.source = Some(source_meta_with_dialect(attributes));
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     let form_padding = ir.source.as_ref().and_then(|source| {
         crate::resolved_features::operations::form_code_padding(
@@ -4563,6 +4594,30 @@ fn preserve_source_image(
     });
 }
 
+/// The primary-layer match for a report, as the one-entry list the reports
+/// carry.
+///
+/// `.sldprt` embeds Parasolid, so the list is a `Vec`, but the embedded kernel
+/// layer is not classified here: `cadmpeg-asm` declares the Parasolid rows once
+/// and the hosts cite them. Until then the primary layer is the whole list.
+fn report_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMatch> {
+    let dialects = vec![crate::dialect::SldprtDialect::classify_scan(scan)];
+    cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
+    dialects
+}
+
+/// Appends the dialect-unverified loss the primary layer's admission charges.
+///
+/// Takes the same `dialects` the report carries, so the note and the reported
+/// admission cannot describe different classifications.
+fn append_dialect_losses(
+    dialects: &[cadmpeg_core::dialect::DialectMatch],
+    losses: &mut Vec<cadmpeg_ir::LossNote>,
+) {
+    let primary = cadmpeg_core::dialect::primary_layer(dialects, crate::dialect::FORMAT);
+    losses.extend(primary.and_then(crate::dialect::dialect_loss));
+}
+
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let parasolid_sources = scan
@@ -4603,9 +4658,12 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
+    let dialects = report_dialects(scan);
+    append_dialect_losses(&dialects, &mut losses);
 
     DecodeReport {
-        format: "sldprt".to_string(),
+        dialects,
+        format: crate::dialect::FORMAT.to_string(),
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),

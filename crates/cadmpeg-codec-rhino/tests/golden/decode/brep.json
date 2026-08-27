@@ -506,6 +506,10 @@
         "unit_system": "standard:3",
         "unit_value": "3"
       },
+      "declared": {
+        "archive_version": "50"
+      },
+      "dialect": "rhino:archive-50",
       "format": "rhino"
     },
     "tolerances": {
@@ -518,6 +522,16 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "50"
+        },
+        "dialect": "rhino:archive-50",
+        "format": "rhino"
+      }
+    ],
     "format": "rhino",
     "geometry_transferred": true,
     "losses": [
@@ -546,6 +560,24 @@
           "namespace": "rhino"
         },
         "message": "object at 177 has nil object UUID",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.writer-stamp-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "rhino"
+        },
+        "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep edge domains read with the pre-2002 layout for 3 records because the archive has no writer-version stamp",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.writer-stamp-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "rhino"
+        },
+        "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep trim domains and proxy senses read with the pre-2002 layout for 3 records because the archive has no writer-version stamp",
         "severity": "warning"
       },
       {

@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::codec::TargetRequest;
 
 #[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
@@ -26,11 +27,11 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
             .iter()
             .find(|face| face.id == *face_id)
             .is_some_and(|face| face.sense == Sense::Reversed)));
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let plan = IgesEncoder
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -201,11 +202,11 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
             geometry: CurveGeometry::Nurbs(nurbs),
             source_object: None,
         });
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        let plan = IgesEncoder
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            )
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let mut written = Vec::new();
         plan.write_to(&mut written)

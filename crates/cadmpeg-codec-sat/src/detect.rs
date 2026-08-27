@@ -6,10 +6,15 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
 
+use crate::dialect::{
+    admits_semantic_decode, classify as classify_dialect, terminator_line, StreamEvidence,
+    TextEvidence,
+};
 use crate::FORMAT;
 
 /// The stream encoding a byte prefix selects.
@@ -102,10 +107,13 @@ pub(crate) fn inspect(
     let mut attributes = BTreeMap::new();
     let mut notes = Vec::new();
     let kind = classify(bytes);
-    match kind {
+    // Inspect classifies from the same evidence decode would read, so the two
+    // report the same `sat:` row and the same admission for the same bytes.
+    let matched = match kind {
         StreamKind::AsmBinary => {
-            if let Some(header) = asm_header::parse(bytes) {
-                header_attributes(&header, "asm", &mut attributes);
+            let header = asm_header::parse(bytes);
+            if let Some(header) = &header {
+                header_attributes(header, "asm", &mut attributes);
                 if header.has_history_partition() {
                     notes.push(
                         "the stream declares a construction-history partition; decode reads \
@@ -114,11 +122,14 @@ pub(crate) fn inspect(
                     );
                 }
             }
+            classify_dialect(&StreamEvidence::AsmBinary(header.as_ref()))
         }
         StreamKind::AcisBinary => {
-            if let Some(header) = acis_header::parse(bytes) {
-                header_attributes(&header, "acis", &mut attributes);
-                if !matches!(header.save_format_major(), Some(217 | 218)) {
+            let header = acis_header::parse(bytes);
+            let evidence = StreamEvidence::AcisBinary(header.as_ref());
+            if let Some(header) = &header {
+                header_attributes(header, "acis", &mut attributes);
+                if !admits_semantic_decode(&evidence) {
                     notes.push("the ACIS binary save-format band is not decoded".into());
                 } else if header.has_history_partition() {
                     notes.push(
@@ -128,34 +139,47 @@ pub(crate) fn inspect(
                     );
                 }
             }
+            classify_dialect(&evidence)
         }
-        StreamKind::Text => match sat::parse(bytes) {
-            Ok(stream) => {
-                let family = match stream.dialect {
-                    sat::Dialect::Asm => "asm",
-                    sat::Dialect::Acis => "acis",
-                };
-                header_attributes(&stream.header.as_kernel_header(), family, &mut attributes);
-                attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
-                attributes.insert("records".to_string(), stream.records.len().to_string());
-                attributes.insert(
-                    "terminator".to_string(),
-                    match stream.dialect {
-                        sat::Dialect::Asm => "End-of-ASM-data",
-                        sat::Dialect::Acis => "End-of-ACIS-data",
-                    }
-                    .to_string(),
-                );
-            }
-            Err(error) => notes.push(format!("text stream does not parse: {error}")),
-        },
+        StreamKind::Text => {
+            // The kernel header is bound here so the evidence can borrow it
+            // past the arm that built it.
+            let parsed = sat::parse(bytes).map(|stream| (stream.header.as_kernel_header(), stream));
+            let text = match &parsed {
+                Ok((kernel, stream)) => {
+                    let family = match stream.dialect {
+                        sat::Dialect::Asm => "asm",
+                        sat::Dialect::Acis => "acis",
+                    };
+                    header_attributes(kernel, family, &mut attributes);
+                    attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
+                    attributes.insert("records".to_string(), stream.records.len().to_string());
+                    attributes.insert(
+                        "terminator".to_string(),
+                        terminator_line(stream.dialect).to_string(),
+                    );
+                    Some(TextEvidence {
+                        branch: stream.dialect,
+                        header: kernel,
+                    })
+                }
+                Err(error) => {
+                    notes.push(format!("text stream does not parse: {error}"));
+                    None
+                }
+            };
+            classify_dialect(&StreamEvidence::Text(text))
+        }
         StreamKind::Unknown => {
             return Err(CodecError::Malformed(
                 "not an ASM stream: no binary magic and no text header lines".to_string(),
             ))
         }
-    }
+    };
+    let dialects = vec![matched];
+    debug_assert_primary_layer(&dialects, FORMAT);
     Ok(ContainerSummary {
+        dialects,
         format: FORMAT.to_string(),
         container_kind: "stream".to_string(),
         entries: vec![ContainerEntry {

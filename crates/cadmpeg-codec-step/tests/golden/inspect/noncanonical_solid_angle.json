@@ -1,5 +1,20 @@
 {
   "container_kind": "iso-10303-21-clear-text",
+  "dialects": [
+    {
+      "admission": {
+        "admitted_unverified": {
+          "nearest": "step:ap242-e3"
+        }
+      },
+      "declared": {
+        "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
+        "implementation_level": "2;1"
+      },
+      "dialect": "step:unknown",
+      "format": "step"
+    }
+  ],
   "entries": [
     {
       "attributes": {},

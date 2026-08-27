@@ -1209,6 +1209,78 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     assert!(strict_output.is_empty());
 }
 
+/// PMI is dropped whole when the target schema has no semantic PMI. The drop is
+/// charged as `pmi.annotation-not-written` for every annotation, and strict mode
+/// refuses the write. The schemas are driven by `supports_semantic_pmi`, so this
+/// covers every non-AP242 target rather than one sampled schema.
+#[test]
+fn pmi_dropped_by_schema_without_semantic_pmi_is_charged() {
+    let ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_semantic_pmi.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode semantic PMI")
+        .into_parts()
+        .0;
+    let annotations = ir.model.pmi.len();
+    assert!(annotations > 0);
+
+    for schema in [
+        StepSchema::Ap203Edition1,
+        StepSchema::Ap203Edition2,
+        StepSchema::Ap214,
+        StepSchema::Ap242Edition1,
+        StepSchema::Ap242Edition2,
+        StepSchema::Ap242Edition3,
+    ] {
+        if schema.supports_semantic_pmi() {
+            continue;
+        }
+        let mut output = Vec::new();
+        let report = write_step(
+            &ir,
+            &mut output,
+            &StepWriteOptions {
+                schema,
+                ..StepWriteOptions::default()
+            },
+        )
+        .expect("report-mode STEP write");
+        let charged = report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind())
+            .count();
+        assert_eq!(charged, 1, "{}", schema.file_schema());
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == StepLossCode::PmiAnnotationNotWritten.kind()
+                && loss.message.contains(&format!("{annotations} PMI"))
+        }));
+
+        let mut strict_output = Vec::new();
+        assert!(
+            matches!(
+                write_step(
+                    &ir,
+                    &mut strict_output,
+                    &StepWriteOptions {
+                        schema,
+                        unsupported: StepUnsupportedPolicy::Reject,
+                        ..StepWriteOptions::default()
+                    }
+                ),
+                Err(StepError::Unsupported(_))
+            ),
+            "{}",
+            schema.file_schema()
+        );
+        assert!(strict_output.is_empty());
+    }
+}
+
 #[test]
 fn edge_without_curve_is_reported_and_omitted() {
     let _ = cylinder_surface_doc(); // keep helper exercised

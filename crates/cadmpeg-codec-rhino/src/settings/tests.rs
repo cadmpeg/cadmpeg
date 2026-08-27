@@ -610,7 +610,12 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
             .map(|value| value.version),
         Some((1, 1))
     );
-    assert!(warnings.is_empty());
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{warnings:?}"
+    );
 
     let mut future_payload = payload.clone();
     future_payload.pop();
@@ -642,7 +647,31 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     assert!(future.opaque_records.is_empty());
 }
 
+/// Marker of the diagnostic raised for an unstamped layer record.
+const LAYER_PARENT_DIALECT: &str = "layer parent link and expanded state were not read";
+
 fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata {
+    let (metadata, warnings) = layer_metadata(extension, None);
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{warnings:?}"
+    );
+    metadata
+}
+
+/// Parses one layer record, with the writer-version stamp under test control.
+///
+/// A `Some` stamp is delivered the way an archive delivers it: a short
+/// writer-version record in a properties table ahead of the layer table. The
+/// payload follows the stamp: a stamped archive carries the parent link and the
+/// expanded flag that the stamped reading consumes, an unstamped one does not,
+/// so each arm parses a record its own reading admits.
+fn layer_metadata(
+    extension: &[u8],
+    writer_version: Option<i64>,
+) -> (settings::DocumentMetadata, Vec<String>) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -662,6 +691,10 @@ fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata
     payload.extend(0.0_f64.to_le_bytes());
     payload.push(0);
     payload.extend([0; 16]);
+    if writer_version.is_some() {
+        payload.extend([0x44; 16]);
+        payload.push(1);
+    }
     payload.extend(crc_chunk(
         archive,
         0x4000_8000,
@@ -695,10 +728,59 @@ fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
     };
+    let mut tables = Vec::new();
+    if let Some(value) = writer_version {
+        tables.push(crate::container::Table {
+            typecode: 0x1000_0014,
+            range: 0..0,
+            body: 0..0,
+            records: vec![crate::container::Record {
+                typecode: 0xa000_0026,
+                range: 0..0,
+                body: 0..0,
+                short: true,
+                value,
+            }],
+            record_count: 1,
+            object_typecodes: std::collections::BTreeMap::new(),
+        });
+    }
+    tables.push(table);
     let mut warnings = Vec::new();
-    let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
-    assert!(warnings.is_empty(), "{warnings:?}");
-    metadata
+    let metadata = settings::parse_metadata(&data, archive, &tables, &mut warnings);
+    (metadata, warnings)
+}
+
+/// The layer parent link rests on the stamp, so the loss follows the stamp.
+#[test]
+fn unstamped_layer_charges_the_parent_link_dialect_loss() {
+    // A single zero closes the extension-item chain, so both arms read a whole
+    // record and the difference between them is only the stamp.
+    let (unstamped_metadata, unstamped) = layer_metadata(&[0], None);
+    assert_eq!(unstamped_metadata.layers.len(), 1, "{unstamped:?}");
+    assert_eq!(unstamped_metadata.layers[0].parent_id, None);
+    assert_eq!(unstamped_metadata.layers[0].expanded, None);
+    assert!(
+        unstamped
+            .iter()
+            .any(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{unstamped:?}"
+    );
+
+    // The stamped arm must read a layer, or its silence proves nothing.
+    let (stamped_metadata, stamped) = layer_metadata(&[0], Some(200_912_010));
+    assert_eq!(stamped_metadata.layers.len(), 1, "{stamped:?}");
+    assert_eq!(
+        stamped_metadata.layers[0].parent_id,
+        Some(Uuid::from_canonical([0x44; 16]))
+    );
+    assert_eq!(stamped_metadata.layers[0].expanded, Some(true));
+    assert!(
+        !stamped
+            .iter()
+            .any(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{stamped:?}"
+    );
 }
 
 fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {

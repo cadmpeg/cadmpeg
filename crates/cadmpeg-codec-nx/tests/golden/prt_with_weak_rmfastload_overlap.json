@@ -3986,8 +3986,13 @@
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "2",
           "plain_streams": "0",
-          "rmfastload_active_object_count": "50"
+          "rmfastload_active_object_count": "50",
+          "splmsstr_version": "6"
         },
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
         "format": "nx"
       },
       "tolerances": {
@@ -4000,6 +4005,16 @@
     },
     "report": {
       "container_only": false,
+      "dialects": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      ],
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -6327,6 +6342,16 @@
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    ],
     "entries": [
       {
         "attributes": {

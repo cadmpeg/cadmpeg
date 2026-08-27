@@ -11,6 +11,25 @@ if git diff --cached --name-only | grep -qE '^docs/formats/.*\.md$'; then
   python3 scripts/check-doc-anchors.py
 fi
 
+# Dialect ids are pinned forever, so a bad edit to the registry must not reach
+# a commit. Run the checker's own synthesized-violation suite first: it is the
+# only thing that proves the rules still fire.
+if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$'; then
+  echo "pre-commit: scripts/check-dialects.py"
+  python3 scripts/check-dialects.py --self-test
+  python3 scripts/check-dialects.py
+fi
+
+# The capability registry cross-references the identity registry, the fixture
+# tree, the golden snapshots, and the encoders' write-target catalogs. Any of
+# those five can move it, so run it whenever one is staged.
+if git diff --cached --name-only \
+    | grep -qE '^docs/dialects?(-support)?\.toml$|^scripts/(check-dialect-support\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
+  echo "pre-commit: scripts/check-dialect-support.py"
+  python3 scripts/check-dialect-support.py --self-test
+  python3 scripts/check-dialect-support.py
+fi
+
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
 # and build flags), or the toolchain pin. A docs-, CI-, or config-only commit

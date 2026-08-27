@@ -1546,8 +1546,11 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
+    let dialects = vec![crate::dialect::classify(scan)];
+    cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     ContainerSummary {
-        format: "catia".to_string(),
+        dialects,
+        format: crate::dialect::FORMAT.to_string(),
         container_kind: "v5-cfv2".to_string(),
         entries,
         notes,

@@ -114,18 +114,21 @@ fn layer_record_with_userdata(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u
 }
 
 fn document(archive: ArchiveVersion, layer: Vec<u8>) -> Vec<u8> {
+    document_with_stamp(archive, layer, Some(202_608_010))
+}
+
+fn document_with_stamp(
+    archive: ArchiveVersion,
+    layer: Vec<u8>,
+    writer_version: Option<i64>,
+) -> Vec<u8> {
+    let properties: Vec<Vec<u8>> = writer_version
+        .map(|value| vec![support::test_dump::short_chunk(archive, 0xa000_0026, value)])
+        .unwrap_or_default();
     support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(
-                archive,
-                0x1000_0014,
-                &[support::test_dump::short_chunk(
-                    archive,
-                    0xa000_0026,
-                    202_608_010,
-                )],
-            ),
+            support::test_dump::table(archive, 0x1000_0014, &properties),
             support::test_dump::table(archive, 0x1000_0015, &[]),
             support::test_dump::table(archive, 0x1000_0011, &[layer]),
             support::test_dump::table(archive, 0x1000_0013, &[]),
@@ -189,6 +192,42 @@ fn layer_userdata_future_payload_retains_complete_layer_record() {
     let layer = layer_record(archive, &outer_payload);
     let result = decode(document(archive, layer.clone()));
     assert_layer_record_retained(&result, &layer, "layer per-viewport userdata at offset");
+}
+
+/// The layer parent-link charge reaches the report as a typed loss code.
+///
+/// `parse_layer` pushes a bare warning string that `dialect_unverified_diagnostic`
+/// promotes in the scan-warning loop. Asserting the warning text alone would
+/// leave that promotion untested, so this asserts the code the report carries.
+#[test]
+fn unstamped_layer_promotes_the_parent_link_warning_to_a_typed_loss_code() {
+    let archive = ArchiveVersion::V8;
+    let layer = layer_record(archive, &[0xde, 0xad]);
+
+    let unstamped = decode(document_with_stamp(archive, layer.clone(), None));
+    assert!(
+        unstamped.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()
+                && loss.message.contains("layer parent link")
+        }),
+        "{:?}",
+        unstamped.report().losses
+    );
+
+    // The same record under a stamp: the parent link is read, so nothing is
+    // charged and the layer still reaches the native arena.
+    let stamped = decode(document(archive, layer));
+    let layers = &stamped.ir().native.namespace("rhino").unwrap().arenas["layers"];
+    assert_eq!(layers.len(), 1);
+    assert!(
+        !stamped
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()),
+        "{:?}",
+        stamped.report().losses
+    );
 }
 
 #[test]

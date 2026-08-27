@@ -509,3 +509,304 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality"
 reason = "Creo direct Function 5 scalar equalities transfer as typed solver-scalar relations"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::dialect::{DialectId,DialectMatch,Admission,primary_layer,holds_primary_layer_invariant,debug_assert_primary_layer}"
+reason = "shared dialect vocabulary; DialectId stays an opaque pinned string so the shared layer does not depend on every codec"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::error::CodecError::UnsupportedDialect"
+reason = "identity survives refusal; replaces per-codec handling of recognized-but-unsupported input"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::container::ContainerSummary::dialects"
+reason = "per-layer dialect identification from inspect; serde-staged so no persisted byte moves"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::DecodeReport::dialects"
+reason = "per-layer dialect identification from decode; serde-staged so no persisted byte moves"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::ExportReport::target"
+reason = "the encoder states the concrete dialect it wrote, replay and patch paths included"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::document::{SourceMeta::dialect,SourceMeta::declared}"
+reason = "primary-layer dialect and its verbatim declarations survive a CADIR intermediate; serde-staged so every document digest holds"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::diff::{SourceDiff::dialect_change,SourceDiff::declared}"
+reason = "the source differ saw only attributes, so a dialect divergence would have compared as agreement"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::Encoder::plan"
+reason = "plan takes the caller's TargetRequest; resolution needs the request and the source together, and an encoder that cannot see the request cannot refuse a target it does not write"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::Encoder::targets"
+reason = "the static synthesis catalog moves into the encoder; the five scattered CLI-side defaults collapse to one catalog entry per format"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::CodecError::UnsupportedTarget"
+reason = "the write-side refusal, naming the requested dialect and the catalog; CodecError is non_exhaustive so no exhaustive match breaks"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::application::ExportTarget::selection"
+reason = "flag absence is not a target: whether it means preservation or the catalog default is only known once the source is read"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::EncodeInput::new"
+reason = "one construction path for the borrowed export input, now that every call site also passes a request"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-codec-iges"
+kind = "signature"
+item = "cadmpeg_codec_iges::IgesVersion::target"
+reason = "the registry dialect id a write version names, so a caller spells the request the same way the report answers it"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-codec-rhino"
+kind = "signature"
+item = "cadmpeg_codec_rhino::RhinoArchiveVersion::target"
+reason = "the registry dialect id an archive version names, for the same reason"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-codec-step"
+kind = "signature"
+item = "cadmpeg_codec_step::StepSchema::target"
+reason = "the registry dialect id a schema names, for the same reason"
+
+[[change]]
+commit = "31f5ebdb0f8a03b35fc5474c6268f655d5da9d47"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::application::export_target"
+reason = "a separate step_target parameter, because --reject-step-losses shares the wrong-format guard with --step-target but must not name a target"
+
+[[change]]
+commit = "31f5ebdb0f8a03b35fc5474c6268f655d5da9d47"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_target"
+reason = "the schema --step-target named, separate from step_options, which also carries the loss policy"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::ContainerSummary::dialects"
+reason = "always serialized: an empty list is the summary stating it identified no layer, which omission cannot express"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::DecodeReport::dialects"
+reason = "always serialized, for the same reason"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::ExportReport::target"
+reason = "always serialized as `null` when the encoder wrote a form the registry does not name"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::document::SourceMeta::dialect"
+reason = "always serialized as `null` when absent; stays `Option` because synthetic documents have no honest id, and `DecodeResult::new` debug-asserts the mirror a decode owes instead"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::document::SourceMeta::declared"
+reason = "always serialized; this is the member that moves the document digest of every document carrying source metadata"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION"
+reason = "2 to 3, because `report.dialects` is now always written; v1 and v2 sidecars still load and restamp"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V2"
+reason = "names the version that omits `dialects`, so a reader can spell the accepted set instead of hardcoding it"
+
+[[change]]
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSIONS_ACCEPTED"
+reason = "the accepted versions oldest first, so migration order is data rather than a match arm a caller cannot see; removed in the flip review follow-up before any release carried it — the constant documented the migration set without enforcing it, and the match arms are the authority"
+
+[[change]]
+commit = "f5b6b8e242f0924f29eb869e40a9e2c9b476dea5"
+crate = "cadmpeg"
+kind = "deletion"
+item = "cadmpeg::application::EncoderRequest::Rhino"
+reason = "the archive version is a write target, and TargetRequest carries it; a request variant let the CLI decide the version again, which is the defect that turned a Rhino 5 file into archive 80"
+
+[[change]]
+commit = "f5b6b8e242f0924f29eb869e40a9e2c9b476dea5"
+crate = "cadmpeg-codec-rhino"
+kind = "trait_impl"
+item = "impl Default for cadmpeg_codec_rhino::RhinoEncoder"
+reason = "the catalog default archive version, so a caller with no version to state does not have to name one; the constructor version is now only the fallback for a request with nothing to inherit"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "deletion"
+item = "cadmpeg::application::EncoderRequest"
+reason = "the per-format request type is gone with the per-format target flags; what an encoder writes is a target and TargetRequest carries it, so construction has nothing format-specific left to decide"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::application::build_encoder"
+reason = "takes the format and a format-independent LossPolicy and returns the encoder directly; total over Format and infallible, and constructing it under no codec feature is what dissolved the dead-code failure of a codec-only build"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::application::export_target"
+reason = "takes the output format, the unresolved dialect half of --to, and the loss policy, and returns the target without a Result; the wrong-format guards died with the flags they guarded, and the dialect is refused by the encoder's plan after the read"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_target"
+reason = "deleted with --step-target; the dialect half of --to travels unresolved and the encoder resolves it"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_options"
+reason = "deleted with --step-target/--reject-step-losses; the only surviving writer option is the loss policy, which build_encoder now takes format-independently"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_flag_present"
+reason = "deleted with the wrong-format guard it fed; a wrong combination is no longer expressible, so there is nothing to guard"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::iges_options"
+reason = "deleted with --iges-target; the IGES version is a target and TargetRequest carries it"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::rhino_target"
+reason = "deleted with --rhino-target, for the same reason"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::reject_lossy"
+reason = "split into reject_decode_losses and reject_export_losses for --reject-lossy[=decode|export|any]; one bool could not express the scope the folded --reject-step-losses needed"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::application::ConversionPolicy::reject_lossy"
+reason = "split into reject_decode_losses and reject_export_losses, mirroring the plan"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::commands::convert"
+reason = "takes the raw --to value instead of a parsed Format, because the value carries a dialect half clap cannot type"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::CodecError::UnsupportedTarget::requested: String -> Option<String>"
+reason = "an inherit refusal over a source that records no dialect has no id to quote; the field carried the bare format id in a dialect-id slot"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::{Inherited,resolve_inherit,unrecorded_source_dialect,UNRECORDED_SOURCE_DIALECT_REASON}"
+reason = "one shape for the Inherit half of every encoder's resolution: refuse an unrecorded same-format dialect, fall to the catalog default only with nothing to inherit"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-codec-iges"
+kind = "deletion"
+item = "cadmpeg_codec_iges::IgesEncoder::new"
+reason = "IgesEncoder holds no target state; TargetRequest decides the dialect and the catalog default is the only fallback"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION"
+crate = "cadmpeg-codec-rhino"
+kind = "deletion"
+item = "cadmpeg_codec_rhino::RhinoEncoder::new"
+reason = "RhinoEncoder holds no target state; the constructor version was a fourth answer to which dialect and overrode the other three"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION-MERGE"
+crate = "cadmpeg-codec-iges"
+kind = "deletion"
+item = "cadmpeg_codec_iges::IgesWriteOptions"
+reason = "sole field was the target version and its last reader was the deleted --iges-target plumbing; a one-field options struct nothing constructs and nothing reads is not an options struct"

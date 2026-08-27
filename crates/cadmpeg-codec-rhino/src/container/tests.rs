@@ -242,6 +242,56 @@ fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
 }
 
 #[test]
+fn a_refused_row_inspects_as_refused_and_a_decoded_row_as_admitted() {
+    // The biconditional at the call sites: the archive words `decode` refuses
+    // are exactly the ones `inspect` reports as `Admission::Refused`, and the
+    // word whose flat legacy grammar this codec does implement is admitted on
+    // its own row even though inspection stops at the header.
+    for (version, id) in [
+        ("5", "rhino:archive-5"),
+        ("999", "rhino:unknown"),
+        ("1", "rhino:archive-1"),
+    ] {
+        let bytes = header(version);
+        let summary = RhinoCodec
+            .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
+            .expect("header-only inspection");
+        let [matched] = summary.dialects.as_slice() else {
+            panic!("{version}: exactly one layer classifies a 3DM archive");
+        };
+        assert_eq!(matched.format, "rhino", "archive word {version}");
+        assert_eq!(
+            matched
+                .dialect
+                .as_ref()
+                .map(cadmpeg_core::dialect::DialectId::as_str),
+            Some(id),
+            "archive word {version}"
+        );
+        assert_eq!(
+            matched.declared["archive_version"], version,
+            "archive word {version}"
+        );
+
+        let refused = matches!(
+            RhinoCodec.decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                    ..Default::default()
+                },
+            ),
+            Err(CodecError::NotImplemented(_))
+        );
+        assert_eq!(
+            matched.admission == cadmpeg_core::dialect::Admission::Refused,
+            refused,
+            "archive word {version}: the reported admission and the decode refusal must agree"
+        );
+    }
+}
+
+#[test]
 fn missing_end_of_table_marker_is_recoverable_warning() {
     let archive = ArchiveVersion::V5;
     let bytes = minimal_document(

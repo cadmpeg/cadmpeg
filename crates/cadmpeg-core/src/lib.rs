@@ -4,6 +4,7 @@
 pub mod bytes;
 pub mod container;
 pub mod decode;
+pub mod dialect;
 pub mod error;
 pub mod io;
 

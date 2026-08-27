@@ -24,7 +24,7 @@ use cadmpeg_ir::CadIr;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::writer::same_float;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 #[test]
 fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
@@ -35,10 +35,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let plan = IgesEncoder::new(IgesWriteOptions { version }).plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        });
+        let plan = plan_at(version, decoded.ir(), None);
         let plan = plan
             .unwrap_or_else(|error| panic!("{version:?} Type 102 semantic plan refused: {error}"));
         let mut written = Vec::new();
@@ -123,14 +120,8 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
             .expect("Type 102 composite edge")
             .end = second_start;
     }
-    let plan = IgesEncoder::new(IgesWriteOptions {
-        version: IgesVersion::V5_0,
-    })
-    .plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: None,
-    })
-    .expect("reversed Type 102 child is writable");
+    let plan = plan_at(IgesVersion::V5_0, decoded.ir(), None)
+        .expect("reversed Type 102 child is writable");
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let round_trip = IgesCodec
@@ -156,12 +147,7 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
@@ -191,12 +177,12 @@ fn encode_replays_an_unchanged_iges_source_image() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
-        .unwrap();
+    let plan = plan_at(
+        IgesVersion::V5_3,
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+    )
+    .unwrap();
     assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -212,13 +198,7 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
             source_object: None,
             position: Point3::new(4.0, 5.0, 6.0),
         });
-        let encoder = IgesEncoder::new(IgesWriteOptions { version });
-        let plan = encoder
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
-            .unwrap();
+        let plan = plan_at(version, &ir, None).unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
         assert!(report.losses.is_empty(), "{name}: {:#?}", report.losses);
@@ -251,12 +231,7 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
             source_object: None,
             position: Point3::new(4.0, 5.0, 6.0),
         });
-        let plan = IgesEncoder::new(IgesWriteOptions { version })
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
-            .unwrap();
+        let plan = plan_at(version, &ir, None).unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
         assert!(report.losses.is_empty(), "{name}: {:#?}", report.losses);
@@ -293,12 +268,8 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             },
             source_object: None,
         });
-        let plan = IgesEncoder::new(IgesWriteOptions { version })
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
-            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        let plan =
+            plan_at(version, &ir, None).unwrap_or_else(|error| panic!("{version:?}: {error}"));
         let mut written = Vec::new();
         let report = plan
             .write_to(&mut written)
@@ -355,11 +326,7 @@ fn encode_rejects_open_shells_before_iges_5_3() {
         )
         .unwrap();
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
-        let error = IgesEncoder::new(IgesWriteOptions { version })
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+        let error = plan_at(version, decoded.ir(), None)
             .err()
             .expect("legacy target must reject an open shell");
         assert!(
@@ -376,15 +343,12 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
-    let encoder = IgesEncoder::new(IgesWriteOptions {
-        version: IgesVersion::V5_2,
-    });
-    let plan = encoder
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
-        .unwrap();
+    let plan = plan_at(
+        IgesVersion::V5_2,
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+    )
+    .unwrap();
     assert_eq!(plan.write_path(), WritePath::Synthesized);
 
     let mut written = Vec::new();
@@ -407,12 +371,7 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
         source_object: None,
         position: Point3::new(4.0, 5.0, 6.0),
     });
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
@@ -440,12 +399,7 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
         .unwrap();
     let (mut ir, _, fidelity) = decoded.into_parts();
     ir.model.points[0].position.x += 1.0;
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: Some(&fidelity),
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, Some(&fidelity)).unwrap();
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
@@ -475,10 +429,7 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.curves[0].geometry = CurveGeometry::Unknown { record: None };
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("unsupported curve geometry was accepted")
     };
     assert!(
@@ -492,10 +443,7 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
 #[test]
 fn encode_refuses_an_empty_source_less_model() {
     let ir = CadIr::empty(Units::default());
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("empty semantic output was accepted")
     };
     assert!(
@@ -518,10 +466,7 @@ fn encode_refuses_a_native_curve_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("native curve was silently omitted from semantic output")
     };
     assert!(
@@ -544,10 +489,7 @@ fn encode_refuses_a_native_point_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("native point was silently omitted from semantic output")
     };
     assert!(
@@ -566,10 +508,7 @@ fn encode_refuses_a_native_surface_without_neutral_geometry() {
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.surfaces.clear();
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("native surface was silently omitted from semantic output")
     };
     assert!(
@@ -609,11 +548,7 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+        let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None)
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let mut written = Vec::new();
         plan.write_to(&mut written)
@@ -671,12 +606,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         },
     ]);
 
-    let plan = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -732,12 +662,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
     assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(decoded.ir().model.procedural_curves.len(), 2);
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(
@@ -826,11 +751,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         },
     ]);
 
-    let error = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let error = plan_at(IgesVersion::V5_3, &ir, None)
         .err()
         .expect("standalone pointer-defined analytic surface must be refused");
     assert!(
@@ -860,11 +781,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         source_object: None,
     });
 
-    let error = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
         .err()
         .expect("free analytic surface must not inherit B-rep eligibility");
     assert!(
@@ -884,11 +801,7 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
         )
         .unwrap();
 
-    let error = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
         .err()
         .expect("a cylindrical face without axial bounds must be refused");
     assert!(
@@ -1095,12 +1008,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             reversed_order[(index + reversed_order.len() - 1) % reversed_order.len()].clone();
     }
 
-    let plan = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -1142,12 +1050,7 @@ fn encode_regenerates_a_decoded_trimmed_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let round_trip = IgesCodec
@@ -1172,12 +1075,7 @@ fn encode_regenerates_decoded_trimmed_sheet_inner_loop_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let round_trip = IgesCodec
@@ -1202,12 +1100,7 @@ fn encode_regenerates_decoded_model_curve_bounded_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
@@ -1233,12 +1126,7 @@ fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
@@ -1263,11 +1151,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("source fixture decodes");
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+        let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None)
             .expect("fixture is semantically writable");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("write succeeds");
@@ -1319,10 +1203,7 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
         control_points[0].u += 0.25;
     }
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, decoded.ir(), None) else {
         panic!("disagreeing pcurve endpoints were accepted")
     };
     assert!(
@@ -1350,12 +1231,7 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
         .unwrap_or_else(|| panic!("losses={:#?}", decoded.report().losses));
     assert_eq!(coedge.pcurves.len(), 2);
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
@@ -1410,12 +1286,7 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
         }
     }
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
@@ -1444,12 +1315,7 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report
@@ -1604,12 +1470,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             parameter_range: None,
         });
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("508_loop"), Some(&4));
@@ -1641,12 +1502,7 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
 
@@ -1677,12 +1533,7 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
         .unwrap();
     decoded.ir_mut().model.loops[0].boundary_role = LoopBoundaryRole::Unspecified;
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
 
@@ -1710,12 +1561,7 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
         .unwrap();
     decoded.ir_mut().model.vertices[0].tolerance = Some(0.25);
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
@@ -1740,12 +1586,7 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(
@@ -1935,12 +1776,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .position(|loop_id| *loop_id == moved_loop_id)
         .unwrap();
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
 
@@ -1990,3 +1826,5 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
 
 mod curves;
 mod region_and_surface;
+mod replay;
+mod targets;

@@ -10,6 +10,11 @@
 #[derive(Debug, Clone)]
 pub struct StepWriteOptions {
     /// Application protocol and edition declared by `FILE_SCHEMA`.
+    ///
+    /// The direct-write input to [`crate::write_step`], for a library caller
+    /// that names the schema itself. It is not encoder target state:
+    /// `StepCodec::plan` overwrites it with the resolution's answer on every
+    /// path, so setting it on a codec decides nothing.
     pub schema: StepSchema,
     /// Handling of IR content the selected writer cannot represent exactly.
     pub unsupported: StepUnsupportedPolicy,
@@ -77,6 +82,34 @@ pub enum StepSchema {
 }
 
 impl StepSchema {
+    /// Every schema the Part 21 writer can emit, and so every row of the
+    /// synthesis catalog. Resolution maps a dialect id back to a schema through
+    /// this list, and `crate::codec` pins the two sets equal in both
+    /// directions.
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Ap203Edition1,
+        Self::Ap203Edition2,
+        Self::Ap214,
+        Self::Ap242Edition1,
+        Self::Ap242Edition2,
+        Self::Ap242Edition3,
+    ];
+
+    /// The registry dialect id this schema writes.
+    ///
+    /// The spelling a caller passes as `TargetRequest::Explicit`.
+    #[must_use]
+    pub const fn target(self) -> &'static str {
+        match self {
+            Self::Ap203Edition1 => "step:ap203-e1",
+            Self::Ap203Edition2 => "step:ap203-e2",
+            Self::Ap214 => "step:ap214",
+            Self::Ap242Edition1 => "step:ap242-e1",
+            Self::Ap242Edition2 => "step:ap242-e2",
+            Self::Ap242Edition3 => "step:ap242-e3",
+        }
+    }
+
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {
         match self {

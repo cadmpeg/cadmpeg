@@ -456,8 +456,15 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
             format!("0x{:08x}", segment.type_word),
         );
     }
+    // The primary-layer mirror. `attributes` keeps every key it already had,
+    // including `variant` and the `catia_*` release tuple: the typed fields are
+    // the contract going forward, and removing an attribute would be a separate
+    // decision from adding them.
+    let primary = crate::dialect::classify(scan);
     SourceMeta {
-        format: "catia".to_string(),
+        declared: primary.declared,
+        dialect: primary.dialect,
+        format: crate::dialect::FORMAT.to_string(),
         attributes,
     }
 }
@@ -554,6 +561,7 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -674,6 +682,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     ));
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,

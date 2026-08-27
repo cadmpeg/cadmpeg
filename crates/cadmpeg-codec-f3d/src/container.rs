@@ -15,12 +15,14 @@ use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
 use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
 
+use crate::dialect::{F3dDialect, FORMAT};
 use crate::manifest;
 
 /// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
@@ -216,6 +218,13 @@ pub struct ContainerScan<'a> {
     pub breps: Vec<BrepFacts>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
     pub kind: F3dContainerKind,
+    /// Primary-layer dialect of this archive, classified from the same
+    /// discriminants that chose [`Self::kind`].
+    ///
+    /// Exactly one entry, `format == "f3d"`. The embedded ACIS layer of the
+    /// BREP streams is a separate match owned by `cadmpeg-asm` and is not
+    /// declared here.
+    pub dialect: DialectMatch,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Entry indices per native scope key, in entry order.
@@ -432,23 +441,32 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         inflated_entries.insert(name, view);
     }
 
-    let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
+    // The parse strategy and the dialect row are chosen together, from the same
+    // discriminants, before anything semantic is read. Classifying here is what
+    // keeps the report from re-deriving an identity the parse already settled.
+    let root_document_members = root_f3d_members(&inflated_entries);
+    let (kind, dialect) = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
+        let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
         let design_asset_folder = manifest::resolve_design_folder(
             &top_level_manifest,
             inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
         )?;
-        F3dContainerKind::Document {
-            design_asset_folder,
-        }
+        (
+            F3dContainerKind::Document {
+                design_asset_folder,
+            },
+            matched,
+        )
     } else if inflated_entries.contains_key("Manifest.json")
         && inflated_entries.contains_key("DesignDescription.json")
-        && inflated_entries
-            .keys()
-            .any(|name| !name.contains('/') && name.to_ascii_lowercase().ends_with(".f3d"))
+        && !root_document_members.is_empty()
     {
-        F3dContainerKind::MultiDocument
+        (
+            F3dContainerKind::MultiDocument,
+            F3dDialect::classify_f3z(&root_document_members),
+        )
     } else {
         return Err(CodecError::Malformed(
             "Fusion ZIP has neither a top-level Manifest.dat nor the F3Z manifest set".into(),
@@ -468,6 +486,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         entries,
         breps,
         kind,
+        dialect,
         inflated_entries,
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
@@ -517,12 +536,29 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
             .to_string(),
     );
 
+    let dialects = vec![scan.dialect.clone()];
+    debug_assert_primary_layer(&dialects, FORMAT);
     ContainerSummary {
-        format: "f3d".to_string(),
+        dialects,
+        format: FORMAT.to_string(),
         container_kind: "zip".to_string(),
         entries: scan.entries.clone(),
         notes,
     }
+}
+
+/// Root-level `*.f3d` member names, sorted by archive path.
+///
+/// The third clause of the F3Z discriminant: a member whose name carries no `/`
+/// and whose extension is `f3d`, case-insensitively. Each name is returned as
+/// the archive spells it, and the order is the entry map's, which is sorted
+/// rather than the archive's own sequence.
+fn root_f3d_members<'a>(entries: &'a BTreeMap<String, View<'_>>) -> Vec<&'a str> {
+    entries
+        .keys()
+        .map(String::as_str)
+        .filter(|name| !name.contains('/') && name.to_ascii_lowercase().ends_with(".f3d"))
+        .collect()
 }
 
 /// Iterate over every BREP whose parsed header sets the history-partition bit.

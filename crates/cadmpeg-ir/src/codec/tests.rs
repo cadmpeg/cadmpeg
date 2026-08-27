@@ -4,6 +4,8 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::{LossKind, LossNote, LossTaxonomy, TransferLedger};
@@ -18,10 +20,10 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube();
     let mut encoded = Vec::new();
     CadirEncoder
-        .plan(crate::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(
+            crate::codec::EncodeInput::new(&ir, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let mut canonical = ir.to_canonical_json().unwrap();
@@ -34,10 +36,10 @@ fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum();
     let validation_counts = validate_neutral(&ir, Vec::new()).entity_counts;
     let plan = CadirEncoder
-        .plan(crate::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(
+            crate::codec::EncodeInput::new(&ir, None),
+            TargetRequest::Inherit,
+        )
         .expect("plan CADIR export");
 
     assert_eq!(plan.report().census.counts, validation_counts);
@@ -47,6 +49,7 @@ fn decode_result(ir: CadIr) -> DecodeResult {
     DecodeResult::new(
         ir,
         DecodeReport {
+            dialects: Vec::new(),
             format: "test".into(),
             container_only: false,
             geometry_transferred: true,
@@ -196,4 +199,164 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
             .count(),
         1
     );
+}
+
+/// The primary layer needs no marker field: exactly one entry names the
+/// report's own format, and `DecodeResult::new` is the construction path that
+/// says so.
+#[test]
+fn a_decode_result_accepts_dialects_with_one_primary_layer() {
+    let mut ir = unit_cube();
+    ir.source = None;
+    let mut report = DecodeReport {
+        dialects: vec![
+            dialect_layer("test", "test:only"),
+            dialect_layer("acis", "acis:save-format-217"),
+        ],
+        format: "test".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+    let result = DecodeResult::new(ir.clone(), report.clone(), SourceFidelity::default());
+
+    assert_eq!(result.report().dialects.len(), 2);
+
+    // An empty list is the staged state and stays admissible.
+    report.dialects.clear();
+    let staged = DecodeResult::new(ir, report, SourceFidelity::default());
+    assert!(staged.report().dialects.is_empty());
+}
+
+/// The gate is a `debug_assert`, which compiles out under `--release`. Without
+/// this attribute a release-profile test run would report a spurious failure:
+/// nothing panics, so `#[should_panic]` is unsatisfied.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "must contain exactly one entry naming it")]
+fn a_decode_result_refuses_dialects_with_no_primary_layer() {
+    let report = DecodeReport {
+        dialects: vec![dialect_layer("acis", "acis:save-format-217")],
+        format: "test".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+
+    DecodeResult::new(unit_cube(), report, SourceFidelity::default());
+}
+
+/// A backend whose `inspect_impl` returns whatever dialect list the test hands
+/// it, so the wrapper's gate is what the assertion is about.
+struct InspectDialectsCodec(Vec<DialectMatch>);
+
+impl CodecBackend for InspectDialectsCodec {
+    fn id(&self) -> &'static str {
+        "inspect-dialects"
+    }
+
+    fn detect(&self, _prefix: &[u8]) -> Confidence {
+        Confidence::No
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        Ok(ContainerSummary {
+            format: "test".into(),
+            container_kind: "flat".into(),
+            entries: Vec::new(),
+            notes: Vec::new(),
+            dialects: self.0.clone(),
+        })
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<DecodeResult, CodecError> {
+        panic!("the inspect gate tests do not decode")
+    }
+}
+
+fn inspect_dialects(dialects: Vec<DialectMatch>) -> Result<ContainerSummary, CodecError> {
+    InspectDialectsCodec(dialects).inspect(
+        &mut Cursor::new(vec![1u8, 2, 3, 4]),
+        &cadmpeg_core::decode::InspectOptions::default(),
+    )
+}
+
+/// `Codec::inspect` is the one wrapper every backend's summary passes through,
+/// so it is where the primary-layer invariant is checked.
+#[test]
+fn inspect_accepts_a_summary_with_one_primary_layer() {
+    let staged = inspect_dialects(Vec::new()).unwrap();
+    assert!(staged.dialects.is_empty());
+
+    let classified = inspect_dialects(vec![
+        dialect_layer("test", "test:only"),
+        dialect_layer("acis", "acis:save-format-217"),
+    ])
+    .unwrap();
+    assert_eq!(classified.dialects.len(), 2);
+}
+
+/// See `a_decode_result_refuses_dialects_with_no_primary_layer` for why this is
+/// gated on `debug_assertions`.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "must contain exactly one entry naming it")]
+fn inspect_refuses_a_summary_with_no_primary_layer() {
+    let _ = inspect_dialects(vec![dialect_layer("acis", "acis:save-format-217")]);
+}
+
+fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
+    DialectMatch {
+        format: format.into(),
+        dialect: Some(DialectId::pinned(id)),
+        declared: BTreeMap::new(),
+        admission: Admission::Admitted,
+    }
+}
+
+/// An explicit target is refused by `plan` itself, with the catalog in the
+/// message.
+///
+/// The neutral encoder has no catalog at all, so every explicit id is outside
+/// it: CADIR is the neutral document, and its version is data about cadmpeg,
+/// never a dialect. A `plan` that dropped the guard would answer a dialect
+/// request by writing a document that has none.
+#[test]
+fn plan_refuses_an_explicit_target_outside_the_catalog() {
+    let ir = crate::CadIr::empty(crate::units::Units::default());
+    let error = Encoder::plan(
+        &CadirEncoder,
+        crate::codec::EncodeInput::new(&ir, None),
+        crate::codec::TargetRequest::Explicit("cadir:nonesuch"),
+    )
+    .err()
+    .expect("an id outside the catalog is refused");
+
+    let cadmpeg_core::CodecError::UnsupportedTarget {
+        format,
+        requested,
+        available,
+        ..
+    } = &error
+    else {
+        panic!("expected a target refusal, got {error}");
+    };
+    assert_eq!(format, "cadir");
+    assert_eq!(requested.as_deref(), Some("cadir:nonesuch"));
+    assert_eq!(available, "none");
+    assert!(Encoder::targets(&CadirEncoder).is_empty());
 }

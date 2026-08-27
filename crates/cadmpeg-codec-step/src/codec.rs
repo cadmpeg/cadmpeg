@@ -3,13 +3,16 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    find_target, unsupported_target, CodecBackend, Confidence, DecodeOptions, DecodeResult,
+    EncodeInput, Encoder, ExportPlan, Inherited, TargetDescriptor, TargetRequest,
 };
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{CadIr, FidelityResolution};
 
 use crate::archive;
+use crate::dialect::{refuse_alternate_encoding, StepDialect};
 use crate::export::write_step;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::parse;
@@ -22,22 +25,199 @@ pub struct StepCodec {
     pub options: StepWriteOptions,
 }
 
+/// The schemas this writer can put in `FILE_SCHEMA`, one per [`StepSchema`]
+/// variant. The XML and HDF5 rows of the registry are read-side identities
+/// with no writer.
+const STEP_TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: "step:ap203-e1",
+        label: "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
+        aliases: &["ap203e1"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap203-e2",
+        label: "STEP AP203 edition 2 modular long form",
+        aliases: &["ap203e2"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap214",
+        label: "STEP AP214 AUTOMOTIVE_DESIGN",
+        aliases: &["ap214"],
+        default: true,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e1",
+        label: "STEP AP242 edition 1 modular long form",
+        aliases: &["ap242e1"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e2",
+        label: "STEP AP242 edition 2 modular long form",
+        aliases: &["ap242e2"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e3",
+        label: "STEP AP242 edition 3 modular long form",
+        aliases: &["ap242e3"],
+        default: false,
+    },
+];
+
+/// The schema a catalog id or alias names, or `None` when the id is not a row
+/// of [`STEP_TARGETS`].
+///
+/// Total over the catalog: `find_target` resolves an alias to its canonical
+/// `id`, and every canonical id is some [`StepSchema`]'s `target()`. A `None`
+/// from the second step is catalog/enum drift, which
+/// `tests::the_catalog_is_the_schemas_the_writer_emits` fails on.
+fn catalog_schema(id: &str) -> Option<StepSchema> {
+    let target = find_target(STEP_TARGETS, id)?;
+    StepSchema::ALL
+        .into_iter()
+        .find(|schema| schema.target() == target.id)
+}
+
+/// What resolving a [`TargetRequest`] against the source decided (design §8.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Resolution {
+    /// The schema to declare in `FILE_SCHEMA`.
+    schema: StepSchema,
+    /// Why the source's own dialect is not what gets written, when it is not.
+    /// `None` where the write keeps the source's dialect, and `None` where
+    /// there is no STEP source at all: nothing was preserved, so nothing was
+    /// lost.
+    declined: Option<String>,
+}
+
+impl StepCodec {
+    /// The design §8.2 resolution: which schema this export writes.
+    ///
+    /// The encoder's own `options.schema` is not consulted. Which schema an
+    /// export declares is the request's answer, resolved against the source;
+    /// `options` says how a schema is written — header metadata and loss
+    /// policy — never which one.
+    fn resolve(ir: &CadIr, request: TargetRequest<'_>) -> Result<Resolution, CodecError> {
+        let id = match request {
+            TargetRequest::Explicit(id) => id,
+            TargetRequest::Inherit => {
+                return match cadmpeg_ir::codec::resolve_inherit(
+                    ir,
+                    crate::dialect::FORMAT,
+                    STEP_TARGETS,
+                )? {
+                    // Nothing to inherit: no source, or one of another format.
+                    // The catalog default stands in; no existing file's
+                    // identity is at stake.
+                    Inherited::Fallback(id) => Ok(Resolution {
+                        schema: catalog_schema(id)
+                            .expect("the STEP catalog default is a synthesizable schema"),
+                        declined: None,
+                    }),
+                    Inherited::Source(dialect) => catalog_schema(dialect.as_str())
+                        .map(|schema| Resolution {
+                            schema,
+                            declined: None,
+                        })
+                        .ok_or_else(|| {
+                            unsupported_target(
+                                crate::dialect::FORMAT,
+                                dialect.as_str(),
+                                "the semantic writer cannot synthesize it, and writing another \
+                                 schema would change what the file declares; name a target to \
+                                 choose one",
+                                STEP_TARGETS,
+                            )
+                        }),
+                };
+            }
+        };
+        let schema = catalog_schema(id).ok_or_else(|| {
+            unsupported_target(
+                crate::dialect::FORMAT,
+                id,
+                "not a schema this encoder can synthesize",
+                STEP_TARGETS,
+            )
+        })?;
+        let target = schema.target();
+        let declined = ir
+            .source
+            .as_ref()
+            .filter(|source| source.format == crate::dialect::FORMAT)
+            .and_then(|source| source.dialect.as_ref())
+            .filter(|dialect| dialect.as_str() != target)
+            .map(|dialect| {
+                format!(
+                    "source is {dialect}, target is {target}; the schema the source declared is \
+                     not what this export writes"
+                )
+            });
+        Ok(Resolution { schema, declined })
+    }
+}
+
 impl Encoder for StepCodec {
     fn id(&self) -> &'static str {
         "step"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        STEP_TARGETS
+    }
+
+    /// Resolve the request against the source, then synthesize the schema it
+    /// names.
+    ///
+    /// `Explicit(id)` refuses an id outside the synthesis catalog and otherwise
+    /// writes that schema. The replay law's compare has no branch to gate here:
+    /// this codec has no retained-image path, so every export is synthesis and
+    /// `id == source.dialect` only means the writer reproduces the declaration
+    /// the source already carried.
+    ///
+    /// `Inherit` asks for preservation. The nearest this writer can come is to
+    /// synthesize the source's own schema, which it does whenever the source's
+    /// dialect is one of the six catalog rows. Where it is not — `step:ap242`,
+    /// `step:unknown` — it refuses, naming the source dialect and the catalog.
+    /// There is no fall-through to the catalog default: a same-format
+    /// conversion never silently changes what the file is, and for an
+    /// edition-unspecified source that change is concrete, because every schema
+    /// this writer emits stamps object-identifier arcs the source never
+    /// declared. An explicit target is the escape.
+    ///
+    /// A STEP source that records no dialect is refused too: there is nothing
+    /// to preserve, and choosing a schema for it would be choosing an identity
+    /// it never declared.
+    ///
+    /// The catalog default supplies the target only when there is nothing to
+    /// inherit: the document has no source, or a source of another format. That
+    /// is the cross-format path, where the application layer would have built
+    /// `Explicit(catalog default)` itself. `self.options.schema` supplies
+    /// nothing: it is overwritten on every path.
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        let Resolution { schema, declined } = Self::resolve(input.ir, request)?;
+        let options = StepWriteOptions {
+            schema,
+            ..self.options.clone()
+        };
         let mut bytes = Vec::new();
-        let mut report =
-            write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
+        let mut report = write_step(input.ir, &mut bytes, &options).map_err(CodecError::from)?;
         // `write_step` takes no fidelity sidecar, so the report it returns
         // states the only resolution it can see. Whether the caller supplied
-        // one is known here, and only here.
-        report.fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
+        // one, and whether the source's own schema survived, are known here and
+        // only here. A write that changes the declared schema charges the
+        // fidelity, naming both dialects.
+        report.fidelity = match declined {
+            Some(reason) => FidelityResolution::Degraded { reason },
+            None if input.fidelity.is_some() => FidelityResolution::NotConsumed,
+            None => FidelityResolution::NotProvided,
         };
         Ok(ExportPlan::buffered(report, bytes))
     }
@@ -207,7 +387,10 @@ impl CodecBackend for StepCodec {
             .unwrap_or("edition unspecified");
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
+        let dialects = vec![StepDialect::classify(&exchange)];
+        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         Ok(ContainerSummary {
+            dialects,
             format: "step".into(),
             container_kind: "iso-10303-21-clear-text".into(),
             entries,
@@ -286,7 +469,7 @@ fn inspect_zip(
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
     let (archive, root_view) = archive::open_root(ctx, root)?;
-    let root_summary = StepCodec::default().inspect_impl(ctx, root_view)?;
+    let mut root_summary = StepCodec::default().inspect_impl(ctx, root_view)?;
     let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
     let entry_count = archive.entries().len();
     let root_entry = archive
@@ -312,9 +495,15 @@ fn inspect_zip(
         format!("root {}", archive::ROOT_NAME),
         format!("archive entries={entry_count}; root data offset={root_data_offset}"),
     ];
-    notes.extend(root_summary.notes);
+    notes.extend(std::mem::take(&mut root_summary.notes));
     notes.extend(resource_notes);
+    // ZIP packaging is a container fact, not an identity axis: the
+    // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
+    // document, so the root's own match is this summary's match.
+    let dialects = std::mem::take(&mut root_summary.dialects);
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(ContainerSummary {
+        dialects,
         format: "step".into(),
         container_kind: "iso-10303-21-zip".into(),
         entries,
@@ -364,37 +553,7 @@ fn decode_zip(
     Ok(result)
 }
 
-fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    // CE-03/CE-04: Part 28 marker detection is not UOS conformance or schema
-    // mapping. The caller owns the exact binding, governing EXPRESS schema,
-    // derived XML Schema, identity/reference checks, and validation result;
-    // this codec has no Part 28 adapter and builds no partial graph.
-    // CE-05: HDF5 signature detection is not HDF5 validation or Part 26
-    // mapping. The caller owns the mapping edition, governing EXPRESS schema,
-    // HDF5 and Part 26 validation, resource-local row/reference mapping, and
-    // malformed-input result; this codec builds no partial graph.
-    // CE-06: Part 26 and Part 21 resource graphs have no universal join. The caller
-    // owns the exact resource identities, row-to-occurrence map, schema/unit/context
-    // agreement, conflict policy, and retention of both source graphs.
-    if is_part26_hdf5(bytes) {
-        return Err(CodecError::NotImplemented(
-            "STEP Part 26 binary/HDF5 encoding".into(),
-        ));
-    }
-    if is_part28_xml(bytes) {
-        return Err(CodecError::NotImplemented(
-            "STEP Part 28 XML encoding".into(),
-        ));
-    }
-    if is_ap242_bo_model_xml(bytes) {
-        return Err(CodecError::NotImplemented(
-            "AP242 BO-Model XML sidecar".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn is_part26_hdf5(bytes: &[u8]) -> bool {
+pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {
     const SIGNATURE: &[u8] = b"\x89HDF\r\n\x1a\n";
     if bytes.starts_with(SIGNATURE) {
         return true;
@@ -413,7 +572,7 @@ fn is_part26_hdf5(bytes: &[u8]) -> bool {
     false
 }
 
-fn is_part28_xml(bytes: &[u8]) -> bool {
+pub(crate) fn is_part28_xml(bytes: &[u8]) -> bool {
     let bytes = &bytes[..bytes.len().min(4096)];
     let Some((name, attributes)) = xml_root_start_tag(bytes) else {
         return false;
@@ -584,7 +743,7 @@ fn xml_attribute_value(
     None
 }
 
-fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
+pub(crate) fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
     let bytes = &bytes[..bytes.len().min(4096)];
     let Some((name, attributes)) = xml_root_start_tag(bytes) else {
         return false;

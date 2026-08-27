@@ -12,7 +12,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use super::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
@@ -84,17 +84,21 @@ const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
 
 /// The archive [`RhinoEncoder`] produces for one target, or the refusal it
 /// reports.
+///
+/// The request is [`TargetRequest::Explicit`], which is what the golden name
+/// `<fixture>.v5.bin` states: this fixture written at archive 50, whatever the
+/// fixture's own archive word is. The `Inherit` path resolves against the source
+/// instead and so cannot be pinned per target; it is covered by the unit tests
+/// in `writer/tests/targets.rs`.
 fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<Vec<u8>, String>> {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
         .ok()?;
     let mut encoded = Vec::new();
     let written = Encoder::plan(
-        &RhinoEncoder::new(version),
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        &RhinoEncoder,
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Explicit(version.target()),
     )
     .and_then(|plan| plan.write_to(&mut encoded));
     Some(match written {

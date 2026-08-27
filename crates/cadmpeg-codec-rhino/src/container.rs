@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::DecodeReport;
@@ -14,6 +15,7 @@ use crate::chunks::{
     parse_eof, parse_header, verify_checksum, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
+use crate::dialect::RhinoDialect;
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
 use crate::objects::{
@@ -1113,15 +1115,28 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             .iter()
             .map(|diagnostic| diagnostic.message.clone()),
     );
+    let dialects = vec![dialect_match(scan)];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     ContainerSummary {
-        format: "rhino".to_string(),
+        dialects,
+        format: crate::dialect::FORMAT.to_string(),
         container_kind: "3dm-chunks".to_string(),
         entries,
         notes,
     }
 }
 
+/// Classifies a scanned archive.
+///
+/// Every report this module builds from a [`Scan`] goes through here, so the
+/// container summary, the container-only report, and the source metadata all
+/// carry the same match.
+fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
+    RhinoDialect::classify(scan.archive, scan.metadata.properties.writer_version)
+}
+
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {
+    let primary = dialect_match(scan);
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
@@ -1139,7 +1154,9 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
         scan.definitions.definitions.len().to_string(),
     );
     SourceMeta {
-        format: "rhino".to_string(),
+        declared: primary.declared,
+        dialect: primary.dialect,
+        format: crate::dialect::FORMAT.to_string(),
         attributes,
     }
 }
@@ -1171,10 +1188,13 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
                 tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
             })
     }));
+    let dialects = vec![dialect_match(scan)];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {
-            format: "rhino".to_string(),
+            dialects,
+            format: crate::dialect::FORMAT.to_string(),
             container_only: true,
             geometry_transferred: false,
             coverage: std::collections::BTreeMap::new(),
@@ -1187,11 +1207,15 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
 }
 
 /// Return whether a version is inspectable only from its header.
+///
+/// Two disjoint reasons put a version here. Archive 1 has no table sequence and
+/// no mandatory end-of-file chunk, so the chunked scan does not apply to it; its
+/// own flat legacy grammar runs at decode. Archive 5 and the totality row have
+/// no grammar in this codec at all, which is
+/// [`crate::dialect::refuses_decode`] — the predicate that also decides the
+/// [`cadmpeg_core::dialect::Admission`] the report carries.
 pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
-    matches!(
-        archive,
-        ArchiveVersion::V1 | ArchiveVersion::LegacyV5 | ArchiveVersion::Other(_)
-    )
+    crate::dialect::refuses_decode(archive) || matches!(archive, ArchiveVersion::V1)
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
@@ -1199,8 +1223,13 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
     if header_only(header.archive_version) {
+        // The properties table is not read on this path, so no openNURBS
+        // writer-version stamp is declared.
+        let dialects = vec![RhinoDialect::classify(header.archive_version, None)];
+        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         return Ok(ContainerSummary {
-            format: "rhino".to_string(),
+            dialects,
+            format: crate::dialect::FORMAT.to_string(),
             container_kind: "3dm-chunks".to_string(),
             entries: Vec::new(),
             notes: vec![format!(
@@ -1223,7 +1252,10 @@ pub(crate) fn decode(
     if header.archive_version == ArchiveVersion::V1 {
         return crate::legacy::decode_v1(data);
     }
-    if header_only(header.archive_version) {
+    // The single predicate: this is the same function that makes the reported
+    // admission `Refused`, so a refused decode and a report claiming admission
+    // are not expressible.
+    if crate::dialect::refuses_decode(header.archive_version) {
         return Err(CodecError::NotImplemented(format!(
             "Rhino archive version {} decode is not implemented",
             header.archive_version.value()

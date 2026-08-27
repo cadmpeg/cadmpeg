@@ -355,7 +355,13 @@ fn decode_binds_entity53_color_to_face() {
     ));
     body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
     body.extend(owned_triangle(0, 700, 0.0));
-    let mut cur = Cursor::new(sldprt_with_body(&body));
+    // The fixture declares a `swVersion` so the exact loss count below stays a
+    // statement about appearance binding. Without one the part classifies as
+    // `sldprt:unknown` and picks up `source.dialect-unverified`, which has
+    // nothing to do with what this test asserts.
+    let mut fixture = sldprt_with_body(&body);
+    add_solidworks_version(&mut fixture, 13100);
+    let mut cur = Cursor::new(fixture);
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();

@@ -68,12 +68,14 @@ serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+# The dialect registries are embedded with `include_str!` and parsed at run
+# time by `cadmpeg dialects`, so the tables live in one place.
+toml.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
 crc32fast.workspace = true
 predicates.workspace = true
-toml.workspace = true
 zip.workspace = true
 # The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps
 # those fixtures out of the normal library build.

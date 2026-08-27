@@ -82,6 +82,10 @@
         "srf_array_count": "5",
         "version_line": "#UGC:2 P c"
       },
+      "declared": {
+        "version_line": "#UGC:2 P c"
+      },
+      "dialect": "creo:unknown",
       "format": "creo"
     },
     "tolerances": {
@@ -457,9 +461,32 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": [
+      {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "creo:unknown"
+          }
+        },
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    ],
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",

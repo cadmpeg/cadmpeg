@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
@@ -352,10 +354,10 @@ fn f3z_archive_merges_identity_occurrences() {
         .all(|id| id.starts_with(&prefix)));
     let mut regenerated = Vec::new();
     let report = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut regenerated))
         .expect("merged F3Z regenerates instead of replaying a member");
     assert!(!regenerated.is_empty());
@@ -464,10 +466,10 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .is_some());
     let mut replayed = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut replayed))
         .expect("unmerged F3Z root member remains replayable");
     assert_eq!(replayed, root);
@@ -555,4 +557,95 @@ fn f3z_prefix_detects_as_f3d() {
         F3dCodec.detect(&archive[..512.min(archive.len())]),
         Confidence::High
     );
+}
+
+/// The outer archive's row survives the inner member's decode.
+///
+/// [`crate::decode::decode`] runs on the root `.f3d` member and classifies that
+/// member. The file the codec was handed is the `.f3z`, so both the report and
+/// `SourceMeta` must name the F3Z row, at inspect and at decode.
+#[test]
+fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("comp.f3d", component.as_slice()),
+        ],
+    );
+
+    let summary = F3dCodec
+        .inspect(
+            &mut Cursor::new(archive.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    let inspected = match summary.dialects.as_slice() {
+        [only] => only.clone(),
+        other => panic!("inspect must report exactly one layer, got {}", other.len()),
+    };
+    assert_eq!(inspected.format, "f3d");
+    assert_eq!(
+        inspected
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("f3d:f3z-multi-document")
+    );
+    assert_eq!(
+        inspected.declared["root_document_members"], "comp.f3d,root.f3d",
+        "each root-level member is recorded as the archive spells it, sorted by path"
+    );
+    assert_eq!(
+        inspected.admission,
+        cadmpeg_core::dialect::Admission::Admitted
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.report().dialects, vec![inspected.clone()]);
+    let source = decoded.ir().source.as_ref().unwrap();
+    assert_eq!(source.dialect, inspected.dialect);
+    assert_eq!(source.declared, inspected.declared);
+}
+
+/// A single-document archive names its own row, not the F3Z one.
+#[test]
+fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
+    let document = f3d_with_smbh(&synthetic_geometry_smbh());
+
+    let summary = F3dCodec
+        .inspect(
+            &mut Cursor::new(document.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    let inspected = match summary.dialects.as_slice() {
+        [only] => only.clone(),
+        other => panic!("inspect must report exactly one layer, got {}", other.len()),
+    };
+    assert_eq!(inspected.format, "f3d");
+    assert_eq!(
+        inspected
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("f3d:manifest-3-2-0-0")
+    );
+    assert_eq!(inspected.declared["top_level_manifest_version"], "3-2-0-0");
+    assert_eq!(
+        inspected.admission,
+        cadmpeg_core::dialect::Admission::Admitted
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(document), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.report().dialects, vec![inspected.clone()]);
+    let source = decoded.ir().source.as_ref().unwrap();
+    assert_eq!(source.dialect, inspected.dialect);
+    assert_eq!(source.declared, inspected.declared);
 }

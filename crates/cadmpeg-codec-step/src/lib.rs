@@ -50,6 +50,7 @@
 
 mod archive;
 mod codec;
+mod dialect;
 mod error;
 mod export;
 mod geometry;

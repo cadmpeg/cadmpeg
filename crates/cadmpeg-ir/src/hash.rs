@@ -82,7 +82,7 @@ pub fn document_local_sha256_with_charge<E>(
         ir_version: ir.ir_version(),
         source: ir.source.as_ref().map(|source| {
             let mut source = source.clone();
-            source.attributes.remove("document_local_sha256");
+            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
         }),
         units: &ir.units,
@@ -268,8 +268,11 @@ fn encode_hex(digest: &[u8]) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use std::collections::BTreeMap;
+
     use super::{
-        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge, sha256_hex,
+        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge,
+        sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
     };
     use crate::document::CadIr;
     use crate::examples::unit_cube;
@@ -478,9 +481,14 @@ mod tests {
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
         ir.source = Some(crate::document::SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "pin".into(),
             attributes: [
-                ("document_local_sha256".to_owned(), "stale".to_owned()),
+                (
+                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    "stale".to_owned(),
+                ),
                 ("file_size".to_owned(), "4096".to_owned()),
             ]
             .into_iter()
@@ -491,12 +499,31 @@ mod tests {
 
     /// Pins normalization over source metadata: the recorded baseline attribute
     /// is dropped before hashing and every other attribute is kept.
+    ///
+    /// The pin covers the canonical JSON of the normalized document, in which
+    /// the source block reads
+    ///
+    /// ```text
+    ///   "source": {
+    ///     "format": "pin",
+    ///     "attributes": {
+    ///       "file_size": "4096"
+    ///     },
+    ///     "dialect": null,
+    ///     "declared": {}
+    ///   },
+    /// ```
+    ///
+    /// `dialect` and `declared` are the two members the wire-format flip made
+    /// unconditional. This is the only pin the flip moves: the other pinned
+    /// documents carry no source metadata, so their normalized form still
+    /// elides the whole `source` member.
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "3750864814cc4d83c355df4e8c6942c3b7c682dc15c193b5c836540ad8c07d64"
+            "4e3230b5e568283a822d086ac724435bc2d9817b127bd7d391b4168a4675e2a7"
         );
     }
 
@@ -520,7 +547,7 @@ mod tests {
         normalized.finalize();
         normalized.source = ir.source.as_ref().map(|source| {
             let mut source = source.clone();
-            source.attributes.remove("document_local_sha256");
+            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
         });
         let unknowns = ir
@@ -540,9 +567,14 @@ mod tests {
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
         ir.source = Some(crate::SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "synthetic".into(),
             attributes: [
-                ("document_local_sha256".to_owned(), "stale".to_owned()),
+                (
+                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    "stale".to_owned(),
+                ),
                 ("active_brep".to_owned(), "body#0".to_owned()),
             ]
             .into_iter()
@@ -604,7 +636,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .attributes
-            .insert("document_local_sha256".into(), hash.clone());
+            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), hash.clone());
         assert_eq!(
             crate::hash::document_local_sha256(&recorded, "synthetic", source_image),
             hash

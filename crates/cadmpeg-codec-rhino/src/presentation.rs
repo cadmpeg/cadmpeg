@@ -1867,6 +1867,7 @@ fn parse_material(
     writer_version: Option<i64>,
     source_offset: usize,
     physically_based: Option<PhysicallyBasedMaterialRecord>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<MaterialRecord, FramingError> {
     if matches!(archive, ArchiveVersion::V2 | ArchiveVersion::V3) {
         return parse_v2_v3_material(data, range, source_offset, physically_based);
@@ -1921,11 +1922,21 @@ fn parse_material(
     let specular = reader.array()?;
     let reflection = reader.array()?;
     let mut transparent = reader.array()?;
-    if !modern
-        && writer_version.is_some_and(|version| version < 200_912_010)
-        && transparent[..3] == [128, 128, 128]
-    {
-        transparent = diffuse;
+    // A pre-2009 writer stores a bogus [128, 128, 128] transparent color that
+    // the diffuse color replaces. Without a stamp the stored color stands, so
+    // the emitted color rests on the missing stamp - but only where the two
+    // readings disagree. Where diffuse already equals the stored color, both
+    // readings give the same IR and nothing was substituted.
+    if !modern && transparent[..3] == [128, 128, 128] {
+        if writer_version.is_some_and(|version| version < 200_912_010) {
+            transparent = diffuse;
+        } else if writer_version.is_none() && diffuse != transparent {
+            losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format!(
+                "legacy material at offset {source_offset} kept its stored transparent color \
+                 instead of the pre-2009 diffuse substitution because {}",
+                crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
+            )));
+        }
     }
     let index_of_refraction = read_finite(&mut reader, "index of refraction")?;
     let reflectivity = read_finite(&mut reader, "reflectivity")?;
@@ -3682,6 +3693,7 @@ fn parse_text_style(
     writer_version: Option<i64>,
     apple_runtime: bool,
     source_offset: usize,
+    losses: &mut Vec<LossNote>,
 ) -> Result<TextStyleRecord, FramingError> {
     if data.get(range.start).copied() != Some(0) {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
@@ -3700,12 +3712,20 @@ fn parse_text_style(
         }
         let face_end = face_units.iter().position(|unit| *unit == 0).unwrap_or(64);
         let windows_logfont_name = String::from_utf16_lossy(&face_units[..face_end]);
-        let postscript_name = if !description.is_empty()
-            && !description.eq_ignore_ascii_case("Default")
+        let named_description =
+            !description.is_empty() && !description.eq_ignore_ascii_case("Default");
+        let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
             description.clone()
         } else {
+            if named_description && !apple_runtime && writer_version.is_none() {
+                losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format!(
+                    "legacy text style at offset {source_offset} dropped the PostScript font \
+                     name \"{description}\" because {}",
+                    crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
+                )));
+            }
             String::new()
         };
         let mut font = FontRecord {
@@ -3896,6 +3916,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                         scan.metadata.properties.writer_version,
                         record.range.start,
                         physically_based,
+                        &mut losses,
                     ) {
                         if let Some(instance_id) = legacy_rdk_instance_id {
                             material.plugin_uuid = UNIVERSAL_RENDER_ENGINE.to_string();
@@ -4090,6 +4111,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                                 |application| application.name.to_ascii_lowercase().contains("mac"),
                             ),
                             record.range.start,
+                            &mut losses,
                         )
                     {
                         text_styles.push(value);
@@ -4978,8 +5000,46 @@ mod tests {
         .is_err());
     }
 
+    /// The PostScript name only comes from the description when the stamp says
+    /// the writer is newer than 2018-02-23. An unstamped archive drops it.
     #[test]
-    fn legacy_text_style_preserves_font_identity_and_characteristics() {
+    fn unstamped_legacy_text_style_charges_the_font_name_dialect_loss() {
+        let bytes = legacy_text_style_bytes();
+        let mut losses = Vec::new();
+        let value = parse_text_style(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            false,
+            42,
+            &mut losses,
+        )
+        .expect("legacy text style without a writer stamp");
+        assert_eq!(value.font.postscript_name, "");
+        assert_eq!(losses.len(), 1, "{losses:?}");
+        assert_eq!(
+            losses[0].code.local_code(),
+            RhinoLossCode::SourceWriterStampUnverified.code()
+        );
+
+        let mut stamped_losses = Vec::new();
+        let stamped = parse_text_style(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            Some(201_802_231),
+            false,
+            42,
+            &mut stamped_losses,
+        )
+        .expect("legacy text style with a modern writer stamp");
+        assert_eq!(stamped.font.postscript_name, "Helvetica Neue");
+        assert!(stamped_losses.is_empty(), "{stamped_losses:?}");
+    }
+
+    /// One legacy text style whose description carries a real font name.
+    fn legacy_text_style_bytes() -> Vec<u8> {
         let mut bytes = vec![0x12];
         bytes.extend(7_i32.to_le_bytes());
         bytes.extend(utf16("Helvetica Neue"));
@@ -4994,6 +5054,12 @@ mod tests {
         bytes.extend(1_i32.to_le_bytes());
         bytes.extend(1.6_f64.to_le_bytes());
         bytes.extend([0x11; 16]);
+        bytes
+    }
+
+    #[test]
+    fn legacy_text_style_preserves_font_identity_and_characteristics() {
+        let bytes = legacy_text_style_bytes();
         let value = parse_text_style(
             &bytes,
             0..bytes.len(),
@@ -5001,6 +5067,7 @@ mod tests {
             Some(201_802_231),
             false,
             42,
+            &mut Vec::new(),
         )
         .expect("valid legacy text style");
         assert_eq!(value.archive_index, Some(7));
@@ -5044,8 +5111,16 @@ mod tests {
         body.extend(utf16("Arial style"));
         body.extend([0xee, 0xff]);
         let bytes = anonymous(2, &body);
-        let value = parse_text_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, None, false, 99)
-            .expect("modern text style with future suffixes");
+        let value = parse_text_style(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            false,
+            99,
+            &mut Vec::new(),
+        )
+        .expect("modern text style with future suffixes");
         assert_eq!(value.archive_index, Some(7));
         assert_eq!(value.name, "Arial style");
         assert_eq!(value.font_description, "ArialMT");
@@ -5393,14 +5468,15 @@ mod tests {
         assert_eq!(light.hotspot, -1.234_321_012_343_21e308);
     }
 
-    #[test]
-    fn legacy_material_preserves_core_appearance_and_switches() {
+    /// One legacy (outer version 2.0) material whose transparent color is the
+    /// bogus [128, 128, 128] that the pre-2009 rule replaces with `diffuse`.
+    fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
         let mut body = [[0x11; 16].as_slice(), 2_i32.to_le_bytes().as_slice()].concat();
         body.extend(utf16("steel"));
         body.extend([0x22; 16]);
         for color in [
             [1, 2, 3, 4],
-            [5, 6, 7, 8],
+            diffuse,
             [9, 10, 11, 12],
             [13, 14, 15, 16],
             [17, 18, 19, 20],
@@ -5425,6 +5501,12 @@ mod tests {
         let inner = anonymous(7, &body);
         let mut bytes = vec![0x20];
         bytes.extend(inner);
+        bytes
+    }
+
+    #[test]
+    fn legacy_material_preserves_core_appearance_and_switches() {
+        let bytes = legacy_material_bytes([5, 6, 7, 8]);
         let material = parse_material(
             &bytes,
             0..bytes.len(),
@@ -5432,6 +5514,7 @@ mod tests {
             Some(200_912_009),
             0,
             None,
+            &mut Vec::new(),
         )
         .expect("required invariant");
         assert_eq!(material.name, "steel");
@@ -5440,6 +5523,64 @@ mod tests {
         assert_eq!(material.index_of_refraction, 1.5);
         assert!(material.shareable);
         assert!(!material.disable_lighting);
+    }
+
+    /// The pre-2009 transparency substitution rests on the stamp.
+    ///
+    /// The same bytes give diffuse under an old stamp and the stored
+    /// [128, 128, 128] under none, so an unstamped archive emits a color the
+    /// archive does not vouch for - unless diffuse already equals the stored
+    /// color, where both readings agree and nothing was substituted.
+    #[test]
+    fn unstamped_legacy_material_charges_the_transparency_dialect_loss() {
+        let bytes = legacy_material_bytes([5, 6, 7, 8]);
+        let mut losses = Vec::new();
+        let material = parse_material(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            None,
+            0,
+            None,
+            &mut losses,
+        )
+        .expect("legacy material without a writer stamp");
+        assert_eq!(material.transparent, [128, 128, 128, 24]);
+        assert_eq!(losses.len(), 1, "{losses:?}");
+        assert_eq!(
+            losses[0].code.local_code(),
+            RhinoLossCode::SourceWriterStampUnverified.code()
+        );
+
+        let mut stamped_losses = Vec::new();
+        let stamped = parse_material(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            Some(200_912_010),
+            0,
+            None,
+            &mut stamped_losses,
+        )
+        .expect("legacy material with a modern writer stamp");
+        assert_eq!(stamped.transparent, [128, 128, 128, 24]);
+        assert!(stamped_losses.is_empty(), "{stamped_losses:?}");
+
+        // Both readings give the same color, so no color was substituted.
+        let agreeing = legacy_material_bytes([128, 128, 128, 24]);
+        let mut agreeing_losses = Vec::new();
+        let material = parse_material(
+            &agreeing,
+            0..agreeing.len(),
+            ArchiveVersion::V5,
+            None,
+            0,
+            None,
+            &mut agreeing_losses,
+        )
+        .expect("legacy material whose diffuse equals its transparent color");
+        assert_eq!(material.transparent, material.diffuse);
+        assert!(agreeing_losses.is_empty(), "{agreeing_losses:?}");
     }
 
     fn v2_v3_material_payload(minor: u8) -> Vec<u8> {
@@ -5491,8 +5632,16 @@ mod tests {
     fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
         for archive in [ArchiveVersion::V2, ArchiveVersion::V3] {
             let bytes = v2_v3_material_payload(1);
-            let material = parse_material(&bytes, 0..bytes.len(), archive, None, 77, None)
-                .expect("V2/V3 material payload");
+            let material = parse_material(
+                &bytes,
+                0..bytes.len(),
+                archive,
+                None,
+                77,
+                None,
+                &mut Vec::new(),
+            )
+            .expect("V2/V3 material payload");
             assert_eq!(material.archive_index, Some(7));
             assert_eq!(material.name, "old steel");
             assert_eq!(
@@ -5530,8 +5679,16 @@ mod tests {
     #[test]
     fn v2_v3_material_minor_zero_uses_source_defaults_without_fabricating_identity() {
         let bytes = v2_v3_material_payload(0);
-        let material = parse_material(&bytes, 0..bytes.len(), ArchiveVersion::V2, None, 77, None)
-            .expect("V2 minor-zero material payload");
+        let material = parse_material(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V2,
+            None,
+            77,
+            None,
+            &mut Vec::new(),
+        )
+        .expect("V2 minor-zero material payload");
         assert_eq!(material.id, "rhino:presentation:material#record-77");
         assert_eq!(material.source_uuid, None);
         assert_eq!(material.reflection, [255, 255, 255, 0]);

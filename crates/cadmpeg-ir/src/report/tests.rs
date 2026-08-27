@@ -141,3 +141,61 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
         "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"
     );
 }
+
+/// The dialect fields are part of the wire format: a report that named nothing
+/// says so with an empty list and a `null`, rather than by omitting the key.
+/// Reports written before the fields existed still read back.
+#[test]
+fn unclassified_reports_serialize_empty_dialect_keys() {
+    let decode = DecodeReport {
+        format: "rhino".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+        dialects: Vec::new(),
+    };
+    let rendered = serde_json::to_string(&decode).unwrap();
+    assert!(rendered.contains("\"dialects\":[]"), "{rendered}");
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
+        decode
+    );
+
+    // A report persisted before the field existed omits the key entirely.
+    let legacy = rendered.replace(",\"dialects\":[]", "");
+    assert!(!legacy.contains("dialects"), "{legacy}");
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&legacy).unwrap(),
+        decode
+    );
+
+    let export = ExportReport {
+        format: "rhino".into(),
+        census: EntityCensus {
+            basis: CensusBasis::TargetRecords,
+            counts: BTreeMap::new(),
+        },
+        fidelity: FidelityResolution::NotProvided,
+        write_path: WritePath::Synthesized,
+        losses: Vec::new(),
+        notes: Vec::new(),
+        target: None,
+    };
+    let rendered = serde_json::to_string(&export).unwrap();
+    assert!(rendered.contains("\"target\":null"), "{rendered}");
+    assert_eq!(
+        serde_json::from_str::<ExportReport>(&rendered).unwrap(),
+        export
+    );
+
+    // An export report persisted before the field existed omits the key.
+    let legacy = rendered.replace(",\"target\":null", "");
+    assert!(!legacy.contains("\"target\":"), "{legacy}");
+    assert_eq!(
+        serde_json::from_str::<ExportReport>(&legacy).unwrap(),
+        export
+    );
+}

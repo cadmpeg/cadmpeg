@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::DecodeResult;
@@ -19,6 +20,7 @@ use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, Unknown
 
 use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
+use crate::dialect::DialectRecovery;
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
@@ -47,6 +49,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         ContainerPurpose::Decode
     };
     let container = InventorContainer::open(ctx, root, purpose)?;
+    // One predicate, read once from the parsed declarations: it decides the
+    // admission in `primary` and the dialect-unverified loss below, and neither
+    // recomputes the other.
+    let recovery = DialectRecovery::of(&container);
+    let primary = recovery.dialect_match();
     let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
@@ -528,7 +535,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     attributes.insert("document_kind".into(), document_kind.label().into());
     metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta {
-        format: "inventor".into(),
+        declared: primary.declared.clone(),
+        dialect: primary.dialect.clone(),
+        format: crate::dialect::FORMAT.into(),
         attributes,
     });
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
@@ -752,11 +761,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .filter_map(|segment| {
             let (status, detail) = match &segment.meta {
                 SegmentMetaState::Parsed(_) => return None,
-                SegmentMetaState::Unsupported { marker, version } => (
+                SegmentMetaState::Unsupported(declared) => (
                     "unsupported",
-                    format!("marker {marker:?}, version {version}"),
+                    format!("marker {:?}, version {}", declared.marker, declared.version),
                 ),
-                SegmentMetaState::Malformed(detail) => ("malformed", detail.clone()),
+                SegmentMetaState::Malformed { detail, .. } => ("malformed", detail.clone()),
             };
             Some(SegmentMetaIssueRecord {
                 id: format!(
@@ -1400,6 +1409,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
     }
     let mut losses = Vec::new();
+    losses.extend(recovery.dialect_loss());
     if ctx.container_only() {
         losses.push(
             InventorLossCode::ContainerOnlyDecode.note("Container-only decode was requested."),
@@ -1662,10 +1672,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
+    let dialects = vec![primary];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
-            format: "inventor".into(),
+            dialects,
+            format: crate::dialect::FORMAT.into(),
             container_only: ctx.container_only(),
             geometry_transferred,
             coverage: BTreeMap::from([
