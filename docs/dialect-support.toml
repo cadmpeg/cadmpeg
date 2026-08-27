@@ -45,12 +45,14 @@
 #   is parsed, but with a strategy some other row declares. The codec charges
 #   its `source.dialect-unverified` loss on exactly these rows.
 #
-#   A score is the `docs/format-support.md` ladder score, read as the primary
-#   band's score per the transitional stamp on line 41 of that file, applied
-#   to the rows the profile's own band statement names, and then cut by the
-#   fixture gate. Where a profile names no band, or names one this codec has
-#   no fixture for, the cell is `detected` and the reason says so. No score
-#   here was invented; none was copied past the gate.
+#   A score is the `docs/format-support.md` ladder score, applied to the rows
+#   the profile's own band statement names and then cut by the fixture gate.
+#   Where a profile names no band, or names one this codec has no fixture for,
+#   the cell is `detected` and the reason says so. No score here was invented;
+#   none was copied past the gate. This file is now the source of every score
+#   `docs/format-support.md` publishes: the tables there are rendered from
+#   these rows by `scripts/render-format-support.py`, so a cell edited here
+#   moves the published headline and a cell edited there fails the checker.
 #
 # How the write cell is chosen. There are two write capabilities, and the
 # column never conflates them.

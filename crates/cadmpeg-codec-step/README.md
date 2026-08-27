@@ -5,8 +5,11 @@ AP203 editions 1–2, AP214, and AP242 editions 1–3. Schema selection uses
 [`StepSchema`] through [`StepWriteOptions`]. [`StepCodec`] implements both
 [`Codec`] decode and [`Encoder`] write. The cadmpeg CLI uses the same model.
 
-Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-for AP242 editions 1–3 and AP203 editions 1–2/AP214.
+<!-- generated: capability -->
+
+Support: depth L9, breadth 4 of >=4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
+
+<!-- /generated: capability -->
 
 ## Install
 

@@ -6,7 +6,11 @@ transfers B-rep topology, analytic and NURBS carriers, display meshes,
 appearances, selected document attributes, Keywords XML feature history, and
 ResolvedFeatures sketch-entity records.
 
-Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+<!-- generated: capability -->
+
+Support: depth none, breadth n/a ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
+
+<!-- /generated: capability -->
 
 ## Install
 
