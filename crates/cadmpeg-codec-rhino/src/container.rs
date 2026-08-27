@@ -1205,17 +1205,10 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     )
 }
 
-/// Return whether a version is inspectable only from its header.
-///
-/// Two disjoint reasons put a version here. Archive 1 has no table sequence and
-/// no mandatory end-of-file chunk, so the chunked scan does not apply to it; its
-/// own flat legacy grammar runs at decode. Archive 5 has no grammar in this
-/// codec at all, which is [`ArchiveVersion::refuses_decode`] — the predicate
-/// that also decides the [`cadmpeg_core::dialect::Admission`] the report
-/// carries. The totality row is not here: an undeclared word selects the same
-/// chunked scan words 2 through 90 use, so it is scanned in full.
+/// Return whether a version is inspectable only from its header, the complement
+/// of [`ArchiveVersion::is_chunked`].
 pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
-    archive.refuses_decode() || matches!(archive, ArchiveVersion::V1)
+    !archive.is_chunked()
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
