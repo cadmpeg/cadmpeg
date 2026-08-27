@@ -33,6 +33,8 @@ pub enum FreecadLossCode {
     AppearanceTopologyColorCountMismatch,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
 }
 
 impl FreecadLossCode {
@@ -45,6 +47,7 @@ impl FreecadLossCode {
         Self::SketchNativeConstraint,
         Self::AppearanceTopologyColorCountMismatch,
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -59,6 +62,7 @@ impl FreecadLossCode {
                 "appearance.topology-color-count-mismatch"
             }
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
         }
     }
 
@@ -70,9 +74,9 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
-            Self::AppearanceTopologyColorCountMismatch | Self::SourceDialectUnverified => {
-                Severity::Warning
-            }
+            Self::AppearanceTopologyColorCountMismatch
+            | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced => Severity::Warning,
         }
     }
 
@@ -85,7 +89,9 @@ impl FreecadLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::SourceDialectDisplaced => {
+                LossTaxonomy::SourceDialectUnverified
+            }
         }
     }
 
@@ -124,6 +130,7 @@ mod tests {
                 "sketch.native-constraint",
                 "appearance.topology-color-count-mismatch",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
             ]
         );
     }

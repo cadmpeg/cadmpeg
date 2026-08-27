@@ -114,6 +114,8 @@ pub enum SldprtLossCode {
     /// nothing must be distinguishable from one whose declaration was
     /// verified.
     SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
 }
 
 impl SldprtLossCode {
@@ -161,6 +163,7 @@ impl SldprtLossCode {
         Self::ContainerNoParasolidStream,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -209,6 +212,7 @@ impl SldprtLossCode {
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
         }
     }
 
@@ -228,7 +232,9 @@ impl SldprtLossCode {
         match self {
             Self::ContainerNoParasolidStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::SourceDialectDisplaced => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
                 LossTaxonomy::TopologyGaugeSubstituted
             }
@@ -320,6 +326,7 @@ mod tests {
                 "container.no-parasolid-stream",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
             ]
         );
     }

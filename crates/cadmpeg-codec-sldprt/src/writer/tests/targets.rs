@@ -8,7 +8,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
-use crate::SldprtCodec;
+use crate::{loss::SldprtLossCode, SldprtCodec};
 
 /// An explicit target this writer does not produce is refused by `plan` itself,
 /// with the catalog in the message.
@@ -80,11 +80,17 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     )
     .expect("explicit transcode plans");
 
-    let FidelityResolution::Degraded { reason } = plan.fidelity_resolution() else {
-        panic!("explicit transcode must be degraded");
-    };
-    assert!(reason.contains("sldprt:sw-version-12000-plus"), "{reason}");
-    assert!(reason.contains("sldprt:unknown"), "{reason}");
+    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotConsumed);
+    let displacement = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == SldprtLossCode::SourceDialectDisplaced.kind())
+        .expect("the source dialect displacement is charged");
+    assert!(displacement
+        .message
+        .contains("sldprt:sw-version-12000-plus"));
+    assert!(displacement.message.contains("sldprt:unknown"));
     assert!(plan
         .report()
         .losses

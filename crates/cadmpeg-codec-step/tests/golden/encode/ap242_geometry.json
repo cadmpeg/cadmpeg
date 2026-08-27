@@ -59,8 +59,7 @@
         }
       },
       "fidelity": {
-        "reason": "source is step:ap242, target is step:ap242-e3; the dialect the source declared is not what this export writes",
-        "status": "degraded"
+        "status": "not_provided"
       },
       "format": "step",
       "losses": [
@@ -81,6 +80,15 @@
           },
           "message": "1 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
           "severity": "info"
+        },
+        {
+          "code": {
+            "code": "target.source-dialect-displaced",
+            "kind": "source_dialect_unverified",
+            "namespace": "step"
+          },
+          "message": "source dialect step:ap242 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
+          "severity": "warning"
         }
       ],
       "notes": [],
@@ -148,8 +156,7 @@
         }
       },
       "fidelity": {
-        "reason": "source is step:ap242, target is step:ap214; the dialect the source declared is not what this export writes",
-        "status": "degraded"
+        "status": "not_provided"
       },
       "format": "step",
       "losses": [
@@ -170,6 +177,15 @@
           },
           "message": "1 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
           "severity": "info"
+        },
+        {
+          "code": {
+            "code": "target.source-dialect-displaced",
+            "kind": "source_dialect_unverified",
+            "namespace": "step"
+          },
+          "message": "source dialect step:ap242 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
+          "severity": "warning"
         }
       ],
       "notes": [],

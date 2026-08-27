@@ -319,14 +319,9 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
     assert_eq!(target_of(&plan), Some("step:ap214".to_owned()));
 }
 
-/// An explicit target that is not the source's declared schema charges the
-/// fidelity, with a reason naming both dialects.
-///
-/// The write is not "fidelity was never offered": the source declared
-/// `CONFIG_CONTROL_DESIGN` and the output declares `AUTOMOTIVE_DESIGN`, so an
-/// identity the file carried is gone and the report says which one it was.
+/// An explicit target that is not the source schema charges a displacement loss.
 #[test]
-fn a_dialect_changing_explicit_write_is_degraded_by_name() {
+fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     let decoded = source_declaring(StepSchema::Ap203Edition1.file_schema());
     let plan = StepCodec::default()
         .plan(
@@ -334,14 +329,18 @@ fn a_dialect_changing_explicit_write_is_degraded_by_name() {
             TargetRequest::Explicit("step:ap214"),
         )
         .expect("AP214 is a catalog row");
-    let cadmpeg_ir::FidelityResolution::Degraded { reason } = &plan.report().fidelity else {
-        panic!(
-            "a schema-changing write must be degraded, got {:?}",
-            plan.report().fidelity
-        );
-    };
-    assert!(reason.contains("step:ap203-e1"), "{reason}");
-    assert!(reason.contains("step:ap214"), "{reason}");
+    assert_eq!(
+        plan.report().fidelity,
+        cadmpeg_ir::FidelityResolution::NotProvided
+    );
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == crate::loss::StepLossCode::SourceDialectDisplaced.kind())
+        .expect("schema displacement is charged");
+    assert!(loss.message.contains("step:ap203-e1"));
+    assert!(loss.message.contains("step:ap214"));
 }
 
 /// An explicit target that is the source's own schema changes nothing, so it is

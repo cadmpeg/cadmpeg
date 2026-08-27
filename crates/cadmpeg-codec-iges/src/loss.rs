@@ -99,6 +99,8 @@ pub enum IgesLossCode {
     GlobalNoncanonicalFraming,
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
     /// Preserved source image required for a byte-exact write was unavailable.
     PreservedSourceUnavailable,
     /// Procedural definitions were reduced to writable solved carriers.
@@ -139,6 +141,7 @@ impl IgesLossCode {
         Self::GlobalLengthUnitUnresolved,
         Self::GlobalNoncanonicalFraming,
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
         Self::PreservedSourceUnavailable,
         Self::ProceduralReduced,
         Self::PassthroughRecordOmitted,
@@ -179,6 +182,7 @@ impl IgesLossCode {
             Self::GlobalLengthUnitUnresolved => "global.length-unit-unresolved",
             Self::GlobalNoncanonicalFraming => "global.noncanonical-framing",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::PreservedSourceUnavailable => "source.preserved-image-unavailable",
             Self::ProceduralReduced => "geometry.procedural-reduced",
             Self::PassthroughRecordOmitted => "writer.passthrough-omitted",
@@ -219,6 +223,7 @@ impl IgesLossCode {
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted => Severity::Warning,
         }
@@ -254,7 +259,9 @@ impl IgesLossCode {
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::SourceDialectDisplaced => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
@@ -317,6 +324,7 @@ mod tests {
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "writer.passthrough-omitted",

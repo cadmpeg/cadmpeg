@@ -166,6 +166,8 @@ pub enum F3dLossCode {
     SourcePreservedImageUnavailable,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
     /// An embedded kernel carrier could not be framed for dialect inspection.
@@ -248,6 +250,7 @@ impl F3dLossCode {
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
     ];
@@ -334,6 +337,7 @@ impl F3dLossCode {
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
         }
@@ -441,9 +445,9 @@ impl F3dLossCode {
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
-            Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
-                LossTaxonomy::SourceDialectUnverified
-            }
+            Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
+            | Self::KernelDialectUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
 
@@ -547,6 +551,7 @@ mod tests {
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
             ]

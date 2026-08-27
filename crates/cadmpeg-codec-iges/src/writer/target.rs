@@ -19,11 +19,11 @@ pub(super) fn plan<'a>(
         crate::dialect::FORMAT,
         crate::dialect::TARGETS,
     )? {
-        WriteRequest::Catalog { entry, declined } => {
+        WriteRequest::Catalog { entry, displaced } => {
             let version = crate::dialect::target_version(entry.id)
                 .expect("the IGES catalog row is a synthesis target");
             let target = crate::dialect::IgesDialect::fixed_ascii(version).id();
-            let replay_declined = if declined.is_none() {
+            let replay_declined = if displaced.is_none() {
                 match replay_bytes(input.ir, input.fidelity, &target)? {
                     Replay::Replayed { bytes, dialect } => {
                         return Ok(super::replayed_plan(input.ir, dialect, bytes));
@@ -33,7 +33,7 @@ pub(super) fn plan<'a>(
             } else {
                 None
             };
-            super::synthesized_plan(input, version, declined.or(replay_declined))
+            super::synthesized_plan(input, version, displaced.as_ref(), replay_declined)
         }
         WriteRequest::OffCatalog { dialect } => {
             match replay_bytes(input.ir, input.fidelity, dialect)? {

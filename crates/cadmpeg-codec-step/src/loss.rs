@@ -36,6 +36,8 @@ pub enum StepLossCode {
     SchemaObjectIdentifierOutOfRange,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
     /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
@@ -307,6 +309,7 @@ impl StepLossCode {
         Self::MetadataStringInvalid,
         Self::SchemaObjectIdentifierOutOfRange,
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
         Self::ConflictingRepresentationUnits,
@@ -451,6 +454,7 @@ impl StepLossCode {
                 "metadata.schema-object-identifier-out-of-range"
             }
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
             Self::ConflictingRepresentationUnits => "geometry.conflicting-representation-units",
@@ -666,7 +670,9 @@ impl StepLossCode {
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::SourceDialectDisplaced => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -839,6 +845,7 @@ mod tests {
                 "metadata.string-invalid",
                 "metadata.schema-object-identifier-out-of-range",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
                 "geometry.conflicting-representation-units",

@@ -165,14 +165,9 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     assert!(available.contains("rhino:archive-80"), "{available}");
 }
 
-/// An explicit target that is not the source's archive version charges the
-/// fidelity, with a reason naming both dialects.
-///
-/// The write is not "fidelity was never offered": the source declared archive
-/// 50 and the output declares archive 70, so an identity the file carried is
-/// gone and the report says which one it was and what replaced it.
+/// An explicit target that is not the source archive version charges a loss.
 #[test]
-fn a_dialect_changing_explicit_write_is_degraded_by_name() {
+fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     let ir = source_in("rhino:archive-50");
     let plan = Encoder::plan(
         &RhinoEncoder,
@@ -180,14 +175,18 @@ fn a_dialect_changing_explicit_write_is_degraded_by_name() {
         TargetRequest::Explicit("rhino:archive-70"),
     )
     .expect("archive 70 is in the catalog");
-    let cadmpeg_ir::FidelityResolution::Degraded { reason } = &plan.report().fidelity else {
-        panic!(
-            "a dialect-changing write must be degraded, got {:?}",
-            plan.report().fidelity
-        );
-    };
-    assert!(reason.contains("rhino:archive-50"), "{reason}");
-    assert!(reason.contains("rhino:archive-70"), "{reason}");
+    assert_eq!(
+        plan.report().fidelity,
+        cadmpeg_ir::FidelityResolution::NotProvided
+    );
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == crate::loss::RhinoLossCode::SourceDialectDisplaced.kind())
+        .expect("dialect displacement is charged");
+    assert!(loss.message.contains("rhino:archive-50"));
+    assert!(loss.message.contains("rhino:archive-70"));
 }
 
 /// An explicit target that is the source's own archive version changes nothing,

@@ -1118,3 +1118,10 @@ crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::dialect::{KernelHeaderRef,classify}"
 reason = "classify already-parsed ACIS and ASM headers through one canonical kernel-layer match constructor shared by host codecs"
+
+[[change]]
+commit = "b614cda6ee792944602f566cfc87a3dd53fd8740"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::{WriteRequest::Catalog,resolve_catalog_write,source_dialect_displaced_message}"
+reason = "write resolution carries the displaced source DialectId instead of preformatted fidelity prose; codecs charge dialect displacement through pinned loss codes while FidelityResolution remains a sidecar-consumption outcome"

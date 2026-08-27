@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::loss::IgesLossCode;
 use crate::test_support::{point_file, point_file_with_global};
 use crate::IgesVersion;
 use crate::{IgesCodec, IgesEncoder};
@@ -159,8 +160,8 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .contains(&"normalized_representation=compressed-ascii".into()));
 
     // Compressed ASCII is not the dialect this writer synthesizes, so an
-    // explicit Fixed ASCII target declines replay and the report names both
-    // dialects. The gate used to compare the version alone and replayed the
+    // explicit Fixed ASCII target declines replay and charges displacement.
+    // The gate used to compare the version alone and replayed the
     // compressed bytes while the plan claimed Fixed ASCII.
     let plan = IgesEncoder
         .plan(
@@ -169,19 +170,15 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         )
         .unwrap();
     assert_eq!(plan.write_path(), WritePath::Synthesized);
-    match plan.fidelity_resolution() {
-        FidelityResolution::Degraded { reason } => {
-            assert!(
-                reason.contains("source is iges:5.3-compressed-ascii"),
-                "{reason}"
-            );
-            assert!(
-                reason.contains("target is iges:5.3-fixed-ascii"),
-                "{reason}"
-            );
-        }
-        other => panic!("a representation mismatch must degrade: {other:?}"),
-    }
+    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotConsumed);
+    let displacement = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .expect("representation displacement is charged");
+    assert!(displacement.message.contains("iges:5.3-compressed-ascii"));
+    assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
 }
 
 /// Preservation is not synthesis: a Compressed ASCII source replays its own

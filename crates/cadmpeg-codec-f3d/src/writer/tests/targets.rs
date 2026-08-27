@@ -8,7 +8,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
-use crate::F3dCodec;
+use crate::{loss::F3dLossCode, F3dCodec};
 
 /// An explicit target this writer does not produce is refused by `plan` itself,
 /// with the catalog in the message.
@@ -74,16 +74,37 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     )
     .expect("explicit transcode plans");
 
-    let FidelityResolution::Degraded { reason } = plan.fidelity_resolution() else {
-        panic!("explicit transcode must be degraded");
-    };
-    assert!(reason.contains("f3d:f3z-multi-document"), "{reason}");
-    assert!(reason.contains("f3d:manifest-3-2-0-0"), "{reason}");
+    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotConsumed);
+    let displacement = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::SourceDialectDisplaced.kind())
+        .expect("the source dialect displacement is charged");
+    assert!(displacement.message.contains("f3d:f3z-multi-document"));
+    assert!(displacement.message.contains("f3d:manifest-3-2-0-0"));
     assert!(plan
         .report()
         .losses
         .iter()
         .all(|loss| loss.code.code != "source.preserved-image-unavailable"));
+}
+
+#[test]
+fn cross_format_write_has_no_dialect_displacement() {
+    let mut ir = sourced_ir("step:ap242-edition-3");
+    ir.source.as_mut().unwrap().format = "step".into();
+    let plan = Encoder::plan(
+        &F3dCodec,
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+    )
+    .expect("cross-format synthesis plans");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::SourceDialectDisplaced.kind()));
 }
 
 #[test]

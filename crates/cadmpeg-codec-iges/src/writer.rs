@@ -127,36 +127,49 @@ fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'
 
 /// Plan a semantic write at `version`, charging the loss for a preserved source
 /// image this export could not use.
-fn synthesized_plan(
-    input: EncodeInput<'_>,
+fn synthesized_plan<'a>(
+    input: EncodeInput<'a>,
     version: crate::IgesVersion,
-    declined: Option<String>,
-) -> Result<ExportPlan<'_>, CodecError> {
+    displaced: Option<&DialectId>,
+    replay_failure: Option<String>,
+) -> Result<ExportPlan<'a>, CodecError> {
     let target = IgesDialect::fixed_ascii(version).id();
-    let source_expected = input
-        .ir
-        .source
-        .as_ref()
-        .is_some_and(|source| source.format == crate::dialect::FORMAT);
+    let preservation_eligible = displaced.is_none()
+        && input
+            .ir
+            .source
+            .as_ref()
+            .is_some_and(|source| source.format == crate::dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
         .is_some();
     let mut losses = Vec::new();
-    if source_expected && !source_available {
+    if preservation_eligible && !source_available {
         losses.push(
             IgesLossCode::PreservedSourceUnavailable.note(
                 "preserved IGES source image is unavailable; semantic regeneration is required",
             ),
         );
     }
+    if let Some(source) = displaced.as_ref() {
+        losses.push(IgesLossCode::SourceDialectDisplaced.note(
+            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
+        ));
+    }
     let synthesis = synthesize(input.ir, version)?;
     losses.extend(synthesis.losses.clone());
-    let fidelity = if source_expected && !source_available {
+    let fidelity = if preservation_eligible && !source_available {
         FidelityResolution::Degraded {
             reason: "preserved IGES source image is unavailable".into(),
         }
-    } else if let Some(reason) = declined {
+    } else if displaced.is_some() {
+        if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        }
+    } else if let Some(reason) = replay_failure {
         FidelityResolution::Degraded { reason }
     } else if input.fidelity.is_some() {
         FidelityResolution::NotConsumed
