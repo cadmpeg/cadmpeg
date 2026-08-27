@@ -3098,9 +3098,10 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
 /// The declaration comes from `attributes["sw_version"]`, which
 /// [`add_solidworks_xml_metadata`] has already written, so the mirror and the
 /// report entry classify the same string. The `sw_version` attribute stays
-/// where it is: eleven sites read the attribute map with `is_none()` and
-/// absence is load-bearing at each of them. Retiring the ad-hoc keys is a later
-/// phase.
+/// where it is, and so does every other key: absence in this map is
+/// load-bearing at the sites that read it, `sw_name` and
+/// `sldprt_active_partition_unresolved` gate the writer, and these fields are
+/// additive. Retiring the ad-hoc keys is a later phase.
 fn source_meta_with_dialect(attributes: BTreeMap<String, String>) -> SourceMeta {
     let primary =
         crate::dialect::SldprtDialect::classify(attributes.get("sw_version").map(String::as_str));
