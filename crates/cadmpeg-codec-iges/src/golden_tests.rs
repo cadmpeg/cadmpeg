@@ -87,7 +87,7 @@ fn encode_snapshot(bytes: &[u8]) -> String {
             }
         };
     let outcome = Encoder::plan(
-        &IgesEncoder::default(),
+        &IgesEncoder,
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit(IgesVersion::V5_3.target()),
     )

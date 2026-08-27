@@ -68,7 +68,7 @@ fn target_of(plan: &ExportPlan<'_>) -> Option<String> {
     plan.report().target.as_ref().map(ToString::to_string)
 }
 
-fn refusal(error: &CodecError) -> (&str, &str, &str) {
+fn refusal(error: &CodecError) -> (&str, Option<&str>, &str) {
     let CodecError::UnsupportedTarget {
         format,
         requested,
@@ -78,7 +78,7 @@ fn refusal(error: &CodecError) -> (&str, &str, &str) {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    (format, requested, available)
+    (format, requested.as_deref(), available)
 }
 
 /// The flagship case: `convert in.step -o out.step` on a file that is not the
@@ -163,7 +163,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
         .expect("an edition-unspecified AP242 source has no write target");
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
-    assert_eq!(requested, "step:ap242");
+    assert_eq!(requested, Some("step:ap242"));
     for schema in StepSchema::ALL {
         assert!(available.contains(schema.target()), "{available}");
     }
@@ -191,12 +191,16 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
         .err()
         .expect("step:unknown has no write target");
     let (_, requested, available) = refusal(&error);
-    assert_eq!(requested, "step:unknown");
+    assert_eq!(requested, Some("step:unknown"));
     assert!(available.contains("step:ap214"), "{available}");
 }
 
 /// A STEP source that records no dialect refuses as well. Nothing names an
 /// identity to preserve, and picking one would be inventing it.
+///
+/// The refusal quotes no dialect id, because none exists. It used to pass the
+/// bare format id `"step"` in the dialect-id field the command line renders,
+/// which reads as a request for a dialect called `step`.
 #[test]
 fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let mut ir = CadIr::empty(Units::default());
@@ -209,9 +213,16 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let error = inherit(&StepCodec::default(), &ir)
         .err()
         .expect("a STEP source with no dialect has nothing to preserve");
-    let (format, requested, _) = refusal(&error);
+    let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
-    assert_eq!(requested, "step");
+    assert_eq!(requested, None);
+    assert!(available.contains("step:ap214"), "{available}");
+    let message = error.to_string();
+    assert!(message.contains("records no dialect"), "{message}");
+    assert!(
+        !message.contains("cannot write step:"),
+        "the refusal must not quote a dialect id it does not have: {message}"
+    );
 }
 
 /// The same source writes the moment the caller names a target: an explicit
@@ -277,21 +288,29 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
 }
 
 /// With nothing STEP to inherit — no source at all, or one of another format —
-/// the constructor schema is the target. This is the only path that reads it,
-/// and the command line never takes it: it builds `Inherit` for a STEP source
-/// alone.
+/// the catalog default is the target, never the constructor schema.
+///
+/// The encoder here is built at AP242 edition 1 and the catalog default is
+/// AP214, so the two disagree and the answer names which one won. Encoder state
+/// deciding a target is the defect: it is a fourth answer to "which dialect",
+/// and it is the one that overrode the other three whenever a request had
+/// nothing to inherit. `options` says how a schema is written; it never says
+/// which.
 #[test]
-fn nothing_to_inherit_falls_to_the_constructor_schema() {
+fn nothing_to_inherit_falls_to_the_catalog_default() {
     let encoder = StepCodec {
         options: StepWriteOptions {
             schema: StepSchema::Ap242Edition1,
             ..StepWriteOptions::default()
         },
     };
+    let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
+    assert_eq!(default, "step:ap214");
 
     let sourceless = unit_cube();
-    let plan = inherit(&encoder, &sourceless).expect("a sourceless document takes the constructor");
-    assert_eq!(target_of(&plan), Some("step:ap242-e1".to_owned()));
+    let plan = inherit(&encoder, &sourceless).expect("a sourceless document takes the default");
+    assert_eq!(target_of(&plan), Some("step:ap214".to_owned()));
+    assert!(written_text(plan).contains("AUTOMOTIVE_DESIGN"));
 
     let mut foreign = unit_cube();
     foreign.source = Some(SourceMeta {
@@ -301,8 +320,50 @@ fn nothing_to_inherit_falls_to_the_constructor_schema() {
         )),
         ..SourceMeta::default()
     });
-    let plan = inherit(&encoder, &foreign).expect("a foreign source takes the constructor");
-    assert_eq!(target_of(&plan), Some("step:ap242-e1".to_owned()));
+    let plan = inherit(&encoder, &foreign).expect("a foreign source takes the default");
+    assert_eq!(target_of(&plan), Some("step:ap214".to_owned()));
+}
+
+/// An explicit target that is not the source's declared schema charges the
+/// fidelity, with a reason naming both dialects.
+///
+/// The write is not "fidelity was never offered": the source declared
+/// `CONFIG_CONTROL_DESIGN` and the output declares `AUTOMOTIVE_DESIGN`, so an
+/// identity the file carried is gone and the report says which one it was.
+#[test]
+fn a_dialect_changing_explicit_write_is_degraded_by_name() {
+    let decoded = source_declaring(StepSchema::Ap203Edition1.file_schema());
+    let plan = StepCodec::default()
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit("step:ap214"),
+        )
+        .expect("AP214 is a catalog row");
+    let cadmpeg_ir::FidelityResolution::Degraded { reason } = &plan.report().fidelity else {
+        panic!(
+            "a schema-changing write must be degraded, got {:?}",
+            plan.report().fidelity
+        );
+    };
+    assert!(reason.contains("step:ap203-e1"), "{reason}");
+    assert!(reason.contains("step:ap214"), "{reason}");
+}
+
+/// An explicit target that is the source's own schema changes nothing, so it is
+/// not degraded.
+#[test]
+fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
+    let decoded = source_declaring(StepSchema::Ap203Edition1.file_schema());
+    let plan = StepCodec::default()
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit("step:ap203-e1"),
+        )
+        .expect("AP203 edition 1 is a catalog row");
+    assert_eq!(
+        plan.report().fidelity,
+        cadmpeg_ir::FidelityResolution::NotProvided
+    );
 }
 
 /// The catalog is exactly the six schemas the writer emits, in both directions,
@@ -366,8 +427,53 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
 
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
-    assert_eq!(requested, "step:nonesuch");
+    assert_eq!(requested, Some("step:nonesuch"));
     for target in Encoder::targets(&encoder) {
         assert!(available.contains(target.id), "{available}");
+    }
+}
+
+/// The §8.3 honesty invariant on the synthesis path: re-decoding the output
+/// classifies the host layer into exactly the dialect the report named.
+///
+/// The assertion is against the bytes, not against the report twice, and not
+/// against a substring of `FILE_SCHEMA` text. `target` is a claim about what
+/// was written, and the only thing that can check a claim about bytes is
+/// reading them back through the classifier the codec uses on any other input.
+/// A substring check would still pass for a writer that emitted a declaration
+/// the registry classifies as another row: the bare AP242 MIM identifier
+/// without its object-identifier arcs is exactly such a case, and it classifies
+/// `step:ap242`, not any edition.
+#[test]
+fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
+    let cube = unit_cube();
+    for schema in StepSchema::ALL {
+        let plan = StepCodec::default()
+            .plan(
+                EncodeInput::new(&cube, None),
+                TargetRequest::Explicit(schema.target()),
+            )
+            .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
+        let claimed = plan
+            .report()
+            .target
+            .clone()
+            .expect("a STEP write always names its schema");
+        let mut written = Vec::new();
+        plan.write_to(&mut written).expect("the plan writes");
+
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{schema:?} output must decode, got {error}"));
+        let classified = cadmpeg_core::dialect::primary_layer(
+            &decoded.report().dialects,
+            &decoded.report().format,
+        )
+        .and_then(|entry| entry.dialect.clone())
+        .unwrap_or_else(|| panic!("{schema:?} output must classify a host dialect"));
+        assert_eq!(
+            classified, claimed,
+            "{schema:?}: the report claims {claimed} but the bytes are {classified}"
+        );
     }
 }

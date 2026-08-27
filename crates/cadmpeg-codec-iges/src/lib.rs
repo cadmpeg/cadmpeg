@@ -93,13 +93,6 @@ impl IgesVersion {
     }
 }
 
-/// Options controlling a semantic IGES write.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct IgesWriteOptions {
-    /// Target specification version.
-    pub version: IgesVersion,
-}
-
 /// Codec for IGES files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
@@ -172,19 +165,15 @@ impl CodecBackend for IgesCodec {
     }
 }
 
-/// IGES encoder with explicit target-version options.
+/// IGES encoder.
+///
+/// Carries no target state. Which dialect an export writes is
+/// [`TargetRequest`]'s answer, resolved against the source: an explicit target
+/// names it, `Inherit` preserves the source's own, and a document with nothing
+/// to inherit falls to the catalog default. An encoder-held version would be a
+/// fourth answer, and the one that used to override the other three.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct IgesEncoder {
-    options: IgesWriteOptions,
-}
-
-impl IgesEncoder {
-    /// Construct an encoder for `options`.
-    #[must_use]
-    pub const fn new(options: IgesWriteOptions) -> Self {
-        Self { options }
-    }
-}
+pub struct IgesEncoder;
 
 impl Encoder for IgesEncoder {
     fn id(&self) -> &'static str {
@@ -200,7 +189,7 @@ impl Encoder for IgesEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        writer::plan(input, self.options, request)
+        writer::plan(input, request)
     }
 }
 

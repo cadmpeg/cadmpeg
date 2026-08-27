@@ -30,7 +30,7 @@ pub(crate) fn plan_at<'a>(
 ) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
 
-    crate::IgesEncoder::new(crate::IgesWriteOptions { version }).plan(
+    crate::IgesEncoder.plan(
         EncodeInput { ir, fidelity },
         TargetRequest::Explicit(version.target()),
     )

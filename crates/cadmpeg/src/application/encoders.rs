@@ -61,9 +61,9 @@ pub fn build_encoder(format: Format, losses: LossPolicy) -> Box<dyn Encoder> {
         // `TargetRequest` carries them; deciding one here is what silently
         // rewrote a Rhino 5 file as archive 80.
         #[cfg(feature = "rhino")]
-        Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder::default()),
+        Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder),
         #[cfg(feature = "iges")]
-        Format::Iges => Box::new(cadmpeg_codec_iges::IgesEncoder::default()),
+        Format::Iges => Box::new(cadmpeg_codec_iges::IgesEncoder),
     }
 }
 
@@ -144,7 +144,7 @@ mod tests {
             else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
-            assert_eq!(requested, "nonesuch:dialect");
+            assert_eq!(requested.as_deref(), Some("nonesuch:dialect"));
             for target in encoder.targets() {
                 assert!(
                     available.contains(target.id),

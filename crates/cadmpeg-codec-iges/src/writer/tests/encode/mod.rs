@@ -24,7 +24,7 @@ use cadmpeg_ir::CadIr;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::writer::same_float;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 #[test]
 fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {

@@ -20,7 +20,7 @@ fn inherit<'a>(
     ir: &'a CadIr,
     fidelity: Option<&'a cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, CodecError> {
-    IgesEncoder::default().plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+    IgesEncoder.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
 }
 
 /// The flagship case: `convert in.igs -o out.igs` on a file that is not the
@@ -113,7 +113,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "iges");
-    assert_eq!(requested, "iges:1.0-fixed-ascii");
+    assert_eq!(requested.as_deref(), Some("iges:1.0-fixed-ascii"));
     assert!(available.contains("iges:5.3-fixed-ascii"), "{available}");
 }
 
@@ -143,7 +143,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
-    let error = IgesEncoder::default()
+    let error = IgesEncoder
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Explicit("step:ap242-e3"),
@@ -158,7 +158,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(requested, "step:ap242-e3");
+    assert_eq!(requested.as_deref(), Some("step:ap242-e3"));
     for version in IgesVersion::ALL {
         assert!(available.contains(version.target()), "{available}");
     }
@@ -170,7 +170,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
 /// written by preserving a source image instead.
 #[test]
 fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
-    let targets = IgesEncoder::default().targets();
+    let targets = IgesEncoder.targets();
     assert_eq!(targets.len(), IgesVersion::ALL.len());
     for version in IgesVersion::ALL {
         assert!(find_target(targets, version.target()).is_some());
@@ -182,4 +182,53 @@ fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
         cadmpeg_ir::codec::default_target(targets),
         Some(IgesVersion::V5_3.target())
     );
+}
+
+/// The §8.3 honesty invariant on the synthesis path: re-decoding the output
+/// classifies the host layer into exactly the dialect the report named.
+///
+/// The assertion is against the bytes, not against the report twice. `target`
+/// is a claim about what was written, and the only thing that can check a claim
+/// about bytes is reading them back through the classifier the codec uses on
+/// any other input. For IGES synthesis the whole claim rests on one gate — the
+/// global section's version flag, field 23 — and disabling that gate makes this
+/// test fail while every other assertion in the crate still passes.
+#[test]
+fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.points.push(Point {
+        id: PointId("cadir:model:point#honesty".into()),
+        source_object: None,
+        position: Point3::new(1.0, 2.0, 3.0),
+    });
+
+    for version in IgesVersion::ALL {
+        let plan = IgesEncoder
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.target()),
+            )
+            .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
+        let claimed = plan
+            .report()
+            .target
+            .clone()
+            .expect("an IGES write always names its dialect");
+        let mut written = Vec::new();
+        plan.write_to(&mut written).unwrap();
+
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{version:?} output must decode, got {error}"));
+        let classified = cadmpeg_core::dialect::primary_layer(
+            &decoded.report().dialects,
+            &decoded.report().format,
+        )
+        .and_then(|entry| entry.dialect.clone())
+        .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"));
+        assert_eq!(
+            classified, claimed,
+            "{version:?}: the report claims {claimed} but the bytes are {classified}"
+        );
+    }
 }

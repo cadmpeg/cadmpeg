@@ -38,7 +38,7 @@ fuzz_reason = "focused targets call FcstdCodec::decode"
 
 [[crate]]
 id = "iges"
-names = ["IgesCodec", "IgesEncoder", "IgesWriteOptions", "IgesVersion"]
+names = ["IgesCodec", "IgesEncoder", "IgesVersion"]
 fuzz = "required"
 
 [[crate]]

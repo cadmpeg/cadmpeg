@@ -469,7 +469,7 @@ mod tests {
     fn flag_absence_inherits_only_within_one_format() {
         #[cfg(feature = "iges")]
         {
-            let iges = cadmpeg_codec_iges::IgesEncoder::default();
+            let iges = cadmpeg_codec_iges::IgesEncoder;
             assert_eq!(
                 TargetSelection::Unstated.request(&iges, Some("iges")),
                 TargetRequest::Inherit
@@ -520,7 +520,7 @@ mod tests {
 
         let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut archive_50 = Vec::new();
-        cadmpeg_codec_rhino::RhinoEncoder::new(cadmpeg_codec_rhino::RhinoArchiveVersion::V5)
+        cadmpeg_codec_rhino::RhinoEncoder
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit("rhino:archive-50"),

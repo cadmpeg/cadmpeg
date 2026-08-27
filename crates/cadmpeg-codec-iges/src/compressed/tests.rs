@@ -162,7 +162,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     // explicit Fixed ASCII target declines replay and the report names both
     // dialects. The gate used to compare the version alone and replayed the
     // compressed bytes while the plan claimed Fixed ASCII.
-    let plan = IgesEncoder::default()
+    let plan = IgesEncoder
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),
@@ -197,7 +197,7 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     let result = IgesCodec
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
-    let plan = IgesEncoder::default()
+    let plan = IgesEncoder
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
             TargetRequest::Inherit,

@@ -4,6 +4,14 @@
 use crate::decode::{ErrorContext, ResourceLimit, SourceLocation};
 use crate::dialect::DialectMatch;
 
+/// What [`CodecError::UnsupportedTarget`] renders where its `requested` field
+/// is `None`.
+///
+/// A same-format source that records no dialect gives the refusal nothing to
+/// quote: no id was asked for, and the source declares none. The message says
+/// so in words rather than putting a bare format id in a dialect-id slot.
+pub const UNRECORDED_SOURCE_DIALECT: &str = "an unrecorded source dialect";
+
 /// Errors a codec can raise.
 ///
 /// Marked `#[non_exhaustive]`: external exhaustive matches must carry a
@@ -79,17 +87,25 @@ pub enum CodecError {
     ///
     /// The write-side counterpart of [`CodecError::UnsupportedDialect`]. It
     /// carries no [`DialectMatch`]: nothing is being classified, and the
-    /// requested id can name no declared dialect at all. Both write refusals
-    /// use it: an explicit target outside the synthesis catalog, and an
-    /// inherit request whose source dialect can be neither preserved nor
-    /// synthesized.
-    #[error("{format} cannot write {requested}: {reason}; available targets: {available}")]
+    /// requested id can name no declared dialect at all. Three write refusals
+    /// use it: an explicit target outside the synthesis catalog, an inherit
+    /// request whose source dialect can be neither preserved nor synthesized,
+    /// and an inherit request over a same-format source that records no
+    /// dialect at all.
+    #[error("{format} cannot write {}: {reason}; available targets: {available}", .requested.as_deref().unwrap_or(UNRECORDED_SOURCE_DIALECT))]
     UnsupportedTarget {
         /// Format layer that refused.
         format: String,
         /// The dialect asked for: an explicit id, or the source's dialect
         /// under an inherit request.
-        requested: String,
+        ///
+        /// `None` where no dialect id exists to name: the request was
+        /// `Inherit` over a same-format source that records no dialect, so
+        /// there is nothing to preserve and nothing to quote back. The field
+        /// carries a dialect id or nothing; it never carries a bare format id
+        /// standing in for one. [`UNRECORDED_SOURCE_DIALECT`] is what the
+        /// message renders in its place.
+        requested: Option<String>,
         /// Why that dialect is unavailable.
         reason: String,
         /// The synthesis catalog, comma separated, in catalog order.

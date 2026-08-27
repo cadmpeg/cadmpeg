@@ -11,7 +11,7 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
@@ -95,15 +95,16 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 /// the semantic writer could never synthesize. Where the baseline is not usable,
 /// `Inherit` synthesizes the source's own dialect, and refuses when that dialect
 /// is not a target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is.
+/// same-format conversion never silently changes what the file is. An IGES
+/// source that records no dialect is refused for the same reason — there is
+/// nothing to preserve, and no identity to default to.
 ///
-/// `options` supplies the target only when there is nothing to inherit: the
-/// document is not an IGES document, or it records no dialect. Neither case is
-/// reachable from the command line, which builds `Inherit` only for an IGES
-/// source.
+/// The catalog default supplies the target only when there is nothing to
+/// inherit: the document has no source, or a source of another format. That is
+/// the cross-format path, where the application layer would have built
+/// `Explicit(catalog default)` itself.
 pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
-    options: crate::IgesWriteOptions,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     match request {
@@ -118,7 +119,7 @@ pub(crate) fn plan<'a>(
             })?;
             plan_explicit(input, version)
         }
-        TargetRequest::Inherit => plan_inherited(input, options.version),
+        TargetRequest::Inherit => plan_inherited(input),
     }
 }
 
@@ -129,28 +130,29 @@ fn plan_explicit(
     version: crate::IgesVersion,
 ) -> Result<ExportPlan<'_>, CodecError> {
     let target = IgesDialect::fixed_ascii(version).id();
-    match replay_bytes(input.ir, input.fidelity, Some(&target))? {
+    match replay_bytes(input.ir, input.fidelity, &target)? {
         Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
         Replay::Declined { reason } => synthesized_plan(input, version, reason),
     }
 }
 
 /// Plan a write that preserves the source's dialect.
-fn plan_inherited(
-    input: EncodeInput<'_>,
-    fallback: crate::IgesVersion,
-) -> Result<ExportPlan<'_>, CodecError> {
-    let Some(source_dialect) = input
-        .ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == crate::dialect::FORMAT)
-        .and_then(|source| source.dialect.clone())
-    else {
-        // Nothing to inherit: no IGES source, or one that records no dialect.
-        return plan_explicit(input, fallback);
+fn plan_inherited(input: EncodeInput<'_>) -> Result<ExportPlan<'_>, CodecError> {
+    let source_dialect = match cadmpeg_ir::codec::resolve_inherit(
+        input.ir,
+        crate::dialect::FORMAT,
+        crate::dialect::TARGETS,
+    )? {
+        // Nothing to inherit: no source, or one of another format. The catalog
+        // default stands in; no existing file's identity is at stake.
+        Inherited::Fallback(id) => {
+            let version = crate::dialect::target_version(id)
+                .expect("the IGES catalog default is a synthesis target");
+            return plan_explicit(input, version);
+        }
+        Inherited::Source(dialect) => dialect.clone(),
     };
-    match replay_bytes(input.ir, input.fidelity, None)? {
+    match replay_bytes(input.ir, input.fidelity, &source_dialect)? {
         Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
         Replay::Declined { reason } => {
             let Some(version) = crate::dialect::target_version(source_dialect.as_str()) else {
@@ -278,7 +280,7 @@ impl Replay {
 fn replay_bytes(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
-    target: Option<&DialectId>,
+    target: &DialectId,
 ) -> Result<Replay, CodecError> {
     let Some(source) = ir
         .source
@@ -292,23 +294,21 @@ fn replay_bytes(
             "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
         )));
     };
-    let source_dialect = match (source.dialect.as_ref(), target) {
-        (None, Some(target)) => {
+    // The replay law, with the reason naming both sides wherever the two
+    // dialects differ. `Inherit` passes the source's own dialect as the target,
+    // so only the explicit path reaches the mismatch arms.
+    let source_dialect = match source.dialect.as_ref() {
+        None => {
             return Ok(Replay::declined_because(format!(
                 "preserved IGES source records no dialect, target is {target}; byte replay skipped"
             )));
         }
-        (None, None) => {
-            return Ok(Replay::declined_because(
-                "preserved IGES source records no dialect to preserve; byte replay skipped",
-            ));
-        }
-        (Some(dialect), Some(target)) if dialect != target => {
+        Some(dialect) if dialect != target => {
             return Ok(Replay::declined_because(format!(
                 "source is {dialect}, target is {target}; byte replay skipped"
             )));
         }
-        (Some(dialect), _) => dialect.clone(),
+        Some(dialect) => dialect.clone(),
     };
     if crate::document_digest(ir) != *expected {
         return Ok(Replay::declined_because(
