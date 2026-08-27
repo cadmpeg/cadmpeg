@@ -3,7 +3,7 @@
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
 //! <!-- generated: capability -->
-//! Support: depth L1, breadth 6 of 8 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
 //! <!-- /generated: capability -->
 //!
 //! The codec provides bounded 3DM

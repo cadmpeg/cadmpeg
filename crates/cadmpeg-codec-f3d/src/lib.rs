@@ -10,7 +10,7 @@
 //! archive from the supported source-less profile.
 //!
 //! <!-- generated: capability -->
-//! Support: depth L4, breadth 1 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
+//! Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
 //! <!-- /generated: capability -->
 //!
 //! # Decode

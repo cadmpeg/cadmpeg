@@ -8,7 +8,7 @@ is an argument to [`write_step`], resolved from the encoder's catalog by
 
 <!-- generated: capability -->
 
-Support: depth L9, breadth 4 of >=4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
+Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
 
 <!-- /generated: capability -->
 

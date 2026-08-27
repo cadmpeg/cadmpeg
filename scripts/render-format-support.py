@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Render every published capability table from the two dialect registries.
+"""Render every published capability table from the dialect registries.
 
-The registries are the only input: ``docs/dialects.toml`` (identity) and
-``docs/dialect-support.toml`` (capability). This script owns marker-delimited
-regions inside ``docs/format-support.md``, the root ``README.md``, each codec
-crate's ``README.md``, and each codec crate's ``src/lib.rs`` doc header. Prose
-outside a region is hand-written and is never touched.
+The registries are the only input: ``docs/dialects.toml`` (identity),
+``docs/dialect-support.toml`` (capability), and ``docs/evaluations.toml``
+(maintainer evaluations). This script owns marker-delimited regions inside
+``docs/format-support.md``, the root ``README.md``, each codec crate's
+``README.md``, and each codec crate's ``src/lib.rs`` doc header. Prose outside
+a region is hand-written and is never touched.
 
 A region begins with ``<!-- generated: <marker> -->`` and ends with
 ``<!-- /generated: <marker> -->``, each on its own line. In a ``lib.rs`` doc
@@ -36,6 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_REL = Path("docs") / "dialects.toml"
 SUPPORT_REL = Path("docs") / "dialect-support.toml"
+EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 LADDER_REL = Path("docs") / "format-support.md"
 README_REL = Path("README.md")
 SELF_TEST_REL = Path("scripts") / "test_render_format_support.py"
@@ -44,12 +46,6 @@ SELF_TEST_REL = Path("scripts") / "test_render_format_support.py"
 # crate READMEs and the rustdoc headers ship to crates.io and docs.rs, so their
 # links cannot be repository-relative.
 BLOB = "https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md"
-
-READ_LEVEL = re.compile(r"^L([0-9])$")
-WITNESSED_PREFIXES = ("spec:", "corpus:")
-# The residual row of a `complete = false` format. It is not an enumerated
-# dialect, so it is outside every breadth denominator.
-RESIDUAL_NAME = "unknown"
 
 MARKER_LADDER_TABLE = "ladder-table"
 MARKER_README_LINES = "capability-lines"
@@ -102,55 +98,36 @@ class Row:
     """One identity row joined to its capability row."""
 
     dialect: str
-    fmt: str
-    name: str
-    witness: str
     read: str
     write: str
     fixtures: int
 
-    @property
-    def level(self) -> int | None:
-        match = READ_LEVEL.match(self.read)
-        return int(match.group(1)) if match else None
-
-    @property
-    def witnessed(self) -> bool:
-        """In a breadth denominator: spec- or corpus-witnessed, not residual."""
-        if self.name == RESIDUAL_NAME:
-            return False
-        return self.witness.startswith(WITNESSED_PREFIXES)
-
 
 @dataclass(frozen=True)
 class Format:
-    """One format's rows and the headline they produce."""
+    """One format's owner-declared level, cut, and rows."""
 
     fmt: str
-    complete: bool
+    level: int | None
+    scored: frozenset[str]
+    evaluated: frozenset[str]
     rows: tuple[Row, ...]
 
     @property
-    def depth(self) -> str:
-        levels = [row.level for row in self.rows if row.level is not None]
-        return f"L{max(levels)}" if levels else "none"
-
-    @property
-    def breadth(self) -> str:
-        denominator = [row for row in self.rows if row.witnessed]
-        if not denominator:
-            return "n/a"
-        numerator = sum(1 for row in denominator if (row.level or 0) >= 1)
-        bound = "" if self.complete else ">="
-        return f"{numerator} of {bound}{len(denominator)}"
-
-    @property
     def headline(self) -> str:
-        return f"depth {self.depth}, breadth {self.breadth}"
+        if self.level is None:
+            raise RenderError(f"{SUPPORT_REL}: format.{self.fmt} has no level")
+        return f"L{self.level}"
 
-    @property
-    def refusals(self) -> int:
-        return sum(1 for row in self.rows if row.read == "refused")
+    def displayed_read(self, row: Row) -> str:
+        if (
+            row.dialect in self.scored
+            and row.read == "detected"
+            and row.fixtures == 0
+            and row.dialect not in self.evaluated
+        ):
+            return "pending"
+        return row.read
 
 
 def _load_toml(path: Path) -> dict:
@@ -164,9 +141,10 @@ def _load_toml(path: Path) -> dict:
 
 
 def load_formats(root: Path) -> dict[str, Format]:
-    """Join the two registries into per-format row sets."""
+    """Join the registries into per-format row sets."""
     identity = _load_toml(root / IDENTITY_REL)
     capability = _load_toml(root / SUPPORT_REL)
+    evaluations = _load_toml(root / EVALUATIONS_REL)
 
     declared = identity.get("format")
     if not isinstance(declared, dict) or not declared:
@@ -177,6 +155,17 @@ def load_formats(root: Path) -> dict[str, Format]:
     supports = capability.get("support")
     if not isinstance(supports, list) or not supports:
         raise RenderError(f"{SUPPORT_REL}: no [[support]] rows")
+    format_levels = capability.get("format")
+    if not isinstance(format_levels, dict):
+        raise RenderError(f"{SUPPORT_REL}: no [format.<id>] entries")
+    evaluation_rows = evaluations.get("evaluation")
+    if not isinstance(evaluation_rows, list):
+        raise RenderError(f"{EVALUATIONS_REL}: no [[evaluation]] rows")
+    evaluated = {
+        row.get("dialect")
+        for row in evaluation_rows
+        if isinstance(row, dict) and isinstance(row.get("dialect"), str)
+    }
 
     by_dialect: dict[str, dict] = {}
     for support in supports:
@@ -192,7 +181,7 @@ def load_formats(root: Path) -> dict[str, Format]:
         dialect = entry.get("id")
         if not isinstance(dialect, str) or ":" not in dialect:
             raise RenderError(f"{IDENTITY_REL}: bad dialect id {dialect!r}")
-        fmt, _, name = dialect.partition(":")
+        fmt, _, _ = dialect.partition(":")
         if fmt not in declared:
             raise RenderError(f"{IDENTITY_REL}: {dialect} names undeclared format {fmt}")
         support = by_dialect.pop(dialect, None)
@@ -201,9 +190,6 @@ def load_formats(root: Path) -> dict[str, Format]:
         grouped[fmt].append(
             Row(
                 dialect=dialect,
-                fmt=fmt,
-                name=name,
-                witness=entry.get("witness", ""),
                 read=support.get("read", ""),
                 write=support.get("write", ""),
                 fixtures=len(support.get("fixtures", [])),
@@ -225,10 +211,19 @@ def load_formats(root: Path) -> dict[str, Format]:
             "TARGETS names formats absent from the registry: " + ", ".join(extra)
         )
 
-    return {
-        fmt: Format(fmt=fmt, complete=bool(declared[fmt].get("complete")), rows=tuple(rows))
-        for fmt, rows in grouped.items()
-    }
+    result = {}
+    for fmt, rows in grouped.items():
+        block = format_levels.get(fmt)
+        level = block.get("level") if isinstance(block, dict) else None
+        scored = block.get("scored", []) if isinstance(block, dict) else []
+        result[fmt] = Format(
+            fmt=fmt,
+            level=level if isinstance(level, int) else None,
+            scored=frozenset(scored if isinstance(scored, list) else []),
+            evaluated=frozenset(evaluated),
+            rows=tuple(rows),
+        )
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -273,42 +268,19 @@ def _table(header: tuple[str, ...], rows: list[tuple[str, ...]]) -> str:
 # Bodies
 # --------------------------------------------------------------------------
 
-BREADTH_RULE = """\
-Depth is the highest read level any declared dialect of the format reaches.
-Breadth is the count of its witnessed identity rows at read `L1` or higher over
-the count of witnessed rows. A witnessed row is one carrying a `spec:` or
-`corpus:` witness; rows on `code:` witnesses are outside the denominator by the
-witness rule in `docs/dialects.toml`, and each format's `<format>:unknown`
-residual row is outside it because the row is a grammar residue, not an
-enumerated dialect. A format whose `[format.<id>]` is `complete = false` prints
-`>=` before the denominator: its rows are grammar classes, so the enumeration
-is a floor. A format with no witnessed row prints `n/a`. Refusals are counted,
-never excluded: refusing a dialect can only worsen a published number.
-
-Both numbers are monotone under adding capability, and the denominator comes
-from the identity registry, which changes when a vendor ships and not when
-cadmpeg gains a decoder."""
-
-
 def ladder_table(formats: dict[str, Format]) -> str:
     rows = [
-        (
-            TARGETS[fmt].name,
-            formats[fmt].depth,
-            formats[fmt].breadth,
-            str(len(formats[fmt].rows)),
-            str(formats[fmt].refusals),
-        )
+        (TARGETS[fmt].name, formats[fmt].headline)
         for fmt in TARGETS
+        if not TARGETS[fmt].registry_only
     ]
-    header = ("Format", "Depth", "Breadth", "Identity rows", "Refused")
-    return f"\n{BREADTH_RULE}\n\n{_table(header, rows)}\n"
+    return f"\n{_table(('Format', 'Level'), rows)}\n"
 
 
 def format_section(fmt: str, formats: dict[str, Format]) -> str:
     entry = formats[fmt]
     rows = [
-        (f"`{row.dialect}`", row.read, row.write, str(row.fixtures))
+        (f"`{row.dialect}`", entry.displayed_read(row), row.write, str(row.fixtures))
         for row in entry.rows
     ]
     header = ("Dialect", "Read", "Write", "Fixtures")
@@ -317,7 +289,7 @@ def format_section(fmt: str, formats: dict[str, Format]) -> str:
 
 def readme_lines(formats: dict[str, Format], anchors: dict[str, str]) -> str:
     lines = [
-        f"- **{TARGETS[fmt].name}**: {formats[fmt].headline} "
+        f"- **{TARGETS[fmt].name}** — {formats[fmt].headline} "
         f"([profile](docs/format-support.md#{anchors[fmt]}))"
         for fmt in TARGETS
         if not TARGETS[fmt].registry_only

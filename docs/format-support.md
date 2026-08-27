@@ -45,36 +45,19 @@ edit without a re-render fails the gate.
 
 <!-- generated: ladder-table -->
 
-Depth is the highest read level any declared dialect of the format reaches.
-Breadth is the count of its witnessed identity rows at read `L1` or higher over
-the count of witnessed rows. A witnessed row is one carrying a `spec:` or
-`corpus:` witness; rows on `code:` witnesses are outside the denominator by the
-witness rule in `docs/dialects.toml`, and each format's `<format>:unknown`
-residual row is outside it because the row is a grammar residue, not an
-enumerated dialect. A format whose `[format.<id>]` is `complete = false` prints
-`>=` before the denominator: its rows are grammar classes, so the enumeration
-is a floor. A format with no witnessed row prints `n/a`. Refusals are counted,
-never excluded: refusing a dialect can only worsen a published number.
-
-Both numbers are monotone under adding capability, and the denominator comes
-from the identity registry, which changes when a vendor ships and not when
-cadmpeg gains a decoder.
-
-| Format                          | Depth | Breadth  | Identity rows | Refused |
-| ------------------------------- | ----- | -------- | ------------- | ------- |
-| FreeCAD `.FCStd`                | L5    | 1 of >=1 | 4             | 0       |
-| Autodesk Fusion `.f3d`          | L4    | 1 of >=1 | 3             | 0       |
-| Autodesk Inventor `.ipt`/`.iam` | none  | n/a      | 2             | 0       |
-| SolidWorks `.sldprt`            | none  | n/a      | 3             | 0       |
-| Rhino `.3dm`                    | L1    | 6 of 8   | 11            | 1       |
-| Siemens NX `.prt`               | none  | 0 of >=1 | 3             | 1       |
-| CATIA V5 `.CATPart`             | L1    | 6 of >=6 | 7             | 0       |
-| Creo Parametric `.prt`          | L1    | 2 of >=2 | 4             | 0       |
-| STEP Part 21                    | L9    | 4 of >=4 | 11            | 3       |
-| IGES                            | L9    | 2 of 21  | 22            | 0       |
-| ASM/ACIS bare streams           | none  | n/a      | 4             | 1       |
-| ACIS save formats               | none  | 0 of >=2 | 8             | 1       |
-| Parasolid schemas               | none  | 0 of >=1 | 4             | 0       |
+| Format                          | Level |
+| ------------------------------- | ----- |
+| FreeCAD `.FCStd`                | L5    |
+| Autodesk Fusion `.f3d`          | L4    |
+| Autodesk Inventor `.ipt`/`.iam` | L1    |
+| SolidWorks `.sldprt`            | L1    |
+| Rhino `.3dm`                    | L1    |
+| Siemens NX `.prt`               | L1    |
+| CATIA V5 `.CATPart`             | L1    |
+| Creo Parametric `.prt`          | L1    |
+| STEP Part 21                    | L9    |
+| IGES                            | L9    |
+| ASM/ACIS bare streams           | L1    |
 
 <!-- /generated: ladder-table -->
 
@@ -89,7 +72,7 @@ lists. Every profile below describes the envelope its rows cover.
 
 <!-- generated: dialects inventor -->
 
-**Ladder: depth none, breadth n/a.**
+**Ladder: L1.**
 
 | Dialect                     | Read                   | Write | Fixtures |
 | --------------------------- | ---------------------- | ----- | -------- |
@@ -117,7 +100,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 <!-- generated: dialects sat -->
 
-**Ladder: depth none, breadth n/a.**
+**Ladder: L1.**
 
 | Dialect           | Read     | Write | Fixtures |
 | ----------------- | -------- | ----- | -------- |
@@ -151,7 +134,7 @@ See [`formats/asm.md`](formats/asm.md) and [`formats/asm-open-items.md`](formats
 
 <!-- generated: dialects fcstd -->
 
-**Ladder: depth L5, breadth 1 of >=1.**
+**Ladder: L5.**
 
 | Dialect          | Read                   | Write     | Fixtures |
 | ---------------- | ---------------------- | --------- | -------- |
@@ -176,7 +159,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 <!-- generated: dialects iges -->
 
-**Ladder: depth L9, breadth 2 of 21.**
+**Ladder: L9.**
 
 | Dialect                                   | Read                   | Write     | Fixtures |
 | ----------------------------------------- | ---------------------- | --------- | -------- |
@@ -187,7 +170,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 | `iges:asme-ansi-y14.26m-1987-fixed-ascii` | unclassified-recovered | preserved | 0        |
 | `iges:4.0-fixed-ascii`                    | detected               | emitted   | 0        |
 | `iges:asme-y14.26m-1989-fixed-ascii`      | unclassified-recovered | preserved | 0        |
-| `iges:5.0-fixed-ascii`                    | detected               | emitted   | 0        |
+| `iges:5.0-fixed-ascii`                    | pending                | emitted   | 0        |
 | `iges:5.1-fixed-ascii`                    | detected               | emitted   | 0        |
 | `iges:5.2-fixed-ascii`                    | detected               | emitted   | 0        |
 | `iges:5.3-fixed-ascii`                    | L9                     | verified  | 78       |
@@ -249,7 +232,7 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 <!-- generated: dialects rhino -->
 
-**Ladder: depth L1, breadth 6 of 8.**
+**Ladder: L1.**
 
 | Dialect            | Read                   | Write   | Fixtures |
 | ------------------ | ---------------------- | ------- | -------- |
@@ -295,7 +278,7 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md), [`formats/rhino_3dm-open-ite
 
 <!-- generated: dialects sldprt -->
 
-**Ladder: depth none, breadth n/a.**
+**Ladder: L1.**
 
 | Dialect                        | Read                   | Write     | Fixtures |
 | ------------------------------ | ---------------------- | --------- | -------- |
@@ -331,7 +314,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 <!-- generated: dialects f3d -->
 
-**Ladder: depth L4, breadth 1 of >=1.**
+**Ladder: L4.**
 
 | Dialect                  | Read                   | Write    | Fixtures |
 | ------------------------ | ---------------------- | -------- | -------- |
@@ -389,7 +372,7 @@ See [`formats/f3d.md`](formats/f3d.md), [`formats/f3d-open-items.md`](formats/f3
 
 <!-- generated: dialects nx -->
 
-**Ladder: depth none, breadth 0 of >=1.**
+**Ladder: L1.**
 
 | Dialect         | Read     | Write | Fixtures |
 | --------------- | -------- | ----- | -------- |
@@ -430,7 +413,7 @@ See the [format specification](formats/siemens_nx.md), [coverage contract](forma
 
 <!-- generated: dialects catia -->
 
-**Ladder: depth L1, breadth 6 of >=6.**
+**Ladder: L1.**
 
 | Dialect                           | Read                   | Write | Fixtures |
 | --------------------------------- | ---------------------- | ----- | -------- |
@@ -471,7 +454,7 @@ See the [coverage contract](formats/catia-coverage.md), [format specification](f
 
 <!-- generated: dialects creo -->
 
-**Ladder: depth L1, breadth 2 of >=2.**
+**Ladder: L1.**
 
 | Dialect             | Read                   | Write | Fixtures |
 | ------------------- | ---------------------- | ----- | -------- |
@@ -511,7 +494,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- generated: dialects step -->
 
-**Ladder: depth L9, breadth 4 of >=4.**
+**Ladder: L9.**
 
 | Dialect                   | Read                   | Write    | Fixtures |
 | ------------------------- | ---------------------- | -------- | -------- |
@@ -521,7 +504,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 | `step:ap242`              | L9                     | none     | 13       |
 | `step:ap242-e1`           | detected               | emitted  | 0        |
 | `step:ap242-e2`           | L9                     | verified | 1        |
-| `step:ap242-e3`           | detected               | verified | 0        |
+| `step:ap242-e3`           | pending                | verified | 0        |
 | `step:part28-xml`         | refused                | none     | 0        |
 | `step:ap242-bo-model-xml` | refused                | none     | 0        |
 | `step:part26-hdf5`        | refused                | none     | 0        |

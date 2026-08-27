@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import re
 import sys
 import tempfile
 import unittest
@@ -50,6 +51,10 @@ witness = "corpus:demo/other.bin"
 """
 
 SUPPORT = """\
+[format.demo]
+level = 3
+scored = ["demo:one", "demo:two"]
+
 [[support]]
 dialect = "demo:one"
 read = "L3"
@@ -68,68 +73,26 @@ read = "unclassified-recovered"
 write = "preserved"
 reason = "residue"
 """
-
-
-def _row(dialect: str, read: str) -> renderer.Row:
-    fmt, _, name = dialect.partition(":")
-    witness = "code:x.rs:1" if name == "two" else "corpus:x"
-    return renderer.Row(
-        dialect=dialect,
-        fmt=fmt,
-        name=name,
-        witness=witness,
-        read=read,
-        write="none",
-        fixtures=0,
-    )
+EVALUATIONS = "evaluation = []\n"
 
 
 class HeadlineCase(unittest.TestCase):
-    """Depth and breadth arithmetic, including every degenerate denominator."""
+    """The owner-declared digit is printed without arithmetic."""
 
-    def _format(self, reads: dict[str, str], *, complete: bool = True) -> renderer.Format:
-        return renderer.Format(
-            fmt="demo",
-            complete=complete,
-            rows=tuple(_row(d, r) for d, r in reads.items()),
-        )
+    def _format(self, *, level: int = 3, evaluated: frozenset[str] = frozenset()):
+        row = renderer.Row("demo:one", "detected", "none", 0)
+        return renderer.Format("demo", level, frozenset({"demo:one"}), evaluated, (row,))
 
-    def test_depth_is_the_highest_level_any_row_reaches(self):
-        fmt = self._format({"demo:one": "L3", "demo:three": "L5", "demo:four": "detected"})
-        self.assertEqual(fmt.depth, "L5")
+    def test_headline_is_the_declared_digit(self):
+        self.assertEqual(self._format(level=7).headline, "L7")
 
-    def test_depth_is_none_when_no_row_carries_a_level(self):
-        fmt = self._format({"demo:one": "detected", "demo:unknown": "refused"})
-        self.assertEqual(fmt.depth, "none")
+    def test_unevaluated_detected_cut_row_displays_pending(self):
+        fmt = self._format()
+        self.assertEqual(fmt.displayed_read(fmt.rows[0]), "pending")
 
-    def test_code_witnesses_are_outside_the_denominator(self):
-        # `demo:two` is code-witnessed, so neither half counts it.
-        fmt = self._format({"demo:one": "L1", "demo:two": "L9"})
-        self.assertEqual(fmt.breadth, "1 of 1")
-
-    def test_the_unknown_row_is_outside_the_denominator(self):
-        fmt = self._format({"demo:one": "L1", "demo:unknown": "L1"})
-        self.assertEqual(fmt.breadth, "1 of 1")
-
-    def test_detected_is_below_l1_and_does_not_count(self):
-        fmt = self._format({"demo:one": "L1", "demo:three": "detected"})
-        self.assertEqual(fmt.breadth, "1 of 2")
-
-    def test_l0_is_below_l1_and_does_not_count(self):
-        fmt = self._format({"demo:one": "L0"})
-        self.assertEqual(fmt.breadth, "0 of 1")
-
-    def test_an_incomplete_format_prints_a_floor(self):
-        fmt = self._format({"demo:one": "L1"}, complete=False)
-        self.assertEqual(fmt.breadth, "1 of >=1")
-
-    def test_no_witnessed_row_prints_not_applicable(self):
-        fmt = self._format({"demo:two": "L9", "demo:unknown": "L9"})
-        self.assertEqual(fmt.breadth, "n/a")
-
-    def test_refusals_are_counted_not_excluded(self):
-        fmt = self._format({"demo:one": "L1", "demo:two": "refused"})
-        self.assertEqual(fmt.refusals, 1)
+    def test_evaluated_detected_cut_row_stays_detected(self):
+        fmt = self._format(evaluated=frozenset({"demo:one"}))
+        self.assertEqual(fmt.displayed_read(fmt.rows[0]), "detected")
 
 
 class SpliceCase(unittest.TestCase):
@@ -166,12 +129,18 @@ class RegistryCase(unittest.TestCase):
     """Structural faults in the two registries. All are exit code 2."""
 
     @contextlib.contextmanager
-    def _root(self, identity: str = IDENTITY, support: str = SUPPORT):
+    def _root(
+        self,
+        identity: str = IDENTITY,
+        support: str = SUPPORT,
+        evaluations: str = EVALUATIONS,
+    ):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
             (root / "docs" / "dialects.toml").write_text(identity, encoding="utf-8")
             (root / "docs" / "dialect-support.toml").write_text(support, encoding="utf-8")
+            (root / "docs" / "evaluations.toml").write_text(evaluations, encoding="utf-8")
             yield root
 
     @contextlib.contextmanager
@@ -188,7 +157,7 @@ class RegistryCase(unittest.TestCase):
     def test_a_well_formed_pair_loads(self):
         with self._root() as root, self._targets({"demo": renderer.Target("Demo")}):
             formats = renderer.load_formats(root)
-            self.assertEqual(formats["demo"].headline, "depth L3, breadth 1 of 1")
+            self.assertEqual(formats["demo"].headline, "L3")
 
     def test_a_missing_registry_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -253,14 +222,51 @@ class CommittedCase(unittest.TestCase):
     def test_check_reports_a_hand_edited_table(self):
         rendered = renderer.render(REPO)
         rel = renderer.LADDER_REL
-        text = rendered[rel].replace("depth L9", "depth L2", 1)
+        text = rendered[rel].replace("L9", "L2", 1)
         self.assertNotEqual(text, rendered[rel])
         diff = "".join(
             __import__("difflib").unified_diff(
                 text.splitlines(keepends=True), rendered[rel].splitlines(keepends=True)
             )
         )
-        self.assertIn("depth L2", diff)
+        self.assertIn("L2", diff)
+
+    def test_every_generated_headline_is_one_ladder_digit(self):
+        rendered = renderer.render(REPO)
+        headlines = []
+        for rel, text in rendered.items():
+            for line in text.splitlines():
+                if "Support: " in line:
+                    headlines.append(line.split("Support: ", 1)[1].split(" (", 1)[0])
+                elif line.startswith("- **") and " — L" in line:
+                    headlines.append(line.split(" — ", 1)[1].split(" (", 1)[0])
+                elif line.startswith("**Ladder: "):
+                    headlines.append(line.removeprefix("**Ladder: ").removesuffix(".**"))
+                elif rel == renderer.LADDER_REL and line.startswith("| "):
+                    cells = [cell.strip() for cell in line.strip("|").split("|")]
+                    if len(cells) == 2 and cells[1] != "Level" and cells[1].startswith("L"):
+                        headlines.append(cells[1])
+        self.assertTrue(headlines)
+        self.assertTrue(all(re.fullmatch(r"L[0-9]", headline) for headline in headlines), headlines)
+
+    def test_forbidden_tokens_are_absent_from_every_generated_region(self):
+        forbidden = ("depth", "breadth", ">=", "n/a")
+        regions = []
+        for rel, text in renderer.render(REPO).items():
+            lines = text.splitlines()
+            starts = [i for i, line in enumerate(lines) if "<!-- generated: " in line]
+            for start in starts:
+                prefix, marker = lines[start].split("<!-- generated: ", 1)
+                end_line = f"{prefix}<!-- /generated: {marker}"
+                end = lines.index(end_line, start + 1)
+                regions.append((rel, "\n".join(lines[start + 1 : end]).lower()))
+        self.assertTrue(regions)
+        for token in forbidden:
+            with self.subTest(token=token):
+                self.assertEqual(
+                    [(rel, token) for rel, body in regions if token in body],
+                    [],
+                )
 
     def test_the_committed_tree_needs_no_write(self):
         buffer = io.StringIO()

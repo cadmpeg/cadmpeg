@@ -4,7 +4,7 @@
 //! 5.1, 5.2, and 5.3.
 //!
 //! <!-- generated: capability -->
-//! Support: depth L9, breadth 2 of 21 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
+//! Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
 //! <!-- /generated: capability -->
 //!
 //! Compressed ASCII and Binary read normalization is provided. Bounded

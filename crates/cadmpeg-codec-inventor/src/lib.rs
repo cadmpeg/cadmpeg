@@ -5,7 +5,7 @@
 //! directory structure. It does not classify unrelated CFB files as Inventor.
 //!
 //! <!-- generated: capability -->
-//! Support: depth none, breadth n/a ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
 //! <!-- /generated: capability -->
 
 mod assembly;

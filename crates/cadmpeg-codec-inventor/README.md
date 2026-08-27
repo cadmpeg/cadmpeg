@@ -8,7 +8,7 @@ read-only: it has no Inventor writer, replay path, or patch path.
 
 <!-- generated: capability -->
 
-Support: depth none, breadth n/a ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
+Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
 
 <!-- /generated: capability -->
 

@@ -9,7 +9,7 @@
 //! layout.
 //!
 //! <!-- generated: capability -->
-//! Support: depth L1, breadth 2 of >=2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
 //! <!-- /generated: capability -->
 //!
 //! # Quick start

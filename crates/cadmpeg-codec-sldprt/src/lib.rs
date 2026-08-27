@@ -8,7 +8,7 @@
 //! blocks and records provenance so supported edits can retain native data.
 //!
 //! <!-- generated: capability -->
-//! Support: depth none, breadth n/a ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
 //! <!-- /generated: capability -->
 //!
 //! # Decode
