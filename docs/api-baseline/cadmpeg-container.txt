@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at fb9a11f1c
 pub mod cadmpeg_container
 pub mod cadmpeg_container::compound
 pub enum cadmpeg_container::compound::CompoundAllocation
@@ -223,9 +223,13 @@ impl core::marker::Unpin for cadmpeg_container::compound::CompoundStreamId
 impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundStreamId
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundStreamId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundStreamId
+pub fn cadmpeg_container::compound::read_detection_prefix(&mut dyn std::io::Read, usize, u64) -> core::io::error::Result<alloc::vec::Vec<u8>>
 pub mod cadmpeg_container::compression
 pub fn cadmpeg_container::compression::inflate_bounded_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
+pub fn cadmpeg_container::compression::inflate_deflate<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>, cadmpeg_core::decode::context::ExpandSpec) -> core::result::Result<cadmpeg_core::decode::view::View<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::compression::inflate_zlib_exact<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::decode::view::View<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_container::compression::inflate_zlib_member<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>, cadmpeg_core::decode::context::ExpandSpec) -> core::result::Result<(cadmpeg_core::decode::view::View<'a>, usize), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_container::compression::inflate_zlib_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
 pub enum cadmpeg_container::EntryCompression
 pub cadmpeg_container::EntryCompression::Deflate
 pub cadmpeg_container::EntryCompression::Stored
@@ -276,6 +280,7 @@ pub cadmpeg_container::EntryRecord::name: alloc::string::String
 pub cadmpeg_container::EntryRecord::uncompressed_size: u64
 impl cadmpeg_container::EntryRecord
 pub fn cadmpeg_container::EntryRecord::data_end(&self) -> core::result::Result<u64, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_container::EntryRecord::uses_utf8_name_encoding(&self) -> bool
 impl core::clone::Clone for cadmpeg_container::EntryRecord
 pub fn cadmpeg_container::EntryRecord::clone(&self) -> cadmpeg_container::EntryRecord
 impl core::cmp::Eq for cadmpeg_container::EntryRecord

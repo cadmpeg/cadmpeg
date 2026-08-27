@@ -39,6 +39,7 @@ sat = ["dep:cadmpeg-codec-sat"]
 
 [dependencies]
 cadmpeg-core.workspace = true
+cadmpeg-container.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-codec-f3d = { workspace = true, optional = true }
 cadmpeg-codec-inventor = { workspace = true, optional = true }

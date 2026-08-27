@@ -2,8 +2,9 @@
 //! "What is this file?", answered at inspection depth.
 
 use std::collections::BTreeMap;
-use std::io::{Read, SeekFrom};
+use std::io::SeekFrom;
 
+use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::dialect::{primary_layer, DialectId};
 use cadmpeg_core::ReadSeek;
@@ -151,12 +152,9 @@ pub fn identify_with(
 /// Bounded by the inspection's own input limit as well as the window: a
 /// caller that capped the input has capped what detection may look at too.
 fn read_prefix(source: &mut dyn ReadSeek, options: &InspectOptions) -> std::io::Result<Vec<u8>> {
-    let window = u64::try_from(DETECTION_PREFIX_LEN)
-        .unwrap_or(u64::MAX)
-        .min(options.limits.max_input_bytes);
     source.seek(SeekFrom::Start(0))?;
-    let mut prefix = Vec::new();
-    (&mut *source).take(window).read_to_end(&mut prefix)?;
+    let prefix =
+        read_detection_prefix(source, DETECTION_PREFIX_LEN, options.limits.max_input_bytes)?;
     source.seek(SeekFrom::Start(0))?;
     Ok(prefix)
 }
