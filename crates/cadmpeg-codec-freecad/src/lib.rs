@@ -83,13 +83,20 @@ impl Default for FcstdWriteOptions {
 
 impl FcstdCodec {
     /// Write a document for an explicitly selected persistence band.
+    ///
+    /// The band names a dialect, so this is [`Encoder::plan`] with an explicit
+    /// target and no fidelity sidecar. There is one resolution gate for every
+    /// write this codec performs, and this door goes through it: a band the
+    /// retained document graph does not deliver is refused as
+    /// [`CodecError::UnsupportedTarget`], with the catalog, before any byte is
+    /// written.
     pub fn encode_with_options(
         &self,
         ir: &CadIr,
         writer: &mut dyn std::io::Write,
         options: FcstdWriteOptions,
     ) -> Result<ExportReport, CodecError> {
-        writer::write(ir, writer, options)
+        writer::plan_options(EncodeInput::new(ir, None), options)?.write_to(writer)
     }
 
     /// Change one attribute on an ordered native property value.

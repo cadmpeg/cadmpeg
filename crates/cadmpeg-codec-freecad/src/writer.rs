@@ -27,11 +27,22 @@ impl<T: Write + Seek> WriteSeek for T {}
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
 /// the one the retained document already declares. Every other resolution is a
 /// refusal, not a degraded write: there is no synthesis path to degrade to.
+/// Only [`resolve`] builds one: the field is private, so a `Resolution` in hand
+/// is a proof that the retained document graph delivers the options it carries.
+/// [`write_seekable`] takes that proof instead of raw options, which is why it
+/// needs no target gate of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Resolution {
+pub(crate) struct Resolution {
     /// The persistence band to write. Always the one the retained document
     /// graph carries.
     options: FcstdWriteOptions,
+}
+
+impl Resolution {
+    /// The write options the retained graph delivers.
+    pub(crate) fn options(self) -> FcstdWriteOptions {
+        self.options
+    }
 }
 
 /// Resolve the request against the source, then plan the export it names.
@@ -60,8 +71,40 @@ pub(crate) fn plan<'a>(
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     let resolution = resolve(input.ir, request)?;
+    finish(input, resolution)
+}
+
+/// Plan the write that [`crate::FcstdCodec::encode_with_options`] names.
+///
+/// The options name a persistence band, so they name a dialect, and that dialect
+/// goes through the one resolution gate like every other request. Two halves are
+/// checked, because a dialect id carries only one of them: [`resolve`] answers
+/// for the `SchemaVersion`, and the comparison below answers for the
+/// `FileVersion`, which no id can state. A caller that asks for a band the
+/// retained graph does not carry is refused by name, with the catalog, before
+/// any byte is written.
+pub(crate) fn plan_options(
+    input: EncodeInput<'_>,
+    options: FcstdWriteOptions,
+) -> Result<ExportPlan<'_>, CodecError> {
+    let target = dialect::written_dialect(options);
+    let resolution = resolve(input.ir, TargetRequest::Explicit(target.as_str()))?;
+    if resolution.options != options {
+        return Err(unsupported_target(
+            dialect::FORMAT,
+            target.as_str(),
+            "the retained FCStd document graph declares another FileVersion, and this writer \
+             regenerates no Document.xml, so it cannot be written",
+            dialect::TARGETS,
+        ));
+    }
+    finish(input, resolution)
+}
+
+/// Write the resolved export and state what the fidelity sidecar did.
+fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'_>, CodecError> {
     let mut bytes = Vec::new();
-    let mut report = write(input.ir, &mut bytes, resolution.options)?;
+    let mut report = write(input.ir, &mut bytes, resolution)?;
     // `write` takes no fidelity sidecar, so the report it returns states the
     // only resolution it can see. Whether the caller supplied one is known
     // here, and only here. There is no degraded arm: a write that would change
@@ -151,43 +194,33 @@ fn retained_baseline(ir: &CadIr, source_dialect: &DialectId) -> Option<FcstdWrit
 pub(crate) fn write(
     ir: &CadIr,
     output: &mut dyn Write,
-    options: FcstdWriteOptions,
+    resolution: Resolution,
 ) -> Result<ExportReport, CodecError> {
     let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(ir, &mut staged, options)?;
+    let report = write_seekable(ir, &mut staged, resolution)?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, output)?;
     Ok(report)
 }
 
+/// Repack the retained entry set with a patched `Document.xml`.
+///
+/// The replay law is already settled when this runs. A [`Resolution`] comes only
+/// from [`resolve`], which takes its options from [`retained_baseline`], so the
+/// dialect and the `FileVersion` written here are the ones the retained document
+/// already declares. This function states them; it does not gate them.
 pub(crate) fn write_seekable(
     ir: &CadIr,
     output: &mut dyn WriteSeek,
-    options: FcstdWriteOptions,
+    resolution: Resolution,
 ) -> Result<ExportReport, CodecError> {
+    let options = resolution.options();
+    let target = dialect::written_dialect(options);
     let namespace = ir.native.namespace("fcstd").ok_or_else(|| {
         CodecError::NotImplemented(
             "source-less FCStd generation requires a constructed native document graph".into(),
         )
     })?;
-    let documents = namespace.arena_as::<DocumentFacts>("document")?;
-    let document = exactly_one(&documents, "document record")?;
-    // The replay law, on the typed dialect: this writer patches the retained
-    // `Document.xml` and regenerates none, so it may write only the dialect the
-    // retained document already declares. `FileVersion` is not part of a dialect
-    // id, so it is the second half of the gate.
-    let target = dialect::written_dialect(options);
-    let retained = dialect::FcstdDialect::from_schema_version(&document.schema_version).id();
-    if retained != target || document.file_version != options.file_version.to_string() {
-        return Err(CodecError::NotImplemented(format!(
-            "cannot transcode retained {retained} (SchemaVersion={} FileVersion={}) to {target} \
-             (SchemaVersion={} FileVersion={})",
-            document.schema_version,
-            document.file_version,
-            options.schema_version,
-            options.file_version
-        )));
-    }
     let entry_records = namespace
         .arenas
         .get("entries")
@@ -284,15 +317,6 @@ pub(crate) fn write_seekable(
             "unsupported retained entries and unedited XML records were preserved".into(),
         ],
     })
-}
-
-fn exactly_one<'a, T>(values: &'a [T], description: &str) -> Result<&'a T, CodecError> {
-    if values.len() != 1 {
-        return Err(CodecError::malformed(format_args!(
-            "FCStd native graph must contain exactly one {description}"
-        )));
-    }
-    Ok(&values[0])
 }
 
 struct EntrySlot {
@@ -747,7 +771,32 @@ pub(crate) mod tests {
                 },
             )
             .expect_err("unsupported target must fail");
-        assert!(unsupported.to_string().contains("SchemaVersion=3"));
+        let CodecError::UnsupportedTarget {
+            format, requested, ..
+        } = &unsupported
+        else {
+            panic!("expected a target refusal, got {unsupported}");
+        };
+        assert_eq!(format, "fcstd");
+        assert_eq!(requested.as_deref(), Some("fcstd:schema-3"));
+
+        // `FileVersion` is not part of a dialect id, so the catalog cannot
+        // refuse this one. The resolution's second half does, at the same
+        // layer and with the same typed refusal.
+        let wrong_file_version = FcstdCodec
+            .encode_with_options(
+                decoded.ir(),
+                &mut Vec::new(),
+                crate::FcstdWriteOptions {
+                    schema_version: 4,
+                    file_version: 2,
+                },
+            )
+            .expect_err("a FileVersion the retained graph does not carry must fail");
+        let CodecError::UnsupportedTarget { requested, .. } = &wrong_file_version else {
+            panic!("expected a target refusal, got {wrong_file_version}");
+        };
+        assert_eq!(requested.as_deref(), Some("fcstd:schema-4"));
 
         // A document with no retained graph has nothing this writer can patch,
         // so `plan` refuses by name with the catalog rather than failing deep
@@ -783,12 +832,10 @@ pub(crate) mod tests {
             .and_then(|plan| plan.write_to(&mut staged))
             .expect("write-only fallback");
         let mut streamed = Cursor::new(Vec::new());
-        crate::writer::write_seekable(
-            decoded.ir(),
-            &mut streamed,
-            crate::FcstdWriteOptions::default(),
-        )
-        .expect("seekable writer");
+        let resolution =
+            resolve(decoded.ir(), TargetRequest::Inherit).expect("schema 4 is preserved");
+        crate::writer::write_seekable(decoded.ir(), &mut streamed, resolution)
+            .expect("seekable writer");
 
         assert_eq!(streamed.into_inner(), staged);
     }

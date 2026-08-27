@@ -908,3 +908,10 @@ crate = "cadmpeg-registry"
 kind = "addition"
 item = "cadmpeg_registry::UnknownFormat"
 reason = "the refusal print_dialects returns after losing its anyhow dependency"
+
+[[change]]
+commit = "pending-fcstd-writer-reorg"
+crate = "cadmpeg-codec-freecad"
+kind = "signature"
+item = "cadmpeg_codec_freecad::FcstdCodec::encode_with_options"
+reason = "same Rust signature, different refusal: the band now goes through the writer's one resolution gate, so an undeliverable band returns CodecError::UnsupportedTarget with the catalog instead of a CodecError::NotImplemented transcode string from inside the write"
