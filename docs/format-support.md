@@ -71,7 +71,7 @@ cadmpeg gains a decoder.
 | CATIA V5 `.CATPart`             | L1    | 6 of >=6 | 7             | 0       |
 | Creo Parametric `.prt`          | L1    | 2 of >=2 | 4             | 0       |
 | STEP Part 21                    | L9    | 4 of >=4 | 11            | 3       |
-| IGES                            | L9    | 1 of 21  | 22            | 0       |
+| IGES                            | L9    | 2 of 21  | 22            | 0       |
 | ASM/ACIS bare streams           | none  | n/a      | 4             | 1       |
 | ACIS save formats               | none  | 0 of >=2 | 8             | 2       |
 | Parasolid schemas               | none  | 0 of >=1 | 4             | 0       |
@@ -176,13 +176,13 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 <!-- generated: dialects iges -->
 
-**Ladder: depth L9, breadth 1 of 21.**
+**Ladder: depth L9, breadth 2 of 21.**
 
 | Dialect                                   | Read                   | Write     | Fixtures |
 | ----------------------------------------- | ---------------------- | --------- | -------- |
 | `iges:1.0-fixed-ascii`                    | unclassified-recovered | preserved | 0        |
 | `iges:ansi-y14.26m-1981-fixed-ascii`      | unclassified-recovered | preserved | 0        |
-| `iges:2.0-fixed-ascii`                    | unclassified-recovered | preserved | 0        |
+| `iges:2.0-fixed-ascii`                    | unclassified-recovered | preserved | 1        |
 | `iges:3.0-fixed-ascii`                    | unclassified-recovered | preserved | 0        |
 | `iges:asme-ansi-y14.26m-1987-fixed-ascii` | unclassified-recovered | preserved | 0        |
 | `iges:4.0-fixed-ascii`                    | detected               | emitted   | 0        |
@@ -195,13 +195,13 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 | `iges:5.0-compressed-ascii`               | detected               | preserved | 0        |
 | `iges:5.1-compressed-ascii`               | detected               | preserved | 0        |
 | `iges:5.2-compressed-ascii`               | detected               | preserved | 0        |
-| `iges:5.3-compressed-ascii`               | detected               | preserved | 0        |
+| `iges:5.3-compressed-ascii`               | L1                     | preserved | 1        |
 | `iges:4.0-binary`                         | detected               | preserved | 0        |
 | `iges:5.0-binary`                         | detected               | preserved | 0        |
 | `iges:5.1-binary`                         | detected               | preserved | 0        |
 | `iges:5.2-binary`                         | detected               | preserved | 0        |
 | `iges:5.3-binary`                         | detected               | preserved | 0        |
-| `iges:unknown`                            | unclassified-recovered | preserved | 0        |
+| `iges:unknown`                            | unclassified-recovered | preserved | 1        |
 
 <!-- /generated: dialects iges -->
 
@@ -513,19 +513,19 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 **Ladder: depth L9, breadth 4 of >=4.**
 
-| Dialect                   | Read                   | Write   | Fixtures |
-| ------------------------- | ---------------------- | ------- | -------- |
-| `step:ap203-e1`           | L9                     | emitted | 1        |
-| `step:ap203-e2`           | detected               | emitted | 0        |
-| `step:ap214`              | L9                     | emitted | 1        |
-| `step:ap242`              | L9                     | none    | 13       |
-| `step:ap242-e1`           | detected               | emitted | 0        |
-| `step:ap242-e2`           | L9                     | emitted | 1        |
-| `step:ap242-e3`           | detected               | emitted | 0        |
-| `step:part28-xml`         | refused                | none    | 0        |
-| `step:ap242-bo-model-xml` | refused                | none    | 0        |
-| `step:part26-hdf5`        | refused                | none    | 0        |
-| `step:unknown`            | unclassified-recovered | none    | 3        |
+| Dialect                   | Read                   | Write    | Fixtures |
+| ------------------------- | ---------------------- | -------- | -------- |
+| `step:ap203-e1`           | L9                     | verified | 1        |
+| `step:ap203-e2`           | detected               | emitted  | 0        |
+| `step:ap214`              | L9                     | verified | 1        |
+| `step:ap242`              | L9                     | none     | 13       |
+| `step:ap242-e1`           | detected               | emitted  | 0        |
+| `step:ap242-e2`           | L9                     | verified | 1        |
+| `step:ap242-e3`           | detected               | verified | 0        |
+| `step:part28-xml`         | refused                | none     | 0        |
+| `step:ap242-bo-model-xml` | refused                | none     | 0        |
+| `step:part26-hdf5`        | refused                | none     | 0        |
+| `step:unknown`            | unclassified-recovered | none     | 3        |
 
 <!-- /generated: dialects step -->
 

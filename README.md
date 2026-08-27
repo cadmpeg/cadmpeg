@@ -72,7 +72,7 @@ for the per-dialect rows.
 - **CATIA V5 `.CATPart`**: depth L1, breadth 6 of >=6 ([profile](docs/format-support.md#catia-v5-catpart))
 - **Creo Parametric `.prt`**: depth L1, breadth 2 of >=2 ([profile](docs/format-support.md#creo-parametric-prt))
 - **STEP Part 21**: depth L9, breadth 4 of >=4 ([profile](docs/format-support.md#step-part-21))
-- **IGES**: depth L9, breadth 1 of 21 ([profile](docs/format-support.md#iges))
+- **IGES**: depth L9, breadth 2 of 21 ([profile](docs/format-support.md#iges))
 - **ASM/ACIS bare streams**: depth none, breadth n/a ([profile](docs/format-support.md#asmacis-bare-satsmtsmbsab-streams))
 
 <!-- /generated: capability-lines -->
