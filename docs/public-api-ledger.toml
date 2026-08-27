@@ -1001,6 +1001,83 @@ item = "cadmpeg_codec_f3d::F3dCodec::write_preserved_with_source_fidelity"
 reason = "the method bypasses TargetRequest and is used only by crate-owned replay tests; external writes must resolve through Encoder::plan"
 
 [[change]]
+commit = "66419386cf82ca78b2a24035637c771844405f53"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::decode::View::{f32_be,f32_be_at,f32_le_at,f64_be_at,f64_le_at,i16_be,i16_be_at,i16_le_at,i32_be,i32_be_at,i32_le_at,i64_be,i64_be_at,i64_le_at,req_f32_be,req_i16_be,req_i32_be,req_i64_be,u16_be_at,u16_le_at,u24_be_at,u24_le_at,u32_be_at,u32_le_at,u64_be_at,u64_le_at}"
+reason = "complete the signed, floating-point, endian, and retained-window read families on View"
+
+[[change]]
+commit = "66419386cf82ca78b2a24035637c771844405f53"
+crate = "cadmpeg-protein"
+kind = "addition"
+item = "cadmpeg_protein::{STREAM_HEADER_LEN,PAGE_SIZE,RECORD_MARKER,CONTINUATION_MARKER,TERMINAL_MARKER}"
+reason = "publish the generated instance-stream framing constants used by record_frames and its callers"
+
+[[change]]
+commit = "74d66189d0208f1476789511ffe616d426bf007d"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::bytes::{find,find_from,find_in,contains,find_iter}"
+reason = "one shared byte-window search surface replaces codec-local search helpers"
+
+[[change]]
+commit = "ed3994945f84b746b42427872d2bd28f8f77e31b"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::decode::DecodeContext::refuse_codec_limit"
+reason = "construct a codec-dimension resource refusal through the active decode context"
+
+[[change]]
+commit = "5f0685f5c0dbcf641aeda03c9300854955b59e6b"
+crate = "cadmpeg-codec-iges"
+kind = "variant"
+item = "cadmpeg_codec_iges::IgesVersion::{V4_0,V5_0}"
+reason = "the writer and dialect catalog support IGES 4.0 and 5.0 targets"
+
+[[change]]
+commit = "5f0685f5c0dbcf641aeda03c9300854955b59e6b"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::error::CodecError::malformed"
+reason = "centralize conversion of displayable parser context into Malformed messages"
+
+[[change]]
+commit = "754b0638f37a3c962c57e60d227fe334cec93e5b"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::decode::{WorkBudget::recursion_guard,WorkBudgetRecursionGuard}"
+reason = "bound recursive evaluation with an RAII guard that returns budget depth on drop"
+
+[[change]]
+commit = "3aabad359a483adc45adfddcdac8b376a74b6117"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::bytes::{assemble_u16_le,assemble_u16_be,assemble_u24_le,assemble_u24_be,assemble_u32_le,assemble_u32_be,assemble_u64_le,assemble_u64_be,assemble_f32_le,assemble_f32_be,assemble_f64_le,assemble_f64_be}"
+reason = "assemble typed endian values from exact arrays without host-endian decode-window conversions"
+
+[[change]]
+commit = "3aabad359a483adc45adfddcdac8b376a74b6117"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::error::CodecError::InvalidInput"
+reason = "separate an encoder input-contract violation from malformed source bytes"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-codec-iges"
+kind = "signature"
+item = "cadmpeg_codec_iges::IgesEncoder::{plan,targets}"
+reason = "plan takes TargetRequest and the encoder publishes its synthesis catalog"
+
+[[change]]
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
+crate = "cadmpeg-codec-rhino"
+kind = "signature"
+item = "cadmpeg_codec_rhino::RhinoEncoder::{plan,targets}"
+reason = "plan takes TargetRequest and the encoder publishes its synthesis catalog"
+
+[[change]]
 commit = "4b5aed14a82561587eea3d0f633d2a272b217d7c"
 crate = "cadmpeg-codec-sldprt"
 kind = "visibility"

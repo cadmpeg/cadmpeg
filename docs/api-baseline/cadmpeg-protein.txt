@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at 9518f7666
 pub mod cadmpeg_protein
 pub enum cadmpeg_protein::PropertyValue
 pub cadmpeg_protein::PropertyValue::Boolean(bool)
@@ -145,6 +145,11 @@ impl core::marker::Unpin for cadmpeg_protein::RejectedRecord
 impl core::marker::UnsafeUnpin for cadmpeg_protein::RejectedRecord
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_protein::RejectedRecord
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_protein::RejectedRecord
+pub const cadmpeg_protein::CONTINUATION_MARKER: &[u8]
+pub const cadmpeg_protein::PAGE_SIZE: usize
+pub const cadmpeg_protein::RECORD_MARKER: &[u8]
+pub const cadmpeg_protein::STREAM_HEADER_LEN: usize
+pub const cadmpeg_protein::TERMINAL_MARKER: &[u8]
 pub fn cadmpeg_protein::decode(&[u8], &[u8]) -> core::result::Result<alloc::vec::Vec<cadmpeg_protein::DecodedRecord>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_protein::decode_detailed(&[u8], &[u8]) -> core::result::Result<cadmpeg_protein::DecodeOutcome, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_protein::has_schemas(&[u8]) -> bool
