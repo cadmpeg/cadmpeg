@@ -14,9 +14,9 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 use crate::application::{
-    build_encoder, export_target, ArtifactStore, ConversionPolicy, ConversionRefusal,
-    EncoderRequest, ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError,
-    ResolvedSource, SidecarPersistOutcome, SourceRequest, Transcoder,
+    build_encoder, export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, ForcedInput,
+    InputCatalog, LossPolicy, NativeValidatorCatalog, ResolveSourceError, ResolvedSource,
+    SidecarPersistOutcome, SourceRequest, Transcoder,
 };
 use crate::loader::{self, read_detection_input, LoadNotice, DETECTION_PREFIX_LEN};
 use crate::{DecodeArgs, Format};
@@ -81,28 +81,23 @@ pub struct ConversionPlan {
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
-    pub reject_lossy: bool,
-    /// Explicit Rhino output archive version when the flag was supplied.
-    #[cfg(feature = "rhino")]
-    pub rhino_target: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
-    /// STEP writer options when a STEP-only flag was supplied.
-    #[cfg(feature = "step")]
-    pub step_options: Option<cadmpeg_codec_step::StepWriteOptions>,
-    /// Schema named by `--step-target`, and by that flag alone.
-    ///
-    /// Distinct from [`ConversionPlan::step_options`], which also carries the
-    /// loss policy of `--reject-step-losses`: only a target flag may name a
-    /// target.
-    #[cfg(feature = "step")]
-    pub step_target: Option<cadmpeg_codec_step::StepSchema>,
-    /// True when `--step-target` or `--reject-step-losses` was present.
-    #[cfg(feature = "step")]
-    pub step_flag_present: bool,
-    /// IGES writer options when `--iges-target` was supplied.
-    #[cfg(feature = "iges")]
-    pub iges_options: Option<cadmpeg_codec_iges::IgesWriteOptions>,
+    pub reject_decode_losses: bool,
+    /// Refuse to export when export planning reported any loss, and construct
+    /// writers that reject unrepresentable content before emitting a byte.
+    pub reject_export_losses: bool,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
+}
+
+impl ConversionPlan {
+    /// The construction-time loss policy `--reject-lossy`'s scope implies.
+    const fn loss_policy(&self) -> LossPolicy {
+        if self.reject_export_losses {
+            LossPolicy::Reject
+        } else {
+            LossPolicy::Report
+        }
+    }
 }
 
 /// One input to a structural diff and its optional format override.
@@ -182,6 +177,9 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
+    if let Some(line) = crate::registry::dialect_provenance(&summary.dialects, &summary.format) {
+        println!("{line}");
+    }
     println!();
     for entry in &summary.entries {
         println!(
@@ -245,7 +243,6 @@ pub fn dump(
         out,
         path,
         force,
-        EncoderRequest::Neutral,
     )?;
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
@@ -349,37 +346,25 @@ pub fn check_cmd(
 pub fn convert(
     catalogs: &AppCatalogs,
     path: &Path,
-    format: Option<Format>,
+    to: Option<&str>,
     out: Option<&Path>,
     plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
-    execute_conversion(catalogs, path, format, out, plan, args)
+    execute_conversion(catalogs, path, to, out, plan, args)
 }
 
 fn execute_conversion(
     catalogs: &AppCatalogs,
     path: &Path,
-    format: Option<Format>,
+    to: Option<&str>,
     out: Option<&Path>,
     plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let format = resolve_format(format, out)?;
-    let target = export_target(
-        format,
-        #[cfg(feature = "step")]
-        plan.step_options.clone(),
-        #[cfg(feature = "step")]
-        plan.step_target,
-        #[cfg(feature = "step")]
-        plan.step_flag_present,
-        #[cfg(feature = "iges")]
-        plan.iges_options,
-        #[cfg(feature = "rhino")]
-        plan.rhino_target,
-    )
-    .map_err(anyhow::Error::from)?;
+    let selection = OutputSelection::resolve(to, out)?;
+    let format = selection.format;
+    let target = export_target(format, selection.dialect.as_deref(), plan.loss_policy());
 
     let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
     let source = SourceRequest {
@@ -395,7 +380,8 @@ fn execute_conversion(
             binary_stdout: plan.binary_stdout,
             allow_errors: plan.allow_errors,
             allow_empty: plan.allow_empty,
-            reject_lossy: plan.reject_lossy,
+            reject_decode_losses: plan.reject_decode_losses,
+            reject_export_losses: plan.reject_export_losses,
             destination: out.map(Path::to_path_buf),
         },
     ) {
@@ -689,21 +675,104 @@ fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
         .unwrap_or_default()
 }
 
-fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format> {
-    if let Some(format) = explicit {
-        if let Some(inferred) = Format::from_path(out) {
-            if inferred != format {
-                eprintln!(
-                    "warning: explicit format {} disagrees with output extension format {}; using {}",
-                    format.name(),
-                    inferred.name(),
-                    format.name()
+/// What `--to` and the output path together say the conversion writes.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct OutputSelection {
+    /// The output format, resolved before the input is opened.
+    pub(crate) format: Format,
+    /// The dialect half of `--to`, unresolved: a registry id or a catalog
+    /// alias. `None` when `--to` named no dialect, which is the identity
+    /// default.
+    pub(crate) dialect: Option<String>,
+}
+
+impl OutputSelection {
+    /// Reads `--to VALUE` against the output path.
+    ///
+    /// The grammar, in the order it is tried:
+    ///
+    /// * `FORMAT:DIALECT` — the left half names the output format and the
+    ///   whole value names the dialect, respelled under the format's canonical
+    ///   id so an alias spelling of the format (`3dm:archive-80`) still
+    ///   produces a registry id.
+    /// * `FORMAT` — the format, with no dialect stated. `--to step` is the
+    ///   same statement `-f step` has always made: it says what kind of file
+    ///   to write, not which dialect of it, so a same-format conversion still
+    ///   inherits.
+    /// * anything else — a dialect of the format the output path implies. This
+    ///   is what keeps the native short vocabularies usable (`--to 5.1`,
+    ///   `--to 60`, `--to ap242e3`). The value is not checked against a
+    ///   catalog here; `plan` refuses it after the read, naming the catalog.
+    ///
+    /// The third case is unambiguous because no target alias is also an output
+    /// format name. `scripts/check-dialect-support.py` and
+    /// `application::encoders` both prove that.
+    fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
+        let inferred = Format::from_path(out);
+        let Some(value) = to else {
+            let format = inferred.ok_or_else(|| {
+                anyhow!("cannot infer format from the output path; pass --to FORMAT")
+            })?;
+            return Ok(Self {
+                format,
+                dialect: None,
+            });
+        };
+
+        if let Some((left, right)) = value.split_once(':') {
+            let format = Format::from_name(left).ok_or_else(|| {
+                anyhow!(
+                    "--to {value}: {left} is not an output format of this build; available: {}",
+                    Format::vocabulary()
+                )
+            })?;
+            if right.is_empty() {
+                bail!(
+                    "--to {value}: nothing after the colon; write --to {left} for the format alone"
                 );
             }
+            warn_on_extension_disagreement(format, inferred);
+            return Ok(Self {
+                format,
+                dialect: Some(format!("{}:{right}", format.name())),
+            });
         }
-        return Ok(format);
+
+        if let Some(format) = Format::from_name(value) {
+            warn_on_extension_disagreement(format, inferred);
+            return Ok(Self {
+                format,
+                dialect: None,
+            });
+        }
+
+        let format = inferred.ok_or_else(|| {
+            anyhow!(
+                "--to {value}: not an output format of this build ({}), and no output path to read \
+                 a format from; write --to FORMAT:{value}",
+                Format::vocabulary()
+            )
+        })?;
+        Ok(Self {
+            format,
+            dialect: Some(value.to_owned()),
+        })
     }
-    Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
+}
+
+/// Warns when an explicitly named output format disagrees with the output
+/// path's extension. The named format wins; the warning says so.
+fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
+    if let Some(inferred) = inferred {
+        if inferred != named {
+            eprintln!(
+                "warning: explicit format {} disagrees with output extension format {}; using {}",
+                named.name(),
+                inferred.name(),
+                named.name()
+            );
+        }
+    }
 }
 
 /// Writes CADIR for the dump command (no conversion refusals).
@@ -716,12 +785,13 @@ fn export_ir(
     out: Option<&Path>,
     input: &Path,
     force: bool,
-    encoder_request: EncoderRequest,
 ) -> Result<ExportReport> {
     if let Some(path) = out {
         ArtifactStore::check_output_path(input, path, force)?;
     }
-    let encoder = build_encoder(format, encoder_request)?;
+    // Dump writes the neutral document. It has no dialect, so no loss policy
+    // of a native writer applies to it.
+    let encoder = build_encoder(format, LossPolicy::Report);
     let plan = encoder.plan(
         cadmpeg_ir::codec::EncodeInput {
             ir,

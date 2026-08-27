@@ -193,6 +193,11 @@ impl InputCatalog {
         }
     }
 
+    /// Every registered input format, in catalog order.
+    pub fn descriptors(&self) -> impl Iterator<Item = &InputDescriptor> {
+        self.descriptors.iter()
+    }
+
     /// Returns the descriptor with the stable format identifier.
     pub fn descriptor(&self, id: &str) -> Option<&InputDescriptor> {
         self.descriptors

@@ -12,4 +12,5 @@ mod convert;
 mod diff;
 mod inspect;
 mod refusals;
+mod registry;
 mod reports;

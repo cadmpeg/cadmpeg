@@ -158,48 +158,166 @@ fn convert_rejects_container_only_geometry_unless_allowed() {
         .stdout(predicate::str::starts_with("ISO-10303-21"));
 }
 
+/// The format half of `--to` is checked before the input is opened.
+///
+/// A format this build cannot write is wrong whatever the source turns out to
+/// be, so it fails against an absent path. The dialect half is a different
+/// question and is answered after the read, by the encoder.
 #[test]
-fn wrong_target_flags_refuse_before_reading_input() {
+fn an_unwritable_output_format_refuses_before_reading_input() {
     let dir = tempdir().unwrap();
-    // Absent path: wrong-target must fail before open/read.
     let missing = dir.path().join("does-not-exist.cadir.json");
     let path = missing.to_str().unwrap();
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["convert", path, "-f", "step", "--iges-target", "5.3"])
+        .args(["convert", path, "--to", "catia:v5"])
         .assert()
-        .code(1)
+        .code(2)
+        .stderr(
+            predicate::str::contains("catia is not an output format of this build")
+                .and(predicate::str::contains("step")),
+        );
+
+    // A bare value that names neither a format nor an inferable one: there is
+    // no output path to read a format from, so nothing can be resolved.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "--to", "ap242e3"])
+        .assert()
+        .code(2)
         .stderr(predicate::str::contains(
-            "--iges-target requires IGES output",
+            "no output path to read a format from",
         ));
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["convert", path, "-f", "cadir", "--step-target", "ap214"])
+        .args(["convert", path, "--to", "step:"])
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains(
-            "--step-target/--reject-step-losses require STEP output",
-        ));
+        .code(2)
+        .stderr(predicate::str::contains("nothing after the colon"));
+}
+
+/// A dialect outside the encoder's catalog is refused with that catalog, and
+/// only after the source has been read.
+///
+/// This is the whole error surface the deleted `--iges-target requires IGES
+/// output` strings used to hand-write. The catalog in the message comes from
+/// `Encoder::targets()`, so it reflects the build's own feature set.
+#[test]
+fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let output = dir.path().join("cube.igs");
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["convert", path, "-f", "iges", "--reject-step-losses"])
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--to",
+            "ap242e3",
+            "--allow-errors",
+        ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains(
-            "--step-target/--reject-step-losses require STEP output",
-        ));
+        .stderr(
+            predicate::str::contains("ap242e3")
+                .and(predicate::str::contains("iges:5.3-fixed-ascii"))
+                .and(predicate::str::contains("iges:4.0-fixed-ascii")),
+        );
+    assert!(!output.exists());
+
+    // A format-qualified id outside the catalog is the same refusal.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step:ap999",
+            "--allow-errors",
+        ])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("step:ap999").and(predicate::str::contains("step:ap242-e3")),
+        );
+}
+
+/// `--reject-lossy` takes an optional scope, and each scope refuses on its own
+/// half of the loss surface.
+///
+/// The same Creo file loses content on both sides, and the two scopes name
+/// different stages for it: `decode` reports what the reader could not carry,
+/// `export` what the writer will not emit. Both are negative verdicts, so both
+/// exit 1 rather than 2. A file that loses nothing is written under every
+/// scope, which is what proves the scope is a predicate and not a switch that
+/// refuses on sight.
+#[test]
+fn reject_lossy_scopes_select_which_losses_refuse() {
+    let dir = tempdir().unwrap();
+    let lossy = geometryless_creo(dir.path(), "lossy.prt");
+    let path = lossy.to_str().unwrap();
+
+    for scope in [
+        "--reject-lossy",
+        "--reject-lossy=decode",
+        "--reject-lossy=any",
+    ] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["convert", path, "-f", "step", "--allow-empty", scope])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("decode reported"));
+    }
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["convert", path, "-f", "step", "--rhino-target", "80"])
+        .args([
+            "convert",
+            path,
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy=export",
+        ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains(
-            "--rhino-target requires Rhino output",
-        ));
+        .stderr(
+            predicate::str::contains("refused unrepresentable content")
+                .and(predicate::str::contains("decode reported").not()),
+        );
+
+    let lossless = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    for scope in [
+        "--reject-lossy",
+        "--reject-lossy=decode",
+        "--reject-lossy=export",
+    ] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["convert", lossless.to_str().unwrap(), "-f", "step", scope])
+            .assert()
+            .success();
+    }
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            path,
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy=nonesuch",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("invalid value"));
 }
 
 #[test]

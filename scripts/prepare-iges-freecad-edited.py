@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
         "--iges-target",
         choices=("5.1", "5.2", "5.3"),
         default="5.3",
-        help="IGES target version (default: 5.3)",
+        help="IGES target version, passed to `cadmpeg convert --to` (default: 5.3)",
     )
     parser.add_argument(
         "--output-name",
@@ -137,10 +137,8 @@ def main() -> None:
                 args.cadmpeg,
                 "convert",
                 str(edited),
-                "--format",
-                "iges",
-                "--iges-target",
-                args.iges_target,
+                "--to",
+                f"iges:{args.iges_target}-fixed-ascii",
                 "--limits",
                 args.limits,
                 "--allow-empty",

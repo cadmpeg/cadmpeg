@@ -23,7 +23,15 @@ The rules, all cross-referencing:
   format's identity rows, and each exported id has a support row whose
   ``write`` is not ``none``. Subset, not equality: read-side rows
   (``step:ap242``) and residual rows (``*:unknown``) are legitimately not
-  write targets.
+  write targets;
+* **no target alias is an output-format word.** ``cadmpeg convert --to
+  VALUE`` reads a bare ``VALUE`` as a format first and as a dialect alias of
+  the inferred output format second, so an alias that is also a format word
+  would be unreachable and the grammar ambiguous. The reserved words are the
+  ``[format.<id>]`` keys of the identity registry, ``cadir``, and the aliases
+  the CLI's own ``Format`` enum accepts, parsed from
+  ``crates/cadmpeg/src/main.rs`` so the rule tracks the vocabulary rather
+  than a copy of it.
 
 Write-target mechanism. The catalogs are ``const``/``static`` tables of
 ``TargetDescriptor`` literals in ``crates/cadmpeg-codec-*/src/**.rs``. This
@@ -77,7 +85,13 @@ CODEC_SRC_GLOB = "crates/cadmpeg-codec-*/src"
 
 TARGET_LITERAL = re.compile(r"TargetDescriptor\s*\{(.*?)\}", re.DOTALL)
 TARGET_ID_FIELD = re.compile(r"\bid\s*:\s*([^,\n]+?)\s*,")
+TARGET_ALIASES_FIELD = re.compile(r"\baliases\s*:\s*&\[(.*?)\]", re.DOTALL)
 STRING_LITERAL = re.compile(r'"([^"]*)"')
+
+# The CLI's output-format vocabulary, so the alias-collision rule tracks the
+# words `--to` actually accepts instead of a second copy of them.
+CLI_MAIN_REL = Path("crates") / "cadmpeg" / "src" / "main.rs"
+FROM_NAME_FN = re.compile(r"fn from_name\(.*?\n    \}", re.DOTALL)
 PINNED_CALL = re.compile(r"^[A-Za-z0-9_]+::([A-Za-z0-9_]+)\.pinned\(\)$")
 PINNED_ARM = re.compile(r'Self::([A-Za-z0-9_]+)\s*=>\s*"([^"]+)"')
 
@@ -105,11 +119,16 @@ def _load(path: Path, label: str, failures: list[str]) -> dict | None:
 # --------------------------------------------------------------------------
 
 
-def parse_target_catalogs(root: Path, failures: list[str]) -> dict[str, set[str]]:
+def parse_target_catalogs(
+    root: Path, failures: list[str], aliases: dict[str, set[str]] | None = None
+) -> dict[str, set[str]]:
     """Return ``{format: {target id}}`` from the ``TargetDescriptor`` tables.
 
-    An ``id:`` expression this parser cannot resolve is a failure. A silent
-    skip would make the subset rule vacuous for that catalog.
+    An ``id:`` or ``aliases:`` expression this parser cannot resolve is a
+    failure. A silent skip would make the subset and collision rules vacuous
+    for that catalog.
+
+    ``aliases``, when given, is filled with ``{target id: {alias}}``.
     """
     catalogs: dict[str, set[str]] = {}
     for src in sorted(root.glob(CODEC_SRC_GLOB)):
@@ -133,7 +152,82 @@ def parse_target_catalogs(root: Path, failures: list[str]) -> dict[str, set[str]
                     failures.append(f"{rel}: target id {resolved!r} is not <format>:<name>")
                     continue
                 catalogs.setdefault(resolved.split(":", 1)[0], set()).add(resolved)
+                if aliases is not None:
+                    aliases.setdefault(resolved, set()).update(
+                        _parse_aliases(rel, resolved, body, failures)
+                    )
     return catalogs
+
+
+def _parse_aliases(rel: str, target: str, body: str, failures: list[str]) -> set[str]:
+    """The ``aliases`` field of one ``TargetDescriptor`` literal.
+
+    Every literal declares the field: the struct has no ``Default``. A literal
+    that appears not to, or one whose list holds anything but string literals,
+    is a failure rather than an empty set, because an unparsed list would let
+    a colliding alias through.
+    """
+    field = TARGET_ALIASES_FIELD.search(body)
+    if field is None:
+        failures.append(f"{rel}: {target}: TargetDescriptor literal has no aliases field")
+        return set()
+    inner = field.group(1).strip().rstrip(",").strip()
+    if not inner:
+        return set()
+    found: set[str] = set()
+    for piece in inner.split(","):
+        piece = piece.strip()
+        if not piece:
+            continue
+        literal = STRING_LITERAL.fullmatch(piece)
+        if literal is None:
+            failures.append(f"{rel}: {target}: cannot resolve alias expression {piece!r}")
+            continue
+        found.add(literal.group(1))
+    return found
+
+
+def output_format_words(root: Path, registry_formats: set[str], failures: list[str]) -> set[str]:
+    """Words ``cadmpeg convert --to`` reads as an output format.
+
+    The identity registry's format ids, ``cadir`` (the neutral document, which
+    has no identity rows), and the aliases the CLI's own ``Format::from_name``
+    accepts. The CLI file is read where it exists; where it does not -- a
+    synthetic root -- the registry ids still apply. A file that exists but
+    whose ``from_name`` cannot be read is a failure, because that is how the
+    rule would quietly weaken in the real tree.
+    """
+    words = set(registry_formats) | {"cadir"}
+    main = root / CLI_MAIN_REL
+    if not main.is_file():
+        return words
+    block = FROM_NAME_FN.search(main.read_text(encoding="utf-8"))
+    if block is None:
+        failures.append(f"{CLI_MAIN_REL.as_posix()}: no Format::from_name to read --to's vocabulary from")
+        return words
+    literals = set(STRING_LITERAL.findall(block.group(0)))
+    if not literals:
+        failures.append(f"{CLI_MAIN_REL.as_posix()}: Format::from_name names no output formats")
+        return words
+    return words | literals
+
+
+def check_alias_collisions(
+    aliases: dict[str, set[str]], reserved: set[str], failures: list[str]
+) -> None:
+    """No target alias is an output-format word.
+
+    ``cadmpeg convert --to VALUE`` reads a bare ``VALUE`` as a format first
+    and as a dialect alias second, so an alias that is also a format word
+    would be unreachable and the grammar ambiguous.
+    """
+    for target in sorted(aliases):
+        for alias in sorted(aliases[target]):
+            if alias in reserved:
+                failures.append(
+                    f"{target}: alias {alias!r} is also an output-format word; "
+                    "a bare --to value would be ambiguous"
+                )
 
 
 def _resolve_target_id(expr: str, arms: dict[str, str]) -> str | None:
@@ -445,18 +539,27 @@ def check(root: Path) -> tuple[list[str], str]:
             tally[read] += 1
 
     check_totality(known, covered, failures)
-    catalogs = parse_target_catalogs(root, failures)
+    aliases: dict[str, set[str]] = {}
+    catalogs = parse_target_catalogs(root, failures, aliases)
     check_target_subset(catalogs, known, writes, failures)
+    registry_formats = {
+        name for name in identity.get("format", {}) if isinstance(name, str)
+    }
+    check_alias_collisions(
+        aliases, output_format_words(root, registry_formats, failures), failures
+    )
     verified = check_snapshot_dialects(root, fixtures_by_dialect, reads, failures)
 
     scored = sum(n for value, n in tally.items() if value in READ_SCORES)
     targets = sum(len(ids) for ids in catalogs.values())
+    alias_total = sum(len(names) for names in aliases.values())
     summary = (
         f"dialect-support: ok ({len(rows)} rows covering {len(known)} identity rows; "
         f"{scored} scored, {tally['detected']} detected, {tally['refused']} refused, "
         f"{tally['unclassified-recovered']} unclassified-recovered; "
         f"{fixture_total} fixtures, {verified} confirmed against golden decode snapshots; "
-        f"{targets} write targets across {len(catalogs)} catalogs)"
+        f"{targets} write targets across {len(catalogs)} catalogs, "
+        f"{alias_total} target aliases, none an output-format word)"
     )
     return failures, summary
 

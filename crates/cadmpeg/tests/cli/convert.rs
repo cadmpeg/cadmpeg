@@ -26,20 +26,24 @@ fn convert_stdout_contains_only_json_artifact() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
 }
 
+/// `--to` names the schema, in both spellings the grammar admits.
+///
+/// `step:ap242-e3` is the registry id; `ap242e3` is the catalog alias, usable
+/// bare because the output extension already names the format. Both must reach
+/// the same `FILE_SCHEMA`, or one of the two spellings is decoration.
 #[test]
 fn step_artifact_starts_with_step_header() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.json", &unit_cube());
+
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
             "convert",
             input.to_str().unwrap(),
-            "-f",
-            "step",
-            "--step-target",
-            "ap242e3",
-            "--reject-step-losses",
+            "--to",
+            "step:ap242-e3",
+            "--reject-lossy=export",
         ])
         .output()
         .unwrap();
@@ -48,6 +52,22 @@ fn step_artifact_starts_with_step_header() {
     assert!(String::from_utf8_lossy(&output.stdout)
         .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
     assert!(!String::from_utf8_lossy(&output.stdout).contains("check:"));
+
+    let aliased = dir.path().join("cube.step");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            aliased.to_str().unwrap(),
+            "--to",
+            "ap242e3",
+        ])
+        .assert()
+        .success();
+    assert!(String::from_utf8_lossy(&fs::read(&aliased).unwrap())
+        .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
 }
 
 #[test]
@@ -113,6 +133,11 @@ fn source_less_ir_exports_to_decodable_rhino() {
     );
 }
 
+/// The Rhino archive version is a dialect of `--to`, in all three spellings.
+///
+/// `rhino:archive-60` is the registry id, `3dm:archive-60` reaches the same row
+/// through the format alias, and `60` is the native short vocabulary, usable
+/// bare because the output path already names the format.
 #[test]
 fn rhino_output_version_is_selected_explicitly() {
     let dir = tempdir().unwrap();
@@ -123,36 +148,30 @@ fn rhino_output_version_is_selected_explicitly() {
         source_object: None,
     });
     let input = fixture(dir.path(), "point.cadir.json", &ir);
-    let output = dir.path().join("point.3dm");
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-o",
-            output.to_str().unwrap(),
-            "--rhino-target",
-            "60",
-            "--allow-errors",
-        ])
-        .assert()
-        .success();
-    assert_eq!(&fs::read(output).unwrap()[24..32], b"      60");
-
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-f",
-            "cadir",
-            "--rhino-target",
-            "60",
-            "--allow-errors",
-        ])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("requires Rhino output"));
+    for (index, spelling) in ["rhino:archive-60", "3dm:archive-60", "60"]
+        .into_iter()
+        .enumerate()
+    {
+        let output = dir.path().join(format!("point-{index}.3dm"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--to",
+                spelling,
+                "--allow-errors",
+            ])
+            .assert()
+            .success();
+        assert_eq!(
+            &fs::read(output).unwrap()[24..32],
+            b"      60",
+            "{spelling}"
+        );
+    }
 }
 
 #[test]
@@ -241,7 +260,9 @@ fn format_is_required_when_stdout_has_no_extension() {
         .args(["convert", input.to_str().unwrap()])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("cannot infer format; pass -f"));
+        .stderr(predicate::str::contains(
+            "cannot infer format from the output path; pass --to FORMAT",
+        ));
 }
 
 #[test]
@@ -611,7 +632,7 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             input.to_str().unwrap(),
             "-o",
             original.to_str().unwrap(),
-            "--iges-target",
+            "--to",
             "5.1",
             "--allow-errors",
         ])
@@ -641,11 +662,67 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             original.to_str().unwrap(),
             "-o",
             upgraded.to_str().unwrap(),
-            "--iges-target",
+            "--to",
             "5.3",
             "--allow-errors",
         ])
         .assert()
         .success();
     assert_ne!(fs::read(&upgraded).unwrap(), original_bytes);
+}
+
+/// A `--to` that names only a format states no dialect, so a same-format
+/// conversion still inherits.
+///
+/// `--to` is the same flag as `-f`/`--format`, and `-f iges` has always said
+/// which kind of file to write, not which dialect of it. Reading a bare format
+/// as its catalog default would make `convert old.igs -o new.igs -f iges`
+/// silently rewrite the version while the identical command without `-f`
+/// preserved it — the defect the identity default exists to close, back
+/// through the spelling most users reach for. Naming the dialect is still the
+/// escape.
+#[test]
+#[cfg(feature = "iges")]
+fn a_to_that_names_only_the_format_still_inherits() {
+    let dir = tempdir().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.points.push(cadmpeg_ir::topology::Point {
+        id: cadmpeg_ir::ids::PointId("cadir:model:point#bare".into()),
+        position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
+    });
+    let input = fixture(dir.path(), "point.cadir.json", &ir);
+    let original = dir.path().join("v51.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            original.to_str().unwrap(),
+            "--to",
+            "iges:5.1-fixed-ascii",
+            "--allow-errors",
+        ])
+        .assert()
+        .success();
+    let original_bytes = fs::read(&original).unwrap();
+
+    for spelling in ["iges", "igs"] {
+        let inherited = dir.path().join(format!("inherited-{spelling}.igs"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                original.to_str().unwrap(),
+                "-o",
+                inherited.to_str().unwrap(),
+                "--to",
+                spelling,
+                "--allow-errors",
+            ])
+            .assert()
+            .success();
+        assert_eq!(fs::read(&inherited).unwrap(), original_bytes, "{spelling}");
+    }
 }
