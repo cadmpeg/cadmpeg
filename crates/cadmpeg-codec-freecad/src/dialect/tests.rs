@@ -78,9 +78,9 @@ struct Case {
 /// Declarations spanning every arm of the schema dispatch.
 ///
 /// Ids come from `docs/dialects.toml`, admission from
-/// `persistence::parse_with_context`'s `"2"` and `"3" | "4"` arms. `"04"` and
-/// `"10"` parse as unsigned integers — `container::parse_document` requires
-/// that much — and still match no row's `schema_version` discriminant.
+/// `persistence::parse_with_context`'s `== "2"` branch and `else` branch.
+/// `"04"` and `"10"` parse as unsigned integers — `container::parse_document`
+/// requires that much — and still match no row's `schema_version` discriminant.
 const CASES: &[Case] = &[
     Case {
         declaration: "2",
