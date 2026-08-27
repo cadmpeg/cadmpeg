@@ -130,6 +130,8 @@ jobs:
           python3 scripts/check-codec-facade.py
           python3 -m unittest -v scripts/test_check_dialects.py
           python3 scripts/check-dialects.py
+          python3 -m unittest -v scripts/test_check_dialect_support.py
+          python3 scripts/check-dialect-support.py
           python3 -m unittest -v scripts/test_render_format_support.py
           python3 scripts/render-format-support.py --check
 
