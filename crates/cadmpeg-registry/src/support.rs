@@ -522,7 +522,14 @@ mod tests {
 
         for format in Format::ALL {
             let targets = write_targets(*format);
+            let prefix = format!("{}:", format.name());
             for target in targets {
+                assert!(
+                    target.id.starts_with(&prefix),
+                    "{}: compiled target belongs to the {} catalog but does not use its registry prefix {prefix:?}",
+                    target.id,
+                    format.name()
+                );
                 let disposition = dispositions
                     .get(target.id)
                     .unwrap_or_else(|| panic!("{}: not a registry row", target.id));
@@ -551,7 +558,6 @@ mod tests {
             if targets.is_empty() {
                 continue;
             }
-            let prefix = format!("{}:", format.name());
             for (id, disposition) in &dispositions {
                 if id.starts_with(&prefix)
                     && matches!(
