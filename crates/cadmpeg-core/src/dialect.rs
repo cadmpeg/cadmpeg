@@ -102,6 +102,11 @@ pub enum Admission {
     /// document can carry a registry row of its own while its bytes are
     /// read with a newer grammar.
     ///
+    /// A format's residual `unknown` row is never [`Admission::Admitted`]:
+    /// admission verifies a declared identity, and the residual row is the
+    /// absence of one. When the substituted strategy is the residual row's
+    /// own declared fallback, `nearest` names the row itself.
+    ///
     /// The codec must charge its dialect-unverified loss.
     AdmittedUnverified {
         /// Dialect whose declared strategy was substituted for the parse.
