@@ -668,7 +668,7 @@ witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
 # container decode test only `schema_version == "2"` and use that vocabulary
 # for the `else` branch (persistence.rs:52-60, container.rs:224-237).
 # `FcstdDialect::classify` returns `Admission::AdmittedUnverified`, names
-# `fcstd:schema-4` as the nearest row, and full decode charges
+# `fcstd:schema-4` as the nearest row, and both decode branches charge
 # `fcstd/source.dialect-unverified` (dialect.rs:169-220). Schema 4 is the newer
 # row with that vocabulary and the writer's default.
 id = "fcstd:unknown"
