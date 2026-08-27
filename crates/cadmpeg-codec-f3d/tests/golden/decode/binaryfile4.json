@@ -446,6 +446,17 @@
           "top_level_manifest_version": "3-2-0-0"
         },
         "admission": "admitted"
+      },
+      {
+        "format": "acis",
+        "dialect": "acis:asm-binaryfile-4",
+        "declared": {
+          "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "reference_width": "4",
+          "save_format_major": "227",
+          "save_format_minor": "0"
+        },
+        "admission": "admitted"
       }
     ]
   },

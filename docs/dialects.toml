@@ -1,10 +1,9 @@
-# Draft naming contract for the dialect migration; enforced by
-# scripts/check-dialects.py when it lands. Ids are pinned from this commit
-# onward.
+# Dialect identity registry. `scripts/check-dialects.py` enforces this contract
+# in the commit hook and CI. Ids are pinned.
 #
 # This file describes formats, not cadmpeg. It changes when a vendor ships,
 # never when cadmpeg gains a decoder. Capability lives in
-# `docs/dialect-support.toml` (not yet written). See
+# `docs/dialect-support.toml`. See
 # `~/side2/cadmpeg-dialects-design.md` §3 and §5 for the model.
 #
 # Schema

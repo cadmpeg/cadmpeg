@@ -4752,13 +4752,10 @@ fn source_and_tolerances(
     (source_meta(scan, attributes), tolerances)
 }
 
-/// The archive's dialect matches: exactly the primary `f3d` layer.
-///
-/// The embedded ACIS layer of the B-rep streams is a second format layer and
-/// gets its own match once `cadmpeg-asm` declares those rows. This codec
-/// declares only the layer it owns.
+/// The archive's primary `f3d` layer and its embedded ACIS layers.
 fn primary_layer_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMatch> {
-    let dialects = vec![scan.dialect.clone()];
+    let mut dialects = vec![scan.dialect.clone()];
+    dialects.extend(crate::dialect::kernel_layers(scan));
     cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     dialects
 }
@@ -4768,8 +4765,16 @@ fn primary_layer_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::Di
 ///
 /// Every `DecodeReport` this codec builds appends this, so the charge and
 /// `DecodeReport::dialects` come from the same match and cannot disagree.
-fn dialect_losses(scan: &ContainerScan) -> Option<cadmpeg_ir::report::LossNote> {
-    crate::dialect::dialect_loss(&scan.dialect)
+fn dialect_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::LossNote> {
+    let mut losses = crate::dialect::dialect_loss(&scan.dialect)
+        .into_iter()
+        .collect::<Vec<_>>();
+    losses.extend(
+        crate::dialect::kernel_layers(scan)
+            .iter()
+            .filter_map(crate::dialect::kernel_dialect_loss),
+    );
+    losses
 }
 
 /// Source metadata carrying `attributes`, with the primary-layer match mirrored

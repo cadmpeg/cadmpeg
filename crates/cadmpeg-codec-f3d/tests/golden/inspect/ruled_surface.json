@@ -8,6 +8,17 @@
       },
       "dialect": "f3d:manifest-3-2-0-0",
       "format": "f3d"
+    },
+    {
+      "admission": "admitted",
+      "declared": {
+        "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        "reference_width": "8",
+        "save_format_major": "231",
+        "save_format_minor": "0"
+      },
+      "dialect": "acis:asm-binaryfile-8",
+      "format": "acis"
     }
   ],
   "entries": [

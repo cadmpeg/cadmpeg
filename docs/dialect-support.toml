@@ -1288,20 +1288,83 @@ reason = """
 dialect = "acis:asm-binaryfile-4"
 read = "detected"
 write = "none"
-fixtures = []
+fixtures = [
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/binaryfile4.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/binaryfile4_nurbs.f3d",
+]
 reason = """
-admitted at every save format: the ASM record decoders compare none. The
-Inventor decode emits this id as the non-primary kernel layer of a
-four-byte-width carrier; the goldens that pin it are code-built"""
+admitted at every save format: the ASM record decoders compare none. F3D and
+Inventor emit this id as the non-primary kernel layer of a four-byte-width
+carrier; the F3D goldens pin it"""
 
 [[support]]
 dialect = "acis:asm-binaryfile-8"
 read = "detected"
 write = "none"
-fixtures = []
+fixtures = [
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/attributes.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/body_color.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/body_transform.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/compound_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/compound_loft_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/container_metadata_only.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/cyl_spline_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/deformable_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/degenerate_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_appearances_protein.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_base_feature.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_base_flange.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_configuration.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_copy_paste.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_copy_paste_bodies.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_form.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_remove_body.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_surface_stitch.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/exact_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/exact_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/face_color.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/free_vertex_body.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/g2_blend_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/generated_unit_cube.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/helix_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/helix_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/history.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/law_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/law_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/loft_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/mesh_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/mixed_face_wire_body.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/net_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/offset_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_inline.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_rational.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_ref.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/projection_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/revolution_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/rolling_ball_blend_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/ruled_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/scaled_compound_loft_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/silhouette_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sketch_link.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/skin_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/spring_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sub_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/subset_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sum_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/surface_intersection_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/surface_offset_curve.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sweep_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/taper_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/topology_base.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/tspline_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/variable_blend_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/vertex_blend_surface.f3d",
+  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/wire_body.f3d",
+]
 reason = """
-the eight-byte-width half of `acis:asm-binaryfile-4`; witnessed only by
-`cadmpeg-asm`'s row-mapping test — no golden carries the id"""
+the eight-byte-width half of `acis:asm-binaryfile-4`; F3D goldens pin the
+non-primary layer"""
 
 [[support]]
 dialect = "acis:save-format-217"

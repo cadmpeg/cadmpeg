@@ -613,10 +613,10 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    let inspected = match summary.dialects.as_slice() {
-        [only] => only.clone(),
-        other => panic!("inspect must report exactly one layer, got {}", other.len()),
-    };
+    let inspected = cadmpeg_core::dialect::primary_layer(&summary.dialects, "f3d")
+        .expect("inspect must report exactly one primary F3D layer")
+        .clone();
+    let inspected_dialects = summary.dialects;
     assert_eq!(inspected.format, "f3d");
     assert_eq!(
         inspected
@@ -637,7 +637,7 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.report().dialects, vec![inspected.clone()]);
+    assert_eq!(decoded.report().dialects, inspected_dialects);
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect, inspected.dialect);
     assert_eq!(source.declared, inspected.declared);
@@ -654,10 +654,10 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    let inspected = match summary.dialects.as_slice() {
-        [only] => only.clone(),
-        other => panic!("inspect must report exactly one layer, got {}", other.len()),
-    };
+    let inspected = cadmpeg_core::dialect::primary_layer(&summary.dialects, "f3d")
+        .expect("inspect must report exactly one primary F3D layer")
+        .clone();
+    let inspected_dialects = summary.dialects;
     assert_eq!(inspected.format, "f3d");
     assert_eq!(
         inspected
@@ -675,7 +675,7 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(document), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.report().dialects, vec![inspected.clone()]);
+    assert_eq!(decoded.report().dialects, inspected_dialects);
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect, inspected.dialect);
     assert_eq!(source.declared, inspected.declared);

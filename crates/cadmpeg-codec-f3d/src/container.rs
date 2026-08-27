@@ -221,9 +221,8 @@ pub struct ContainerScan<'a> {
     /// Primary-layer dialect of this archive, classified from the same
     /// discriminants that chose [`Self::kind`].
     ///
-    /// Exactly one entry, `format == "f3d"`. The embedded ACIS layer of the
-    /// BREP streams is a separate match owned by `cadmpeg-asm` and is not
-    /// declared here.
+    /// Exactly one entry, `format == "f3d"`. Embedded ACIS layers are derived
+    /// from [`Self::breps`] when a report is built.
     pub dialect: DialectMatch,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
@@ -536,7 +535,8 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
             .to_string(),
     );
 
-    let dialects = vec![scan.dialect.clone()];
+    let mut dialects = vec![scan.dialect.clone()];
+    dialects.extend(crate::dialect::kernel_layers(scan));
     debug_assert_primary_layer(&dialects, FORMAT);
     ContainerSummary {
         dialects,

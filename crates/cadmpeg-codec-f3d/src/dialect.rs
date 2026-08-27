@@ -217,5 +217,61 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     }
 }
 
+/// Kernel dialect layers declared by the binary B-rep streams.
+pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
+    scan.breps
+        .iter()
+        .filter_map(|brep| {
+            let bytes = scan.entry_bytes(&brep.name).ok()?;
+            let (header, dialect, admission) = if cadmpeg_asm::asm_header::has_asm_magic(bytes) {
+                let header = cadmpeg_asm::asm_header::parse(bytes)?;
+                let dialect = cadmpeg_asm::dialect::asm_binary_row(header.width);
+                (header, dialect, Admission::Admitted)
+            } else {
+                let header = cadmpeg_asm::acis_header::parse(bytes)?;
+                let major = header.save_format_major();
+                let dialect = cadmpeg_asm::dialect::acis_binary_row(major);
+                let admission = cadmpeg_asm::dialect::acis_admission(major);
+                (header, dialect, admission)
+            };
+            let mut declared = BTreeMap::new();
+            declared.insert("carrier".to_owned(), brep.name.clone());
+            if let Some(major) = header.save_format_major() {
+                declared.insert("save_format_major".to_owned(), major.to_string());
+            }
+            if let Some(minor) = header.save_format_minor() {
+                declared.insert("save_format_minor".to_owned(), minor.to_string());
+            }
+            declared.insert("reference_width".to_owned(), header.width.to_string());
+            Some(DialectMatch {
+                format: "acis".to_owned(),
+                dialect: Some(dialect),
+                declared,
+                admission,
+            })
+        })
+        .collect()
+}
+
+/// The recovery loss a kernel layer charges, if it recovered.
+pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+        return None;
+    };
+    let carrier = matched
+        .declared
+        .get("carrier")
+        .map_or("an unnamed carrier", String::as_str);
+    let declared = matched.declared.get("save_format_major").map_or_else(
+        || "no save format".to_owned(),
+        |major| format!("save format major {major}"),
+    );
+    Some(F3dLossCode::KernelDialectUnverified.note(format!(
+        "the kernel carrier {carrier} declares {declared}, which no verified Spatial ACIS band \
+         declares; its records were read with the grammar `{nearest}` declares, and what they \
+         decoded is reported as it decoded"
+    )))
+}
+
 #[cfg(test)]
 mod tests;
