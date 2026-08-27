@@ -1,0 +1,184 @@
+{
+  "explicit_ap242_e3": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = PLANE('',#9);\n#11 = VERTEX_POINT('',#6);\n#12 = CARTESIAN_POINT('',(10.,0.,0.));\n#13 = VERTEX_POINT('',#12);\n#14 = VECTOR('',#8,1.);\n#15 = LINE('',#6,#14);\n#16 = COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#15);\n#17 = COMPOSITE_CURVE('',(#16),.F.);\n#18 = COMPOSITE_CURVE_SEGMENT(.CONTSAMEGRADIENT.,.T.,#17);\n#19 = COMPOSITE_CURVE('',(#18),.F.);\n#20 = EDGE_CURVE('',#11,#13,#19,.T.);\n#21 = ORIENTED_EDGE('',*,*,#20,.T.);\n#22 = CARTESIAN_POINT('',(0.,10.,0.));\n#23 = VERTEX_POINT('',#22);\n#24 = DIRECTION('',(-0.7071067811865476,0.7071067811865476,0.));\n#25 = VECTOR('',#24,1.);\n#26 = LINE('',#12,#25);\n#27 = EDGE_CURVE('',#13,#23,#26,.T.);\n#28 = ORIENTED_EDGE('',*,*,#27,.T.);\n#29 = DIRECTION('',(0.,-1.,0.));\n#30 = VECTOR('',#29,1.);\n#31 = LINE('',#22,#30);\n#32 = EDGE_CURVE('',#23,#11,#31,.T.);\n#33 = ORIENTED_EDGE('',*,*,#32,.T.);\n#34 = EDGE_LOOP('',(#21,#28,#33));\n#35 = FACE_OUTER_BOUND('',#34,.T.);\n#36 = ADVANCED_FACE('',(#35),#10,.T.);\n#37 = OPEN_SHELL('',(#36));\n#38 = SHELL_BASED_SURFACE_MODEL('',(#37));\n#39 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#40 = PLANE('',#39);\n#41 = GEOMETRIC_SET('',(#40));\n#42 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#43 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#44 = APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2022,#43);\n#45 = PRODUCT_CONTEXT('',#43,'mechanical');\n#46 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#45));\n#47 = PRODUCT_DEFINITION_FORMATION('','',#46);\n#48 = PRODUCT_DEFINITION_CONTEXT('part definition',#43,'design');\n#49 = PRODUCT_DEFINITION('design','',#47,#48);\n#50 = PRODUCT_DEFINITION_SHAPE('','',#49);\n#51 = SHAPE_REPRESENTATION('',(#38,#41,#42),#5);\n#52 = SHAPE_DEFINITION_REPRESENTATION(#50,#51);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "ADVANCED_FACE": 1,
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS2_PLACEMENT_3D": 3,
+          "CARTESIAN_POINT": 3,
+          "COMPOSITE_CURVE": 2,
+          "COMPOSITE_CURVE_SEGMENT": 2,
+          "DIRECTION": 4,
+          "EDGE_CURVE": 3,
+          "EDGE_LOOP": 1,
+          "FACE_OUTER_BOUND": 1,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "GEOMETRIC_SET": 1,
+          "LENGTH_UNIT": 1,
+          "LINE": 3,
+          "OPEN_SHELL": 1,
+          "ORIENTED_EDGE": 3,
+          "PLANE": 2,
+          "PLANE_ANGLE_UNIT": 1,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SHELL_BASED_SURFACE_MODEL": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+          "VECTOR": 3,
+          "VERTEX_POINT": 3
+        }
+      },
+      "fidelity": {
+        "reason": "source is step:ap203-e1, target is step:ap242-e3; the schema the source declared is not what this export writes",
+        "status": "degraded"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "geometry.procedural-reduced-to-carrier",
+            "kind": "procedural_reduced",
+            "namespace": "step"
+          },
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap242-e3",
+      "write_path": "synthesized"
+    }
+  },
+  "explicit_default": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = PLANE('',#9);\n#11 = VERTEX_POINT('',#6);\n#12 = CARTESIAN_POINT('',(10.,0.,0.));\n#13 = VERTEX_POINT('',#12);\n#14 = VECTOR('',#8,1.);\n#15 = LINE('',#6,#14);\n#16 = COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#15);\n#17 = COMPOSITE_CURVE('',(#16),.F.);\n#18 = COMPOSITE_CURVE_SEGMENT(.CONTSAMEGRADIENT.,.T.,#17);\n#19 = COMPOSITE_CURVE('',(#18),.F.);\n#20 = EDGE_CURVE('',#11,#13,#19,.T.);\n#21 = ORIENTED_EDGE('',*,*,#20,.T.);\n#22 = CARTESIAN_POINT('',(0.,10.,0.));\n#23 = VERTEX_POINT('',#22);\n#24 = DIRECTION('',(-0.7071067811865476,0.7071067811865476,0.));\n#25 = VECTOR('',#24,1.);\n#26 = LINE('',#12,#25);\n#27 = EDGE_CURVE('',#13,#23,#26,.T.);\n#28 = ORIENTED_EDGE('',*,*,#27,.T.);\n#29 = DIRECTION('',(0.,-1.,0.));\n#30 = VECTOR('',#29,1.);\n#31 = LINE('',#22,#30);\n#32 = EDGE_CURVE('',#23,#11,#31,.T.);\n#33 = ORIENTED_EDGE('',*,*,#32,.T.);\n#34 = EDGE_LOOP('',(#21,#28,#33));\n#35 = FACE_OUTER_BOUND('',#34,.T.);\n#36 = ADVANCED_FACE('',(#35),#10,.T.);\n#37 = OPEN_SHELL('',(#36));\n#38 = SHELL_BASED_SURFACE_MODEL('',(#37));\n#39 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#40 = PLANE('',#39);\n#41 = GEOMETRIC_SET('',(#40));\n#42 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#43 = APPLICATION_CONTEXT('automotive design');\n#44 = APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#43);\n#45 = PRODUCT_CONTEXT('',#43,'mechanical');\n#46 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#45));\n#47 = PRODUCT_DEFINITION_FORMATION('','',#46);\n#48 = PRODUCT_DEFINITION_CONTEXT('part definition',#43,'design');\n#49 = PRODUCT_DEFINITION('design','',#47,#48);\n#50 = PRODUCT_DEFINITION_SHAPE('','',#49);\n#51 = SHAPE_REPRESENTATION('',(#38,#41,#42),#5);\n#52 = SHAPE_DEFINITION_REPRESENTATION(#50,#51);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "ADVANCED_FACE": 1,
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS2_PLACEMENT_3D": 3,
+          "CARTESIAN_POINT": 3,
+          "COMPOSITE_CURVE": 2,
+          "COMPOSITE_CURVE_SEGMENT": 2,
+          "DIRECTION": 4,
+          "EDGE_CURVE": 3,
+          "EDGE_LOOP": 1,
+          "FACE_OUTER_BOUND": 1,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "GEOMETRIC_SET": 1,
+          "LENGTH_UNIT": 1,
+          "LINE": 3,
+          "OPEN_SHELL": 1,
+          "ORIENTED_EDGE": 3,
+          "PLANE": 2,
+          "PLANE_ANGLE_UNIT": 1,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SHELL_BASED_SURFACE_MODEL": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+          "VECTOR": 3,
+          "VERTEX_POINT": 3
+        }
+      },
+      "fidelity": {
+        "reason": "source is step:ap203-e1, target is step:ap214; the schema the source declared is not what this export writes",
+        "status": "degraded"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "geometry.procedural-reduced-to-carrier",
+            "kind": "procedural_reduced",
+            "namespace": "step"
+          },
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap214",
+      "write_path": "synthesized"
+    }
+  },
+  "inherit": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('CONFIG_CONTROL_DESIGN'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = PLANE('',#9);\n#11 = VERTEX_POINT('',#6);\n#12 = CARTESIAN_POINT('',(10.,0.,0.));\n#13 = VERTEX_POINT('',#12);\n#14 = VECTOR('',#8,1.);\n#15 = LINE('',#6,#14);\n#16 = COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#15);\n#17 = COMPOSITE_CURVE('',(#16),.F.);\n#18 = COMPOSITE_CURVE_SEGMENT(.CONTSAMEGRADIENT.,.T.,#17);\n#19 = COMPOSITE_CURVE('',(#18),.F.);\n#20 = EDGE_CURVE('',#11,#13,#19,.T.);\n#21 = ORIENTED_EDGE('',*,*,#20,.T.);\n#22 = CARTESIAN_POINT('',(0.,10.,0.));\n#23 = VERTEX_POINT('',#22);\n#24 = DIRECTION('',(-0.7071067811865476,0.7071067811865476,0.));\n#25 = VECTOR('',#24,1.);\n#26 = LINE('',#12,#25);\n#27 = EDGE_CURVE('',#13,#23,#26,.T.);\n#28 = ORIENTED_EDGE('',*,*,#27,.T.);\n#29 = DIRECTION('',(0.,-1.,0.));\n#30 = VECTOR('',#29,1.);\n#31 = LINE('',#22,#30);\n#32 = EDGE_CURVE('',#23,#11,#31,.T.);\n#33 = ORIENTED_EDGE('',*,*,#32,.T.);\n#34 = EDGE_LOOP('',(#21,#28,#33));\n#35 = FACE_OUTER_BOUND('',#34,.T.);\n#36 = ADVANCED_FACE('',(#35),#10,.T.);\n#37 = OPEN_SHELL('',(#36));\n#38 = SHELL_BASED_SURFACE_MODEL('',(#37));\n#39 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#40 = PLANE('',#39);\n#41 = GEOMETRIC_SET('',(#40));\n#42 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#43 = APPLICATION_CONTEXT('configuration controlled 3d designs of mechanical parts and assemblies');\n#44 = APPLICATION_PROTOCOL_DEFINITION('international standard','config_control_design',1994,#43);\n#45 = PRODUCT_CONTEXT('',#43,'mechanical');\n#46 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#45));\n#47 = PRODUCT_DEFINITION_FORMATION('','',#46);\n#48 = PRODUCT_DEFINITION_CONTEXT('part definition',#43,'design');\n#49 = PRODUCT_DEFINITION('design','',#47,#48);\n#50 = PRODUCT_DEFINITION_SHAPE('','',#49);\n#51 = SHAPE_REPRESENTATION('',(#38,#41,#42),#5);\n#52 = SHAPE_DEFINITION_REPRESENTATION(#50,#51);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "ADVANCED_FACE": 1,
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS2_PLACEMENT_3D": 3,
+          "CARTESIAN_POINT": 3,
+          "COMPOSITE_CURVE": 2,
+          "COMPOSITE_CURVE_SEGMENT": 2,
+          "DIRECTION": 4,
+          "EDGE_CURVE": 3,
+          "EDGE_LOOP": 1,
+          "FACE_OUTER_BOUND": 1,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "GEOMETRIC_SET": 1,
+          "LENGTH_UNIT": 1,
+          "LINE": 3,
+          "OPEN_SHELL": 1,
+          "ORIENTED_EDGE": 3,
+          "PLANE": 2,
+          "PLANE_ANGLE_UNIT": 1,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SHELL_BASED_SURFACE_MODEL": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+          "VECTOR": 3,
+          "VERTEX_POINT": 3
+        }
+      },
+      "fidelity": {
+        "status": "not_provided"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "geometry.procedural-reduced-to-carrier",
+            "kind": "procedural_reduced",
+            "namespace": "step"
+          },
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap203-e1",
+      "write_path": "synthesized"
+    }
+  }
+}

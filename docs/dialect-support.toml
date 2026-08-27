@@ -519,10 +519,17 @@ filter, so a source that classifies here replays its own bytes under
 dialect = "step:ap203-e1"
 grammar = "part21"
 read = "L9"
-write = "emitted"
+write = "verified"
 fixtures = [
   "crates/cadmpeg-codec-step/tests/fixtures/ap203_sheet.p21",
 ]
+reason = """
+`tests/golden/encode/ap203_sheet.json` freezes the bytes an `Inherit`
+request writes for this row, with `FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'))`
+and `ExportReport.target = step:ap203-e1` in the same artifact.
+`golden_output_is_deterministic` re-runs the branch byte-exactly, and
+`targets.rs` `every_synthesized_target_re_decodes_as_the_dialect_the_report_named`
+puts the written bytes back through the classifier"""
 
 [[support]]
 dialect = "step:ap203-e2"
@@ -538,10 +545,17 @@ schema"""
 dialect = "step:ap214"
 grammar = "part21"
 read = "L9"
-write = "emitted"
+write = "verified"
 fixtures = [
   "crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21",
 ]
+reason = """
+the catalog default. All four encode goldens freeze an `explicit_default`
+arm writing this row -- from an ap203-e1, an ap214, an ap242-e2, and an
+edition-less ap242 source -- each with
+`FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'))` beside
+`ExportReport.target = step:ap214`. `ap214_sheet.json` also shows `Inherit`
+reaching the same row from a source that declares it"""
 
 [[support]]
 dialect = "step:ap242"
@@ -565,7 +579,10 @@ fixtures = [
 ]
 reason = """
 a read-side row: a header with no schema object identifier has no write
-target, because the writer always declares an edition"""
+target, because the writer always declares an edition. The `inherit` arm of
+`tests/golden/encode/ap242_geometry.json` freezes that refusal: a source
+here makes `plan` return `UnsupportedTarget` carrying the whole catalog
+rather than silently writing an edition the source never declared"""
 
 [[support]]
 dialect = "step:ap242-e1"
@@ -581,20 +598,30 @@ schema"""
 dialect = "step:ap242-e2"
 grammar = "part21"
 read = "L9"
-write = "emitted"
+write = "verified"
 fixtures = [
   "crates/cadmpeg-codec-step/tests/fixtures/ap242_minimal.p21",
 ]
+reason = """
+`tests/golden/encode/ap242_minimal.json` freezes the `Inherit` arm writing
+`FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF
+{ 1 0 10303 442 3 1 4 }'))` with `ExportReport.target = step:ap242-e2`, so
+the edition arc in the object identifier and the reported row are pinned
+in one artifact"""
 
 [[support]]
 dialect = "step:ap242-e3"
 grammar = "part21"
 read = "detected"
-write = "emitted"
+write = "verified"
 fixtures = []
 reason = """
-decoded and exported as write target ap242e3, but no fixture declares this
-schema"""
+no fixture declares this schema, so the read cell stays `detected`. The
+write cell is separate evidence: all four encode goldens freeze an
+`explicit_ap242_e3` arm writing
+`FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF
+{ 1 0 10303 442 4 1 4 }'))` with `ExportReport.target = step:ap242-e3`,
+from four different source rows"""
 
 [[support]]
 dialect = "step:part28-xml"
