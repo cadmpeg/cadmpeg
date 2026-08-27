@@ -43,8 +43,7 @@ use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "sat";
+use crate::FORMAT;
 
 /// Key of the stream encoding in [`DialectMatch::declared`].
 const DECLARED_ENCODING: &str = "encoding";

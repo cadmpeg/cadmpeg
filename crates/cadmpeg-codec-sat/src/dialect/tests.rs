@@ -248,26 +248,19 @@ fn acis_binary_out_of_band() -> Vec<u8> {
     bytes
 }
 
-/// An ACIS-terminated text stream declaring save format `700`.
-fn acis_text_out_of_band() -> Vec<u8> {
-    let mut text = String::new();
-    text.push_str("700 0 1 0 \n");
-    text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
-    text.push_str("1 1e-06 1.0e-10 \n");
-    text.push_str("body $-1 -1 $-1 $-1 $-1 $-1 #\n");
-    text.push_str("End-of-ACIS-data \n");
-    text.into_bytes()
-}
-
-/// An ACIS-terminated text stream inside the covered band.
-fn acis_text_in_band() -> Vec<u8> {
-    let mut text = String::new();
-    text.push_str("21800 0 1 0 \n");
-    text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
-    text.push_str("1 1e-06 1.0e-10 \n");
-    text.push_str("body $-1 -1 $-1 $-1 $-1 $-1 #\n");
-    text.push_str("End-of-ACIS-data \n");
-    text.into_bytes()
+/// An ACIS-terminated text stream at `save_format_version`.
+///
+/// The product strings name ASM while the terminator names ACIS, which is the
+/// asymmetry the gate must ignore: the branch comes from the terminator line.
+fn acis_text(save_format_version: u32) -> Vec<u8> {
+    format!(
+        "{save_format_version} 0 1 0 \n\
+         16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n\
+         1 1e-06 1.0e-10 \n\
+         body $-1 -1 $-1 $-1 $-1 $-1 #\n\
+         End-of-ACIS-data \n"
+    )
+    .into_bytes()
 }
 
 /// One end-to-end case: real bytes, the row they must classify into, and
@@ -307,13 +300,13 @@ fn cases() -> Vec<Case> {
         },
         Case {
             label: "acis text at 700",
-            bytes: acis_text_out_of_band(),
+            bytes: acis_text(700),
             id: "sat:text",
             admitted: false,
         },
         Case {
             label: "acis text at 218",
-            bytes: acis_text_in_band(),
+            bytes: acis_text(21_800),
             id: "sat:text",
             admitted: true,
         },
