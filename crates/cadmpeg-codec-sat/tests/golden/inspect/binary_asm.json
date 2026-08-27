@@ -1,5 +1,17 @@
 {
   "container_kind": "stream",
+  "dialects": [
+    {
+      "admission": "admitted",
+      "declared": {
+        "encoding": "binary",
+        "save_format_major": "232",
+        "save_format_minor": "0"
+      },
+      "dialect": "sat:asm-binary",
+      "format": "sat"
+    }
+  ],
   "entries": [
     {
       "attributes": {

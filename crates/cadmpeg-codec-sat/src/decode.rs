@@ -9,6 +9,7 @@ use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::{debug_assert_primary_layer, Admission, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -17,6 +18,7 @@ use cadmpeg_ir::units::{Tolerances, Units};
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
+use crate::dialect::{classify as classify_dialect, terminator_line, StreamEvidence, TextEvidence};
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
@@ -64,7 +66,8 @@ pub(crate) fn decode_asm_binary(
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "asm", &mut attributes);
     attributes.insert("encoding".to_string(), "binary".to_string());
-    build_result(ctx, brep, attributes, &header, None)
+    let matched = classify_dialect(&StreamEvidence::AsmBinary(Some(&header)));
+    build_result(ctx, brep, attributes, &header, None, matched)
 }
 
 pub(crate) fn decode_acis_binary(
@@ -77,13 +80,17 @@ pub(crate) fn decode_acis_binary(
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
-    if !matches!(header.save_format_major(), Some(217 | 218)) {
+    // One predicate decides both: `classify` sets `Admission::Refused` from
+    // the same save-format band this branch refuses on.
+    let matched = classify_dialect(&StreamEvidence::AcisBinary(Some(&header)));
+    if matched.admission == Admission::Refused {
         let mut attributes = BTreeMap::new();
         header_attributes(&header, "acis", &mut attributes);
         attributes.insert("encoding".to_string(), "binary".to_string());
         return Ok(unsupported_result(
             "Spatial ACIS binary stream: this save-format band is not decoded",
             attributes,
+            matched,
         ));
     }
     let start = acis_header::record_stream_start(bytes).ok_or_else(|| {
@@ -106,7 +113,7 @@ pub(crate) fn decode_acis_binary(
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "acis", &mut attributes);
     attributes.insert("encoding".to_string(), "binary".to_string());
-    build_result(ctx, brep, attributes, &header, None)
+    build_result(ctx, brep, attributes, &header, None, matched)
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
@@ -114,23 +121,28 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         CodecError::malformed(format_args!("text stream parse failed: {error}"))
     })?;
     let header = stream.header.as_kernel_header();
-    let (family, dialect) = match stream.dialect {
-        sat::Dialect::Asm => ("asm", "End-of-ASM-data"),
-        sat::Dialect::Acis => ("acis", "End-of-ACIS-data"),
+    let family = match stream.dialect {
+        sat::Dialect::Asm => "asm",
+        sat::Dialect::Acis => "acis",
     };
+    let dialect = terminator_line(stream.dialect);
     let mut attributes = BTreeMap::new();
     header_attributes(&header, family, &mut attributes);
     attributes.insert("encoding".to_string(), "text".to_string());
     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
     attributes.insert("terminator".to_string(), dialect.to_string());
     // The ACIS branch carries the same save-format band as the ACIS binary
-    // stream, so it takes the same admission gate.
-    if stream.dialect == sat::Dialect::Acis
-        && !matches!(header.save_format_major(), Some(217 | 218))
-    {
+    // stream, so it takes the same admission gate — literally the same
+    // predicate, through `classify`.
+    let matched = classify_dialect(&StreamEvidence::Text(Some(TextEvidence {
+        branch: stream.dialect,
+        header: &header,
+    })));
+    if matched.admission == Admission::Refused {
         return Ok(unsupported_result(
             "Spatial ACIS text stream: this save-format band is not decoded",
             attributes,
+            matched,
         ));
     }
     let brep = decode_with_header(
@@ -141,7 +153,22 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         IdFormat(FORMAT),
         DecodePurpose::Model,
     );
-    build_result(ctx, brep, attributes, &header, Some(dialect))
+    build_result(ctx, brep, attributes, &header, Some(dialect), matched)
+}
+
+/// Mirrors the primary-layer match into [`SourceMeta`], beside the attributes
+/// the codec already emits.
+///
+/// The `encoding`, `scale`, `terminator`, and save-format attribute keys stay.
+/// They duplicate the declared keys for now; retiring the ad-hoc attribute keys
+/// is a later phase.
+fn source_meta(attributes: BTreeMap<String, String>, matched: &DialectMatch) -> SourceMeta {
+    SourceMeta {
+        declared: matched.declared.clone(),
+        dialect: matched.dialect.clone(),
+        format: FORMAT.to_string(),
+        attributes,
+    }
 }
 
 fn build_result(
@@ -150,14 +177,10 @@ fn build_result(
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<&str>,
+    matched: DialectMatch,
 ) -> Result<DecodeResult, CodecError> {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(SourceMeta {
-        declared: BTreeMap::new(),
-        dialect: None,
-        format: FORMAT.to_string(),
-        attributes,
-    });
+    ir.source = Some(source_meta(attributes, &matched));
     if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
         ir.tolerances = Tolerances { linear, angular };
     }
@@ -194,8 +217,10 @@ fn build_result(
         "unknown_surface_faces".to_string(),
         stats.unknown_surface_faces,
     );
+    let dialects = vec![matched];
+    debug_assert_primary_layer(&dialects, FORMAT);
     let report = DecodeReport {
-        dialects: Vec::new(),
+        dialects,
         format: FORMAT.to_string(),
         container_only: false,
         geometry_transferred,
@@ -215,16 +240,27 @@ fn build_result(
 }
 
 /// A result for an identified stream the decoders do not cover.
-fn unsupported_result(message: &str, attributes: BTreeMap<String, String>) -> DecodeResult {
+///
+/// Identity survives refusal: the stream keeps its `sat:` row in both the
+/// report and [`SourceMeta`], and `matched.admission` is
+/// [`Admission::Refused`]. The loss charged here is a refusal mark, not a
+/// recovery mark — nothing was read with a substituted grammar.
+fn unsupported_result(
+    message: &str,
+    attributes: BTreeMap<String, String>,
+    matched: DialectMatch,
+) -> DecodeResult {
+    debug_assert_eq!(
+        matched.admission,
+        Admission::Refused,
+        "an unsupported result must carry a refused admission"
+    );
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(SourceMeta {
-        declared: BTreeMap::new(),
-        dialect: None,
-        format: FORMAT.to_string(),
-        attributes,
-    });
+    ir.source = Some(source_meta(attributes, &matched));
+    let dialects = vec![matched];
+    debug_assert_primary_layer(&dialects, FORMAT);
     let report = DecodeReport {
-        dialects: Vec::new(),
+        dialects,
         format: FORMAT.to_string(),
         container_only: false,
         geometry_transferred: false,
