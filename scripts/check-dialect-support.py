@@ -23,7 +23,13 @@ The rules, all cross-referencing:
   format's identity rows, and each exported id has a support row whose
   ``write`` is not ``none``. Subset, not equality: read-side rows
   (``step:ap242``) and residual rows (``*:unknown``) are legitimately not
-  write targets.
+  write targets;
+* **the two write capabilities stay apart** (design section 8.2). A
+  ``preserved`` row must NOT appear in any ``targets()`` catalog: it is
+  reachable only from a source that already is that dialect, so listing it
+  would advertise an output arbitrary input cannot reach. Conversely a
+  ``verified``/``emitted`` row on a format that has a catalog must appear
+  in it.
 
 Write-target mechanism. The catalogs are ``const``/``static`` tables of
 ``TargetDescriptor`` literals in ``crates/cadmpeg-codec-*/src/**.rs``. This
@@ -69,7 +75,15 @@ READ_SCORES = frozenset(f"L{n}" for n in range(10))
 READ_OTHER = frozenset({"detected", "refused", "unclassified-recovered"})
 READ_VALUES = READ_SCORES | READ_OTHER
 
-WRITE_VALUES = frozenset({"verified", "emitted", "none"})
+# `verified` and `emitted` are synthesis: the encoder builds the dialect from
+# neutral IR for arbitrary input, and the id is in its `targets()` catalog.
+# `preserved` is the other write capability (design section 8.2): the dialect
+# is reachable only when the source already is one, through replay or patch of
+# a retained baseline under `TargetRequest::Inherit`. It is input-conditioned,
+# so it is never a catalog row -- a `targets()` that listed it would advertise
+# an output arbitrary input cannot reach.
+WRITE_VALUES = frozenset({"verified", "emitted", "preserved", "none"})
+SYNTHESIS_WRITES = frozenset({"verified", "emitted"})
 
 # Codec crates only. `cadmpeg-ir` declares the trait and returns an empty
 # catalog for CADIR; the CLI only consumes catalogs.
@@ -181,7 +195,7 @@ def check_row(row: object, index: int, known: set[str], root: Path, failures: li
 
     write = row.get("write")
     if "write" in row and write not in WRITE_VALUES:
-        failures.append(f"{label}: write must be one of verified, emitted, none")
+        failures.append(f"{label}: write must be one of verified, emitted, preserved, none")
         write = None
 
     if "grammar" in row and (not isinstance(row["grammar"], str) or not row["grammar"].strip()):
@@ -248,12 +262,17 @@ def check_target_subset(
     """Write-target catalogs are a subset of their format's identity rows.
 
     Subset and not equality: read-side and residual identity rows are not
-    write targets. The second half is what makes the rule load-bearing --
-    an exported target must also be declared writable in the support table.
+    write targets. Two further rules make it load-bearing, one in each
+    direction. An exported target must be declared writable -- not
+    ``write = "none"``. And a ``preserved`` row must NOT be exported: the
+    two write capabilities are distinct (design section 8.2), and a
+    preservation-only dialect in a synthesis catalog would advertise an
+    output that arbitrary input cannot reach.
     """
     by_format: dict[str, set[str]] = {}
     for dialect_id in known:
         by_format.setdefault(dialect_id.split(":", 1)[0], set()).add(dialect_id)
+    exported = {target for ids in catalogs.values() for target in ids}
     for fmt in sorted(catalogs):
         rows = by_format.get(fmt)
         if rows is None:
@@ -264,6 +283,25 @@ def check_target_subset(
         for target in sorted(catalogs[fmt] & rows):
             if writes.get(target) == "none":
                 failures.append(f"{target}: exported as a write target but the support row says write = \"none\"")
+            elif writes.get(target) == "preserved":
+                failures.append(
+                    f"{target}: write = \"preserved\" but the encoder exports it as a synthesis "
+                    "target; preservation is input-conditioned and is never a targets() row"
+                )
+    # The converse of the subset rule, scoped to formats that have a catalog at
+    # all. A synthesis claim on a format whose encoder enumerates its outputs
+    # must appear in that enumeration, or the two halves have drifted. Formats
+    # with no catalog are exempt: an embedded-kernel layer is synthesized by its
+    # host's writer and is never that host's target (design section 8.3).
+    for dialect_id in sorted(writes):
+        fmt = dialect_id.split(":", 1)[0]
+        if fmt not in catalogs:
+            continue
+        if writes[dialect_id] in SYNTHESIS_WRITES and dialect_id not in exported:
+            failures.append(
+                f"{dialect_id}: write = \"{writes[dialect_id]}\" claims synthesis, but "
+                f"the {fmt} targets() catalog does not export it"
+            )
 
 
 # --------------------------------------------------------------------------
@@ -456,7 +494,8 @@ def check(root: Path) -> tuple[list[str], str]:
         f"{scored} scored, {tally['detected']} detected, {tally['refused']} refused, "
         f"{tally['unclassified-recovered']} unclassified-recovered; "
         f"{fixture_total} fixtures, {verified} confirmed against golden decode snapshots; "
-        f"{targets} write targets across {len(catalogs)} catalogs)"
+        f"{targets} write targets across {len(catalogs)} catalogs, "
+        f"{sum(1 for value in writes.values() if value == 'preserved')} preserved)"
     )
     return failures, summary
 

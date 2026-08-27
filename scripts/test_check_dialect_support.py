@@ -181,6 +181,10 @@ class TestVocabulary(SupportCase):
             GOOD_SUPPORT.replace('write = "none"', 'write = "partial"', 1), "write must be one of"
         )
 
+    def test_preserved_is_accepted_without_a_catalog(self):
+        # Preservation is input-conditioned, so it needs no `targets()` row.
+        self.assertClean(GOOD_SUPPORT.replace('write = "none"', 'write = "preserved"', 1))
+
     def test_every_ladder_rung_is_accepted(self):
         for rung in (f"L{n}" for n in range(10)):
             with self.subTest(rung=rung):
@@ -358,6 +362,39 @@ class TestTargetCatalogs(SupportCase):
             GOOD_SUPPORT,
             'exported as a write target but the support row says write = "none"',
             files=self.catalog('TargetDescriptor { id: "demo:one", default: true }'),
+        )
+
+    def test_a_preserved_row_exported_as_a_synthesis_target(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "preserved"', 1),
+            "preservation is input-conditioned and is never a targets() row",
+            files=self.catalog('TargetDescriptor { id: "demo:one", default: true }'),
+        )
+
+    def two_is_the_only_target(self, one_write: str) -> str:
+        """`demo:two` is the catalog's sole target; `demo:one` writes some other way."""
+        return (
+            '[[support]]\ndialect = "demo:one"\nread = "L2"\n'
+            f'write = "{one_write}"\nfixtures = ["{FIXTURE}"]\n'
+            '\n[[support]]\ndialect = "demo:two"\nread = "detected"\n'
+            'write = "verified"\nfixtures = []\nreason = "synthesized, never observed"\n'
+        )
+
+    def test_a_synthesis_claim_the_catalog_does_not_export(self):
+        # `demo:one` claims synthesis, but the catalog exports only `demo:two`,
+        # so the table and the encoder have drifted apart.
+        self.assertFires(
+            self.two_is_the_only_target("emitted"),
+            "the demo targets() catalog does not export it",
+            files=self.catalog('TargetDescriptor { id: "demo:two", default: true }'),
+        )
+
+    def test_a_preserved_row_beside_a_catalog_that_omits_it(self):
+        # The same shape with `preserved` is exactly right: preservation is
+        # reachable without a catalog row, synthesis is not.
+        self.assertClean(
+            self.two_is_the_only_target("preserved"),
+            files=self.catalog('TargetDescriptor { id: "demo:two", default: true }'),
         )
 
     def test_a_catalog_for_a_format_with_no_identity_rows(self):

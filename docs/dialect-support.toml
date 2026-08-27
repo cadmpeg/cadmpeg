@@ -52,13 +52,28 @@
 #   no fixture for, the cell is `detected` and the reason says so. No score
 #   here was invented; none was copied past the gate.
 #
-# How the write cell is chosen. `verified` means the target has checked-in
-# golden artifacts proving deterministic output that re-decodes, or a stated
-# independent-application acceptance gate. `emitted` means the encoder
-# exports the target and the profile states it is emitted, without that
-# evidence. `none` means no encoder writes the dialect. The ids each
-# encoder's `targets()` exports are a subset of that format's identity rows;
-# the checker proves it, and proves each exported id is not `write = "none"`.
+# How the write cell is chosen. There are two write capabilities, and the
+# column never conflates them.
+#
+#   SYNTHESIS builds the dialect from neutral IR for arbitrary input. It is
+#   static: the encoder's `targets()` catalog enumerates it. `verified` means
+#   that target has checked-in golden artifacts proving deterministic output
+#   that re-decodes, or a stated independent-application acceptance gate.
+#   `emitted` means the encoder exports the target and the profile states it
+#   is emitted, without that evidence.
+#
+#   PRESERVATION reproduces a dialect only when the source already is one --
+#   verbatim byte replay or a patch of the retained baseline, asked for with
+#   `TargetRequest::Inherit`. It is input-conditioned, so it is never a
+#   catalog row: a `targets()` that listed it would advertise an output
+#   arbitrary input cannot reach. `preserved` is that cell.
+#
+#   `none` means no encoder writes the dialect on any path.
+#
+# The checker holds the two apart in both directions: a `preserved` row must
+# not appear in any `targets()` catalog, and a `verified`/`emitted` row on a
+# format that has a catalog must appear in it. It also proves each exported
+# id is a subset of that format's identity rows and is not `write = "none"`.
 #
 # Two namespaces have no code producer at all. `acis:` is registry-only: its
 # streams are wrapped by the `sat:` rows. `parasolid:` has no owning crate,
