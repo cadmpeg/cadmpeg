@@ -440,9 +440,14 @@ pub trait Encoder {
     /// Stable output format id.
     fn id(&self) -> &'static str;
 
-    /// The static synthesis catalog: dialects this encoder can produce for any
-    /// input. Preservation is not listed here; [`TargetRequest::Inherit`] asks
-    /// for it. Ids come from this encoder's own format namespace only.
+    /// The static catalog of output flavors this encoder can produce.
+    ///
+    /// Whether a given input reaches one is resolution's answer, not the
+    /// catalog's: a patch-only writer's row is reachable only from a retained
+    /// source of that flavor, and `plan` refuses by name where it cannot
+    /// deliver. Preservation of dialects outside the catalog is not listed
+    /// here; [`TargetRequest::Inherit`] asks for it. Ids come from this
+    /// encoder's own format namespace only.
     fn targets(&self) -> &'static [TargetDescriptor];
 
     /// Plans one export without writing to the destination.
