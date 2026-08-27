@@ -1,16 +1,20 @@
-# generated at 4c12cca4e
+# generated at f6e212928
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
 pub fn cadmpeg_asm::acis_header::has_acis_magic(&[u8]) -> bool
 pub fn cadmpeg_asm::acis_header::parse(&[u8]) -> core::option::Option<cadmpeg_asm::kernel_header::KernelHeader>
 pub fn cadmpeg_asm::acis_header::record_stream_start(&[u8]) -> core::option::Option<usize>
+pub fn cadmpeg_asm::acis_header::record_stream_start_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
 pub fn cadmpeg_asm::acis_header::solved_record_limit(&[u8]) -> core::option::Option<usize>
+pub fn cadmpeg_asm::acis_header::solved_record_limit_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
 pub mod cadmpeg_asm::asm_header
 pub fn cadmpeg_asm::asm_header::has_asm_magic(&[u8]) -> bool
 pub fn cadmpeg_asm::asm_header::parse(&[u8]) -> core::option::Option<cadmpeg_asm::kernel_header::KernelHeader>
 pub fn cadmpeg_asm::asm_header::record_stream_start(&[u8]) -> core::option::Option<usize>
+pub fn cadmpeg_asm::asm_header::record_stream_start_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
 pub fn cadmpeg_asm::asm_header::solved_record_limit(&[u8]) -> core::option::Option<usize>
+pub fn cadmpeg_asm::asm_header::solved_record_limit_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
 pub fn cadmpeg_asm::asm_header::stream_ref_width(&[u8]) -> usize
 pub mod cadmpeg_asm::brep
 pub mod cadmpeg_asm::brep::attributes
