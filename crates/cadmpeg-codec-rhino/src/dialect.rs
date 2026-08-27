@@ -298,5 +298,10 @@ pub(crate) const fn refuses_decode(archive: ArchiveVersion) -> bool {
     RhinoDialect::from_archive(archive).refuses_decode()
 }
 
+/// Whether the archive word selects the chunked grammar.
+pub(crate) const fn is_chunked(archive: ArchiveVersion) -> bool {
+    !refuses_decode(archive) && !matches!(archive, ArchiveVersion::V1)
+}
+
 #[cfg(test)]
 mod tests;

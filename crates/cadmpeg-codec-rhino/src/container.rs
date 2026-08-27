@@ -1264,20 +1264,7 @@ pub(crate) fn decode(
         )));
     }
     let scan = scan(data)?;
-    if container_only
-        && matches!(
-            scan.archive,
-            ArchiveVersion::V2
-                | ArchiveVersion::V3
-                | ArchiveVersion::V4
-                | ArchiveVersion::V5
-                | ArchiveVersion::V6
-                | ArchiveVersion::V7
-                | ArchiveVersion::V8
-                | ArchiveVersion::V9
-                | ArchiveVersion::Other(_)
-        )
-    {
+    if container_only && crate::dialect::is_chunked(scan.archive) {
         return Ok(container_only_result(&scan));
     }
     Ok(crate::decode::decode(
