@@ -303,6 +303,8 @@ fn plan_refusal(
         cadmpeg_core::CodecError::UnsupportedTarget { .. } => {
             ConversionRefusal::UnsupportedTarget {
                 message: error.to_string(),
+                decode_report,
+                validation,
             }
             .into()
         }

@@ -133,6 +133,10 @@ pub enum ConversionRefusal {
     UnsupportedTarget {
         /// Human-readable message.
         message: String,
+        /// Decode report available for an optional `--report`.
+        decode_report: Option<DecodeReport>,
+        /// Validation report available for an optional `--report`.
+        validation: Option<ValidationReport>,
     },
     /// Binary container would write to stdout without an override.
     BinaryStdoutRejected {
@@ -179,7 +183,7 @@ impl ConversionRefusal {
             | Self::DecodeLossRejected { message, .. }
             | Self::ExportLossRejected { message, .. }
             | Self::EmptyGeometry { message, .. }
-            | Self::UnsupportedTarget { message }
+            | Self::UnsupportedTarget { message, .. }
             | Self::BinaryStdoutRejected { message } => message,
         }
     }
@@ -199,9 +203,8 @@ impl ConversionRefusal {
 
     /// Whether an explicitly requested `--report` may still be written.
     ///
-    /// Decode, loss, validation, and empty-geometry refusals may write the
-    /// report. Binary-stdout and unsupported-target refusals happen before
-    /// the input is read and do not write a report.
+    /// Refusals that have read a document may write the report. The
+    /// binary-stdout refusal happens before the input is read and does not.
     #[must_use]
     pub const fn may_write_report(&self) -> bool {
         match self {
@@ -209,8 +212,9 @@ impl ConversionRefusal {
             | Self::CheckFailed { .. }
             | Self::DecodeLossRejected { .. }
             | Self::ExportLossRejected { .. }
-            | Self::EmptyGeometry { .. } => true,
-            Self::UnsupportedTarget { .. } | Self::BinaryStdoutRejected { .. } => false,
+            | Self::EmptyGeometry { .. }
+            | Self::UnsupportedTarget { .. } => true,
+            Self::BinaryStdoutRejected { .. } => false,
         }
     }
 
@@ -222,8 +226,9 @@ impl ConversionRefusal {
             Self::CheckFailed { decode_report, .. } => decode_report.as_ref(),
             Self::DecodeLossRejected { decode_report, .. } => Some(decode_report),
             Self::ExportLossRejected { decode_report, .. }
-            | Self::EmptyGeometry { decode_report, .. } => decode_report.as_ref(),
-            Self::UnsupportedTarget { .. } | Self::BinaryStdoutRejected { .. } => None,
+            | Self::EmptyGeometry { decode_report, .. }
+            | Self::UnsupportedTarget { decode_report, .. } => decode_report.as_ref(),
+            Self::BinaryStdoutRejected { .. } => None,
         }
     }
 
@@ -234,10 +239,9 @@ impl ConversionRefusal {
             Self::DecodeFailed { .. } => None,
             Self::CheckFailed { validation, .. } => Some(validation),
             Self::ExportLossRejected { validation, .. }
-            | Self::EmptyGeometry { validation, .. } => validation.as_ref(),
-            Self::DecodeLossRejected { .. }
-            | Self::UnsupportedTarget { .. }
-            | Self::BinaryStdoutRejected { .. } => None,
+            | Self::EmptyGeometry { validation, .. }
+            | Self::UnsupportedTarget { validation, .. } => validation.as_ref(),
+            Self::DecodeLossRejected { .. } | Self::BinaryStdoutRejected { .. } => None,
         }
     }
 
@@ -272,11 +276,13 @@ mod tests {
     fn refusal_codes_are_stable_for_tests_and_absent_from_display() {
         let refusal = ConversionRefusal::UnsupportedTarget {
             message: "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii".into(),
+            decode_report: None,
+            validation: None,
         };
         assert_eq!(refusal.code(), RefusalCode::UnsupportedTarget);
         assert_eq!(refusal.stage(), RefusalStage::Plan);
         assert_eq!(refusal.exit_code(), 1);
-        assert!(!refusal.may_write_report());
+        assert!(refusal.may_write_report());
         assert_eq!(refusal.to_string(), "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii");
         let fields = refusal.report_fields();
         assert_eq!(fields["status"], "refused");

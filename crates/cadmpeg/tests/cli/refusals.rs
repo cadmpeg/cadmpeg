@@ -230,6 +230,44 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         );
     assert!(!output.exists());
 
+    let native_input = dir.path().join("native-cube.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            native_input.to_str().unwrap(),
+            "--allow-errors",
+        ])
+        .assert()
+        .success();
+    let report = dir.path().join("unsupported-target-report.json");
+    let refused_output = dir.path().join("refused.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            native_input.to_str().unwrap(),
+            "-o",
+            refused_output.to_str().unwrap(),
+            "--to",
+            "9.9",
+            "--report",
+            report.to_str().unwrap(),
+            "--allow-errors",
+        ])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("iges cannot write 9.9")
+                .and(predicate::str::contains("decode report (iges)")),
+        );
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["code"], "unsupported_target");
+    assert!(value["decode_report"].is_object());
+    assert!(value["check_report"].is_object());
+
     // A format-qualified id outside the catalog is the same refusal.
     Command::cargo_bin("cadmpeg")
         .unwrap()
