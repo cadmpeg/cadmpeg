@@ -230,6 +230,11 @@ mod sealed {
 /// ```
 pub trait Codec: CodecBackend + sealed::Sealed {
     /// Inspects the source under its input and resource limits.
+    ///
+    /// This is the only path from a backend's `ContainerSummary` to a caller,
+    /// so it is where the primary-layer invariant is checked: a populated
+    /// [`ContainerSummary::dialects`] names the summary's own `format` exactly
+    /// once. See [`cadmpeg_core::dialect::debug_assert_primary_layer`].
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -268,6 +273,9 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
+        if let Ok(summary) = &result {
+            cadmpeg_core::dialect::debug_assert_primary_layer(&summary.dialects, &summary.format);
+        }
         result
     }
 

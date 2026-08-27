@@ -231,6 +231,10 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     assert!(staged.report().dialects.is_empty());
 }
 
+/// The gate is a `debug_assert`, which compiles out under `--release`. Without
+/// this attribute a release-profile test run would report a spurious failure:
+/// nothing panics, so `#[should_panic]` is unsatisfied.
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "must contain exactly one entry naming it")]
 fn a_decode_result_refuses_dialects_with_no_primary_layer() {
@@ -246,6 +250,73 @@ fn a_decode_result_refuses_dialects_with_no_primary_layer() {
     };
 
     DecodeResult::new(unit_cube(), report, SourceFidelity::default());
+}
+
+/// A backend whose `inspect_impl` returns whatever dialect list the test hands
+/// it, so the wrapper's gate is what the assertion is about.
+struct InspectDialectsCodec(Vec<DialectMatch>);
+
+impl CodecBackend for InspectDialectsCodec {
+    fn id(&self) -> &'static str {
+        "inspect-dialects"
+    }
+
+    fn detect(&self, _prefix: &[u8]) -> Confidence {
+        Confidence::No
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        Ok(ContainerSummary {
+            format: "test".into(),
+            container_kind: "flat".into(),
+            entries: Vec::new(),
+            notes: Vec::new(),
+            dialects: self.0.clone(),
+        })
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<DecodeResult, CodecError> {
+        panic!("the inspect gate tests do not decode")
+    }
+}
+
+fn inspect_dialects(dialects: Vec<DialectMatch>) -> Result<ContainerSummary, CodecError> {
+    InspectDialectsCodec(dialects).inspect(
+        &mut Cursor::new(vec![1u8, 2, 3, 4]),
+        &cadmpeg_core::decode::InspectOptions::default(),
+    )
+}
+
+/// `Codec::inspect` is the one wrapper every backend's summary passes through,
+/// so it is where the primary-layer invariant is checked.
+#[test]
+fn inspect_accepts_a_summary_with_one_primary_layer() {
+    let staged = inspect_dialects(Vec::new()).unwrap();
+    assert!(staged.dialects.is_empty());
+
+    let classified = inspect_dialects(vec![
+        dialect_layer("test", "test:only"),
+        dialect_layer("acis", "acis:save-format-217"),
+    ])
+    .unwrap();
+    assert_eq!(classified.dialects.len(), 2);
+}
+
+/// See `a_decode_result_refuses_dialects_with_no_primary_layer` for why this is
+/// gated on `debug_assertions`.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "must contain exactly one entry naming it")]
+fn inspect_refuses_a_summary_with_no_primary_layer() {
+    let _ = inspect_dialects(vec![dialect_layer("acis", "acis:save-format-217")]);
 }
 
 fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {

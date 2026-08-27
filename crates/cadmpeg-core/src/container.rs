@@ -47,7 +47,10 @@ pub struct ContainerSummary {
     ///
     /// Empty while a codec has not yet been migrated to classify. Once
     /// populated, exactly one entry's `format` equals [`Self::format`]: that
-    /// entry is the primary layer. See
+    /// entry is the primary layer.
+    ///
+    /// Enforced by `cadmpeg_ir::codec::Codec::inspect`, the one wrapper every
+    /// backend's summary passes through on its way to a caller. See
     /// [`crate::dialect::debug_assert_primary_layer`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dialects: Vec<DialectMatch>,
