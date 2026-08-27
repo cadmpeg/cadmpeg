@@ -8,12 +8,9 @@ use anyhow::{anyhow, Context, Result};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
 use cadmpeg_ir::CadIr;
 
-use crate::application::{
-    ArtifactStore, ForcedInput, InputCatalog, LoadOrigin, LoadedDocument, ResolvedSource,
-};
+use cadmpeg_registry::{ForcedInput, InputCatalog, ResolvedSource, DETECTION_PREFIX_LEN};
 
-/// Leading byte window available to content-based codec detection.
-pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
+use crate::application::{ArtifactStore, LoadOrigin, LoadedDocument};
 
 /// Non-fatal notice produced while loading an input.
 #[derive(Debug, Clone, PartialEq, Eq)]

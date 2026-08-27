@@ -173,6 +173,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-registry",
  "clap",
  "crc32fast",
  "memchr",
@@ -422,6 +423,29 @@ dependencies = [
  "roxmltree",
  "serde",
  "zip",
+]
+
+[[package]]
+name = "cadmpeg-registry"
+version = "0.5.4"
+dependencies = [
+ "cadmpeg-codec-catia",
+ "cadmpeg-codec-creo",
+ "cadmpeg-codec-f3d",
+ "cadmpeg-codec-freecad",
+ "cadmpeg-codec-iges",
+ "cadmpeg-codec-inventor",
+ "cadmpeg-codec-nx",
+ "cadmpeg-codec-rhino",
+ "cadmpeg-codec-sat",
+ "cadmpeg-codec-sldprt",
+ "cadmpeg-codec-step",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "crc32fast",
+ "serde",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]

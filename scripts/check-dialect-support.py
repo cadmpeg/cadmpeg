@@ -35,9 +35,9 @@ The rules, all cross-referencing:
   the inferred output format second, so an alias that is also a format word
   would be unreachable and the grammar ambiguous. The reserved words are the
   ``[format.<id>]`` keys of the identity registry, ``cadir``, and the aliases
-  the CLI's own ``Format`` enum accepts, parsed from
-  ``crates/cadmpeg/src/main.rs`` so the rule tracks the vocabulary rather
-  than a copy of it.
+  the ``Format`` enum ``--to`` resolves against, parsed from
+  ``crates/cadmpeg-registry/src/format.rs`` so the rule tracks the vocabulary
+  rather than a copy of it.
 
 Write-target mechanism. The catalogs are ``const``/``static`` tables of
 ``TargetDescriptor`` literals in ``crates/cadmpeg-codec-*/src/**.rs``. This
@@ -104,7 +104,7 @@ STRING_LITERAL = re.compile(r'"([^"]*)"')
 
 # The CLI's output-format vocabulary, so the alias-collision rule tracks the
 # words `--to` actually accepts instead of a second copy of them.
-CLI_MAIN_REL = Path("crates") / "cadmpeg" / "src" / "main.rs"
+CLI_MAIN_REL = Path("crates") / "cadmpeg-registry" / "src" / "format.rs"
 FROM_NAME_FN = re.compile(r"fn from_name\(.*?\n    \}", re.DOTALL)
 PINNED_CALL = re.compile(r"^[A-Za-z0-9_]+::([A-Za-z0-9_]+)\.pinned\(\)$")
 PINNED_ARM = re.compile(r'Self::([A-Za-z0-9_]+)\s*=>\s*"([^"]+)"')
@@ -205,8 +205,8 @@ def output_format_words(root: Path, registry_formats: set[str], failures: list[s
     """Words ``cadmpeg convert --to`` reads as an output format.
 
     The identity registry's format ids, ``cadir`` (the neutral document, which
-    has no identity rows), and the aliases the CLI's own ``Format::from_name``
-    accepts. The CLI file is read where it exists; where it does not -- a
+    has no identity rows), and the aliases ``Format::from_name`` accepts.
+    The file is read where it exists; where it does not -- a
     synthetic root -- the registry ids still apply. A file that exists but
     whose ``from_name`` cannot be read is a failure, because that is how the
     rule would quietly weaken in the real tree.

@@ -34,6 +34,7 @@ KINDS = frozenset(
         "trait_impl",
         "field",
         "variant",
+        "addition",
     }
 )
 SHA = re.compile(r"^[0-9a-f]{40}$")

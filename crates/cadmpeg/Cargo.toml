@@ -33,22 +33,28 @@ default = [
   "iges",
   "sat",
 ]
-fcstd = ["dep:cadmpeg-codec-freecad"]
-f3d = ["dep:cadmpeg-codec-f3d"]
-inventor = ["dep:cadmpeg-codec-inventor"]
-sldprt = ["dep:cadmpeg-codec-sldprt"]
-catia = ["dep:cadmpeg-codec-catia"]
-creo = ["dep:cadmpeg-codec-creo"]
-nx = ["dep:cadmpeg-codec-nx"]
-rhino = ["dep:cadmpeg-codec-rhino"]
-step = ["dep:cadmpeg-codec-step"]
-iges = ["dep:cadmpeg-codec-iges"]
-sat = ["dep:cadmpeg-codec-sat"]
+#
+# Each id forwards to the same feature of `cadmpeg-registry`, which owns the
+# codec registry and constructs the codecs for detection, inspection, and
+# encoding. The CLI keeps its own optional dependency on each codec crate for
+# the native validators and for the conformance suites.
+fcstd = ["cadmpeg-registry/fcstd", "dep:cadmpeg-codec-freecad"]
+f3d = ["cadmpeg-registry/f3d", "dep:cadmpeg-codec-f3d"]
+inventor = ["cadmpeg-registry/inventor", "dep:cadmpeg-codec-inventor"]
+sldprt = ["cadmpeg-registry/sldprt", "dep:cadmpeg-codec-sldprt"]
+catia = ["cadmpeg-registry/catia", "dep:cadmpeg-codec-catia"]
+creo = ["cadmpeg-registry/creo", "dep:cadmpeg-codec-creo"]
+nx = ["cadmpeg-registry/nx", "dep:cadmpeg-codec-nx"]
+rhino = ["cadmpeg-registry/rhino", "dep:cadmpeg-codec-rhino"]
+step = ["cadmpeg-registry/step", "dep:cadmpeg-codec-step"]
+iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
+sat = ["cadmpeg-registry/sat", "dep:cadmpeg-codec-sat"]
 
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-registry.workspace = true
 cadmpeg-codec-f3d = { workspace = true, optional = true }
 cadmpeg-codec-inventor = { workspace = true, optional = true }
 cadmpeg-codec-freecad = { workspace = true, optional = true }
@@ -68,15 +74,15 @@ serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
-# The dialect registries are embedded with `include_str!` and parsed at run
-# time by `cadmpeg dialects`, so the tables live in one place.
-toml.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
 crc32fast.workspace = true
 predicates.workspace = true
 zip.workspace = true
+# `layout_tables` parses `docs/layouts/*.toml`. The dialect registries moved to
+# `cadmpeg-registry`, which embeds and parses them itself.
+toml.workspace = true
 # The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps
 # those fixtures out of the normal library build.
 cadmpeg-ir = { workspace = true, features = ["examples"] }

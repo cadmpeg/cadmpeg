@@ -2,17 +2,13 @@
 //! Typed application workflows for the `cadmpeg` CLI.
 
 pub mod artifact_store;
-pub mod catalogs;
 pub mod document;
-pub mod encoders;
 pub mod refusal;
 pub mod transcoder;
+pub mod validators;
 
 pub use artifact_store::{ArtifactStore, SidecarPersistOutcome};
-pub use catalogs::{
-    ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError, ResolvedSource,
-};
 pub use document::{LoadOrigin, LoadedDocument};
-pub use encoders::{build_encoder, LossPolicy};
 pub use refusal::ConversionRefusal;
 pub use transcoder::{export_target, ConversionPolicy, SourceRequest, Transcoder};
+pub use validators::NativeValidatorCatalog;
