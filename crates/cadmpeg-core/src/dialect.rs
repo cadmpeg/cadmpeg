@@ -94,13 +94,17 @@ impl<'de> Deserialize<'de> for DialectId {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Admission {
-    /// Parsed with the strategy declared for this dialect.
+    /// Parsed with the strategy declared for the identified dialect.
     Admitted,
-    /// No declared dialect matched; parsed with the nearest strategy.
+    /// Parsed with a strategy not declared for the identified dialect, or
+    /// no dialect was identified at all. Identity and admission are
+    /// orthogonal: [`DialectMatch::dialect`] may still be `Some` — a legacy
+    /// document can carry a registry row of its own while its bytes are
+    /// read with a newer grammar.
     ///
     /// The codec must charge its dialect-unverified loss.
     AdmittedUnverified {
-        /// Dialect whose strategy was used in place of a declared match.
+        /// Dialect whose declared strategy was substituted for the parse.
         nearest: DialectId,
     },
     /// Structurally identified; semantic decode refused.
