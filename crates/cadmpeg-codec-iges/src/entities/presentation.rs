@@ -3,7 +3,7 @@
 
 use super::geometry::ProjectionOutcome;
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -63,23 +63,25 @@ fn text_font_definition_pointer_valid(
 pub(super) fn general_note_font_valid_for_dialect(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
-    let standard = match dialect {
-        Dialect::V4_0 => {
+    let standard = match global_table {
+        GlobalTable::V4_0 => {
             matches!(
                 value,
                 0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003
             )
         }
-        Dialect::V5_0 => matches!(
+        GlobalTable::V5_0 => matches!(
             value,
             0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001
         ),
-        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => matches!(
-            value,
-            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
-        ),
+        GlobalTable::Legacy | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
+            matches!(
+                value,
+                0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
+            )
+        }
     };
     standard || text_font_definition_pointer_valid(value, entries)
 }
@@ -110,12 +112,12 @@ fn line_font_definition_directory_valid(entry: &DirectoryEntry) -> bool {
         && (1..=5).contains(&entry.line_font)
 }
 
-fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    match dialect {
-        Dialect::V4_0 | Dialect::V5_0 => {
+fn text_template_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
+    match global_table {
+        GlobalTable::V4_0 | GlobalTable::V5_0 => {
             entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
         }
-        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+        GlobalTable::Legacy | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
             entry.status.subordinate == 0
                 && entry.status.use_flag == 2
                 && entry.structure == 0
@@ -129,12 +131,12 @@ fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bo
     }
 }
 
-fn directory_color_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 406))
+fn directory_color_is_semantic(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
+    !(matches!(global_table, GlobalTable::V4_0) && matches!(entry.entity_type, 124 | 406))
 }
 
-fn directory_line_weight_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
+fn directory_line_weight_is_semantic(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
+    !(matches!(global_table, GlobalTable::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
 }
 
 fn source_sequence(id: &str) -> Option<u32> {
@@ -283,9 +285,9 @@ pub(super) fn project(
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| {
-            general_note_font_valid_for_dialect(font, &entries, global.dialect())
+            general_note_font_valid_for_dialect(font, &entries, global.global_table())
         });
-        let directory_valid = text_template_directory_valid(entry, global.dialect());
+        let directory_valid = text_template_directory_valid(entry, global.global_table());
         let fields_valid = parameter_end <= 11
             && (1..=2).all(|index| {
                 record
@@ -422,7 +424,7 @@ pub(super) fn project(
                 .string(4)
                 .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok()),
             Some(crate::parameter::TokenValue::Integer(0))
-                if matches!(global.dialect(), Dialect::V4_0) =>
+                if matches!(global.global_table(), GlobalTable::V4_0) =>
             {
                 None
             }
@@ -478,10 +480,9 @@ pub(super) fn project(
         }
     };
 
-    for entry in directory
-        .iter()
-        .filter(|entry| entry.color != 0 && directory_color_is_semantic(entry, global.dialect()))
-    {
+    for entry in directory.iter().filter(|entry| {
+        entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
+    }) {
         if resolve(entry.color).is_none() {
             losses.push(loss(
                 entry,
@@ -504,7 +505,7 @@ pub(super) fn project(
         }
     }
     for entry in directory.iter().filter(|entry| {
-        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.dialect())
+        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())
     }) {
         if !global.line_weight_number_is_valid(entry.line_weight) {
             losses.push(loss(

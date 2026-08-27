@@ -560,26 +560,35 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
     );
 
     assert_eq!(
-        entity_primary_end_for_dialect(&omitted_count, &directory, Dialect::V4_0),
+        entity_primary_end_for_dialect(&omitted_count, &directory, GlobalTable::V4_0),
         Some(omitted_count.tokens.len())
     );
     let v4_analysis =
-        analyze_trailing_pointer_groups_for_dialect(&omitted_count, &directory, Dialect::V4_0);
+        analyze_trailing_pointer_groups_for_dialect(&omitted_count, &directory, GlobalTable::V4_0);
     assert!(v4_analysis.groups.is_none());
 
-    for dialect in [Dialect::V5_0, Dialect::V5_1, Dialect::V5_2, Dialect::V5_3] {
+    for global_table in [
+        GlobalTable::V5_0,
+        GlobalTable::V5_1,
+        GlobalTable::V5_2,
+        GlobalTable::V5_3,
+    ] {
         assert_eq!(
-            entity_primary_end_for_dialect(&omitted_count, &directory, dialect),
+            entity_primary_end_for_dialect(&omitted_count, &directory, global_table),
             Some(4),
-            "dialect={dialect:?}"
+            "global_table={global_table:?}"
         );
         let analysis =
-            analyze_trailing_pointer_groups_for_dialect(&omitted_count, &directory, dialect);
+            analyze_trailing_pointer_groups_for_dialect(&omitted_count, &directory, global_table);
         let groups = analysis
             .groups
             .expect("optional Type 402 visible-entity list");
-        assert_eq!(groups.token_start, 4, "dialect={dialect:?}");
-        assert_eq!(groups.associations, vec![1], "dialect={dialect:?}");
+        assert_eq!(groups.token_start, 4, "global_table={global_table:?}");
+        assert_eq!(
+            groups.associations,
+            vec![1],
+            "global_table={global_table:?}"
+        );
     }
 
     let explicit_zero = token_parameter_record(
@@ -595,11 +604,11 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
         ],
     );
     assert_eq!(
-        entity_primary_end_for_dialect(&explicit_zero, &directory, Dialect::V4_0),
+        entity_primary_end_for_dialect(&explicit_zero, &directory, GlobalTable::V4_0),
         Some(4)
     );
     let analysis =
-        analyze_trailing_pointer_groups_for_dialect(&explicit_zero, &directory, Dialect::V4_0);
+        analyze_trailing_pointer_groups_for_dialect(&explicit_zero, &directory, GlobalTable::V4_0);
     let groups = analysis.groups.expect("explicit V4 Type 402 entity count");
     assert_eq!(groups.token_start, 4);
     assert_eq!(groups.associations, vec![1]);

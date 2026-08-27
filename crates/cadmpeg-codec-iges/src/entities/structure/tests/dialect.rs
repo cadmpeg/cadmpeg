@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::directory::{DirectoryEntry, Status};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::test_support::*;
 use crate::IgesCodec;
 
@@ -45,29 +45,29 @@ fn v4_flow_associativity_requires_entity_use_flag_three() {
 
     assert!(flow_associativity_directory_valid(
         &entry(18, 3, 0),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(flow_associativity_directory_valid(
         &entry(18, 3, 99),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     for use_flag in [0, 1, 2, 4, 5] {
         assert!(
-            !flow_associativity_directory_valid(&entry(18, use_flag, 0), Dialect::V4_0),
+            !flow_associativity_directory_valid(&entry(18, use_flag, 0), GlobalTable::V4_0),
             "{use_flag}"
         );
     }
     assert!(!flow_associativity_directory_valid(
         &entry(20, 3, 0),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(flow_associativity_directory_valid(
         &entry(18, 2, 99),
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(flow_associativity_directory_valid(
         &entry(20, 2, 99),
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
 }
 
@@ -138,14 +138,14 @@ fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
 
     for form in [2, 5, 6, 8, 9, 10, 11, 12, 13, 16] {
         assert!(
-            type402_structure_valid(&entry(form, 99), Dialect::V4_0),
+            type402_structure_valid(&entry(form, 99), GlobalTable::V4_0),
             "V4 form {form}"
         );
         assert!(
-            !type402_structure_valid(&entry(form, 99), Dialect::V5_0),
+            !type402_structure_valid(&entry(form, 99), GlobalTable::V5_0),
             "V5 form {form}"
         );
-        assert!(type402_structure_valid(&entry(form, 0), Dialect::V5_0));
+        assert!(type402_structure_valid(&entry(form, 0), GlobalTable::V5_0));
     }
 }
 
@@ -187,25 +187,25 @@ fn v4_flow_uses_only_the_v4_target_classes() {
     assert!(flow_connection_target_valid(
         &connect_point,
         18,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
-    assert!(!flow_connection_target_valid(&group, 18, Dialect::V4_0));
-    assert!(flow_connection_target_valid(&group, 18, Dialect::V5_3));
+    assert!(!flow_connection_target_valid(&group, 18, GlobalTable::V4_0));
+    assert!(flow_connection_target_valid(&group, 18, GlobalTable::V5_3));
 
-    assert!(flow_display_target_valid(&template, 18, Dialect::V4_0));
-    assert!(!flow_display_target_valid(&note, 18, Dialect::V4_0));
-    assert!(flow_display_target_valid(&note, 18, Dialect::V5_3));
+    assert!(flow_display_target_valid(&template, 18, GlobalTable::V4_0));
+    assert!(!flow_display_target_valid(&note, 18, GlobalTable::V4_0));
+    assert!(flow_display_target_valid(&note, 18, GlobalTable::V5_3));
 
-    assert!(flow_continuation_target_valid(&flow, 18, Dialect::V4_0));
+    assert!(flow_continuation_target_valid(&flow, 18, GlobalTable::V4_0));
     assert!(!flow_continuation_target_valid(
         &old_connect_node,
         18,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(flow_continuation_target_valid(
         &old_connect_node,
         18,
-        Dialect::V5_3
+        GlobalTable::V5_3
     ));
 }
 

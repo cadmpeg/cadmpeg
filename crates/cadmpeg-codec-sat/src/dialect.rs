@@ -4,7 +4,7 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. Every variant here has a row in `docs/dialects.toml`
+//! vocabulary is closed. Every [`StreamKind`] has a row in `docs/dialects.toml`
 //! under the `sat` namespace; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
 //! fails on drift in either direction.
 //!
@@ -62,34 +62,29 @@ const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 /// Absent on the binary branches, which carry no terminator.
 const DECLARED_TERMINATOR: &str = "terminator";
 
-/// One row of `docs/dialects.toml` under the `sat` namespace.
-///
-/// One row per [`StreamKind`]: the discriminant is the leading magic, or the
-/// two-line header shape for text. [`Self::Unknown`] is the mandatory totality
-/// row (design §3.3, B4); `detect::confidence` reports [`Confidence::No`] for
-/// it, so it is unreachable through the normal catalog and exists to keep
-/// classification total.
-///
-/// [`Confidence::No`]: cadmpeg_ir::codec::Confidence::No
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum SatDialect {
-    AsmBinary,
-    AcisBinary,
-    Text,
-    Unknown,
-}
-
-impl SatDialect {
+impl StreamKind {
     /// Every dialect this codec can name.
     ///
     /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
+    /// the list exists so a stream kind added without a registry row, or a row
+    /// added without a stream kind, fails a test.
     #[cfg(test)]
     pub(crate) const ALL: [Self; 4] =
         [Self::AsmBinary, Self::AcisBinary, Self::Text, Self::Unknown];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The pinned registry id.
+    ///
+    /// One row of `docs/dialects.toml` under the `sat` namespace per stream
+    /// kind: the discriminant is the leading magic, or the two-line header shape
+    /// for text. [`Self::Unknown`] is the mandatory totality row (design §3.3,
+    /// B4); `detect::confidence` reports [`Confidence::No`] for it, so it is
+    /// unreachable through the normal catalog and exists to keep classification
+    /// total.
+    ///
+    /// Identity here is the detection discriminant and nothing else. This is the
+    /// only registry string boundary the enum has.
+    ///
+    /// [`Confidence::No`]: cadmpeg_ir::codec::Confidence::No
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
             Self::AsmBinary => "sat:asm-binary",
@@ -97,19 +92,6 @@ impl SatDialect {
             Self::Text => "sat:text",
             Self::Unknown => "sat:unknown",
         })
-    }
-
-    /// The row a detected stream kind satisfies.
-    ///
-    /// Total and injective: identity here is the detection discriminant and
-    /// nothing else.
-    pub(crate) const fn from_stream_kind(kind: StreamKind) -> Self {
-        match kind {
-            StreamKind::AsmBinary => Self::AsmBinary,
-            StreamKind::AcisBinary => Self::AcisBinary,
-            StreamKind::Text => Self::Text,
-            StreamKind::Unknown => Self::Unknown,
-        }
     }
 }
 
@@ -121,7 +103,7 @@ impl SatDialect {
 /// terminator recovers outside the band, symmetrically with binary.
 pub(crate) struct TextEvidence<'a> {
     /// Branch the terminator line selected.
-    pub(crate) branch: sat::Dialect,
+    pub(crate) branch: sat::Terminator,
     /// Kernel header the three text header lines carried.
     pub(crate) header: &'a KernelHeader,
 }
@@ -177,8 +159,8 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
         StreamEvidence::AsmBinary(Some(_)) => return Admission::Admitted,
         StreamEvidence::AcisBinary(Some(header)) => header.save_format_major(),
         StreamEvidence::Text(Some(text)) => match text.branch {
-            sat::Dialect::Asm => return Admission::Admitted,
-            sat::Dialect::Acis => text.header.save_format_major(),
+            sat::Terminator::Asm => return Admission::Admitted,
+            sat::Terminator::Acis => text.header.save_format_major(),
         },
         StreamEvidence::AsmBinary(None)
         | StreamEvidence::AcisBinary(None)
@@ -253,10 +235,10 @@ fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
 }
 
 /// The terminator line a text branch ends with.
-pub(crate) const fn terminator_line(branch: sat::Dialect) -> &'static str {
+pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
     match branch {
-        sat::Dialect::Asm => "End-of-ASM-data",
-        sat::Dialect::Acis => "End-of-ACIS-data",
+        sat::Terminator::Asm => "End-of-ASM-data",
+        sat::Terminator::Acis => "End-of-ACIS-data",
     }
 }
 
@@ -270,7 +252,7 @@ pub(crate) const fn terminator_line(branch: sat::Dialect) -> &'static str {
 pub(crate) fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
     DialectMatch {
         format: FORMAT.into(),
-        dialect: Some(SatDialect::from_stream_kind(evidence.kind()).id()),
+        dialect: Some(evidence.kind().id()),
         declared: declared(evidence),
         admission: admission(evidence),
     }

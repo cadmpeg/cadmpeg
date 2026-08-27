@@ -57,7 +57,7 @@ pub(crate) struct RawGlobal {
 /// specifications are verified. The 4.0 and 5.0 families are separate because
 /// their Global tables stop at fields 24 and 25 respectively.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Dialect {
+pub(crate) enum GlobalTable {
     Legacy,
     V4_0,
     V5_0,
@@ -69,7 +69,7 @@ pub(crate) enum Dialect {
 /// Whether field 23 selected a Global table this codec verified for the version
 /// the source declared, and if not, why not.
 ///
-/// Distinct from [`Dialect`], which names the table actually used. This names
+/// Distinct from [`GlobalTable`], which names the table actually used. This names
 /// the relationship between that table and the declaration: a decode can read a
 /// file with the 5.3 table because the file says 5.3 ([`Self::Verified`]),
 /// because the file says 5.1 and the tables coincide, because field 23 was
@@ -90,7 +90,7 @@ pub(crate) enum DialectRecovery {
     UnverifiedVersion,
 }
 
-impl Dialect {
+impl GlobalTable {
     const fn from_effective_flag(flag: i64) -> Self {
         match flag {
             6 => Self::V4_0,
@@ -148,7 +148,7 @@ impl Dialect {
         !byte.is_ascii() || (byte.is_ascii_control() && !matches!(self, Self::V4_0))
     }
 
-    /// Whether an empty field has no specification default in this dialect.
+    /// Whether an empty field has no specification default in this Global table.
     ///
     /// A required-no-default field must contain a supplied value. Its data
     /// type's implicit default does not override that category. V4.0 names
@@ -204,7 +204,7 @@ pub(crate) struct ResolvedGlobal {
     double_significance_absent: bool,
     declared_version_flag: i64,
     unreadable_version_declaration: Option<String>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 }
 
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
@@ -214,7 +214,7 @@ pub(crate) struct ProjectedGlobal {
     minimum_resolution_mm: f64,
     precision: RealPrecision,
     line_weight_scale: Option<LineWeightScale>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -838,7 +838,7 @@ fn recovered_real_text(text: &str) -> Option<f64> {
 }
 
 impl Resolution {
-    fn apply_string_policy(&mut self, dialect: Dialect) {
+    fn apply_string_policy(&mut self, global_table: GlobalTable) {
         for value in &mut self.values {
             let Value::String(bytes) = value else {
                 continue;
@@ -846,7 +846,7 @@ impl Resolution {
             if bytes
                 .iter()
                 .copied()
-                .any(|byte| dialect.string_byte_is_forbidden(byte))
+                .any(|byte| global_table.string_byte_is_forbidden(byte))
             {
                 *value = Value::ForbiddenString;
             }
@@ -885,10 +885,10 @@ impl Resolution {
         }
     }
 
-    fn supplied_date(&self, index: usize, dialect: Dialect) -> Supplied<String> {
+    fn supplied_date(&self, index: usize, global_table: GlobalTable) -> Supplied<String> {
         match self.supplied_string(index) {
             Supplied::Value(text)
-                if date_value_is_valid(text.as_bytes(), dialect.accepts_four_digit_date()) =>
+                if date_value_is_valid(text.as_bytes(), global_table.accepts_four_digit_date()) =>
             {
                 Supplied::Value(text)
             }
@@ -931,9 +931,9 @@ impl Resolution {
             .push(recovered_real_loss_note(index, &source, value));
     }
 
-    fn metadata_string(&mut self, index: usize, dialect: Dialect) -> Option<String> {
+    fn metadata_string(&mut self, index: usize, global_table: GlobalTable) -> Option<String> {
         match self.supplied_string(index) {
-            Supplied::Absent if dialect.field_requires_value(index) => {
+            Supplied::Absent if global_table.field_requires_value(index) => {
                 self.charge(
                     IgesLossCode::GlobalMetadataFieldUnusable,
                     index,
@@ -956,9 +956,9 @@ impl Resolution {
         }
     }
 
-    fn metadata_date(&mut self, index: usize, dialect: Dialect) {
-        let supplied = self.supplied_date(index, dialect);
-        if matches!(&supplied, Supplied::Absent) && dialect.field_requires_value(index) {
+    fn metadata_date(&mut self, index: usize, global_table: GlobalTable) {
+        let supplied = self.supplied_date(index, global_table);
+        if matches!(&supplied, Supplied::Absent) && global_table.field_requires_value(index) {
             self.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 index,
@@ -975,20 +975,25 @@ impl Resolution {
         }
     }
 
-    fn metadata_integer(&mut self, index: usize, dialect: Dialect, admits: fn(i64) -> bool) {
-        let _ = self.metadata_integer_value(index, dialect, admits);
+    fn metadata_integer(
+        &mut self,
+        index: usize,
+        global_table: GlobalTable,
+        admits: fn(i64) -> bool,
+    ) {
+        let _ = self.metadata_integer_value(index, global_table, admits);
     }
 
     fn metadata_integer_value(
         &mut self,
         index: usize,
-        dialect: Dialect,
+        global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) -> Option<i64> {
         let supplied = self.supplied_integer(index);
         let absent = matches!(&supplied, Supplied::Absent);
         let admitted = match &supplied {
-            Supplied::Absent => !dialect.field_requires_value(index),
+            Supplied::Absent => !global_table.field_requires_value(index),
             Supplied::Value(value) => admits(*value),
             Supplied::Malformed => false,
         };
@@ -1010,10 +1015,10 @@ impl Resolution {
         }
     }
 
-    fn maximum_coordinate(&mut self, dialect: Dialect) -> Option<f64> {
+    fn maximum_coordinate(&mut self, global_table: GlobalTable) -> Option<f64> {
         match self.supplied_real(FIELD_MAXIMUM_COORDINATE) {
-            SuppliedReal::Absent if dialect == Dialect::V5_0 => None,
-            SuppliedReal::Absent if dialect == Dialect::V4_0 => {
+            SuppliedReal::Absent if global_table == GlobalTable::V5_0 => None,
+            SuppliedReal::Absent if global_table == GlobalTable::V4_0 => {
                 self.charge(
                     IgesLossCode::GlobalMetadataFieldUnusable,
                     FIELD_MAXIMUM_COORDINATE,
@@ -1058,9 +1063,9 @@ impl Resolution {
         FALLBACK_SIGNIFICANCE
     }
 
-    fn minimum_resolution(&mut self, dialect: Dialect) -> f64 {
+    fn minimum_resolution(&mut self, global_table: GlobalTable) -> f64 {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
-            SuppliedReal::Absent if dialect.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
+            SuppliedReal::Absent if global_table.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
                 self.charge(
                     IgesLossCode::GlobalSemanticContextSubstituted,
                     FIELD_MINIMUM_RESOLUTION,
@@ -1087,27 +1092,31 @@ impl Resolution {
         }
     }
 
-    fn line_weight_scale(&mut self, dialect: Dialect) -> Option<LineWeightScale> {
+    fn line_weight_scale(&mut self, global_table: GlobalTable) -> Option<LineWeightScale> {
         let supplied_gradations = self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS);
         let gradations_was_supplied = !matches!(&supplied_gradations, Supplied::Absent);
         let (gradations, gradations_defect) = match supplied_gradations {
-            Supplied::Absent if matches!(dialect, Dialect::V4_0) => (None, Some(Defect::Absent)),
+            Supplied::Absent if matches!(global_table, GlobalTable::V4_0) => {
+                (None, Some(Defect::Absent))
+            }
             Supplied::Absent => (Some(1), None),
             Supplied::Value(value)
-                if value > 0 && (dialect != Dialect::V4_0 || value <= 32_768) =>
+                if value > 0 && (global_table != GlobalTable::V4_0 || value <= 32_768) =>
             {
                 (Some(value), None)
             }
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
         let (mode, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
-            SuppliedReal::Absent if dialect == Dialect::V5_0 && !gradations_was_supplied => {
+            SuppliedReal::Absent
+                if global_table == GlobalTable::V5_0 && !gradations_was_supplied =>
+            {
                 (None, None)
             }
-            SuppliedReal::Value(0.0) if dialect == Dialect::V5_0 => {
+            SuppliedReal::Value(0.0) if global_table == GlobalTable::V5_0 => {
                 (Some(LineWeightMode::Relative), None)
             }
-            SuppliedReal::Recovered(0.0) if dialect == Dialect::V5_0 => {
+            SuppliedReal::Recovered(0.0) if global_table == GlobalTable::V5_0 => {
                 self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, 0.0);
                 (Some(LineWeightMode::Relative), None)
             }
@@ -1151,9 +1160,12 @@ impl Resolution {
         })
     }
 
-    fn length_unit(&mut self, dialect: Dialect) -> (Option<i64>, Option<String>, Option<f64>) {
+    fn length_unit(
+        &mut self,
+        global_table: GlobalTable,
+    ) -> (Option<i64>, Option<String>, Option<f64>) {
         let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
-            SuppliedReal::Absent => (dialect.default_model_scale(), None),
+            SuppliedReal::Absent => (global_table.default_model_scale(), None),
             SuppliedReal::Value(value) if value > 0.0 => (Some(value), None),
             SuppliedReal::Recovered(value) if value > 0.0 => {
                 self.charge_recovered_real(FIELD_MODEL_SCALE, value);
@@ -1164,7 +1176,7 @@ impl Resolution {
             }
         };
         let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG) {
-            Supplied::Absent => (dialect.default_units_flag(), None),
+            Supplied::Absent => (global_table.default_units_flag(), None),
             Supplied::Value(value) if (1..=11).contains(&value) => (Some(value), None),
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
@@ -1179,10 +1191,10 @@ impl Resolution {
             }
         } else {
             let name = match self.supplied_string(FIELD_UNITS_NAME) {
-                Supplied::Absent if dialect.defaults_units_name() => {
+                Supplied::Absent if global_table.defaults_units_name() => {
                     units_flag.and_then(enumerated_unit_name).map(str::to_owned)
                 }
-                Supplied::Absent if dialect.field_requires_value(FIELD_UNITS_NAME) => {
+                Supplied::Absent if global_table.field_requires_value(FIELD_UNITS_NAME) => {
                     self.charge(
                         IgesLossCode::GlobalMetadataFieldUnusable,
                         FIELD_UNITS_NAME,
@@ -1260,9 +1272,9 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             Supplied::Malformed => (3, Some(resolution.declaration_text(FIELD_VERSION_FLAG))),
         };
     let effective_flag = effective_version(declared_version_flag).0;
-    let dialect = Dialect::from_effective_flag(effective_flag);
-    resolution.apply_string_policy(dialect);
-    let global_field_count = dialect.global_field_count();
+    let global_table = GlobalTable::from_effective_flag(effective_flag);
+    resolution.apply_string_policy(global_table);
+    let global_field_count = global_table.global_field_count();
 
     if field_count > global_field_count {
         resolution
@@ -1273,24 +1285,24 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             )));
     }
 
-    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, dialect);
-    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, dialect);
-    resolution.metadata_string(FIELD_NATIVE_SYSTEM, dialect);
-    resolution.metadata_string(FIELD_PREPROCESSOR_VERSION, dialect);
+    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table);
+    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table);
+    resolution.metadata_string(FIELD_NATIVE_SYSTEM, global_table);
+    resolution.metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
     let integer_bits = resolution
-        .metadata_integer_value(FIELD_INTEGER_BITS, dialect, |_| true)
+        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |_| true)
         .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
     let single_magnitude =
-        resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, dialect, |_| true);
+        resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE);
-    let double_magnitude_absent = dialect == Dialect::V5_0
+    let double_magnitude_absent = global_table == GlobalTable::V5_0
         && matches!(
             resolution.supplied_integer(FIELD_DOUBLE_MAGNITUDE),
             Supplied::Absent
         );
     let double_magnitude =
-        resolution.metadata_integer_value(FIELD_DOUBLE_MAGNITUDE, dialect, |_| true);
-    let double_significance_absent = dialect == Dialect::V5_0
+        resolution.metadata_integer_value(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
+    let double_significance_absent = global_table == GlobalTable::V5_0
         && matches!(
             resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
             Supplied::Absent
@@ -1301,8 +1313,10 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
     };
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
-        Supplied::Absent if dialect.defaults_receiver_product_to_sender() => sender_product.clone(),
-        Supplied::Absent if dialect.field_requires_value(FIELD_RECEIVER_PRODUCT) => {
+        Supplied::Absent if global_table.defaults_receiver_product_to_sender() => {
+            sender_product.clone()
+        }
+        Supplied::Absent if global_table.field_requires_value(FIELD_RECEIVER_PRODUCT) => {
             resolution.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 FIELD_RECEIVER_PRODUCT,
@@ -1323,26 +1337,26 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             None
         }
     };
-    let (units_flag, units_name, length_factor_mm) = resolution.length_unit(dialect);
+    let (units_flag, units_name, length_factor_mm) = resolution.length_unit(global_table);
     #[cfg(not(test))]
     let _ = units_flag;
-    let line_weight_scale = resolution.line_weight_scale(dialect);
-    resolution.metadata_date(FIELD_GENERATION_DATE, dialect);
-    let minimum_resolution = resolution.minimum_resolution(dialect);
+    let line_weight_scale = resolution.line_weight_scale(global_table);
+    resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
+    let minimum_resolution = resolution.minimum_resolution(global_table);
     #[cfg(test)]
-    let maximum_coordinate = resolution.maximum_coordinate(dialect);
+    let maximum_coordinate = resolution.maximum_coordinate(global_table);
     #[cfg(not(test))]
-    let _ = resolution.maximum_coordinate(dialect);
-    resolution.metadata_string(FIELD_AUTHOR, dialect);
-    resolution.metadata_string(FIELD_ORGANIZATION, dialect);
-    resolution.metadata_integer(FIELD_DRAFTING_STANDARD, dialect, |value| {
+    let _ = resolution.maximum_coordinate(global_table);
+    resolution.metadata_string(FIELD_AUTHOR, global_table);
+    resolution.metadata_string(FIELD_ORGANIZATION, global_table);
+    resolution.metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
         (0..=7).contains(&value)
     });
-    if dialect.has_model_date() {
-        resolution.metadata_date(FIELD_MODEL_DATE, dialect);
+    if global_table.has_model_date() {
+        resolution.metadata_date(FIELD_MODEL_DATE, global_table);
     }
-    if dialect.has_application_protocol() {
-        resolution.metadata_string(FIELD_APPLICATION_PROTOCOL, dialect);
+    if global_table.has_application_protocol() {
+        resolution.metadata_string(FIELD_APPLICATION_PROTOCOL, global_table);
     }
 
     let resolved = ResolvedGlobal {
@@ -1372,7 +1386,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         double_significance_absent,
         declared_version_flag,
         unreadable_version_declaration,
-        dialect,
+        global_table,
     };
     (resolved, resolution.losses)
 }
@@ -1386,7 +1400,7 @@ impl ResolvedGlobal {
             minimum_resolution_mm: self.minimum_resolution * length_factor_mm,
             precision: self.precision,
             line_weight_scale: self.line_weight_scale,
-            dialect: self.dialect,
+            global_table: self.global_table,
         })
     }
 
@@ -1464,25 +1478,25 @@ impl ResolvedGlobal {
     }
 
     pub(crate) fn version(&self) -> &'static str {
-        match self.dialect {
-            Dialect::V4_0 => "4.0",
-            Dialect::V5_0 => "5.0",
-            Dialect::V5_1 => "5.1",
-            Dialect::V5_2 => "5.2",
-            Dialect::V5_3 => "5.3",
-            Dialect::Legacy => effective_version(self.declared_version_flag).1,
+        match self.global_table {
+            GlobalTable::V4_0 => "4.0",
+            GlobalTable::V5_0 => "5.0",
+            GlobalTable::V5_1 => "5.1",
+            GlobalTable::V5_2 => "5.2",
+            GlobalTable::V5_3 => "5.3",
+            GlobalTable::Legacy => effective_version(self.declared_version_flag).1,
         }
     }
 
-    pub(crate) fn dialect(&self) -> Dialect {
-        self.dialect
+    pub(crate) fn global_table(&self) -> GlobalTable {
+        self.global_table
     }
 
     pub(crate) fn conditional_double_precision_losses(
         &self,
         uses_double_precision: bool,
     ) -> Vec<LossNote> {
-        if self.dialect != Dialect::V5_0 || !uses_double_precision {
+        if self.global_table != GlobalTable::V5_0 || !uses_double_precision {
             return Vec::new();
         }
         let mut losses = Vec::new();
@@ -1550,7 +1564,7 @@ impl ResolvedGlobal {
         if let Some(product) = self.sender_product() {
             notes.push(format!("sender_product={product}"));
         }
-        if self.dialect == Dialect::V5_0 {
+        if self.global_table == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
                 notes.push(format!("receiver_product={product}"));
             }
@@ -1567,8 +1581,8 @@ impl ResolvedGlobal {
 }
 
 impl ProjectedGlobal {
-    pub(crate) fn dialect(&self) -> Dialect {
-        self.dialect
+    pub(crate) fn global_table(&self) -> GlobalTable {
+        self.global_table
     }
 
     pub(crate) fn length_factor_mm(&self) -> f64 {

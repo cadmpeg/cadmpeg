@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -225,7 +225,7 @@ pub(super) fn project(
             continue;
         }
         if matches!(entry.form, 11..=13) {
-            let minimum_tuple_count = if matches!(global.dialect(), Dialect::V4_0) {
+            let minimum_tuple_count = if matches!(global.global_table(), GlobalTable::V4_0) {
                 1
             } else {
                 2
@@ -331,7 +331,7 @@ pub(super) fn project(
         let projects_as_points = matches!(entry.form, 1..=3)
             || (matches!(entry.form, 11..=13)
                 && tuple_count == 1
-                && matches!(global.dialect(), Dialect::V4_0));
+                && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in points.into_iter().enumerate() {
                 let point = PointId(format!(

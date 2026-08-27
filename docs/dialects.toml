@@ -1235,8 +1235,8 @@ witness = "code:crates/cadmpeg-codec-inventor/src/rse.rs:580"
 # (detect.rs:33-44), which tries ASM magic, then ACIS magic, then text, then
 # Unknown. Stream content selects the decoder; the file extension does not.
 #
-# `SatDialect` (crates/cadmpeg-codec-sat/src/dialect.rs:83-88) pins one id per
-# stream kind, and `dialect::classify` (dialect.rs:244) is the codec's single
+# `StreamKind::id` (crates/cadmpeg-codec-sat/src/dialect.rs) pins one id per
+# stream kind, and `dialect::classify` (dialect.rs) is the codec's single
 # construction path for a `DialectMatch`.
 [format.sat]
 complete = false
@@ -1360,7 +1360,7 @@ seam = "structurally identified and read with a verified band's record grammar; 
 witness = "code:crates/cadmpeg-asm/src/dialect.rs:63"
 
 [[dialect]]
-# `sat::Dialect::Asm` (crates/cadmpeg-asm/src/sat.rs:27-33). The text branch
+# `sat::Terminator::Asm` (crates/cadmpeg-asm/src/sat.rs:27-33). The text branch
 # is decided by the TERMINATOR line, not the header: `End-of-ASM-data`.
 # Modern save formats use this terminator and the modern subtype spellings.
 id = "acis:text-asm"
@@ -1369,7 +1369,7 @@ discriminants = { header_line_1 = "four integer fields", terminator = "End-of-AS
 witness = "code:crates/cadmpeg-asm/src/sat.rs:29"
 
 [[dialect]]
-# `sat::Dialect::Acis` (sat.rs:27-33), terminator `End-of-ACIS-data`. Save
+# `sat::Terminator::Acis` (sat.rs:27-33), terminator `End-of-ACIS-data`. Save
 # format 700 streams use this terminator, store no `asmheader` record, and
 # use three topology record layouts with fewer fields. The code reaches those
 # layouts by token shape rather than by comparing 700

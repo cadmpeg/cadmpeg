@@ -114,11 +114,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         CodecError::malformed(format_args!("text stream parse failed: {error}"))
     })?;
     let header = stream.header.as_kernel_header();
-    let family = match stream.dialect {
-        sat::Dialect::Asm => "asm",
-        sat::Dialect::Acis => "acis",
+    let family = match stream.terminator {
+        sat::Terminator::Asm => "asm",
+        sat::Terminator::Acis => "acis",
     };
-    let dialect = terminator_line(stream.dialect);
+    let dialect = terminator_line(stream.terminator);
     let mut attributes = BTreeMap::new();
     header_attributes(&header, family, &mut attributes);
     attributes.insert("encoding".to_string(), "text".to_string());
@@ -128,7 +128,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
     // stream, so it takes the same admission — literally the same code path,
     // through `classify`. Neither branch gates the record decode on it.
     let matched = classify_dialect(&StreamEvidence::Text(Some(TextEvidence {
-        branch: stream.dialect,
+        branch: stream.terminator,
         header: &header,
     })));
     let brep = decode_with_header(

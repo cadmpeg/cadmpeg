@@ -19,7 +19,7 @@ use crate::test_support::*;
 use crate::IgesCodec;
 
 use crate::entities::presentation::general_note_font_valid_for_dialect;
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 
 use super::{
     dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
@@ -98,43 +98,43 @@ fn general_note_kanji_text_uses_biased_jis_hex_pairs() {
     assert!(general_note_text_valid_for_dialect(
         b"34413B7A",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
     assert!(general_note_text_valid_for_dialect(
         b"",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
     assert!(!general_note_text_valid_for_dialect(
         b"34413B7",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
     assert!(!general_note_text_valid_for_dialect(
         b"34413B7G",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
     assert!(!general_note_text_valid_for_dialect(
         b"20413B7A",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
     assert!(general_note_text_valid_for_dialect(
         b" ",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         true
     ));
     assert!(!general_note_text_valid_for_dialect(
         b"34413B7A",
         2001,
-        Dialect::V4_0,
+        GlobalTable::V4_0,
         false
     ));
 }
@@ -479,13 +479,13 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
+            general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
+            !general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
@@ -537,7 +537,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         240, 244, 246, 252, 254, 256, 262, 264, 265, 266, 268,
     ] {
         assert!(
-            fill_pattern_valid_for_dialect(value, Dialect::V5_3),
+            fill_pattern_valid_for_dialect(value, GlobalTable::V5_3),
             "admitted fill pattern {value}"
         );
     }
@@ -545,7 +545,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         21, 23, 24, 25, 27, 30, 31, 33, 35, 37, 39, 43, 44, 45, 47, 48, 49, 51, 269,
     ] {
         assert!(
-            !fill_pattern_valid_for_dialect(value, Dialect::V5_3),
+            !fill_pattern_valid_for_dialect(value, GlobalTable::V5_3),
             "reserved fill pattern {value}"
         );
     }
@@ -553,11 +553,11 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
 
 #[test]
 fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
-    assert!(fill_pattern_valid_for_dialect(19, Dialect::V4_0));
-    assert!(!fill_pattern_valid_for_dialect(20, Dialect::V4_0));
-    assert!(fill_pattern_valid_for_dialect(20, Dialect::V5_0));
-    assert!(fill_pattern_valid_for_dialect(268, Dialect::V5_3));
-    assert!(!fill_pattern_valid_for_dialect(269, Dialect::V5_3));
+    assert!(fill_pattern_valid_for_dialect(19, GlobalTable::V4_0));
+    assert!(!fill_pattern_valid_for_dialect(20, GlobalTable::V4_0));
+    assert!(fill_pattern_valid_for_dialect(20, GlobalTable::V5_0));
+    assert!(fill_pattern_valid_for_dialect(268, GlobalTable::V5_3));
+    assert!(!fill_pattern_valid_for_dialect(269, GlobalTable::V5_3));
 }
 
 #[test]
@@ -648,7 +648,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &record,
         &entries,
         0,
-        Dialect::V4_0,
+        GlobalTable::V4_0,
         Transform::identity(),
         1.0,
         0.001
@@ -658,7 +658,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &record,
         &entries,
         0,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -679,7 +679,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &record,
         &entries,
         0,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         translated_pattern_plane,
         1.0,
         0.001
@@ -759,7 +759,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(1),
         &entries,
         1,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -769,7 +769,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(0),
         &entries,
         1,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -779,7 +779,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(1),
         &entries,
         0,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -788,10 +788,14 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
 
 #[test]
 fn point_dimension_enclosure_types_follow_the_declared_dialect() {
-    assert!(dimension_enclosure_type_allowed(100, 0, Dialect::V4_0));
-    assert!(dimension_enclosure_type_allowed(102, 0, Dialect::V4_0));
-    assert!(!dimension_enclosure_type_allowed(106, 63, Dialect::V4_0));
-    assert!(dimension_enclosure_type_allowed(106, 63, Dialect::V5_0));
+    assert!(dimension_enclosure_type_allowed(100, 0, GlobalTable::V4_0));
+    assert!(dimension_enclosure_type_allowed(102, 0, GlobalTable::V4_0));
+    assert!(!dimension_enclosure_type_allowed(
+        106,
+        63,
+        GlobalTable::V4_0
+    ));
+    assert!(dimension_enclosure_type_allowed(106, 63, GlobalTable::V5_0));
 }
 
 fn leader_record(arrowhead_height: f64, arrowhead_width: f64) -> ParameterRecord {
@@ -852,13 +856,21 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(5);
 
-    assert!(leader_valid_for_dialect(&entry, &record, Dialect::V4_0));
-    assert!(!leader_valid_for_dialect(&entry, &record, Dialect::V5_3));
+    assert!(leader_valid_for_dialect(&entry, &record, GlobalTable::V4_0));
+    assert!(!leader_valid_for_dialect(
+        &entry,
+        &record,
+        GlobalTable::V5_3
+    ));
 
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(4);
-    assert!(leader_valid_for_dialect(&entry, &record, Dialect::V4_0));
-    assert!(!leader_valid_for_dialect(&entry, &record, Dialect::V5_3));
+    assert!(leader_valid_for_dialect(&entry, &record, GlobalTable::V4_0));
+    assert!(!leader_valid_for_dialect(
+        &entry,
+        &record,
+        GlobalTable::V5_3
+    ));
 }
 
 #[test]
@@ -885,21 +897,21 @@ fn general_symbol_zero_note_pointer_follows_the_declared_dialect() {
         &entries,
         &records,
         0,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(general_symbol_note_valid(
         &record,
         &entries,
         &records,
         0,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(!general_symbol_note_valid(
         &record,
         &entries,
         &records,
         1,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
 }
 

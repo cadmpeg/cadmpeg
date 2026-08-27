@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
-use crate::global::{Dialect, NumericLimits, RealPrecision, ResolvedGlobal};
+use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -351,7 +351,7 @@ pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
 fn analyze_trailing_pointer_groups_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
@@ -366,25 +366,25 @@ fn analyze_trailing_pointer_groups_for_dialect(
     analyze_trailing_pointer_groups_from_end(
         record,
         directory,
-        entity_primary_end_for_dialect(record, directory, dialect),
+        entity_primary_end_for_dialect(record, directory, global_table),
     )
 }
 
 #[cfg(test)]
 // Existing boundary fixtures use the fully specified later-profile default;
-// every production caller supplies the resolved file dialect explicitly.
+// every production caller supplies the resolved file global_table explicitly.
 pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_for_dialect(record, directory, Dialect::V5_3)
+    analyze_trailing_pointer_groups_for_dialect(record, directory, GlobalTable::V5_3)
 }
 
 fn analyze_trailing_pointer_groups_with_records_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
@@ -400,10 +400,10 @@ fn analyze_trailing_pointer_groups_with_records_for_dialect(
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
     if !is_attribute_table_instance {
-        return analyze_trailing_pointer_groups_for_dialect(record, directory, dialect);
+        return analyze_trailing_pointer_groups_for_dialect(record, directory, global_table);
     }
     let primary_end =
-        entity_primary_end_with_records_for_dialect(record, directory, records, dialect);
+        entity_primary_end_with_records_for_dialect(record, directory, records, global_table);
     analyze_trailing_pointer_groups_from_end(record, directory, primary_end)
 }
 
@@ -417,7 +417,7 @@ fn analyze_trailing_pointer_groups_with_records(
         record,
         directory,
         records,
-        Dialect::V5_3,
+        GlobalTable::V5_3,
     )
 }
 
@@ -831,15 +831,15 @@ fn connect_node_primary_end(record: &ParameterRecord) -> usize {
 pub(crate) fn entity_primary_end_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
         (402, 6) => Some(view_list_primary_end(record)),
-        (402, 3) => Some(view_visibility_primary_end(record, 1, dialect)),
-        (402, 4) => Some(view_visibility_primary_end(record, 5, dialect)),
+        (402, 3) => Some(view_visibility_primary_end(record, 1, global_table)),
+        (402, 4) => Some(view_visibility_primary_end(record, 5, global_table)),
         (402, 2 | 12) => Some(external_reference_index_primary_end(record)),
         (402, 8) => Some(signal_string_primary_end(record)),
         (402, 10) => Some(text_node_primary_end(record)),
@@ -980,20 +980,20 @@ pub(crate) fn entity_primary_end_for_dialect(
 }
 
 #[cfg(test)]
-// Keep the legacy test fixture adapter dialect-explicit so it cannot be used
-// by production assembly when a file's resolved dialect is available.
+// Keep the legacy test fixture adapter global_table-explicit so it cannot be used
+// by production assembly when a file's resolved global_table is available.
 pub(crate) fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
-    entity_primary_end_for_dialect(record, directory, Dialect::V5_3)
+    entity_primary_end_for_dialect(record, directory, GlobalTable::V5_3)
 }
 
 fn entity_primary_end_with_records_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
@@ -1001,7 +1001,7 @@ fn entity_primary_end_with_records_for_dialect(
             record, entry, directory, records,
         ));
     }
-    entity_primary_end_for_dialect(record, directory, dialect)
+    entity_primary_end_for_dialect(record, directory, global_table)
 }
 
 #[cfg(test)]
@@ -1010,7 +1010,7 @@ fn entity_primary_end_with_records(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Option<usize> {
-    entity_primary_end_with_records_for_dialect(record, directory, records, Dialect::V5_3)
+    entity_primary_end_with_records_for_dialect(record, directory, records, GlobalTable::V5_3)
 }
 
 fn counted_primary_end(record: &ParameterRecord) -> usize {
@@ -1336,9 +1336,9 @@ fn planar_associativity_primary_end(record: &ParameterRecord) -> usize {
 
 pub(crate) fn view_visibility_entity_count(
     record: &ParameterRecord,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<usize> {
-    let value = if dialect == Dialect::V4_0 {
+    let value = if global_table == GlobalTable::V4_0 {
         record.integer(2)
     } else {
         record.integer_or(2, 0)
@@ -1349,13 +1349,13 @@ pub(crate) fn view_visibility_entity_count(
 fn view_visibility_primary_end(
     record: &ParameterRecord,
     block_width: usize,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> usize {
     let view_count = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0);
-    let entity_count = view_visibility_entity_count(record, dialect);
+    let entity_count = view_visibility_entity_count(record, global_table);
     view_count
         .zip(entity_count)
         .and_then(|(view_count, entity_count)| {
@@ -2663,7 +2663,7 @@ fn hollerith(
     bytes: &[u8],
     card_boundaries: &[usize],
     start: usize,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
@@ -2702,7 +2702,7 @@ fn hollerith(
         start,
     ))?;
     if payload.iter().copied().any(|byte| {
-        !byte.is_ascii() || (byte.is_ascii_control() && !matches!(dialect, Dialect::V4_0))
+        !byte.is_ascii() || (byte.is_ascii_control() && !matches!(global_table, GlobalTable::V4_0))
     }) {
         return Err(TokenizeFailure::Defect(
             ParameterDefect::HollerithForbiddenByte,
@@ -3121,7 +3121,7 @@ fn tokenize_with_limits(
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
-    dialect: Dialect,
+    global_table: GlobalTable,
     limits: NumericLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
@@ -3144,7 +3144,8 @@ fn tokenize_with_limits(
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) = hollerith(bytes, card_boundaries, cursor, dialect)?
+        let (token, end) = if let Some(value) =
+            hollerith(bytes, card_boundaries, cursor, global_table)?
         {
             value
         } else {
@@ -3203,7 +3204,7 @@ fn tokenize(
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
-    dialect: Dialect,
+    global_table: GlobalTable,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     tokenize_with_limits(
@@ -3211,7 +3212,7 @@ fn tokenize(
         card_boundaries,
         parameter_delimiter,
         record_delimiter,
-        dialect,
+        global_table,
         NumericLimits::default(),
         ctx,
     )
@@ -3550,7 +3551,7 @@ pub(crate) fn assemble_with_context(
                 &owned_bytes.card_boundaries,
                 global.parameter_delimiter,
                 global.record_delimiter,
-                global.dialect(),
+                global.global_table(),
                 global.numeric_limits(),
                 ctx,
             )
@@ -3610,7 +3611,7 @@ pub(crate) fn assemble_with_context(
                 record,
                 &entries,
                 &record_by_directory,
-                global.dialect(),
+                global.global_table(),
             );
             trailing_pointer_analysis.insert(record.directory_sequence, analysis);
         }

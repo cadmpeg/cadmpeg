@@ -39,20 +39,20 @@ fn registry_ids() -> BTreeSet<String> {
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = CreoDialect::ALL
+    let pinned = Layout::ALL
         .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
+        .map(|layout| layout.id().as_str().to_owned())
         .collect::<BTreeSet<_>>();
 
     assert_eq!(
         pinned.len(),
-        CreoDialect::ALL.len(),
+        Layout::ALL.len(),
         "two variants pin the same id"
     );
     assert_eq!(
         pinned,
         registry_ids(),
-        "docs/dialects.toml and CreoDialect disagree; ids are pinned forever, so reconcile the enum"
+        "docs/dialects.toml and Layout disagree; ids are pinned forever, so reconcile the enum"
     );
 }
 
@@ -177,7 +177,7 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
         let scan = scan_bytes(bytes.as_slice());
         assert_eq!(scan.framing.layout, case.layout, "{}", case.label);
 
-        let matched = CreoDialect::classify(&scan);
+        let matched = classify(&scan);
         assert_eq!(matched.format, FORMAT, "{}", case.label);
         assert_eq!(
             matched.dialect.as_ref().map(DialectId::as_str),
@@ -232,7 +232,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     ] {
         let charged = dialect_loss(layout).is_some();
         assert_eq!(
-            layout_recovery(layout) == LayoutRecovery::Declared,
+            layout_is_declared(layout),
             !charged,
             "{layout:?}: the recovery predicate and the charged loss disagree"
         );
@@ -243,7 +243,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let scan = scan_bytes(bytes.as_slice());
         let charged = dialect_loss(scan.framing.layout).is_some();
         assert_eq!(
-            CreoDialect::classify(&scan).admission == Admission::Admitted,
+            classify(&scan).admission == Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             case.label
@@ -275,10 +275,8 @@ fn the_totality_row_never_carries_a_verified_admission() {
     for case in CASES {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
-        let matched = CreoDialect::classify(&scan);
-        if matched.dialect.as_ref().map(DialectId::as_str)
-            == Some(CreoDialect::Unknown.id().as_str())
-        {
+        let matched = classify(&scan);
+        if matched.dialect.as_ref().map(DialectId::as_str) == Some(Layout::Unknown.id().as_str()) {
             assert_ne!(matched.admission, Admission::Admitted, "{}", case.label);
         }
     }
@@ -295,7 +293,7 @@ fn the_layout_token_vocabulary_is_not_the_registry_vocabulary() {
         Layout::LegacyAscii,
         Layout::Unknown,
     ] {
-        let id = CreoDialect::from_layout(layout).id();
+        let id = layout.id();
         assert_ne!(id.as_str(), layout.token());
         assert!(id.as_str().starts_with("creo:"));
     }

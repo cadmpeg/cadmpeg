@@ -149,7 +149,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             .transpose()?;
         let scan = card::scan_with_context(bytes, ctx)?;
         let (global, mut global_losses) = global::parse(&scan)?;
-        let (directory, quarantined_directory) = directory::parse(&scan, global.dialect());
+        let (directory, quarantined_directory) = directory::parse(&scan, global.global_table());
         charge_entities(
             ctx,
             (directory.len() + quarantined_directory.len()) as u64,
@@ -197,7 +197,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let mut losses = Vec::new();
         losses.extend(self.global.dialect_loss());
         losses.extend(self.global_losses.iter().cloned());
-        if matches!(self.global.dialect(), global::Dialect::V4_0) {
+        if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
                 losses.push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
@@ -466,7 +466,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         ));
     }
-    let dialect = parse.global.dialect();
+    let global_table = parse.global.global_table();
     if !options.container_only {
         let attributed_before_generic = attributed_sequences(&losses);
         let generic_losses = parse
@@ -474,7 +474,7 @@ fn decode_with_occurrence_limits(
             .iter()
             .filter(|entry| entry.entity_type != 0)
             .filter(|entry| {
-                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect) {
+                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
                     return true;
                 }
                 !projection.decoded.contains(&entry.sequence)
@@ -482,7 +482,7 @@ fn decode_with_occurrence_limits(
                     && !attributed_before_generic.contains(&entry.sequence)
             })
             .map(|entry| {
-                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
+                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
                 {
                     IgesLossCode::EntityRetainedUnprojected.note(format!(
                         "IGES entity type {} form {} retained without neutral projection",
@@ -519,7 +519,7 @@ fn decode_with_occurrence_limits(
         let attributed_loss = attributed.contains(&entry.sequence);
         let note = if options.container_only {
             "native record retained; semantic projection was not requested"
-        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect) {
+        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
             "native record retained; entity is outside the declared read envelope"
         } else if projection.decoded.contains(&entry.sequence) && attributed_loss {
             "native record retained; semantic projection emitted with an attributed loss"

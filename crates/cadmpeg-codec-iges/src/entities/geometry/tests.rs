@@ -14,30 +14,36 @@ use super::{
     enforce_transform_depth, is_finite_nonzero_vector, validate_declared_transform_frame,
     DeclaredInterval, DeclaredTransformFrameError,
 };
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
 #[test]
 fn point_display_symbol_targets_follow_the_declared_dialect() {
-    assert!(super::point_display_symbol_type_allowed(408, Dialect::V4_0));
+    assert!(super::point_display_symbol_type_allowed(
+        408,
+        GlobalTable::V4_0
+    ));
     assert!(!super::point_display_symbol_type_allowed(
         308,
-        Dialect::V4_0
-    ));
-    assert!(super::point_display_symbol_type_allowed(308, Dialect::V5_0));
-    assert!(!super::point_display_symbol_type_allowed(
-        408,
-        Dialect::V5_0
+        GlobalTable::V4_0
     ));
     assert!(super::point_display_symbol_type_allowed(
         308,
-        Dialect::Legacy
+        GlobalTable::V5_0
+    ));
+    assert!(!super::point_display_symbol_type_allowed(
+        408,
+        GlobalTable::V5_0
+    ));
+    assert!(super::point_display_symbol_type_allowed(
+        308,
+        GlobalTable::Legacy
     ));
     assert!(super::point_display_symbol_type_allowed(
         408,
-        Dialect::Legacy
+        GlobalTable::Legacy
     ));
 }
 
@@ -86,22 +92,27 @@ fn base_geometry_line_font_follows_the_declared_dialect() {
             entity_type,
             0,
             0,
-            Dialect::V4_0
+            GlobalTable::V4_0
         ));
         assert!(base_geometry_line_font_valid(
             entity_type,
             0,
             1,
-            Dialect::V4_0
+            GlobalTable::V4_0
         ));
     }
-    assert!(base_geometry_line_font_valid(106, 1, 0, Dialect::V4_0));
-    assert!(base_geometry_line_font_valid(106, 3, 0, Dialect::V4_0));
+    assert!(base_geometry_line_font_valid(106, 1, 0, GlobalTable::V4_0));
+    assert!(base_geometry_line_font_valid(106, 3, 0, GlobalTable::V4_0));
     for form in [11, 12, 13, 63] {
-        assert!(!base_geometry_line_font_valid(106, form, 0, Dialect::V4_0));
+        assert!(!base_geometry_line_font_valid(
+            106,
+            form,
+            0,
+            GlobalTable::V4_0
+        ));
     }
-    assert!(base_geometry_line_font_valid(116, 0, 0, Dialect::V4_0));
-    assert!(base_geometry_line_font_valid(110, 0, 0, Dialect::V5_0));
+    assert!(base_geometry_line_font_valid(116, 0, 0, GlobalTable::V4_0));
+    assert!(base_geometry_line_font_valid(110, 0, 0, GlobalTable::V5_0));
 }
 
 #[test]
@@ -111,7 +122,7 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
             110,
             0,
             use_flag,
-            Dialect::V4_0
+            GlobalTable::V4_0
         ));
     }
     for use_flag in [3, 4] {
@@ -119,12 +130,12 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
             110,
             0,
             use_flag,
-            Dialect::V4_0
+            GlobalTable::V4_0
         ));
     }
-    assert!(base_geometry_use_flag_valid(110, 0, 3, Dialect::V5_0));
-    assert!(!base_geometry_use_flag_valid(116, 0, 3, Dialect::V4_0));
-    assert!(base_geometry_use_flag_valid(125, 0, 3, Dialect::V4_0));
+    assert!(base_geometry_use_flag_valid(110, 0, 3, GlobalTable::V5_0));
+    assert!(!base_geometry_use_flag_valid(116, 0, 3, GlobalTable::V4_0));
+    assert!(base_geometry_use_flag_valid(125, 0, 3, GlobalTable::V4_0));
 }
 
 #[test]

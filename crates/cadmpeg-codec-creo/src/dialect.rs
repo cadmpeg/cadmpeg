@@ -3,8 +3,8 @@
 //! admitted.
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`CreoDialect::classify`] is the one construction
-//! path, and the vocabulary is closed. Every variant here has a row in
+//! strings are the boundary, [`classify`] is the one construction
+//! path, and the vocabulary is closed. Every layout has a row in
 //! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
 //! fails on drift in either direction.
 //!
@@ -15,9 +15,9 @@
 //! it. What does partition the document space is the persistence layout, which
 //! `container::identify_layout` reads from the enumerated section
 //! table before any decode strategy is chosen — a B1 grammar boundary. So
-//! [`CreoDialect`] is the image of [`Layout`], one variant per layout family,
-//! and the `from_layout` match is exhaustive so a new layout cannot be added
-//! without pinning an id for it.
+//! [`Layout`] is the identity vocabulary itself: [`Layout::id`] pins one
+//! registry id per layout family, and the match is exhaustive so a new layout
+//! cannot be added without pinning an id for it.
 //!
 //! [`Layout::token`] is a separate vocabulary and stays that way. It is the
 //! value of the long-standing `layout` source attribute and of the inspect
@@ -33,7 +33,7 @@
 //! of them. That is a real recovery strategy and it is charged as one:
 //! [`Admission::AdmittedUnverified`] plus
 //! [`CreoLossCode::SourceDialectUnverified`], both derived from
-//! [`layout_recovery`] so they cannot disagree.
+//! [`layout_is_declared`] so they cannot disagree.
 
 use crate::container::{ContainerScan, Layout};
 use crate::loss::CreoLossCode;
@@ -62,56 +62,32 @@ const DECLARED_LEGACY_ASCII_SCHEMA: &str = "legacy_ascii_schema";
 /// no `Version` or `Release` word.
 const DECLARED_LEGACY_ASCII_PRODUCT_RELEASE: &str = "legacy_ascii_product_release";
 
-/// One row of `docs/dialects.toml` under the `creo` namespace.
-///
-/// `docs/dialects.toml` declares `complete = false` for this format: the rows
-/// are the grammar classes this codec branches on plus the mandatory
-/// [`Self::Unknown`] totality row (design §3.3, B4), not an enumeration of
-/// anything PTC publishes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum CreoDialect {
-    Nd,
-    Depdb,
-    LegacyAscii,
-    Unknown,
-}
-
 /// Whether the layout classification named a dialect whose own declared decode
 /// strategy this run then applied.
 ///
 /// The single predicate behind two facts that must never disagree: the
-/// [`Admission`] in [`CreoDialect::classify`] and the
+/// [`Admission`] in [`classify`] and the
 /// [`CreoLossCode::SourceDialectUnverified`] charge in [`dialect_loss`]. Both
 /// call this; neither recomputes it, so the biconditional the decode policy
 /// requires holds by construction rather than by two authors agreeing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LayoutRecovery {
-    /// A layout discriminant matched, and the decode gates for that layout ran.
-    /// The only state that charges no loss.
-    Declared,
-    /// No layout discriminant matched. The decode ran the layout-independent
-    /// path and skipped every layout gate.
-    Unclassified,
-}
-
-/// Why this decode did not read the file with a layout-specific strategy.
 ///
-/// See [`LayoutRecovery`]: this is the one predicate, and the two facts derived
-/// from it are the admission and the loss.
-pub(crate) const fn layout_recovery(layout: Layout) -> LayoutRecovery {
+/// True when a layout discriminant matched and the decode gates for that
+/// layout ran — the only state that charges no loss. False when no discriminant
+/// matched, so the decode ran the layout-independent path and skipped every
+/// layout gate.
+pub(crate) const fn layout_is_declared(layout: Layout) -> bool {
     match layout {
-        Layout::Nd | Layout::Depdb | Layout::LegacyAscii => LayoutRecovery::Declared,
-        Layout::Unknown => LayoutRecovery::Unclassified,
+        Layout::Nd | Layout::Depdb | Layout::LegacyAscii => true,
+        Layout::Unknown => false,
     }
 }
 
 /// The loss charged when no layout discriminant matched.
 ///
-/// `None` exactly when [`layout_recovery`] is [`LayoutRecovery::Declared`],
-/// which is also exactly when [`CreoDialect::classify`] reports
-/// [`Admission::Admitted`].
+/// `None` exactly when [`layout_is_declared`] holds, which is also exactly
+/// when [`classify`] reports [`Admission::Admitted`].
 pub(crate) fn dialect_loss(layout: Layout) -> Option<LossNote> {
-    if layout_recovery(layout) == LayoutRecovery::Declared {
+    if layout_is_declared(layout) {
         return None;
     }
     Some(CreoLossCode::SourceDialectUnverified.note(
@@ -122,16 +98,25 @@ pub(crate) fn dialect_loss(layout: Layout) -> Option<LossNote> {
     ))
 }
 
-impl CreoDialect {
+impl Layout {
     /// Every dialect this codec can name.
     ///
     /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
+    /// the list exists so a layout added without a registry row, or a row
+    /// added without a layout, fails a test.
     #[cfg(test)]
     pub(crate) const ALL: [Self; 4] = [Self::Nd, Self::Depdb, Self::LegacyAscii, Self::Unknown];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The pinned registry id.
+    ///
+    /// One row of `docs/dialects.toml` under the `creo` namespace, and the only
+    /// registry string boundary this enum has. `docs/dialects.toml` declares
+    /// `complete = false` for this format: the rows are the grammar classes this
+    /// codec branches on plus the mandatory [`Layout::Unknown`] totality row
+    /// (design §3.3, B4), not an enumeration of anything PTC publishes.
+    ///
+    /// Total by construction: [`Layout`] is closed and this match is
+    /// exhaustive, so `detect`'s whole domain classifies.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
             Self::Nd => "creo:nd",
@@ -140,62 +125,49 @@ impl CreoDialect {
             Self::Unknown => "creo:unknown",
         })
     }
+}
 
-    /// The row whose discriminants the container satisfied.
-    ///
-    /// Total by construction: [`Layout`] is closed and this match is
-    /// exhaustive, so `detect`'s whole domain classifies (design §3.3, B4).
-    pub(crate) const fn from_layout(layout: Layout) -> Self {
-        match layout {
-            Layout::Nd => Self::Nd,
-            Layout::Depdb => Self::Depdb,
-            Layout::LegacyAscii => Self::LegacyAscii,
-            Layout::Unknown => Self::Unknown,
+/// Classifies one container scan. The single construction path for a
+/// [`DialectMatch`] in this codec, so a classification bug and the report
+/// can never disagree.
+///
+/// # `nearest` on the unclassified path
+///
+/// [`Admission::AdmittedUnverified`] documents `nearest` as the dialect
+/// whose declared strategy was substituted for the parse. Creo's
+/// unclassified path substitutes nothing — it skips every layout gate — so
+/// the only row that describes the strategy actually applied is
+/// `creo:unknown` itself. Naming `creo:nd` or `creo:depdb` would assert a
+/// substitution that did not happen, which is the one thing the field must
+/// not do.
+pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
+    let layout = scan.framing.layout;
+    let admission = if layout_is_declared(layout) {
+        Admission::Admitted
+    } else {
+        Admission::AdmittedUnverified {
+            nearest: Layout::Unknown.id(),
+        }
+    };
+    let mut declared = BTreeMap::new();
+    declared.insert(
+        DECLARED_VERSION_LINE.into(),
+        scan.framing.version_line.clone(),
+    );
+    if let Some(legacy) = &scan.framing.legacy_ascii {
+        declared.insert(DECLARED_LEGACY_ASCII_SCHEMA.into(), legacy.schema.clone());
+        if let Some(release) = &legacy.product_release {
+            declared.insert(
+                DECLARED_LEGACY_ASCII_PRODUCT_RELEASE.into(),
+                release.clone(),
+            );
         }
     }
-
-    /// Classifies one container scan. The single construction path for a
-    /// [`DialectMatch`] in this codec, so a classification bug and the report
-    /// can never disagree.
-    ///
-    /// # `nearest` on the unclassified path
-    ///
-    /// [`Admission::AdmittedUnverified`] documents `nearest` as the dialect
-    /// whose declared strategy was substituted for the parse. Creo's
-    /// unclassified path substitutes nothing — it skips every layout gate — so
-    /// the only row that describes the strategy actually applied is
-    /// `creo:unknown` itself. Naming `creo:nd` or `creo:depdb` would assert a
-    /// substitution that did not happen, which is the one thing the field must
-    /// not do.
-    pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
-        let layout = scan.framing.layout;
-        let dialect = Self::from_layout(layout);
-        let admission = match layout_recovery(layout) {
-            LayoutRecovery::Declared => Admission::Admitted,
-            LayoutRecovery::Unclassified => Admission::AdmittedUnverified {
-                nearest: Self::Unknown.id(),
-            },
-        };
-        let mut declared = BTreeMap::new();
-        declared.insert(
-            DECLARED_VERSION_LINE.into(),
-            scan.framing.version_line.clone(),
-        );
-        if let Some(legacy) = &scan.framing.legacy_ascii {
-            declared.insert(DECLARED_LEGACY_ASCII_SCHEMA.into(), legacy.schema.clone());
-            if let Some(release) = &legacy.product_release {
-                declared.insert(
-                    DECLARED_LEGACY_ASCII_PRODUCT_RELEASE.into(),
-                    release.clone(),
-                );
-            }
-        }
-        DialectMatch {
-            format: FORMAT.into(),
-            dialect: Some(dialect.id()),
-            declared,
-            admission,
-        }
+    DialectMatch {
+        format: FORMAT.into(),
+        dialect: Some(layout.id()),
+        declared,
+        admission,
     }
 }
 

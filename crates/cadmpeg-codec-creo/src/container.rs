@@ -2878,7 +2878,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
-    let dialects = vec![crate::dialect::CreoDialect::classify(scan)];
+    let dialects = vec![crate::dialect::classify(scan)];
     cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     ContainerSummary {
         dialects,
