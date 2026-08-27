@@ -52,14 +52,14 @@ impl Encoder for StepCodec {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let (schema, displaced) = resolve_catalog_write(
+        let (entry, displaced) = resolve_catalog_write(
             input.ir,
             request,
             crate::dialect::FORMAT,
             crate::dialect::TARGETS,
-            crate::dialect::target_schema,
             OFF_CATALOG_SOURCE_REASON,
         )?;
+        let schema = crate::dialect::target_schema(entry)?;
         let mut bytes = Vec::new();
         let mut report =
             write_step(input.ir, &mut bytes, schema, &self.options).map_err(CodecError::from)?;

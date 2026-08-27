@@ -32,7 +32,8 @@ use crate::global::{DialectRecovery, ResolvedGlobal};
 use crate::representation::Representation;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_ir::codec::{find_target, TargetDescriptor};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::TargetDescriptor;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
@@ -81,13 +82,14 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[
     },
 ];
 
-/// The write version a target id names, by id or by alias, or `None` when the
-/// id is outside [`TARGETS`].
-pub(crate) fn target_version(id: &str) -> Option<IgesVersion> {
-    let target = find_target(TARGETS, id)?;
+/// The write version represented by a canonical catalog entry.
+pub(crate) fn target_version(target: &TargetDescriptor) -> Result<IgesVersion, CodecError> {
     IgesVersion::ALL
         .into_iter()
         .find(|version| IgesDialect::fixed_ascii(*version).pinned() == target.id)
+        .ok_or_else(|| {
+            CodecError::Malformed("IGES target catalog does not map to a write version".into())
+        })
 }
 
 /// Key of the physical representation in [`DialectMatch::declared`].

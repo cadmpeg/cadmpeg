@@ -45,7 +45,8 @@
 use crate::chunks::ArchiveVersion;
 use crate::RhinoArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_ir::codec::{find_target, TargetDescriptor};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -101,13 +102,8 @@ impl RhinoArchiveVersion {
     }
 }
 
-/// The archive version a target id names, by id or by alias, or `None` when the
-/// id is outside [`TARGETS`].
-///
-/// This is also the inherit-path predicate: a source dialect resolves to the
-/// version that reproduces it exactly when it is a catalog row.
-pub(crate) fn target_version(id: &str) -> Option<RhinoArchiveVersion> {
-    let target = find_target(TARGETS, id)?;
+/// The archive version represented by a canonical catalog entry.
+pub(crate) fn target_version(target: &TargetDescriptor) -> Result<RhinoArchiveVersion, CodecError> {
     [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -116,6 +112,9 @@ pub(crate) fn target_version(id: &str) -> Option<RhinoArchiveVersion> {
     ]
     .into_iter()
     .find(|version| version.target() == target.id)
+    .ok_or_else(|| {
+        CodecError::Malformed("Rhino target catalog does not map to an archive version".into())
+    })
 }
 
 /// Key of the archive-version word in [`DialectMatch::declared`].

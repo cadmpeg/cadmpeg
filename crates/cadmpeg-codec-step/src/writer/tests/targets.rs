@@ -106,7 +106,7 @@ fn inherit_synthesizes_the_source_schema_not_the_catalog_default() {
 
     let encoder = StepCodec::default();
     assert_eq!(
-        default_target(Encoder::targets(&encoder)),
+        default_target(Encoder::targets(&encoder)).map(|target| target.id),
         Some("step:ap214")
     );
     let plan = inherit(&encoder, decoded.ir()).expect("an AP203 edition 1 source is a catalog row");
@@ -269,7 +269,7 @@ fn an_explicit_target_overrides_the_source_schema() {
 fn a_cross_format_conversion_writes_the_catalog_default() {
     let encoder = StepCodec::default();
     let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
-    assert_eq!(default, "step:ap214");
+    assert_eq!(default.id, "step:ap214");
 
     let mut ir = unit_cube();
     ir.source = Some(SourceMeta {
@@ -280,7 +280,7 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
     let plan = encoder
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(default),
+            TargetRequest::Explicit(default.id),
         )
         .expect("the catalog default writes");
 
@@ -300,7 +300,7 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
 fn nothing_to_inherit_falls_to_the_catalog_default() {
     let encoder = StepCodec::default();
     let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
-    assert_eq!(default, "step:ap214");
+    assert_eq!(default.id, "step:ap214");
 
     let sourceless = unit_cube();
     let plan = inherit(&encoder, &sourceless).expect("a sourceless document takes the default");

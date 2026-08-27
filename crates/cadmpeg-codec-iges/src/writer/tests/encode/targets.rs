@@ -190,7 +190,7 @@ fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
     assert!(find_target(targets, "iges:5.3-compressed-ascii").is_none());
     assert!(find_target(targets, "iges:5.3-binary").is_none());
     assert_eq!(
-        cadmpeg_ir::codec::default_target(targets),
+        cadmpeg_ir::codec::default_target(targets).map(|target| target.id),
         Some(IgesVersion::V5_3.target())
     );
 }

@@ -376,10 +376,6 @@ const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
     },
 ];
 
-fn parse_catalog_write_target(id: &str) -> Option<&'static str> {
-    find_target(CATALOG_WRITE_TARGETS, id).map(|target| target.id)
-}
-
 fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.source = source.map(|(format, dialect)| crate::document::SourceMeta {
@@ -399,9 +395,9 @@ fn resolve_test_catalog<'a>(
         request,
         "test",
         CATALOG_WRITE_TARGETS,
-        parse_catalog_write_target,
         "the test writer cannot synthesize the source row",
     )
+    .map(|(entry, displaced)| (entry.id, displaced))
 }
 
 #[test]

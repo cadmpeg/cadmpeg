@@ -106,7 +106,7 @@ fn a_cross_format_request_resolves_to_the_catalog_default() {
     let default = cadmpeg_ir::codec::default_target(crate::dialect::TARGETS)
         .expect("the Rhino catalog has a default");
     assert_eq!(
-        resolved(&ir, RhinoEncoder, TargetRequest::Explicit(default),),
+        resolved(&ir, RhinoEncoder, TargetRequest::Explicit(default.id),),
         "rhino:archive-80"
     );
 }

@@ -56,10 +56,9 @@ impl TargetSelection {
     ///
     /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
     /// resolves to is the encoder's answer, not the command line's:
-    /// `resolve_inherit` preserves the source's dialect within one format and
-    /// falls back to the catalog default when there is nothing to inherit —
-    /// no source, a source of another format, or an encoder with no synthesis
-    /// catalog. Deciding the cross-format default here as well would be the
+    /// `resolve_write_request` preserves the source dialect within one format
+    /// and selects the catalog default when there is nothing to inherit: no
+    /// source or a source of another format. Deciding the cross-format default here as well would be the
     /// same rule written twice, in two places that can drift.
     fn request(&self) -> TargetRequest<'_> {
         match self {
@@ -459,8 +458,8 @@ mod tests {
     /// Flag absence is always `Inherit`; the encoder decides what that means.
     ///
     /// The selection is an owned-string adapter and nothing else. The
-    /// cross-format catalog default is `resolve_inherit`'s `Fallback` arm, so
-    /// the command line does not decide it a second time.
+    /// cross-format catalog default is owned by write resolution, so the command
+    /// line does not decide it a second time.
     #[test]
     fn flag_absence_is_always_an_inherit_request() {
         assert_eq!(TargetSelection::Unstated.request(), TargetRequest::Inherit);
@@ -473,13 +472,12 @@ mod tests {
 
     /// The cross-format default still lands on the catalog default.
     ///
-    /// A source of another format has nothing to inherit, so `resolve_inherit`
-    /// falls back. This is the behavior the command line used to compute for
-    /// itself.
+    /// A source of another format has nothing to inherit, so write resolution
+    /// selects the catalog default.
     #[cfg(feature = "iges")]
     #[test]
     fn a_cross_format_convert_writes_the_catalog_default() {
-        use cadmpeg_ir::codec::{resolve_inherit, Inherited};
+        use cadmpeg_ir::codec::{resolve_write_request, WriteRequest};
 
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         ir.source = Some(cadmpeg_ir::SourceMeta {
@@ -487,10 +485,14 @@ mod tests {
             ..Default::default()
         });
         let encoder = cadmpeg_codec_iges::IgesEncoder;
-        assert_eq!(
-            resolve_inherit(&ir, encoder.id(), encoder.targets()).expect("the fallback resolves"),
-            Inherited::Fallback("iges:5.3-fixed-ascii")
-        );
+        let WriteRequest::Catalog { entry, displaced } =
+            resolve_write_request(&ir, TargetRequest::Inherit, encoder.id(), encoder.targets())
+                .expect("the fallback resolves")
+        else {
+            panic!("a cross-format request resolves to the catalog")
+        };
+        assert_eq!(entry.id, "iges:5.3-fixed-ascii");
+        assert_eq!(displaced, None);
     }
 
     /// CADIR has no catalog, so it takes `Inherit` either way.

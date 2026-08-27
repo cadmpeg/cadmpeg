@@ -373,11 +373,8 @@ pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a 
 /// The catalog's default target, or `None` for an encoder with no synthesis
 /// catalog.
 #[must_use]
-pub fn default_target(targets: &[TargetDescriptor]) -> Option<&'static str> {
-    targets
-        .iter()
-        .find(|target| target.default)
-        .map(|target| target.id)
+pub fn default_target(targets: &'static [TargetDescriptor]) -> Option<&'static TargetDescriptor> {
+    targets.iter().find(|target| target.default)
 }
 
 /// The typed write refusal, naming what was asked for and the whole catalog.
@@ -410,59 +407,6 @@ pub const UNRECORDED_SOURCE_DIALECT_REASON: &str =
 #[must_use]
 pub fn unrecorded_source_dialect(format: &str, targets: &[TargetDescriptor]) -> CodecError {
     refusal(format, None, UNRECORDED_SOURCE_DIALECT_REASON, targets)
-}
-
-/// What an [`TargetRequest::Inherit`] request names, before any encoder-specific
-/// preservation attempt (design §8.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Inherited<'a> {
-    /// The source's own dialect. Preserve it, synthesize it, or refuse it by
-    /// name; never write a different one.
-    Source(&'a cadmpeg_core::dialect::DialectId),
-    /// There was nothing to inherit: no source at all, or one of another
-    /// format. The catalog default stands in, which is the request the
-    /// application layer builds for a cross-format conversion anyway.
-    Fallback(&'static str),
-}
-
-/// The common half of every encoder's `Inherit` resolution.
-///
-/// Three outcomes, one shape in every codec:
-///
-/// - no source, or a source of another format — nothing to inherit, so the
-///   catalog default stands in. This is the cross-format path, and a legitimate
-///   direct-library path; it is not a same-format conversion, so it changes
-///   nothing about what an existing file is.
-/// - a same-format source that records no dialect — refuse. There is nothing to
-///   preserve, and the identity default cannot know what it would be
-///   preserving, so any catalog row it picked could change what the file is.
-/// - a same-format source with a recorded dialect — that dialect, for the
-///   encoder to preserve, synthesize, or refuse by name.
-///
-/// The encoder's own constructor state is not consulted at any of the three:
-/// per-codec knobs configure how a target is written, never which one.
-pub fn resolve_inherit<'a>(
-    ir: &'a CadIr,
-    format: &str,
-    targets: &'static [TargetDescriptor],
-) -> Result<Inherited<'a>, CodecError> {
-    let Some(source) = ir.source.as_ref().filter(|source| source.format == format) else {
-        return default_target(targets)
-            .map(Inherited::Fallback)
-            .ok_or_else(|| {
-                refusal(
-                    format,
-                    None,
-                    "there is nothing to inherit and this encoder has no synthesis catalog",
-                    targets,
-                )
-            });
-    };
-    source
-        .dialect
-        .as_ref()
-        .map(Inherited::Source)
-        .ok_or_else(|| unrecorded_source_dialect(format, targets))
 }
 
 /// A write request resolved against the encoder catalog and source identity.
@@ -498,17 +442,28 @@ pub fn resolve_write_request<'a>(
                 targets,
             )
         })?,
-        TargetRequest::Inherit => match resolve_inherit(ir, format, targets)? {
-            Inherited::Fallback(id) => {
-                find_target(targets, id).expect("the inherited fallback is the catalog default")
+        TargetRequest::Inherit => {
+            match ir.source.as_ref().filter(|source| source.format == format) {
+                None => default_target(targets).ok_or_else(|| {
+                    refusal(
+                        format,
+                        None,
+                        "there is nothing to inherit and this encoder has no synthesis catalog",
+                        targets,
+                    )
+                })?,
+                Some(source) => {
+                    let dialect = source
+                        .dialect
+                        .as_ref()
+                        .ok_or_else(|| unrecorded_source_dialect(format, targets))?;
+                    let Some(entry) = find_target(targets, dialect.as_str()) else {
+                        return Ok(WriteRequest::OffCatalog { dialect });
+                    };
+                    entry
+                }
             }
-            Inherited::Source(dialect) => {
-                let Some(entry) = find_target(targets, dialect.as_str()) else {
-                    return Ok(WriteRequest::OffCatalog { dialect });
-                };
-                entry
-            }
-        },
+        }
     };
     let displaced = ir
         .source
@@ -539,14 +494,11 @@ pub fn source_dialect_displaced_message(
 /// can produce. That makes the resolution a function of the request, the
 /// catalog, and the source alone, identical in every such codec:
 ///
-/// - `Explicit(id)` — `parse` it, or refuse it as outside the catalog.
-/// - `Inherit` with nothing to inherit — the catalog default, which `parse`
-///   accepts by construction.
+/// - `Explicit(id)` — resolve it, or refuse it as outside the catalog.
+/// - `Inherit` with nothing to inherit — the catalog default.
 /// - `Inherit` over a same-format source — that source's own dialect, or a
 ///   refusal naming it and the catalog when `parse` rejects it.
 ///
-/// `parse` is the codec's catalog-id-to-writer-target function; it must accept
-/// exactly the ids of `targets`, aliases included.
 /// `off_catalog_source_reason` states why *this* writer cannot reproduce a
 /// source dialect the catalog does not carry — the one sentence that is
 /// genuinely per-codec, because the reason is the codec's own write model.
@@ -559,20 +511,21 @@ pub fn source_dialect_displaced_message(
 /// (`FCStd`, IGES). There a source dialect outside the catalog is written back
 /// from the retained image rather than refused, so the third bullet is a
 /// different law.
-pub fn resolve_catalog_write<T>(
+pub fn resolve_catalog_write(
     ir: &CadIr,
     request: TargetRequest<'_>,
     format: &str,
     targets: &'static [TargetDescriptor],
-    parse: impl Fn(&str) -> Option<T>,
     off_catalog_source_reason: &str,
-) -> Result<(T, Option<cadmpeg_core::dialect::DialectId>), CodecError> {
+) -> Result<
+    (
+        &'static TargetDescriptor,
+        Option<cadmpeg_core::dialect::DialectId>,
+    ),
+    CodecError,
+> {
     match resolve_write_request(ir, request, format, targets)? {
-        WriteRequest::Catalog { entry, displaced } => Ok((
-            parse(entry.id)
-                .unwrap_or_else(|| panic!("the {format} catalog row is a synthesis target")),
-            displaced,
-        )),
+        WriteRequest::Catalog { entry, displaced } => Ok((entry, displaced)),
         WriteRequest::OffCatalog { dialect } => Err(unsupported_target(
             format,
             dialect.as_str(),
@@ -730,8 +683,8 @@ impl Encoder for CadirEncoder {
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
         // The whole of resolution for an encoder with no catalog and no
-        // dialect. `Inherited` never arises: with no synthesis catalog there is
-        // no row to fall back to and no row to preserve, so `Inherit` is the
+        // dialect. With no synthesis catalog there is no row to fall back to
+        // and no row to preserve, so `Inherit` is the
         // only writable request and every explicit id is outside the catalog.
         if let TargetRequest::Explicit(id) = request {
             return Err(unsupported_target(
