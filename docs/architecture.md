@@ -50,6 +50,28 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 
 Export-side refusal has two owners, and the `Encoder` trait is neither. The conversion layer owns `--reject-lossy`: the application transcoder refuses to plan when the decode report carries any loss and refuses to write when the planned `ExportReport` carries any loss. Both are policy stops distinct from a planning failure, and neither consults per-loss strict floors — any loss note refuses. Separately, a writer may own an unsupported policy of its own: the STEP writer's `StepUnsupportedPolicy` either emits the representable subset with loss notes (the default) or rejects the document before any output byte when its report holds a loss, and the atomic-rejection encoders above refuse unsupported input the same way. A format specification's "strict export rejects" sentence names the owning writer policy where one exists and the conversion stop otherwise.
 
+## Invariants
+
+These hold across every codec, every dialect, and every release. A change that breaks one is a change to the architecture, not to a codec.
+
+**Per-entity persistent identity.** Every entity carries a globally unique id under the entity-ID grammar, and that id is what `diff`, `query graph`, `query join`, and golden stability are built on. A dialect never appears in an id: classification refines, and an id that moved when the classifier improved would churn every diff and every golden against no collision that has ever been constructed.
+
+**The neutral IR is dialect-free.** `CadIr` holds no dialect, no version discriminant, and no branch on either. A dialect is a fact about a source document or about an output target, and it travels in `SourceMeta.dialect`, `ContainerSummary.dialects`, `DecodeReport.dialects`, and `ExportReport.target` — beside the IR, never inside it. `cadmpeg-core` carries the `DialectId` type and zero version branches.
+
+**cadmpeg's own version axes are separate.** `CadIr.ir_version`, `NativeNamespace::version`, report `schema_version`, and `DECODE_SIDECAR_VERSION` describe cadmpeg. A source dialect describes a file someone else wrote. Different lifecycles, different owners, different failure modes; they never share a type and no operation compares one to the other.
+
+**Retention and the three write paths are unconditional.** `SourceFidelity`, retained records, and the `verbatim_replay` / `patched` / `synthesized` distinction are how cadmpeg writes back what it does not understand. Retention is never gated on a version check, and no codec is split per dialect: one codec owns its dialect set and branches inside itself. Splitting either way removes the cross-version upgrade path.
+
+**Decoders tolerate unknown records generationally.** A record a decoder does not recognize is retained, not fatal, and not a reason to select a different decoder. This is the open-world read architecture — the same rule sfnt and protobuf converged on. Version-selected decoder variants are not a cleanup of it; they are its replacement, and they break the previous invariant.
+
+**Transfer accounting closes.** Every drop goes through a `*LossCode` with a pinned `family.detail` string, a `LossTaxonomy`, a severity, and a strict floor, and the ledger closes: what was read, what was written, and what was charged agree. The dialect id in a report is the join key between a claim and one file's ground truth, which is what makes the accounting checkable by someone who did not run it.
+
+**Write reports are honest about bytes.** `ExportReport.target` names the dialect actually produced, on every write path, including the inherited dialect under preservation. The claim is verified against the output: re-decoding the written bytes through the codec's own classifier lands on exactly the dialect the report named. A report that names a target the bytes do not classify as is a defect, not a rounding.
+
+**Refusal is structural, never a version allowlist.** A genuinely undecodable variant is refused. A decodable document is never refused because its version is not on a list: the residual `unknown` row parses with a declared nearest strategy and charges the dialect-unverified loss. Strict mode plus that loss is the only refusal-policy axis; a second one would drift against the first.
+
+**The registries are two files and never one.** `docs/dialects.toml` states which dialects exist. It describes formats, so it changes when a vendor ships. `docs/dialect-support.toml` states what cadmpeg does with each. It describes cadmpeg, so it changes per commit. Merging them makes cadmpeg's coverage look like a property of the format, which is the claim that must never become writable.
+
 ## Crate map
 
 | Crate                    | Responsibility                                                                                                                         |
