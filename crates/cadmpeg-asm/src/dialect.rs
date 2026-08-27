@@ -19,7 +19,50 @@
 //! [`nearest_verified_acis`] as `nearest`, and the host charges its kernel-layer
 //! recovery loss.
 
-use cadmpeg_core::dialect::{Admission, DialectId};
+use std::collections::BTreeMap;
+
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+
+use crate::kernel_header::KernelHeader;
+
+/// Parsed kernel-header family used to select the canonical `acis:` row.
+#[derive(Debug, Clone, Copy)]
+pub enum KernelHeaderRef<'a> {
+    /// A Spatial ACIS binary header.
+    Acis(&'a KernelHeader),
+    /// An Autodesk Shape Manager binary header.
+    Asm(&'a KernelHeader),
+}
+
+/// Classify an already-parsed binary ACIS or ASM kernel header.
+#[must_use]
+pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
+    let parsed = match header {
+        KernelHeaderRef::Acis(header) | KernelHeaderRef::Asm(header) => header,
+    };
+    let mut declared = BTreeMap::new();
+    if let Some(major) = parsed.save_format_major() {
+        declared.insert("save_format_major".to_owned(), major.to_string());
+    }
+    if let Some(minor) = parsed.save_format_minor() {
+        declared.insert("save_format_minor".to_owned(), minor.to_string());
+    }
+    declared.insert("reference_width".to_owned(), parsed.width.to_string());
+
+    let (dialect, admission) = match header {
+        KernelHeaderRef::Acis(header) => {
+            let major = header.save_format_major();
+            (acis_binary_row(major), acis_admission(major))
+        }
+        KernelHeaderRef::Asm(header) => (asm_binary_row(header.width), Admission::Admitted),
+    };
+    DialectMatch {
+        format: "acis".to_owned(),
+        dialect: Some(dialect),
+        declared,
+        admission,
+    }
+}
 
 /// Save-format majors the Spatial ACIS record decoders are verified against.
 pub const VERIFIED_ACIS_MAJORS: [u32; 2] = [217, 218];
@@ -105,10 +148,28 @@ pub fn asm_binary_row(width: u8) -> DialectId {
 #[cfg(test)]
 mod tests {
     use super::{
-        acis_admission, acis_band_verified, acis_binary_row, nearest_verified_acis,
-        ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER,
+        acis_admission, acis_band_verified, acis_binary_row, classify, nearest_verified_acis,
+        KernelHeaderRef, ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218,
+        ACIS_SAVE_FORMAT_BINARY_OTHER,
     };
-    use cadmpeg_core::dialect::Admission;
+    use crate::kernel_header::KernelHeader;
+    use cadmpeg_core::dialect::{Admission, DialectMatch};
+
+    fn header(width: u8, save_format_version: Option<u32>) -> KernelHeader {
+        KernelHeader {
+            width,
+            save_format_version,
+            record_count: None,
+            entity_count: None,
+            flags: None,
+            product_family: None,
+            product_version: None,
+            save_date: None,
+            scale: None,
+            linear: None,
+            angular: None,
+        }
+    }
 
     #[test]
     fn only_the_two_witnessed_majors_are_verified() {
@@ -139,6 +200,40 @@ mod tests {
             acis_admission(Some(700)),
             Admission::AdmittedUnverified {
                 nearest: ACIS_SAVE_FORMAT_218
+            }
+        );
+    }
+
+    #[test]
+    fn classification_uses_family_and_canonical_declarations() {
+        let acis = header(4, Some(21_703));
+        let matched = classify(KernelHeaderRef::Acis(&acis));
+        assert_eq!(matched.format, "acis");
+        assert_eq!(matched.dialect, Some(ACIS_SAVE_FORMAT_217));
+        assert_eq!(matched.admission, Admission::Admitted);
+        assert_eq!(
+            matched.declared.into_iter().collect::<Vec<_>>(),
+            [
+                ("reference_width".to_owned(), "4".to_owned()),
+                ("save_format_major".to_owned(), "217".to_owned()),
+                ("save_format_minor".to_owned(), "3".to_owned()),
+            ]
+        );
+
+        let asm = header(8, Some(70_001));
+        assert_eq!(
+            classify(KernelHeaderRef::Asm(&asm)),
+            DialectMatch {
+                format: "acis".to_owned(),
+                dialect: Some(ACIS_ASM_BINARYFILE_8),
+                declared: [
+                    ("reference_width".to_owned(), "8".to_owned()),
+                    ("save_format_major".to_owned(), "700".to_owned()),
+                    ("save_format_minor".to_owned(), "1".to_owned()),
+                ]
+                .into_iter()
+                .collect(),
+                admission: Admission::Admitted,
             }
         );
     }
