@@ -11,12 +11,14 @@ mod commands;
 mod inspect;
 mod loader;
 mod query;
+mod registry_view;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use cadmpeg_registry::{print_dialects, print_formats, ForcedInput, InputCatalog};
+use cadmpeg_registry::{ForcedInput, InputCatalog};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use registry_view::{print_dialects, print_formats};
 
 use crate::application::NativeValidatorCatalog;
 use crate::commands::AppCatalogs;

@@ -957,3 +957,38 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::codec::TargetRequest::check_explicit"
 reason = "it was a resolution mode no encoder is in any more: it validated the id and then let the encoder ignore the request. Every encoder now resolves through find_target and resolve_inherit, and CadirEncoder — no catalog, no dialect — states its one-line refusal inline"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::{print_formats,print_dialects}"
+reason = "a library does not own stdout; the registry returns rows and the CLI's `registry_view` renders them, so `cadmpeg formats` and `cadmpeg dialects` keep their exact output while an embedder gets the data"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::dialect_provenance"
+reason = "returns DialectProvenance instead of a pre-rendered String; the three sources are the registry's, the sentence is the CLI's"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::{format_rows,dialect_table,DialectProvenance,FormatRow,FormatDialects,DialectRow}"
+reason = "the data behind the two table commands: what this build reads and writes, and the identity registry crossed with the capability registry and the compiled catalogs"
+
+[[change]]
+commit = "977133651548cbc6ccf7559d355551bd808beee4"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::write_targets"
+reason = "the catalog is static per format, so reading it needed no encoder instance; `catalog_of` was boxing an encoder with a dummy LossPolicy::Report to reach a 'static table"
+
+[[change]]
+commit = "46d15a7ac16f2b5aef46751ff6e7cb14fb625a0f"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::ResolveSourceError::Ambiguous Display"
+reason = "the message states the ambiguity and stops; `pass --input-format` names a flag only the CLI has, and the CLI appends it in `loader::detection_failure`"

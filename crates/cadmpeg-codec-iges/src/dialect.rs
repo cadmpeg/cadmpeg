@@ -46,8 +46,8 @@ pub(crate) const FORMAT: &str = "iges";
 /// them. Those dialects are still writable, by preserving a retained source
 /// image under `TargetRequest::Inherit` — preservation, not synthesis.
 ///
-/// The alias of each row is its bare version, the spelling `--iges-target`
-/// already uses.
+/// The alias of each row is its bare version, so `--to 5.3` and
+/// `--to iges:5.3-fixed-ascii` name the same row.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
         id: IgesDialect::V4_0FixedAscii.pinned(),

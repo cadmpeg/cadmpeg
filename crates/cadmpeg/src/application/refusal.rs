@@ -271,13 +271,13 @@ mod tests {
     #[test]
     fn refusal_codes_are_stable_for_tests_and_absent_from_display() {
         let refusal = ConversionRefusal::UnsupportedTarget {
-            message: "--iges-target requires IGES output".into(),
+            message: "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii".into(),
         };
         assert_eq!(refusal.code(), RefusalCode::UnsupportedTarget);
         assert_eq!(refusal.stage(), RefusalStage::Plan);
         assert_eq!(refusal.exit_code(), 1);
         assert!(!refusal.may_write_report());
-        assert_eq!(refusal.to_string(), "--iges-target requires IGES output");
+        assert_eq!(refusal.to_string(), "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii");
         let fields = refusal.report_fields();
         assert_eq!(fields["status"], "refused");
         assert_eq!(fields["refusal"]["code"], "unsupported_target");

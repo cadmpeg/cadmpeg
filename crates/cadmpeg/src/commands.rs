@@ -14,8 +14,8 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 use cadmpeg_registry::{
-    build_encoder, dialect_provenance, ForcedInput, Format, InputCatalog, LossPolicy,
-    ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
+    build_encoder, ForcedInput, Format, InputCatalog, LossPolicy, ResolvedSource,
+    DETECTION_PREFIX_LEN,
 };
 
 use crate::application::{
@@ -137,10 +137,7 @@ pub fn inspect(
                 path.display()
             ));
         }
-        Err(ResolveSourceError::UnsupportedFormat(id)) => {
-            return Err(anyhow!("unsupported input format {id}"));
-        }
-        Err(error) => return Err(anyhow!(error.to_string())),
+        Err(error) => return Err(loader::detection_failure(&error)),
     };
     let mut file = File::open(path)?;
     let summary = codec
@@ -181,7 +178,7 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
-    if let Some(line) = dialect_provenance(&summary.dialects, &summary.format) {
+    if let Some(line) = crate::registry_view::dialect_line(&summary.dialects, &summary.format) {
         println!("{line}");
     }
     println!();
@@ -376,6 +373,38 @@ fn execute_conversion(
         forced: plan.forced_input,
         options: args.options(),
     };
+    // A refusal from either stage renders the same way: it carries whatever
+    // reports it has, and the command report is written only where the refusal
+    // admits one.
+    let render_refusal = |error: &anyhow::Error| -> Result<()> {
+        let Some(refusal) = error.downcast_ref::<ConversionRefusal>() else {
+            return Ok(());
+        };
+        let mut stderr = io::stderr();
+        if let Some(report) = refusal.decode_report() {
+            print_decode_report(&mut stderr, report)?;
+            writeln!(stderr)?;
+        }
+        if let Some(validation) = refusal.check_report() {
+            print_check_report(&mut stderr, validation)?;
+        }
+        if refusal.may_write_report() {
+            write_command_report(
+                path,
+                plan.report.as_deref(),
+                plan.force,
+                "convert",
+                CommandReportBody {
+                    decode_report: refusal.decode_report(),
+                    check_report: refusal.check_report(),
+                    export: None,
+                    refusal: Some(refusal),
+                },
+            )?;
+        }
+        Ok(())
+    };
+
     let prepared = match transcoder.prepare(
         &source,
         target,
@@ -391,30 +420,18 @@ fn execute_conversion(
     ) {
         Ok(prepared) => prepared,
         Err(error) => {
-            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
-                let mut stderr = io::stderr();
-                if let Some(report) = refusal.decode_report() {
-                    print_decode_report(&mut stderr, report)?;
-                    writeln!(stderr)?;
-                }
-                if let Some(validation) = refusal.check_report() {
-                    print_check_report(&mut stderr, validation)?;
-                }
-                if refusal.may_write_report() {
-                    write_command_report(
-                        path,
-                        plan.report.as_deref(),
-                        plan.force,
-                        "convert",
-                        CommandReportBody {
-                            decode_report: refusal.decode_report(),
-                            check_report: refusal.check_report(),
-                            export: None,
-                            refusal: Some(refusal),
-                        },
-                    )?;
-                }
-            }
+            render_refusal(&error)?;
+            return Err(error);
+        }
+    };
+
+    // The plan is made once, here, and the same plan is written below. It
+    // borrows `prepared`, so it stays in this scope rather than travelling
+    // inside an owned value beside the document it borrows.
+    let planned = match prepared.plan() {
+        Ok(planned) => planned,
+        Err(error) => {
+            render_refusal(&error)?;
             return Err(error);
         }
     };
@@ -430,7 +447,7 @@ fn execute_conversion(
     }
     let decode_report = prepared.document.decode_report().cloned();
     let validation = prepared.validation.clone();
-    let report = prepared.write()?;
+    let report = planned.write()?;
     write_command_report(
         path,
         plan.report.as_deref(),

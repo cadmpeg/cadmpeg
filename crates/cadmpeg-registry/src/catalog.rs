@@ -71,13 +71,16 @@ pub enum ResolvedSource<'a> {
 }
 
 /// Failure resolving an input source.
+///
+/// Each message states the fact and nothing else. The remedy is the caller's:
+/// a CLI names its own override flag, and an embedder has no flag to name.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveSourceError {
     /// Forced format id is not registered.
     #[error("unsupported input format {0}")]
     UnsupportedFormat(&'static str),
     /// Multiple codecs tied at the strongest confidence.
-    #[error("ambiguous {confidence}-confidence input format: {candidates}; pass --input-format")]
+    #[error("ambiguous {confidence}-confidence input format: {candidates}")]
     Ambiguous {
         /// Shared strongest confidence.
         confidence: Confidence,

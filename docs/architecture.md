@@ -32,7 +32,7 @@ Semantic decode is bounded by the caller's `DecodePolicy`. The policy limits inp
 
 ## CLI stream and exit contract
 
-`dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. A codec-level decode failure during `dump` with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. JSON from `inspect`, `check`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
+`dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 7`, which always emits the dialect fields: `dialects` on every container summary and decode report, `target` on every export report, and `dialect` and `declared` on every source metadata block. Version 6 added top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. A codec-level decode failure during `dump` with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. JSON from `inspect`, `check`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
 Status 0 is success. Status 1 is a negative verdict on a verdict command; other commands stay off 1. Status 2 is operational failure.
 

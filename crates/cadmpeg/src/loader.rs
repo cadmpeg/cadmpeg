@@ -8,7 +8,9 @@ use anyhow::{anyhow, Context, Result};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
 use cadmpeg_ir::CadIr;
 
-use cadmpeg_registry::{ForcedInput, InputCatalog, ResolvedSource, DETECTION_PREFIX_LEN};
+use cadmpeg_registry::{
+    ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
+};
 
 use crate::application::{ArtifactStore, LoadOrigin, LoadedDocument};
 
@@ -31,6 +33,18 @@ pub struct LoadOutcome {
     pub document: LoadedDocument,
     /// Notices the presentation layer may print.
     pub notices: Vec<LoadNotice>,
+}
+
+/// Restates a detection failure with the flag that overrides it.
+///
+/// The registry states the fact; naming `--input-format` is this crate's job,
+/// because the flag is this crate's. An ambiguity is the only outcome the flag
+/// resolves: an unregistered forced id is already the caller naming a format.
+pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
+    match error {
+        ResolveSourceError::Ambiguous { .. } => anyhow!("{error}; pass --input-format"),
+        ResolveSourceError::UnsupportedFormat(_) => anyhow!("{error}"),
+    }
 }
 
 /// Read the bounded byte image used for content-based format detection.
@@ -56,7 +70,7 @@ pub fn load_artifact(
     )?;
     let resolved = catalog
         .resolve_source(&prefix, forced)
-        .map_err(|error| anyhow!(error.to_string()))?;
+        .map_err(|error| detection_failure(&error))?;
     let mut notices = Vec::new();
     match resolved {
         ResolvedSource::Native {

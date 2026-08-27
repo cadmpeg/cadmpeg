@@ -19,7 +19,7 @@ pub(crate) use test_solids_and_structure::*;
 pub(crate) use test_tabulated_surfaces::*;
 
 /// Plans a write at one Fixed ASCII target, the request the command line
-/// builds for an explicit `--iges-target`.
+/// builds for an explicit `--to`.
 ///
 /// The tests here assert what the writer produces at a version, not how the
 /// request that names it is spelled, so the spelling lives in one place.

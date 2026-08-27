@@ -179,17 +179,20 @@ impl Encoder for RhinoEncoder {
     /// replaying codec: a source dialect outside the catalog cannot be written
     /// back at all, so `Inherit` refuses it with
     /// [`OFF_CATALOG_SOURCE_REASON`], naming the source dialect and the
-    /// catalog. There is no fall-through to the catalog default: a same-format
-    /// conversion never silently changes what the file is, which is exactly the
-    /// archive-50 source that used to come back as archive 80.
+    /// catalog. That band is real — archives 2, 3, 4 and 90 decode without a
+    /// writer, and 1, 5 and unknown words do not decode — and an explicit
+    /// `--to rhino:<archive>` is the escape. There is no fall-through to the
+    /// catalog default: a same-format conversion never silently changes what
+    /// the file is, which is exactly the archive-50 source that used to come
+    /// back as archive 80.
     ///
     /// A Rhino source that records no dialect is refused too: there is nothing
     /// to preserve, and no identity to default to.
     ///
     /// The catalog default supplies the target only when there is nothing to
     /// inherit: the document has no source, or a source of another format. That
-    /// is the cross-format path, where the application layer would have built
-    /// `Explicit(catalog default)` itself. The encoder holds no version of its
+    /// is the cross-format path, resolved by `Inherited::Fallback` — the
+    /// application layer states no default of its own. The encoder holds no version of its
     /// own; an encoder-held one used to override every other answer, which is
     /// how an archive-50 source came back as archive 80.
     fn plan<'a>(
