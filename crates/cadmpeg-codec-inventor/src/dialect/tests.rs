@@ -9,7 +9,6 @@
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -18,29 +17,6 @@ use cadmpeg_ir::report::LossNote;
 use super::*;
 use crate::test_support::{fixture, primary_envelope_fixture_with, EnvelopeDeclarations};
 use crate::InventorCodec;
-
-/// Path of the identity registry, from this crate's manifest directory.
-fn registry_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/dialects.toml")
-        .canonicalize()
-        .expect("docs/dialects.toml resolves from the crate manifest directory")
-}
-
-/// Every `id = "inventor:…"` value in `docs/dialects.toml`.
-fn registry_ids() -> BTreeSet<String> {
-    let text = std::fs::read_to_string(registry_path()).expect("read docs/dialects.toml");
-    let ids = text
-        .lines()
-        .map(str::trim)
-        .filter_map(|line| line.strip_prefix("id = \""))
-        .filter_map(|rest| rest.strip_suffix('"'))
-        .filter(|id| id.starts_with("inventor:"))
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
-    assert!(!ids.is_empty(), "the registry declares no inventor rows");
-    ids
-}
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
@@ -56,7 +32,7 @@ fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
     );
     assert_eq!(
         pinned,
-        registry_ids(),
+        cadmpeg_test_support::registry_ids("inventor"),
         "docs/dialects.toml and InventorDialect disagree; ids are pinned forever, so reconcile the enum"
     );
 }

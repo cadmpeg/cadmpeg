@@ -456,6 +456,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
