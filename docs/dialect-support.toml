@@ -1300,8 +1300,8 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-the eight-byte-width half of `acis:asm-binaryfile-4`, under the same
-note"""
+the eight-byte-width half of `acis:asm-binaryfile-4`; witnessed only by
+`cadmpeg-asm`'s row-mapping test — no golden carries the id"""
 
 [[support]]
 dialect = "acis:save-format-217"
@@ -1311,7 +1311,8 @@ fixtures = []
 reason = """
 a verified band: `Admission::Admitted` on the Inventor kernel layer, and
 the `nearest` grammar `cadmpeg-codec-sat` names when it recovers a band
-below 218. The goldens that pin it are code-built"""
+below 218. Unit tests in `cadmpeg-codec-sat` and `cadmpeg-codec-inventor`
+witness it; no golden carries the id"""
 
 [[support]]
 dialect = "acis:save-format-218"
@@ -1332,8 +1333,8 @@ the unverified save-format band: framed and decoded with the nearer
 verified band's record grammar, in `cadmpeg-codec-sat` and again in
 `cadmpeg-codec-inventor`, which emits this id as the kernel layer of such
 a carrier. Both charge source.dialect-unverified on an
-`Admission::AdmittedUnverified` match; the goldens are code-built, so the
-row lists no fixture"""
+`Admission::AdmittedUnverified` match; unit tests witness the recovery —
+no golden carries the id, so the row lists no fixture"""
 
 [[support]]
 dialect = "acis:text-asm"
@@ -1341,9 +1342,10 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+no reader reports this id today: SAT is single-layer, so a text stream's
+kernel layer is not separately emitted and its disposition is enforced
+through the `sat:text` row that wraps the same stream. `cadmpeg-asm`
+pins the id"""
 
 [[support]]
 dialect = "acis:text-acis"
@@ -1351,9 +1353,10 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+no reader reports this id today: SAT is single-layer, so a text stream's
+kernel layer is not separately emitted and its disposition is enforced
+through the `sat:text` row that wraps the same stream. `cadmpeg-asm`
+pins the id"""
 
 [[support]]
 dialect = "acis:unknown"
@@ -1361,9 +1364,10 @@ read = "refused"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+a kernel stream whose framing markers match no declared row: no header,
+terminator, or width selects a record grammar, so there is no strategy
+to attempt. Unreachable today — every emitted kernel-layer id comes from
+a framed carrier"""
 
 # --------------------------------------------------------------------------
 # parasolid
