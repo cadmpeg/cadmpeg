@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::CurveGeometry;
 
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 pub(crate) fn decode_and_write_singular_vertex_loops() {
@@ -28,8 +28,13 @@ pub(crate) fn decode_and_write_singular_vertex_loops() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();
-    write_step(result.ir(), &mut encoded, &StepWriteOptions::default())
-        .expect("write vertex loops");
+    write_step(
+        result.ir(),
+        &mut encoded,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write vertex loops");
     assert_eq!(
         String::from_utf8(encoded)
             .unwrap()
@@ -116,8 +121,13 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
-    let report = write_step(result.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write sheet pcurve");
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write sheet pcurve");
     assert!(!report
         .losses
         .iter()
@@ -208,8 +218,13 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut encoded = Vec::new();
-    write_step(result.ir(), &mut encoded, &StepWriteOptions::default())
-        .expect("write composite curve graph");
+    write_step(
+        result.ir(),
+        &mut encoded,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write composite curve graph");
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode written composite curve graph");
@@ -411,7 +426,13 @@ pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
 
     let source = unit_cube();
     let mut bytes = Vec::new();
-    write_step(&source, &mut bytes, &StepWriteOptions::default()).unwrap();
+    write_step(
+        &source,
+        &mut bytes,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode generated cube STEP");

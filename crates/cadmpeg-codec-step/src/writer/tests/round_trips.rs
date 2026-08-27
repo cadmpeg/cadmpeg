@@ -273,7 +273,13 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
     align_sheet_edge_to_pcurve(&mut ir, &geometry);
 
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write NURBS pcurve");
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write NURBS pcurve");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode NURBS pcurve");
@@ -363,7 +369,13 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
         ir.model.pcurves[0].geometry = geometry.clone();
         align_sheet_edge_to_pcurve(&mut ir, &geometry);
         let mut output = Vec::new();
-        write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write exact pcurve");
+        write_step(
+            &ir,
+            &mut output,
+            StepSchema::default(),
+            &StepWriteOptions::default(),
+        )
+        .expect("write exact pcurve");
         let output_text = String::from_utf8(output).expect("STEP output is UTF-8");
         if matches!(&geometry, PcurveGeometry::Transformed { .. }) {
             assert!(output_text.contains("CURVE_REPLICA"));
@@ -401,7 +413,7 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &options).expect("write placed body");
+    write_step(&ir, &mut output, StepSchema::default(), &options).expect("write placed body");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode placed body");
@@ -452,12 +464,12 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         native_ref: None,
     });
     let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
         unsupported: StepUnsupportedPolicy::Reject,
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &options).expect("write product-owned body");
+    write_step(&ir, &mut output, StepSchema::Ap242Edition3, &options)
+        .expect("write product-owned body");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode product-owned body");
@@ -512,7 +524,13 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     ir.model.bodies[0].regions = vec![ir.model.regions[0].id.clone()];
 
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write wire body");
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write wire body");
     let text = String::from_utf8(output.clone()).expect("wire STEP is UTF-8");
     assert!(text.contains("CURVE_STYLE"));
     assert_eq!(text.matches("STYLED_ITEM").count(), 1);
@@ -554,7 +572,13 @@ fn writer_round_trips_standalone_points_and_curves() {
     ir.model.vertices.clear();
 
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write standalone geometry");
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write standalone geometry");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode standalone geometry");
@@ -588,12 +612,14 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             texture_assignments: Vec::new(),
             channels: Vec::new(),
         });
-    let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        ..StepWriteOptions::default()
-    };
     let mut bytes = Vec::new();
-    let report = write_step(&ir, &mut bytes, &options).expect("write AP242 tessellation");
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write AP242 tessellation");
     assert!(!report
         .losses
         .iter()
@@ -642,7 +668,13 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
     ]);
 
     let mut output = Vec::new();
-    write_step(&source, &mut output, &StepWriteOptions::default()).expect("write conics");
+    write_step(
+        &source,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write conics");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode conics");
@@ -774,7 +806,13 @@ fn every_reference_resolves() {
 #[test]
 fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     let mut buf = Vec::new();
-    let report = write_step(&unit_cube(), &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &unit_cube(),
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     assert_eq!(report.census.total(), buf_line_count(&buf));
     assert_eq!(report.census.counts.get("ADVANCED_FACE"), Some(&6));
     assert_eq!(report.census.counts.get("VERTEX_POINT"), Some(&8));
@@ -818,8 +856,13 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write hidden appearance binding");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write hidden appearance binding");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("INVISIBILITY"));
@@ -901,8 +944,13 @@ fn writer_round_trips_surface_appearance_transparency() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write transparent surface appearance");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write transparent surface appearance");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("SURFACE_STYLE_TRANSPARENT"));
@@ -939,8 +987,13 @@ fn writer_round_trips_presentation_layer_visibility() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write hidden presentation layer");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write hidden presentation layer");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('hidden layer','layer visibility',"));
@@ -976,8 +1029,13 @@ fn writer_round_trips_empty_presentation_layer_label() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write empty-label presentation layer");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write empty-label presentation layer");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('','unnamed layer',"));
@@ -1158,8 +1216,13 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
     ir.model.shells[0].wire_edges = vec![edge];
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write mixed general body");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write mixed general body");
     assert!(!report.losses.iter().any(|loss| {
         loss.code == StepLossCode::WireRegionNoConnectedEdgeSet.kind()
             && loss.message.contains("wire region")
@@ -1182,8 +1245,13 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
         .swap(0, 1);
 
     let mut bytes = Vec::new();
-    let report = write_step(&source, &mut bytes, &StepWriteOptions::default())
-        .expect("writer should recover a continuous loop order");
+    let report = write_step(
+        &source,
+        &mut bytes,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("writer should recover a continuous loop order");
     assert!(!report.losses.iter().any(|loss| {
         loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
@@ -1209,12 +1277,11 @@ fn writer_declares_each_supported_target_schema_exactly() {
         StepSchema::Ap242Edition3,
     ] {
         let options = StepWriteOptions {
-            schema,
             unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         };
         let mut bytes = Vec::new();
-        write_step(&unit_cube(), &mut bytes, &options).expect("write target schema");
+        write_step(&unit_cube(), &mut bytes, schema, &options).expect("write target schema");
         let text = std::str::from_utf8(&bytes).expect("ASCII STEP output");
         assert!(text.contains(&format!("FILE_SCHEMA(('{}'));", schema.file_schema())));
         StepCodec::default()
@@ -1230,8 +1297,13 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode noncanonical unit fixture");
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
-        .expect("export salvaged IR");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("export salvaged IR");
 
     let (exchange, diagnostics) = crate::parse::parse(&output).expect("parse repaired output");
     assert!(diagnostics.is_empty());

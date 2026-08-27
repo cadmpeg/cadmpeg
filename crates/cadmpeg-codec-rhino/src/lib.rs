@@ -141,21 +141,28 @@ impl CodecBackend for RhinoCodec {
     }
 }
 
-/// What resolving a [`TargetRequest`] against the source decided (design §8.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Resolution {
-    /// The archive version to write.
-    version: RhinoArchiveVersion,
-    /// Why the source's own dialect is not what gets written, when it is not.
-    /// `None` where the write keeps the source's dialect, and `None` where
-    /// there is no Rhino source at all: nothing was preserved, so nothing was
-    /// lost.
-    declined: Option<String>,
-}
+/// Why this writer cannot reproduce a source archive version outside
+/// [`dialect::TARGETS`].
+///
+/// The one per-codec sentence of the shared catalog-write resolution. The band
+/// is real — archives 2, 3, 4 and 90 decode without a writer, and 1, 5 and
+/// unknown words do not decode — and 3DM has no retained-image path that could
+/// write any of them back.
+const OFF_CATALOG_SOURCE_REASON: &str =
+    "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
+     path that could preserve it";
 
-impl RhinoEncoder {
-    /// Resolve the request against the source into the archive version to
-    /// write.
+impl Encoder for RhinoEncoder {
+    fn id(&self) -> &'static str {
+        "rhino"
+    }
+
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        dialect::TARGETS
+    }
+
+    /// Resolve the request against the source, then synthesize the archive
+    /// version it names.
     ///
     /// `Explicit(id)` refuses an id outside the synthesis catalog and otherwise
     /// names its archive version outright. Where that version is not the
@@ -170,13 +177,11 @@ impl RhinoEncoder {
     /// the only write path this codec has and `id == source.dialect` is never a
     /// question about bytes. That makes preservation strictly narrower than in a
     /// replaying codec: a source dialect outside the catalog cannot be written
-    /// back at all, so `Inherit` refuses it, naming the source dialect and the
-    /// catalog. That band is real — archives 2, 3, 4 and 90 decode without a
-    /// writer, and 1, 5 and unknown words do not decode — and an explicit
-    /// `--rhino-target` is the escape. There is no fall-through to the catalog
-    /// default: a same-format conversion never silently changes what the file
-    /// is, which is exactly the archive-50 source that used to come back as
-    /// archive 80.
+    /// back at all, so `Inherit` refuses it with
+    /// [`OFF_CATALOG_SOURCE_REASON`], naming the source dialect and the
+    /// catalog. There is no fall-through to the catalog default: a same-format
+    /// conversion never silently changes what the file is, which is exactly the
+    /// archive-50 source that used to come back as archive 80.
     ///
     /// A Rhino source that records no dialect is refused too: there is nothing
     /// to preserve, and no identity to default to.
@@ -187,83 +192,19 @@ impl RhinoEncoder {
     /// `Explicit(catalog default)` itself. The encoder holds no version of its
     /// own; an encoder-held one used to override every other answer, which is
     /// how an archive-50 source came back as archive 80.
-    fn resolve(
-        ir: &cadmpeg_ir::document::CadIr,
-        request: TargetRequest<'_>,
-    ) -> Result<Resolution, CodecError> {
-        let id = match request {
-            TargetRequest::Explicit(id) => id,
-            TargetRequest::Inherit => {
-                return match cadmpeg_ir::codec::resolve_inherit(
-                    ir,
-                    dialect::FORMAT,
-                    dialect::TARGETS,
-                )? {
-                    cadmpeg_ir::codec::Inherited::Fallback(id) => Ok(Resolution {
-                        version: dialect::target_version(id)
-                            .expect("the Rhino catalog default is a synthesis target"),
-                        declined: None,
-                    }),
-                    cadmpeg_ir::codec::Inherited::Source(source_dialect) => {
-                        dialect::target_version(source_dialect.as_str())
-                            .map(|version| Resolution {
-                                version,
-                                declined: None,
-                            })
-                            .ok_or_else(|| {
-                                cadmpeg_ir::codec::unsupported_target(
-                                    dialect::FORMAT,
-                                    source_dialect.as_str(),
-                                    "the source archive version is one this writer cannot \
-                                     synthesize, and 3DM has no byte-replay path that could \
-                                     preserve it",
-                                    dialect::TARGETS,
-                                )
-                            })
-                    }
-                };
-            }
-        };
-        let version = dialect::target_version(id).ok_or_else(|| {
-            cadmpeg_ir::codec::unsupported_target(
-                dialect::FORMAT,
-                id,
-                "not a target this encoder can synthesize",
-                dialect::TARGETS,
-            )
-        })?;
-        let target = version.target();
-        let declined = ir
-            .source
-            .as_ref()
-            .filter(|source| source.format == dialect::FORMAT)
-            .and_then(|source| source.dialect.as_ref())
-            .filter(|source_dialect| source_dialect.as_str() != target)
-            .map(|source_dialect| {
-                format!(
-                    "source is {source_dialect}, target is {target}; the source archive version is \
-                     not what this export writes"
-                )
-            });
-        Ok(Resolution { version, declined })
-    }
-}
-
-impl Encoder for RhinoEncoder {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
-
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        dialect::TARGETS
-    }
-
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let Resolution { version, declined } = Self::resolve(input.ir, request)?;
+        let (version, declined) = cadmpeg_ir::codec::resolve_catalog_write(
+            input.ir,
+            request,
+            dialect::FORMAT,
+            dialect::TARGETS,
+            dialect::target_version,
+            OFF_CATALOG_SOURCE_REASON,
+        )?;
         let mut bytes = Vec::new();
         writer::write(input.ir, version.value(), &mut bytes)?;
         let vertex_quantization = version == RhinoArchiveVersion::V5

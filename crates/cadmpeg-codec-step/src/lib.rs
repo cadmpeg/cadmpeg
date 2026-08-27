@@ -7,23 +7,29 @@
 //! Support: depth L9, breadth 4 of >=4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
 //! <!-- /generated: capability -->
 //!
-//! [`write_step`] emits the application protocol selected by
-//! [`StepWriteOptions::schema`]. It writes product and representation context,
+//! [`write_step`] emits the application protocol named in the call as a
+//! [`StepSchema`]. It writes product and representation context,
 //! connected exact shape, product occurrences, tessellation, presentation,
 //! and PMI when the target schema carries those domains.
 //!
 //! # Export workflow
 //!
-//! Construct or decode a [`cadmpeg_ir::CadIr`], choose the header metadata in
-//! [`StepWriteOptions`], then write to any [`std::io::Write`] sink:
+//! Construct or decode a [`cadmpeg_ir::CadIr`], name the target [`StepSchema`],
+//! choose the header metadata in [`StepWriteOptions`], then write to any
+//! [`std::io::Write`] sink:
 //!
 //! ```
 //! use cadmpeg_ir::examples::unit_cube;
-//! use cadmpeg_codec_step::{write_step, StepWriteOptions};
+//! use cadmpeg_codec_step::{write_step, StepSchema, StepWriteOptions};
 //!
 //! let ir = unit_cube();
 //! let mut bytes = Vec::new();
-//! let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())?;
+//! let report = write_step(
+//!     &ir,
+//!     &mut bytes,
+//!     StepSchema::Ap242Edition3,
+//!     &StepWriteOptions::default(),
+//! )?;
 //!
 //! assert!(bytes.starts_with(b"ISO-10303-21;"));
 //! assert!(report.census.total() > 0);

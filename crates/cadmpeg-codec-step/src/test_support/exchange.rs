@@ -6,11 +6,17 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::CadIr;
 
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 pub(crate) fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
-    write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");
+    write_step(
+        ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write");
     String::from_utf8(buf).expect("utf8")
 }
 

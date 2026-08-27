@@ -30,10 +30,8 @@ fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
     crate::write_step(
         &unit_cube(),
         &mut bytes,
-        &StepWriteOptions {
-            schema: written,
-            ..StepWriteOptions::default()
-        },
+        written,
+        &StepWriteOptions::default(),
     )
     .expect("write the cube at AP242 edition 3");
     let text = String::from_utf8(bytes).expect("the writer emits 7-bit output");
@@ -84,15 +82,15 @@ fn refusal(error: &CodecError) -> (&str, Option<&str>, &str) {
 /// The flagship case: `convert in.step -o out.step` on a file that is not the
 /// catalog default keeps the schema it was handed.
 ///
-/// The encoder's constructor schema is AP214 here, exactly as the command line
-/// builds it when no `--step-target` is given. Reading it under `Inherit` is the
-/// defect: this AP203 edition 1 file would come back declaring
-/// `AUTOMOTIVE_DESIGN`, a different application protocol, with the report
-/// claiming success. The resolution reads the source instead, and the emitted
-/// `FILE_SCHEMA` and the reported target are checked separately so a report that
-/// agreed with neither the request nor the bytes still fails.
+/// The catalog default is AP214, exactly what the command line writes when no
+/// dialect is named. Taking it under `Inherit` is the defect: this AP203
+/// edition 1 file would come back declaring `AUTOMOTIVE_DESIGN`, a different
+/// application protocol, with the report claiming success. The resolution reads
+/// the source instead, and the emitted `FILE_SCHEMA` and the reported target are
+/// checked separately so a report that agreed with neither the request nor the
+/// bytes still fails.
 #[test]
-fn inherit_synthesizes_the_source_schema_not_the_constructor_schema() {
+fn inherit_synthesizes_the_source_schema_not_the_catalog_default() {
     let decoded = source_declaring(StepSchema::Ap203Edition1.file_schema());
     assert_eq!(
         decoded
@@ -107,7 +105,10 @@ fn inherit_synthesizes_the_source_schema_not_the_constructor_schema() {
     );
 
     let encoder = StepCodec::default();
-    assert_eq!(encoder.options.schema, StepSchema::Ap214);
+    assert_eq!(
+        default_target(Encoder::targets(&encoder)),
+        Some("step:ap214")
+    );
     let plan = inherit(&encoder, decoded.ir()).expect("an AP203 edition 1 source is a catalog row");
 
     assert_eq!(target_of(&plan), Some("step:ap203-e1".to_owned()));
@@ -288,22 +289,16 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
 }
 
 /// With nothing STEP to inherit — no source at all, or one of another format —
-/// the catalog default is the target, never the constructor schema.
+/// the catalog default is the target.
 ///
-/// The encoder here is built at AP242 edition 1 and the catalog default is
-/// AP214, so the two disagree and the answer names which one won. Encoder state
-/// deciding a target is the defect: it is a fourth answer to "which dialect",
-/// and it is the one that overrode the other three whenever a request had
-/// nothing to inherit. `options` says how a schema is written; it never says
-/// which.
+/// Encoder state deciding a target was the defect: it was a fourth answer to
+/// "which dialect", and it was the one that overrode the other three whenever a
+/// request had nothing to inherit. `StepWriteOptions` now carries no schema at
+/// all, so the fourth answer cannot be spelled; what remains under test is that
+/// the answer is the catalog's.
 #[test]
 fn nothing_to_inherit_falls_to_the_catalog_default() {
-    let encoder = StepCodec {
-        options: StepWriteOptions {
-            schema: StepSchema::Ap242Edition1,
-            ..StepWriteOptions::default()
-        },
-    };
+    let encoder = StepCodec::default();
     let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
     assert_eq!(default, "step:ap214");
 

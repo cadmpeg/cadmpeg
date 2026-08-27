@@ -58,10 +58,8 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     let report = write_step(
         source.ir(),
         &mut bytes,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write procedural geometry");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
@@ -99,8 +97,13 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
         )
         .expect("decode curve-bounded surface");
     let mut bytes = Vec::new();
-    let report = write_step(bounded.ir(), &mut bytes, &StepWriteOptions::default())
-        .expect("write curve-bounded surface");
+    let report = write_step(
+        bounded.ir(),
+        &mut bytes,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write curve-bounded surface");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
     assert!(!text.contains("CURVE_BOUNDED_SURFACE"));
     assert!(text.contains("GEOMETRIC_SET"));
@@ -123,6 +126,7 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     assert!(write_step(
         bounded.ir(),
         &mut rejected,
+        StepSchema::default(),
         &StepWriteOptions {
             unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()

@@ -42,5 +42,5 @@ fuzz_target!(|data: &[u8]| {
     };
 
     let mut out = Cursor::new(Vec::new());
-    let _ = write_step(&ir, &mut out, &options);
+    let _ = write_step(&ir, &mut out, cadmpeg_codec_step::StepSchema::default(), &options);
 });

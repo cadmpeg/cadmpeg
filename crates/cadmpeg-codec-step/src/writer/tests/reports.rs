@@ -167,8 +167,13 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             native_ref: None,
         });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes representable geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes representable geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::DocumentAssetOmitted.kind()
             && loss.message.contains("1 document asset")
@@ -212,8 +217,13 @@ fn writer_reports_unrepresented_topology_metadata() {
     coedge.use_curve = Some(edge_curve);
     coedge.use_curve_parameter_range = Some([0.0, 1.0]);
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes topology metadata fixture");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes topology metadata fixture");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveUseNativeMetadata.kind()
             && loss.message.contains("1 pcurve use")
@@ -271,8 +281,13 @@ fn writer_reports_root_occurrence_scale() {
         native_ref: None,
     });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes unscaled geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes unscaled geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::RootOccurrencePlacementNotRepresentable.kind()
             && loss.message.contains("placement or scale")
@@ -305,8 +320,13 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
         .expect("loop edge exists")
         .start = cadmpeg_ir::ids::VertexId("missing-loop-vertex".into());
 
-    let report = write_step(&source, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode should record the topology loss");
+    let report = write_step(
+        &source,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode should record the topology loss");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
@@ -361,10 +381,8 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write tessellation geometry");
     assert_eq!(
@@ -442,8 +460,13 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         native_ref: None,
     });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the product graph");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the product graph");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::AssemblyOccurrenceOmittedNoParentProduct.kind()
             && loss.message.contains("local-child")
@@ -458,8 +481,13 @@ fn writer_reports_region_without_shells() {
     let mut ir = unit_cube();
     ir.model.regions[0].shells.clear();
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the remaining geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::RegionNoShellList.kind()
             && loss.message.contains("region(s) have no shell list")
@@ -472,8 +500,13 @@ fn writer_reports_topology_without_an_emitted_region() {
     ir.model.regions.clear();
     ir.model.bodies[0].regions.clear();
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the empty shape representation");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the empty shape representation");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyUnreachableFromRegion.kind()
             && loss
@@ -491,8 +524,13 @@ fn writer_reports_wire_region_without_connected_edges() {
     ir.model.shells[0].faces.clear();
     ir.model.shells[0].wire_edges = vec![cadmpeg_ir::ids::EdgeId("missing-edge".into())];
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the remaining geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::WireRegionNoConnectedEdgeSet.kind()
             && loss
@@ -507,8 +545,13 @@ fn writer_reports_wire_region_with_missing_shell_record() {
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.regions[0].shells = vec![cadmpeg_ir::ids::ShellId("missing-shell".into())];
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the remaining geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::WireRegionMissingShell.kind()
             && loss.message.contains("missing shell records")
@@ -523,8 +566,13 @@ fn writer_reports_hidden_body_without_step_item() {
     ir.model.bodies[0].visible = Some(false);
     ir.model.regions.clear();
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the remaining geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::HiddenBodyOmitted.kind() && loss.message.contains(body.as_str())
     }));
@@ -548,8 +596,13 @@ fn writer_reports_dangling_appearance_binding() {
         channels: std::collections::BTreeMap::default(),
     });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the representable geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the representable geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::AppearanceBindingMissingAsset.kind()
             && loss.message.contains(binding)
@@ -588,8 +641,13 @@ fn writer_reports_appearance_without_base_color() {
         channels: std::collections::BTreeMap::default(),
     });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the representable geometry");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the representable geometry");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::AppearanceBindingNoBaseColor.kind()
             && loss.message.contains(binding)
@@ -677,6 +735,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
         let forward_report = write_step(
             &duplicate_target_style_ir(body_target, false, false),
             &mut forward_output,
+            StepSchema::default(),
             &StepWriteOptions::default(),
         )
         .expect("report mode writes geometry while omitting the conflict");
@@ -684,6 +743,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
         let reverse_report = write_step(
             &duplicate_target_style_ir(body_target, true, false),
             &mut reverse_output,
+            StepSchema::default(),
             &StepWriteOptions::default(),
         )
         .expect("reordered report mode writes geometry while omitting the conflict");
@@ -706,6 +766,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
             write_step(
                 &duplicate_target_style_ir(body_target, false, false),
                 &mut strict_output,
+                StepSchema::default(),
                 &StepWriteOptions {
                     unsupported: StepUnsupportedPolicy::Reject,
                     ..StepWriteOptions::default()
@@ -720,6 +781,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
     let equivalent_report = write_step(
         &duplicate_target_style_ir(false, false, true),
         &mut equivalent_output,
+        StepSchema::default(),
         &StepWriteOptions::default(),
     )
     .expect("equal target styles are coalesced");
@@ -769,10 +831,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("report mode writes reduced tessellation");
     assert!(report.losses.iter().any(|loss| {
@@ -793,8 +853,13 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
 fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let mut outer_face = unit_cube();
     outer_face.model.faces[0].loops.clear();
-    let report = write_step(&outer_face, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the surviving faces");
+    let report = write_step(
+        &outer_face,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the surviving faces");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::FaceNoWritableBounds.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
@@ -807,8 +872,13 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
         .push(cadmpeg_ir::ids::LoopId(
             "step:data:loop#missing-inner".into(),
         ));
-    let report = write_step(&inner_loop, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the surviving outer loop");
+    let report = write_step(
+        &inner_loop,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the surviving outer loop");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::FaceOmittedInnerLoop.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
@@ -817,8 +887,13 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
 
     let mut missing_edge = unit_cube();
     missing_edge.model.coedges[0].edge = cadmpeg_ir::ids::EdgeId("step:data:edge#missing".into());
-    let report = write_step(&missing_edge, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the surviving coedges");
+    let report = write_step(
+        &missing_edge,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the surviving coedges");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::LoopEdgeMissingForOrder.kind()
             && loss.message.contains("loop")
@@ -831,8 +906,13 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
         .push(cadmpeg_ir::ids::ShellId(
             "step:data:shell#missing-void".into(),
         ));
-    let report = write_step(&missing_void, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the outer shell");
+    let report = write_step(
+        &missing_void,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the outer shell");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::RegionOmittedVoidShell.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
@@ -844,7 +924,12 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
         ..StepWriteOptions::default()
     };
     assert!(matches!(
-        write_step(&missing_void, &mut Vec::new(), &options),
+        write_step(
+            &missing_void,
+            &mut Vec::new(),
+            StepSchema::default(),
+            &options
+        ),
         Err(StepError::Unsupported(_))
     ));
 }
@@ -866,8 +951,13 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
     };
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("report mode writes the representable sheet");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the representable sheet");
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
@@ -880,7 +970,7 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
         ..StepWriteOptions::default()
     };
     assert!(matches!(
-        write_step(&ir, &mut Vec::new(), &options),
+        write_step(&ir, &mut Vec::new(), StepSchema::default(), &options),
         Err(StepError::Unsupported(message)) if message.contains("pcurve")
     ));
 }
@@ -906,8 +996,13 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
     };
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("report mode writes the representable sheet");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the representable sheet");
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
@@ -920,7 +1015,7 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         ..StepWriteOptions::default()
     };
     assert!(matches!(
-        write_step(&ir, &mut Vec::new(), &options),
+        write_step(&ir, &mut Vec::new(), StepSchema::default(), &options),
         Err(StepError::Unsupported(message)) if message.contains("pcurve")
     ));
 }
@@ -937,8 +1032,13 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
         source_object: None,
     });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode writes the representable subset");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the representable subset");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
@@ -950,7 +1050,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
         ..StepWriteOptions::default()
     };
     assert!(matches!(
-        write_step(&ir, &mut Vec::new(), &options),
+        write_step(&ir, &mut Vec::new(), StepSchema::default(), &options),
         Err(StepError::Unsupported(message)) if message.contains("geometry carrier")
     ));
 }
@@ -973,8 +1073,8 @@ fn consumed_unit_and_pmi_wrapper_records_are_strictly_writable() {
         write_step(
             decoded.ir(),
             &mut bytes,
+            StepSchema::Ap242Edition3,
             &StepWriteOptions {
-                schema: StepSchema::Ap242Edition3,
                 unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             },
@@ -992,10 +1092,8 @@ fn ap203e1_does_not_emit_invisibility_entities() {
     let report = write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap203Edition1,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap203Edition1,
+        &StepWriteOptions::default(),
     )
     .unwrap();
     assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
@@ -1044,10 +1142,8 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
     let report = write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap203Edition1,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap203Edition1,
+        &StepWriteOptions::default(),
     )
     .expect("report-mode AP203e1 write");
     assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
@@ -1075,10 +1171,8 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     let report = write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap203Edition1,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap203Edition1,
+        &StepWriteOptions::default(),
     )
     .expect("report-mode AP203e1 layer write");
     assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
@@ -1117,8 +1211,8 @@ pub(crate) fn rejected_step_write_detects_incomplete_datum_system() {
         write_step(
             &ir,
             &mut output,
+            StepSchema::Ap242Edition3,
             &StepWriteOptions {
-                schema: StepSchema::Ap242Edition3,
                 unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             }
@@ -1141,8 +1235,8 @@ pub(crate) fn rejected_step_write_detects_incomplete_datum_system() {
         write_step(
             &ir,
             &mut output,
+            StepSchema::Ap242Edition3,
             &StepWriteOptions {
-                schema: StepSchema::Ap242Edition3,
                 unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             }
@@ -1181,10 +1275,8 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     let report = write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("report-mode STEP write");
     assert!(report.losses.iter().any(|loss| loss.code
@@ -1198,8 +1290,8 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
         write_step(
             &ir,
             &mut strict_output,
+            StepSchema::Ap242Edition3,
             &StepWriteOptions {
-                schema: StepSchema::Ap242Edition3,
                 unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             }
@@ -1240,15 +1332,8 @@ fn pmi_dropped_by_schema_without_semantic_pmi_is_charged() {
             continue;
         }
         let mut output = Vec::new();
-        let report = write_step(
-            &ir,
-            &mut output,
-            &StepWriteOptions {
-                schema,
-                ..StepWriteOptions::default()
-            },
-        )
-        .expect("report-mode STEP write");
+        let report = write_step(&ir, &mut output, schema, &StepWriteOptions::default())
+            .expect("report-mode STEP write");
         let charged = report
             .losses
             .iter()
@@ -1266,8 +1351,8 @@ fn pmi_dropped_by_schema_without_semantic_pmi_is_charged() {
                 write_step(
                     &ir,
                     &mut strict_output,
+                    schema,
                     &StepWriteOptions {
-                        schema,
                         unsupported: StepUnsupportedPolicy::Reject,
                         ..StepWriteOptions::default()
                     }
@@ -1286,7 +1371,13 @@ fn edge_without_curve_is_reported_and_omitted() {
     let _ = cylinder_surface_doc(); // keep helper exercised
     let ir = edgeless_doc();
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     let curve = Curve {
         id: CurveId("unused".into()),
         geometry: CurveGeometry::Line {
@@ -1348,7 +1439,13 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
             channels: Vec::new(),
         });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     assert!(report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
@@ -1381,7 +1478,13 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
         }
     }
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     let s = String::from_utf8(buf).unwrap();
 
     assert_eq!(
@@ -1422,8 +1525,13 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         triangles: Vec::new(),
         chordal_deflection: 0.1,
     };
-    let report = write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("polygonal face is reported as an export loss");
+    let report = write_step(
+        &polygonal,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("unknown or STEP-unsupported surface")
@@ -1444,6 +1552,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     let report = write_step(
         &nested_unknown,
         &mut Vec::new(),
+        StepSchema::default(),
         &StepWriteOptions::default(),
     )
     .expect("transformed unknown curve is reported as an export loss");
@@ -1479,8 +1588,13 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
             record_bounds: None,
         });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode must not panic on an unwritable procedural surface");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode must not panic on an unwritable procedural surface");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
@@ -1509,8 +1623,13 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
             cache_fit_tolerance: None,
         });
 
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
-        .expect("report mode must not panic on an unwritable procedural curve");
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode must not panic on an unwritable procedural curve");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
@@ -1546,7 +1665,7 @@ fn strict_export_rejects_an_unwritable_procedural_carrier() {
     };
     let mut output = Vec::new();
     assert!(matches!(
-        write_step(&ir, &mut output, &options),
+        write_step(&ir, &mut output, StepSchema::default(), &options),
         Err(StepError::Unsupported(message)) if message.contains("geometry carrier")
     ));
     assert!(output.is_empty());
@@ -1563,7 +1682,13 @@ fn signed_analytic_radius_normalization_is_reported() {
     };
 
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::LossCategory::Geometry
@@ -1584,7 +1709,13 @@ fn elliptical_cone_reduction_is_reported() {
     };
 
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::LossCategory::Geometry
@@ -1616,7 +1747,13 @@ fn procedural_construction_reduction_is_reported() {
         });
 
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     assert!(report.losses.iter().any(|loss| loss
         .message
         .contains("reduced to their solved STEP carriers")));
@@ -1635,7 +1772,13 @@ fn source_native_record_reduction_is_reported() {
     ir.finalize();
 
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     assert!(report.losses.iter().any(|loss| loss
         .message
         .contains("source-native record(s) were not represented in STEP")));
@@ -1663,8 +1806,13 @@ fn incomplete_nurbs_surface_is_omitted_and_reported() {
     });
 
     let mut bytes = Vec::new();
-    let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())
-        .expect("report mode omits the invalid carrier");
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode omits the invalid carrier");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
             && loss.message.contains("'cyl'")
@@ -1678,7 +1826,8 @@ fn incomplete_nurbs_surface_is_omitted_and_reported() {
         ..StepWriteOptions::default()
     };
     let mut strict_bytes = Vec::new();
-    let error = write_step(&ir, &mut strict_bytes, &options).expect_err("strict rejection");
+    let error = write_step(&ir, &mut strict_bytes, StepSchema::default(), &options)
+        .expect_err("strict rejection");
     assert!(matches!(error, StepError::Unsupported(_)));
     assert!(strict_bytes.is_empty());
 }
@@ -1700,7 +1849,8 @@ pub(crate) fn strict_writer_rejects_before_emitting_bytes() {
     };
 
     let mut bytes = Vec::new();
-    let error = write_step(&ir, &mut bytes, &options).expect_err("strict rejection");
+    let error =
+        write_step(&ir, &mut bytes, StepSchema::default(), &options).expect_err("strict rejection");
     assert!(matches!(error, StepError::Unsupported(_)));
     assert!(bytes.is_empty());
 }
@@ -1719,8 +1869,8 @@ pub(crate) fn strict_writer_refuses_retained_opaque_step_records_atomically() {
     let result = write_step(
         decoded.ir(),
         &mut bytes,
+        StepSchema::Ap242Edition3,
         &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
             unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         },

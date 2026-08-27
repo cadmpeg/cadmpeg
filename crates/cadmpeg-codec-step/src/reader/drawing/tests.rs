@@ -10,7 +10,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepError, StepUnsupportedPolicy, StepWriteOptions};
+use crate::{
+    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
 
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
@@ -94,6 +96,7 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     let error = write_step(
         result.ir(),
         &mut output,
+        StepSchema::default(),
         &StepWriteOptions {
             unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()

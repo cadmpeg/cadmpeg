@@ -102,8 +102,13 @@ fn main() {
     measure("encode points", || {
         let mut output = Vec::new();
         black_box(
-            write_step(black_box(&ir), &mut output, &StepWriteOptions::default())
-                .expect("required invariant"),
+            write_step(
+                black_box(&ir),
+                &mut output,
+                cadmpeg_codec_step::StepSchema::default(),
+                &StepWriteOptions::default(),
+            )
+            .expect("required invariant"),
         );
         black_box(output);
     });

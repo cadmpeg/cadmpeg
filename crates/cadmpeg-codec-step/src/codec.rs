@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    unsupported_target, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
-    Encoder, ExportPlan, Inherited, TargetDescriptor, TargetRequest,
+    resolve_catalog_write, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
+    Encoder, ExportPlan, TargetDescriptor, TargetRequest,
 };
-use cadmpeg_ir::{CadIr, FidelityResolution};
+use cadmpeg_ir::FidelityResolution;
 
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
@@ -25,84 +25,15 @@ pub struct StepCodec {
     pub options: StepWriteOptions,
 }
 
-/// What resolving a [`TargetRequest`] against the source decided (design §8.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Resolution {
-    /// The schema to declare in `FILE_SCHEMA`.
-    schema: StepSchema,
-    /// Why the source's own dialect is not what gets written, when it is not.
-    /// `None` where the write keeps the source's dialect, and `None` where
-    /// there is no STEP source at all: nothing was preserved, so nothing was
-    /// lost.
-    declined: Option<String>,
-}
-
-impl StepCodec {
-    /// The design §8.2 resolution: which schema this export writes.
-    ///
-    /// The encoder's own `options.schema` is not consulted. Which schema an
-    /// export declares is the request's answer, resolved against the source;
-    /// `options` says how a schema is written — header metadata and loss
-    /// policy — never which one.
-    fn resolve(ir: &CadIr, request: TargetRequest<'_>) -> Result<Resolution, CodecError> {
-        let id = match request {
-            TargetRequest::Explicit(id) => id,
-            TargetRequest::Inherit => {
-                return match cadmpeg_ir::codec::resolve_inherit(
-                    ir,
-                    crate::dialect::FORMAT,
-                    crate::dialect::TARGETS,
-                )? {
-                    // Nothing to inherit: no source, or one of another format.
-                    // The catalog default stands in; no existing file's
-                    // identity is at stake.
-                    Inherited::Fallback(id) => Ok(Resolution {
-                        schema: crate::dialect::target_schema(id)
-                            .expect("the STEP catalog default is a synthesizable schema"),
-                        declined: None,
-                    }),
-                    Inherited::Source(dialect) => crate::dialect::target_schema(dialect.as_str())
-                        .map(|schema| Resolution {
-                            schema,
-                            declined: None,
-                        })
-                        .ok_or_else(|| {
-                            unsupported_target(
-                                crate::dialect::FORMAT,
-                                dialect.as_str(),
-                                "the semantic writer cannot synthesize it, and writing another \
-                                 schema would change what the file declares; name a target to \
-                                 choose one",
-                                crate::dialect::TARGETS,
-                            )
-                        }),
-                };
-            }
-        };
-        let schema = crate::dialect::target_schema(id).ok_or_else(|| {
-            unsupported_target(
-                crate::dialect::FORMAT,
-                id,
-                "not a schema this encoder can synthesize",
-                crate::dialect::TARGETS,
-            )
-        })?;
-        let target = schema.target();
-        let declined = ir
-            .source
-            .as_ref()
-            .filter(|source| source.format == crate::dialect::FORMAT)
-            .and_then(|source| source.dialect.as_ref())
-            .filter(|dialect| dialect.as_str() != target)
-            .map(|dialect| {
-                format!(
-                    "source is {dialect}, target is {target}; the schema the source declared is \
-                     not what this export writes"
-                )
-            });
-        Ok(Resolution { schema, declined })
-    }
-}
+/// Why this writer cannot reproduce a source schema outside [`TARGETS`].
+///
+/// The one per-codec sentence of the shared catalog-write resolution: STEP has
+/// no retained-image path, and every schema this writer emits stamps
+/// object-identifier arcs, so an edition-unspecified or unrecognized
+/// declaration cannot be written back at all.
+const OFF_CATALOG_SOURCE_REASON: &str =
+    "the semantic writer cannot synthesize it, and writing another schema would change what the \
+     file declares; name a target to choose one";
 
 impl Encoder for StepCodec {
     fn id(&self) -> &'static str {
@@ -139,20 +70,24 @@ impl Encoder for StepCodec {
     /// The catalog default supplies the target only when there is nothing to
     /// inherit: the document has no source, or a source of another format. That
     /// is the cross-format path, where the application layer would have built
-    /// `Explicit(catalog default)` itself. `self.options.schema` supplies
-    /// nothing: it is overwritten on every path.
+    /// `Explicit(catalog default)` itself. `self.options` supplies nothing: it
+    /// carries header metadata and loss policy, never a schema.
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let Resolution { schema, declined } = Self::resolve(input.ir, request)?;
-        let options = StepWriteOptions {
-            schema,
-            ..self.options.clone()
-        };
+        let (schema, declined) = resolve_catalog_write(
+            input.ir,
+            request,
+            crate::dialect::FORMAT,
+            crate::dialect::TARGETS,
+            crate::dialect::target_schema,
+            OFF_CATALOG_SOURCE_REASON,
+        )?;
         let mut bytes = Vec::new();
-        let mut report = write_step(input.ir, &mut bytes, &options).map_err(CodecError::from)?;
+        let mut report =
+            write_step(input.ir, &mut bytes, schema, &self.options).map_err(CodecError::from)?;
         // `write_step` takes no fidelity sidecar, so the report it returns
         // states the only resolution it can see. Whether the caller supplied
         // one, and whether the source's own schema survived, are known here and

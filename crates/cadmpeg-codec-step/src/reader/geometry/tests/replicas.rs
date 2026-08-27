@@ -21,7 +21,7 @@ use crate::export::is_rigid_transform;
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn rigid_transform_rejects_reflections() {
@@ -277,8 +277,13 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     );
 
     let mut output = Vec::new();
-    write_step(result.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write trimmed replica");
+    write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write trimmed replica");
     let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
     assert!(text.contains("CURVE_REPLICA"));
     assert!(text.contains("TRIMMED_CURVE"));
@@ -332,7 +337,13 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     });
 
     let mut output = Vec::new();
-    write_step(&source, &mut output, &StepWriteOptions::default()).expect("write replicas");
+    write_step(
+        &source,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write replicas");
     let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
     assert!(text.contains("CURVE_REPLICA"));
     assert!(text.contains("SURFACE_REPLICA"));
@@ -423,8 +434,13 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
     );
 
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write trimmed surface replica");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write trimmed surface replica");
     let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
     assert!(text.contains("SURFACE_REPLICA"));
     assert!(text.contains("RECTANGULAR_TRIMMED_SURFACE"));
@@ -743,8 +759,13 @@ fn replicas_retain_bounded_parent_relations() {
     );
 
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write replicas of bounded parents");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write replicas of bounded parents");
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("CURVE_REPLICA"));
     assert!(text.contains("SURFACE_REPLICA"));

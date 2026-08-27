@@ -26,7 +26,7 @@
         }
       },
       "fidelity": {
-        "reason": "source is step:ap242-e2, target is step:ap242-e3; the schema the source declared is not what this export writes",
+        "reason": "source is step:ap242-e2, target is step:ap242-e3; the dialect the source declared is not what this export writes",
         "status": "degraded"
       },
       "format": "step",
@@ -73,7 +73,7 @@
         }
       },
       "fidelity": {
-        "reason": "source is step:ap242-e2, target is step:ap214; the schema the source declared is not what this export writes",
+        "reason": "source is step:ap242-e2, target is step:ap214; the dialect the source declared is not what this export writes",
         "status": "degraded"
       },
       "format": "step",

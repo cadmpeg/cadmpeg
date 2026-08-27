@@ -31,8 +31,8 @@ use crate::writer::{real, refs, string, Emitter, Ref};
 
 const EPS_IDENTITY: f64 = 1.0e-12;
 
-/// Serializes an IR document as an ISO 10303-21 STEP Part 21 file for the
-/// schema selected by [`StepWriteOptions::schema`].
+/// Serializes an IR document as an ISO 10303-21 STEP Part 21 file declaring
+/// `schema`.
 ///
 /// The output declares that schema and a millimetre length unit. Coordinate
 /// values are not rescaled. The IR linear tolerance becomes the representation
@@ -49,9 +49,10 @@ const EPS_IDENTITY: f64 = 1.0e-12;
 pub fn write_step(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
+    schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> Result<ExportReport, StepError> {
-    let mut b = Builder::new(ir, opts.schema);
+    let mut b = Builder::new(ir, schema);
     b.build();
     let report = b.finish_report();
     let lines = b.emitter.into_lines();
@@ -67,7 +68,7 @@ pub fn write_step(
         ));
     }
 
-    write_header(w, opts)?;
+    write_header(w, schema, opts)?;
     writeln!(w, "DATA;")?;
     for line in &lines {
         writeln!(w, "{line}")?;
@@ -77,7 +78,11 @@ pub fn write_step(
     Ok(report)
 }
 
-fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::io::Result<()> {
+fn write_header(
+    w: &mut (impl Write + ?Sized),
+    schema: StepSchema,
+    opts: &StepWriteOptions,
+) -> std::io::Result<()> {
     let ts = if opts.timestamp.is_empty() {
         "1970-01-01T00:00:00"
     } else {
@@ -101,7 +106,7 @@ fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::
         string(&opts.originating_system),
         string("")
     )?;
-    writeln!(w, "FILE_SCHEMA(({}));", string(opts.schema.file_schema()))?;
+    writeln!(w, "FILE_SCHEMA(({}));", string(schema.file_schema()))?;
     writeln!(w, "ENDSEC;")?;
     Ok(())
 }

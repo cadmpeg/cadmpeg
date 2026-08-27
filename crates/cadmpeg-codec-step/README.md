@@ -58,7 +58,6 @@ let ir = unit_cube();
 let file = File::create("cube.step")?;
 let mut output = BufWriter::new(file);
 let options = StepWriteOptions {
-    schema: StepSchema::Ap242Edition3,
     unsupported: StepUnsupportedPolicy::Reject,
     product_name: "cube".into(),
     author: "Example Author".into(),
@@ -67,7 +66,7 @@ let options = StepWriteOptions {
     originating_system: "example-exporter".into(),
 };
 
-let report = write_step(&ir, &mut output, &options)?;
+let report = write_step(&ir, &mut output, StepSchema::Ap242Edition3, &options)?;
 if !report.losses.is_empty() {
     for loss in &report.losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
@@ -77,7 +76,7 @@ if !report.losses.is_empty() {
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`write_step` emits the Part 21 envelope for the selected schema, product and
+`write_step` emits the Part 21 envelope for the named schema, product and
 representation context, and reachable shape. Coverage includes solid, sheet,
 and wire bodies plus standalone geometry; coedge pcurves; rigid body placement;
 products and occurrences; AP242 tessellation; visibility; layers; named colors;

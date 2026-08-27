@@ -31,5 +31,5 @@ fuzz_target!(|data: &[u8]| {
 
     // Write to STEP - should handle degenerate geometry gracefully
     let mut out = Cursor::new(Vec::new());
-    let _ = write_step(&ir, &mut out, &StepWriteOptions::default());
+    let _ = write_step(&ir, &mut out, cadmpeg_codec_step::StepSchema::default(), &StepWriteOptions::default());
 });

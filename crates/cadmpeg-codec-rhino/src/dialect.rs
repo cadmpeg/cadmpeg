@@ -58,7 +58,7 @@ pub(crate) const FORMAT: &str = "rhino";
 /// archives 2, 3, 4 and 90 decode but have no writer, and archives 1, 5 and the
 /// totality row decode not at all. None of them is a target, and — unlike IGES
 /// — there is no preservation path that could write them anyway (see
-/// [`crate::RhinoEncoder::resolve`]).
+/// [`crate::OFF_CATALOG_SOURCE_REASON`]).
 ///
 /// The alias of each row is its bare archive word and its bare Rhino major, the
 /// spellings `--rhino-target` already accepts.
