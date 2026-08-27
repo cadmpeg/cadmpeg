@@ -776,7 +776,6 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
 }
 
 /// Writes CADIR for the dump command (no conversion refusals).
-#[allow(clippy::too_many_arguments)]
 fn export_ir(
     ir: &CadIr,
     decode_report: Option<&DecodeReport>,
