@@ -1329,21 +1329,23 @@ impl CompoundPrefixProbe {
 
 /// Reads the prefix used for native-format detection.
 ///
-/// Non-CFB inputs stop at `prefix_len`. CFB inputs continue until the
-/// directory probe settles or `max_bytes` is reached. `FileTooLarge` reports a
-/// CFB input that continues beyond that limit.
+/// The first read stops at the smaller of `prefix_len` and `max_bytes`.
+/// CFB inputs continue until the directory probe settles or `max_bytes` is
+/// reached. `FileTooLarge` reports a CFB input that needs bytes beyond that
+/// limit to settle the directory probe.
 pub fn read_detection_prefix(
     source: &mut dyn Read,
     prefix_len: usize,
     max_bytes: u64,
 ) -> io::Result<Vec<u8>> {
-    let mut bytes = Vec::with_capacity(prefix_len);
+    let phase_one_len = prefix_len.min(usize::try_from(max_bytes).unwrap_or(usize::MAX));
+    let mut bytes = Vec::with_capacity(phase_one_len);
     let mut chunk =
         cadmpeg_core::decode::alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
             .map_err(io::Error::other)?
             .into_boxed_slice();
-    while bytes.len() < prefix_len {
-        let chunk_len = (prefix_len - bytes.len()).min(chunk.len());
+    while bytes.len() < phase_one_len {
+        let chunk_len = (phase_one_len - bytes.len()).min(chunk.len());
         let read = source.read(&mut chunk[..chunk_len])?;
         if read == 0 {
             break;
@@ -1356,13 +1358,6 @@ pub fn read_detection_prefix(
     ) {
         return Ok(bytes);
     }
-    if bytes.len() as u64 > max_bytes {
-        return Err(io::Error::new(
-            io::ErrorKind::FileTooLarge,
-            "compound detection input exceeds its byte limit",
-        ));
-    }
-
     loop {
         if !matches!(
             CompoundPrefixProbe::inspect(&bytes),
@@ -1738,11 +1733,40 @@ fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::*;
 
     const SECTOR_SIZE: usize = 512;
+
+    struct CountingReader {
+        inner: &'static [u8],
+        bytes_read: usize,
+    }
+
+    impl Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let read = self.inner.read(buffer)?;
+            self.bytes_read += read;
+            Ok(read)
+        }
+    }
+
+    #[test]
+    fn detection_prefix_never_reads_past_its_byte_limit() {
+        let mut source = CountingReader {
+            inner: &[b'x'; 1024],
+            bytes_read: 0,
+        };
+
+        let prefix = read_detection_prefix(&mut source, 128 * 1024, 16)
+            .expect("a capped non-CFB prefix is not a size refusal");
+
+        assert_eq!(prefix, vec![b'x'; 16]);
+        assert_eq!(source.bytes_read, 16);
+    }
 
     #[test]
     fn snapshot_opens_regular_and_mini_streams_lazily() {

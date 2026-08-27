@@ -153,16 +153,15 @@ pub fn identify_with(
 /// caller that capped the input has capped what detection may look at too.
 fn read_prefix(source: &mut dyn ReadSeek, options: &InspectOptions) -> std::io::Result<Vec<u8>> {
     source.seek(SeekFrom::Start(0))?;
-    let max_input_bytes = options.limits.max_input_bytes;
-    let prefix_len = (DETECTION_PREFIX_LEN as u64).min(max_input_bytes) as usize;
-    let prefix = read_detection_prefix(source, prefix_len, max_input_bytes)?;
+    let prefix =
+        read_detection_prefix(source, DETECTION_PREFIX_LEN, options.limits.max_input_bytes)?;
     source.seek(SeekFrom::Start(0))?;
     Ok(prefix)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Read, Seek, SeekFrom};
+    use std::io::Cursor;
 
     use cadmpeg_core::decode::ResourceLimits;
 
@@ -177,44 +176,6 @@ mod tests {
     fn run(bytes: &[u8], options: &InspectOptions) -> Vec<Identification> {
         let mut reader = Cursor::new(bytes.to_vec());
         identify(&mut reader, options).expect("a Cursor neither fails to read nor to seek")
-    }
-
-    struct CountingReader {
-        inner: Cursor<Vec<u8>>,
-        bytes_read: usize,
-    }
-
-    impl Read for CountingReader {
-        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-            let read = self.inner.read(buffer)?;
-            self.bytes_read += read;
-            Ok(read)
-        }
-    }
-
-    impl Seek for CountingReader {
-        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
-            self.inner.seek(position)
-        }
-    }
-
-    #[test]
-    fn non_compound_detection_reads_no_more_than_the_input_limit() {
-        let mut reader = CountingReader {
-            inner: Cursor::new(vec![b'x'; 1024]),
-            bytes_read: 0,
-        };
-        let options = InspectOptions {
-            limits: ResourceLimits {
-                max_input_bytes: 16,
-                ..ResourceLimits::desktop()
-            },
-        };
-
-        let prefix = read_prefix(&mut reader, &options).expect("non-CFB prefix is bounded");
-
-        assert_eq!(prefix.len(), 16);
-        assert_eq!(reader.bytes_read, 16);
     }
 
     #[cfg(feature = "nx")]
