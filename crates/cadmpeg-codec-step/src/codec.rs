@@ -44,34 +44,9 @@ impl Encoder for StepCodec {
         crate::dialect::TARGETS
     }
 
-    /// Resolve the request against the source, then synthesize the schema it
-    /// names.
-    ///
-    /// `Explicit(id)` refuses an id outside the synthesis catalog and otherwise
-    /// writes that schema. The replay law's compare has no branch to gate here:
-    /// this codec has no retained-image path, so every export is synthesis and
-    /// `id == source.dialect` only means the writer reproduces the declaration
-    /// the source already carried.
-    ///
-    /// `Inherit` asks for preservation. The nearest this writer can come is to
-    /// synthesize the source's own schema, which it does whenever the source's
-    /// dialect is one of the six catalog rows. Where it is not — `step:ap242`,
-    /// `step:unknown` — it refuses, naming the source dialect and the catalog.
-    /// There is no fall-through to the catalog default: a same-format
-    /// conversion never silently changes what the file is, and for an
-    /// edition-unspecified source that change is concrete, because every schema
-    /// this writer emits stamps object-identifier arcs the source never
-    /// declared. An explicit target is the escape.
-    ///
-    /// A STEP source that records no dialect is refused too: there is nothing
-    /// to preserve, and choosing a schema for it would be choosing an identity
-    /// it never declared.
-    ///
-    /// The catalog default supplies the target only when there is nothing to
-    /// inherit: the document has no source, or a source of another format. That
-    /// is the cross-format path, where the application layer would have built
-    /// `Explicit(catalog default)` itself. `self.options` supplies nothing: it
-    /// carries header metadata and loss policy, never a schema.
+    /// Synthesis-only encoder; resolution is owned by
+    /// [`resolve_catalog_write`]. An off-catalog STEP source cannot be
+    /// reproduced because every emitted schema stamps object-identifier arcs.
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,

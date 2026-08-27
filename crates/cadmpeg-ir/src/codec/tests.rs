@@ -360,3 +360,116 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     assert_eq!(available, "none");
     assert!(Encoder::targets(&CadirEncoder).is_empty());
 }
+
+const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: "test:old",
+        label: "Old test dialect",
+        aliases: &["old"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "test:new",
+        label: "New test dialect",
+        aliases: &["new"],
+        default: true,
+    },
+];
+
+fn parse_catalog_write_target(id: &str) -> Option<&'static str> {
+    find_target(CATALOG_WRITE_TARGETS, id).map(|target| target.id)
+}
+
+fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.source = source.map(|(format, dialect)| crate::document::SourceMeta {
+        format: format.to_owned(),
+        dialect: dialect.map(DialectId::pinned),
+        ..Default::default()
+    });
+    ir
+}
+
+fn resolve_test_catalog<'a>(
+    ir: &'a CadIr,
+    request: TargetRequest<'a>,
+) -> Result<(&'static str, Option<String>), CodecError> {
+    resolve_catalog_write(
+        ir,
+        request,
+        "test",
+        CATALOG_WRITE_TARGETS,
+        parse_catalog_write_target,
+        "the test writer cannot synthesize the source row",
+    )
+}
+
+#[test]
+fn catalog_write_resolves_an_explicit_on_catalog_target() {
+    let ir = catalog_write_ir(None);
+    assert_eq!(
+        resolve_test_catalog(&ir, TargetRequest::Explicit("old")).unwrap(),
+        ("test:old", None)
+    );
+}
+
+#[test]
+fn catalog_write_refuses_an_explicit_off_catalog_target_with_the_catalog() {
+    let ir = catalog_write_ir(None);
+    let error = resolve_test_catalog(&ir, TargetRequest::Explicit("test:missing")).unwrap_err();
+    let CodecError::UnsupportedTarget { available, .. } = error else {
+        panic!("expected an unsupported target");
+    };
+    assert_eq!(available, "test:old, test:new");
+}
+
+#[test]
+fn catalog_write_inherit_without_a_source_uses_the_default() {
+    let ir = catalog_write_ir(None);
+    assert_eq!(
+        resolve_test_catalog(&ir, TargetRequest::Inherit).unwrap(),
+        ("test:new", None)
+    );
+}
+
+#[test]
+fn catalog_write_inherit_uses_a_same_format_catalog_source() {
+    let ir = catalog_write_ir(Some(("test", Some("test:old"))));
+    assert_eq!(
+        resolve_test_catalog(&ir, TargetRequest::Inherit).unwrap(),
+        ("test:old", None)
+    );
+}
+
+#[test]
+fn catalog_write_inherit_refuses_a_same_format_off_catalog_source() {
+    let ir = catalog_write_ir(Some(("test", Some("test:future"))));
+    let error = resolve_test_catalog(&ir, TargetRequest::Inherit).unwrap_err();
+    let CodecError::UnsupportedTarget {
+        requested,
+        reason,
+        available,
+        ..
+    } = error
+    else {
+        panic!("expected an unsupported target");
+    };
+    assert_eq!(requested.as_deref(), Some("test:future"));
+    assert_eq!(reason, "the test writer cannot synthesize the source row");
+    assert_eq!(available, "test:old, test:new");
+}
+
+#[test]
+fn catalog_write_explicit_difference_returns_the_declined_sentence() {
+    let ir = catalog_write_ir(Some(("test", Some("test:old"))));
+    let (target, declined) =
+        resolve_test_catalog(&ir, TargetRequest::Explicit("test:new")).unwrap();
+    assert_eq!(target, "test:new");
+    assert_eq!(
+        declined.as_deref(),
+        Some(
+            "source is test:old, target is test:new; the dialect the source declared is not what \
+             this export writes"
+        )
+    );
+}

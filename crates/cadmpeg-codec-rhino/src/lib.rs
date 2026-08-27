@@ -161,41 +161,9 @@ impl Encoder for RhinoEncoder {
         dialect::TARGETS
     }
 
-    /// Resolve the request against the source, then synthesize the archive
-    /// version it names.
-    ///
-    /// `Explicit(id)` refuses an id outside the synthesis catalog and otherwise
-    /// names its archive version outright. Where that version is not the
-    /// source's own dialect the write changes what the file is, so the
-    /// resolution declines preservation by name and the report charges the
-    /// fidelity: the caller asked for archive 80 and the archive 50 identity
-    /// the source carried is gone.
-    ///
-    /// `Inherit` asks for preservation: the source's own dialect, synthesized.
-    /// The replay law is inapplicable here — the 3DM writer builds every chunk
-    /// from the neutral IR and has no retained-source branch, so synthesis is
-    /// the only write path this codec has and `id == source.dialect` is never a
-    /// question about bytes. That makes preservation strictly narrower than in a
-    /// replaying codec: a source dialect outside the catalog cannot be written
-    /// back at all, so `Inherit` refuses it with
-    /// [`OFF_CATALOG_SOURCE_REASON`], naming the source dialect and the
-    /// catalog. That band is real — archives 2, 3, 4 and 90 decode without a
-    /// writer, and 1, 5 and unknown words do not decode — and an explicit
-    /// `--to rhino:<archive>` is the escape. There is no fall-through to the
-    /// catalog default: a same-format conversion never silently changes what
-    /// the file is, which is exactly the archive-50 source that used to come
-    /// back as archive 80.
-    ///
-    /// A Rhino source that records no dialect is refused too: there is nothing
-    /// to preserve, and no identity to default to.
-    ///
-    /// The catalog default supplies the target only when there is nothing to
-    /// inherit: the document has no source, or a source of another format. That
-    /// is the cross-format path, resolved by `Inherited::Fallback` — the
-    /// application layer states no default of its own. The encoder holds no
-    /// version of its
-    /// own; an encoder-held one used to override every other answer, which is
-    /// how an archive-50 source came back as archive 80.
+    /// Synthesis-only encoder; resolution is owned by
+    /// [`cadmpeg_ir::codec::resolve_catalog_write`]. An off-catalog Rhino source
+    /// cannot be reproduced because 3DM has no retained-image path.
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,
