@@ -1596,7 +1596,9 @@ impl<'a> Builder<'a> {
                 self.loss(
                     StepLossCode::HiddenBodyVisibilityUnsupported,
                     format!(
-                        "{hidden} hidden body visibility assignment(s) are unsupported by {}",
+                        "{hidden} hidden body visibility assignment(s) are unsupported by \
+                         {}. step:ap203-e1 is the only write target that omits INVISIBILITY; \
+                         every other step target carries it",
                         self.schema.file_schema()
                     ),
                 );
@@ -1643,7 +1645,9 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::HiddenAppearanceVisibilityUnsupported,
                 format!(
-                    "{hidden_bindings} hidden appearance binding visibility assignment(s) are unsupported by {}",
+                    "{hidden_bindings} hidden appearance binding visibility assignment(s) \
+                     are unsupported by {}. step:ap203-e1 is the only write target that omits \
+                     INVISIBILITY; every other step target carries it",
                     self.schema.file_schema()
                 ),
             );
@@ -1670,7 +1674,9 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::HiddenPresentationLayerVisibilityUnsupported,
                 format!(
-                    "{hidden_layers} hidden presentation layer visibility assignment(s) are unsupported by {}",
+                    "{hidden_layers} hidden presentation layer visibility assignment(s) are \
+                     unsupported by {}. step:ap203-e1 is the only write target that omits \
+                     INVISIBILITY; every other step target carries it",
                     self.schema.file_schema()
                 ),
             );
@@ -1797,7 +1803,9 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::TessellationRequiresAp242,
                 format!(
-                    "{} tessellation(s) require an AP242 target",
+                    "{} tessellation(s) require an AP242 target: step:ap242-e1, \
+                     step:ap242-e2, and step:ap242-e3 carry tessellated geometry and would not \
+                     charge this",
                     self.ir.model.tessellations.len()
                 ),
             );
@@ -3330,7 +3338,9 @@ impl<'a> Builder<'a> {
                 self.loss(
                     StepLossCode::HiddenPmiVisibilityUnsupported,
                     format!(
-                        "{} hidden PMI annotation visibility assignment(s) are unsupported by {}",
+                        "{} hidden PMI annotation visibility assignment(s) are unsupported \
+                         by {}. step:ap203-e1 is the only write target that omits INVISIBILITY; \
+                         every other step target carries it",
                         hidden_presentation_items.len(),
                         self.schema.file_schema()
                     ),
@@ -4221,9 +4231,19 @@ impl<'a> Builder<'a> {
         }
         let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
         if unwritten_pmi > 0 {
+            // Naming the target that would carry these is only honest when the
+            // schema gate is why they were dropped. A target that supports
+            // semantic PMI and still left annotations unwritten dropped them for
+            // some other reason, and pointing at another target would misdirect.
+            let avoidable = if self.schema.supports_semantic_pmi() {
+                ""
+            } else {
+                "; step:ap242-e1, step:ap242-e2, and step:ap242-e3 carry semantic PMI and would \
+                 not charge this"
+            };
             self.loss(
                 StepLossCode::PmiAnnotationNotWritten,
-                format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
+                format!("{unwritten_pmi} PMI annotation(s) were not written to STEP{avoidable}"),
             );
         }
         // STEP-native source associations identify records already represented
