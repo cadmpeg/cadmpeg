@@ -56,10 +56,7 @@ wrote part.step (2125 entities)
 
 ## Format support
 
-Depth is the highest read level any declared dialect of the format reaches;
-breadth counts its witnessed dialects at read `L1` or higher. Both come from
-`docs/dialects.toml` and `docs/dialect-support.toml`. Run `cadmpeg dialects`
-for the per-dialect rows.
+Each format carries one support level from the ladder; `cadmpeg inspect <file>` answers for a specific file.
 
 <!-- generated: capability-lines -->
 
