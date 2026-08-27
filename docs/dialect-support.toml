@@ -89,6 +89,79 @@
 # save-format band its record decoders are verified against. The hosts emit
 # those ids as non-primary `DialectMatch` layers and cite the band.
 
+[format.iges]
+level = 9
+scored = [
+  "iges:4.0-fixed-ascii",
+  "iges:5.0-fixed-ascii",
+  "iges:5.1-fixed-ascii",
+  "iges:5.2-fixed-ascii",
+  "iges:5.3-fixed-ascii",
+]
+
+[format.step]
+level = 9
+scored = [
+  "step:ap203-e1",
+  "step:ap203-e2",
+  "step:ap214",
+  "step:ap242",
+  "step:ap242-e1",
+  "step:ap242-e2",
+  "step:ap242-e3",
+]
+
+[format.rhino]
+level = 1
+scored = [
+  "rhino:archive-2",
+  "rhino:archive-3",
+  "rhino:archive-4",
+  "rhino:archive-50",
+  "rhino:archive-60",
+  "rhino:archive-70",
+  "rhino:archive-80",
+]
+
+[format.fcstd]
+level = 5
+scored = ["fcstd:schema-4"]
+
+[format.f3d]
+level = 4
+scored = ["f3d:manifest-3-2-0-0", "f3d:f3z-multi-document"]
+
+[format.catia]
+level = 1
+scored = [
+  "catia:standard-nested",
+  "catia:fbb-only",
+  "catia:e5-stream",
+  "catia:zero-entity",
+  "catia:float-packed-inner-no-fbb",
+  "catia:inner-no-directory",
+]
+
+[format.creo]
+level = 1
+scored = ["creo:depdb", "creo:nd", "creo:legacy-ascii"]
+
+[format.sldprt]
+level = 1
+scored = ["sldprt:sw-version-pre-12000", "sldprt:sw-version-12000-plus"]
+
+[format.inventor]
+level = 1
+scored = ["inventor:cfb3-rse31-meta8"]
+
+[format.nx]
+level = 1
+scored = ["nx:splmsstr", "nx:legacy-cfb"]
+
+[format.sat]
+level = 1
+scored = ["sat:text"]
+
 
 # --------------------------------------------------------------------------
 # iges

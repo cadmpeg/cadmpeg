@@ -7,7 +7,7 @@ The identity registry (``docs/dialects.toml``, checked by
 cadmpeg does with each of them, and it changes per commit. It is a sibling
 script rather than a section of the identity checker because its inputs are
 different in kind: the identity checker reads one TOML file, while this one
-reads two TOML files and the fixture tree on disk.
+reads three TOML files and the fixture tree on disk.
 
 The rules, all cross-referencing:
 
@@ -36,7 +36,9 @@ Run ``--self-test`` to execute the synthesized-violation suite in
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import re
 import sys
 import tomllib
 import unittest
@@ -46,10 +48,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_REL = Path("docs") / "dialects.toml"
 SUPPORT_REL = Path("docs") / "dialect-support.toml"
+EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 SELF_TEST_REL = Path("scripts") / "test_check_dialect_support.py"
 
 ROW_KEYS = frozenset({"dialect", "grammar", "read", "write", "fixtures", "reason"})
 REQUIRED_ROW_KEYS = ("dialect", "read", "write", "fixtures")
+FORMAT_KEYS = frozenset({"level", "scored"})
+REQUIRED_FORMAT_KEYS = ("level", "scored")
+EVALUATION_KEYS = frozenset({"dialect", "date", "level", "files", "result"})
+REQUIRED_EVALUATION_KEYS = ("dialect", "date", "level", "files", "result")
+REGISTRY_ONLY_FORMATS = frozenset({"acis", "parasolid"})
+PATH_LIKE = re.compile(r"(?:[/\\]|(?:^|\s)\.\.?(?:[/\\]|$)|\b[A-Za-z]:[/\\])")
 
 # `L0`..`L9` are the ladder; the other three are the non-score dispositions
 # (design section 6.2). `detected` is the floor a fixture-less row may claim.
@@ -169,6 +178,126 @@ def check_totality(known: set[str], covered: Counter[str], failures: list[str]) 
     for dialect_id, count in sorted(covered.items()):
         if count > 1:
             failures.append(f"{dialect_id}: {count} support rows; expected one")
+
+
+def check_formats(value: object, known: set[str], failures: list[str]) -> dict[str, tuple[int, list[str]]]:
+    """Validate owner-declared levels and scored cuts."""
+    if not _is_table(value):
+        failures.append("format: must be a table")
+        return {}
+    codec_formats = {dialect_id.partition(":")[0] for dialect_id in known} - REGISTRY_ONLY_FORMATS
+    for format_id in sorted(set(value) - codec_formats):
+        failures.append(f"format.{format_id}: unknown codec format")
+    for format_id in sorted(codec_formats - set(value)):
+        failures.append(f"format.{format_id}: missing format block")
+    checked: dict[str, tuple[int, list[str]]] = {}
+    for format_id in sorted(codec_formats & set(value)):
+        block = value[format_id]
+        label = f"format.{format_id}"
+        if not _is_table(block):
+            failures.append(f"{label}: must be a table")
+            continue
+        for key in REQUIRED_FORMAT_KEYS:
+            if key not in block:
+                failures.append(f"{label}: missing {key}")
+        for key in sorted(set(block) - FORMAT_KEYS):
+            failures.append(f"{label}: unknown key {key}")
+        level = block.get("level")
+        if not isinstance(level, int) or isinstance(level, bool) or not 0 <= level <= 9:
+            failures.append(f"{label}: level must be an integer from 0 through 9")
+            level = None
+        scored = block.get("scored")
+        valid_scored: list[str] = []
+        if not isinstance(scored, list) or not scored:
+            failures.append(f"{label}: scored must be a non-empty list")
+        else:
+            counts = Counter(entry for entry in scored if isinstance(entry, str))
+            for dialect_id, count in sorted(counts.items()):
+                if count > 1:
+                    failures.append(f"{label}: duplicate scored dialect {dialect_id}")
+            for entry in scored:
+                if not isinstance(entry, str) or not entry:
+                    failures.append(f"{label}: scored dialect must be a non-empty string")
+                elif entry not in known:
+                    failures.append(f"{label}: scored dialect {entry} has no identity row")
+                elif not entry.startswith(format_id + ":"):
+                    failures.append(f"{label}: scored dialect {entry} belongs to another format")
+                else:
+                    valid_scored.append(entry)
+        if level is not None:
+            checked[format_id] = (level, valid_scored)
+    return checked
+
+
+def check_evaluations(value: object, known: set[str], failures: list[str]) -> dict[str, list[int]]:
+    """Validate maintainer evaluation records and return levels by dialect."""
+    rows = value.get("evaluation") if _is_table(value) else None
+    if not isinstance(rows, list):
+        failures.append("evaluations.toml: [[evaluation]] must be an array of tables")
+        return {}
+    levels: dict[str, list[int]] = {}
+    for index, row in enumerate(rows):
+        label = f"evaluation #{index}"
+        if not _is_table(row):
+            failures.append(f"{label}: not a table")
+            continue
+        dialect = row.get("dialect")
+        if isinstance(dialect, str) and dialect:
+            label = dialect
+        for key in REQUIRED_EVALUATION_KEYS:
+            if key not in row:
+                failures.append(f"{label}: missing {key}")
+        for key in sorted(set(row) - EVALUATION_KEYS):
+            failures.append(f"{label}: unknown key {key}")
+        if not isinstance(dialect, str) or not dialect:
+            failures.append(f"{label}: dialect must be a non-empty string")
+            dialect = None
+        elif dialect not in known:
+            failures.append(f"{label}: no identity row for dialect {dialect}")
+        date = row.get("date")
+        if not isinstance(date, datetime.date) or isinstance(date, datetime.datetime):
+            failures.append(f"{label}: date must be a TOML local date")
+        level = row.get("level")
+        if not isinstance(level, int) or isinstance(level, bool) or not 0 <= level <= 9:
+            failures.append(f"{label}: level must be an integer from 0 through 9")
+            level = None
+        files = row.get("files")
+        if not isinstance(files, int) or isinstance(files, bool) or files < 1:
+            failures.append(f"{label}: files must be a positive integer")
+        result = row.get("result")
+        if not isinstance(result, str) or not result.strip():
+            failures.append(f"{label}: result must be a non-empty string")
+        for key, entry in row.items():
+            if isinstance(entry, str) and PATH_LIKE.search(entry):
+                failures.append(f"{label}: {key} must not contain a path-like string")
+        if dialect in known and level is not None:
+            levels.setdefault(dialect, []).append(level)
+    return levels
+
+
+def check_declared_levels(
+    formats: dict[str, tuple[int, list[str]]],
+    reads: dict[str, object],
+    evaluations: dict[str, list[int]],
+    failures: list[str],
+) -> None:
+    """Reject evidence that contradicts an owner-declared format level."""
+    for format_id, (level, scored) in sorted(formats.items()):
+        for dialect_id in scored:
+            read = reads.get(dialect_id)
+            if read == "refused":
+                failures.append(f"{format_id}: scored dialect {dialect_id} is refused")
+            elif read == "unclassified-recovered" and dialect_id not in evaluations:
+                failures.append(
+                    f"{format_id}: scored unclassified-recovered dialect {dialect_id} requires an evaluation"
+                )
+            elif isinstance(read, str) and read in READ_SCORES and int(read[1:]) < level:
+                failures.append(f"{format_id}: scored dialect {dialect_id} read {read} contradicts L{level}")
+            for evaluated in evaluations.get(dialect_id, []):
+                if evaluated < level:
+                    failures.append(
+                        f"{format_id}: evaluation L{evaluated} for scored dialect {dialect_id} contradicts L{level}"
+                    )
 
 
 # --------------------------------------------------------------------------
@@ -308,7 +437,8 @@ def check(root: Path) -> tuple[list[str], str]:
 
     identity = _load(root / IDENTITY_REL, IDENTITY_REL.as_posix(), failures)
     support = _load(root / SUPPORT_REL, SUPPORT_REL.as_posix(), failures)
-    if identity is None or support is None:
+    evaluations_doc = _load(root / EVALUATIONS_REL, EVALUATIONS_REL.as_posix(), failures)
+    if identity is None or support is None or evaluations_doc is None:
         return failures, ""
 
     known = {
@@ -319,6 +449,9 @@ def check(root: Path) -> tuple[list[str], str]:
     if not known:
         failures.append(f"{IDENTITY_REL.as_posix()}: no identity rows to support")
         return failures, ""
+
+    formats = check_formats(support.get("format"), known, failures)
+    evaluations = check_evaluations(evaluations_doc, known, failures)
 
     rows = support.get("support")
     if rows is None:
@@ -350,6 +483,7 @@ def check(root: Path) -> tuple[list[str], str]:
             tally[read] += 1
 
     check_totality(known, covered, failures)
+    check_declared_levels(formats, reads, evaluations, failures)
     verified = check_snapshot_dialects(root, fixtures_by_dialect, reads, failures)
 
     scored = sum(n for value, n in tally.items() if value in READ_SCORES)

@@ -48,6 +48,10 @@ witness = "spec:Demo specification section 2"
 
 # `demo:one` is fixture-backed and scored; `demo:two` is the fixture-less row.
 GOOD_SUPPORT = """
+[format.demo]
+level = 2
+scored = ["demo:one", "demo:two"]
+
 [[support]]
 dialect = "demo:one"
 read = "L2"
@@ -64,6 +68,7 @@ reason = "no demo two file exists"
 
 FIXTURE = "crates/cadmpeg-codec-demo/tests/golden/fixtures/one.demo"
 SNAPSHOT = "crates/cadmpeg-codec-demo/tests/golden/decode/one.json"
+GOOD_EVALUATIONS = "evaluation = []\n"
 
 
 class SupportCase(unittest.TestCase):
@@ -74,6 +79,7 @@ class SupportCase(unittest.TestCase):
         support: str | None,
         *,
         identity: str | None = IDENTITY,
+        evaluations: str | None = GOOD_EVALUATIONS,
         files: dict[str, str] | None = None,
         snapshot_id: str | None = "demo:one",
     ):
@@ -84,6 +90,8 @@ class SupportCase(unittest.TestCase):
                 (root / "docs" / "dialects.toml").write_text(identity, encoding="utf-8")
             if support is not None:
                 (root / "docs" / "dialect-support.toml").write_text(support, encoding="utf-8")
+            if evaluations is not None:
+                (root / "docs" / "evaluations.toml").write_text(evaluations, encoding="utf-8")
             tree = dict(files) if files else {FIXTURE: "demo bytes"}
             if snapshot_id is not None:
                 tree.setdefault(
@@ -188,13 +196,17 @@ class TestVocabulary(SupportCase):
     def test_every_ladder_rung_is_accepted(self):
         for rung in (f"L{n}" for n in range(10)):
             with self.subTest(rung=rung):
-                self.assertClean(GOOD_SUPPORT.replace('read = "L2"', f'read = "{rung}"'))
+                support = GOOD_SUPPORT.replace("level = 2", "level = 0")
+                self.assertClean(support.replace('read = "L2"', f'read = "{rung}"'))
 
     def test_every_non_score_disposition_is_accepted(self):
         for word in ("detected", "refused", "unclassified-recovered"):
             with self.subTest(word=word):
+                support = GOOD_SUPPORT.replace(
+                    'scored = ["demo:one", "demo:two"]', 'scored = ["demo:two"]'
+                )
                 self.assertClean(
-                    GOOD_SUPPORT.replace(
+                    support.replace(
                         'read = "L2"', f'read = "{word}"\nreason = "a stated reason"'
                     )
                 )
@@ -322,6 +334,142 @@ class TestReasons(SupportCase):
             ),
             "read refused requires a reason",
         )
+
+
+class TestFormatBlocks(SupportCase):
+    def test_missing_format_table(self):
+        self.assertFires(GOOD_SUPPORT.replace("[format.demo]", "[other.demo]"), "format: must be a table")
+
+    def test_missing_format_block(self):
+        self.assertFires(GOOD_SUPPORT.replace("[format.demo]", "[format.other]"), "format.demo: missing format block")
+
+    def test_foreign_format_block(self):
+        self.assertFires(GOOD_SUPPORT + "\n[format.other]\nlevel = 1\nscored = [\"demo:one\"]\n", "format.other: unknown codec format")
+
+    def test_format_block_must_be_a_table(self):
+        self.assertFires(GOOD_SUPPORT.replace("[format.demo]\nlevel = 2\nscored = [\"demo:one\", \"demo:two\"]", 'format = { demo = "bad" }'), "format.demo: must be a table")
+
+    def test_missing_format_keys(self):
+        self.assertFires(GOOD_SUPPORT.replace("level = 2", "other = 2", 1), "format.demo: missing level")
+
+    def test_missing_scored_key(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('scored = ["demo:one", "demo:two"]\n', "", 1),
+            "format.demo: missing scored",
+        )
+
+    def test_unknown_format_key(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace("level = 2", "level = 2\nextra = true", 1),
+            "format.demo: unknown key extra",
+        )
+
+    def test_invalid_level(self):
+        self.assertFires(GOOD_SUPPORT.replace("level = 2", "level = 10", 1), "level must be an integer from 0 through 9")
+
+    def test_scored_must_be_a_non_empty_list(self):
+        self.assertFires(GOOD_SUPPORT.replace('scored = ["demo:one", "demo:two"]', "scored = []"), "scored must be a non-empty list")
+
+    def test_scored_entry_must_be_a_string(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('scored = ["demo:one", "demo:two"]', 'scored = ["demo:one", 2]'),
+            "scored dialect must be a non-empty string",
+        )
+
+    def test_duplicate_scored_dialect(self):
+        self.assertFires(GOOD_SUPPORT.replace('scored = ["demo:one", "demo:two"]', 'scored = ["demo:one", "demo:one"]'), "duplicate scored dialect demo:one")
+
+    def test_foreign_scored_dialect(self):
+        identity = IDENTITY + '\n[[dialect]]\nid = "other:one"\ntitle = "Other"\ndiscriminants = { marker = "x" }\nwitness = "spec:Other"\n'
+        self.assertFires(GOOD_SUPPORT.replace('"demo:two"]', '"other:one"]', 1), "belongs to another format", identity=identity)
+
+    def test_missing_scored_identity(self):
+        self.assertFires(GOOD_SUPPORT.replace('"demo:two"]', '"demo:gone"]', 1), "has no identity row")
+
+
+class TestEvaluations(SupportCase):
+    @staticmethod
+    def record(**changes):
+        values = {"dialect": '"demo:two"', "date": "2026-08-28", "level": "2", "files": "1", "result": '"decoded"'}
+        values.update(changes)
+        return "[[evaluation]]\n" + "\n".join(f"{key} = {value}" for key, value in values.items()) + "\n"
+
+    def test_missing_evaluations_registry(self):
+        self.assertFires(GOOD_SUPPORT, "evaluations.toml: not found", evaluations=None)
+
+    def test_malformed_evaluations_registry(self):
+        self.assertFires(GOOD_SUPPORT, "evaluations.toml: parse error", evaluations="bad = =\n")
+
+    def test_evaluation_rows_are_required(self):
+        self.assertFires(GOOD_SUPPORT, "must be an array of tables", evaluations="other = 1\n")
+
+    def test_evaluation_row_must_be_a_table(self):
+        self.assertFires(GOOD_SUPPORT, "evaluation #0: not a table", evaluations='evaluation = ["bad"]\n')
+
+    def test_evaluation_dialect_must_be_a_string(self):
+        self.assertFires(GOOD_SUPPORT, "dialect must be a non-empty string", evaluations=self.record(dialect="7"))
+
+    def test_missing_evaluation_key(self):
+        self.assertFires(GOOD_SUPPORT, "missing result", evaluations=self.record(result=None).replace("result = None\n", ""))
+
+    def test_unknown_evaluation_key(self):
+        self.assertFires(GOOD_SUPPORT, "unknown key extra", evaluations=self.record() + "extra = 1\n")
+
+    def test_foreign_evaluation_dialect(self):
+        self.assertFires(GOOD_SUPPORT, "no identity row for dialect demo:gone", evaluations=self.record(dialect='"demo:gone"'))
+
+    def test_invalid_evaluation_date(self):
+        self.assertFires(GOOD_SUPPORT, "date must be a TOML local date", evaluations=self.record(date='"2026-08-28"'))
+
+    def test_invalid_evaluation_level(self):
+        self.assertFires(GOOD_SUPPORT, "level must be an integer from 0 through 9", evaluations=self.record(level="10"))
+
+    def test_invalid_evaluation_file_count(self):
+        self.assertFires(GOOD_SUPPORT, "files must be a positive integer", evaluations=self.record(files="0"))
+
+    def test_invalid_evaluation_result(self):
+        self.assertFires(GOOD_SUPPORT, "result must be a non-empty string", evaluations=self.record(result='""'))
+
+    def test_path_like_evaluation_string(self):
+        self.assertFires(GOOD_SUPPORT, "must not contain a path-like string", evaluations=self.record(result='"decoded fixtures/one.demo"'))
+
+    def test_detected_without_evaluation_is_allowed(self):
+        self.assertClean(GOOD_SUPPORT)
+
+    def test_detected_with_equal_evaluation_is_allowed(self):
+        self.assertClean(GOOD_SUPPORT, evaluations=self.record())
+
+    def test_detected_with_higher_evaluation_is_allowed(self):
+        self.assertClean(GOOD_SUPPORT, evaluations=self.record(level="9"))
+
+    def test_detected_with_lower_evaluation_fails(self):
+        self.assertFires(GOOD_SUPPORT, "evaluation L1", evaluations=self.record(level="1"))
+
+    def test_every_evaluation_record_is_compared(self):
+        self.assertFires(GOOD_SUPPORT, "evaluation L1", evaluations=self.record() + self.record(level="1"))
+
+
+class TestDeclaredLevelComparisons(SupportCase):
+    def test_fixture_level_below_declared_level_fails(self):
+        self.assertFires(GOOD_SUPPORT.replace('read = "L2"', 'read = "L1"'), "read L1 contradicts L2")
+
+    def test_fixture_level_equal_to_declared_level_passes(self):
+        self.assertClean(GOOD_SUPPORT)
+
+    def test_fixture_level_above_declared_level_passes(self):
+        self.assertClean(GOOD_SUPPORT.replace('read = "L2"', 'read = "L9"'))
+
+    def test_refused_scored_row_fails(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"')
+        self.assertFires(support, "scored dialect demo:two is refused")
+
+    def test_unclassified_scored_row_without_evaluation_fails(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "unclassified-recovered"')
+        self.assertFires(support, "requires an evaluation")
+
+    def test_unclassified_scored_row_with_evaluation_passes(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "unclassified-recovered"')
+        self.assertClean(support, evaluations=TestEvaluations.record())
 
     def test_empty_fixtures_require_a_reason(self):
         self.assertFires(
