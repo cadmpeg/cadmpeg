@@ -112,7 +112,7 @@ pub(crate) fn plan(
         .ir
         .source
         .as_ref()
-        .is_some_and(|source| source.format == "iges");
+        .is_some_and(|source| source.format == crate::dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
