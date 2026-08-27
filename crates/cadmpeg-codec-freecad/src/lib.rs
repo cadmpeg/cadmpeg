@@ -96,7 +96,7 @@ impl FcstdCodec {
         writer: &mut dyn std::io::Write,
         options: FcstdWriteOptions,
     ) -> Result<ExportReport, CodecError> {
-        writer::plan_options(EncodeInput::new(ir, None), options)?.write_to(writer)
+        writer::target::plan_options(EncodeInput::new(ir, None), options)?.write_to(writer)
     }
 
     /// Change one attribute on an ordered native property value.
@@ -1465,7 +1465,7 @@ impl Encoder for FcstdCodec {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        writer::plan(input, request)
+        writer::target::plan(input, request)
     }
 }
 

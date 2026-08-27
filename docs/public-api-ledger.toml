@@ -910,7 +910,7 @@ item = "cadmpeg_registry::UnknownFormat"
 reason = "the refusal print_dialects returns after losing its anyhow dependency"
 
 [[change]]
-commit = "pending-fcstd-writer-reorg"
+commit = "7ad71b13335380b5aba89f54333510c575edceed"
 crate = "cadmpeg-codec-freecad"
 kind = "signature"
 item = "cadmpeg_codec_freecad::FcstdCodec::encode_with_options"
