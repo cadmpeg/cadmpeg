@@ -411,12 +411,42 @@ fn the_patch_path_names_the_preserved_dialect() {
         )
         .expect("an edited part still preserves its dialect");
     assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Patched);
+    let cadmpeg_ir::FidelityResolution::Degraded { reason } = plan.fidelity_resolution() else {
+        panic!("digest mismatch must report degraded fidelity");
+    };
+    assert!(reason.contains("digest"), "{reason}");
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:sw-version-12000-plus");
 
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     assert_eq!(classify(written), claimed);
+}
+
+#[test]
+fn a_retained_source_record_without_data_reports_degraded_fidelity() {
+    let result = decode(versioned_part());
+    let (ir, _, mut fidelity) = result.into_parts();
+    fidelity
+        .retained_records
+        .iter_mut()
+        .find(|record| record.id.as_str() == crate::SOURCE_IMAGE_ID)
+        .expect("decode retains the source image")
+        .data = None;
+
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::EncodeInput::new(&ir, Some(&fidelity)),
+            cadmpeg_ir::codec::TargetRequest::Inherit,
+        )
+        .expect("missing retained bytes fall back to semantic writing");
+    assert_ne!(plan.write_path(), cadmpeg_ir::WritePath::VerbatimReplay);
+    assert_eq!(
+        plan.fidelity_resolution(),
+        &cadmpeg_ir::FidelityResolution::Degraded {
+            reason: "preserved SLDPRT source image is unavailable".into(),
+        }
+    );
 }
 
 /// The §8.3 honesty invariant on the generation path: a part built with nothing

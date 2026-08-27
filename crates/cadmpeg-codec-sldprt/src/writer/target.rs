@@ -11,7 +11,7 @@ use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
 
 use crate::dialect;
 use crate::loss::SldprtLossCode;
-use crate::{source_records, SldprtCodec, Written, SOURCE_IMAGE_ID};
+use crate::{source_records, SldprtCodec, Written};
 
 /// Resolve the request against the source, then plan the export it names
 /// (design §8.2).
@@ -74,10 +74,30 @@ fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>
                     &mut bytes,
                 )?
             } else {
-                SldprtCodec::write_semantic(input.ir, &value.annotations, &records, &mut bytes)?
+                SldprtCodec::write_semantic(
+                    input.ir,
+                    &value.annotations,
+                    &records,
+                    FidelityResolution::NotConsumed,
+                    false,
+                    &mut bytes,
+                )?
             }
         }
-        None => SldprtCodec::write_semantic(input.ir, &Annotations::default(), &[], &mut bytes)?,
+        None => SldprtCodec::write_semantic(
+            input.ir,
+            &Annotations::default(),
+            &[],
+            if replay_eligible {
+                FidelityResolution::Degraded {
+                    reason: "preserved SLDPRT source image is unavailable".into(),
+                }
+            } else {
+                FidelityResolution::NotProvided
+            },
+            replay_eligible,
+            &mut bytes,
+        )?,
     };
     Ok((written, bytes))
 }
@@ -110,40 +130,9 @@ fn finish<'a>(
     bytes: Vec<u8>,
 ) -> ExportPlan<'a> {
     let write_path = written.path();
-    let source_dialect = input
-        .ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == dialect::FORMAT)
-        .and_then(|source| source.dialect.as_ref());
-    let replay_eligible = source_dialect == Some(&target);
-    let expects_preserved_source = input
-        .ir
-        .source
-        .as_ref()
-        .is_some_and(|source| source.format == dialect::FORMAT);
-    let replayed = replay_eligible
-        && input
-            .fidelity
-            .and_then(|value| value.retained_record(SOURCE_IMAGE_ID))
-            .is_some();
-    let fidelity = if replayed {
-        FidelityResolution::Replayed
-    } else if displaced.is_some() {
-        if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        }
-    } else if input.fidelity.is_some() || expects_preserved_source {
-        FidelityResolution::Degraded {
-            reason: "preserved SLDPRT source image is unavailable".into(),
-        }
-    } else {
-        FidelityResolution::NotProvided
-    };
-    let mut losses: Vec<_> = (matches!(fidelity, FidelityResolution::Degraded { .. })
-        && replay_eligible)
+    let fidelity = written.fidelity();
+    let mut losses: Vec<_> = written
+        .replay_failed()
         .then(|| {
             SldprtLossCode::SourcePreservedImageUnavailable
                 .note("preserved SLDPRT source image is unavailable; regenerated from IR")
