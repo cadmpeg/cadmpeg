@@ -81,6 +81,32 @@ def check_formats(formats: object, failures: list[str]) -> dict[str, dict]:
     return checked
 
 
+def _check_witness_path(label: str, kind: str, rel: str, root: Path, failures: list[str]) -> None:
+    """Require a witness path to be repo-relative and to name a file that exists."""
+    if not rel:
+        failures.append(f"{label}: {kind} witness names no path")
+        return
+    path = Path(rel)
+    if path.is_absolute() or ".." in path.parts:
+        failures.append(f"{label}: {kind} witness must be a repo-relative path: {rel}")
+        return
+    if not (root / path).is_file():
+        failures.append(f"{label}: {kind} witness file not found: {rel}")
+
+
+def _code_witness_file(rest: str) -> str:
+    """Split ``<file>[:<line>]`` and return the file part.
+
+    The line number is evidence of where the discriminant is read, not part of
+    the file's identity. Line drift is expected as the codec changes, so the
+    line is never checked -- only the file it points into.
+    """
+    head, sep, tail = rest.rpartition(":")
+    if sep and tail.isdigit():
+        return head.strip()
+    return rest
+
+
 def check_witness(label: str, witness: object, root: Path, failures: list[str]) -> bool:
     """Validate one ``witness`` value. Returns True when it is a ``code:`` debt."""
     if not isinstance(witness, str):
@@ -90,19 +116,11 @@ def check_witness(label: str, witness: object, root: Path, failures: list[str]) 
         failures.append(f"{label}: witness must start with spec:, corpus:, or code:")
         return False
     if witness.startswith("code:"):
+        rest = witness[len("code:") :].strip()
+        _check_witness_path(label, "code", _code_witness_file(rest), root, failures)
         return True
-    if not witness.startswith("corpus:"):
-        return False
-    rel = witness[len("corpus:") :].strip()
-    if not rel:
-        failures.append(f"{label}: corpus witness names no path")
-        return False
-    path = Path(rel)
-    if path.is_absolute() or ".." in path.parts:
-        failures.append(f"{label}: corpus witness must be a repo-relative path: {rel}")
-        return False
-    if not (root / path).is_file():
-        failures.append(f"{label}: corpus witness file not found: {rel}")
+    if witness.startswith("corpus:"):
+        _check_witness_path(label, "corpus", witness[len("corpus:") :].strip(), root, failures)
     return False
 
 
