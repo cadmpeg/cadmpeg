@@ -684,3 +684,17 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSIONS_ACCEPTED"
 reason = "the accepted versions oldest first, so migration order is data rather than a match arm a caller cannot see; removed in the flip review follow-up before any release carried it — the constant documented the migration set without enforcing it, and the match arms are the authority"
+
+[[change]]
+commit = "f5b6b8e242f0924f29eb869e40a9e2c9b476dea5"
+crate = "cadmpeg"
+kind = "deletion"
+item = "cadmpeg::application::EncoderRequest::Rhino"
+reason = "the archive version is a write target, and TargetRequest carries it; a request variant let the CLI decide the version again, which is the defect that turned a Rhino 5 file into archive 80"
+
+[[change]]
+commit = "f5b6b8e242f0924f29eb869e40a9e2c9b476dea5"
+crate = "cadmpeg-codec-rhino"
+kind = "trait_impl"
+item = "impl Default for cadmpeg_codec_rhino::RhinoEncoder"
+reason = "the catalog default archive version, so a caller with no version to state does not have to name one; the constructor version is now only the fallback for a request with nothing to inherit"
