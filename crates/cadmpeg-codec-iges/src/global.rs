@@ -1406,13 +1406,24 @@ impl ResolvedGlobal {
     }
 
     /// The declaration text of a field 23 that does not read as an integer.
-    fn unreadable_version_declaration(&self) -> Option<&str> {
+    pub(crate) fn unreadable_version_declaration(&self) -> Option<&str> {
         self.unreadable_version_declaration.as_deref()
     }
 
     /// The declared version flag after the specification's postprocessor clamp.
-    fn effective_version_flag(&self) -> i64 {
+    pub(crate) fn effective_version_flag(&self) -> i64 {
         effective_version(self.declared_version_flag).0
+    }
+
+    /// Whether the effective version has a Global table this codec verified
+    /// against that version's own specification.
+    ///
+    /// False for every version [`Dialect::Legacy`] absorbs; those documents are
+    /// read with the newest verified table and charge
+    /// [`IgesLossCode::SourceDialectUnverified`], so they are admitted
+    /// unverified rather than admitted.
+    pub(crate) fn grammar_is_verified(&self) -> bool {
+        VERIFIED_VERSIONS.contains(&self.version())
     }
 
     pub(crate) fn version(&self) -> &'static str {

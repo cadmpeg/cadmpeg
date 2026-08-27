@@ -17,6 +17,20 @@ pub(crate) enum Representation {
     Unknown,
 }
 
+impl Representation {
+    /// The discriminant value `docs/dialects.toml` states for this
+    /// representation, and the value the `representation` source attribute and
+    /// the non-Fixed-ASCII container kind carry.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::FixedAscii => "fixed-ascii",
+            Self::CompressedAscii => "compressed-ascii",
+            Self::Binary => "binary",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 fn compressed_ascii(prefix: &[u8]) -> bool {
     let Some(flag) = prefix.get(..80) else {
         return false;

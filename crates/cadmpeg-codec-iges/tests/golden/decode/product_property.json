@@ -2132,6 +2132,12 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
+      "declared": {
+        "effective_version": "5.3",
+        "representation": "fixed-ascii",
+        "version_flag": "11"
+      },
+      "dialect": "iges:5.3-fixed-ascii",
       "format": "iges"
     },
     "tolerances": {
@@ -2144,6 +2150,18 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "effective_version": "5.3",
+          "representation": "fixed-ascii",
+          "version_flag": "11"
+        },
+        "dialect": "iges:5.3-fixed-ascii",
+        "format": "iges"
+      }
+    ],
     "format": "iges",
     "geometry_transferred": true,
     "losses": [],
