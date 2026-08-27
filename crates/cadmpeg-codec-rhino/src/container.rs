@@ -15,7 +15,6 @@ use crate::chunks::{
     parse_eof, parse_header, verify_checksum, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
-use crate::dialect::RhinoDialect;
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
 use crate::objects::{
@@ -1132,7 +1131,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
 /// container summary, the container-only report, and the source metadata all
 /// carry the same match.
 fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
-    RhinoDialect::classify(scan.archive, scan.metadata.properties.writer_version)
+    ArchiveVersion::classify(scan.archive, scan.metadata.properties.writer_version)
 }
 
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {
@@ -1227,7 +1226,7 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     if header_only(header.archive_version) {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
-        let dialects = vec![RhinoDialect::classify(header.archive_version, None)];
+        let dialects = vec![ArchiveVersion::classify(header.archive_version, None)];
         debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         return Ok(ContainerSummary {
             dialects,

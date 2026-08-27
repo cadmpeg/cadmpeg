@@ -3,7 +3,7 @@
 //! was admitted.
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`RhinoDialect::classify`] is the one construction
+//! strings are the boundary, [`ArchiveVersion::classify`] is the one construction
 //! path, and the vocabulary is closed. Every variant here has a row in
 //! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
 //! fails on drift in either direction.
@@ -12,8 +12,8 @@
 //!
 //! The archive-version word occupies bytes 24..32 of the 32-byte start section
 //! and is the sole read discriminant of this format
-//! ([`ArchiveVersion::classify`]). It is exact-equality: word 51 is not
-//! "archive 50 with extras", it is [`RhinoDialect::Unknown`]. Ten words
+//! ([`ArchiveVersion::from_word`]). It is exact-equality: word 51 is not
+//! "archive 50 with extras", it is [`ArchiveVersion::Other`]. Ten words
 //! carry their own row and every other positive word lands on the mandatory
 //! totality row (design §3.3, B4).
 //!
@@ -38,7 +38,7 @@
 //!
 //! Word 5 is the one structural refusal: the pre-chunk grammar it names has no
 //! reader here, so no scan applies to it at all.
-//! [`RhinoDialect::refuses_decode`] is the single predicate: it decides the
+//! [`ArchiveVersion::refuses_decode`] is the single predicate: it decides the
 //! [`Admission`] this module reports *and* the refusal
 //! `crate::container::decode` returns, so the two can never disagree.
 
@@ -130,28 +130,7 @@ const DECLARED_ARCHIVE_VERSION: &str = "archive_version";
 /// archive level.
 const DECLARED_OPENNURBS_WRITER_VERSION: &str = "opennurbs_writer_version";
 
-/// One row of `docs/dialects.toml` under the `rhino` namespace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum RhinoDialect {
-    /// Archive word 1: the flat legacy record grammar.
-    Archive1,
-    Archive2,
-    Archive3,
-    Archive4,
-    /// Archive word 5: four-byte chunk values and a grammar this codec does not
-    /// read. Distinct from word 50.
-    Archive5,
-    Archive50,
-    Archive60,
-    Archive70,
-    Archive80,
-    Archive90,
-    /// The mandatory totality row: any positive archive word that is not one of
-    /// the ten literals above.
-    Unknown,
-}
-
-impl RhinoDialect {
+impl ArchiveVersion {
     /// Every dialect this codec can name.
     ///
     /// The registry cross-check is its only consumer, and that is the point:
@@ -159,54 +138,34 @@ impl RhinoDialect {
     /// added without a variant, fails a test.
     #[cfg(test)]
     pub(crate) const ALL: [Self; 11] = [
-        Self::Archive1,
-        Self::Archive2,
-        Self::Archive3,
-        Self::Archive4,
-        Self::Archive5,
-        Self::Archive50,
-        Self::Archive60,
-        Self::Archive70,
-        Self::Archive80,
-        Self::Archive90,
-        Self::Unknown,
+        Self::V1,
+        Self::V2,
+        Self::V3,
+        Self::V4,
+        Self::LegacyV5,
+        Self::V5,
+        Self::V6,
+        Self::V7,
+        Self::V8,
+        Self::V9,
+        Self::Other(0),
     ];
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::Archive1 => "rhino:archive-1",
-            Self::Archive2 => "rhino:archive-2",
-            Self::Archive3 => "rhino:archive-3",
-            Self::Archive4 => "rhino:archive-4",
-            Self::Archive5 => "rhino:archive-5",
-            Self::Archive50 => "rhino:archive-50",
-            Self::Archive60 => "rhino:archive-60",
-            Self::Archive70 => "rhino:archive-70",
-            Self::Archive80 => "rhino:archive-80",
-            Self::Archive90 => "rhino:archive-90",
-            Self::Unknown => "rhino:unknown",
+            Self::V1 => "rhino:archive-1",
+            Self::V2 => "rhino:archive-2",
+            Self::V3 => "rhino:archive-3",
+            Self::V4 => "rhino:archive-4",
+            Self::LegacyV5 => "rhino:archive-5",
+            Self::V5 => "rhino:archive-50",
+            Self::V6 => "rhino:archive-60",
+            Self::V7 => "rhino:archive-70",
+            Self::V8 => "rhino:archive-80",
+            Self::V9 => "rhino:archive-90",
+            Self::Other(_) => "rhino:unknown",
         })
-    }
-
-    /// The row whose `archive_version` discriminant the header word satisfies.
-    ///
-    /// Total by construction: [`ArchiveVersion`] already partitions the word
-    /// space, and `Other` is the residue that no literal row claims.
-    pub(crate) const fn from_archive(archive: ArchiveVersion) -> Self {
-        match archive {
-            ArchiveVersion::V1 => Self::Archive1,
-            ArchiveVersion::V2 => Self::Archive2,
-            ArchiveVersion::V3 => Self::Archive3,
-            ArchiveVersion::V4 => Self::Archive4,
-            ArchiveVersion::LegacyV5 => Self::Archive5,
-            ArchiveVersion::V5 => Self::Archive50,
-            ArchiveVersion::V6 => Self::Archive60,
-            ArchiveVersion::V7 => Self::Archive70,
-            ArchiveVersion::V8 => Self::Archive80,
-            ArchiveVersion::V9 => Self::Archive90,
-            ArchiveVersion::Other(_) => Self::Unknown,
-        }
     }
 
     /// Whether this codec declines to decode the row at all.
@@ -222,7 +181,7 @@ impl RhinoDialect {
     /// scan, and the totality row that same chunked scan under
     /// [`Admission::AdmittedUnverified`].
     pub(crate) const fn refuses_decode(self) -> bool {
-        matches!(self, Self::Archive5)
+        matches!(self, Self::LegacyV5)
     }
 
     /// How a run admitted a document on this row.
@@ -233,15 +192,15 @@ impl RhinoDialect {
     /// so it names the row whose strategy was substituted for it; and word 5 is
     /// refused, which [`Self::refuses_decode`] decides for the decode branch
     /// too.
-    fn admission(self, archive: ArchiveVersion) -> Admission {
+    fn admission(self) -> Admission {
         if self.refuses_decode() {
             Admission::Refused
-        } else if matches!(self, Self::Unknown) {
+        } else if matches!(self, Self::Other(_)) {
             Admission::AdmittedUnverified {
-                nearest: if archive.uses_eight_byte_values() {
-                    Self::Archive90.id()
+                nearest: if self.uses_eight_byte_values() {
+                    Self::V9.id()
                 } else {
-                    Self::Archive4.id()
+                    Self::V4.id()
                 },
             }
         } else {
@@ -256,7 +215,6 @@ impl RhinoDialect {
     /// `writer_version` is the openNURBS stamp where the run read the
     /// properties table, and `None` where it did not.
     pub(crate) fn classify(archive: ArchiveVersion, writer_version: Option<i64>) -> DialectMatch {
-        let dialect = Self::from_archive(archive);
         let mut declared = BTreeMap::new();
         declared.insert(DECLARED_ARCHIVE_VERSION.into(), archive.value().to_string());
         if let Some(stamp) = writer_version {
@@ -264,9 +222,9 @@ impl RhinoDialect {
         }
         DialectMatch {
             format: FORMAT.into(),
-            dialect: Some(dialect.id()),
+            dialect: Some(archive.id()),
             declared,
-            admission: dialect.admission(archive),
+            admission: archive.admission(),
         }
     }
 }
@@ -300,7 +258,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 /// The call site in `crate::container::decode`; it reads the same predicate the
 /// reported [`Admission`] reads.
 pub(crate) const fn refuses_decode(archive: ArchiveVersion) -> bool {
-    RhinoDialect::from_archive(archive).refuses_decode()
+    archive.refuses_decode()
 }
 
 /// Whether the archive word selects the chunked grammar.

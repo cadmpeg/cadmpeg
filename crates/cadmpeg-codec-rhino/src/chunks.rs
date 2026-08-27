@@ -60,8 +60,8 @@ pub(crate) enum ArchiveVersion {
 
 impl ArchiveVersion {
     /// Partitions the archive-version word. The sole read discriminant of this
-    /// format; `crate::dialect` maps the result onto its registry row.
-    pub(crate) fn classify(value: u64) -> Self {
+    /// format; `crate::dialect` assigns the result its registry identity.
+    pub(crate) fn from_word(value: u64) -> Self {
         match value {
             1 => Self::V1,
             2 => Self::V2,
@@ -207,7 +207,7 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
     }
     Ok(Header {
         start_offset,
-        archive_version: ArchiveVersion::classify(value),
+        archive_version: ArchiveVersion::from_word(value),
     })
 }
 

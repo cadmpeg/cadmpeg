@@ -5612,7 +5612,7 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
 /// The full decode's report and its source metadata both read this, so they
 /// carry the same match.
 fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
-    crate::dialect::RhinoDialect::classify(scan.archive, scan.metadata.properties.writer_version)
+    ArchiveVersion::classify(scan.archive, scan.metadata.properties.writer_version)
 }
 
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {
