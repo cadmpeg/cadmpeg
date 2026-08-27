@@ -30,6 +30,17 @@ if git diff --cached --name-only \
   python3 scripts/check-dialect-support.py
 fi
 
+# Every published capability table is rendered from the two registries. A
+# registry edit without a re-render, or a hand edit inside a generated region,
+# must not reach a commit. Run it whenever a registry, the renderer, or a file
+# that owns a generated region is staged.
+if git diff --cached --name-only \
+    | grep -qE '^docs/dialects?(-support)?\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
+  echo "pre-commit: scripts/render-format-support.py --check"
+  python3 scripts/render-format-support.py --self-test
+  python3 scripts/render-format-support.py --check
+fi
+
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
 # and build flags), or the toolchain pin. A docs-, CI-, or config-only commit

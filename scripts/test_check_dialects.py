@@ -332,13 +332,15 @@ class TestLattice(RegistryCase):
 
 class TestExtensionPoints(unittest.TestCase):
     def test_stubs_report_not_yet_enforced(self):
-        for stub in (
-            checker.check_codec_emitted_ids,
-            checker.check_support_tables,
-        ):
+        for stub in (checker.check_codec_emitted_ids,):
             with self.subTest(stub=stub.__name__):
                 self.assertEqual(stub(REPO), ["not yet enforced"])
                 self.assertTrue(stub.__doc__)
+
+    def test_support_tables_moved_to_the_renderer(self):
+        """The stub is gone because the rule is enforced, not deferred."""
+        self.assertFalse(hasattr(checker, "check_support_tables"))
+        self.assertTrue((REPO / "scripts" / "render-format-support.py").is_file())
 
     def test_fixture_gating_moved_to_the_capability_checker(self):
         """The stub is gone because the rule is enforced, not deferred."""

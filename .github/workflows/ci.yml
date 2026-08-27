@@ -116,6 +116,16 @@ jobs:
           python3 -m unittest -v scripts/test_check_dialect_support.py
           python3 scripts/check-dialect-support.py
 
+      - name: Rendered capability tables
+        # Every score table in docs/format-support.md, the root README, each
+        # codec crate README, and each codec lib.rs doc header is rendered from
+        # the two registries. --check re-renders and compares byte for byte, so
+        # a registry edit without a re-render fails here.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_render_format_support.py
+          python3 scripts/render-format-support.py --check
+
       - name: Format check
         run: cargo fmt --all --check
 
