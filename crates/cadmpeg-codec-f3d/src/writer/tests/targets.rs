@@ -3,8 +3,10 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
-use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::units::Units;
+use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
 use crate::F3dCodec;
 
@@ -40,4 +42,69 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     for target in Encoder::targets(&F3dCodec) {
         assert!(available.contains(target.id), "{available}");
     }
+}
+
+fn sourced_ir(dialect: &'static str) -> CadIr {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.source = Some(SourceMeta {
+        format: "f3d".into(),
+        dialect: Some(cadmpeg_core::dialect::DialectId::pinned(dialect)),
+        ..SourceMeta::default()
+    });
+    ir
+}
+
+#[test]
+fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable() {
+    let ir = sourced_ir("f3d:f3z-multi-document");
+    let data = b"present retained image".to_vec();
+    let mut fidelity = SourceFidelity::default();
+    fidelity.retained_records.push(RetainedSourceRecord {
+        id: crate::ids::FILE_SOURCE_IMAGE_ID.into(),
+        stream: "f3d".into(),
+        offset: 0,
+        byte_len: data.len() as u64,
+        sha256: sha256_hex(&data),
+        data: Some(data),
+    });
+    let plan = Encoder::plan(
+        &F3dCodec,
+        EncodeInput::new(&ir, Some(&fidelity)),
+        TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+    )
+    .expect("explicit transcode plans");
+
+    let FidelityResolution::Degraded { reason } = plan.fidelity_resolution() else {
+        panic!("explicit transcode must be degraded");
+    };
+    assert!(reason.contains("f3d:f3z-multi-document"), "{reason}");
+    assert!(reason.contains("f3d:manifest-3-2-0-0"), "{reason}");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.code != "source.preserved-image-unavailable"));
+}
+
+#[test]
+fn inherit_with_missing_image_charges_preserved_image_unavailable() {
+    let ir = sourced_ir("f3d:manifest-3-2-0-0");
+    let plan = Encoder::plan(
+        &F3dCodec,
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .expect("inherit synthesizes the catalog source dialect");
+
+    assert_eq!(
+        plan.fidelity_resolution(),
+        &FidelityResolution::Degraded {
+            reason: "preserved F3D source image is unavailable".into(),
+        }
+    );
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.code == "source.preserved-image-unavailable"));
 }

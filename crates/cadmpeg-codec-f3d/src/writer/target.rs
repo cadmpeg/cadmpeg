@@ -4,7 +4,7 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    find_target, unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
@@ -39,56 +39,28 @@ pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    match request {
-        TargetRequest::Explicit(id) => {
-            let target = find_target(dialect::TARGETS, id).ok_or_else(|| {
-                unsupported_target(
-                    dialect::FORMAT,
-                    id,
-                    "not a target this encoder can synthesize",
-                    dialect::TARGETS,
-                )
-            })?;
-            plan_explicit(input, &DialectId::pinned(target.id))
+    match resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)? {
+        WriteRequest::Catalog { entry, declined } => {
+            let target = DialectId::pinned(entry.id);
+            if declined.is_none() {
+                if let Preservation::Written { bytes, write_path } = preserve(input, &target)? {
+                    return Ok(preserved_plan(input.ir, target, write_path, bytes));
+                }
+            }
+            synthesized_plan(input, &target, declined)
         }
-        TargetRequest::Inherit => plan_inherited(input),
-    }
-}
-
-fn plan_explicit<'a>(
-    input: EncodeInput<'a>,
-    target: &DialectId,
-) -> Result<ExportPlan<'a>, CodecError> {
-    match preserve(input, target)? {
-        Preservation::Written { bytes, write_path } => {
-            Ok(preserved_plan(input.ir, target.clone(), write_path, bytes))
-        }
-        Preservation::Declined => synthesized_plan(input, target),
-    }
-}
-
-fn plan_inherited(input: EncodeInput<'_>) -> Result<ExportPlan<'_>, CodecError> {
-    let source_dialect =
-        match cadmpeg_ir::codec::resolve_inherit(input.ir, dialect::FORMAT, dialect::TARGETS)? {
-            Inherited::Fallback(id) => return plan_explicit(input, &DialectId::pinned(id)),
-            Inherited::Source(value) => value.clone(),
-        };
-    match preserve(input, &source_dialect)? {
-        Preservation::Written { bytes, write_path } => {
-            Ok(preserved_plan(input.ir, source_dialect, write_path, bytes))
-        }
-        Preservation::Declined
-            if find_target(dialect::TARGETS, source_dialect.as_str()).is_some() =>
-        {
-            synthesized_plan(input, &source_dialect)
-        }
-        Preservation::Declined => Err(unsupported_target(
-            dialect::FORMAT,
-            source_dialect.as_str(),
-            "its retained source image is unavailable for preservation and the generator cannot \
-             synthesize it",
-            dialect::TARGETS,
-        )),
+        WriteRequest::OffCatalog { dialect: source } => match preserve(input, source)? {
+            Preservation::Written { bytes, write_path } => {
+                Ok(preserved_plan(input.ir, source.clone(), write_path, bytes))
+            }
+            Preservation::Declined => Err(unsupported_target(
+                dialect::FORMAT,
+                source.as_str(),
+                "its retained source image is unavailable for preservation and the generator \
+                 cannot synthesize it",
+                dialect::TARGETS,
+            )),
+        },
     }
 }
 
@@ -155,6 +127,7 @@ fn preserved_plan(
 fn synthesized_plan<'a>(
     input: EncodeInput<'a>,
     target: &DialectId,
+    declined: Option<String>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     debug_assert_eq!(target.as_str(), SYNTHESIS_TARGET);
     let mut bytes = Vec::new();
@@ -164,20 +137,25 @@ fn synthesized_plan<'a>(
         .source
         .as_ref()
         .is_some_and(|source| source.format == dialect::FORMAT);
-    let fidelity = if input.fidelity.is_some() || expects_preserved_source {
+    let fidelity = if let Some(reason) = declined {
+        FidelityResolution::Degraded { reason }
+    } else if input.fidelity.is_some() || expects_preserved_source {
         FidelityResolution::Degraded {
             reason: "preserved F3D source image is unavailable".into(),
         }
     } else {
         FidelityResolution::NotProvided
     };
-    let losses = matches!(fidelity, FidelityResolution::Degraded { .. })
-        .then(|| {
-            F3dLossCode::SourcePreservedImageUnavailable
-                .note("preserved F3D source image is unavailable; regenerated from IR")
-        })
-        .into_iter()
-        .collect();
+    let losses = (matches!(fidelity, FidelityResolution::Degraded { .. })
+        && input.ir.source.as_ref().is_some_and(|source| {
+            source.format == dialect::FORMAT && source.dialect.as_ref() == Some(target)
+        }))
+    .then(|| {
+        F3dLossCode::SourcePreservedImageUnavailable
+            .note("preserved F3D source image is unavailable; regenerated from IR")
+    })
+    .into_iter()
+    .collect();
     Ok(ExportPlan::buffered(
         report(
             input.ir,

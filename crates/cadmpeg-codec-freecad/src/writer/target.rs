@@ -10,7 +10,7 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest};
+use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::FidelityResolution;
 
@@ -121,31 +121,16 @@ pub(in crate::writer) fn resolve(
     ir: &CadIr,
     request: TargetRequest<'_>,
 ) -> Result<Resolution, CodecError> {
-    let target = match request {
-        TargetRequest::Explicit(id) => {
-            let options = dialect::target_options(id).ok_or_else(|| {
-                unsupported_target(
-                    dialect::FORMAT,
-                    id,
-                    "not a target this encoder can synthesize",
-                    dialect::TARGETS,
-                )
-            })?;
-            dialect::written_dialect(options)
-        }
-        TargetRequest::Inherit => {
-            match cadmpeg_ir::codec::resolve_inherit(ir, dialect::FORMAT, dialect::TARGETS)? {
-                // Nothing to inherit: no source, or one of another format. The
-                // catalog default stands in; no existing file's identity is at
-                // stake. The deliverability check below still applies — this writer
-                // needs a retained graph whatever the request was.
-                Inherited::Fallback(id) => dialect::written_dialect(
-                    dialect::target_options(id)
-                        .expect("the FCStd catalog default is a synthesis target"),
-                ),
-                Inherited::Source(dialect) => dialect.clone(),
-            }
-        }
+    let target = match cadmpeg_ir::codec::resolve_write_request(
+        ir,
+        request,
+        dialect::FORMAT,
+        dialect::TARGETS,
+    )? {
+        cadmpeg_ir::codec::WriteRequest::Catalog { entry, .. } => dialect::written_dialect(
+            dialect::target_options(entry.id).expect("the FCStd catalog row is a synthesis target"),
+        ),
+        cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect } => dialect.clone(),
     };
     // Deliverability, not preference. This writer patches the retained
     // `Document.xml` and regenerates none, so the resolved target is reachable

@@ -1013,3 +1013,10 @@ crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::dialect::acis_admission"
 reason = "the shared Spatial ACIS decoder band owns the complete Admission fold so SAT and Inventor cannot disagree about verified and nearest rows"
+
+[[change]]
+commit = "e174555acd923135306a5e3f0226d8606944bcb0"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::codec::{WriteRequest,resolve_write_request}"
+reason = "all native encoders resolve explicit catalog requests and inherited source identity once before applying their codec-owned preservation, synthesis, patch, or replay delivery law"
