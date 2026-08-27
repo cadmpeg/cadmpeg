@@ -11,7 +11,9 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest};
+use cadmpeg_ir::codec::{
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
+};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
@@ -107,64 +109,39 @@ pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    match request {
-        TargetRequest::Explicit(id) => {
-            let version = crate::dialect::target_version(id).ok_or_else(|| {
-                unsupported_target(
-                    crate::dialect::FORMAT,
-                    id,
-                    "not a target this encoder can synthesize",
-                    crate::dialect::TARGETS,
-                )
-            })?;
-            plan_explicit(input, version)
-        }
-        TargetRequest::Inherit => plan_inherited(input),
-    }
-}
-
-/// Plan a write at one synthesis target: replay when the source is already in
-/// that dialect, otherwise synthesize it.
-fn plan_explicit(
-    input: EncodeInput<'_>,
-    version: crate::IgesVersion,
-) -> Result<ExportPlan<'_>, CodecError> {
-    let target = IgesDialect::fixed_ascii(version).id();
-    match replay_bytes(input.ir, input.fidelity, &target)? {
-        Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
-        Replay::Declined { reason } => synthesized_plan(input, version, reason),
-    }
-}
-
-/// Plan a write that preserves the source's dialect.
-fn plan_inherited(input: EncodeInput<'_>) -> Result<ExportPlan<'_>, CodecError> {
-    let source_dialect = match cadmpeg_ir::codec::resolve_inherit(
+    match resolve_write_request(
         input.ir,
+        request,
         crate::dialect::FORMAT,
         crate::dialect::TARGETS,
     )? {
-        // Nothing to inherit: no source, or one of another format. The catalog
-        // default stands in; no existing file's identity is at stake.
-        Inherited::Fallback(id) => {
-            let version = crate::dialect::target_version(id)
-                .expect("the IGES catalog default is a synthesis target");
-            return plan_explicit(input, version);
+        WriteRequest::Catalog { entry, declined } => {
+            let version = crate::dialect::target_version(entry.id)
+                .expect("the IGES catalog row is a synthesis target");
+            let target = IgesDialect::fixed_ascii(version).id();
+            let replay_declined = if declined.is_none() {
+                match replay_bytes(input.ir, input.fidelity, &target)? {
+                    Replay::Replayed { bytes, dialect } => {
+                        return Ok(replayed_plan(input.ir, dialect, bytes));
+                    }
+                    Replay::Declined { reason } => reason,
+                }
+            } else {
+                None
+            };
+            synthesized_plan(input, version, declined.or(replay_declined))
         }
-        Inherited::Source(dialect) => dialect.clone(),
-    };
-    match replay_bytes(input.ir, input.fidelity, &source_dialect)? {
-        Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
-        Replay::Declined { reason } => {
-            let Some(version) = crate::dialect::target_version(source_dialect.as_str()) else {
-                return Err(unsupported_target(
+        WriteRequest::OffCatalog { dialect } => {
+            match replay_bytes(input.ir, input.fidelity, dialect)? {
+                Replay::Replayed { bytes, dialect } => Ok(replayed_plan(input.ir, dialect, bytes)),
+                Replay::Declined { .. } => Err(unsupported_target(
                     crate::dialect::FORMAT,
-                    source_dialect.as_str(),
+                    dialect.as_str(),
                     "its retained source image is unavailable for byte replay and the semantic \
                      writer cannot synthesize it",
                     crate::dialect::TARGETS,
-                ));
-            };
-            synthesized_plan(input, version, reason)
+                )),
+            }
         }
     }
 }

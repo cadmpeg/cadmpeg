@@ -1,4 +1,4 @@
-# generated at dde088151
+# generated at e174555ac
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -555,6 +555,27 @@ impl<'a> core::marker::Unpin for cadmpeg_ir::codec::TargetRequest<'a>
 impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::codec::TargetRequest<'a>
 impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::TargetRequest<'a>
 impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::TargetRequest<'a>
+pub enum cadmpeg_ir::codec::WriteRequest<'a>
+pub cadmpeg_ir::codec::WriteRequest::Catalog
+pub cadmpeg_ir::codec::WriteRequest::Catalog::declined: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::codec::WriteRequest::Catalog::entry: &'static cadmpeg_ir::codec::TargetDescriptor
+pub cadmpeg_ir::codec::WriteRequest::OffCatalog
+pub cadmpeg_ir::codec::WriteRequest::OffCatalog::dialect: &'a cadmpeg_core::dialect::DialectId
+impl<'a> core::clone::Clone for cadmpeg_ir::codec::WriteRequest<'a>
+pub fn cadmpeg_ir::codec::WriteRequest<'a>::clone(&self) -> cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::cmp::Eq for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::cmp::PartialEq for cadmpeg_ir::codec::WriteRequest<'a>
+pub fn cadmpeg_ir::codec::WriteRequest<'a>::eq(&self, &cadmpeg_ir::codec::WriteRequest<'a>) -> bool
+impl<'a> core::fmt::Debug for cadmpeg_ir::codec::WriteRequest<'a>
+pub fn cadmpeg_ir::codec::WriteRequest<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::StructuralPartialEq for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::marker::Freeze for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::marker::Send for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::marker::Sync for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::marker::Unpin for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::WriteRequest<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::WriteRequest<'a>
 pub struct cadmpeg_ir::codec::CadirEncoder
 impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
@@ -700,6 +721,7 @@ pub fn cadmpeg_ir::codec::default_target(&[cadmpeg_ir::codec::TargetDescriptor])
 pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::resolve_catalog_write<T>(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor], impl core::ops::function::Fn(&str) -> core::option::Option<T>, &str) -> core::result::Result<(T, core::option::Option<alloc::string::String>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::resolve_inherit<'a>(&'a cadmpeg_ir::document::CadIr, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::Inherited<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::resolve_write_request<'a>(&'a cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::WriteRequest<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::unrecorded_source_dialect(&str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_ir::codec::unsupported_target(&str, &str, &str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
 pub mod cadmpeg_ir::compare

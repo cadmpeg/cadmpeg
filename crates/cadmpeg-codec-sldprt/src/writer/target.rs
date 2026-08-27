@@ -4,7 +4,7 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    find_target, unsupported_target, EncodeInput, ExportPlan, Inherited, TargetRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
@@ -43,24 +43,9 @@ pub(crate) fn plan<'a>(
 
 /// Resolve an explicit catalog request or inherit the same-format source row.
 fn resolve(input: EncodeInput<'_>, request: TargetRequest<'_>) -> Result<DialectId, CodecError> {
-    match request {
-        TargetRequest::Explicit(id) => {
-            let entry = find_target(dialect::TARGETS, id).ok_or_else(|| {
-                unsupported_target(
-                    dialect::FORMAT,
-                    id,
-                    "not a target this encoder can synthesize",
-                    dialect::TARGETS,
-                )
-            })?;
-            Ok(DialectId::pinned(entry.id))
-        }
-        TargetRequest::Inherit => {
-            match cadmpeg_ir::codec::resolve_inherit(input.ir, dialect::FORMAT, dialect::TARGETS)? {
-                Inherited::Fallback(id) => Ok(DialectId::pinned(id)),
-                Inherited::Source(value) => Ok(value.clone()),
-            }
-        }
+    match resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)? {
+        WriteRequest::Catalog { entry, .. } => Ok(DialectId::pinned(entry.id)),
+        WriteRequest::OffCatalog { dialect } => Ok(dialect.clone()),
     }
 }
 

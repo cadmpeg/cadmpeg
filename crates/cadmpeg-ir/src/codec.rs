@@ -465,6 +465,67 @@ pub fn resolve_inherit<'a>(
         .ok_or_else(|| unrecorded_source_dialect(format, targets))
 }
 
+/// A write request resolved against the encoder catalog and source identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WriteRequest<'a> {
+    /// The request names a catalog row.
+    Catalog {
+        /// The canonical catalog entry.
+        entry: &'static TargetDescriptor,
+        /// Why a same-format source dialect was declined, when applicable.
+        declined: Option<String>,
+    },
+    /// `Inherit` names a same-format source dialect outside the catalog.
+    OffCatalog {
+        /// The source dialect that must be preserved or refused by name.
+        dialect: &'a cadmpeg_core::dialect::DialectId,
+    },
+}
+
+/// Resolve target syntax and inheritance once, before codec-specific delivery.
+pub fn resolve_write_request<'a>(
+    ir: &'a CadIr,
+    request: TargetRequest<'_>,
+    format: &str,
+    targets: &'static [TargetDescriptor],
+) -> Result<WriteRequest<'a>, CodecError> {
+    let entry = match request {
+        TargetRequest::Explicit(id) => find_target(targets, id).ok_or_else(|| {
+            unsupported_target(
+                format,
+                id,
+                "not a target this encoder can synthesize",
+                targets,
+            )
+        })?,
+        TargetRequest::Inherit => match resolve_inherit(ir, format, targets)? {
+            Inherited::Fallback(id) => {
+                find_target(targets, id).expect("the inherited fallback is the catalog default")
+            }
+            Inherited::Source(dialect) => {
+                let Some(entry) = find_target(targets, dialect.as_str()) else {
+                    return Ok(WriteRequest::OffCatalog { dialect });
+                };
+                entry
+            }
+        },
+    };
+    let declined = ir
+        .source
+        .as_ref()
+        .filter(|source| source.format == format)
+        .and_then(|source| source.dialect.as_ref())
+        .filter(|dialect| dialect.as_str() != entry.id)
+        .map(|dialect| {
+            format!(
+                "source is {dialect}, target is {}; the dialect the source declared is not what \
+                 this export writes",
+                entry.id
+            )
+        });
+    Ok(WriteRequest::Catalog { entry, declined })
+}
+
 /// The whole write resolution of a synthesis-only encoder (design §8.2): the
 /// writer target a request names, and why the source's own dialect is not it.
 ///
@@ -503,59 +564,19 @@ pub fn resolve_catalog_write<T>(
     parse: impl Fn(&str) -> Option<T>,
     off_catalog_source_reason: &str,
 ) -> Result<(T, Option<String>), CodecError> {
-    let id = match request {
-        TargetRequest::Explicit(id) => id,
-        TargetRequest::Inherit => {
-            return match resolve_inherit(ir, format, targets)? {
-                // Nothing to inherit: no source, or one of another format. The
-                // catalog default stands in; no existing file's identity is at
-                // stake.
-                Inherited::Fallback(id) => Ok((
-                    parse(id).unwrap_or_else(|| {
-                        panic!("the {format} catalog default is a synthesis target")
-                    }),
-                    None,
-                )),
-                Inherited::Source(dialect) => parse(dialect.as_str())
-                    .map(|resolved| (resolved, None))
-                    .ok_or_else(|| {
-                        unsupported_target(
-                            format,
-                            dialect.as_str(),
-                            off_catalog_source_reason,
-                            targets,
-                        )
-                    }),
-            };
-        }
-    };
-    let resolved = parse(id).ok_or_else(|| {
-        unsupported_target(
+    match resolve_write_request(ir, request, format, targets)? {
+        WriteRequest::Catalog { entry, declined } => Ok((
+            parse(entry.id)
+                .unwrap_or_else(|| panic!("the {format} catalog row is a synthesis target")),
+            declined,
+        )),
+        WriteRequest::OffCatalog { dialect } => Err(unsupported_target(
             format,
-            id,
-            "not a target this encoder can synthesize",
+            dialect.as_str(),
+            off_catalog_source_reason,
             targets,
-        )
-    })?;
-    // `parse` accepted the id, so the catalog carries it, and `find_target`
-    // maps the alias the caller may have spelled onto the canonical dialect id
-    // the report and the declined sentence name.
-    let target = find_target(targets, id)
-        .expect("parse accepts exactly the catalog ids")
-        .id;
-    let declined = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == format)
-        .and_then(|source| source.dialect.as_ref())
-        .filter(|dialect| dialect.as_str() != target)
-        .map(|dialect| {
-            format!(
-                "source is {dialect}, target is {target}; the dialect the source declared is not \
-                 what this export writes"
-            )
-        });
-    Ok((resolved, declined))
+        )),
+    }
 }
 
 fn refusal(
