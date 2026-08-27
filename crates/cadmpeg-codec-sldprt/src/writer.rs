@@ -4,6 +4,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
+pub(crate) mod target;
+
 use crate::native::SldprtNative;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;

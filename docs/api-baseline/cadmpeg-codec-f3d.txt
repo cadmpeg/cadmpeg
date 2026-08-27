@@ -1,8 +1,6 @@
-# generated at 410399168
+# generated at 4b5aed14a
 pub mod cadmpeg_codec_f3d
 pub struct cadmpeg_codec_f3d::F3dCodec
-impl cadmpeg_codec_f3d::F3dCodec
-pub fn cadmpeg_codec_f3d::F3dCodec::write_preserved_with_source_fidelity(&self, &cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::report::WritePath, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_f3d::F3dCodec
 pub fn cadmpeg_codec_f3d::F3dCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_f3d::F3dCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
@@ -10,7 +8,8 @@ pub fn cadmpeg_codec_f3d::F3dCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_f3d::F3dCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_f3d::F3dCodec
 pub fn cadmpeg_codec_f3d::F3dCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_f3d::F3dCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_f3d::F3dCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_f3d::F3dCodec::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_codec_f3d::F3dCodec
 pub fn cadmpeg_codec_f3d::F3dCodec::clone(&self) -> cadmpeg_codec_f3d::F3dCodec
 impl core::default::Default for cadmpeg_codec_f3d::F3dCodec
