@@ -36,10 +36,10 @@
 # How the read cell is chosen.
 #
 #   `refused` mirrors the codec's own refusal: either `Admission::Refused`, or
-#   a `CodecError` raised before any report exists. Four rows refuse in fact
+#   a `CodecError` raised before any report exists. Three rows refuse in fact
 #   without ever carrying an `Admission` value (the three STEP alternate
-#   encodings and `f3d:unknown`); they are marked `refused` and the reason
-#   names the refusal site.
+#   encodings); they are marked `refused` and the reason names the refusal
+#   site.
 #
 #   `unclassified-recovered` mirrors `Admission::AdmittedUnverified`: the file
 #   is parsed, but with a strategy some other row declares. The codec charges
@@ -1194,12 +1194,15 @@ fixture exists"""
 
 [[support]]
 dialect = "f3d:unknown"
-read = "refused"
+read = "unclassified-recovered"
 write = "none"
 fixtures = []
 reason = """
-`manifest::parse_top_level` returns NotImplemented before a report exists;
-no match ever carries this row"""
+`manifest::parse_top_level` parses any readable version with the 3-2-0-0
+layout, so a document that declares another version and fits that layout is
+admitted unverified on `f3d:manifest-3-2-0-0` and charges
+`source.dialect-unverified`; a document whose layout does not fit is refused
+with NotImplemented. No .f3d file of another generation is in the repository"""
 
 # --------------------------------------------------------------------------
 # inventor

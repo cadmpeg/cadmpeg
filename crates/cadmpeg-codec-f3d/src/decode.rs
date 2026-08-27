@@ -4763,6 +4763,15 @@ fn primary_layer_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::Di
     dialects
 }
 
+/// The recovery charge for the archive's primary layer, if the layer was read
+/// with a strategy its own declaration does not name.
+///
+/// Every `DecodeReport` this codec builds appends this, so the charge and
+/// `DecodeReport::dialects` come from the same match and cannot disagree.
+fn dialect_losses(scan: &ContainerScan) -> Option<cadmpeg_ir::report::LossNote> {
+    crate::dialect::dialect_loss(&scan.dialect)
+}
+
 /// Source metadata carrying `attributes`, with the primary-layer match mirrored
 /// into [`SourceMeta::dialect`] and [`SourceMeta::declared`].
 ///
@@ -4871,6 +4880,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         "Materials/appearances (.protein assets, ACT/design assignments) were not \
          transferred.",
     ));
+    losses.extend(dialect_losses(scan));
 
     DecodeReport {
         dialects: primary_layer_dialects(scan),
@@ -5029,6 +5039,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             },
         ));
     }
+
+    losses.extend(dialect_losses(scan));
 
     DecodeReport {
         dialects: primary_layer_dialects(scan),

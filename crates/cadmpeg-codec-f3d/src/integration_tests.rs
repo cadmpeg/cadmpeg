@@ -201,3 +201,61 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
     assert!(!result.source_fidelity().retained_records.is_empty());
     assert!(result.ir().native.namespace("f3d").is_some());
 }
+
+#[test]
+fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery() {
+    // The archive differs from the known-version archive in the manifest
+    // version field alone, so the whole decode runs the same code the known
+    // version runs. What changes is the identity claim: the row is the
+    // recovery row, the admission names the strategy applied, and the report
+    // charges the dialect-unverified loss.
+    let known = decode(f3d_with_smbh(&synthetic_geometry_smbh()));
+    let drifted = decode(f3d_with_smbh_and_manifest_version(
+        &synthetic_geometry_smbh(),
+        "3-3-0-0",
+    ));
+
+    assert!(drifted.report().geometry_transferred);
+    assert_eq!(
+        drifted.ir().model.bodies.len(),
+        known.ir().model.bodies.len()
+    );
+
+    let matched = drifted
+        .report()
+        .dialects
+        .first()
+        .expect("the primary layer is classified");
+    assert_eq!(
+        matched
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("f3d:unknown")
+    );
+    assert_eq!(
+        matched.admission,
+        cadmpeg_core::dialect::Admission::AdmittedUnverified {
+            nearest: cadmpeg_core::dialect::DialectId::pinned("f3d:manifest-3-2-0-0"),
+        }
+    );
+    assert_eq!(matched.declared["top_level_manifest_version"], "3-3-0-0");
+
+    let expected = crate::loss::F3dLossCode::SourceDialectUnverified.kind();
+    assert!(
+        drifted
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == expected),
+        "the recovery must be charged"
+    );
+    assert!(
+        !known
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == expected),
+        "a known version charges no recovery"
+    );
+}

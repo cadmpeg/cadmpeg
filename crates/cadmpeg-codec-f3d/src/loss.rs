@@ -164,6 +164,8 @@ pub enum F3dLossCode {
     TsplineCageUndecoded,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
+    /// The document was read with a grammar its own declarations do not select.
+    SourceDialectUnverified,
 }
 
 impl F3dLossCode {
@@ -241,6 +243,7 @@ impl F3dLossCode {
         Self::TsplineRecordUntyped,
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
+        Self::SourceDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -324,6 +327,7 @@ impl F3dLossCode {
             Self::TsplineRecordUntyped => "tspline.record-untyped",
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
         }
     }
 
@@ -428,6 +432,7 @@ impl F3dLossCode {
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
 
@@ -530,6 +535,7 @@ mod tests {
                 "tspline.record-untyped",
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
+                "source.dialect-unverified",
             ]
         );
     }

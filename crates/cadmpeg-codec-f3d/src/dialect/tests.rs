@@ -67,16 +67,31 @@ fn a_document_match_names_its_row_and_records_the_version_the_parse_read() {
 }
 
 #[test]
-fn the_declared_version_is_the_parse_reading_not_the_constant_it_matched() {
-    // The gate is upstream of classification. Handed another reading, the match
-    // records that reading verbatim rather than substituting the row's name, so
-    // a widened gate surfaces in the report without a second edit here.
-    let matched = F3dDialect::classify_document("4-0-0-0");
+fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
+    // The parse ran the `3-2-0-0` layout and it fitted. The declaration names
+    // no row this codec knows, so the reading is recorded verbatim, the row is
+    // the recovery row, and the admission names the strategy applied.
+    let matched = F3dDialect::classify_document("3-3-0-0");
 
     assert_eq!(
         matched.declared[DECLARED_TOP_LEVEL_MANIFEST_VERSION],
-        "4-0-0-0"
+        "3-3-0-0"
     );
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("f3d:unknown")
+    );
+    assert_eq!(
+        matched.admission,
+        Admission::AdmittedUnverified {
+            nearest: DialectId::pinned("f3d:manifest-3-2-0-0"),
+        }
+    );
+
+    let loss = dialect_loss(&matched).expect("the recovery is charged");
+    assert_eq!(loss.code, F3dLossCode::SourceDialectUnverified.kind());
+    assert!(loss.message.contains("3-3-0-0"));
+    assert!(loss.message.contains("f3d:manifest-3-2-0-0"));
 }
 
 #[test]
@@ -102,24 +117,20 @@ fn an_f3z_match_names_its_row_and_records_the_root_members() {
 }
 
 #[test]
-fn every_match_this_codec_builds_is_admitted() {
-    // `AdmittedUnverified` has no producer in this codec: the manifest version
-    // is an equality gate rather than a clamp, and the F3Z branch declares no
-    // version to diverge from. An admission state with no producer is a fact
-    // about F3D's two grammars, pinned here so a new parse path that recovers a
-    // document with a foreign grammar has to come back and charge the loss.
+fn the_identity_rows_are_admitted_and_charge_nothing() {
+    // A row parsed with the strategy it declares carries no recovery. The loss
+    // and the admission are read from one value, so this pins both halves.
     for matched in [
         F3dDialect::classify_document("3-2-0-0"),
         F3dDialect::classify_f3z(&["Part.f3d"]),
     ] {
         assert_eq!(matched.admission, Admission::Admitted);
+        assert!(dialect_loss(&matched).is_none());
     }
 }
 
 #[test]
-fn the_totality_row_is_pinned_but_no_match_carries_it() {
-    // `f3d:unknown` is refused inside `manifest::parse_top_level`, before any
-    // report exists, so it is declared and pinned without a runtime producer.
+fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
     assert_eq!(F3dDialect::Unknown.id().as_str(), "f3d:unknown");
     for matched in [
         F3dDialect::classify_document("3-2-0-0"),
@@ -130,4 +141,11 @@ fn the_totality_row_is_pinned_but_no_match_carries_it() {
             Some(F3dDialect::Unknown.id().as_str())
         );
     }
+    assert_eq!(
+        F3dDialect::classify_document("4-0-0-0")
+            .dialect
+            .as_ref()
+            .map(DialectId::as_str),
+        Some(F3dDialect::Unknown.id().as_str())
+    );
 }

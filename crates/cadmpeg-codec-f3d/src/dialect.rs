@@ -8,39 +8,38 @@
 //! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
 //! fails on drift in either direction.
 //!
-//! # Two grammars, one enum, and a row no run can reach
+//! # Two grammars, one enum, and one recovery row
 //!
 //! A Fusion ZIP takes one of two document-wide parse strategies, chosen before
 //! anything semantic is read (`crate::container::scan`):
 //!
-//! - A root `Manifest.dat` selects the binary top-level manifest grammar. Its
-//!   leading field must equal `3-2-0-0` exactly, and the two fields after it
-//!   must equal `FusionDocType` and `.f3d` exactly, so a document that reaches
-//!   the rest of the decode is `f3d:manifest-3-2-0-0` by construction.
+//! - A root `Manifest.dat` selects the binary top-level manifest grammar. The
+//!   version field selects nothing: every readable version is parsed with the
+//!   `3-2-0-0` layout, whose anchors (`FusionDocType`, `.f3d`, and two
+//!   hyphenated GUIDs) decide whether that layout fits. A document that
+//!   declares `3-2-0-0` and parses is `f3d:manifest-3-2-0-0`. A document that
+//!   declares another version and still parses is `f3d:unknown`, read with a
+//!   strategy its own declaration does not name.
 //! - No root `Manifest.dat`, but `Manifest.json`, `DesignDescription.json`, and
 //!   a root-level `*.f3d` member, selects the F3Z multi-document grammar. That
-//!   branch reads no version field at all — the test is filename presence — so
-//!   `f3d:f3z-multi-document` is an identity row with an unbounded interior.
+//!   branch reads no version field at all, so `f3d:f3z-multi-document` is an
+//!   identity row with an unbounded interior.
 //!
-//! Both are [`Admission::Admitted`]: each is parsed with the strategy its own
-//! row declares. [`Admission::AdmittedUnverified`] has **no producer in this
-//! codec**. It would need a document read with a grammar its row does not
-//! declare, and F3D has no such path: the manifest version is an equality gate,
-//! not a clamp, and the F3Z branch declares no version to diverge from. The
-//! absence is a fact about F3D's two grammars, not a gap.
+//! The two identity rows are [`Admission::Admitted`]: each is parsed with the
+//! strategy its own row declares. [`F3dDialect::Unknown`] is the mandatory
+//! totality row (design 3.3, B4) and it is
+//! [`Admission::AdmittedUnverified`], naming `f3d:manifest-3-2-0-0` as the
+//! strategy applied to it, with [`dialect_loss`] charging
+//! `source.dialect-unverified` on exactly that admission. Refusal stays
+//! structural: a manifest whose bytes do not fit the anchors is refused by
+//! `crate::manifest::parse_top_level`, and no version is on an allowlist.
 //!
-//! [`F3dDialect::Unknown`] is the mandatory totality row (design §3.3, B4). Its
-//! disposition is refusal: a readable top-level manifest version other than
-//! `3-2-0-0` returns `CodecError::NotImplemented` naming the observed version
-//! (`crate::manifest::parse_top_level`), and that refusal happens before a
-//! [`ContainerSummary`](cadmpeg_core::ContainerSummary) or a `DecodeReport`
-//! exists. So the row is declared and pinned, and no [`DialectMatch`] this
-//! codec builds ever carries it. Identity surviving refusal is what
-//! `CodecError::UnsupportedDialect` will deliver; migrating the refusal is a
-//! later phase and is deliberately not done here.
-
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
+
+use crate::loss::F3dLossCode;
+use crate::manifest::TOP_LEVEL_MANIFEST_VERSION;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "f3d";
@@ -49,10 +48,10 @@ pub(crate) const FORMAT: &str = "f3d";
 /// [`DialectMatch::declared`], recorded as the manifest cursor read it.
 ///
 /// The value is the length-prefixed ASCII field at the head of the manifest.
-/// `crate::manifest::parse_top_level` compares it for exact equality and
-/// refuses anything else, so every recorded value is `3-2-0-0` today. The key
-/// carries the parse's own reading rather than the constant it matched, so a
-/// widening of the gate surfaces here without a second edit.
+/// `crate::manifest::parse_top_level` reads it and parses on regardless, so the
+/// recorded value is whatever the document declared. It is the discriminant
+/// between the identity row and the recovery row, and it is what names the
+/// generation the bytes came from.
 pub(crate) const DECLARED_TOP_LEVEL_MANIFEST_VERSION: &str = "top_level_manifest_version";
 
 /// Key of the root-level `*.f3d` member names in [`DialectMatch::declared`],
@@ -82,16 +81,14 @@ pub(crate) enum F3dDialect {
     Manifest3200,
     /// No root `Manifest.dat`; the F3Z manifest set plus a root-level `*.f3d`.
     F3zMultiDocument,
-    /// Mandatory totality row: a readable top-level manifest version this codec
-    /// does not parse. Refused, so no match ever carries it.
+    /// Mandatory totality row: a top-level manifest that declares a version
+    /// this codec does not know, and that the `3-2-0-0` layout parsed anyway.
     ///
-    /// Never constructed outside the registry drift test, and that is the
-    /// declared state of this row rather than an oversight: the refusal in
-    /// `crate::manifest::parse_top_level` fires before a report exists, so the
-    /// row is pinned without a runtime producer. Constructing it becomes
-    /// possible when the refusal migrates to
-    /// `CodecError::UnsupportedDialect`, which carries the match.
-    #[allow(dead_code)]
+    /// The document is read, so the row carries a match. The strategy applied
+    /// to it is the one [`Self::Manifest3200`] declares, which the document's
+    /// own declaration does not name, so the admission is
+    /// [`Admission::AdmittedUnverified`] and [`dialect_loss`] charges the
+    /// recovery.
     Unknown,
 }
 
@@ -117,16 +114,36 @@ impl F3dDialect {
     /// declared.
     ///
     /// `version` is the field `crate::manifest::parse_top_level` read, not the
-    /// constant it compared against. That parse admits one value and refuses
-    /// every other, so reaching here means the bytes obey the row's
-    /// discriminants and the admission is [`Admission::Admitted`].
+    /// constant it compared against. Reaching here means the `3-2-0-0` layout
+    /// parsed the whole manifest, so the version decides only which row names
+    /// that reading: its own, or the recovery row.
     pub(crate) fn classify_document(version: &str) -> DialectMatch {
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_TOP_LEVEL_MANIFEST_VERSION.to_owned(),
             version.to_owned(),
         );
-        Self::Manifest3200.matched(declared)
+        let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
+            Self::Manifest3200
+        } else {
+            Self::Unknown
+        };
+        dialect.matched(declared)
+    }
+
+    /// How a document on this row was admitted.
+    ///
+    /// The one predicate behind both the report's [`Admission`] and
+    /// [`dialect_loss`]: an identity row was parsed with the strategy it
+    /// declares, and the recovery row was parsed with the `3-2-0-0` strategy
+    /// its own declaration does not name.
+    fn admission(self) -> Admission {
+        match self {
+            Self::Manifest3200 | Self::F3zMultiDocument => Admission::Admitted,
+            Self::Unknown => Admission::AdmittedUnverified {
+                nearest: Self::Manifest3200.id(),
+            },
+        }
     }
 
     /// Classifies a multi-document F3Z archive from its root-level `*.f3d`
@@ -151,7 +168,31 @@ impl F3dDialect {
             format: FORMAT.to_owned(),
             dialect: Some(self.id()),
             declared,
-            admission: Admission::Admitted,
+            admission: self.admission(),
+        }
+    }
+}
+
+/// The dialect-unverified loss for a classified layer.
+///
+/// `None` exactly when `matched.admission` is [`Admission::Admitted`], because
+/// this reads that field rather than reclassifying. The biconditional the
+/// decode policy requires is therefore structural: the note charged and the
+/// admission reported come from one value, not from two authors agreeing.
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    match &matched.admission {
+        Admission::Admitted | Admission::Refused => None,
+        Admission::AdmittedUnverified { nearest } => {
+            let version = matched
+                .declared
+                .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
+                .map_or("(none)", String::as_str);
+            Some(F3dLossCode::SourceDialectUnverified.note(format!(
+                "the top-level manifest declares version {version:?}, which no dialect row of \
+                 this codec names, so no declared identity was verified. The document is read on \
+                 {nearest}: every field after the version was parsed with that layout. The layout \
+                 fitting is consistency, not a declaration."
+            )))
         }
     }
 }
