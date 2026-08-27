@@ -251,6 +251,10 @@
         "section_count": "1",
         "version_line": "#UGC:2 P c"
       },
+      "declared": {
+        "version_line": "#UGC:2 P c"
+      },
+      "dialect": "creo:depdb",
       "format": "creo"
     },
     "tolerances": {
@@ -626,6 +630,16 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:depdb",
+        "format": "creo"
+      }
+    ],
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
