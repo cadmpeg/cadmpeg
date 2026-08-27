@@ -17,7 +17,6 @@ use crate::test_support::{make_block, outer_header};
 use cadmpeg_core::dialect::primary_layer;
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 /// A synthetic `.sldprt` whose `Contents/SolidWorks` block declares
 /// `swVersion`, verbatim as given.
@@ -35,29 +34,6 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
     bytes
 }
 
-/// Path of the identity registry, from this crate's manifest directory.
-fn registry_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/dialects.toml")
-        .canonicalize()
-        .expect("docs/dialects.toml resolves from the crate manifest directory")
-}
-
-/// Every `id = "sldprt:…"` value in `docs/dialects.toml`.
-fn registry_ids() -> BTreeSet<String> {
-    let text = std::fs::read_to_string(registry_path()).expect("read docs/dialects.toml");
-    let ids = text
-        .lines()
-        .map(str::trim)
-        .filter_map(|line| line.strip_prefix("id = \""))
-        .filter_map(|rest| rest.strip_suffix('"'))
-        .filter(|id| id.starts_with("sldprt:"))
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
-    assert!(!ids.is_empty(), "the registry declares no sldprt rows");
-    ids
-}
-
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
     let pinned = SldprtDialect::ALL
@@ -72,7 +48,7 @@ fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
     );
     assert_eq!(
         pinned,
-        registry_ids(),
+        cadmpeg_test_support::registry_ids("sldprt"),
         "docs/dialects.toml and SldprtDialect disagree; ids are pinned forever, so reconcile the enum"
     );
 }

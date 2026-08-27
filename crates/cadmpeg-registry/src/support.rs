@@ -503,19 +503,68 @@ mod tests {
         }
     }
 
-    /// Every compiled write target is a declared identity row.
-    ///
-    /// The `(target)` column would otherwise be able to mark nothing, or to
-    /// mark a row the registry does not carry.
+    /// Compiled catalogs and write-policy rows describe the same synthesis
+    /// surface, separate preservation from synthesis, and keep aliases
+    /// disjoint from output-format words.
     #[test]
-    fn every_write_target_is_a_registry_row() {
-        let ids = registries()
+    fn compiled_write_catalogs_match_registry_policy() {
+        let registries = registries();
+        let dispositions = registries
             .rows_all()
-            .map(|row| row.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
+            .map(|row| {
+                (
+                    row.id.as_str(),
+                    row.disposition
+                        .expect("every identity row has a support row"),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+
         for format in Format::ALL {
-            for target in write_targets(*format) {
-                assert!(ids.contains(target.id), "{}: not a registry row", target.id);
+            let targets = write_targets(*format);
+            for target in targets {
+                let disposition = dispositions
+                    .get(target.id)
+                    .unwrap_or_else(|| panic!("{}: not a registry row", target.id));
+                assert!(
+                    matches!(
+                        disposition.write,
+                        WriteDisposition::Verified | WriteDisposition::Emitted
+                    ),
+                    "{}: a compiled target must be verified or emitted, not {}",
+                    target.id,
+                    disposition.write
+                );
+                for alias in target.aliases {
+                    assert!(
+                        !registries
+                            .formats
+                            .iter()
+                            .any(|word| word.as_str() == *alias)
+                            && Format::from_name(alias).is_none(),
+                        "{}: alias {alias:?} is also an output-format word",
+                        target.id
+                    );
+                }
+            }
+
+            if targets.is_empty() {
+                continue;
+            }
+            let prefix = format!("{}:", format.name());
+            for (id, disposition) in &dispositions {
+                if id.starts_with(&prefix)
+                    && matches!(
+                        disposition.write,
+                        WriteDisposition::Verified | WriteDisposition::Emitted
+                    )
+                {
+                    assert!(
+                        targets.iter().any(|target| target.id == *id),
+                        "{id}: synthesis write is absent from the {} catalog",
+                        format.name()
+                    );
+                }
             }
         }
     }
