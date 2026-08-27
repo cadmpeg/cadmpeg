@@ -359,6 +359,11 @@
         "entity_instances": "59",
         "schema": "AUTOMOTIVE_DESIGN"
       },
+      "declared": {
+        "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+        "implementation_level": "2;1"
+      },
+      "dialect": "step:ap214",
       "format": "step"
     },
     "tolerances": {
@@ -371,6 +376,17 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap214",
+        "format": "step"
+      }
+    ],
     "format": "step",
     "geometry_transferred": true,
     "losses": [

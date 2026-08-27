@@ -589,7 +589,19 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!((replica_start.x - 12.0).abs() < 1.0e-12);
     assert!(replica_start.y.abs() < 1.0e-12);
 
-    assert!(decoded.report().losses.is_empty());
+    // The witness declares the bare AP242 schema name with no object
+    // identifier, which satisfies no AP242 registry row, so the decode is
+    // admitted-unverified and charges the dialect loss. Nothing else is lost.
+    let dialect_unverified = StepLossCode::SourceDialectUnverified
+        .note(String::new())
+        .code;
+    let codes = decoded
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(codes, [dialect_unverified]);
 }
 
 #[test]

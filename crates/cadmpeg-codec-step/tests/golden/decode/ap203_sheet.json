@@ -329,6 +329,11 @@
         "entity_instances": "37",
         "schema": "CONFIG_CONTROL_DESIGN"
       },
+      "declared": {
+        "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
+        "implementation_level": "2;1"
+      },
+      "dialect": "step:ap203-e1",
       "format": "step"
     },
     "tolerances": {
@@ -341,6 +346,17 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap203-e1",
+        "format": "step"
+      }
+    ],
     "format": "step",
     "geometry_transferred": true,
     "losses": [

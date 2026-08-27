@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -14,6 +15,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
+use crate::dialect::StepDialect;
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
@@ -85,15 +87,23 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             "entity_instances".into(),
             exchange.records.len().to_string(),
         );
+        // The primary-layer match is the source of both the report entry and
+        // the `SourceMeta` mirror. The `schema` attribute above stays: it is
+        // the joined identifier list, and retiring the ad-hoc attribute keys is
+        // a later phase.
+        let primary = StepDialect::classify(exchange);
+        let dialect_loss = crate::dialect::dialect_loss(&primary);
         ir.source = Some(SourceMeta {
-            declared: BTreeMap::new(),
-            dialect: None,
-            format: "step".into(),
+            declared: primary.declared.clone(),
+            dialect: primary.dialect.clone(),
+            format: crate::dialect::FORMAT.into(),
             attributes,
         });
 
+        let dialects = vec![primary];
+        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         let mut report = DecodeReport {
-            dialects: Vec::new(),
+            dialects,
             format: "step".into(),
             container_only,
             geometry_transferred: false,
@@ -106,6 +116,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
                 .collect(),
         };
+        report.losses.extend(dialect_loss);
         report.losses.extend(diagnostics.iter().map(|diagnostic| {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
