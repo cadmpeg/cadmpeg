@@ -475,15 +475,15 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # --------------------------------------------------------------------------
 # One discriminant: the archive-version word, right-justified ASCII decimal in
 # header bytes 24..32 (`file_header::ARCHIVE_VERSION`,
-# crates/cadmpeg-codec-rhino/src/layout.rs). `ArchiveVersion::classify`
+# crates/cadmpeg-codec-rhino/src/layout.rs). `ArchiveVersion::from_word`
 # (crates/cadmpeg-codec-rhino/src/chunks.rs) is an exact-equality match on ten
 # literal integers; there are no bands. Word 0 is refused at the header layer
 # (`parse_header`); every other positive integer becomes
 # `ArchiveVersion::Other(_)`.
 #
 # `crates/cadmpeg-codec-rhino/src/dialect.rs` maps that partition onto the rows
-# below: `RhinoDialect::from_archive` is the row, `RhinoDialect::classify` is
-# the sole `DialectMatch` construction path, and `RhinoDialect::refuses_decode`
+# below: `ArchiveVersion::id` selects the row, `ArchiveVersion::classify` is
+# the sole `DialectMatch` construction path, and `ArchiveVersion::refuses_decode`
 # is the sole disposition predicate -- it decides both the reported
 # `Admission` and the refusal `container::decode` returns.
 #
@@ -547,7 +547,7 @@ witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only
 [[dialect]]
 # `ArchiveVersion::LegacyV5`. Word 5 and word 50 are distinct. Word 5 is a
 # four-byte-value archive (`ArchiveVersion::uses_eight_byte_values` is
-# value >= 50) and is decode-refused: `RhinoDialect::refuses_decode` holds, so
+# value >= 50) and is decode-refused: `ArchiveVersion::refuses_decode` holds, so
 # inspection reports the header with `Admission::Refused` and
 # `container::decode` returns `CodecError::NotImplemented`.
 #
@@ -601,14 +601,15 @@ discriminants = { archive_version = "90" }
 witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 
 [[dialect]]
-# `ArchiveVersion::Other(u64)`, mapped by `RhinoDialect::from_archive`. B4
+# `ArchiveVersion::Other(u64)`, mapped by `ArchiveVersion::id`. B4
 # totality: any positive archive word that is not one of the ten literals
-# classifies here, including 51 and 61 -- `ArchiveVersion::classify` does not
-# fold near-misses into a band. Disposition today: recovery is not attempted.
-# `RhinoDialect::refuses_decode` holds, so inspection reports the header with
-# `Admission::Refused` and `container::decode` returns
-# `CodecError::NotImplemented`. No document is read with a grammar declared for
-# another row, so `Admission::AdmittedUnverified` is unreachable in this codec.
+# classifies here, including 51 and 61 -- `ArchiveVersion::from_word` does not
+# fold near-misses into a band. The document decodes with
+# `Admission::AdmittedUnverified`. A word below 50 uses the four-byte chunk
+# value width and names `rhino:archive-4` as its nearest declared strategy. A
+# word of 50 or greater uses the eight-byte chunk value width and names
+# `rhino:archive-90`. The report charges `rhino/source.dialect-unverified` for
+# the substituted declared strategy.
 #
 # Judgment call for the registry owner: this row exists under
 # `complete = true` because B4 requires classification to be total, while the
