@@ -63,17 +63,17 @@ for the per-dialect rows.
 
 <!-- generated: capability-lines -->
 
-- **FreeCAD `.FCStd`**: depth L5, breadth 1 of >=1 ([profile](docs/format-support.md#freecad-fcstd))
-- **Autodesk Fusion `.f3d`**: depth L4, breadth 1 of >=1 ([profile](docs/format-support.md#fusion-360-f3d))
-- **Autodesk Inventor `.ipt`/`.iam`**: depth none, breadth n/a ([profile](docs/format-support.md#autodesk-inventor-ipt-and-iam))
-- **SolidWorks `.sldprt`**: depth none, breadth n/a ([profile](docs/format-support.md#solidworks-sldprt))
-- **Rhino `.3dm`**: depth L1, breadth 6 of 8 ([profile](docs/format-support.md#rhino-3dm))
-- **Siemens NX `.prt`**: depth none, breadth 0 of >=1 ([profile](docs/format-support.md#siemens-nx-prt))
-- **CATIA V5 `.CATPart`**: depth L1, breadth 6 of >=6 ([profile](docs/format-support.md#catia-v5-catpart))
-- **Creo Parametric `.prt`**: depth L1, breadth 2 of >=2 ([profile](docs/format-support.md#creo-parametric-prt))
-- **STEP Part 21**: depth L9, breadth 4 of >=4 ([profile](docs/format-support.md#step-part-21))
-- **IGES**: depth L9, breadth 2 of 21 ([profile](docs/format-support.md#iges))
-- **ASM/ACIS bare streams**: depth none, breadth n/a ([profile](docs/format-support.md#asmacis-bare-satsmtsmbsab-streams))
+- **FreeCAD `.FCStd`** — L5 ([profile](docs/format-support.md#freecad-fcstd))
+- **Autodesk Fusion `.f3d`** — L4 ([profile](docs/format-support.md#fusion-360-f3d))
+- **Autodesk Inventor `.ipt`/`.iam`** — L1 ([profile](docs/format-support.md#autodesk-inventor-ipt-and-iam))
+- **SolidWorks `.sldprt`** — L1 ([profile](docs/format-support.md#solidworks-sldprt))
+- **Rhino `.3dm`** — L1 ([profile](docs/format-support.md#rhino-3dm))
+- **Siemens NX `.prt`** — L1 ([profile](docs/format-support.md#siemens-nx-prt))
+- **CATIA V5 `.CATPart`** — L1 ([profile](docs/format-support.md#catia-v5-catpart))
+- **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
+- **STEP Part 21** — L9 ([profile](docs/format-support.md#step-part-21))
+- **IGES** — L9 ([profile](docs/format-support.md#iges))
+- **ASM/ACIS bare streams** — L1 ([profile](docs/format-support.md#asmacis-bare-satsmtsmbsab-streams))
 
 <!-- /generated: capability-lines -->
 

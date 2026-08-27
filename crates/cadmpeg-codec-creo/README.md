@@ -11,7 +11,7 @@ The `.prt` extension is also used by Siemens NX. Format detection uses the
 
 <!-- generated: capability -->
 
-Support: depth L1, breadth 2 of >=2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
+Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
 
 <!-- /generated: capability -->
 

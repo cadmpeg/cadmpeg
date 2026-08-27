@@ -4,7 +4,7 @@
 //! 21 exchange structures for AP203, AP214, and AP242.
 //!
 //! <!-- generated: capability -->
-//! Support: depth L9, breadth 4 of >=4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
+//! Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
 //! <!-- /generated: capability -->
 //!
 //! [`write_step`] emits the application protocol named in the call as a

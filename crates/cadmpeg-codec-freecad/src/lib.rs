@@ -9,7 +9,7 @@
 //! lossless serializer are rejected explicitly.
 //!
 //! <!-- generated: capability -->
-//! Support: depth L5, breadth 1 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
+//! Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
 //! <!-- /generated: capability -->
 
 mod annotation;

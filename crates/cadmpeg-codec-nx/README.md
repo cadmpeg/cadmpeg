@@ -7,7 +7,7 @@ part payload, and decodes supported geometry and topology.
 
 <!-- generated: capability -->
 
-Support: depth none, breadth 0 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)).
+Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)).
 
 <!-- /generated: capability -->
 

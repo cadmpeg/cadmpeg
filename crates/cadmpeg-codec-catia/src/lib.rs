@@ -8,7 +8,7 @@
 //! families supported for that variant.
 //!
 //! <!-- generated: capability -->
-//! Support: depth L1, breadth 6 of >=6 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
 //! <!-- /generated: capability -->
 //!
 //! Geometry on the standard-nested layout shows as extras.

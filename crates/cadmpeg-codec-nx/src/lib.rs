@@ -10,7 +10,7 @@
 //! extension.
 //!
 //! <!-- generated: capability -->
-//! Support: depth none, breadth 0 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)).
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)).
 //! <!-- /generated: capability -->
 //!
 //! Connected B-rep on selected or terminal-lineage-resolved body images

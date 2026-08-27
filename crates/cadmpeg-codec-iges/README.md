@@ -5,7 +5,7 @@ Fixed ASCII files through `CadIr`.
 
 <!-- generated: capability -->
 
-Support: depth L9, breadth 2 of 21 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
+Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
 
 <!-- /generated: capability -->
 
