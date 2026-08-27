@@ -153,15 +153,16 @@ pub fn identify_with(
 /// caller that capped the input has capped what detection may look at too.
 fn read_prefix(source: &mut dyn ReadSeek, options: &InspectOptions) -> std::io::Result<Vec<u8>> {
     source.seek(SeekFrom::Start(0))?;
-    let prefix =
-        read_detection_prefix(source, DETECTION_PREFIX_LEN, options.limits.max_input_bytes)?;
+    let max_input_bytes = options.limits.max_input_bytes;
+    let prefix_len = (DETECTION_PREFIX_LEN as u64).min(max_input_bytes) as usize;
+    let prefix = read_detection_prefix(source, prefix_len, max_input_bytes)?;
     source.seek(SeekFrom::Start(0))?;
     Ok(prefix)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::io::{Cursor, Read, Seek, SeekFrom};
 
     use cadmpeg_core::decode::ResourceLimits;
 
@@ -176,6 +177,130 @@ mod tests {
     fn run(bytes: &[u8], options: &InspectOptions) -> Vec<Identification> {
         let mut reader = Cursor::new(bytes.to_vec());
         identify(&mut reader, options).expect("a Cursor neither fails to read nor to seek")
+    }
+
+    struct CountingReader {
+        inner: Cursor<Vec<u8>>,
+        bytes_read: usize,
+    }
+
+    impl Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let read = self.inner.read(buffer)?;
+            self.bytes_read += read;
+            Ok(read)
+        }
+    }
+
+    impl Seek for CountingReader {
+        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+            self.inner.seek(position)
+        }
+    }
+
+    #[test]
+    fn non_compound_detection_reads_no_more_than_the_input_limit() {
+        let mut reader = CountingReader {
+            inner: Cursor::new(vec![b'x'; 1024]),
+            bytes_read: 0,
+        };
+        let options = InspectOptions {
+            limits: ResourceLimits {
+                max_input_bytes: 16,
+                ..ResourceLimits::desktop()
+            },
+        };
+
+        let prefix = read_prefix(&mut reader, &options).expect("non-CFB prefix is bounded");
+
+        assert_eq!(prefix.len(), 16);
+        assert_eq!(reader.bytes_read, 16);
+    }
+
+    #[cfg(feature = "nx")]
+    #[test]
+    fn compound_detection_under_a_small_cap_keeps_prefix_candidates() {
+        let mut bytes = nx_compound_prefix();
+        let cap = bytes.len();
+        bytes.resize(cap + 1024, 0x5a);
+        let options = InspectOptions {
+            limits: ResourceLimits {
+                max_input_bytes: cap as u64,
+                ..ResourceLimits::desktop()
+            },
+        };
+        let mut reader = Cursor::new(bytes);
+
+        let found = identify(&mut reader, &options).expect("the cap bounds CFB detection");
+
+        assert!(found.iter().any(|candidate| candidate.format == "nx"));
+    }
+
+    #[cfg(feature = "nx")]
+    fn nx_compound_prefix() -> Vec<u8> {
+        const SECTOR: usize = 512;
+        const END: u32 = 0xffff_fffe;
+        const FREE: u32 = 0xffff_ffff;
+        const FAT: u32 = 0xffff_fffd;
+        let mut file = vec![0_u8; SECTOR * 3];
+        file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+        put_u16(&mut file, 24, 0x003e);
+        put_u16(&mut file, 26, 3);
+        put_u16(&mut file, 28, 0xfffe);
+        put_u16(&mut file, 30, 9);
+        put_u16(&mut file, 32, 6);
+        put_u32(&mut file, 44, 1);
+        put_u32(&mut file, 48, 0);
+        put_u32(&mut file, 56, 4096);
+        put_u32(&mut file, 60, END);
+        put_u32(&mut file, 68, END);
+        for index in 0..109 {
+            put_u32(&mut file, 76 + index * 4, FREE);
+        }
+        put_u32(&mut file, 76, 1);
+
+        directory_entry(&mut file[SECTOR..SECTOR * 2], 0, "Root Entry", 5, FREE, 1);
+        directory_entry(&mut file[SECTOR..SECTOR * 2], 1, "UG_PART", 1, FREE, 2);
+        directory_entry(&mut file[SECTOR..SECTOR * 2], 2, "UG_PART", 2, END, FREE);
+        file[SECTOR * 2..].fill(0xff);
+        put_u32(&mut file, SECTOR * 2, END);
+        put_u32(&mut file, SECTOR * 2 + 4, FAT);
+        file
+    }
+
+    #[cfg(feature = "nx")]
+    fn directory_entry(
+        directory: &mut [u8],
+        index: usize,
+        name: &str,
+        kind: u8,
+        start: u32,
+        child: u32,
+    ) {
+        const FREE: u32 = 0xffff_ffff;
+        let entry = &mut directory[index * 128..(index + 1) * 128];
+        let mut encoded = name.encode_utf16().collect::<Vec<_>>();
+        encoded.push(0);
+        for (offset, word) in encoded.iter().enumerate() {
+            put_u16(entry, offset * 2, *word);
+        }
+        put_u16(entry, 64, (encoded.len() * 2) as u16);
+        entry[66] = kind;
+        entry[67] = 1;
+        put_u32(entry, 68, FREE);
+        put_u32(entry, 72, FREE);
+        put_u32(entry, 76, child);
+        put_u32(entry, 116, start);
+    }
+
+    #[cfg(feature = "nx")]
+    fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    #[cfg(feature = "nx")]
+    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 
     /// The per-format fixture table and the case it drives.
