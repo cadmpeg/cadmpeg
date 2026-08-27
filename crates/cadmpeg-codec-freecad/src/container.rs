@@ -221,21 +221,8 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     file_version
         .parse::<u32>()
         .map_err(|_| CodecError::Malformed("Document.xml FileVersion is invalid".into()))?;
-    let declaration_tag = if schema_version == "2" {
-        "Features"
-    } else {
-        "Objects"
-    };
-    let record_tag = if schema_version == "2" {
-        "Feature"
-    } else {
-        "Object"
-    };
-    let data_tag = if schema_version == "2" {
-        "FeatureData"
-    } else {
-        "ObjectData"
-    };
+    let (declaration_tag, data_tag, record_tag) =
+        crate::persistence::persistence_tags(&schema_version);
     let _ = unique_section(root, data_tag)?;
     let declarations = unique_section(root, declaration_tag)?
         .into_iter()
