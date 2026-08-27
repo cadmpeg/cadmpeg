@@ -9,7 +9,7 @@ use crate::writer::tests::{
 };
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 
 use crate::container::role;
 use crate::SldprtCodec;
@@ -228,4 +228,214 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
     );
     semantic_writer_rejects_subds();
     semantic_writer_rejects_nonfinite_analytic_carriers();
+}
+
+// --------------------------------------------------------------------------
+// Resolution of a write request against the source (design §8.2), and the
+// §8.3 honesty invariant on every write path.
+// --------------------------------------------------------------------------
+
+/// A part declaring `swVersion`, so its dialect is a versioned row this writer
+/// cannot synthesize and can only preserve.
+///
+/// The envelope carries a `swModel` as well as the version, so the semantic
+/// writer can run over this part: without one it refuses before resolution is
+/// reached, and the resolution is what these tests are about.
+fn versioned_part() -> Vec<u8> {
+    let mut bytes = sldprt_with_body_and_history(&triangle_body());
+    bytes.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    bytes
+}
+
+fn plan<'a>(
+    result: &'a cadmpeg_ir::codec::DecodeResult,
+    fidelity: bool,
+    request: cadmpeg_ir::codec::TargetRequest<'a>,
+) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::CodecError> {
+    SldprtCodec.plan(
+        cadmpeg_ir::codec::EncodeInput::new(
+            result.ir(),
+            fidelity.then(|| result.source_fidelity()),
+        ),
+        request,
+    )
+}
+
+fn named_target(plan: &cadmpeg_ir::codec::ExportPlan<'_>) -> String {
+    plan.report()
+        .target
+        .as_ref()
+        .expect("a SLDPRT write always names its dialect")
+        .to_string()
+}
+
+fn classify(bytes: Vec<u8>) -> String {
+    let redecoded = decode(bytes);
+    cadmpeg_core::dialect::primary_layer(&redecoded.report().dialects, &redecoded.report().format)
+        .and_then(|entry| entry.dialect.clone())
+        .expect("the written part classifies a host dialect")
+        .to_string()
+}
+
+/// The flagship case: `convert in.sldprt -o out.sldprt` on a part whose version
+/// is not the catalog row keeps the part it was handed, and says so.
+#[test]
+fn inherit_replays_a_versioned_part_and_names_its_dialect() {
+    let source = versioned_part();
+    let result = decode(source.clone());
+    assert_eq!(
+        result
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|meta| meta.dialect.as_ref())
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("sldprt:sw-version-12000-plus")
+    );
+
+    let plan = plan(&result, true, cadmpeg_ir::codec::TargetRequest::Inherit)
+        .expect("the source's own dialect is preserved");
+    assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::VerbatimReplay);
+    assert_eq!(named_target(&plan), "sldprt:sw-version-12000-plus");
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
+    assert_eq!(classify(written), "sldprt:sw-version-12000-plus");
+}
+
+/// A source dialect outside the one-row catalog refuses under `Inherit` once
+/// there is nothing to preserve. There is no fall-through to the catalog row: a
+/// same-format conversion never silently changes what the part is, and the
+/// refusal names both the source's dialect and the escape.
+#[test]
+fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
+    let result = decode(versioned_part());
+    let error = plan(&result, false, cadmpeg_ir::codec::TargetRequest::Inherit)
+        .err()
+        .expect("a versioned row is not a synthesis target");
+    let cadmpeg_core::CodecError::UnsupportedTarget {
+        format,
+        requested,
+        available,
+        ..
+    } = &error
+    else {
+        panic!("expected a target refusal, got {error}");
+    };
+    assert_eq!(format, "sldprt");
+    assert_eq!(requested.as_deref(), Some("sldprt:sw-version-12000-plus"));
+    assert!(available.contains("sldprt:unknown"), "{available}");
+    let cadmpeg_core::CodecError::UnsupportedTarget { reason, .. } = &error else {
+        unreachable!()
+    };
+    assert!(
+        reason.contains("sldprt:unknown"),
+        "the refusal must name what the write would have been: {reason}"
+    );
+}
+
+/// The replay law's compare, not the presence of a retained image: an explicit
+/// catalog row over a retained part of a different dialect never replays that
+/// part while claiming the row. This writer passes a retained `swSolidWorks`
+/// envelope through unchanged and regenerates none over one it kept, so it
+/// cannot deliver the version-less row from this input and refuses by name.
+#[test]
+fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
+    let result = decode(versioned_part());
+    let error = plan(
+        &result,
+        true,
+        cadmpeg_ir::codec::TargetRequest::Explicit("sldprt:unknown"),
+    )
+    .err()
+    .expect("the version-less row is not deliverable from a versioned part");
+    let cadmpeg_core::CodecError::UnsupportedTarget {
+        requested, reason, ..
+    } = &error
+    else {
+        panic!("expected a target refusal, got {error}");
+    };
+    assert_eq!(requested.as_deref(), Some("sldprt:unknown"));
+    assert!(
+        reason.contains("sldprt:sw-version-12000-plus"),
+        "the refusal must name what the write would have been: {reason}"
+    );
+}
+
+/// An explicit id outside the catalog is refused with the catalog, so the
+/// caller can correct the request from the message alone.
+#[test]
+fn an_unknown_explicit_target_is_refused_with_the_catalog() {
+    let result = decode(synthetic_sldprt());
+    let error = plan(
+        &result,
+        true,
+        cadmpeg_ir::codec::TargetRequest::Explicit("step:ap242-e3"),
+    )
+    .err()
+    .expect("a STEP schema is not a SLDPRT target");
+    let cadmpeg_core::CodecError::UnsupportedTarget {
+        requested,
+        available,
+        ..
+    } = &error
+    else {
+        panic!("expected a target refusal, got {error}");
+    };
+    assert_eq!(requested.as_deref(), Some("step:ap242-e3"));
+    assert!(available.contains("sldprt:unknown"), "{available}");
+}
+
+/// The §8.3 honesty invariant on the patch path: an edited part still writes
+/// the source's own dialect, because the retained `swSolidWorks` envelope goes
+/// through unchanged, and the report names it.
+#[test]
+fn the_patch_path_names_the_preserved_dialect() {
+    let result = decode(versioned_part());
+    assert!(
+        !result.ir().model.points.is_empty(),
+        "the patch lane needs an editable point"
+    );
+    let mut edited = result.ir().clone();
+    edited.model.points[0].position.x += 1.0;
+
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::EncodeInput::new(&edited, Some(result.source_fidelity())),
+            cadmpeg_ir::codec::TargetRequest::Inherit,
+        )
+        .expect("an edited part still preserves its dialect");
+    assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Patched);
+    let claimed = named_target(&plan);
+    assert_eq!(claimed, "sldprt:sw-version-12000-plus");
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), claimed);
+}
+
+/// The §8.3 honesty invariant on the generation path: a part built with nothing
+/// retained lands on the totality row, which is the whole catalog, and the
+/// report names it.
+#[test]
+fn the_generation_path_names_the_catalog_row() {
+    let ir = source_less_cube();
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::EncodeInput::new(&ir, None),
+            cadmpeg_ir::codec::TargetRequest::Inherit,
+        )
+        .expect("nothing to inherit, so the catalog default stands in");
+    assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Synthesized);
+    let claimed = named_target(&plan);
+    assert_eq!(claimed, "sldprt:unknown");
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), claimed);
 }

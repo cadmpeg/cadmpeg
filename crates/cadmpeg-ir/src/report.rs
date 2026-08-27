@@ -805,7 +805,11 @@ pub struct ExportReport {
     /// The concrete dialect written, including on replay and patch paths, where
     /// the encoder states what the preserved dialect was.
     ///
-    /// `None` when the encoder wrote a form the registry does not name.
+    /// `None` on exactly one write path, and it stays `Option` for that one:
+    /// [`crate::codec::CadirEncoder`] writes the neutral document itself, whose
+    /// version is data about cadmpeg and never a dialect, so there is no id to
+    /// name. Every native encoder names one on every path, replay and patch
+    /// included.
     ///
     /// Always serialized, as `null` when absent. Reports written before the
     /// field existed omit the key and read back `None`.

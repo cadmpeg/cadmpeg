@@ -950,3 +950,10 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::sat::TextStream::dialect -> cadmpeg_asm::sat::TextStream::terminator"
 reason = "renamed with its type; the field already documented itself as which terminator line closed the stream"
+
+[[change]]
+commit = "69cf1c1bab6a2d8e80d5a92c9b9d4f7c59924cdd"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::TargetRequest::check_explicit"
+reason = "it was a resolution mode no encoder is in any more: it validated the id and then let the encoder ignore the request. Every encoder now resolves through find_target and resolve_inherit, and CadirEncoder — no catalog, no dialect — states its one-line refusal inline"

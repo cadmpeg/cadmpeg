@@ -29,12 +29,18 @@ pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
 pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
+/// Writes a semantic document and returns the dialect it wrote.
+///
+/// The returned id is read back out of the `swSolidWorks` envelope this call
+/// emits, whether that envelope survived from the retained blocks or was
+/// generated here, so a re-decode of these bytes classifies exactly what the
+/// caller reports as `ExportReport::target` (design §8.3).
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     writer: &mut dyn Write,
-) -> Result<(), CodecError> {
+) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
     let mut native = ir
         .native
         .namespace("sldprt")
@@ -272,7 +278,19 @@ pub(crate) fn write_semantic_with_records(
     for entry in section_directory_entries(retained_records, &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
-    Ok(())
+    // The identity claim, read out of the bytes just written rather than
+    // inferred from which branch produced them. A retained envelope carries the
+    // source's own `swVersion` through unchanged; a generated one declares
+    // none; a document with no active configuration and no retained envelope
+    // carries no envelope at all. The last two classify onto the totality row,
+    // which is the whole synthesis catalog.
+    Ok(crate::dialect::SldprtDialect::from_declaration(
+        sections
+            .iter()
+            .find_map(|(_, payload)| crate::decode::payload_sw_version(payload))
+            .as_deref(),
+    )
+    .id())
 }
 
 fn assign_configuration_indices(
