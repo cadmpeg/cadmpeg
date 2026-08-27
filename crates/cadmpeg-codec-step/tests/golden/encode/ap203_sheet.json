@@ -56,7 +56,7 @@
         {
           "code": {
             "code": "target.source-dialect-displaced",
-            "kind": "source_dialect_unverified",
+            "kind": "source_dialect_displaced",
             "namespace": "step"
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
@@ -125,7 +125,7 @@
         {
           "code": {
             "code": "target.source-dialect-displaced",
-            "kind": "source_dialect_unverified",
+            "kind": "source_dialect_displaced",
             "namespace": "step"
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap214; the source dialect identity is not preserved",

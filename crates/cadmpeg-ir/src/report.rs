@@ -151,6 +151,9 @@ pub enum LossTaxonomy {
     /// The source declares a dialect or specification version whose semantics
     /// the decoder has not verified for that declaration.
     SourceDialectUnverified,
+    /// The writer emitted a different dialect from the source dialect, so the
+    /// source dialect identity was not preserved.
+    SourceDialectDisplaced,
     /// Standalone mesh vertices were stored at reduced (f32) precision by the
     /// source archive.
     MeshVertexPrecision,
@@ -226,6 +229,7 @@ impl LossTaxonomy {
             Self::IntegrityFailure => "integrity_failure",
             Self::NoncanonicalSourceSyntax => "noncanonical_source_syntax",
             Self::SourceDialectUnverified => "source_dialect_unverified",
+            Self::SourceDialectDisplaced => "source_dialect_displaced",
             Self::MeshVertexPrecision => "mesh_vertex_precision",
             Self::ObjectRecordsUntransferred => "object_records_untransferred",
             Self::UnsupportedObjectFamily => "unsupported_object_family",
@@ -273,6 +277,7 @@ impl LossTaxonomy {
             "integrity_failure" => Self::IntegrityFailure,
             "noncanonical_source_syntax" => Self::NoncanonicalSourceSyntax,
             "source_dialect_unverified" => Self::SourceDialectUnverified,
+            "source_dialect_displaced" => Self::SourceDialectDisplaced,
             "mesh_vertex_precision" => Self::MeshVertexPrecision,
             "object_records_untransferred" => Self::ObjectRecordsUntransferred,
             "unsupported_object_family" => Self::UnsupportedObjectFamily,
@@ -321,6 +326,7 @@ impl LossTaxonomy {
             | Self::IntegrityFailure
             | Self::NoncanonicalSourceSyntax
             | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
             | Self::PreservedSourceUnavailable => LossCategory::Other,
@@ -369,6 +375,7 @@ impl LossTaxonomy {
             | Self::SubdOmitted
             | Self::NoncanonicalSourceSyntax
             | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
             | Self::IntegrityFailure
             | Self::NoExportableSolids => Some(Severity::Warning),
             _ => None,
