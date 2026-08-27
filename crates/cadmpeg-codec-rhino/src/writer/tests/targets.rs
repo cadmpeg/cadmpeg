@@ -241,3 +241,61 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
         assert!(available.contains(target.id), "{available}");
     }
 }
+
+/// The §8.3 honesty invariant on the synthesis path: re-decoding the output
+/// classifies the host layer into exactly the dialect the report named.
+///
+/// The assertion is against the bytes, not against the report twice. `target`
+/// is a claim about what was written, and the only thing that can check a claim
+/// about bytes is reading them back through the classifier the codec uses on
+/// any other input. For 3DM the whole claim rests on the archive version word
+/// in the file header, and writing a fixed word there makes this test fail.
+#[test]
+fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.points.push(cadmpeg_ir::topology::Point {
+        id: cadmpeg_ir::ids::PointId("cadir:model:point#honesty".into()),
+        source_object: None,
+        position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+    });
+
+    for version in [
+        crate::RhinoArchiveVersion::V5,
+        crate::RhinoArchiveVersion::V6,
+        crate::RhinoArchiveVersion::V7,
+        crate::RhinoArchiveVersion::V8,
+    ] {
+        let plan = Encoder::plan(
+            &RhinoEncoder,
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(version.target()),
+        )
+        .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
+        let claimed = plan
+            .report()
+            .target
+            .clone()
+            .expect("a Rhino write always names its archive version");
+        let mut written = Vec::new();
+        plan.write_to(&mut written).expect("the plan writes");
+
+        let decoded = crate::RhinoCodec
+            .decode(
+                &mut std::io::Cursor::new(written),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{version:?} output must decode, got {error}"));
+        let classified = cadmpeg_core::dialect::primary_layer(
+            &decoded.report().dialects,
+            &decoded.report().format,
+        )
+        .and_then(|entry| entry.dialect.clone())
+        .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"));
+        assert_eq!(
+            classified, claimed,
+            "{version:?}: the report claims {claimed} but the bytes are {classified}"
+        );
+    }
+}

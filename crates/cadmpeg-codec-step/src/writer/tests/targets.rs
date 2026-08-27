@@ -432,3 +432,48 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         assert!(available.contains(target.id), "{available}");
     }
 }
+
+/// The §8.3 honesty invariant on the synthesis path: re-decoding the output
+/// classifies the host layer into exactly the dialect the report named.
+///
+/// The assertion is against the bytes, not against the report twice, and not
+/// against a substring of `FILE_SCHEMA` text. `target` is a claim about what
+/// was written, and the only thing that can check a claim about bytes is
+/// reading them back through the classifier the codec uses on any other input.
+/// A substring check would still pass for a writer that emitted a declaration
+/// the registry classifies as another row: the bare AP242 MIM identifier
+/// without its object-identifier arcs is exactly such a case, and it classifies
+/// `step:ap242`, not any edition.
+#[test]
+fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
+    let cube = unit_cube();
+    for schema in StepSchema::ALL {
+        let plan = StepCodec::default()
+            .plan(
+                EncodeInput::new(&cube, None),
+                TargetRequest::Explicit(schema.target()),
+            )
+            .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
+        let claimed = plan
+            .report()
+            .target
+            .clone()
+            .expect("a STEP write always names its schema");
+        let mut written = Vec::new();
+        plan.write_to(&mut written).expect("the plan writes");
+
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{schema:?} output must decode, got {error}"));
+        let classified = cadmpeg_core::dialect::primary_layer(
+            &decoded.report().dialects,
+            &decoded.report().format,
+        )
+        .and_then(|entry| entry.dialect.clone())
+        .unwrap_or_else(|| panic!("{schema:?} output must classify a host dialect"));
+        assert_eq!(
+            classified, claimed,
+            "{schema:?}: the report claims {claimed} but the bytes are {classified}"
+        );
+    }
+}

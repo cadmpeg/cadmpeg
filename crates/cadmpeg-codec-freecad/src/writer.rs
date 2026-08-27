@@ -1105,4 +1105,52 @@ pub(crate) mod tests {
         assert_eq!(*requested, None);
         assert!(available.contains("fcstd:schema-4"), "{available}");
     }
+
+    /// The §8.3 honesty invariant on this codec's only write path: re-decoding
+    /// the output classifies the host layer into exactly the dialect the report
+    /// named.
+    ///
+    /// The assertion is against the bytes, not against the report twice, and
+    /// not against entry payloads. `target` comes from the resolution's write
+    /// options; the `SchemaVersion` in the output comes from the retained
+    /// `Document.xml`, which this writer patches and never regenerates. Those
+    /// are two independent sources for one fact, and the equality gate in
+    /// `resolve` is the only thing that ties them together — disabling it makes
+    /// this test fail. Both bands are covered: the catalog dialect and the
+    /// schema-2 dialect that is preserved but never synthesized.
+    #[test]
+    fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
+        let schema_two = schema_two_archive();
+        for (label, source) in [
+            ("schema 4", CORE_DESIGN_PRODUCT),
+            ("schema 2", schema_two.as_slice()),
+        ] {
+            let decoded = FcstdCodec
+                .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
+                .unwrap_or_else(|error| panic!("{label} source must decode, got {error}"));
+            let plan = inherit(decoded.ir())
+                .unwrap_or_else(|error| panic!("{label} is preserved, got {error}"));
+            let claimed = plan
+                .report()
+                .target
+                .clone()
+                .expect("an FCStd write always names its dialect");
+            let mut written = Vec::new();
+            plan.write_to(&mut written).expect("the plan writes");
+
+            let round_trip = FcstdCodec
+                .decode(&mut Cursor::new(written), &DecodeOptions::default())
+                .unwrap_or_else(|error| panic!("{label} output must decode, got {error}"));
+            let classified = cadmpeg_core::dialect::primary_layer(
+                &round_trip.report().dialects,
+                &round_trip.report().format,
+            )
+            .and_then(|entry| entry.dialect.clone())
+            .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));
+            assert_eq!(
+                classified, claimed,
+                "{label}: the report claims {claimed} but the bytes are {classified}"
+            );
+        }
+    }
 }
