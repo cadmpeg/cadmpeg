@@ -9,12 +9,12 @@ use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetR
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
+use cadmpeg_registry::{ForcedInput, Format, InputCatalog, LossPolicy};
+
 use crate::application::{
-    ArtifactStore, ConversionRefusal, ForcedInput, InputCatalog, LoadedDocument, LossPolicy,
-    NativeValidatorCatalog, SidecarPersistOutcome,
+    ArtifactStore, ConversionRefusal, LoadedDocument, NativeValidatorCatalog, SidecarPersistOutcome,
 };
 use crate::loader::{self, LoadNotice};
-use crate::Format;
 
 /// Input path and decode options for one conversion.
 pub struct SourceRequest<'a> {
@@ -447,7 +447,7 @@ fn write_export_plan(
 pub fn export_target(format: Format, dialect: Option<&str>, losses: LossPolicy) -> ExportTarget {
     ExportTarget {
         format,
-        encoder: crate::application::build_encoder(format, losses),
+        encoder: cadmpeg_registry::build_encoder(format, losses),
         selection: match dialect {
             Some(dialect) => TargetSelection::Explicit(dialect.to_owned()),
             None => TargetSelection::Unstated,

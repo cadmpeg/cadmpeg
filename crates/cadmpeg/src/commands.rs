@@ -13,13 +13,17 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
+use cadmpeg_registry::{
+    build_encoder, dialect_provenance, ForcedInput, Format, InputCatalog, LossPolicy,
+    ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
+};
+
 use crate::application::{
-    build_encoder, export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, ForcedInput,
-    InputCatalog, LossPolicy, NativeValidatorCatalog, ResolveSourceError, ResolvedSource,
+    export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, NativeValidatorCatalog,
     SidecarPersistOutcome, SourceRequest, Transcoder,
 };
-use crate::loader::{self, read_detection_input, LoadNotice, DETECTION_PREFIX_LEN};
-use crate::{DecodeArgs, Format};
+use crate::loader::{self, read_detection_input, LoadNotice};
+use crate::DecodeArgs;
 
 /// CLI command-report envelope version.
 ///
@@ -177,7 +181,7 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
-    if let Some(line) = crate::registry::dialect_provenance(&summary.dialects, &summary.format) {
+    if let Some(line) = dialect_provenance(&summary.dialects, &summary.format) {
         println!("{line}");
     }
     println!();
@@ -706,9 +710,9 @@ impl OutputSelection {
     ///
     /// The third case is unambiguous because no target alias is also an output
     /// format name. `scripts/check-dialect-support.py` and
-    /// `application::encoders` both prove that.
+    /// `cadmpeg_registry::encoders` both prove that.
     fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
-        let inferred = Format::from_path(out);
+        let inferred = format_from_path(out);
         let Some(value) = to else {
             let format = inferred.ok_or_else(|| {
                 anyhow!("cannot infer format from the output path; pass --to FORMAT")
@@ -762,6 +766,13 @@ impl OutputSelection {
 
 /// Warns when an explicitly named output format disagrees with the output
 /// path's extension. The named format wins; the warning says so.
+/// The output format an `-o` path implies, read from its extension.
+fn format_from_path(path: Option<&Path>) -> Option<Format> {
+    path.and_then(Path::extension)
+        .and_then(|extension| extension.to_str())
+        .and_then(Format::from_extension)
+}
+
 fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
     if let Some(inferred) = inferred {
         if inferred != named {

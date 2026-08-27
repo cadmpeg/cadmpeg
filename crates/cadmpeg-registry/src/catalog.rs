@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Input detection and native-validator catalogs for the CLI.
+//! The codec registry: which input formats this build carries, and which of
+//! them a byte prefix names.
+//!
+//! Prefix detection is the cheap candidate stage. It is legitimately
+//! ambiguous — a ZIP with no format marker is `Low` for every ZIP-based
+//! format at once — and it settles nothing about a dialect. [`crate::identify`]
+//! is the stage that opens the container.
 
 use cadmpeg_ir::codec::{Codec, Confidence};
-use cadmpeg_ir::{CadIr, Finding};
 
 /// Explicit input selection that bypasses content detection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,8 +168,14 @@ impl InputCatalog {
         catalog
     }
 
-    /// Detects a format without hiding equal-confidence ambiguity.
-    pub fn detect(&self, prefix: &[u8]) -> DetectionOutcome<'_> {
+    /// Every descriptor whose codec gives `prefix` more than
+    /// [`Confidence::No`], strongest first and in catalog order within a tier.
+    ///
+    /// The whole candidate set, not the winner. `detect` collapses it to a
+    /// selection because loading one file needs one codec; [`crate::identify`]
+    /// keeps every candidate because reporting what a file might be is the
+    /// question it answers.
+    pub fn candidates(&self, prefix: &[u8]) -> Vec<(&InputDescriptor, Confidence)> {
         let mut matches = self
             .descriptors
             .iter()
@@ -173,6 +184,13 @@ impl InputCatalog {
                 (confidence > Confidence::No).then_some((descriptor, confidence))
             })
             .collect::<Vec<_>>();
+        matches.sort_by(|(_, left), (_, right)| right.cmp(left));
+        matches
+    }
+
+    /// Detects a format without hiding equal-confidence ambiguity.
+    pub fn detect(&self, prefix: &[u8]) -> DetectionOutcome<'_> {
+        let mut matches = self.candidates(prefix);
         let Some(best_confidence) = matches.iter().map(|(_, confidence)| *confidence).max() else {
             return DetectionOutcome::None;
         };
@@ -263,46 +281,6 @@ impl InputCatalog {
     }
 }
 
-type NativeValidator = fn(&CadIr) -> Vec<Finding>;
-
-/// Maps native namespace ids to codec-owned validator functions.
-pub struct NativeValidatorCatalog {
-    entries: Vec<(&'static str, NativeValidator)>,
-}
-
-impl NativeValidatorCatalog {
-    /// Registers the four native validators shipped with the CLI.
-    pub fn with_builtins() -> Self {
-        Self {
-            entries: vec![
-                #[cfg(feature = "fcstd")]
-                ("fcstd", cadmpeg_codec_freecad::validate_native),
-                #[cfg(feature = "f3d")]
-                ("f3d", cadmpeg_codec_f3d::validate_native),
-                #[cfg(feature = "inventor")]
-                ("inventor", cadmpeg_codec_inventor::validate_native),
-                #[cfg(feature = "sldprt")]
-                ("sldprt", cadmpeg_codec_sldprt::validate_native),
-            ],
-        }
-    }
-
-    /// Stable namespace ids that have a registered validator.
-    #[cfg(test)]
-    fn namespaces(&self) -> impl Iterator<Item = &'static str> + '_ {
-        self.entries.iter().map(|(namespace, _)| *namespace)
-    }
-
-    /// Runs every validator whose namespace is present on the document.
-    pub fn validate(&self, ir: &CadIr) -> Vec<Finding> {
-        self.entries
-            .iter()
-            .filter(|(namespace, _)| ir.native.namespace(namespace).is_some())
-            .flat_map(|(_, validator)| validator(ir))
-            .collect()
-    }
-}
-
 fn input(
     id: &'static str,
     extensions: &'static [&'static str],
@@ -318,57 +296,6 @@ fn input(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::units::Units;
-    use cadmpeg_ir::CadIr;
-
-    #[cfg(all(
-        feature = "fcstd",
-        feature = "f3d",
-        feature = "inventor",
-        feature = "sldprt"
-    ))]
-    #[test]
-    fn native_validator_catalog_registers_the_four_shipped_validators() {
-        let catalog = NativeValidatorCatalog::with_builtins();
-        let mut namespaces = catalog.namespaces().collect::<Vec<_>>();
-        namespaces.sort_unstable();
-        assert_eq!(namespaces, ["f3d", "fcstd", "inventor", "sldprt"]);
-    }
-
-    #[cfg(all(feature = "fcstd", feature = "f3d"))]
-    #[test]
-    fn native_validator_catalog_invokes_two_validators_for_two_namespaces() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        static CALLS: AtomicUsize = AtomicUsize::new(0);
-
-        fn counting_fcstd(ir: &CadIr) -> Vec<Finding> {
-            let _ = ir;
-            CALLS.fetch_add(1, Ordering::SeqCst);
-            Vec::new()
-        }
-        fn counting_f3d(ir: &CadIr) -> Vec<Finding> {
-            let _ = ir;
-            CALLS.fetch_add(1, Ordering::SeqCst);
-            Vec::new()
-        }
-
-        let catalog = NativeValidatorCatalog {
-            entries: vec![("fcstd", counting_fcstd), ("f3d", counting_f3d)],
-        };
-        CALLS.store(0, Ordering::SeqCst);
-        let mut ir = CadIr::empty(Units::default());
-        let _ = ir.native.namespace_mut("fcstd");
-        let _ = ir.native.namespace_mut("f3d");
-        let _ = catalog.validate(&ir);
-        assert_eq!(CALLS.load(Ordering::SeqCst), 2);
-
-        CALLS.store(0, Ordering::SeqCst);
-        let mut none = CadIr::empty(Units::default());
-        let _ = none.native.namespace_mut("absent");
-        let _ = catalog.validate(&none);
-        assert_eq!(CALLS.load(Ordering::SeqCst), 0);
-    }
 
     #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]

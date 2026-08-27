@@ -51,6 +51,7 @@ jobs:
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt
             cadmpeg-codec-step
+            cadmpeg-registry
             cadmpeg
           )
           version="${GITHUB_REF_NAME#v}"

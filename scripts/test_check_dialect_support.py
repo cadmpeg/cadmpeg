@@ -463,7 +463,7 @@ class TestAliasCollisions(SupportCase):
 
     CATALOG = "crates/cadmpeg-codec-demo/src/lib.rs"
     # The CLI file the checker reads `--to`'s vocabulary from.
-    CLI = "crates/cadmpeg/src/main.rs"
+    CLI = "crates/cadmpeg-registry/src/format.rs"
     FROM_NAME = (
         "impl Format {\n"
         "    fn from_name(name: &str) -> Option<Self> {\n"

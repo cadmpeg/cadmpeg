@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-registry"
+description = "Format detection, dialect identification, and the cadmpeg dialect registries."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[features]
+# Registry ids are the feature names, matching the `cadmpeg` package: `fcstd`
+# enables the FreeCAD codec crate. The CLI's own features forward to these.
+default = [
+  "fcstd",
+  "f3d",
+  "inventor",
+  "sldprt",
+  "catia",
+  "creo",
+  "nx",
+  "rhino",
+  "step",
+  "iges",
+  "sat",
+]
+fcstd = ["dep:cadmpeg-codec-freecad"]
+f3d = ["dep:cadmpeg-codec-f3d"]
+inventor = ["dep:cadmpeg-codec-inventor"]
+sldprt = ["dep:cadmpeg-codec-sldprt"]
+catia = ["dep:cadmpeg-codec-catia"]
+creo = ["dep:cadmpeg-codec-creo"]
+nx = ["dep:cadmpeg-codec-nx"]
+rhino = ["dep:cadmpeg-codec-rhino"]
+step = ["dep:cadmpeg-codec-step"]
+iges = ["dep:cadmpeg-codec-iges"]
+sat = ["dep:cadmpeg-codec-sat"]
+
+[dependencies]
+cadmpeg-core.workspace = true
+cadmpeg-ir.workspace = true
+cadmpeg-codec-f3d = { workspace = true, optional = true }
+cadmpeg-codec-inventor = { workspace = true, optional = true }
+cadmpeg-codec-freecad = { workspace = true, optional = true }
+cadmpeg-codec-sldprt = { workspace = true, optional = true }
+cadmpeg-codec-catia = { workspace = true, optional = true }
+cadmpeg-codec-creo = { workspace = true, optional = true }
+cadmpeg-codec-nx = { workspace = true, optional = true }
+cadmpeg-codec-rhino = { workspace = true, optional = true }
+cadmpeg-codec-iges = { workspace = true, optional = true }
+cadmpeg-codec-step = { workspace = true, optional = true }
+cadmpeg-codec-sat = { workspace = true, optional = true }
+serde.workspace = true
+thiserror.workspace = true
+# The dialect registries are embedded with `include_str!` and parsed on first
+# use, so the tables live in one place.
+toml.workspace = true
+
+[dev-dependencies]
+crc32fast.workspace = true
+
+[lints]
+workspace = true

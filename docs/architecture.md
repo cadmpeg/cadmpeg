@@ -76,7 +76,8 @@ These hold across every codec, every dialect, and every release. A change that b
 
 | Crate                    | Responsibility                                                                                                                         |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg`                | CLI orchestration, built-in codec registration, and output dispatch.                                                                   |
+| `cadmpeg`                | CLI orchestration, conversion workflow, native validators, and output dispatch.                                                        |
+| `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
 | `cadmpeg-ir`             | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |

@@ -1,6 +1,8 @@
 # Public API change ledger for the refactor.
 # Phase 2+ adds one row per intentional public deletion, module move, visibility
-# reduction, signature change, removed trait implementation, or field encapsulation.
+# reduction, signature change, removed trait implementation, or field encapsulation,
+# and one per deliberately published new surface (kind = "addition"), so a new
+# public name is a decision on the record rather than a diff nobody chose.
 # At phase 9, compare rustdoc public items to the baseline snapshots under
 # docs/api-baseline/ and reconcile every difference with a row here.
 #
@@ -19,6 +21,9 @@ measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 # kind = "deletion" # deletion | move | visibility | signature | trait_impl | field
 # item = "cadmpeg_core::cursor::Cursor"
 # reason = "..."
+#
+# kind: deletion | move | visibility | signature | trait_impl | field | variant |
+#       addition
 
 [[change]]
 commit = "5c122163b4c7308a36378c994bafa7139542b005"
@@ -810,3 +815,96 @@ crate = "cadmpeg-codec-iges"
 kind = "deletion"
 item = "cadmpeg_codec_iges::IgesWriteOptions"
 reason = "sole field was the target version and its last reader was the deleted --iges-target plumbing; a one-field options struct nothing constructs and nothing reads is not an options struct"
+
+# --------------------------------------------------------------------------
+# Wave 5: identify() and the library hoist (design section 10)
+#
+# The `cadmpeg` package still has no `[lib]` target. The embeddable half moved
+# out of it instead, into `cadmpeg-registry`, so an embedder links the codec
+# registry and the dialect registries without the CLI's command, conversion,
+# and artifact layers.
+# --------------------------------------------------------------------------
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "move"
+item = "cadmpeg::application::catalogs::{InputCatalog,InputDescriptor,ForcedInput,DetectionOutcome,ResolvedSource,ResolveSourceError} -> cadmpeg_registry"
+reason = "the codec registry is the first thing an embedder needs and was CLI-private; the subgraph it depends on is closed, so it moves whole rather than being re-exported"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "move"
+item = "cadmpeg::application::encoders::{build_encoder,LossPolicy} -> cadmpeg_registry"
+reason = "the synthesis catalogs answer \"what can I save as\"; the registry rendering already called build_encoder and would otherwise have to reach back into the CLI"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "move"
+item = "cadmpeg::registry::{dialect_provenance,print_dialects,print_formats} -> cadmpeg_registry"
+reason = "the module include_str!s both TOMLs; the tables must ship with the library, not with the binary alone"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "move"
+item = "cadmpeg::Format -> cadmpeg_registry::Format"
+reason = "the output-format vocabulary, not a CLI flag type: it is deliberately not a ValueEnum, and both build_encoder and the registry rendering key on it"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "move"
+item = "cadmpeg::loader::DETECTION_PREFIX_LEN -> cadmpeg_registry::DETECTION_PREFIX_LEN"
+reason = "identify reads the same window the loader does; two copies could drift and make identify name a codec the loader would not pick"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg"
+kind = "move"
+item = "cadmpeg::application::catalogs::NativeValidatorCatalog -> cadmpeg::application::validators"
+reason = "stays in the CLI: codec-owned validators belong to `cadmpeg check`, not to the four questions an embedder asks of a file"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg"
+kind = "deletion"
+item = "cadmpeg::Format::from_path"
+reason = "output-path extension inference is a CLI concern; it is now `commands::format_from_path` over the moved `Format::from_extension`"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::print_dialects"
+reason = "returns Result<(), UnknownFormat> instead of anyhow::Result<()>; a library refusal names its own type and the CLI wraps it"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::{identify,identify_with,Identification,INSPECTION_FLOOR}"
+reason = "design section 10 question 1: prefix detection picks candidates, and a candidate at or above the floor is run through Codec::inspect so the answer carries a dialect; no admission field, because admission is the record of a run and a preflight reporting one would guess"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::{dialects,support,DialectEntry,Disposition,ReadDisposition,WriteDisposition,UnknownDisposition}"
+reason = "design section 10.2: the capability registry's declared disposition, typed in its own vocabulary (L0..L9 | detected | refused | unclassified-recovered, and verified | emitted | preserved | none), served from the embedded tables with no I/O"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::InputCatalog::candidates"
+reason = "identify needs every candidate the prefix allows, where detect collapses them to one selection; detect is now written on top of it"
+
+[[change]]
+commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
+crate = "cadmpeg-registry"
+kind = "addition"
+item = "cadmpeg_registry::UnknownFormat"
+reason = "the refusal print_dialects returns after losing its anyhow dependency"
