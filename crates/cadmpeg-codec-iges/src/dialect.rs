@@ -34,6 +34,7 @@ use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::TargetDescriptor;
+use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
@@ -90,6 +91,34 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> Result<IgesVersion, C
         .ok_or_else(|| {
             CodecError::Malformed("IGES target catalog does not map to a write version".into())
         })
+}
+
+/// The dialect-unverified loss required by a classified Global declaration.
+pub(crate) fn dialect_loss(global: &ResolvedGlobal, matched: &DialectMatch) -> Option<LossNote> {
+    let Admission::AdmittedUnverified { .. } = &matched.admission else {
+        return None;
+    };
+    let recovery = global.dialect_recovery();
+    let declared = global.declared_version_flag();
+    let effective = global.effective_version_flag();
+    let version = global.version();
+    let declaration = match global.unreadable_version_declaration() {
+        Some(text) => format!(
+            "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
+        ),
+        None => format!("IGES Global version flag {declared}"),
+    };
+    let clamp = if recovery == DialectRecovery::Clamped {
+        format!(
+            " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
+        )
+    } else {
+        String::new()
+    };
+    Some(crate::loss::IgesLossCode::SourceDialectUnverified.note(format!(
+        "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
+        crate::global::VERIFIED_VERSIONS.join(", ")
+    )))
 }
 
 /// Key of the physical representation in [`DialectMatch::declared`].

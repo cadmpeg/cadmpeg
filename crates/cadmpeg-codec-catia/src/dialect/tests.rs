@@ -117,7 +117,8 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     for witness in WITNESSES {
         let bytes = fixture_bytes(witness.fixture);
         let scan = container::scan_bytes(bytes.as_slice());
-        let charged = dialect_loss(scan.variant).is_some();
+        let matched = classify(&scan);
+        let charged = dialect_loss(&matched).is_some();
 
         assert_eq!(
             witness.admitted, !charged,
@@ -125,23 +126,10 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             witness.fixture
         );
         assert_eq!(
-            classify(&scan).admission == Admission::Admitted,
+            matched.admission == Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             witness.fixture
-        );
-    }
-}
-
-/// The biconditional over the whole enum, not only the witnessed inputs: a
-/// variant added later without a route cannot slip through as `Admitted`.
-#[test]
-fn the_admission_predicate_and_the_loss_agree_on_every_variant() {
-    for variant in Variant::ALL {
-        assert_eq!(
-            admission(variant) == Admission::Admitted,
-            dialect_loss(variant).is_none(),
-            "{variant:?}"
         );
     }
 }

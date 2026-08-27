@@ -130,18 +130,17 @@ pub(crate) fn admission(variant: Variant) -> Admission {
 /// The dialect-unverified loss (§7), charged exactly on
 /// [`Admission::AdmittedUnverified`].
 ///
-/// `None` exactly when [`admission`] is [`Admission::Admitted`], because this
-/// function computes admission rather than restating its condition. That
-/// biconditional is what the decode policy requires, and it is structural here
-/// rather than maintained by hand.
+/// `None` exactly when the classified match is [`Admission::Admitted`]. The
+/// loss reads the admission already built by [`classify`] and does not
+/// recompute it from the variant.
 ///
 /// This is a *dialect* loss and is disjoint from
 /// [`CatiaLossCode::GeometryBrepNotTransferred`] and
 /// [`CatiaLossCode::TopologyGraphNotBuilt`], which state what was not
 /// transferred out of an identified layout. This one states that the layout was
 /// never identified.
-pub(crate) fn dialect_loss(variant: Variant) -> Option<LossNote> {
-    match admission(variant) {
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    match &matched.admission {
         Admission::Admitted | Admission::Refused => None,
         Admission::AdmittedUnverified { nearest } => {
             Some(CatiaLossCode::SourceDialectUnverified.note(format!(
