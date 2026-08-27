@@ -137,7 +137,7 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::{Annotations, Finding, SourceFidelity, WritePath};
+use cadmpeg_ir::{Annotations, FidelityResolution, Finding, SourceFidelity, WritePath};
 
 /// Retained-record id of the whole source part, the byte-replay baseline.
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
@@ -204,15 +204,55 @@ impl SldprtCodec {
             .source
             .as_ref()
             .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
-        if expected.is_none_or(|expected| decode::document_local_sha256(ir) != *expected) {
-            return Self::write_semantic(ir, annotations, records, writer);
+        let Some(expected) = expected else {
+            return Self::write_semantic(
+                ir,
+                annotations,
+                records,
+                FidelityResolution::Degraded {
+                    reason: "preserved SLDPRT source digest baseline is unavailable".into(),
+                },
+                true,
+                writer,
+            );
+        };
+        if decode::document_local_sha256(ir) != *expected {
+            return Self::write_semantic(
+                ir,
+                annotations,
+                records,
+                FidelityResolution::Degraded {
+                    reason: "decoded model no longer matches the preserved SLDPRT source digest"
+                        .into(),
+                },
+                true,
+                writer,
+            );
         }
         let Some(record) = records.iter().find(|record| record.id.0 == SOURCE_IMAGE_ID) else {
-            return Self::write_semantic(ir, annotations, records, writer);
+            return Self::write_semantic(
+                ir,
+                annotations,
+                records,
+                FidelityResolution::Degraded {
+                    reason: "preserved SLDPRT source image is unavailable".into(),
+                },
+                true,
+                writer,
+            );
         };
-        let data = record.data.as_ref().ok_or_else(|| {
-            CodecError::Malformed("retained SLDPRT source image has no bytes".into())
-        })?;
+        let Some(data) = record.data.as_ref() else {
+            return Self::write_semantic(
+                ir,
+                annotations,
+                records,
+                FidelityResolution::Degraded {
+                    reason: "preserved SLDPRT source image is unavailable".into(),
+                },
+                true,
+                writer,
+            );
+        };
         let hash = sha256_hex(data);
         if data.len() as u64 != record.byte_len || hash != record.sha256 {
             return Err(CodecError::Malformed(
@@ -230,6 +270,8 @@ impl SldprtCodec {
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
+        fidelity: FidelityResolution,
+        replay_failed: bool,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let dialect = writer::write_semantic_with_records(ir, annotations, records, writer)?;
@@ -240,6 +282,8 @@ impl SldprtCodec {
                 WritePath::Patched
             },
             dialect,
+            fidelity,
+            replay_failed,
         })
     }
 }
@@ -251,7 +295,12 @@ enum Written {
     Replayed,
     /// A semantic write, in the dialect the emitted `swSolidWorks` envelope
     /// declares.
-    Semantic { path: WritePath, dialect: DialectId },
+    Semantic {
+        path: WritePath,
+        dialect: DialectId,
+        fidelity: FidelityResolution,
+        replay_failed: bool,
+    },
 }
 
 impl Written {
@@ -262,6 +311,23 @@ impl Written {
             Self::Replayed => WritePath::VerbatimReplay,
             Self::Semantic { path, .. } => *path,
         }
+    }
+
+    fn fidelity(&self) -> FidelityResolution {
+        match self {
+            Self::Replayed => FidelityResolution::Replayed,
+            Self::Semantic { fidelity, .. } => fidelity.clone(),
+        }
+    }
+
+    fn replay_failed(&self) -> bool {
+        matches!(
+            self,
+            Self::Semantic {
+                replay_failed: true,
+                ..
+            }
+        )
     }
 }
 
