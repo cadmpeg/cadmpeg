@@ -1,5 +1,18 @@
 {
   "container_kind": "cfb",
+  "dialects": [
+    {
+      "admission": "admitted",
+      "declared": {
+        "cfb_major_version": "3",
+        "meta_stream_marker": "RSe Meta Stream Version 8",
+        "meta_stream_version": "8",
+        "rse_db_schema": "31"
+      },
+      "dialect": "inventor:cfb3-rse31-meta8",
+      "format": "inventor"
+    }
+  ],
   "entries": [
     {
       "attributes": {

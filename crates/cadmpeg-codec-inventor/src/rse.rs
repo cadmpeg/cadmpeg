@@ -9,8 +9,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::database::{
-    parse_database, parse_registry, parse_revisions, RevisionTable, RseDatabase, RseSchema,
-    SegmentRegistry,
+    parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
+    RseSchema, SegmentRegistry,
 };
 use crate::kernel::{select_active_carrier, ActiveCarrierState};
 use crate::layout::bulk_envelope as envelope;
@@ -70,6 +70,30 @@ pub(crate) struct MetaStreamVersion(u16);
 impl MetaStreamVersion {
     pub(crate) const fn value(self) -> u16 {
         self.0
+    }
+}
+
+/// The marker and version an `RSe` metadata stream declares in its first two
+/// fields, as read.
+///
+/// Both fields are gates: [`parse_meta_stream`] reads the rest of the stream
+/// only when the pair is [`Self::VERIFIED_MARKER`] and
+/// [`Self::VERIFIED_VERSION`] together. The declaration is kept whether or not
+/// it passes, because the dialect classifier reports what the file said.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct MetaStreamDeclaration {
+    pub(crate) marker: String,
+    pub(crate) version: u16,
+}
+
+impl MetaStreamDeclaration {
+    /// The one marker this codec implements a segment metadata grammar for.
+    pub(crate) const VERIFIED_MARKER: &'static str = "RSe Meta Stream Version 8";
+    /// The one version word this codec implements a segment metadata grammar for.
+    pub(crate) const VERIFIED_VERSION: u16 = 8;
+
+    pub(crate) fn is_verified(&self) -> bool {
+        self.marker == Self::VERIFIED_MARKER && self.version == Self::VERIFIED_VERSION
     }
 }
 
@@ -190,8 +214,32 @@ pub(crate) struct SegmentMeta<'a> {
 #[derive(Debug)]
 pub(crate) enum SegmentMetaState<'a> {
     Parsed(Box<SegmentMeta<'a>>),
-    Unsupported { marker: String, version: u16 },
-    Malformed(String),
+    Unsupported(MetaStreamDeclaration),
+    /// The stream did not parse. `declared` carries the marker and version when
+    /// they were read before the failure, and is `None` when the stream ended
+    /// or failed inside those two fields — in which case the stream declares no
+    /// dialect evidence at all.
+    Malformed {
+        declared: Option<MetaStreamDeclaration>,
+        detail: String,
+    },
+}
+
+impl SegmentMetaState<'_> {
+    /// The marker and version this stream declared, where it declared them.
+    ///
+    /// [`Self::Parsed`] reached its body, which happens only for the verified
+    /// pair, so it reports that pair rather than re-reading the stream.
+    pub(crate) fn declaration(&self) -> Option<MetaStreamDeclaration> {
+        match self {
+            Self::Parsed(meta) => Some(MetaStreamDeclaration {
+                marker: MetaStreamDeclaration::VERIFIED_MARKER.into(),
+                version: meta.version.value(),
+            }),
+            Self::Unsupported(declared) => Some(declared.clone()),
+            Self::Malformed { declared, .. } => declared.clone(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -253,6 +301,10 @@ pub(crate) enum ParsedState<T> {
 pub(crate) struct DatabaseDescriptor {
     pub(crate) band: StorageBand,
     pub(crate) stream: CompoundStreamId,
+    /// The schema this `RSeDb` stream declared, or `None` when the stream did
+    /// not read that far. Present for an unimplemented schema, whose `state` is
+    /// [`ParsedState::Unavailable`].
+    pub(crate) declared_schema: Option<RseSchema>,
     pub(crate) state: ParsedState<RseDatabase>,
 }
 
@@ -305,19 +357,29 @@ impl<'a> RseInventory<'a> {
         databases.sort_by_key(|(band, _)| *band);
         let mut database_descriptors = Vec::with_capacity(databases.len());
         for (band, stream_id) in databases {
-            let state = match snapshot.stream_by_id(stream_id) {
+            let (declared_schema, state) = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot
                     .open(ctx, stream)
                     .and_then(|view| parse_database(ctx, view.window()))
                 {
-                    Ok(database) => ParsedState::Parsed(database),
-                    Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
+                    Ok(DatabaseHeader::Supported(database)) => {
+                        (Some(database.schema), ParsedState::Parsed(database))
+                    }
+                    Ok(DatabaseHeader::UnsupportedSchema(schema)) => (
+                        Some(schema),
+                        ParsedState::Unavailable(DatabaseHeader::unsupported_detail(schema)),
+                    ),
+                    Err(error) => (None, ParsedState::Unavailable(crate::issue_detail(error)?)),
                 },
-                None => ParsedState::Unavailable("RSe database stream handle is absent".into()),
+                None => (
+                    None,
+                    ParsedState::Unavailable("RSe database stream handle is absent".into()),
+                ),
             };
             database_descriptors.push(DatabaseDescriptor {
                 band,
                 stream: stream_id,
+                declared_schema,
                 state,
             });
         }
@@ -363,10 +425,13 @@ impl<'a> RseInventory<'a> {
                         CodecError::Malformed("RSe metadata stream handle is absent".into())
                     })
                     .and_then(|entry| snapshot.open(ctx, entry))
-                    .and_then(|view| parse_meta_stream_v8(ctx, view));
+                    .and_then(|view| parse_meta_stream(ctx, view));
                 let meta = match meta {
                     Ok(meta) => meta,
-                    Err(error) => SegmentMetaState::Malformed(crate::issue_detail(error)?),
+                    Err(error) => SegmentMetaState::Malformed {
+                        declared: None,
+                        detail: crate::issue_detail(error)?,
+                    },
                 };
                 let bulk = snapshot
                     .stream_by_id(pair.bulk)
@@ -569,16 +634,40 @@ fn frame_segment_records<'a>(
     Ok(())
 }
 
-fn parse_meta_stream_v8<'a>(
+/// Reads one `RSe` metadata stream, keeping its declaration through failure.
+///
+/// The marker and version are read first and then never lost: a body that
+/// fails after them is [`SegmentMetaState::Malformed`] carrying the
+/// declaration, and only a failure inside those two fields leaves the stream
+/// with no declaration to report. Charging the dialect from the declaration a
+/// failed parse actually read is what keeps the loss and the report from
+/// disagreeing about the same bytes.
+fn parse_meta_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<SegmentMetaState<'a>, CodecError> {
     let mut cursor = MetaCursor::new(source);
     let marker = cursor.length_prefixed_utf8("marker")?;
     let version = cursor.u16("version")?;
-    if marker != "RSe Meta Stream Version 8" || version != 8 {
-        return Ok(SegmentMetaState::Unsupported { marker, version });
+    let declared = MetaStreamDeclaration { marker, version };
+    if !declared.is_verified() {
+        return Ok(SegmentMetaState::Unsupported(declared));
     }
+    match parse_meta_stream_v8(ctx, source, cursor, version) {
+        Ok(meta) => Ok(SegmentMetaState::Parsed(Box::new(meta))),
+        Err(error) => Ok(SegmentMetaState::Malformed {
+            declared: Some(declared),
+            detail: crate::issue_detail(error)?,
+        }),
+    }
+}
+
+fn parse_meta_stream_v8<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    mut cursor: MetaCursor<'a>,
+    version: u16,
+) -> Result<SegmentMeta<'a>, CodecError> {
     let header_values = cursor.u16_array("header values")?;
     let display_name = cursor.length_prefixed_utf16("display name")?;
     let mut segment_id = [0; 16];
@@ -597,7 +686,7 @@ fn parse_meta_stream_v8<'a>(
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = inflate_zlib_exact(ctx, compressed)?;
     let tables = parse_meta_tables(ctx, body)?;
-    Ok(SegmentMetaState::Parsed(Box::new(SegmentMeta {
+    Ok(SegmentMeta {
         version: MetaStreamVersion(version),
         header_values,
         display_name,
@@ -608,11 +697,11 @@ fn parse_meta_stream_v8<'a>(
         body_form,
         body,
         tables,
-    })))
+    })
 }
 
 pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _ = parse_meta_stream_v8(ctx, source);
+    let _ = parse_meta_stream(ctx, source);
 }
 
 pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
@@ -747,7 +836,7 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic metadata stream fits policy");
         let SegmentMetaState::Parsed(meta) =
-            parse_meta_stream_v8(&ctx, root).expect("synthetic metadata stream parses")
+            parse_meta_stream(&ctx, root).expect("synthetic metadata stream parses")
         else {
             panic!("version-eight metadata state")
         };
@@ -766,7 +855,19 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic metadata stream fits policy");
-        assert!(parse_meta_stream_v8(&ctx, root).is_err());
+        let state = parse_meta_stream(&ctx, root).expect("the declaration reads before the body");
+        let SegmentMetaState::Malformed { declared, detail } = state else {
+            panic!("a zlib suffix fails after the declaration")
+        };
+        assert_eq!(
+            declared,
+            Some(MetaStreamDeclaration {
+                marker: MetaStreamDeclaration::VERIFIED_MARKER.into(),
+                version: MetaStreamDeclaration::VERIFIED_VERSION,
+            }),
+            "a body failure keeps the declaration the stream did read"
+        );
+        assert!(!detail.is_empty());
     }
 
     #[test]

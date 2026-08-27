@@ -9,6 +9,7 @@ mod container;
 mod database;
 mod decode;
 mod design;
+mod dialect;
 mod external_reference;
 mod feature;
 #[doc(hidden)]

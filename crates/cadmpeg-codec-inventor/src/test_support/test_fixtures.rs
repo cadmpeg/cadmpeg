@@ -85,7 +85,36 @@ fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
+/// The `RSe` version declarations a synthetic primary envelope carries.
+///
+/// [`Default`] is the pair this codec implements. A test that needs an
+/// unimplemented declaration changes one field, so the rest of the document
+/// stays byte-identical and the classification is the only difference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EnvelopeDeclarations {
+    /// The `RSeDb` schema word.
+    pub(crate) schema: u32,
+    /// The `RSe` metadata stream marker.
+    pub(crate) meta_marker: &'static str,
+    /// The `RSe` metadata stream version word.
+    pub(crate) meta_version: u16,
+}
+
+impl Default for EnvelopeDeclarations {
+    fn default() -> Self {
+        Self {
+            schema: 31,
+            meta_marker: "RSe Meta Stream Version 8",
+            meta_version: 8,
+        }
+    }
+}
+
 pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
+    primary_envelope_fixture_with(EnvelopeDeclarations::default())
+}
+
+pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
     const V1: usize = 2;
@@ -102,9 +131,9 @@ pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
     const FAT_SECTOR: u32 = 0xffff_fffd;
 
     let carrier = kernel_carrier_fixture();
-    let meta = meta_stream_fixture(carrier.len());
+    let meta = meta_stream_fixture(carrier.len(), declarations);
     let bulk = bulk_stream_fixture(&carrier);
-    let database = database_fixture();
+    let database = database_fixture(declarations.schema);
     let registry = registry_fixture();
     let revisions = revision_fixture();
     let streams = [
@@ -290,9 +319,9 @@ pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
     file
 }
 
-fn database_fixture() -> Vec<u8> {
+fn database_fixture(schema: u32) -> Vec<u8> {
     let mut bytes = vec![0x21; 16];
-    put_u32_vec(&mut bytes, 31);
+    put_u32_vec(&mut bytes, schema);
     push_version(&mut bytes, 24);
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     push_version(&mut bytes, 25);
@@ -342,11 +371,11 @@ fn revision_fixture() -> Vec<u8> {
     [3_u32, 0].into_iter().flat_map(u32::to_le_bytes).collect()
 }
 
-fn meta_stream_fixture(payload_len: usize) -> Vec<u8> {
+fn meta_stream_fixture(payload_len: usize, declarations: EnvelopeDeclarations) -> Vec<u8> {
     let body = meta_table_body(payload_len);
     let mut bytes = Vec::new();
-    push_bytes_vec(&mut bytes, b"RSe Meta Stream Version 8");
-    bytes.extend_from_slice(&8_u16.to_le_bytes());
+    push_bytes_vec(&mut bytes, declarations.meta_marker.as_bytes());
+    bytes.extend_from_slice(&declarations.meta_version.to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0]);
     push_utf16_vec(&mut bytes, "PmBRepSegment");
     bytes.extend_from_slice(&[0x5a; 16]);

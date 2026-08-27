@@ -96,18 +96,38 @@ pub(crate) struct RevisionTable {
     pub(crate) entries: Vec<RevisionEntry>,
 }
 
+/// The outcome of reading an `RSeDb` stream far enough to know its schema.
+///
+/// The schema is a version declaration, so it survives its own rejection: a
+/// stream that declares a schema this codec has no grammar for still tells the
+/// dialect classifier what it declared. Folding that case into an error would
+/// leave the declaration readable only by re-parsing the bytes at the report
+/// boundary, which is exactly the drift this split exists to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DatabaseHeader {
+    /// The declared schema is [`RseSchema::SCHEMA_31`] and the body parsed.
+    Supported(RseDatabase),
+    /// The declared schema is not one this codec has a grammar for. The rest of
+    /// the stream is not read.
+    UnsupportedSchema(RseSchema),
+}
+
+impl DatabaseHeader {
+    /// The detail an unsupported schema reports as a database issue.
+    pub(crate) fn unsupported_detail(schema: RseSchema) -> String {
+        format!("RSe database schema {} is not implemented", schema.value())
+    }
+}
+
 pub(crate) fn parse_database(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<RseDatabase, CodecError> {
+) -> Result<DatabaseHeader, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe database");
     let id = cursor.array("database id")?;
     let schema = RseSchema(cursor.u32("schema")?);
     if schema != RseSchema::SCHEMA_31 {
-        return Err(CodecError::NotImplemented(format!(
-            "RSe database schema {} is not implemented",
-            schema.value()
-        )));
+        return Ok(DatabaseHeader::UnsupportedSchema(schema));
     }
     let database = RseDatabase {
         id,
@@ -120,7 +140,7 @@ pub(crate) fn parse_database(
     };
     cursor.finish()?;
     ctx.charge_collection_items(1, "admit Inventor RSe database")?;
-    Ok(database)
+    Ok(DatabaseHeader::Supported(database))
 }
 
 pub(crate) fn parse_registry(
@@ -407,7 +427,11 @@ mod tests {
     fn schema_31_database_requires_exact_exhaustion() {
         let mut bytes = database_fixture();
         with_context(&bytes, |ctx| {
-            let database = parse_database(ctx, &bytes).expect("schema 31 database parses");
+            let DatabaseHeader::Supported(database) =
+                parse_database(ctx, &bytes).expect("schema 31 database parses")
+            else {
+                panic!("the fixture declares schema 31");
+            };
             assert_eq!(database.schema.value(), 31);
             assert_eq!(database.created_by.major, 24);
             assert_eq!(database.saved_by.major, 25);
@@ -415,6 +439,23 @@ mod tests {
         });
         bytes.push(0);
         with_context(&bytes, |ctx| assert!(parse_database(ctx, &bytes).is_err()));
+    }
+
+    /// An unimplemented schema is a declaration, not a parse failure: the value
+    /// survives so the dialect classifier reads what the stream said.
+    #[test]
+    fn an_unimplemented_schema_is_reported_as_the_value_declared() {
+        let mut bytes = database_fixture();
+        bytes[16..20].copy_from_slice(&12_u32.to_le_bytes());
+        with_context(&bytes, |ctx| {
+            let header =
+                parse_database(ctx, &bytes).expect("an unsupported schema is not an error");
+            assert_eq!(header, DatabaseHeader::UnsupportedSchema(RseSchema(12)));
+            assert_eq!(
+                DatabaseHeader::unsupported_detail(RseSchema(12)),
+                "RSe database schema 12 is not implemented"
+            );
+        });
     }
 
     #[test]
