@@ -453,10 +453,11 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # `ArchiveVersion::Other(_)`.
 #
 # `crates/cadmpeg-codec-rhino/src/dialect.rs` maps that partition onto the rows
-# below: `ArchiveVersion::id` selects the row, `dialect::classify` is
-# the sole `DialectMatch` construction path, and `ArchiveVersion::refuses_decode`
-# is the sole disposition predicate -- it decides both the reported
-# `Admission` and the refusal `container::decode` returns.
+# below: `ArchiveVersion::id` selects the row, `ArchiveVersion::classify` is
+# the sole `DialectMatch` construction path, and
+# `ArchiveVersion::refuses_decode` is the sole disposition predicate -- it
+# decides both the reported `Admission` and the refusal `container::decode`
+# returns. `ArchiveVersion::is_chunked` selects the chunked grammar.
 #
 # The design's open question -- whether archives 2-4 and 50-90 are one read
 # grammar or two -- is a grammar question, not an identity question, and is

@@ -773,7 +773,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Decode and atomically commit supported simple geometry.
     pub(crate) fn decode_geometry(&mut self) {
-        if !crate::dialect::is_chunked(self.archive()) {
+        if !self.archive().is_chunked() {
             return;
         }
         for source_order in 0..self.scan.objects.len() {
@@ -997,7 +997,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Decode semantic dimensions independently of shape carriers.
     pub(crate) fn decode_dimensions(&mut self) {
-        if !crate::dialect::is_chunked(self.archive()) {
+        if !self.archive().is_chunked() {
             return;
         }
         for source_order in 0..self.scan.objects.len() {
@@ -5612,7 +5612,8 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
 /// The full decode's report and its source metadata both read this, so they
 /// carry the same match.
 fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
-    ArchiveVersion::classify(scan.archive, scan.metadata.properties.writer_version)
+    scan.archive
+        .classify(scan.metadata.properties.writer_version)
 }
 
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {

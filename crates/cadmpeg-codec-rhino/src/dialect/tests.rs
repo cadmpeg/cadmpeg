@@ -47,7 +47,7 @@ const ENUMERATED: &[(u64, &str)] = &[
 const OUTSIDE: &[u64] = &[6, 7, 40, 49, 51, 61, 71, 81, 89, 91, 100, u64::MAX];
 
 fn classify_word(word: u64) -> cadmpeg_core::dialect::DialectMatch {
-    ArchiveVersion::classify(crate::chunks::ArchiveVersion::from_word(word), None)
+    crate::chunks::ArchiveVersion::from_word(word).classify(None)
 }
 
 #[test]
@@ -97,10 +97,10 @@ fn admission_is_refused_exactly_where_decode_is_refused() {
         .chain(OUTSIDE.iter().copied());
     for word in words {
         let archive = crate::chunks::ArchiveVersion::from_word(word);
-        let matched = ArchiveVersion::classify(archive, None);
+        let matched = archive.classify(None);
         assert_eq!(
             matched.admission == Admission::Refused,
-            refuses_decode(archive),
+            archive.refuses_decode(),
             "archive word {word}: admission and the decode refusal must agree"
         );
     }
@@ -161,13 +161,13 @@ fn only_archive_5_is_refused() {
 fn the_writer_stamp_is_declared_when_the_run_read_it_and_omitted_when_it_did_not() {
     let archive = crate::chunks::ArchiveVersion::from_word(80);
 
-    let stamped = ArchiveVersion::classify(archive, Some(2_348_836_140));
+    let stamped = archive.classify(Some(2_348_836_140));
     assert_eq!(
         stamped.declared[DECLARED_OPENNURBS_WRITER_VERSION],
         "2348836140"
     );
 
-    let unstamped = ArchiveVersion::classify(archive, None);
+    let unstamped = archive.classify(None);
     assert!(!unstamped
         .declared
         .contains_key(DECLARED_OPENNURBS_WRITER_VERSION));

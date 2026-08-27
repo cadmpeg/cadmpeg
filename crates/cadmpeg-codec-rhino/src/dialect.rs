@@ -224,18 +224,23 @@ impl ArchiveVersion {
     ///
     /// `writer_version` is the openNURBS stamp where the run read the
     /// properties table, and `None` where it did not.
-    pub(crate) fn classify(archive: ArchiveVersion, writer_version: Option<i64>) -> DialectMatch {
+    pub(crate) fn classify(self, writer_version: Option<i64>) -> DialectMatch {
         let mut declared = BTreeMap::new();
-        declared.insert(DECLARED_ARCHIVE_VERSION.into(), archive.value().to_string());
+        declared.insert(DECLARED_ARCHIVE_VERSION.into(), self.value().to_string());
         if let Some(stamp) = writer_version {
             declared.insert(DECLARED_OPENNURBS_WRITER_VERSION.into(), stamp.to_string());
         }
         DialectMatch {
             format: FORMAT.into(),
-            dialect: Some(archive.id()),
+            dialect: Some(self.id()),
             declared,
-            admission: archive.admission(),
+            admission: self.admission(),
         }
+    }
+
+    /// Whether the archive word selects the chunked grammar.
+    pub(crate) const fn is_chunked(self) -> bool {
+        !self.refuses_decode() && !matches!(self, Self::V1)
     }
 }
 
@@ -261,19 +266,6 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
          archive word."
     )),
     )
-}
-
-/// Whether the archive word names a row this codec declines to decode.
-///
-/// The call site in `crate::container::decode`; it reads the same predicate the
-/// reported [`Admission`] reads.
-pub(crate) const fn refuses_decode(archive: ArchiveVersion) -> bool {
-    archive.refuses_decode()
-}
-
-/// Whether the archive word selects the chunked grammar.
-pub(crate) const fn is_chunked(archive: ArchiveVersion) -> bool {
-    !refuses_decode(archive) && !matches!(archive, ArchiveVersion::V1)
 }
 
 #[cfg(test)]

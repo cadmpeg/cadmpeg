@@ -2125,7 +2125,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     // The flat legacy grammar is the strategy `rhino:archive-1` declares, so
     // this path admits the document on its own row. It reads no properties
     // table, so no openNURBS writer-version stamp is declared.
-    let primary = ArchiveVersion::classify(ArchiveVersion::V1, None);
+    let primary = ArchiveVersion::V1.classify(None);
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {

@@ -691,9 +691,9 @@ fn face_reversal_selects_face_sense() {
 
 #[test]
 fn polymorphic_object_geometry_starts_with_v2() {
-    assert!(!crate::dialect::is_chunked(ArchiveVersion::V1));
-    assert!(crate::dialect::is_chunked(ArchiveVersion::V2));
-    assert!(crate::dialect::is_chunked(ArchiveVersion::V8));
+    assert!(!ArchiveVersion::V1.is_chunked());
+    assert!(ArchiveVersion::V2.is_chunked());
+    assert!(ArchiveVersion::V8.is_chunked());
 }
 
 #[test]
