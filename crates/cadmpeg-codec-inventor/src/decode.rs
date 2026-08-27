@@ -535,10 +535,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     attributes.insert("document_kind".into(), document_kind.label().into());
     metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta {
-        declared: primary.declared.clone(),
-        dialect: primary.dialect.clone(),
         format: crate::dialect::FORMAT.into(),
         attributes,
+        ..Default::default()
     });
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {

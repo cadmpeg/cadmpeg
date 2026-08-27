@@ -87,17 +87,14 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             "entity_instances".into(),
             exchange.records.len().to_string(),
         );
-        // The primary-layer match is the source of both the report entry and
-        // the `SourceMeta` mirror. The `schema` attribute above stays: it is
-        // the joined identifier list, and retiring the ad-hoc attribute keys is
-        // a later phase.
+        // The `schema` attribute above stays: it is the joined identifier list,
+        // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
         ir.source = Some(SourceMeta {
-            declared: primary.declared.clone(),
-            dialect: primary.dialect.clone(),
             format: crate::dialect::FORMAT.into(),
             attributes,
+            ..Default::default()
         });
 
         let dialects = vec![primary];

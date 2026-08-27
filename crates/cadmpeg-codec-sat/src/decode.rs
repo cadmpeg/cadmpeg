@@ -148,12 +148,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
 /// The `encoding`, `scale`, `terminator`, and save-format attribute keys stay.
 /// They duplicate the declared keys for now; retiring the ad-hoc attribute keys
 /// is a later phase.
-fn source_meta(attributes: BTreeMap<String, String>, matched: &DialectMatch) -> SourceMeta {
+fn source_meta(attributes: BTreeMap<String, String>) -> SourceMeta {
     SourceMeta {
-        declared: matched.declared.clone(),
-        dialect: matched.dialect.clone(),
         format: FORMAT.to_string(),
         attributes,
+        ..Default::default()
     }
 }
 
@@ -166,7 +165,7 @@ fn build_result(
     matched: DialectMatch,
 ) -> Result<DecodeResult, CodecError> {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(source_meta(attributes, &matched));
+    ir.source = Some(source_meta(attributes));
     if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
         ir.tolerances = Tolerances { linear, angular };
     }

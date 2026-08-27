@@ -484,7 +484,7 @@ pub struct SourceMeta {
     /// `None` on a synthetic document that no decode produced, and on a decode
     /// whose primary layer the registry does not name. A decode-produced
     /// document mirrors its report's primary layer exactly; `DecodeResult::new`
-    /// debug-asserts that.
+    /// projects it at construction.
     ///
     /// Always serialized, as `null` when absent. Documents written before the
     /// field existed omit the key and read back `None`.

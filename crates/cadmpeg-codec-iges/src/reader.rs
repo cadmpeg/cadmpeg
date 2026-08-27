@@ -17,16 +17,9 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Builds the source metadata, mirroring the primary-layer match into
-/// [`SourceMeta::dialect`] and [`SourceMeta::declared`].
-///
 /// The `iges_version` attribute stays. It duplicates the `effective_version`
 /// declared key for now; retiring the ad-hoc attribute keys is a later phase.
-fn source_meta(
-    global: &global::ResolvedGlobal,
-    representation: Representation,
-    primary: &DialectMatch,
-) -> SourceMeta {
+fn source_meta(global: &global::ResolvedGlobal, representation: Representation) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("representation".into(), representation.as_str().into());
     attributes.insert(
@@ -52,10 +45,9 @@ fn source_meta(
         attributes.insert("native_file_name".into(), value);
     }
     SourceMeta {
-        declared: primary.declared.clone(),
-        dialect: primary.dialect.clone(),
         format: crate::dialect::FORMAT.into(),
         attributes,
+        ..Default::default()
     }
 }
 
@@ -337,7 +329,7 @@ fn decode_with_occurrence_limits(
         ir.tolerances.linear = context.minimum_resolution_mm();
     }
     let primary = IgesDialect::classify(representation, &parse.global);
-    ir.source = Some(source_meta(&parse.global, representation, &primary));
+    ir.source = Some(source_meta(&parse.global, representation));
     let projection = match length_context.filter(|_| !options.container_only) {
         Some(context) => {
             charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
@@ -378,22 +370,10 @@ fn decode_with_occurrence_limits(
         ),
         ctx,
     )?;
+    // The transfer ledger is verified before DecodeResult construction, so its
+    // identity checks require the same canonical arena order as the result.
     ir.finalize();
-    let document_digest = match ctx {
-        Some(ctx) => {
-            document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
-                ctx.charge_work(bytes, "iges_document_digest")
-            })?
-        }
-        None => crate::document_digest(&ir),
-    };
-    if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
-    }
     source_fidelity.finalize();
-
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses(&primary);
     losses.extend(projection.losses);
@@ -572,7 +552,7 @@ fn decode_with_occurrence_limits(
     notes.extend(graph::summary_notes(&parse.references));
     let dialects = vec![primary];
     debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
-    Ok(DecodeResult::new(
+    let mut result = DecodeResult::new(
         ir,
         DecodeReport {
             dialects,
@@ -585,7 +565,22 @@ fn decode_with_occurrence_limits(
             notes,
         },
         source_fidelity,
-    ))
+    );
+    let document_digest = match ctx {
+        Some(ctx) => document_local_sha256_with_charge(
+            result.ir(),
+            "iges",
+            crate::SOURCE_IMAGE_ID,
+            |bytes| ctx.charge_work(bytes, "iges_document_digest"),
+        )?,
+        None => crate::document_digest(result.ir()),
+    };
+    if let Some(source) = &mut result.ir_mut().source {
+        source
+            .attributes
+            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
+    }
+    Ok(result)
 }
 
 /// Fail the decode when the projected IR has any error-severity finding.

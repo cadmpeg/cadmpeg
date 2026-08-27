@@ -66,30 +66,6 @@ pub struct DecodeOptions {
     pub policy: DecodePolicy,
 }
 
-/// Assert that a decode-produced document's source dialect is exactly the one
-/// its report named for the primary layer.
-///
-/// [`crate::document::SourceMeta::dialect`] documents itself as a mirror of the
-/// primary [`cadmpeg_core::dialect::DialectMatch`], and readers of a CADIR
-/// intermediate rely on that: the round-trip default is taken from the document,
-/// not the report, which the intermediate does not carry. A codec that populated
-/// one and forgot the other would silently change the default a re-export picks.
-///
-/// A document with no source metadata is exempt — nothing to mirror. The mirror
-/// carries `None` through faithfully when the registry names no dialect for the
-/// layer, so the assertion is equality, not presence.
-fn debug_assert_source_mirrors_primary_layer(ir: &CadIr, report: &DecodeReport) {
-    debug_assert!(
-        ir.source.as_ref().is_none_or(|source| {
-            source.dialect
-                == cadmpeg_core::dialect::primary_layer(&report.dialects, &report.format)
-                    .and_then(|entry| entry.dialect.clone())
-        }),
-        "source dialect for format {:?} must mirror the report's primary layer",
-        report.format
-    );
-}
-
 /// A decoded document plus its loss report.
 ///
 /// Construct only through [`DecodeResult::new`], which finalizes the IR and
@@ -110,7 +86,14 @@ impl DecodeResult {
     /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
         cadmpeg_core::dialect::debug_assert_primary_layer(&report.dialects, &report.format);
-        debug_assert_source_mirrors_primary_layer(&ir, &report);
+        if let Some(source) = ir.source.as_mut() {
+            let (dialect, declared) =
+                cadmpeg_core::dialect::primary_layer(&report.dialects, &report.format)
+                    .map(|matched| (matched.dialect.clone(), matched.declared.clone()))
+                    .unwrap_or_default();
+            source.dialect = dialect;
+            source.declared = declared;
+        }
         ir.finalize();
         source_fidelity.finalize();
         Self {
@@ -136,6 +119,9 @@ impl DecodeResult {
     }
 
     /// Borrow the transfer report mutably.
+    ///
+    /// This does not re-project source metadata after construction. Post-hoc
+    /// report mutation is a separate consistency responsibility.
     pub fn report_mut(&mut self) -> &mut DecodeReport {
         &mut self.report
     }

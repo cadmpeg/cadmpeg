@@ -1135,7 +1135,6 @@ fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
 }
 
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {
-    let primary = dialect_match(scan);
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
@@ -1153,10 +1152,9 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
         scan.definitions.definitions.len().to_string(),
     );
     SourceMeta {
-        declared: primary.declared,
-        dialect: primary.dialect,
         format: crate::dialect::FORMAT.to_string(),
         attributes,
+        ..Default::default()
     }
 }
 
