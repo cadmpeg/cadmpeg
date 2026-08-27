@@ -7,7 +7,7 @@ use super::geometry::{
     planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, ParameterRecord, TokenValue,
     TrailingPointerAnalysis,
@@ -30,16 +30,19 @@ use std::collections::{BTreeMap, BTreeSet};
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 const LEGACY_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
-pub(crate) fn attribute_list_type_meaning(value: i64, dialect: Dialect) -> Option<&'static str> {
-    match (dialect, value) {
-        (Dialect::V4_0, 0) => Some("property-entity-defined"),
+pub(crate) fn attribute_list_type_meaning(
+    value: i64,
+    global_table: GlobalTable,
+) -> Option<&'static str> {
+    match (global_table, value) {
+        (GlobalTable::V4_0, 0) => Some("property-entity-defined"),
         (_, 0) => Some("type406-form15-defined"),
         (_, 1) => Some("general"),
         (_, 2) => Some("electrical"),
         (_, 3) => Some("aec"),
         (_, 4) => Some("process-plant"),
-        (Dialect::V4_0, 5..=5000) => Some("other-application-area"),
-        (Dialect::V4_0, 5001..=9999) => Some("user-defined"),
+        (GlobalTable::V4_0, 5..=5000) => Some("other-application-area"),
+        (GlobalTable::V4_0, 5001..=9999) => Some("user-defined"),
         (_, 5) => Some("electrical-lep-manufacturing"),
         (_, 6..=5000) => Some("other-application-area"),
         (_, 5001..=9999) => Some("implementor-defined"),
@@ -47,9 +50,9 @@ pub(crate) fn attribute_list_type_meaning(value: i64, dialect: Dialect) -> Optio
     }
 }
 
-fn connect_point_function_code_valid(value: i64, dialect: Dialect) -> bool {
-    match dialect {
-        Dialect::V4_0 => matches!(value, 0..=5),
+fn connect_point_function_code_valid(value: i64, global_table: GlobalTable) -> bool {
+    match global_table {
+        GlobalTable::V4_0 => matches!(value, 0..=5),
         _ => matches!(value, 0..=49 | 98..=99 | 5001..=9999),
     }
 }
@@ -91,18 +94,18 @@ fn network_connect_points(
     count_index: usize,
     first_pointer_index: usize,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<Vec<Option<u32>>> {
     let count = record.count(count_index)?;
     (0..count)
         .map(|index| {
-            let value = if matches!(dialect, Dialect::V4_0) {
+            let value = if matches!(global_table, GlobalTable::V4_0) {
                 record.integer(first_pointer_index + index)
             } else {
                 record.integer_or(first_pointer_index + index, 0)
             }?;
             if value == 0 {
-                return (!matches!(dialect, Dialect::V4_0)).then_some(None);
+                return (!matches!(global_table, GlobalTable::V4_0)).then_some(None);
             }
             let sequence = u32::try_from(value).ok()?;
             (sequence % 2 == 1)
@@ -120,7 +123,7 @@ fn network_connect_points(
 fn network_connectivity_valid(
     definition: &[Option<u32>],
     instance: &[Option<u32>],
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     let slots_match = definition
         .iter()
@@ -128,13 +131,16 @@ fn network_connectivity_valid(
         .all(|(definition, instance)| definition.is_some() || instance.is_none());
     definition.len() == instance.len()
         && slots_match
-        && (!matches!(dialect, Dialect::V4_0)
+        && (!matches!(global_table, GlobalTable::V4_0)
             || (definition.iter().all(Option::is_some) && instance.iter().all(Option::is_some)))
 }
 
-fn subfigure_definition_directory_fields_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+fn subfigure_definition_directory_fields_valid(
+    entry: &DirectoryEntry,
+    global_table: GlobalTable,
+) -> bool {
     entry.status.use_flag == 2
-        && (!matches!(dialect, Dialect::V4_0)
+        && (!matches!(global_table, GlobalTable::V4_0)
             || (entry.status.subordinate == 0
                 && (entry.status.hierarchy == 1 || entry.line_font != 0)))
 }
@@ -306,35 +312,47 @@ pub(crate) fn flow_join_target_valid(target: &DirectoryEntry) -> bool {
             ))
 }
 
-fn flow_associativity_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+fn flow_associativity_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     if entry.entity_type != 402 {
         return false;
     }
-    match dialect {
-        Dialect::V4_0 => entry.form == 18 && entry.status.use_flag == 3,
+    match global_table {
+        GlobalTable::V4_0 => entry.form == 18 && entry.status.use_flag == 3,
         _ => matches!(entry.form, 18 | 20),
     }
 }
 
-fn flow_connection_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+fn flow_connection_target_valid(
+    target: &DirectoryEntry,
+    form: i64,
+    global_table: GlobalTable,
+) -> bool {
     if form != 18 {
         return target.entity_type == 132;
     }
     target.entity_type == 132
-        || (!matches!(dialect, Dialect::V4_0)
+        || (!matches!(global_table, GlobalTable::V4_0)
             && target.entity_type == 402
             && matches!(target.form, 1 | 7 | 14 | 15))
 }
 
-fn flow_display_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+fn flow_display_target_valid(
+    target: &DirectoryEntry,
+    form: i64,
+    global_table: GlobalTable,
+) -> bool {
     target.entity_type == 312
-        || (form == 18 && !matches!(dialect, Dialect::V4_0) && target.entity_type == 212)
+        || (form == 18 && !matches!(global_table, GlobalTable::V4_0) && target.entity_type == 212)
 }
 
-fn flow_continuation_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+fn flow_continuation_target_valid(
+    target: &DirectoryEntry,
+    form: i64,
+    global_table: GlobalTable,
+) -> bool {
     target.entity_type == 402
         && if form == 18 {
-            target.form == 18 || (!matches!(dialect, Dialect::V4_0) && target.form == 11)
+            target.form == 18 || (!matches!(global_table, GlobalTable::V4_0) && target.form == 11)
         } else {
             target.form == 20
         }
@@ -1129,8 +1147,8 @@ fn existing_pointer(
         .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
 }
 
-fn type402_structure_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    matches!(dialect, Dialect::V4_0) || entry.structure == 0
+fn type402_structure_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
+    matches!(global_table, GlobalTable::V4_0) || entry.structure == 0
 }
 
 fn predefined_associativity_valid(
@@ -1852,9 +1870,9 @@ fn flow_associativity(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<FlowAssociativity> {
-    if !flow_associativity_directory_valid(entry, dialect) {
+    if !flow_associativity_directory_valid(entry, global_table) {
         return None;
     }
     let form = entry.form;
@@ -1920,7 +1938,7 @@ fn flow_associativity(
     let connections_valid = connections.iter().all(|sequence| {
         entries
             .get(sequence)
-            .is_some_and(|target| flow_connection_target_valid(target, form, dialect))
+            .is_some_and(|target| flow_connection_target_valid(target, form, global_table))
             && (form == 20
                 || records.get(sequence).is_some_and(|member| {
                     has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
@@ -1938,12 +1956,12 @@ fn flow_associativity(
     let displays_valid = displays.iter().all(|sequence| {
         entries
             .get(sequence)
-            .is_some_and(|target| flow_display_target_valid(target, form, dialect))
+            .is_some_and(|target| flow_display_target_valid(target, form, global_table))
     });
     let continuations_valid = continuations.iter().flatten().all(|sequence| {
         entries
             .get(sequence)
-            .is_some_and(|target| flow_continuation_target_valid(target, form, dialect))
+            .is_some_and(|target| flow_continuation_target_valid(target, form, global_table))
             && (form == 20
                 || records.get(sequence).is_some_and(|member| {
                     has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
@@ -1995,7 +2013,7 @@ pub(super) fn project(
                 &entries,
                 &records,
                 trailing_pointer_analysis,
-                global.dialect(),
+                global.global_table(),
             )
             .map(|flow| (entry.sequence, flow))
         })
@@ -2224,9 +2242,9 @@ pub(super) fn project(
             record.value(1),
             Some(TokenValue::String(_) | TokenValue::Omitted)
         );
-        let list_type_valid = record
-            .integer(2)
-            .is_some_and(|value| attribute_list_type_meaning(value, global.dialect()).is_some());
+        let list_type_valid = record.integer(2).is_some_and(|value| {
+            attribute_list_type_meaning(value, global.global_table()).is_some()
+        });
         let attribute_count = record.count(3).filter(|count| *count > 0);
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
@@ -2463,7 +2481,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let valid = type402_structure_valid(entry, global.dialect())
+        let valid = type402_structure_valid(entry, global.global_table())
             && if matches!(entry.form, 8 | 10 | 11) {
                 legacy_associativity_valid(
                     entry,
@@ -2735,12 +2753,13 @@ pub(super) fn project(
                     })
             })
         };
-        let type_flag_valid = record
-            .integer_or(5, 0)
-            .is_some_and(|value| match global.dialect() {
-                Dialect::V4_0 => matches!(value, 0..=2),
-                _ => matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999),
-            });
+        let type_flag_valid =
+            record
+                .integer_or(5, 0)
+                .is_some_and(|value| match global.global_table() {
+                    GlobalTable::V4_0 => matches!(value, 0..=2),
+                    _ => matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999),
+                });
         let function_flag_valid = record
             .integer_or(6, 0)
             .is_some_and(|value| matches!(value, 0..=2));
@@ -2748,7 +2767,7 @@ pub(super) fn project(
         let identifier_valid = record.integer(11).is_some();
         let function_code_valid = record
             .integer_or(12, 0)
-            .is_some_and(|value| connect_point_function_code_valid(value, global.dialect()));
+            .is_some_and(|value| connect_point_function_code_valid(value, global.global_table()));
         let swap_valid = record
             .integer_or(13, 0)
             .is_some_and(|value| matches!(value, 0..=1));
@@ -2989,7 +3008,7 @@ pub(super) fn project(
         };
         definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
         if name_valid
-            && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
             && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
         {
@@ -3094,7 +3113,7 @@ pub(super) fn project(
             7 + member_count,
             8 + member_count,
             &entries,
-            global.dialect(),
+            global.global_table(),
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -3114,7 +3133,7 @@ pub(super) fn project(
             && type_flag_valid
             && designator_valid
             && display_valid
-            && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
             && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
         {
@@ -3162,7 +3181,8 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_points = network_connect_points(record, 11, 12, &entries, global.dialect());
+        let connect_points =
+            network_connect_points(record, 11, 12, &entries, global.global_table());
         let transform_valid = resolve_transform(
             entry.transform,
             &entries,
@@ -3290,7 +3310,7 @@ pub(super) fn project(
                     network_connectivity_valid(
                         &definition.connect_points,
                         &instance.connect_points,
-                        global.dialect(),
+                        global.global_table(),
                     )
                 });
         if instance.valid_fields && definition_valid && decoded.contains(&instance.definition) {

@@ -910,14 +910,14 @@ item = "cadmpeg_registry::UnknownFormat"
 reason = "the refusal print_dialects returns after losing its anyhow dependency"
 
 [[change]]
-commit = "pending"
+commit = "375d50a0b326383347e72554e3abbcd758d64f81"
 crate = "cadmpeg-asm"
 kind = "move"
 item = "cadmpeg_asm::sat::Dialect -> cadmpeg_asm::sat::Terminator"
 reason = "the type is the terminator-line distinction (End-of-ASM-data | End-of-ACIS-data), not a registry row; the design retired 'dialect' as a synonym for anything but an identity-registry row"
 
 [[change]]
-commit = "pending"
+commit = "375d50a0b326383347e72554e3abbcd758d64f81"
 crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::sat::TextStream::dialect -> cadmpeg_asm::sat::TextStream::terminator"

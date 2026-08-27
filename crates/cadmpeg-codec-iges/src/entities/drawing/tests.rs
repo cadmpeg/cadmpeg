@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 
 use crate::directory::{DirectoryEntry, Status};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -50,23 +50,23 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
 #[test]
 fn drawing_presentation_directory_rules_match_the_iges_tables() {
     let mut drawing = directory_entry(404, 0);
-    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(drawing_directory_valid(&drawing, Dialect::V5_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V5_0));
     drawing.status.subordinate = 1;
-    assert!(!drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
     drawing.status.subordinate = 0;
     drawing.status.use_flag = 2;
-    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
     drawing.status.use_flag = 0;
-    assert!(!drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
     drawing.status.use_flag = 1;
     drawing.status.blank = 1;
     drawing.status.hierarchy = 3;
-    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(drawing_directory_valid(&drawing, Dialect::V5_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V5_0));
 
     for field in 0..4 {
         let mut candidate = directory_entry(404, 0);
@@ -76,25 +76,25 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             2 => candidate.line_weight = 1,
             _ => candidate.color = 1,
         }
-        assert!(drawing_directory_valid(&candidate, Dialect::V4_0));
-        assert!(!drawing_directory_valid(&candidate, Dialect::V5_0));
+        assert!(drawing_directory_valid(&candidate, GlobalTable::V4_0));
+        assert!(!drawing_directory_valid(&candidate, GlobalTable::V5_0));
     }
 
     let mut view = directory_entry(410, 0);
-    assert!(view_directory_valid(&view, Dialect::V4_0));
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
     view.status.subordinate = 2;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
     view.status.subordinate = 0;
     view.status.use_flag = 2;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    assert!(!view_directory_valid(&view, Dialect::V5_0));
-    assert!(!view_directory_valid(&view, Dialect::V5_3));
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    assert!(!view_directory_valid(&view, GlobalTable::V5_0));
+    assert!(!view_directory_valid(&view, GlobalTable::V5_3));
     view.status.use_flag = 1;
     view.status.blank = 1;
     view.status.hierarchy = 3;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    assert!(view_directory_valid(&view, Dialect::V5_0));
-    assert!(view_directory_valid(&view, Dialect::V5_3));
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    assert!(view_directory_valid(&view, GlobalTable::V5_0));
+    assert!(view_directory_valid(&view, GlobalTable::V5_3));
     for field in 0..4 {
         let mut candidate = directory_entry(410, 1);
         match field {
@@ -103,34 +103,34 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             2 => candidate.line_weight = 1,
             _ => candidate.color = 1,
         }
-        assert!(view_directory_valid(&candidate, Dialect::V4_0));
-        assert!(view_directory_valid(&candidate, Dialect::V5_3));
+        assert!(view_directory_valid(&candidate, GlobalTable::V4_0));
+        assert!(view_directory_valid(&candidate, GlobalTable::V5_3));
     }
     view.level = 2;
     view.view = 3;
     view.label_display = 5;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    assert!(view_directory_valid(&view, Dialect::V5_3));
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    assert!(view_directory_valid(&view, GlobalTable::V5_3));
 
     for form in [3, 4] {
         let mut visible = directory_entry(402, form);
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
         visible.status.subordinate = 1;
-        assert!(!views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
         visible.status.subordinate = 0;
         visible.status.use_flag = 0;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
         visible.status.use_flag = 2;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
         visible.status.use_flag = 1;
         visible.status.blank = 1;
         visible.status.hierarchy = 3;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
         for field in 0..4 {
             let mut candidate = directory_entry(402, form);
             match field {
@@ -139,21 +139,24 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
                 2 => candidate.line_weight = 1,
                 _ => candidate.color = 1,
             }
-            assert!(views_visible_directory_valid(&candidate, Dialect::V4_0));
-            assert!(views_visible_directory_valid(&candidate, Dialect::V5_0));
+            assert!(views_visible_directory_valid(&candidate, GlobalTable::V4_0));
+            assert!(views_visible_directory_valid(&candidate, GlobalTable::V5_0));
         }
         visible.level = 2;
         visible.view = 3;
         visible.transform = 5;
         visible.label_display = 7;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
     }
 
     let segmented = directory_entry(402, 19);
-    assert!(!views_visible_directory_valid(&segmented, Dialect::V4_0));
-    assert!(views_visible_directory_valid(&segmented, Dialect::V5_0));
-    assert!(views_visible_directory_valid(&segmented, Dialect::V5_3));
+    assert!(!views_visible_directory_valid(
+        &segmented,
+        GlobalTable::V4_0
+    ));
+    assert!(views_visible_directory_valid(&segmented, GlobalTable::V5_0));
+    assert!(views_visible_directory_valid(&segmented, GlobalTable::V5_3));
 }
 
 #[test]
@@ -517,15 +520,21 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
     };
     for use_flag in [0, 1, 2, 5] {
         target.status.use_flag = use_flag;
-        assert!(clipping_plane_valid(&target, Dialect::V4_0), "{use_flag}");
+        assert!(
+            clipping_plane_valid(&target, GlobalTable::V4_0),
+            "{use_flag}"
+        );
     }
     for use_flag in [3, 4] {
         target.status.use_flag = use_flag;
-        assert!(!clipping_plane_valid(&target, Dialect::V4_0), "{use_flag}");
+        assert!(
+            !clipping_plane_valid(&target, GlobalTable::V4_0),
+            "{use_flag}"
+        );
     }
-    assert!(!clipping_plane_valid(&target, Dialect::V5_0));
+    assert!(!clipping_plane_valid(&target, GlobalTable::V5_0));
     target.status.use_flag = 1;
-    assert!(clipping_plane_valid(&target, Dialect::V5_0));
+    assert!(clipping_plane_valid(&target, GlobalTable::V5_0));
 }
 
 #[test]

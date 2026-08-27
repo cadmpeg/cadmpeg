@@ -1654,7 +1654,7 @@ pub(crate) fn store(
                 crate::parameter::entity_primary_end_for_dialect(
                     record,
                     &entries,
-                    global.dialect(),
+                    global.global_table(),
                 )
                 .unwrap_or(record.parameter_end()),
             )
@@ -4355,7 +4355,10 @@ pub(crate) fn store(
                 .and_then(|record| record.count_with_stride_before(1, width, end))
                 .and_then(|view_count| {
                     let entity_count = record.and_then(|record| {
-                        crate::parameter::view_visibility_entity_count(record, global.dialect())
+                        crate::parameter::view_visibility_entity_count(
+                            record,
+                            global.global_table(),
+                        )
                     })?;
                     let entity_start = 3_usize.checked_add(view_count.checked_mul(width)?)?;
                     let finish = entity_start.checked_add(entity_count)?;
@@ -4645,7 +4648,7 @@ pub(crate) fn store(
         &parameter_resolver,
         &clamped_primary_end,
         &mut overdeclared_counts,
-        global.dialect(),
+        global.global_table(),
     );
     let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, ctx)?;
     // Scan every definition for root-inference diagnostics, then restrict the

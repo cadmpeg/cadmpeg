@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal, RealPrecision};
+use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -187,18 +187,23 @@ fn planar_segments_intersect_beyond_endpoint(
     contacts.any(|point| Some(point) != allowed_endpoint)
 }
 
-pub(crate) fn point_display_symbol_type_allowed(entity_type: i64, dialect: Dialect) -> bool {
-    match dialect {
-        Dialect::Legacy => matches!(entity_type, 308 | 408),
-        Dialect::V4_0 => entity_type == 408,
-        Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => entity_type == 308,
+pub(crate) fn point_display_symbol_type_allowed(
+    entity_type: i64,
+    global_table: GlobalTable,
+) -> bool {
+    match global_table {
+        GlobalTable::Legacy => matches!(entity_type, 308 | 408),
+        GlobalTable::V4_0 => entity_type == 408,
+        GlobalTable::V5_0 | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
+            entity_type == 308
+        }
     }
 }
 
 fn point_display_symbol_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     match record.value(4) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
@@ -208,7 +213,7 @@ fn point_display_symbol_valid(
                 sequence % 2 == 1
                     && entries.get(&sequence).is_some_and(|target| {
                         target.form == 0
-                            && point_display_symbol_type_allowed(target.entity_type, dialect)
+                            && point_display_symbol_type_allowed(target.entity_type, global_table)
                     })
             })
         }
@@ -231,10 +236,10 @@ fn base_geometry_use_flag_valid(
     entity_type: i64,
     form: i64,
     use_flag: u8,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     !base_geometry_table_entry(entity_type, form)
-        || !matches!(dialect, Dialect::V4_0)
+        || !matches!(global_table, GlobalTable::V4_0)
         || matches!(use_flag, 0 | 1 | 2 | 5)
 }
 
@@ -248,9 +253,9 @@ fn base_geometry_line_font_valid(
     entity_type: i64,
     form: i64,
     line_font: i64,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
-    !matches!(dialect, Dialect::V4_0)
+    !matches!(global_table, GlobalTable::V4_0)
         || !base_geometry_line_font_required(entity_type, form)
         || line_font != 0
 }
@@ -1190,26 +1195,26 @@ pub(crate) fn project_geometry(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
-    let dialect = global.dialect();
+    let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
-        entry.status.is_use_flag_valid(dialect)
+        entry.status.is_use_flag_valid(global_table)
             && base_geometry_use_flag_valid(
                 entry.entity_type,
                 entry.form,
                 entry.status.use_flag,
-                dialect,
+                global_table,
             )
             && base_geometry_line_font_valid(
                 entry.entity_type,
                 entry.form,
                 entry.line_font,
-                dialect,
+                global_table,
             )
-            && crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
+            && crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
     };
     let mut losses = Vec::new();
     for entry in directory {
-        if !entry.status.is_use_flag_valid(dialect) {
+        if !entry.status.is_use_flag_valid(global_table) {
             losses.push(entity_loss(
                 entry,
                 format!(
@@ -1221,7 +1226,7 @@ pub(crate) fn project_geometry(
             entry.entity_type,
             entry.form,
             entry.status.use_flag,
-            dialect,
+            global_table,
         ) {
             losses.push(entity_loss(
                 entry,
@@ -1234,7 +1239,7 @@ pub(crate) fn project_geometry(
             entry.entity_type,
             entry.form,
             entry.line_font,
-            dialect,
+            global_table,
         ) {
             losses.push(entity_loss(
                 entry,
@@ -1474,7 +1479,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "X, Y, or Z is not numeric"));
             continue;
         };
-        if !point_display_symbol_valid(record, &entries, global.dialect()) {
+        if !point_display_symbol_valid(record, &entries, global.global_table()) {
             losses.push(
                 IgesLossCode::DisplayDataNotProjected
                     .note("Type 116 display symbol pointer is invalid for the declared dialect")

@@ -9,7 +9,7 @@ use crate::directory::DirectoryEntry;
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
 use serde::Serialize;
@@ -646,7 +646,7 @@ pub(super) fn build(
     parameter_resolver: &ParameterResolver<'_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Vec<NativeAnnotation> {
     directory
         .iter()
@@ -660,7 +660,7 @@ pub(super) fn build(
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
                 entries,
                 parameter_resolver,
-                v5_null_string_rule: dialect == Dialect::V5_0
+                v5_null_string_rule: global_table == GlobalTable::V5_0
                     && matches!(kind, AnnotationKind::GeneralNote),
             };
             let transformation = (entry.transform > 0)

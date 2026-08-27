@@ -2,7 +2,7 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -18,9 +18,9 @@ pub(crate) struct Status {
 }
 
 impl Status {
-    pub(crate) fn is_use_flag_valid(self, dialect: Dialect) -> bool {
+    pub(crate) fn is_use_flag_valid(self, global_table: GlobalTable) -> bool {
         self.use_flag
-            <= if matches!(dialect, Dialect::V4_0) {
+            <= if matches!(global_table, GlobalTable::V4_0) {
                 5
             } else {
                 6
@@ -171,9 +171,9 @@ fn directory_integer(
     field: [u8; 8],
     name: &'static str,
     number: u8,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Result<i64, DirectoryDefect> {
-    if matches!(dialect, Dialect::V4_0)
+    if matches!(global_table, GlobalTable::V4_0)
         && matches!(number, 1 | 2 | 11 | 14)
         && field.iter().all(|byte| *byte == b' ')
     {
@@ -182,7 +182,7 @@ fn directory_integer(
     integer(field, name)
 }
 
-fn status(field: [u8; 8], dialect: Dialect) -> Result<Status, DirectoryDefect> {
+fn status(field: [u8; 8], global_table: GlobalTable) -> Result<Status, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(Status {
             blank: 0,
@@ -192,7 +192,10 @@ fn status(field: [u8; 8], dialect: Dialect) -> Result<Status, DirectoryDefect> {
         });
     }
     let mut digits = [b'0'; 8];
-    if matches!(dialect, Dialect::Legacy | Dialect::V4_0 | Dialect::V5_0) {
+    if matches!(
+        global_table,
+        GlobalTable::Legacy | GlobalTable::V4_0 | GlobalTable::V5_0
+    ) {
         let first_digit = field
             .iter()
             .position(u8::is_ascii_digit)
@@ -224,13 +227,14 @@ fn status(field: [u8; 8], dialect: Dialect) -> Result<Status, DirectoryDefect> {
 fn parse_pair(
     first: &PhysicalLine,
     second: &PhysicalLine,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
     let sequence = first.sequence.unwrap_or_default();
     let first_fields = fields(first);
     let second_fields = fields(second);
-    let entity_type = directory_integer(first_fields[0], "entity type", 1, dialect)?;
-    let repeated_type = directory_integer(second_fields[0], "repeated entity type", 11, dialect)?;
+    let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
+    let repeated_type =
+        directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
     if entity_type != repeated_type {
         return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
             declared: entity_type,
@@ -241,26 +245,31 @@ fn parse_pair(
         source_offset: first.offset,
         sequence,
         entity_type,
-        parameter_start: directory_integer(first_fields[1], "Parameter Data start", 2, dialect)?,
-        structure: directory_integer(first_fields[2], "structure", 3, dialect)?,
-        line_font: directory_integer(first_fields[3], "line font", 4, dialect)?,
-        level: directory_integer(first_fields[4], "level", 5, dialect)?,
-        view: directory_integer(first_fields[5], "view", 6, dialect)?,
-        transform: directory_integer(first_fields[6], "transformation", 7, dialect)?,
-        label_display: directory_integer(first_fields[7], "label display", 8, dialect)?,
-        status: status(first_fields[8], dialect)?,
-        line_weight: directory_integer(second_fields[1], "line weight", 12, dialect)?,
-        color: directory_integer(second_fields[2], "color", 13, dialect)?,
+        parameter_start: directory_integer(
+            first_fields[1],
+            "Parameter Data start",
+            2,
+            global_table,
+        )?,
+        structure: directory_integer(first_fields[2], "structure", 3, global_table)?,
+        line_font: directory_integer(first_fields[3], "line font", 4, global_table)?,
+        level: directory_integer(first_fields[4], "level", 5, global_table)?,
+        view: directory_integer(first_fields[5], "view", 6, global_table)?,
+        transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
+        label_display: directory_integer(first_fields[7], "label display", 8, global_table)?,
+        status: status(first_fields[8], global_table)?,
+        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table)?,
+        color: directory_integer(second_fields[2], "color", 13, global_table)?,
         parameter_line_count: directory_integer(
             second_fields[3],
             "Parameter Data count",
             14,
-            dialect,
+            global_table,
         )?,
-        form: directory_integer(second_fields[4], "form", 15, dialect)?,
+        form: directory_integer(second_fields[4], "form", 15, global_table)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: directory_integer(second_fields[8], "entity subscript", 19, dialect)?,
+        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table)?,
     })
 }
 
@@ -283,7 +292,7 @@ fn quarantine(cards: &[&PhysicalLine], defect: DirectoryDefect) -> QuarantinedDi
 /// Split the Directory Entry section into typed records and quarantined ones.
 pub(crate) fn parse(
     scan: &CardScan,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
     let lines = scan
         .lines
@@ -294,7 +303,7 @@ pub(crate) fn parse(
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
-        match parse_pair(pair[0], pair[1], dialect) {
+        match parse_pair(pair[0], pair[1], global_table) {
             Ok(entry) => entries.push(entry),
             Err(defect) => quarantined.push(quarantine(pair, defect)),
         }

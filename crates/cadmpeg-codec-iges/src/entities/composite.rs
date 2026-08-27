@@ -4,7 +4,7 @@
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
@@ -27,16 +27,16 @@ const MAX_COMPOSITE_CHILDREN: usize = 100_000;
 const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
 
-fn composite_minimum_child_count(dialect: Dialect) -> usize {
-    if matches!(dialect, Dialect::V4_0) {
+fn composite_minimum_child_count(global_table: GlobalTable) -> usize {
+    if matches!(global_table, GlobalTable::V4_0) {
         2
     } else {
         1
     }
 }
 
-fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
-    if matches!(dialect, Dialect::V4_0) {
+fn composite_child_type_allowed(entity_type: i64, form: i64, global_table: GlobalTable) -> bool {
+    if matches!(global_table, GlobalTable::V4_0) {
         return matches!(
             (entity_type, form),
             (100 | 110 | 112 | 116 | 132, 0) | (104, 0..=3) | (126, 0..=5)
@@ -48,26 +48,26 @@ fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -
     )
 }
 
-fn composite_use_flag_valid(use_flag: u8, dialect: Dialect) -> bool {
-    match dialect {
-        Dialect::V4_0 => use_flag == 0,
+fn composite_use_flag_valid(use_flag: u8, global_table: GlobalTable) -> bool {
+    match global_table {
+        GlobalTable::V4_0 => use_flag == 0,
         _ => use_flag <= 6,
     }
 }
 
-fn composite_line_font_valid(line_font: i64, hierarchy: u8, dialect: Dialect) -> bool {
-    !matches!(dialect, Dialect::V4_0) || hierarchy == 1 || line_font != 0
+fn composite_line_font_valid(line_font: i64, hierarchy: u8, global_table: GlobalTable) -> bool {
+    !matches!(global_table, GlobalTable::V4_0) || hierarchy == 1 || line_font != 0
 }
 
 fn composite_logical_connector_use_valid(
     use_flag: u8,
     is_logical_connector: bool,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     !is_logical_connector
         || !matches!(
-            dialect,
-            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3
+            global_table,
+            GlobalTable::V5_0 | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3
         )
         || use_flag == 4
 }
@@ -1405,7 +1405,7 @@ fn has_type_130_child(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     let Some(record) = records.get(&sequence).copied() else {
         return false;
@@ -1425,7 +1425,7 @@ fn has_type_130_child(
             .is_some_and(|child| {
                 child.entity_type == 130
                     && child.form == 0
-                    && composite_child_type_allowed(child.entity_type, child.form, dialect)
+                    && composite_child_type_allowed(child.entity_type, child.form, global_table)
             })
     })
 }
@@ -1456,19 +1456,23 @@ fn project_with_type_130_policy(
         .iter()
         .filter(|entry| entry.entity_type == 102 && entry.form == 0)
     {
-        if has_type_130_child(entry.sequence, &entries, &records, global.dialect())
+        if has_type_130_child(entry.sequence, &entries, &records, global.global_table())
             != only_type_130_children
         {
             continue;
         }
-        if !composite_use_flag_valid(entry.status.use_flag, global.dialect()) {
+        if !composite_use_flag_valid(entry.status.use_flag, global.global_table()) {
             losses.push(entity_loss(
                 entry,
                 "Type 102 Entity Use Flag must be 00 in IGES 4.0",
             ));
             continue;
         }
-        if !composite_line_font_valid(entry.line_font, entry.status.hierarchy, global.dialect()) {
+        if !composite_line_font_valid(
+            entry.line_font,
+            entry.status.hierarchy,
+            global.global_table(),
+        ) {
             losses.push(entity_loss(
                 entry,
                 "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01",
@@ -1491,7 +1495,7 @@ fn project_with_type_130_policy(
                 None,
             ));
         }
-        let minimum_child_count = composite_minimum_child_count(global.dialect());
+        let minimum_child_count = composite_minimum_child_count(global.global_table());
         let Some(child_count) = usize::try_from(raw_child_count)
             .ok()
             .filter(|count| *count >= minimum_child_count)
@@ -1522,7 +1526,7 @@ fn project_with_type_130_policy(
         if !composite_logical_connector_use_valid(
             entry.status.use_flag,
             is_logical_connector,
-            global.dialect(),
+            global.global_table(),
         ) {
             losses.push(entity_loss(
                 entry,
@@ -1539,7 +1543,7 @@ fn project_with_type_130_policy(
         }
         if child_sequences.iter().any(|sequence| {
             entries.get(sequence).is_none_or(|child| {
-                !composite_child_type_allowed(child.entity_type, child.form, global.dialect())
+                !composite_child_type_allowed(child.entity_type, child.form, global.global_table())
                     || !child.status.is_physically_dependent()
             })
         }) {

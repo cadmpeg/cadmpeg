@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -34,11 +34,11 @@ fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
 
 #[test]
 fn entity_use_flag_range_follows_the_declared_dialect() {
-    for (dialect, use_flag, expected) in [
-        (Dialect::V4_0, 5, true),
-        (Dialect::V4_0, 6, false),
-        (Dialect::V5_0, 6, true),
-        (Dialect::V5_0, 7, false),
+    for (global_table, use_flag, expected) in [
+        (GlobalTable::V4_0, 5, true),
+        (GlobalTable::V4_0, 6, false),
+        (GlobalTable::V5_0, 6, true),
+        (GlobalTable::V5_0, 7, false),
     ] {
         let status = Status {
             blank: 0,
@@ -46,21 +46,21 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
             use_flag,
             hierarchy: 0,
         };
-        assert_eq!(status.is_use_flag_valid(dialect), expected);
+        assert_eq!(status.is_use_flag_valid(global_table), expected);
     }
 }
 
 #[test]
 fn early_dialects_left_pad_right_justified_status_numbers() {
-    for dialect in [Dialect::Legacy, Dialect::V4_0, Dialect::V5_0] {
-        let status = status(*b"     201", dialect).unwrap();
+    for global_table in [GlobalTable::Legacy, GlobalTable::V4_0, GlobalTable::V5_0] {
+        let status = status(*b"     201", global_table).unwrap();
         assert_eq!(status.blank, 0);
         assert_eq!(status.subordinate, 0);
         assert_eq!(status.use_flag, 2);
         assert_eq!(status.hierarchy, 1);
     }
 
-    assert!(status(*b"     201", Dialect::V5_1).is_err());
+    assert!(status(*b"     201", GlobalTable::V5_1).is_err());
 }
 
 #[test]

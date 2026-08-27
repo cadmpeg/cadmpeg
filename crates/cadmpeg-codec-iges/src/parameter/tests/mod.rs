@@ -14,7 +14,7 @@ use super::{
 };
 use crate::card::{scan, Section};
 use crate::directory::{DirectoryEntry, Status};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;

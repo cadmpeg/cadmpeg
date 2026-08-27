@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -46,7 +46,10 @@ fn text_template_directory_rules_follow_legacy_and_later_dialects() {
             &[(1, 1)],
         )
     };
-    for (global, dialect) in [(GLOBAL_V4, Dialect::V4_0), (GLOBAL_V5_0, Dialect::V5_0)] {
+    for (global, global_table) in [
+        (GLOBAL_V4, GlobalTable::V4_0),
+        (GLOBAL_V5_0, GlobalTable::V5_0),
+    ] {
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(legacy_fields(global)),
@@ -63,7 +66,7 @@ fn text_template_directory_rules_follow_legacy_and_later_dialects() {
                 .losses
                 .iter()
                 .any(|loss| { loss.code == IgesLossCode::DisplayDataNotProjected.kind() }),
-            "legacy {dialect:?}: {:#?}",
+            "legacy {global_table:?}: {:#?}",
             result.report().losses
         );
     }
@@ -123,13 +126,13 @@ fn presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
+            general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
+            !general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
@@ -159,22 +162,22 @@ fn general_note_font_codes_follow_the_declared_dialect() {
     assert!(!general_note_font_valid_for_dialect(
         2001,
         &entries,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(general_note_font_valid_for_dialect(
         2001,
         &entries,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(!general_note_font_valid_for_dialect(
         3001,
         &entries,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(general_note_font_valid_for_dialect(
         3001,
         &entries,
-        Dialect::V5_1
+        GlobalTable::V5_1
     ));
 }
 

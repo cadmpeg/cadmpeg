@@ -7,7 +7,7 @@ use super::geometry::{
     ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal, RealPrecision};
+use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
@@ -69,8 +69,12 @@ pub(super) fn type128_parameter_bound_intervals(
         .ok()
 }
 
-fn tabulated_directrix_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
-    if matches!(dialect, Dialect::V4_0) {
+fn tabulated_directrix_type_allowed(
+    entity_type: i64,
+    form: i64,
+    global_table: GlobalTable,
+) -> bool {
+    if matches!(global_table, GlobalTable::V4_0) {
         return matches!(
             (entity_type, form),
             (100 | 102 | 110 | 112, 0) | (104, 0..=3) | (126, 0..=5)
@@ -1407,7 +1411,7 @@ pub(super) fn project(
         if !tabulated_directrix_type_allowed(
             directrix_entry.entity_type,
             directrix_entry.form,
-            global.dialect(),
+            global.global_table(),
         ) {
             losses.push(entity_loss(
                 entry,

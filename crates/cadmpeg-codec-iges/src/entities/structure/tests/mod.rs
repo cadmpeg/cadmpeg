@@ -15,7 +15,7 @@ use super::{
     subfigure_definition_directory_fields_valid,
 };
 use crate::directory::{DirectoryEntry, Status};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;

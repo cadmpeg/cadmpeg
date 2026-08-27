@@ -12,7 +12,7 @@
 //! shows the gap plainly. The registry enumerates eleven Fixed ASCII versions
 //! because IGES 5.3 section 2.2.4.3.23 enumerates eleven version flags; this
 //! codec has verified Global tables for five of them
-//! ([`crate::global::Dialect`] groups the rest as `Legacy`). A document at an
+//! ([`crate::global::GlobalTable`] groups the rest as `Legacy`). A document at an
 //! unverified version still classifies into its own identity row and is
 //! admitted as [`Admission::AdmittedUnverified`], naming the row whose Global
 //! table actually parsed it.
@@ -270,7 +270,7 @@ impl IgesDialect {
     /// The row whose Global table parses a document this codec has not verified
     /// at its own version.
     ///
-    /// [`crate::global::Dialect::Legacy`] reads the 26-field Global table, which
+    /// [`crate::global::GlobalTable::Legacy`] reads the 26-field Global table, which
     /// is the table of 5.1, 5.2, and 5.3. 5.3 is the newest of the three and the
     /// one the codec's other defaults follow, so it names the strategy used.
     const fn nearest_verified(representation: Representation) -> Self {

@@ -931,25 +931,33 @@ fn network_connectivity_uses_versioned_null_pointer_rules() {
     assert!(network_connectivity_valid(
         &definition,
         &instance,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(!network_connectivity_valid(
         &definition,
         &instance,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(network_connectivity_valid(
         &definition,
         &[Some(3)],
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
-    assert!(!network_connectivity_valid(&definition, &[], Dialect::V5_0));
+    assert!(!network_connectivity_valid(
+        &definition,
+        &[],
+        GlobalTable::V5_0
+    ));
     assert!(!network_connectivity_valid(
         &[None],
         &[Some(3)],
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
-    assert!(network_connectivity_valid(&[None], &[None], Dialect::V5_0));
+    assert!(network_connectivity_valid(
+        &[None],
+        &[None],
+        GlobalTable::V5_0
+    ));
 }
 
 #[test]
@@ -982,49 +990,49 @@ fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
 
     assert!(!subfigure_definition_directory_fields_valid(
         &entry(0, 0, 2, 0),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(subfigure_definition_directory_fields_valid(
         &entry(1, 0, 2, 0),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(subfigure_definition_directory_fields_valid(
         &entry(0, 0, 2, 1),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(!subfigure_definition_directory_fields_valid(
         &entry(1, 1, 2, 0),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(!subfigure_definition_directory_fields_valid(
         &entry(1, 0, 1, 0),
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(subfigure_definition_directory_fields_valid(
         &entry(0, 3, 2, 0),
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
 }
 
 #[test]
 fn attribute_list_type_meaning_uses_versioned_ranges() {
-    for (dialect, value, expected) in [
-        (Dialect::V4_0, 0, Some("property-entity-defined")),
-        (Dialect::V4_0, 5, Some("other-application-area")),
-        (Dialect::V4_0, 5000, Some("other-application-area")),
-        (Dialect::V4_0, 5001, Some("user-defined")),
-        (Dialect::V4_0, 9999, Some("user-defined")),
-        (Dialect::V4_0, 10_000, None),
-        (Dialect::V5_0, 0, Some("type406-form15-defined")),
-        (Dialect::V5_0, 5, Some("electrical-lep-manufacturing")),
-        (Dialect::V5_0, 6, Some("other-application-area")),
-        (Dialect::V5_0, 5000, Some("other-application-area")),
-        (Dialect::V5_0, 5001, Some("implementor-defined")),
-        (Dialect::V5_0, 9999, Some("implementor-defined")),
-        (Dialect::V5_0, 10_000, None),
+    for (global_table, value, expected) in [
+        (GlobalTable::V4_0, 0, Some("property-entity-defined")),
+        (GlobalTable::V4_0, 5, Some("other-application-area")),
+        (GlobalTable::V4_0, 5000, Some("other-application-area")),
+        (GlobalTable::V4_0, 5001, Some("user-defined")),
+        (GlobalTable::V4_0, 9999, Some("user-defined")),
+        (GlobalTable::V4_0, 10_000, None),
+        (GlobalTable::V5_0, 0, Some("type406-form15-defined")),
+        (GlobalTable::V5_0, 5, Some("electrical-lep-manufacturing")),
+        (GlobalTable::V5_0, 6, Some("other-application-area")),
+        (GlobalTable::V5_0, 5000, Some("other-application-area")),
+        (GlobalTable::V5_0, 5001, Some("implementor-defined")),
+        (GlobalTable::V5_0, 9999, Some("implementor-defined")),
+        (GlobalTable::V5_0, 10_000, None),
     ] {
         assert_eq!(
-            crate::entities::structure::attribute_list_type_meaning(value, dialect),
+            crate::entities::structure::attribute_list_type_meaning(value, global_table),
             expected
         );
     }

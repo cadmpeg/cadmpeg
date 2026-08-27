@@ -25,50 +25,50 @@ use super::*;
 
 #[test]
 fn composite_child_types_follow_the_declared_dialect() {
-    assert!(composite_child_type_allowed(116, 0, Dialect::V4_0));
-    assert!(composite_child_type_allowed(132, 0, Dialect::V4_0));
-    assert!(composite_child_type_allowed(112, 0, Dialect::V4_0));
-    assert!(!composite_child_type_allowed(112, 1, Dialect::V4_0));
-    assert!(!composite_child_type_allowed(112, 3, Dialect::V5_0));
-    assert!(!composite_child_type_allowed(106, 1, Dialect::V4_0));
-    assert!(!composite_child_type_allowed(130, 0, Dialect::V4_0));
-    assert!(composite_child_type_allowed(106, 1, Dialect::V5_0));
-    assert!(composite_child_type_allowed(130, 0, Dialect::V5_0));
-    assert!(composite_child_type_allowed(142, 0, Dialect::V5_3));
+    assert!(composite_child_type_allowed(116, 0, GlobalTable::V4_0));
+    assert!(composite_child_type_allowed(132, 0, GlobalTable::V4_0));
+    assert!(composite_child_type_allowed(112, 0, GlobalTable::V4_0));
+    assert!(!composite_child_type_allowed(112, 1, GlobalTable::V4_0));
+    assert!(!composite_child_type_allowed(112, 3, GlobalTable::V5_0));
+    assert!(!composite_child_type_allowed(106, 1, GlobalTable::V4_0));
+    assert!(!composite_child_type_allowed(130, 0, GlobalTable::V4_0));
+    assert!(composite_child_type_allowed(106, 1, GlobalTable::V5_0));
+    assert!(composite_child_type_allowed(130, 0, GlobalTable::V5_0));
+    assert!(composite_child_type_allowed(142, 0, GlobalTable::V5_3));
 }
 
 #[test]
 fn composite_child_count_follows_the_declared_dialect() {
-    assert_eq!(composite_minimum_child_count(Dialect::V4_0), 2);
-    assert_eq!(composite_minimum_child_count(Dialect::V5_0), 1);
-    assert_eq!(composite_minimum_child_count(Dialect::V5_3), 1);
+    assert_eq!(composite_minimum_child_count(GlobalTable::V4_0), 2);
+    assert_eq!(composite_minimum_child_count(GlobalTable::V5_0), 1);
+    assert_eq!(composite_minimum_child_count(GlobalTable::V5_3), 1);
 }
 
 #[test]
 fn composite_entity_use_flag_follows_the_declared_dialect() {
-    assert!(composite_use_flag_valid(0, Dialect::V4_0));
+    assert!(composite_use_flag_valid(0, GlobalTable::V4_0));
     for use_flag in [1, 2, 3, 4, 5] {
         assert!(
-            !composite_use_flag_valid(use_flag, Dialect::V4_0),
+            !composite_use_flag_valid(use_flag, GlobalTable::V4_0),
             "{use_flag}"
         );
     }
     for use_flag in 0..=6 {
         assert!(
-            composite_use_flag_valid(use_flag, Dialect::V5_0),
+            composite_use_flag_valid(use_flag, GlobalTable::V5_0),
             "{use_flag}"
         );
     }
-    assert!(!composite_use_flag_valid(7, Dialect::V5_0));
+    assert!(!composite_use_flag_valid(7, GlobalTable::V5_0));
 }
 
 #[test]
 fn composite_line_font_follows_the_declared_dialect_and_hierarchy() {
-    assert!(composite_line_font_valid(1, 0, Dialect::V4_0));
-    assert!(composite_line_font_valid(-3, 2, Dialect::V4_0));
-    assert!(!composite_line_font_valid(0, 0, Dialect::V4_0));
-    assert!(composite_line_font_valid(0, 1, Dialect::V4_0));
-    assert!(composite_line_font_valid(0, 0, Dialect::V5_0));
+    assert!(composite_line_font_valid(1, 0, GlobalTable::V4_0));
+    assert!(composite_line_font_valid(-3, 2, GlobalTable::V4_0));
+    assert!(!composite_line_font_valid(0, 0, GlobalTable::V4_0));
+    assert!(composite_line_font_valid(0, 1, GlobalTable::V4_0));
+    assert!(composite_line_font_valid(0, 0, GlobalTable::V5_0));
 }
 
 #[test]
@@ -76,27 +76,27 @@ fn composite_logical_connector_use_flag_is_a_v5_rule() {
     assert!(composite_logical_connector_use_valid(
         0,
         true,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(!composite_logical_connector_use_valid(
         0,
         true,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
         4,
         true,
-        Dialect::V5_3
+        GlobalTable::V5_3
     ));
     assert!(!composite_logical_connector_use_valid(
         5,
         true,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
         0,
         false,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
 }
 
