@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-registry"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
