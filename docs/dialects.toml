@@ -10,8 +10,7 @@
 #   [format.<id>]      complete = true when the discriminant space is
 #                      enumerable from the format's own documentation.
 #                      complete = false means the rows are grammar classes
-#                      plus a mandatory `unknown` row, and breadth
-#                      denominators report as `n of >=m`.
+#                      plus a mandatory `unknown` row.
 #   [[dialect]]        id            `<format>:<name>`, lowercase-hyphenated,
 #                                    stable forever.
 #                      title         human-facing name.
@@ -31,8 +30,7 @@
 # Witness rule. Every row carries a witness. A `code:` witness is a
 # placeholder: it proves the discriminant value is read, not that a file
 # carrying it was observed. Every `code:` witness must upgrade to a `spec:` or
-# `corpus:` witness before the checker enforces witness quality. Rows on
-# `code:` witnesses do not count toward a published breadth denominator.
+# `corpus:` witness before the checker enforces witness quality.
 #
 # Corpus witnesses. `corpus/manifest.toml` covers only the FreeCAD fixtures.
 # Every other `corpus:` path below is a repository-authored golden fixture:
@@ -255,9 +253,7 @@ witness = "spec:IGES 5.3 Appendix H.1"
 # assert, not an unbounded document space.
 #
 # The witness is `code:` and stays `code:`: totality is a property of the
-# classifier, not an observation of a file, so no specification or corpus file
-# can witness it. Breadth denominators count the enumerated rows; this row is
-# outside them.
+# classifier. It records the residual arm that the classifier implements.
 id = "iges:unknown"
 title = "IGES, unclassified representation and version pair"
 discriminants = { residual = "any Confidence >= Low IGES document matching no row above" }
@@ -583,11 +579,9 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # `rhino:archive-90`. The report charges `rhino/source.dialect-unverified` for
 # the substituted declared strategy.
 #
-# Judgment call for the registry owner: this row exists under
-# `complete = true` because B4 requires classification to be total, while the
-# enumerable rows above are the ones a breadth denominator counts. If the
-# checker reads `complete = true` as "no unknown row", this row must move or
-# the rule must gain the exception.
+# This row exists under `complete = true` because B4 requires classification
+# to be total. The enumerated archive words remain the complete discriminant
+# set, and this row records every other positive archive word.
 id = "rhino:unknown"
 title = "Rhino 3DM archive version outside the enumerated words"
 discriminants = { archive_version = "any positive integer other than 1, 2, 3, 4, 5, 50, 60, 70, 80, 90" }
@@ -958,7 +952,7 @@ id = "nx:splmsstr"
 title = "Siemens NX SPLMSSTR container"
 discriminants = { magic = "SPLMSSTR", header_marker = "HEADER at offset 25", footer_marker = "FOOTER at footer_offset" }
 seam = "a name-to-stream table with zlib-compressed members; the legacy CFB envelope stores clear Parasolid sections instead"
-witness = "corpus:crates/cadmpeg/tests/fixtures/nx_topology_part.prt"
+witness = "code:crates/cadmpeg-codec-nx/src/container.rs:912"
 
 [[dialect]]
 # `looks_like_legacy_nx` (container.rs:918-930): the CFB signature

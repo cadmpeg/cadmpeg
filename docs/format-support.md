@@ -4,17 +4,17 @@
 
 ### Scoring rules
 
-1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
+1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage — concretely, the format's `scored` list in `docs/dialect-support.toml`. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
 2. **Full pass.** A level passes when its requirements and the proof criteria hold across mainstream files in the declared envelope. One fixture, an entity census, or an opaque record capture does not pass a level.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
-4. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec.
+4. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec. The published headline for a format is the single integer level and nothing else.
 5. **Refusal is a visible mark.** Refusing a recognized band is a visible mark and can never improve any published number.
 
 ### Proof criteria
 
 A level passes only when every criterion holds for the declared envelope:
 
-- Real files exercise the scored level.
+- Real files exercise the scored level. A maintainer evaluation recorded in `docs/evaluations.toml` satisfies this criterion.
 - Every source byte is typed, classified as structural, or preserved as a named opaque record.
 - Every unsupported semantic construct produces a machine-readable loss.
 - Decode, validation, write, and conversion results are deterministic.
