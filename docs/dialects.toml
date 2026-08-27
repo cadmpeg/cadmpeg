@@ -269,6 +269,31 @@ discriminants = { representation = "binary", effective_version = "5.3", version_
 seam = "Binary Flag Section plus per-section identifier/count headers; a deprecated physical representation with no writer"
 witness = "spec:IGES 5.3 Appendix H.1"
 
+[[dialect]]
+# The mandatory totality row (design §3.3, B4). The Fixed ASCII block above
+# covers every value of the clamped version flag, but the Compressed ASCII and
+# Binary blocks stop at the flags whose representation this repository can cite
+# a specification for: 6, 8, 9, 10, and 11. A Compressed ASCII or Binary file
+# whose clamped flag is 1, 2, 3, 4, 5, or 7 therefore matches no row above, and
+# without this row the classification would not be total. The missing rows are
+# not invented here: the IGES 3.0 specification would witness them, and each
+# one that gains a witness leaves this row and enters the enumeration.
+#
+# `complete = true` still holds for the format. The version-flag space is
+# enumerable from IGES 5.3 section 2.2.4.3.23 and is enumerated above; what
+# this row absorbs is a representation/version product the registry declines to
+# assert, not an unbounded document space.
+#
+# The witness is `code:` and stays `code:`: totality is a property of the
+# classifier, not an observation of a file, so no specification or corpus file
+# can witness it. Breadth denominators count the enumerated rows; this row is
+# outside them.
+id = "iges:unknown"
+title = "IGES, unclassified representation and version pair"
+discriminants = { residual = "any Confidence >= Low IGES document matching no row above" }
+seam = "no declared row states this representation at this version; decode uses the nearest verified Global table and charges iges/source.dialect-unverified"
+witness = "code:crates/cadmpeg-codec-iges/src/dialect.rs"
+
 # --------------------------------------------------------------------------
 # STEP
 # --------------------------------------------------------------------------

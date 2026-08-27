@@ -5,6 +5,7 @@ use super::*;
 use crate::test_support::{point_file, point_file_with_global};
 use crate::{IgesCodec, IgesEncoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::report::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -154,15 +155,31 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .notes
         .contains(&"normalized_representation=compressed-ascii".into()));
 
+    // Compressed ASCII is not the dialect this writer synthesizes, so the
+    // replay gate declines and the report names both dialects. The gate used to
+    // compare the version alone and replayed the compressed bytes while the plan
+    // claimed Fixed ASCII. `TargetRequest::Inherit` (design section 8.1) is what
+    // asks for preservation; the encoder trait does not carry it yet.
     let plan = IgesEncoder::default()
         .plan(EncodeInput {
             ir: result.ir(),
             fidelity: Some(result.source_fidelity()),
         })
         .unwrap();
-    let mut replayed = Vec::new();
-    plan.write_to(&mut replayed).unwrap();
-    assert_eq!(replayed, source);
+    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    match plan.fidelity_resolution() {
+        FidelityResolution::Degraded { reason } => {
+            assert!(
+                reason.contains("source is iges:5.3-compressed-ascii"),
+                "{reason}"
+            );
+            assert!(
+                reason.contains("target is iges:5.3-fixed-ascii"),
+                "{reason}"
+            );
+        }
+        other => panic!("a representation mismatch must degrade: {other:?}"),
+    }
 }
 
 #[test]

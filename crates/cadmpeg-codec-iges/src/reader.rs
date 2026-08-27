@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
+use crate::dialect::IgesDialect;
 use crate::loss::IgesLossCode;
+use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, loss, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{
@@ -14,9 +17,18 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn source_meta(global: &global::ResolvedGlobal, representation: &str) -> SourceMeta {
+/// Builds the source metadata, mirroring the primary-layer match into
+/// [`SourceMeta::dialect`] and [`SourceMeta::declared`].
+///
+/// The `iges_version` attribute stays. It duplicates the `effective_version`
+/// declared key for now; retiring the ad-hoc attribute keys is a later phase.
+fn source_meta(
+    global: &global::ResolvedGlobal,
+    representation: Representation,
+    primary: &DialectMatch,
+) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    attributes.insert("representation".into(), representation.into());
+    attributes.insert("representation".into(), representation.as_str().into());
     attributes.insert(
         "parameter_delimiter".into(),
         char::from(global.parameter_delimiter).to_string(),
@@ -40,9 +52,9 @@ fn source_meta(global: &global::ResolvedGlobal, representation: &str) -> SourceM
         attributes.insert("native_file_name".into(), value);
     }
     SourceMeta {
-        declared: BTreeMap::new(),
-        dialect: None,
-        format: "iges".into(),
+        declared: primary.declared.clone(),
+        dialect: primary.dialect.clone(),
+        format: crate::dialect::FORMAT.into(),
         attributes,
     }
 }
@@ -215,13 +227,17 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
 pub(crate) fn inspect(
     ctx: &DecodeContext<'_>,
     window: &[u8],
-    representation: &str,
+    representation: Representation,
     source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
     let parse = PhysicalParse::run(window, Some(ctx), ParseMode::Inspect)?;
     let mut losses = parse.admission_losses();
     losses.extend(parse.record_losses());
     let mut summary = card::summarize(&parse.scan);
+    summary
+        .dialects
+        .push(IgesDialect::classify(representation, &parse.global));
+    debug_assert_primary_layer(&summary.dialects, &summary.format);
     summary.notes.extend(parse.global.summary_notes());
     summary
         .notes
@@ -233,8 +249,8 @@ pub(crate) fn inspect(
         .notes
         .extend(graph::summary_notes(&parse.references));
     summary.notes.extend(loss::census(&losses));
-    if representation != "fixed-ascii" {
-        summary.container_kind = representation.into();
+    if representation != Representation::FixedAscii {
+        summary.container_kind = representation.as_str().into();
         if let Some(note) = summary
             .notes
             .iter_mut()
@@ -242,9 +258,10 @@ pub(crate) fn inspect(
         {
             *note = format!("source_bytes={source_size}");
         }
-        summary
-            .notes
-            .push(format!("normalized_representation={representation}"));
+        summary.notes.push(format!(
+            "normalized_representation={}",
+            representation.as_str()
+        ));
     }
     Ok(summary)
 }
@@ -252,7 +269,7 @@ pub(crate) fn inspect(
 pub(crate) fn decode(
     parse_bytes: &[u8],
     source_bytes: &[u8],
-    representation: &str,
+    representation: Representation,
     options: DecodeOptions,
     ctx: &DecodeContext<'_>,
 ) -> Result<DecodeResult, CodecError> {
@@ -280,7 +297,7 @@ pub(crate) fn decode(
 fn decode_with_occurrence_limits(
     parse_bytes: &[u8],
     source_bytes: &[u8],
-    representation: &str,
+    representation: Representation,
     options: DecodeOptions,
     product_occurrence_output_limit: usize,
     product_occurrence_depth_limit: usize,
@@ -320,7 +337,8 @@ fn decode_with_occurrence_limits(
     if let Some(context) = &length_context {
         ir.tolerances.linear = context.minimum_resolution_mm();
     }
-    ir.source = Some(source_meta(&parse.global, representation));
+    let primary = IgesDialect::classify(representation, &parse.global);
+    ir.source = Some(source_meta(&parse.global, representation, &primary));
     let projection = match length_context.filter(|_| !options.container_only) {
         Some(context) => {
             charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
@@ -553,11 +571,13 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
+    let dialects = vec![primary];
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
-            dialects: Vec::new(),
-            format: "iges".into(),
+            dialects,
+            format: crate::dialect::FORMAT.into(),
             container_only: options.container_only,
             geometry_transferred,
             coverage: std::collections::BTreeMap::new(),
@@ -603,7 +623,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
     decode_with_occurrence_limits(
         bytes,
         bytes,
-        "fixed-ascii",
+        Representation::FixedAscii,
         options,
         output_limit,
         depth_limit,

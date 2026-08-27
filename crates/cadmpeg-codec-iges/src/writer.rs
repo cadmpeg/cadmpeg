@@ -5,9 +5,11 @@
 //! source image byte for byte. Otherwise the semantic writer emits the current
 //! supported neutral profile and refuses unsupported models or native records.
 
+use crate::dialect::IgesDialect;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
@@ -88,10 +90,12 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     options: crate::IgesWriteOptions,
 ) -> Result<ExportPlan<'_>, CodecError> {
-    let declined = match replay_bytes(input.ir, input.fidelity, options.version)? {
-        Replay::Replayed(bytes) => {
+    let target = IgesDialect::fixed_ascii(options.version).id();
+    let declined = match replay_bytes(input.ir, input.fidelity, &target)? {
+        Replay::Replayed { bytes, dialect } => {
             return Ok(ExportPlan::buffered(
                 report(
+                    dialect,
                     FidelityResolution::Replayed,
                     WritePath::VerbatimReplay,
                     Vec::new(),
@@ -108,7 +112,7 @@ pub(crate) fn plan(
         .ir
         .source
         .as_ref()
-        .is_some_and(|source| source.format == "iges");
+        .is_some_and(|source| source.format == crate::dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
@@ -136,6 +140,7 @@ pub(crate) fn plan(
     };
     Ok(ExportPlan::buffered(
         report(
+            target,
             fidelity,
             WritePath::Synthesized,
             losses,
@@ -149,8 +154,16 @@ pub(crate) fn plan(
 /// Outcome of the replay decision. A decline carries the specific cause when
 /// the source is an IGES document, so the export report can name it.
 enum Replay {
-    Replayed(Vec<u8>),
-    Declined { reason: Option<String> },
+    /// The preserved bytes, and the dialect they are in. Replay reproduces the
+    /// source's dialect, so the report states that rather than the synthesis
+    /// target.
+    Replayed {
+        bytes: Vec<u8>,
+        dialect: DialectId,
+    },
+    Declined {
+        reason: Option<String>,
+    },
 }
 
 impl Replay {
@@ -165,12 +178,27 @@ impl Replay {
     }
 }
 
+/// Decides byte replay against five conditions, in order: the source is an IGES
+/// document, it carries a document baseline, its dialect is the one this export
+/// targets, the decoded model still matches the baseline, and the retained image
+/// is present and intact.
+///
+/// The dialect compare is the full typed identity, not the version alone. A
+/// version-only compare is blind to the physical representation, so a Compressed
+/// ASCII or Binary source at the target version replayed its own bytes while the
+/// plan claimed Fixed ASCII. The semantic writer emits Fixed ASCII only, so a
+/// preserved non-Fixed-ASCII image is a different dialect from the target and
+/// declines to a degraded synthesis.
 fn replay_bytes(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
-    version: crate::IgesVersion,
+    target: &DialectId,
 ) -> Result<Replay, CodecError> {
-    let Some(source) = ir.source.as_ref().filter(|source| source.format == "iges") else {
+    let Some(source) = ir
+        .source
+        .as_ref()
+        .filter(|source| source.format == crate::dialect::FORMAT)
+    else {
         return Ok(Replay::declined());
     };
     let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
@@ -178,21 +206,19 @@ fn replay_bytes(
             "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
         )));
     };
-    match source.attributes.get("iges_version") {
+    let source_dialect = match source.dialect.as_ref() {
         None => {
             return Ok(Replay::declined_because(format!(
-                "preserved IGES source records no version, target is {}; byte replay skipped",
-                version.name()
+                "preserved IGES source records no dialect, target is {target}; byte replay skipped"
             )));
         }
-        Some(source_version) if source_version != version.name() => {
+        Some(dialect) if dialect != target => {
             return Ok(Replay::declined_because(format!(
-                "source is {source_version}, target is {}; byte replay skipped",
-                version.name()
+                "source is {dialect}, target is {target}; byte replay skipped"
             )));
         }
-        Some(_) => {}
-    }
+        Some(dialect) => dialect.clone(),
+    };
     if crate::document_digest(ir) != *expected {
         return Ok(Replay::declined_because(
             "decoded model no longer matches the preserved IGES source digest; byte replay skipped",
@@ -212,10 +238,14 @@ fn replay_bytes(
             "retained IGES source image failed integrity validation".into(),
         ));
     }
-    Ok(Replay::Replayed(data.to_vec()))
+    Ok(Replay::Replayed {
+        bytes: data.to_vec(),
+        dialect: source_dialect,
+    })
 }
 
 fn report(
+    target: DialectId,
     fidelity: FidelityResolution,
     write_path: WritePath,
     losses: Vec<LossNote>,
@@ -223,8 +253,8 @@ fn report(
     counts: BTreeMap<String, usize>,
 ) -> ExportReport {
     ExportReport {
-        target: None,
-        format: "iges".into(),
+        target: Some(target),
+        format: crate::dialect::FORMAT.into(),
         census: EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts,

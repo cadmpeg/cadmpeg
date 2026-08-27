@@ -12,6 +12,7 @@
 mod binary;
 mod card;
 mod compressed;
+mod dialect;
 mod directory;
 mod entities;
 mod error;
@@ -109,17 +110,18 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
-        match representation::classify(&mut reader)? {
+        let representation = representation::classify(&mut reader)?;
+        match representation {
             representation::Representation::FixedAscii => {
-                reader::inspect(ctx, root.window(), "fixed-ascii", root.window().len())
+                reader::inspect(ctx, root.window(), representation, root.window().len())
             }
             representation::Representation::CompressedAscii => {
                 let normalized = compressed::normalize(root.window(), Some(ctx))?;
-                reader::inspect(ctx, &normalized, "compressed-ascii", root.window().len())
+                reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Binary => {
                 let normalized = binary::normalize(root.window(), Some(ctx))?;
-                reader::inspect(ctx, &normalized, "binary", root.window().len())
+                reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),
@@ -133,42 +135,22 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let mut source = Cursor::new(root.window());
-        match representation::classify(&mut source)? {
-            representation::Representation::FixedAscii => reader::decode(
-                root.window(),
-                root.window(),
-                "fixed-ascii",
-                DecodeOptions {
-                    container_only: ctx.container_only(),
-                    policy: *ctx.policy(),
-                },
-                ctx,
-            ),
+        let representation = representation::classify(&mut source)?;
+        let options = DecodeOptions {
+            container_only: ctx.container_only(),
+            policy: *ctx.policy(),
+        };
+        match representation {
+            representation::Representation::FixedAscii => {
+                reader::decode(root.window(), root.window(), representation, options, ctx)
+            }
             representation::Representation::CompressedAscii => {
                 let normalized = compressed::normalize(root.window(), Some(ctx))?;
-                reader::decode(
-                    &normalized,
-                    root.window(),
-                    "compressed-ascii",
-                    DecodeOptions {
-                        container_only: ctx.container_only(),
-                        policy: *ctx.policy(),
-                    },
-                    ctx,
-                )
+                reader::decode(&normalized, root.window(), representation, options, ctx)
             }
             representation::Representation::Binary => {
                 let normalized = binary::normalize(root.window(), Some(ctx))?;
-                reader::decode(
-                    &normalized,
-                    root.window(),
-                    "binary",
-                    DecodeOptions {
-                        container_only: ctx.container_only(),
-                        policy: *ctx.policy(),
-                    },
-                    ctx,
-                )
+                reader::decode(&normalized, root.window(), representation, options, ctx)
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),
