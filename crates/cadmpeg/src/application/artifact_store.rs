@@ -325,6 +325,18 @@ mod tests {
         assert_eq!(detected, bytes);
     }
 
+    #[test]
+    fn non_compound_detection_under_a_small_limit_returns_a_prefix() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("part.igs");
+        std::fs::write(&path, vec![b'x'; 1024]).unwrap();
+
+        let detected = ArtifactStore::read_detection_input(&path, DETECTION_PREFIX_LEN, 16)
+            .expect("a non-CFB detection prefix respects the limit without refusing the file");
+
+        assert_eq!(detected, vec![b'x'; 16]);
+    }
+
     #[cfg(feature = "nx")]
     #[test]
     fn identify_and_cli_detection_reach_remote_compound_directory_evidence() {
