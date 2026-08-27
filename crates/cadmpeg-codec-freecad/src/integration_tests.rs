@@ -347,3 +347,112 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
         assert_valid_document(first.ir());
     }
 }
+
+/// Every reported dialect path, end to end through the public codec surface.
+///
+/// The unit tests in `dialect/tests.rs` pin `classify` against the registry.
+/// This one pins what a caller sees: the match on the container summary, the
+/// match and the loss on the decode report, and the `SourceMeta` mirror, for a
+/// declared schema and for one outside the declared rows.
+#[test]
+fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
+    let unverified = crate::loss::FreecadLossCode::SourceDialectUnverified
+        .note(String::new())
+        .code;
+    let body = "<Objects Count=\"0\"></Objects><ObjectData Count=\"0\"></ObjectData>";
+
+    // A declared schema: its own row, admitted, no dialect loss.
+    let bytes = archive(&format!(
+        "<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\">{body}</Document>"
+    ));
+    let summary = FcstdCodec
+        .inspect(
+            &mut Cursor::new(&bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect("FCStd inspection");
+    assert_eq!(summary.dialects.len(), 1);
+    assert_eq!(summary.dialects[0].format, "fcstd");
+    assert_eq!(
+        summary.dialects[0]
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("fcstd:schema-4")
+    );
+    assert_eq!(
+        summary.dialects[0].admission,
+        cadmpeg_core::dialect::Admission::Admitted
+    );
+
+    let result = decode(bytes);
+    assert_eq!(result.report().dialects, summary.dialects);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != unverified));
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(source.dialect, summary.dialects[0].dialect);
+    assert_eq!(source.declared, summary.dialects[0].declared);
+    assert_eq!(source.declared["schema_version"], "4");
+    assert_eq!(source.declared["file_version"], "1");
+    assert_eq!(source.declared["program_version"], "1.0");
+    // The pre-existing attribute keys keep their duties beside the mirror.
+    assert_eq!(source.attributes["schema_version"], "4");
+    assert_eq!(source.attributes["file_version"], "1");
+
+    // A schema outside the declared rows: the totality row, admitted with the
+    // schema-4 vocabulary substituted, and the loss naming the substitution.
+    let bytes = archive(&format!(
+        "<Document SchemaVersion=\"5\" FileVersion=\"1\">{body}</Document>"
+    ));
+    let summary = FcstdCodec
+        .inspect(
+            &mut Cursor::new(&bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect("FCStd inspection of an undeclared schema");
+    assert_eq!(
+        summary.dialects[0]
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("fcstd:unknown")
+    );
+    assert_eq!(
+        summary.dialects[0].admission,
+        cadmpeg_core::dialect::Admission::AdmittedUnverified {
+            nearest: cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
+        }
+    );
+
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("container-only decode of an undeclared schema");
+    assert_eq!(result.report().dialects, summary.dialects);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == unverified)
+            .count(),
+        1
+    );
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(source.declared["schema_version"], "5");
+    assert!(!source.declared.contains_key("program_version"));
+
+    // A full decode still refuses, so no report and no match are produced.
+    let refusal = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect_err("full decode of an undeclared schema");
+    assert!(refusal.to_string().contains("SchemaVersion=5"));
+}
