@@ -166,6 +166,8 @@ pub enum F3dLossCode {
     SourcePreservedImageUnavailable,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
+    /// An embedded kernel carrier was read with an unverified ACIS grammar.
+    KernelDialectUnverified,
 }
 
 impl F3dLossCode {
@@ -244,6 +246,7 @@ impl F3dLossCode {
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
+        Self::KernelDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -328,6 +331,7 @@ impl F3dLossCode {
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
 
@@ -432,7 +436,9 @@ impl F3dLossCode {
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
         }
     }
 
@@ -536,6 +542,7 @@ mod tests {
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
+                "source.kernel-dialect-unverified",
             ]
         );
     }
