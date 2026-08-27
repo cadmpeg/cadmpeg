@@ -377,7 +377,9 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             } else {
                 (None, acis_header::parse(buf))
             };
-            let solved_record_limit = asm_header::solved_record_limit(buf);
+            let solved_record_limit = header
+                .as_ref()
+                .and_then(|header| asm_header::solved_record_limit_with_header(buf, header));
             let sha = sha256_hex(buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(buf));

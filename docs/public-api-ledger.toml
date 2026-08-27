@@ -1146,3 +1146,10 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::report::LossTaxonomy::SourceDialectDisplaced"
 reason = "distinguish write-side source dialect identity displacement from an unverified decode-side declaration"
+
+[[change]]
+commit = "f6e212928df7f4d418aaffcd4dfd7c1328f3fae9"
+crate = "cadmpeg-asm"
+kind = "addition"
+item = "cadmpeg_asm::{asm_header,acis_header}::{record_stream_start_with_header,solved_record_limit_with_header}"
+reason = "frame already-classified kernel carriers without reparsing their shared header"

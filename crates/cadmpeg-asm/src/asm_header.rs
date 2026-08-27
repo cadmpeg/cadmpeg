@@ -116,10 +116,18 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
 /// the `asmheader`, which is `RecordTable` index 0. Returns `None` for streams
 /// without a recognized header layout.
 pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
-    if !has_asm_magic(bytes) {
-        return None;
-    }
-    let start = string_region_start(bytes)?;
+    let header = parse(bytes)?;
+    record_stream_start_with_header(bytes, &header)
+}
+
+/// Byte offset at which the SAB record stream begins, using an already-parsed
+/// ASM header.
+pub fn record_stream_start_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
+    let start = match header.width {
+        8 => bf8::LEN,
+        4 => bf4::LEN,
+        _ => return None,
+    };
     let (strings, doubles, cur) = read_string_region(bytes, start);
     (strings.len() == 3 && doubles.len() == 3).then_some(cur)
 }
@@ -138,10 +146,15 @@ const HISTORY_PREAMBLE_RECORD: &str = "Begin-of-ASM-History-Data";
 /// used because string payloads can contain the same bytes.
 pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
     let header = parse(bytes)?;
+    solved_record_limit_with_header(bytes, &header)
+}
+
+/// Exact solved-record boundary, using an already-parsed ASM header.
+pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
     if !header.has_history_partition() {
         return None;
     }
-    let start = record_stream_start(bytes)?;
+    let start = record_stream_start_with_header(bytes, header)?;
     let records = crate::sab::frame(bytes, start, bytes.len(), usize::from(header.width)).ok()?;
     if let Some(preamble) = records
         .iter()

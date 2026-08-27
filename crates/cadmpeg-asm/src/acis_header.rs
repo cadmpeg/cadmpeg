@@ -52,7 +52,16 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
 
 /// Byte offset immediately after the three strings and three doubles.
 pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
-    parse(bytes)?;
+    let header = parse(bytes)?;
+    record_stream_start_with_header(bytes, &header)
+}
+
+/// Byte offset immediately after the three strings and three doubles, using
+/// an already-parsed ACIS header.
+pub fn record_stream_start_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
+    if header.width != 4 {
+        return None;
+    }
     let (strings, doubles, position) = read_string_region(bytes, acis_bf4::LEN);
     (strings.len() == 3 && doubles.len() == 3).then_some(position)
 }
@@ -61,10 +70,15 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
 /// partition.
 pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
     let header = parse(bytes)?;
+    solved_record_limit_with_header(bytes, &header)
+}
+
+/// Exact solved-record boundary, using an already-parsed ACIS header.
+pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
     if !header.has_history_partition() {
         return None;
     }
-    let start = record_stream_start(bytes)?;
+    let start = record_stream_start_with_header(bytes, header)?;
     let records = crate::sab::frame(bytes, start, bytes.len(), 4).ok()?;
     let mut next = match records.last() {
         Some(record) => record.offset.checked_add(record.len)?,
