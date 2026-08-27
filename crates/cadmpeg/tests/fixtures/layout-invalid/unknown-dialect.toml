@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Deliberately broken layout table: `dialects` names an id with no row in
+# `docs/dialects.toml`. `crates/cadmpeg/tests/layout_tables.rs` asserts the
+# validator rejects it, so a table cannot key on a dialect that does not exist.
+schema = 1
+format = "f3d"
+spec = "docs/formats/f3d.md"
+endianness = "little"
+
+[[record]]
+name = "asmheader_binaryfile8"
+dialects = ["acis:asm-binaryfile-16"]
+kind = "byte"
+section = "3"
+anchor = "`BinaryFile8` header layout"
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "`0..15` | magic `ASM BinaryFile8`"

@@ -291,16 +291,17 @@ impl Encoder for RhinoEncoder {
             });
         let mut losses = Vec::new();
         if vertex_quantization {
-            losses.push(
-                loss::RhinoLossCode::MeshVertexPrecisionReduced
-                    .note("archive version 50 stores standalone mesh vertices as f32"),
-            );
+            losses.push(loss::RhinoLossCode::MeshVertexPrecisionReduced.note(
+                "archive version 50 stores standalone mesh vertices as f32; \
+                 rhino:archive-60, rhino:archive-70, and rhino:archive-80 store them as f64 \
+                 and would not charge this",
+            ));
         }
         if normal_quantization {
-            losses.push(
-                loss::RhinoLossCode::MeshNormalPrecisionReduced
-                    .note("3DM mesh normals are stored as f32"),
-            );
+            losses.push(loss::RhinoLossCode::MeshNormalPrecisionReduced.note(
+                "3DM mesh normals are stored as f32; every rhino write target charges this, \
+                 so no other target avoids it",
+            ));
         }
         let report = ExportReport {
             target: Some(cadmpeg_core::dialect::DialectId::pinned(version.target())),

@@ -66,14 +66,16 @@ pub(crate) mod uuid_wire_form {
     pub(crate) const DATA4: usize = 8;
 }
 
-/// Byte offsets for the `long_chunk_header_v2` record.
+/// Byte offsets for the `long_chunk_header_narrow` record.
 ///
 /// Spec §4. Record length 8 B.
 ///
+/// Dialects: `rhino:archive-1`, `rhino:archive-2`, `rhino:archive-3`, `rhino:archive-4`, `rhino:archive-5`, `rhino:unknown`.
+///
 /// ```text
-/// Archive versions below 50. The length word is `i32` below archive version 50 and `i64` from 50; the 8-byte total here is the below-50 form. `declared_length` bytes of body follow and include the trailing checksum when present.
+/// The narrow form: a 4-byte `i32` length word, selected when the archive-version word is below 50 (`ArchiveVersion::uses_eight_byte_values`). `declared_length` bytes of body follow and include the trailing checksum when present. `rhino:unknown` is keyed on both this record and its wide sibling: the residual row is any version word outside the enumerated ten, and the width follows the word, not the row.
 /// ```
-pub(crate) mod long_chunk_header_v2 {
+pub(crate) mod long_chunk_header_narrow {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 8;
     /// Offset of `typecode` (`u32`, little-endian). Spec §4.
@@ -82,14 +84,16 @@ pub(crate) mod long_chunk_header_v2 {
     pub(crate) const DECLARED_LENGTH: usize = 4;
 }
 
-/// Byte offsets for the `long_chunk_header_v50` record.
+/// Byte offsets for the `long_chunk_header_wide` record.
 ///
 /// Spec §4. Record length 12 B.
 ///
+/// Dialects: `rhino:archive-50`, `rhino:archive-60`, `rhino:archive-70`, `rhino:archive-80`, `rhino:archive-90`, `rhino:unknown`.
+///
 /// ```text
-/// Archive versions 50 and above widen the length word to `i64`.
+/// The wide form: the length word widens to an 8-byte `i64` when the archive-version word is 50 or above. `rhino:unknown` is keyed here for the reason stated on the narrow form.
 /// ```
-pub(crate) mod long_chunk_header_v50 {
+pub(crate) mod long_chunk_header_wide {
     /// Record length in bytes. Spec §4.
     pub(crate) const LEN: usize = 12;
     /// Offset of `typecode` (`u32`, little-endian). Spec §4.
@@ -98,14 +102,16 @@ pub(crate) mod long_chunk_header_v50 {
     pub(crate) const DECLARED_LENGTH: usize = 4;
 }
 
-/// Byte offsets for the `endoffile_record_v50` record.
+/// Byte offsets for the `endoffile_record_wide` record.
 ///
 /// Spec §5. Record length 20 B.
 ///
+/// Dialects: `rhino:archive-50`, `rhino:archive-60`, `rhino:archive-70`, `rhino:archive-80`, `rhino:archive-90`, `rhino:unknown`.
+///
 /// ```text
-/// `TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk whose declared length is exactly the file-size field width. The stored size includes the 32-byte header, all preceding chunks, the EOF typecode, the EOF value field, and the file-size field. Below archive version 50 the length and size words are four bytes each and the record is 12 bytes. The 20-byte total is derived from the three stated widths; the spec states no total.
+/// `TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk whose declared length is exactly the file-size field width. The stored size includes the 32-byte header, all preceding chunks, the EOF typecode, the EOF value field, and the file-size field. Below archive version 50 the length and size words are four bytes each and the record is 12 bytes; that narrow form has no record of its own here. `rhino:unknown` is keyed because an unenumerated version word at or above 50 reads this layout. The 20-byte total is derived from the three stated widths; the spec states no total.
 /// ```
-pub(crate) mod endoffile_record_v50 {
+pub(crate) mod endoffile_record_wide {
     /// Record length in bytes. Spec §5.
     pub(crate) const LEN: usize = 20;
     /// Offset of `typecode` (`u32`, little-endian). Spec §5.

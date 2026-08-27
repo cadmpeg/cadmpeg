@@ -47,6 +47,8 @@ variable-length token graphs and are listed under "Not tabulated".
 
 Spec §1 · layout: byte offsets · size: 47 B
 
+Dialects: `acis:asm-binaryfile-8`
+
 Fixed prefix only. The string region and the six trailing tagged metadata fields begin at byte 47 and are a sequence, not a fixed-offset structure.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
@@ -60,6 +62,8 @@ Fixed prefix only. The string region and the six trailing tagged metadata fields
 ## `asmheader_binaryfile4`
 
 Spec §1 · layout: byte offsets · size: 31 B
+
+Dialects: `acis:asm-binaryfile-4`
 
 Fixed prefix only; the string region begins at byte 31.
 
@@ -75,6 +79,8 @@ Fixed prefix only; the string region begins at byte 31.
 
 Spec §1 · layout: byte offsets · size: 31 B
 
+Dialects: `acis:save-format-217`, `acis:save-format-218`, `acis:save-format-binary-other`
+
 Fixed 32-bit ACIS prefix; the tagged string region begins at byte 31.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
@@ -88,6 +94,8 @@ Fixed 32-bit ACIS prefix; the tagged string region begins at byte 31.
 ## `body`
 
 Spec §5.2 · layout: byte offsets · size: 61 B
+
+Dialects: `acis:asm-binaryfile-8`
 
 Offsets are record-relative from the leading `0x11`. On `BinaryFile4` streams ref/int chunks are 5 bytes and the offsets scale accordingly.
 
@@ -224,6 +232,8 @@ Unstated regions:
 ## `point`
 
 Spec §5.3 · layout: byte offsets · size: 60 B
+
+Dialects: `acis:asm-binaryfile-8`
 
 The record terminates immediately after the position and carries no trailing reference-count integer.
 
