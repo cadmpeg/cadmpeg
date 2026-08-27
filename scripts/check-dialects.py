@@ -303,7 +303,11 @@ def check(root: Path) -> tuple[list[str], str]:
 
 
 def check_codec_emitted_ids(root: Path) -> list[str]:
-    """Require every pinned registry id as a Rust string literal in a codec."""
+    """Require each pinned id in non-comment Rust text under workspace crates.
+
+    This text scan removes ``//`` line comments but does not parse Rust syntax
+    or exclude code disabled by ``cfg`` attributes.
+    """
     path = root / REGISTRY_REL
     try:
         with path.open("rb") as handle:
@@ -319,6 +323,7 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
                 text = source.read_text(encoding="utf-8")
             except OSError:
                 continue
+            text = re.sub(r"//.*$", "", text, flags=re.MULTILINE)
             literals.update(re.findall(r'"([a-z0-9]+:[a-z0-9.-]+)"', text))
 
     failures: list[str] = []
