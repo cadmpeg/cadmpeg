@@ -38,6 +38,7 @@
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
 use crate::detect::StreamKind;
+use cadmpeg_asm::dialect::{acis_band_verified, nearest_verified_acis};
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
@@ -60,40 +61,6 @@ const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 /// Key of the text stream's terminator line in [`DialectMatch::declared`].
 /// Absent on the binary branches, which carry no terminator.
 const DECLARED_TERMINATOR: &str = "terminator";
-
-/// Save-format majors the Spatial ACIS record decoders are verified against.
-const VERIFIED_ACIS_MAJORS: [u32; 2] = [217, 218];
-
-/// Registry row of the lower verified Spatial ACIS band.
-///
-/// Owned by `cadmpeg-asm`, cited here: it names the kernel grammar this codec
-/// substitutes for a stream whose declared band no row verifies.
-const ACIS_SAVE_FORMAT_217: DialectId = DialectId::pinned("acis:save-format-217");
-/// Registry row of the upper verified Spatial ACIS band, under the same note as
-/// [`ACIS_SAVE_FORMAT_217`].
-const ACIS_SAVE_FORMAT_218: DialectId = DialectId::pinned("acis:save-format-218");
-
-/// Whether a Spatial ACIS save format is one the record decoders are verified
-/// against.
-///
-/// A header without a readable save-format word declares no band, so it is not
-/// in the verified one.
-fn acis_band_verified(save_format_major: Option<u32>) -> bool {
-    save_format_major.is_some_and(|major| VERIFIED_ACIS_MAJORS.contains(&major))
-}
-
-/// The verified band row whose record grammar an unverified stream is read
-/// with: the nearer of the two, by declared major.
-///
-/// A stream declaring no band at all, or one below the lower verified major,
-/// takes [`ACIS_SAVE_FORMAT_217`].
-fn nearest_verified_acis(save_format_major: Option<u32>) -> DialectId {
-    if save_format_major.is_some_and(|major| major >= 218) {
-        ACIS_SAVE_FORMAT_218
-    } else {
-        ACIS_SAVE_FORMAT_217
-    }
-}
 
 /// One row of `docs/dialects.toml` under the `sat` namespace.
 ///
@@ -149,9 +116,9 @@ impl SatDialect {
 /// The text branch's evidence.
 ///
 /// The terminator line selects the branch, and the header carries the save
-/// format the ACIS branch is gated on. The gate keys on the terminator, not on
+/// format the ACIS branch is banded on. The band keys on the terminator, not on
 /// the product family the header names, so an ASM product string under an ACIS
-/// terminator is refused outside the band, symmetrically with binary.
+/// terminator recovers outside the band, symmetrically with binary.
 pub(crate) struct TextEvidence<'a> {
     /// Branch the terminator line selected.
     pub(crate) branch: sat::Dialect,

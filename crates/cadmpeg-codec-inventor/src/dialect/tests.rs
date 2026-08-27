@@ -155,9 +155,12 @@ fn decoded(bytes: &[u8]) -> (DialectMatch, Vec<LossNote>) {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("both version gates degrade rather than refuse");
     let report = decoded.report();
-    assert_eq!(report.dialects.len(), 1, "{:#?}", report.dialects);
-    assert_eq!(report.dialects[0].format, FORMAT);
-    (report.dialects[0].clone(), report.losses.clone())
+    // The report also carries the non-primary `acis:` kernel layer. These
+    // fixtures carry an ASM carrier, which is admitted at every save format, so
+    // the only dialect-unverified charge they can raise is the host's.
+    let primary = cadmpeg_core::dialect::primary_layer(&report.dialects, FORMAT)
+        .unwrap_or_else(|| panic!("one primary layer, got {:#?}", report.dialects));
+    (primary.clone(), report.losses.clone())
 }
 
 /// Whether `losses` charges [`InventorLossCode::SourceDialectUnverified`].

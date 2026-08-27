@@ -77,15 +77,17 @@
 # format that has a catalog must appear in it. It also proves each exported
 # id is a subset of that format's identity rows and is not `write = "none"`.
 #
-# Two namespaces have no owning crate, so nothing classifies them on the read
-# side. `acis:` is registry-only: its streams are wrapped by the `sat:` rows.
-# `parasolid:` schema tokens are read as attributes inside the sldprt and nx
-# readers. The schema has no cell for "identity row with no reader", so these
-# twelve rows carry the disposition the wrapping code enforces and say so in
-# the reason. Two of them are written even so: the sldprt writer stamps a
-# Parasolid schema token on every stream it generates, which is synthesis at
-# the kernel layer, and an embedded-kernel dialect is never its host's
-# `targets()` row.
+# `parasolid:` has no owning crate, so nothing classifies it on the read side:
+# its schema tokens are read as attributes inside the sldprt and nx readers.
+# The schema has no cell for "identity row with no reader", so those four rows
+# carry the disposition the wrapping code enforces and say so in the reason.
+# Two of them are written even so: the sldprt writer stamps a Parasolid schema
+# token on every stream it generates, which is synthesis at the kernel layer,
+# and an embedded-kernel dialect is never its host's `targets()` row.
+#
+# `acis:` does have an owner, `cadmpeg-asm`, which pins its rows and the
+# save-format band its record decoders are verified against. The hosts emit
+# those ids as non-primary `DialectMatch` layers and cite the band.
 
 
 # --------------------------------------------------------------------------
@@ -1281,9 +1283,9 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+admitted at every save format: the ASM record decoders compare none. The
+Inventor decode emits this id as the non-primary kernel layer of a
+four-byte-width carrier; the goldens that pin it are code-built"""
 
 [[support]]
 dialect = "acis:asm-binaryfile-8"
@@ -1291,9 +1293,8 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+the eight-byte-width half of `acis:asm-binaryfile-4`, under the same
+note"""
 
 [[support]]
 dialect = "acis:save-format-217"
@@ -1301,9 +1302,9 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-a verified band. The `acis:` namespace is registry-only on the identity
-side, so no host row is ever this id; `cadmpeg-codec-sat` does name it as
-the `nearest` grammar an unverified band was read with"""
+a verified band: `Admission::Admitted` on the Inventor kernel layer, and
+the `nearest` grammar `cadmpeg-codec-sat` names when it recovers a band
+below 218. The goldens that pin it are code-built"""
 
 [[support]]
 dialect = "acis:save-format-218"
@@ -1322,10 +1323,10 @@ fixtures = []
 reason = """
 the unverified save-format band: framed and decoded with the nearer
 verified band's record grammar, in `cadmpeg-codec-sat` and again in
-`cadmpeg-codec-inventor`'s kernel carrier path. The host `sat:` row it
-wraps carries `Admission::AdmittedUnverified` and the
-source.dialect-unverified charge; no code emits this id itself, because
-the `acis:` namespace is registry-only"""
+`cadmpeg-codec-inventor`, which emits this id as the kernel layer of such
+a carrier. Both charge source.dialect-unverified on an
+`Admission::AdmittedUnverified` match; the goldens are code-built, so the
+row lists no fixture"""
 
 [[support]]
 dialect = "acis:text-asm"

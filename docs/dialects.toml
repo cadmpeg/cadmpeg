@@ -1248,7 +1248,7 @@ complete = false
 id = "sat:asm-binary"
 title = "Bare ASM binary stream"
 discriminants = { magic = "ASM BinaryFile4 | ASM BinaryFile8" }
-seam = "admitted at any save format: the ASM binary path performs no save-format comparison (crates/cadmpeg-codec-sat/src/decode.rs:38-73, crates/cadmpeg-codec-sat/src/dialect.rs:208-234). Kernel layer: acis:asm-binaryfile-4 or acis:asm-binaryfile-8"
+seam = "admitted at any save format: the ASM binary path performs no save-format comparison (crates/cadmpeg-codec-sat/src/decode.rs:38-73, crates/cadmpeg-codec-sat/src/dialect.rs:175-185). Kernel layer: acis:asm-binaryfile-4 or acis:asm-binaryfile-8"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
 
 [[dialect]]
@@ -1257,7 +1257,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
 id = "sat:acis-binary"
 title = "Bare Spatial ACIS binary stream"
 discriminants = { magic = "ACIS BinaryFile" }
-seam = "the save format bands the admission, never the decode: `dialect::admission` (crates/cadmpeg-codec-sat/src/dialect.rs:208) reports Admitted inside majors 217 and 218 and AdmittedUnverified outside them, naming the nearer verified band as `nearest`. Every band takes the same framing and record decode (crates/cadmpeg-codec-sat/src/decode.rs:75-119); an unverified band charges source.dialect-unverified and reports what its records decoded. Kernel layer: acis:save-format-217, acis:save-format-218, or acis:save-format-binary-other"
+seam = "the save format bands the admission, never the decode: `dialect::admission` (crates/cadmpeg-codec-sat/src/dialect.rs:175) reports Admitted inside majors 217 and 218 and AdmittedUnverified outside them, naming the nearer verified band as `nearest`. Every band takes the same framing and record decode (crates/cadmpeg-codec-sat/src/decode.rs:75-119); an unverified band charges source.dialect-unverified and reports what its records decoded. Kernel layer: acis:save-format-217, acis:save-format-218, or acis:save-format-binary-other"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 
 [[dialect]]
@@ -1268,7 +1268,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and bands ACIS-terminated streams by majors 217 and 218 through the same code as the ACIS binary path, `dialect::admission` (crates/cadmpeg-codec-sat/src/dialect.rs:208). The band moves the admission and the source.dialect-unverified mark, not the record decode, which runs identically at every band (crates/cadmpeg-codec-sat/src/decode.rs:112-149). The band keys on the terminator-derived branch, not on the product family the header names, so ASM-terminated text streams are Admitted at any save format. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
+seam = "the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and bands ACIS-terminated streams by majors 217 and 218 through the same code as the ACIS binary path, `dialect::admission` (crates/cadmpeg-codec-sat/src/dialect.rs:175). The band moves the admission and the source.dialect-unverified mark, not the record decode, which runs identically at every band (crates/cadmpeg-codec-sat/src/decode.rs:112-149). The band keys on the terminator-derived branch, not on the product family the header names, so ASM-terminated text streams are Admitted at any save format. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 
 [[dialect]]
@@ -1327,33 +1327,37 @@ witness = "corpus:crates/cadmpeg-codec-f3d/tests/golden/fixtures/topology_base.f
 [[dialect]]
 # `ACIS BinaryFile` (acis_header.rs:15) with `save_format_major` 217. Width is
 # hard-coded to 4 (acis_header.rs:29, :68) -- there is no width digit in this
-# magic. This is a verified band: `dialect::admission`
-# (crates/cadmpeg-codec-sat/src/dialect.rs:208) reports Admitted for it, and
-# it is one of the two rows an unverified band names as `nearest`.
+# magic. This is a verified band: `cadmpeg_asm::dialect::acis_band_verified`
+# (crates/cadmpeg-asm/src/dialect.rs:40) holds for it, so its hosts report
+# Admitted, and it is one of the two rows an unverified band names as
+# `nearest`.
 id = "acis:save-format-217"
 title = "Spatial ACIS binary stream, save format 217"
 discriminants = { magic = "ACIS BinaryFile", save_format_major = "217" }
-witness = "code:crates/cadmpeg-codec-sat/src/dialect.rs:71"
+witness = "code:crates/cadmpeg-asm/src/dialect.rs:27"
 
 [[dialect]]
 # Same magic, `save_format_major` 218. The other verified band.
 id = "acis:save-format-218"
 title = "Spatial ACIS binary stream, save format 218"
 discriminants = { magic = "ACIS BinaryFile", save_format_major = "218" }
-witness = "code:crates/cadmpeg-codec-sat/src/dialect.rs:74"
+witness = "code:crates/cadmpeg-asm/src/dialect.rs:29"
 
 [[dialect]]
 # Same magic, any other major. Disposition: recovery -- the records are framed
-# and decoded with the nearer verified band's grammar, the host row carries
-# `Admission::AdmittedUnverified` naming that band, and
-# `SatLossCode::SourceDialectUnverified` is charged
-# (crates/cadmpeg-codec-sat/src/dialect.rs:90-234). Mirrored as an inspect
-# note at detect.rs:130-136.
+# and decoded with the nearer verified band's grammar
+# (`cadmpeg_asm::dialect::nearest_verified_acis`,
+# crates/cadmpeg-asm/src/dialect.rs:50), the match carries
+# `Admission::AdmittedUnverified` naming that band, and the host charges its
+# `source.dialect-unverified` loss: `cadmpeg-codec-sat` on the `sat:` row
+# (crates/cadmpeg-codec-sat/src/dialect.rs:203) and `cadmpeg-codec-inventor`
+# on this kernel layer (crates/cadmpeg-codec-inventor/src/decode.rs:1881).
+# Mirrored as an inspect note at detect.rs:130-136.
 id = "acis:save-format-binary-other"
 title = "Spatial ACIS binary stream outside save formats 217 and 218"
 discriminants = { magic = "ACIS BinaryFile", save_format_major = "any other" }
 seam = "structurally identified and read with a verified band's record grammar; an AdmittedUnverified admission, not a refusal"
-witness = "code:crates/cadmpeg-codec-sat/src/dialect.rs:90"
+witness = "code:crates/cadmpeg-asm/src/dialect.rs:63"
 
 [[dialect]]
 # `sat::Dialect::Asm` (crates/cadmpeg-asm/src/sat.rs:27-33). The text branch
