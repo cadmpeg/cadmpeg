@@ -29,7 +29,21 @@ const GENERATED_PHYSICAL_CHANGE_GUID: &str = "00000000-0000-4000-8000-0000000000
 /// Fields from the top-level manifest that govern asset-folder ownership.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TopLevelManifest {
+    /// Leading length-prefixed ASCII version field, as the cursor read it.
+    ///
+    /// [`parse_top_level`] admits one value and refuses every other, so this is
+    /// the reading rather than a range. It is the evidence the dialect match
+    /// records, kept beside the parse instead of re-derived at the report
+    /// boundary.
+    version: String,
     asset_folder_bases: Vec<String>,
+}
+
+impl TopLevelManifest {
+    /// The version field the top-level manifest declared, verbatim.
+    pub(crate) fn declared_version(&self) -> &str {
+        &self.version
+    }
 }
 
 /// Prefix fields that identify one asset manifest.
@@ -234,10 +248,15 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
         let _value = cursor.u32(&format!("top-level manifest registry value {ordinal}"))?;
     }
 
-    parse_asset_tail(bytes, cursor.position())
+    let asset_folder_bases = parse_asset_tail(bytes, cursor.position())?;
+    Ok(TopLevelManifest {
+        version,
+        asset_folder_bases,
+    })
 }
 
-fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<TopLevelManifest, CodecError> {
+/// The asset-folder base run of the one exact tail framing.
+fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<String>, CodecError> {
     let mut selected = None;
     for at in start..bytes.len().saturating_sub(3) {
         if bytes.get(at..at + 4) != Some(36_u32.to_le_bytes().as_slice()) {
@@ -261,7 +280,7 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<TopLevelManifest, Code
     })
 }
 
-fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, CodecError> {
+fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<String>, CodecError> {
     let mut cursor = Cursor::from_offset(bytes, at)?;
     let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
     let asset_folder_count = bounded_nonzero_count(
@@ -284,7 +303,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
     }
     cursor.expect_u32("top-level manifest terminal word", 0)?;
     if cursor.exhausted() {
-        return Ok(TopLevelManifest { asset_folder_bases });
+        return Ok(asset_folder_bases);
     }
     match cursor.u8("top-level manifest terminal byte")? {
         0 => {
@@ -322,7 +341,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
     }
     cursor.finish("top-level manifest")?;
 
-    Ok(TopLevelManifest { asset_folder_bases })
+    Ok(asset_folder_bases)
 }
 
 /// Resolve the unique Design archive folder through the top-level folder run
