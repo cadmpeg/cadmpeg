@@ -560,126 +560,126 @@ item = "cadmpeg_ir::diff::{SourceDiff::dialect_change,SourceDiff::declared}"
 reason = "the source differ saw only attributes, so a dialect divergence would have compared as agreement"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::Encoder::plan"
 reason = "plan takes the caller's TargetRequest; resolution needs the request and the source together, and an encoder that cannot see the request cannot refuse a target it does not write"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::Encoder::targets"
 reason = "the static synthesis catalog moves into the encoder; the five scattered CLI-side defaults collapse to one catalog entry per format"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::CodecError::UnsupportedTarget"
 reason = "the write-side refusal, naming the requested dialect and the catalog; CodecError is non_exhaustive so no exhaustive match breaks"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg"
 kind = "field"
 item = "cadmpeg::application::ExportTarget::selection"
 reason = "flag absence is not a target: whether it means preservation or the catalog default is only known once the source is read"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::EncodeInput::new"
 reason = "one construction path for the borrowed export input, now that every call site also passes a request"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg-codec-iges"
 kind = "signature"
 item = "cadmpeg_codec_iges::IgesVersion::target"
 reason = "the registry dialect id a write version names, so a caller spells the request the same way the report answers it"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg-codec-rhino"
 kind = "signature"
 item = "cadmpeg_codec_rhino::RhinoArchiveVersion::target"
 reason = "the registry dialect id an archive version names, for the same reason"
 
 [[change]]
-commit = "b3b71f647"
+commit = "b3b71f647a14d6c032c2c8f7511c1652b5dd60f3"
 crate = "cadmpeg-codec-step"
 kind = "signature"
 item = "cadmpeg_codec_step::StepSchema::target"
 reason = "the registry dialect id a schema names, for the same reason"
 
 [[change]]
-commit = "31f5ebdb0"
+commit = "31f5ebdb0f8a03b35fc5474c6268f655d5da9d47"
 crate = "cadmpeg"
 kind = "signature"
 item = "cadmpeg::application::export_target"
 reason = "a separate step_target parameter, because --reject-step-losses shares the wrong-format guard with --step-target but must not name a target"
 
 [[change]]
-commit = "31f5ebdb0"
+commit = "31f5ebdb0f8a03b35fc5474c6268f655d5da9d47"
 crate = "cadmpeg"
 kind = "field"
 item = "cadmpeg::commands::ConversionPlan::step_target"
 reason = "the schema --step-target named, separate from step_options, which also carries the loss policy"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-core"
 kind = "field"
 item = "cadmpeg_core::ContainerSummary::dialects"
 reason = "always serialized: an empty list is the summary stating it identified no layer, which omission cannot express"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::report::DecodeReport::dialects"
 reason = "always serialized, for the same reason"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::report::ExportReport::target"
 reason = "always serialized as `null` when the encoder wrote a form the registry does not name"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::document::SourceMeta::dialect"
 reason = "always serialized as `null` when absent; stays `Option` because synthetic documents have no honest id, and `DecodeResult::new` debug-asserts the mirror a decode owes instead"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::document::SourceMeta::declared"
 reason = "always serialized; this is the member that moves the document digest of every document carrying source metadata"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION"
 reason = "2 to 3, because `report.dialects` is now always written; v1 and v2 sidecars still load and restamp"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V2"
 reason = "names the version that omits `dialects`, so a reader can spell the accepted set instead of hardcoding it"
 
 [[change]]
-commit = "0d2be2134"
+commit = "0d2be213463b2a87c41850de8e74d30d7c5d46a2"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSIONS_ACCEPTED"
