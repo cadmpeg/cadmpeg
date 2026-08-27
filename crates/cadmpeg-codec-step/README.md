@@ -1,8 +1,9 @@
 # cadmpeg-codec-step
 
 `cadmpeg-codec-step` reads and writes ISO 10303-21 Part 21 exchange structures for
-AP203 editions 1–2, AP214, and AP242 editions 1–3. Schema selection uses
-[`StepSchema`] through [`StepWriteOptions`]. [`StepCodec`] implements both
+AP203 editions 1–2, AP214, and AP242 editions 1–3. The target [`StepSchema`]
+is an argument to [`write_step`], resolved from the encoder's catalog by
+[`StepCodec::plan`]. [`StepCodec`] implements both
 [`Codec`] decode and [`Encoder`] write. The cadmpeg CLI uses the same model.
 
 <!-- generated: capability -->
@@ -93,8 +94,9 @@ declares millimetres. Supply geometry in millimetres before export. The context
 uses the IR linear tolerance as its uncertainty value; plane and solid angles
 use radians and steradians.
 
-[`StepWriteOptions`] controls `FILE_NAME` metadata and the target
-[`StepSchema`]. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
+[`StepWriteOptions`] controls `FILE_NAME` metadata and the unsupported-content
+policy; the target [`StepSchema`] is `write_step`'s own argument, never encoder
+state. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
 default output deterministic. The first body name, when present, supplies the
 STEP product name. `product_name` supplies the `FILE_NAME` name instead.
 

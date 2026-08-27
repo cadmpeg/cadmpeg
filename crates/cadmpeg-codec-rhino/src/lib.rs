@@ -192,7 +192,8 @@ impl Encoder for RhinoEncoder {
     /// The catalog default supplies the target only when there is nothing to
     /// inherit: the document has no source, or a source of another format. That
     /// is the cross-format path, resolved by `Inherited::Fallback` — the
-    /// application layer states no default of its own. The encoder holds no version of its
+    /// application layer states no default of its own. The encoder holds no
+    /// version of its
     /// own; an encoder-held one used to override every other answer, which is
     /// how an archive-50 source came back as archive 80.
     fn plan<'a>(

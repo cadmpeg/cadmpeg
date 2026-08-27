@@ -1,4 +1,4 @@
-# generated at 4c65315c4
+# generated at dde088151
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -207,6 +207,7 @@ pub cadmpeg_ir::appearance::AppearanceBinding::id: alloc::string::String
 pub cadmpeg_ir::appearance::AppearanceBinding::object_type: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::appearance::AppearanceBinding::source_entity_id: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::appearance::AppearanceBinding::target: cadmpeg_ir::appearance::AppearanceTarget
+pub cadmpeg_ir::appearance::AppearanceBinding::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::appearance::AppearanceBinding
 pub fn cadmpeg_ir::appearance::AppearanceBinding::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::appearance::AppearanceBinding::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -517,10 +518,48 @@ impl core::marker::Unpin for cadmpeg_ir::codec::Confidence
 impl core::marker::UnsafeUnpin for cadmpeg_ir::codec::Confidence
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::Confidence
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::Confidence
+pub enum cadmpeg_ir::codec::Inherited<'a>
+pub cadmpeg_ir::codec::Inherited::Fallback(&'static str)
+pub cadmpeg_ir::codec::Inherited::Source(&'a cadmpeg_core::dialect::DialectId)
+impl<'a> core::clone::Clone for cadmpeg_ir::codec::Inherited<'a>
+pub fn cadmpeg_ir::codec::Inherited<'a>::clone(&self) -> cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::cmp::Eq for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::cmp::PartialEq for cadmpeg_ir::codec::Inherited<'a>
+pub fn cadmpeg_ir::codec::Inherited<'a>::eq(&self, &cadmpeg_ir::codec::Inherited<'a>) -> bool
+impl<'a> core::fmt::Debug for cadmpeg_ir::codec::Inherited<'a>
+pub fn cadmpeg_ir::codec::Inherited<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::StructuralPartialEq for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::marker::Freeze for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::marker::Send for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::marker::Sync for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::marker::Unpin for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::Inherited<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::Inherited<'a>
+pub enum cadmpeg_ir::codec::TargetRequest<'a>
+pub cadmpeg_ir::codec::TargetRequest::Explicit(&'a str)
+pub cadmpeg_ir::codec::TargetRequest::Inherit
+impl<'a> core::clone::Clone for cadmpeg_ir::codec::TargetRequest<'a>
+pub fn cadmpeg_ir::codec::TargetRequest<'a>::clone(&self) -> cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::cmp::Eq for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::cmp::PartialEq for cadmpeg_ir::codec::TargetRequest<'a>
+pub fn cadmpeg_ir::codec::TargetRequest<'a>::eq(&self, &cadmpeg_ir::codec::TargetRequest<'a>) -> bool
+impl<'a> core::fmt::Debug for cadmpeg_ir::codec::TargetRequest<'a>
+pub fn cadmpeg_ir::codec::TargetRequest<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::marker::StructuralPartialEq for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::marker::Freeze for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::marker::Send for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::marker::Sync for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::marker::Unpin for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::TargetRequest<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::TargetRequest<'a>
 pub struct cadmpeg_ir::codec::CadirEncoder
 impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::clone(&self) -> cadmpeg_ir::codec::CadirEncoder
 impl core::default::Default for cadmpeg_ir::codec::CadirEncoder
@@ -564,12 +603,12 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::DecodeOptions
 impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
-pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> &mut cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::report_mut(&mut self) -> &mut cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
-pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> &mut cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::clone(&self) -> cadmpeg_ir::codec::DecodeResult
 impl core::cmp::PartialEq for cadmpeg_ir::codec::DecodeResult
@@ -587,6 +626,8 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::DecodeResult
 pub struct cadmpeg_ir::codec::EncodeInput<'a>
 pub cadmpeg_ir::codec::EncodeInput::fidelity: core::option::Option<&'a cadmpeg_ir::source_fidelity::SourceFidelity>
 pub cadmpeg_ir::codec::EncodeInput::ir: &'a cadmpeg_ir::document::CadIr
+impl<'a> cadmpeg_ir::codec::EncodeInput<'a>
+pub const fn cadmpeg_ir::codec::EncodeInput<'a>::new(&'a cadmpeg_ir::document::CadIr, core::option::Option<&'a cadmpeg_ir::source_fidelity::SourceFidelity>) -> Self
 impl<'a> core::clone::Clone for cadmpeg_ir::codec::EncodeInput<'a>
 pub fn cadmpeg_ir::codec::EncodeInput<'a>::clone(&self) -> cadmpeg_ir::codec::EncodeInput<'a>
 impl<'a> core::fmt::Debug for cadmpeg_ir::codec::EncodeInput<'a>
@@ -614,6 +655,28 @@ impl<'a> core::marker::Unpin for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::ExportPlan<'a>
+pub struct cadmpeg_ir::codec::TargetDescriptor
+pub cadmpeg_ir::codec::TargetDescriptor::aliases: &'static [&'static str]
+pub cadmpeg_ir::codec::TargetDescriptor::default: bool
+pub cadmpeg_ir::codec::TargetDescriptor::id: &'static str
+pub cadmpeg_ir::codec::TargetDescriptor::label: &'static str
+impl core::clone::Clone for cadmpeg_ir::codec::TargetDescriptor
+pub fn cadmpeg_ir::codec::TargetDescriptor::clone(&self) -> cadmpeg_ir::codec::TargetDescriptor
+impl core::cmp::Eq for cadmpeg_ir::codec::TargetDescriptor
+impl core::cmp::PartialEq for cadmpeg_ir::codec::TargetDescriptor
+pub fn cadmpeg_ir::codec::TargetDescriptor::eq(&self, &cadmpeg_ir::codec::TargetDescriptor) -> bool
+impl core::fmt::Debug for cadmpeg_ir::codec::TargetDescriptor
+pub fn cadmpeg_ir::codec::TargetDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::codec::TargetDescriptor
+impl core::marker::StructuralPartialEq for cadmpeg_ir::codec::TargetDescriptor
+impl core::marker::Freeze for cadmpeg_ir::codec::TargetDescriptor
+impl core::marker::Send for cadmpeg_ir::codec::TargetDescriptor
+impl core::marker::Sync for cadmpeg_ir::codec::TargetDescriptor
+impl core::marker::Unpin for cadmpeg_ir::codec::TargetDescriptor
+impl core::marker::UnsafeUnpin for cadmpeg_ir::codec::TargetDescriptor
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::TargetDescriptor
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::TargetDescriptor
+pub const cadmpeg_ir::codec::UNRECORDED_SOURCE_DIALECT_REASON: &str
 pub trait cadmpeg_ir::codec::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
@@ -627,10 +690,18 @@ pub fn cadmpeg_ir::codec::CodecBackend::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::codec::Encoder
 pub fn cadmpeg_ir::codec::Encoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::Encoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+pub fn cadmpeg_ir::codec::default_target(&[cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static str>
+pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
+pub fn cadmpeg_ir::codec::resolve_catalog_write<T>(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor], impl core::ops::function::Fn(&str) -> core::option::Option<T>, &str) -> core::result::Result<(T, core::option::Option<alloc::string::String>), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::resolve_inherit<'a>(&'a cadmpeg_ir::document::CadIr, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::Inherited<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::unrecorded_source_dialect(&str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
+pub fn cadmpeg_ir::codec::unsupported_target(&str, &str, &str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
 pub mod cadmpeg_ir::compare
 pub const cadmpeg_ir::compare::FLOAT_TOLERANCE: f64
 pub const cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX: &str
@@ -727,6 +798,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::diff::ModifiedEntit
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::diff::ModifiedEntity
 pub struct cadmpeg_ir::diff::SourceDiff
 pub cadmpeg_ir::diff::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
+pub cadmpeg_ir::diff::SourceDiff::declared: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
+pub cadmpeg_ir::diff::SourceDiff::dialect_change: core::option::Option<(core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>)>
 pub cadmpeg_ir::diff::SourceDiff::format_change: core::option::Option<(alloc::string::String, alloc::string::String)>
 pub cadmpeg_ir::diff::SourceDiff::local_digests: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 impl cadmpeg_ir::diff::SourceDiff
@@ -859,6 +932,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::document::Model
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::document::Model
 pub struct cadmpeg_ir::document::SourceMeta
 pub cadmpeg_ir::document::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_ir::document::SourceMeta::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_ir::document::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_ir::document::SourceMeta::format: alloc::string::String
 impl core::clone::Clone for cadmpeg_ir::document::SourceMeta
 pub fn cadmpeg_ir::document::SourceMeta::clone(&self) -> cadmpeg_ir::document::SourceMeta
@@ -1150,6 +1225,7 @@ pub cadmpeg_ir::drawings::Drawing::rotation_degrees: core::option::Option<f64>
 pub cadmpeg_ir::drawings::Drawing::runtime_type: alloc::string::String
 pub cadmpeg_ir::drawings::Drawing::scale: core::option::Option<f64>
 pub cadmpeg_ir::drawings::Drawing::template: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::drawings::Drawing::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::drawings::Drawing
 pub fn cadmpeg_ir::drawings::Drawing::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::drawings::Drawing::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -1285,16 +1361,23 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::eval::SurfaceSecond
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::eval::SurfaceSecondPartials
 pub fn cadmpeg_ir::eval::analytic_surface_parameters(&cadmpeg_ir::geometry::SurfaceGeometry, cadmpeg_ir::math::Point3) -> core::option::Option<cadmpeg_ir::math::Point2>
 pub fn cadmpeg_ir::eval::curve_point(&cadmpeg_ir::geometry::CurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
+pub fn cadmpeg_ir::eval::curve_point_with_budget(&cadmpeg_ir::geometry::CurveGeometry, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::curve_second_derivative(&cadmpeg_ir::geometry::CurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Vector3>
+pub fn cadmpeg_ir::eval::curve_second_derivative_with_budget(&cadmpeg_ir::geometry::CurveGeometry, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Vector3>
 pub fn cadmpeg_ir::eval::curve_tangent(&cadmpeg_ir::geometry::CurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Vector3>
+pub fn cadmpeg_ir::eval::curve_tangent_with_budget(&cadmpeg_ir::geometry::CurveGeometry, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Vector3>
 pub fn cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(&cadmpeg_ir::sketches::SketchGeometry, &cadmpeg_ir::sketches::SketchGeometry, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::map_nurbs_curve_parameter(&cadmpeg_ir::geometry::NurbsCurve, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::model_curve_parameter_near_point(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::ids::CurveId, cadmpeg_ir::math::Point3, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::CurveId, cadmpeg_ir::math::Point3, f64) -> core::option::Option<f64>
+pub fn cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::CurveId, cadmpeg_ir::math::Point3, f64, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::model_curve_point_by_id(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::CurveId, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
+pub fn cadmpeg_ir::eval::model_curve_point_by_id_with_budget(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::CurveId, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::model_surface_partials_by_id(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::SurfaceId, f64, f64) -> core::option::Option<cadmpeg_ir::eval::SurfacePartials>
+pub fn cadmpeg_ir::eval::model_surface_partials_by_id_with_budget(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::SurfaceId, f64, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::eval::SurfacePartials>
 pub fn cadmpeg_ir::eval::model_surface_point(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::geometry::SurfaceGeometry, f64, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::model_surface_point_by_id(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::SurfaceId, f64, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
+pub fn cadmpeg_ir::eval::model_surface_point_by_id_with_budget(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::SurfaceId, f64, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::nurbs_curve_parameter_domain(&cadmpeg_ir::geometry::NurbsCurve) -> core::option::Option<[f64; 2]>
 pub fn cadmpeg_ir::eval::nurbs_curve_parameter_near_point(&cadmpeg_ir::geometry::NurbsCurve, cadmpeg_ir::math::Point3, f64, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::nurbs_curve_point(u32, &[f64], &[cadmpeg_ir::math::Point3], core::option::Option<&[f64]>, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
@@ -1303,18 +1386,26 @@ pub fn cadmpeg_ir::eval::nurbs_pcurve_contains_point(u32, &[f64], &[cadmpeg_ir::
 pub fn cadmpeg_ir::eval::nurbs_pcurve_parameter_domain(u32, &[f64], usize) -> core::option::Option<[f64; 2]>
 pub fn cadmpeg_ir::eval::nurbs_pcurve_uv(u32, &[f64], &[cadmpeg_ir::math::Point2], core::option::Option<&[f64]>, f64) -> core::option::Option<cadmpeg_ir::math::Point2>
 pub fn cadmpeg_ir::eval::nurbs_surface_closest_parameter(&cadmpeg_ir::geometry::NurbsSurface, cadmpeg_ir::math::Point3, core::option::Option<cadmpeg_ir::math::Point2>) -> core::option::Option<cadmpeg_ir::math::Point2>
+pub fn cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_ir::geometry::NurbsSurface, cadmpeg_ir::math::Point3, core::option::Option<cadmpeg_ir::math::Point2>, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Point2>
 pub fn cadmpeg_ir::eval::nurbs_surface_isocurve(&cadmpeg_ir::geometry::NurbsSurface, cadmpeg_ir::geometry::SurfaceParameterAxis, f64) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
 pub fn cadmpeg_ir::eval::nurbs_surface_isoline(&cadmpeg_ir::geometry::NurbsSurface, cadmpeg_ir::eval::IsolineDirection, f64) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
+pub fn cadmpeg_ir::eval::nurbs_surface_parameter_near_point(&cadmpeg_ir::geometry::NurbsSurface, cadmpeg_ir::math::Point3, core::option::Option<cadmpeg_ir::math::Point2>) -> core::option::Option<cadmpeg_ir::math::Point2>
 pub fn cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound(&cadmpeg_ir::geometry::NurbsSurface, [cadmpeg_ir::math::Point2; 2], [cadmpeg_ir::math::Point3; 2]) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&cadmpeg_ir::geometry::NurbsSurface, cadmpeg_ir::math::Point3, core::option::Option<cadmpeg_ir::math::Point2>, f64) -> core::option::Option<cadmpeg_ir::math::Point2>
+pub fn cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(&cadmpeg_ir::geometry::NurbsSurface, cadmpeg_ir::math::Point3, core::option::Option<cadmpeg_ir::math::Point2>, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Point2>
 pub fn cadmpeg_ir::eval::nurbs_surface_partials(&cadmpeg_ir::geometry::NurbsSurface, f64, f64) -> core::option::Option<cadmpeg_ir::eval::SurfacePartials>
+pub fn cadmpeg_ir::eval::nurbs_surface_partials_with_budget(&cadmpeg_ir::geometry::NurbsSurface, f64, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::eval::SurfacePartials>
 pub fn cadmpeg_ir::eval::nurbs_surface_point(&cadmpeg_ir::geometry::NurbsSurface, f64, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
+pub fn cadmpeg_ir::eval::nurbs_surface_point_with_budget(&cadmpeg_ir::geometry::NurbsSurface, f64, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::nurbs_surface_second_partials(&cadmpeg_ir::geometry::NurbsSurface, f64, f64) -> core::option::Option<cadmpeg_ir::eval::SurfaceSecondPartials>
+pub fn cadmpeg_ir::eval::nurbs_surface_second_partials_with_budget(&cadmpeg_ir::geometry::NurbsSurface, f64, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::eval::SurfaceSecondPartials>
 pub fn cadmpeg_ir::eval::pcurve_tangent(&cadmpeg_ir::geometry::PcurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Point2>
 pub fn cadmpeg_ir::eval::pcurve_uv(&cadmpeg_ir::geometry::PcurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Point2>
+pub fn cadmpeg_ir::eval::rolling_ball_jet_point(&cadmpeg_ir::geometry::ProceduralSurfaceDefinition, f64, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::spatial_points_are_reflections(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3) -> bool
 pub fn cadmpeg_ir::eval::surface_partials(&cadmpeg_ir::geometry::SurfaceGeometry, f64, f64) -> core::option::Option<cadmpeg_ir::eval::SurfacePartials>
 pub fn cadmpeg_ir::eval::surface_point(&cadmpeg_ir::geometry::SurfaceGeometry, f64, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
+pub fn cadmpeg_ir::eval::surface_point_with_budget(&cadmpeg_ir::geometry::SurfaceGeometry, f64, f64, &cadmpeg_core::decode::budget::WorkBudget<'_>) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::surface_second_partials(&cadmpeg_ir::geometry::SurfaceGeometry, f64, f64) -> core::option::Option<cadmpeg_ir::eval::SurfaceSecondPartials>
 pub mod cadmpeg_ir::features
 pub enum cadmpeg_ir::features::BinderConstruction
@@ -1986,6 +2077,8 @@ pub cadmpeg_ir::features::DatumPointConstruction::DistanceOnEdge::fraction: f64
 pub cadmpeg_ir::features::DatumPointConstruction::EdgePlaneIntersection
 pub cadmpeg_ir::features::DatumPointConstruction::EdgePlaneIntersection::edge: cadmpeg_ir::features::EdgeSelection
 pub cadmpeg_ir::features::DatumPointConstruction::EdgePlaneIntersection::plane: cadmpeg_ir::features::DatumPlaneReference
+pub cadmpeg_ir::features::DatumPointConstruction::SketchPoint
+pub cadmpeg_ir::features::DatumPointConstruction::SketchPoint::point: cadmpeg_ir::features::SketchPointSelection
 pub cadmpeg_ir::features::DatumPointConstruction::ThreePlaneIntersection
 pub cadmpeg_ir::features::DatumPointConstruction::ThreePlaneIntersection::planes: alloc::boxed::Box<[cadmpeg_ir::features::DatumPlaneReference; 3]>
 pub cadmpeg_ir::features::DatumPointConstruction::TwoEdgeIntersection
@@ -2280,6 +2373,8 @@ pub cadmpeg_ir::features::FeatureDefinition::BoundaryFill
 pub cadmpeg_ir::features::FeatureDefinition::BoundaryFill::cells: alloc::vec::Vec<cadmpeg_ir::features::BodySelection>
 pub cadmpeg_ir::features::FeatureDefinition::BoundaryFill::tools: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::BoundarySurfaceUnresolved
+pub cadmpeg_ir::features::FeatureDefinition::BrepUnresolved
+pub cadmpeg_ir::features::FeatureDefinition::BridgeCurveUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Chamfer
 pub cadmpeg_ir::features::FeatureDefinition::Chamfer::flip_direction: bool
 pub cadmpeg_ir::features::FeatureDefinition::Chamfer::groups: alloc::vec::Vec<cadmpeg_ir::features::ChamferGroup>
@@ -2302,6 +2397,8 @@ pub cadmpeg_ir::features::FeatureDefinition::CompositeCurve::closed: bool
 pub cadmpeg_ir::features::FeatureDefinition::CompositeCurve::segments: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
 pub cadmpeg_ir::features::FeatureDefinition::Compound
 pub cadmpeg_ir::features::FeatureDefinition::Compound::members: cadmpeg_ir::features::BodySelection
+pub cadmpeg_ir::features::FeatureDefinition::ConeUnresolved
+pub cadmpeg_ir::features::FeatureDefinition::CopyFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread::diameter: core::option::Option<cadmpeg_ir::features::Length>
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread::extent: core::option::Option<cadmpeg_ir::features::CosmeticThreadExtent>
@@ -2310,9 +2407,11 @@ pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::reverse: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::tools: cadmpeg_ir::features::FaceSelection
+pub cadmpeg_ir::features::FeatureDefinition::CylinderUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumAxis
 pub cadmpeg_ir::features::FeatureDefinition::DatumAxis::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::DatumAxis::origin: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::features::FeatureDefinition::DatumAxisUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem::x_axis: cadmpeg_ir::math::Vector3
@@ -2349,8 +2448,10 @@ pub cadmpeg_ir::features::FeatureDefinition::DeleteBody::mode: cadmpeg_ir::featu
 pub cadmpeg_ir::features::FeatureDefinition::DeleteFace
 pub cadmpeg_ir::features::FeatureDefinition::DeleteFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::DeleteFace::heal: bool
+pub cadmpeg_ir::features::FeatureDefinition::DeleteFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DerivedGeometry
 pub cadmpeg_ir::features::FeatureDefinition::DerivedGeometry::source: cadmpeg_ir::features::FeatureId
+pub cadmpeg_ir::features::FeatureDefinition::DetailedThreadUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Dome
 pub cadmpeg_ir::features::FeatureDefinition::Dome::elliptical: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Dome::faces: cadmpeg_ir::features::FaceSelection
@@ -2386,6 +2487,7 @@ pub cadmpeg_ir::features::FeatureDefinition::ExtendSurface::faces: cadmpeg_ir::f
 pub cadmpeg_ir::features::FeatureDefinition::ExtendSurface::method: cadmpeg_ir::features::SurfaceExtension
 pub cadmpeg_ir::features::FeatureDefinition::ExtractBody
 pub cadmpeg_ir::features::FeatureDefinition::ExtractBody::source: cadmpeg_ir::features::BodySelection
+pub cadmpeg_ir::features::FeatureDefinition::ExtractFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Extrude
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::direction: cadmpeg_ir::features::ExtrudeDirection
@@ -2398,6 +2500,7 @@ pub cadmpeg_ir::features::FeatureDefinition::Extrude::op: cadmpeg_ir::features::
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::profile: cadmpeg_ir::features::ProfileRef
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::solid: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::start: cadmpeg_ir::features::ExtrudeStart
+pub cadmpeg_ir::features::FeatureDefinition::ExtrudeUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::FaceBlend
 pub cadmpeg_ir::features::FeatureDefinition::FaceBlend::first_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::FaceBlend::radius: cadmpeg_ir::features::RadiusSpec
@@ -2405,6 +2508,7 @@ pub cadmpeg_ir::features::FeatureDefinition::FaceBlend::second_faces: cadmpeg_ir
 pub cadmpeg_ir::features::FeatureDefinition::FaceFromShapes
 pub cadmpeg_ir::features::FeatureDefinition::FaceFromShapes::face_maker_class: alloc::string::String
 pub cadmpeg_ir::features::FeatureDefinition::FaceFromShapes::sources: cadmpeg_ir::features::BodySelection
+pub cadmpeg_ir::features::FeatureDefinition::FillHoleUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::boundary: cadmpeg_ir::features::SurfaceBoundary
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::boundary_continuities: alloc::vec::Vec<cadmpeg_ir::features::SurfaceContinuity>
@@ -2413,6 +2517,7 @@ pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::merge_result: core::
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::support_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::Fillet
 pub cadmpeg_ir::features::FeatureDefinition::Fillet::groups: alloc::vec::Vec<cadmpeg_ir::features::FilletGroup>
+pub cadmpeg_ir::features::FeatureDefinition::FilletUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Flex
 pub cadmpeg_ir::features::FeatureDefinition::Flex::axis: core::option::Option<cadmpeg_ir::math::Vector3>
 pub cadmpeg_ir::features::FeatureDefinition::Flex::mode: cadmpeg_ir::features::FlexMode
@@ -2473,12 +2578,13 @@ pub cadmpeg_ir::features::FeatureDefinition::KnitSurface::merge_entities: core::
 pub cadmpeg_ir::features::FeatureDefinition::LineSegment
 pub cadmpeg_ir::features::FeatureDefinition::LineSegment::end: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::LineSegment::start: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::features::FeatureDefinition::LinkedFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Loft
 pub cadmpeg_ir::features::FeatureDefinition::Loft::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Loft::centerline: core::option::Option<cadmpeg_ir::features::PathRef>
-pub cadmpeg_ir::features::FeatureDefinition::Loft::check_compatibility: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Loft::closed: bool
 pub cadmpeg_ir::features::FeatureDefinition::Loft::guides: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
+pub cadmpeg_ir::features::FeatureDefinition::Loft::linearize: bool
 pub cadmpeg_ir::features::FeatureDefinition::Loft::max_degree: core::option::Option<u32>
 pub cadmpeg_ir::features::FeatureDefinition::Loft::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::features::FeatureDefinition::Loft::ruled: bool
@@ -2487,6 +2593,7 @@ pub cadmpeg_ir::features::FeatureDefinition::Loft::solid: bool
 pub cadmpeg_ir::features::FeatureDefinition::LoftUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::MeshImport
 pub cadmpeg_ir::features::FeatureDefinition::MeshImport::tessellations: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::features::FeatureDefinition::MirrorFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::MirrorShape
 pub cadmpeg_ir::features::FeatureDefinition::MirrorShape::plane_normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::MirrorShape::plane_origin: cadmpeg_ir::math::Point3
@@ -2500,6 +2607,8 @@ pub cadmpeg_ir::features::FeatureDefinition::MoveBody::translation: cadmpeg_ir::
 pub cadmpeg_ir::features::FeatureDefinition::MoveFace
 pub cadmpeg_ir::features::FeatureDefinition::MoveFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::MoveFace::motion: cadmpeg_ir::features::FaceMotion
+pub cadmpeg_ir::features::FeatureDefinition::MoveFaceUnresolved
+pub cadmpeg_ir::features::FeatureDefinition::MoveObjectUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Native
 pub cadmpeg_ir::features::FeatureDefinition::Native::kind: alloc::string::String
 pub cadmpeg_ir::features::FeatureDefinition::Native::parameters: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -2569,6 +2678,7 @@ pub cadmpeg_ir::features::FeatureDefinition::ReverseShape::source: cadmpeg_ir::f
 pub cadmpeg_ir::features::FeatureDefinition::Revolve
 pub cadmpeg_ir::features::FeatureDefinition::Revolve::construction: cadmpeg_ir::features::RevolutionConstruction
 pub cadmpeg_ir::features::FeatureDefinition::Revolve::op: cadmpeg_ir::features::BooleanOp
+pub cadmpeg_ir::features::FeatureDefinition::RevolveUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Rib
 pub cadmpeg_ir::features::FeatureDefinition::Rib::construction: cadmpeg_ir::features::RibConstruction
 pub cadmpeg_ir::features::FeatureDefinition::Rib::op: cadmpeg_ir::features::BooleanOp
@@ -2634,6 +2744,7 @@ pub cadmpeg_ir::features::FeatureDefinition::Sphere
 pub cadmpeg_ir::features::FeatureDefinition::Sphere::center: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::Sphere::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::features::FeatureDefinition::Sphere::radius: cadmpeg_ir::features::Length
+pub cadmpeg_ir::features::FeatureDefinition::SphereUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::SplitBody
 pub cadmpeg_ir::features::FeatureDefinition::SplitBody::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::SplitBody::tools: cadmpeg_ir::features::FaceSelection
@@ -2641,6 +2752,7 @@ pub cadmpeg_ir::features::FeatureDefinition::SplitFace
 pub cadmpeg_ir::features::FeatureDefinition::SplitFace::targets: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::SplitFace::tool: cadmpeg_ir::features::SplitFaceTool
 pub cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+pub cadmpeg_ir::features::FeatureDefinition::SubdivisionBodyUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Sweep
 pub cadmpeg_ir::features::FeatureDefinition::Sweep::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Sweep::guide_rail: core::option::Option<cadmpeg_ir::features::SweepGuideRail>
@@ -2661,6 +2773,9 @@ pub cadmpeg_ir::features::FeatureDefinition::Thicken
 pub cadmpeg_ir::features::FeatureDefinition::Thicken::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::Thicken::side: core::option::Option<cadmpeg_ir::features::ThickenSide>
 pub cadmpeg_ir::features::FeatureDefinition::Thicken::thickness: core::option::Option<cadmpeg_ir::features::Length>
+pub cadmpeg_ir::features::FeatureDefinition::ThreadUnresolved
+pub cadmpeg_ir::features::FeatureDefinition::ThroughCurveMeshUnresolved
+pub cadmpeg_ir::features::FeatureDefinition::TopologyOptimizationUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Torus
 pub cadmpeg_ir::features::FeatureDefinition::Torus::axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::Torus::center: cadmpeg_ir::math::Point3
@@ -2676,6 +2791,7 @@ pub cadmpeg_ir::features::FeatureDefinition::TrimBodies::keep: cadmpeg_ir::featu
 pub cadmpeg_ir::features::FeatureDefinition::TrimBodies::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::TrimBodies::tools: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::TrimSurface
+pub cadmpeg_ir::features::FeatureDefinition::TrimSurface::cell_selection: core::option::Option<cadmpeg_ir::features::TrimCellSelection>
 pub cadmpeg_ir::features::FeatureDefinition::TrimSurface::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::TrimSurface::keep: cadmpeg_ir::features::TrimRegion
 pub cadmpeg_ir::features::FeatureDefinition::TrimSurface::tool: cadmpeg_ir::features::PathRef
@@ -3886,6 +4002,8 @@ pub cadmpeg_ir::features::SheetMetalFlangeWidth::Symmetric::width: cadmpeg_ir::f
 pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSides
 pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSides::first: cadmpeg_ir::features::Length
 pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSides::second: cadmpeg_ir::features::Length
+pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSidesPerEdge
+pub cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSidesPerEdge::widths: alloc::vec::Vec<cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth>
 impl core::clone::Clone for cadmpeg_ir::features::SheetMetalFlangeWidth
 pub fn cadmpeg_ir::features::SheetMetalFlangeWidth::clone(&self) -> cadmpeg_ir::features::SheetMetalFlangeWidth
 impl core::cmp::PartialEq for cadmpeg_ir::features::SheetMetalFlangeWidth
@@ -4057,6 +4175,35 @@ impl core::marker::Unpin for cadmpeg_ir::features::ShellMode
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ShellMode
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ShellMode
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ShellMode
+pub enum cadmpeg_ir::features::SketchPointSelection
+pub cadmpeg_ir::features::SketchPointSelection::Native(alloc::string::String)
+pub cadmpeg_ir::features::SketchPointSelection::Planar
+pub cadmpeg_ir::features::SketchPointSelection::Planar::native: alloc::string::String
+pub cadmpeg_ir::features::SketchPointSelection::Planar::point: cadmpeg_ir::sketches::SketchEntityId
+pub cadmpeg_ir::features::SketchPointSelection::Planar::sketch: cadmpeg_ir::sketches::SketchId
+pub cadmpeg_ir::features::SketchPointSelection::Spatial
+pub cadmpeg_ir::features::SketchPointSelection::Spatial::native: alloc::string::String
+pub cadmpeg_ir::features::SketchPointSelection::Spatial::point: cadmpeg_ir::sketches::SpatialSketchEntityId
+pub cadmpeg_ir::features::SketchPointSelection::Spatial::sketch: cadmpeg_ir::sketches::SpatialSketchId
+pub cadmpeg_ir::features::SketchPointSelection::Unresolved
+impl core::clone::Clone for cadmpeg_ir::features::SketchPointSelection
+pub fn cadmpeg_ir::features::SketchPointSelection::clone(&self) -> cadmpeg_ir::features::SketchPointSelection
+impl core::cmp::PartialEq for cadmpeg_ir::features::SketchPointSelection
+pub fn cadmpeg_ir::features::SketchPointSelection::eq(&self, &cadmpeg_ir::features::SketchPointSelection) -> bool
+impl core::fmt::Debug for cadmpeg_ir::features::SketchPointSelection
+pub fn cadmpeg_ir::features::SketchPointSelection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::SketchPointSelection
+impl serde_core::ser::Serialize for cadmpeg_ir::features::SketchPointSelection
+pub fn cadmpeg_ir::features::SketchPointSelection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::SketchPointSelection
+pub fn cadmpeg_ir::features::SketchPointSelection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::SketchPointSelection
+impl core::marker::Send for cadmpeg_ir::features::SketchPointSelection
+impl core::marker::Sync for cadmpeg_ir::features::SketchPointSelection
+impl core::marker::Unpin for cadmpeg_ir::features::SketchPointSelection
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::SketchPointSelection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::SketchPointSelection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::SketchPointSelection
 pub enum cadmpeg_ir::features::SketchProfileRegion
 pub cadmpeg_ir::features::SketchProfileRegion::Loops
 pub cadmpeg_ir::features::SketchProfileRegion::Loops::holes: alloc::vec::Vec<u32>
@@ -4180,6 +4327,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::SurfaceConti
 pub enum cadmpeg_ir::features::SurfaceExtension
 pub cadmpeg_ir::features::SurfaceExtension::Linear
 pub cadmpeg_ir::features::SurfaceExtension::Natural
+pub cadmpeg_ir::features::SurfaceExtension::Perpendicular
 pub cadmpeg_ir::features::SurfaceExtension::Unresolved
 impl core::clone::Clone for cadmpeg_ir::features::SurfaceExtension
 pub fn cadmpeg_ir::features::SurfaceExtension::clone(&self) -> cadmpeg_ir::features::SurfaceExtension
@@ -5416,6 +5564,27 @@ impl core::marker::Unpin for cadmpeg_ir::features::ScaleFactors
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ScaleFactors
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ScaleFactors
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ScaleFactors
+pub struct cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+pub cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::first: cadmpeg_ir::features::Length
+pub cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::second: cadmpeg_ir::features::Length
+impl core::clone::Clone for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+pub fn cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::clone(&self) -> cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl core::cmp::PartialEq for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+pub fn cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::eq(&self, &cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth) -> bool
+impl core::fmt::Debug for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+pub fn cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl serde_core::ser::Serialize for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+pub fn cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+pub fn cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl core::marker::Send for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl core::marker::Sync for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl core::marker::Unpin for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::SheetMetalFlangeTwoSidedWidth
 pub struct cadmpeg_ir::features::SketchProfileBoundaryUse
 pub cadmpeg_ir::features::SketchProfileBoundaryUse::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::features::SketchProfileBoundaryUse::parameter_range: [f64; 2]
@@ -5481,6 +5650,30 @@ impl core::marker::Unpin for cadmpeg_ir::features::SweepPathExtent
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::SweepPathExtent
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::SweepPathExtent
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::SweepPathExtent
+pub struct cadmpeg_ir::features::TrimCellSelection
+pub cadmpeg_ir::features::TrimCellSelection::removed: alloc::vec::Vec<u64>
+pub cadmpeg_ir::features::TrimCellSelection::total: u64
+impl cadmpeg_ir::features::TrimCellSelection
+pub fn cadmpeg_ir::features::TrimCellSelection::is_valid(&self) -> bool
+impl core::clone::Clone for cadmpeg_ir::features::TrimCellSelection
+pub fn cadmpeg_ir::features::TrimCellSelection::clone(&self) -> cadmpeg_ir::features::TrimCellSelection
+impl core::cmp::Eq for cadmpeg_ir::features::TrimCellSelection
+impl core::cmp::PartialEq for cadmpeg_ir::features::TrimCellSelection
+pub fn cadmpeg_ir::features::TrimCellSelection::eq(&self, &cadmpeg_ir::features::TrimCellSelection) -> bool
+impl core::fmt::Debug for cadmpeg_ir::features::TrimCellSelection
+pub fn cadmpeg_ir::features::TrimCellSelection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::TrimCellSelection
+impl serde_core::ser::Serialize for cadmpeg_ir::features::TrimCellSelection
+pub fn cadmpeg_ir::features::TrimCellSelection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::TrimCellSelection
+pub fn cadmpeg_ir::features::TrimCellSelection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::TrimCellSelection
+impl core::marker::Send for cadmpeg_ir::features::TrimCellSelection
+impl core::marker::Sync for cadmpeg_ir::features::TrimCellSelection
+impl core::marker::Unpin for cadmpeg_ir::features::TrimCellSelection
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::TrimCellSelection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::TrimCellSelection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::TrimCellSelection
 pub struct cadmpeg_ir::features::VariableRadius
 pub cadmpeg_ir::features::VariableRadius::parameter: f64
 pub cadmpeg_ir::features::VariableRadius::radius: cadmpeg_ir::features::Length
@@ -5836,6 +6029,18 @@ pub cadmpeg_ir::geometry::DeformableSurfaceData::Minimal::vectors: [cadmpeg_ir::
 pub cadmpeg_ir::geometry::DeformableSurfaceData::Plain
 pub cadmpeg_ir::geometry::DeformableSurfaceData::Plain::frame: alloc::boxed::Box<cadmpeg_ir::geometry::DeformableSurfaceFrame>
 pub cadmpeg_ir::geometry::DeformableSurfaceData::Plain::parameter_triples: alloc::vec::Vec<[f64; 3]>
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::frame_flags: [bool; 2]
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::frame_parameter: f64
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::leading_flags: [bool; 3]
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::leading_parameter: f64
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::leading_vectors: [cadmpeg_ir::math::Vector3; 4]
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::parameters: [f64; 3]
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::trailing_flags: [bool; 5]
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::trailing_parameter: f64
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::trailing_point: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::trailing_value: i64
+pub cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3::trailing_vectors: [cadmpeg_ir::math::Vector3; 2]
 pub cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve
 pub cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve::first_parameter: f64
@@ -5937,6 +6142,8 @@ pub cadmpeg_ir::geometry::LawExpression::Spline::controls: alloc::vec::Vec<f64>
 pub cadmpeg_ir::geometry::LawExpression::Spline::knots: alloc::vec::Vec<f64>
 pub cadmpeg_ir::geometry::LawExpression::Spline::native_id: i64
 pub cadmpeg_ir::geometry::LawExpression::Spline::point: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::geometry::LawExpression::Text
+pub cadmpeg_ir::geometry::LawExpression::Text::value: alloc::string::String
 pub cadmpeg_ir::geometry::LawExpression::Transform
 pub cadmpeg_ir::geometry::LawExpression::Transform::enums: [i64; 3]
 pub cadmpeg_ir::geometry::LawExpression::Transform::scalars: [f64; 13]
@@ -6019,6 +6226,29 @@ impl core::marker::Unpin for cadmpeg_ir::geometry::LoftBridgeToken
 impl core::marker::UnsafeUnpin for cadmpeg_ir::geometry::LoftBridgeToken
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::geometry::LoftBridgeToken
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::geometry::LoftBridgeToken
+pub enum cadmpeg_ir::geometry::OffsetSupportExtension
+pub cadmpeg_ir::geometry::OffsetSupportExtension::Linear
+pub cadmpeg_ir::geometry::OffsetSupportExtension::Natural
+impl core::clone::Clone for cadmpeg_ir::geometry::OffsetSupportExtension
+pub fn cadmpeg_ir::geometry::OffsetSupportExtension::clone(&self) -> cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::cmp::Eq for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::cmp::PartialEq for cadmpeg_ir::geometry::OffsetSupportExtension
+pub fn cadmpeg_ir::geometry::OffsetSupportExtension::eq(&self, &cadmpeg_ir::geometry::OffsetSupportExtension) -> bool
+impl core::fmt::Debug for cadmpeg_ir::geometry::OffsetSupportExtension
+pub fn cadmpeg_ir::geometry::OffsetSupportExtension::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::marker::StructuralPartialEq for cadmpeg_ir::geometry::OffsetSupportExtension
+impl serde_core::ser::Serialize for cadmpeg_ir::geometry::OffsetSupportExtension
+pub fn cadmpeg_ir::geometry::OffsetSupportExtension::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::OffsetSupportExtension
+pub fn cadmpeg_ir::geometry::OffsetSupportExtension::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::marker::Send for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::marker::Sync for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::marker::Unpin for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::marker::UnsafeUnpin for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::geometry::OffsetSupportExtension
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::geometry::OffsetSupportExtension
 pub enum cadmpeg_ir::geometry::PcurveGeometry
 pub cadmpeg_ir::geometry::PcurveGeometry::Circle
 pub cadmpeg_ir::geometry::PcurveGeometry::Circle::center: cadmpeg_ir::math::Point2
@@ -6291,6 +6521,7 @@ pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset::distance: f64
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset::extension_flags: alloc::vec::Vec<bool>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset::support: cadmpeg_ir::ids::SurfaceId
+pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset::support_extension: core::option::Option<cadmpeg_ir::geometry::OffsetSupportExtension>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset::u_sense: core::option::Option<i64>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset::v_sense: core::option::Option<i64>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset
@@ -7267,6 +7498,7 @@ pub struct cadmpeg_ir::geometry::DeformableSurfaceConstruction
 pub cadmpeg_ir::geometry::DeformableSurfaceConstruction::data: cadmpeg_ir::geometry::DeformableSurfaceData
 pub cadmpeg_ir::geometry::DeformableSurfaceConstruction::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_ir::geometry::DeformableSurfaceConstruction::discontinuity_flag: bool
+pub cadmpeg_ir::geometry::DeformableSurfaceConstruction::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
 pub cadmpeg_ir::geometry::DeformableSurfaceConstruction::support: cadmpeg_ir::ids::SurfaceId
 impl core::clone::Clone for cadmpeg_ir::geometry::DeformableSurfaceConstruction
 pub fn cadmpeg_ir::geometry::DeformableSurfaceConstruction::clone(&self) -> cadmpeg_ir::geometry::DeformableSurfaceConstruction
@@ -7791,6 +8023,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::geometry::NurbsCurv
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::geometry::NurbsCurve
 pub struct cadmpeg_ir::geometry::NurbsSurface
 pub cadmpeg_ir::geometry::NurbsSurface::control_points: alloc::vec::Vec<cadmpeg_ir::math::Point3>
+pub cadmpeg_ir::geometry::NurbsSurface::normal_reversed: bool
 pub cadmpeg_ir::geometry::NurbsSurface::u_count: u32
 pub cadmpeg_ir::geometry::NurbsSurface::u_degree: u32
 pub cadmpeg_ir::geometry::NurbsSurface::u_knots: alloc::vec::Vec<f64>
@@ -8330,6 +8563,7 @@ pub cadmpeg_ir::geometry::SweepRevisionForm::primary_flag: bool
 pub cadmpeg_ir::geometry::SweepRevisionForm::profile_endpoints: [core::option::Option<f64>; 2]
 pub cadmpeg_ir::geometry::SweepRevisionForm::revision: i64
 pub cadmpeg_ir::geometry::SweepRevisionForm::tail_enum: i64
+pub cadmpeg_ir::geometry::SweepRevisionForm::tail_parameterization: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>
 impl core::clone::Clone for cadmpeg_ir::geometry::SweepRevisionForm
 pub fn cadmpeg_ir::geometry::SweepRevisionForm::clone(&self) -> cadmpeg_ir::geometry::SweepRevisionForm
 impl core::cmp::PartialEq for cadmpeg_ir::geometry::SweepRevisionForm
@@ -8612,10 +8846,13 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::geometry::VertexBlendConstruction
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::geometry::VertexBlendConstruction
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::geometry::VertexBlendConstruction
 pub fn cadmpeg_ir::geometry::derive_reference_direction(cadmpeg_ir::math::Vector3) -> cadmpeg_ir::math::Vector3
+pub fn cadmpeg_ir::geometry::knots_nondecreasing(&[f64]) -> bool
+pub fn cadmpeg_ir::geometry::knots_strictly_increasing(&[f64]) -> bool
 pub mod cadmpeg_ir::hash
 pub const cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str
 pub fn cadmpeg_ir::hash::canonical_json_sha256<T: serde_core::ser::Serialize>(&T) -> alloc::string::String
 pub fn cadmpeg_ir::hash::document_local_sha256(&cadmpeg_ir::document::CadIr, &str, &str) -> alloc::string::String
+pub fn cadmpeg_ir::hash::document_local_sha256_with_charge<E>(&cadmpeg_ir::document::CadIr, &str, &str, impl core::ops::function::FnMut(u64) -> core::result::Result<(), E>) -> core::result::Result<alloc::string::String, E>
 pub fn cadmpeg_ir::hash::sha256_hex(&[u8]) -> alloc::string::String
 pub mod cadmpeg_ir::ids
 pub enum cadmpeg_ir::ids::IdentityError
@@ -9566,6 +9803,7 @@ pub fn cadmpeg_ir::index::ModelIndex<'a>::identities(&self) -> impl core::iter::
 pub fn cadmpeg_ir::index::ModelIndex<'a>::ir(&self) -> &'a cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::index::ModelIndex<'a>::loops(&self, &str) -> core::option::Option<&'a cadmpeg_ir::topology::Loop>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::new(&'a cadmpeg_ir::document::CadIr) -> Self
+pub fn cadmpeg_ir::index::ModelIndex<'a>::new_model_only(&'a cadmpeg_ir::document::CadIr) -> Self
 pub fn cadmpeg_ir::index::ModelIndex<'a>::occurrences(&self, &str) -> core::option::Option<&'a cadmpeg_ir::products::Occurrence>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::parameters(&self, &str) -> core::option::Option<&'a cadmpeg_ir::features::DesignParameter>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::pcurves(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::Pcurve>
@@ -9574,6 +9812,8 @@ pub fn cadmpeg_ir::index::ModelIndex<'a>::points(&self, &str) -> core::option::O
 pub fn cadmpeg_ir::index::ModelIndex<'a>::presentation_documents(&self, &str) -> core::option::Option<&'a cadmpeg_ir::presentation::PresentationDocument>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::presentation_layers(&self, &str) -> core::option::Option<&'a cadmpeg_ir::presentation::PresentationLayer>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_curves(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::ProceduralCurve>
+pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_curves_for_curve(&self, &str) -> core::option::Option<&[&'a cadmpeg_ir::geometry::ProceduralCurve]>
+pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_surface_for_carrier(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::ProceduralSurface>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_surface_for_surface(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::ProceduralSurface>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_surfaces(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::ProceduralSurface>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::product_definitions(&self, &str) -> core::option::Option<&'a cadmpeg_ir::products::ProductDefinition>
@@ -9593,7 +9833,7 @@ pub fn cadmpeg_ir::index::ModelIndex<'a>::tessellations(&self, &str) -> core::op
 pub fn cadmpeg_ir::index::ModelIndex<'a>::vertices(&self, &str) -> core::option::Option<&'a cadmpeg_ir::topology::Vertex>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::view_presentations(&self, &str) -> core::option::Option<&'a cadmpeg_ir::presentation::ViewPresentation>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::with_additional_native_identities(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>) -> Self
-impl<'a> core::marker::Freeze for cadmpeg_ir::index::ModelIndex<'a>
+impl<'a> !core::marker::Freeze for cadmpeg_ir::index::ModelIndex<'a>
 impl<'a> core::marker::Send for cadmpeg_ir::index::ModelIndex<'a>
 impl<'a> core::marker::Sync for cadmpeg_ir::index::ModelIndex<'a>
 impl<'a> core::marker::Unpin for cadmpeg_ir::index::ModelIndex<'a>
@@ -9639,6 +9879,10 @@ impl core::clone::Clone for cadmpeg_ir::math::Point3
 pub fn cadmpeg_ir::math::Point3::clone(&self) -> cadmpeg_ir::math::Point3
 impl core::cmp::PartialEq for cadmpeg_ir::math::Point3
 pub fn cadmpeg_ir::math::Point3::eq(&self, &cadmpeg_ir::math::Point3) -> bool
+impl core::convert::From<[f64; 3]> for cadmpeg_ir::math::Point3
+pub fn cadmpeg_ir::math::Point3::from([f64; 3]) -> Self
+impl core::convert::From<cadmpeg_ir::math::Point3> for [f64; 3]
+pub fn [f64; 3]::from(cadmpeg_ir::math::Point3) -> Self
 impl core::fmt::Debug for cadmpeg_ir::math::Point3
 pub fn cadmpeg_ir::math::Point3::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for cadmpeg_ir::math::Point3
@@ -9669,6 +9913,10 @@ impl core::clone::Clone for cadmpeg_ir::math::Vector3
 pub fn cadmpeg_ir::math::Vector3::clone(&self) -> cadmpeg_ir::math::Vector3
 impl core::cmp::PartialEq for cadmpeg_ir::math::Vector3
 pub fn cadmpeg_ir::math::Vector3::eq(&self, &cadmpeg_ir::math::Vector3) -> bool
+impl core::convert::From<[f64; 3]> for cadmpeg_ir::math::Vector3
+pub fn cadmpeg_ir::math::Vector3::from([f64; 3]) -> Self
+impl core::convert::From<cadmpeg_ir::math::Vector3> for [f64; 3]
+pub fn [f64; 3]::from(cadmpeg_ir::math::Vector3) -> Self
 impl core::fmt::Debug for cadmpeg_ir::math::Vector3
 pub fn cadmpeg_ir::math::Vector3::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for cadmpeg_ir::math::Vector3
@@ -9922,6 +10170,32 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::native::NativeRecord
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::native::NativeRecord
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::native::NativeRecord
 pub mod cadmpeg_ir::pmi
+pub enum cadmpeg_ir::pmi::DatumTargetForm
+pub cadmpeg_ir::pmi::DatumTargetForm::Circle
+pub cadmpeg_ir::pmi::DatumTargetForm::CircularCurve
+pub cadmpeg_ir::pmi::DatumTargetForm::Line
+pub cadmpeg_ir::pmi::DatumTargetForm::Other(alloc::string::String)
+pub cadmpeg_ir::pmi::DatumTargetForm::Point
+pub cadmpeg_ir::pmi::DatumTargetForm::Rectangle
+impl core::clone::Clone for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::clone(&self) -> cadmpeg_ir::pmi::DatumTargetForm
+impl core::cmp::Eq for cadmpeg_ir::pmi::DatumTargetForm
+impl core::cmp::PartialEq for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::eq(&self, &cadmpeg_ir::pmi::DatumTargetForm) -> bool
+impl core::fmt::Debug for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::pmi::DatumTargetForm
+impl serde_core::ser::Serialize for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::Send for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::Sync for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::Unpin for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::UnsafeUnpin for cadmpeg_ir::pmi::DatumTargetForm
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::pmi::DatumTargetForm
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::pmi::DatumTargetForm
 pub enum cadmpeg_ir::pmi::DimensionKind
 pub cadmpeg_ir::pmi::DimensionKind::Angular
 pub cadmpeg_ir::pmi::DimensionKind::Diameter
@@ -9989,6 +10263,10 @@ pub cadmpeg_ir::pmi::PmiDefinition::Datum
 pub cadmpeg_ir::pmi::PmiDefinition::Datum::identification: alloc::string::String
 pub cadmpeg_ir::pmi::PmiDefinition::DatumSystem
 pub cadmpeg_ir::pmi::PmiDefinition::DatumSystem::references: alloc::vec::Vec<cadmpeg_ir::pmi::DatumReference>
+pub cadmpeg_ir::pmi::PmiDefinition::DatumTarget
+pub cadmpeg_ir::pmi::PmiDefinition::DatumTarget::basis: alloc::vec::Vec<cadmpeg_ir::pmi::PmiTarget>
+pub cadmpeg_ir::pmi::PmiDefinition::DatumTarget::form: cadmpeg_ir::pmi::DatumTargetForm
+pub cadmpeg_ir::pmi::PmiDefinition::DatumTarget::identification: alloc::string::String
 pub cadmpeg_ir::pmi::PmiDefinition::Dimension
 pub cadmpeg_ir::pmi::PmiDefinition::Dimension::dimension: cadmpeg_ir::pmi::DimensionKind
 pub cadmpeg_ir::pmi::PmiDefinition::Dimension::limits_and_fits: core::option::Option<cadmpeg_ir::pmi::LimitsAndFits>
@@ -10052,12 +10330,16 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::pmi::PmiQuantity
 pub enum cadmpeg_ir::pmi::PmiTarget
 pub cadmpeg_ir::pmi::PmiTarget::Body
 pub cadmpeg_ir::pmi::PmiTarget::Body::body: cadmpeg_ir::ids::BodyId
+pub cadmpeg_ir::pmi::PmiTarget::Curve
+pub cadmpeg_ir::pmi::PmiTarget::Curve::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::pmi::PmiTarget::Edge
 pub cadmpeg_ir::pmi::PmiTarget::Edge::edge: cadmpeg_ir::ids::EdgeId
 pub cadmpeg_ir::pmi::PmiTarget::Face
 pub cadmpeg_ir::pmi::PmiTarget::Face::face: cadmpeg_ir::ids::FaceId
 pub cadmpeg_ir::pmi::PmiTarget::Occurrence
 pub cadmpeg_ir::pmi::PmiTarget::Occurrence::occurrence: cadmpeg_ir::ids::OccurrenceId
+pub cadmpeg_ir::pmi::PmiTarget::Point
+pub cadmpeg_ir::pmi::PmiTarget::Point::point: cadmpeg_ir::ids::PointId
 pub cadmpeg_ir::pmi::PmiTarget::Product
 pub cadmpeg_ir::pmi::PmiTarget::Product::product: cadmpeg_ir::ids::ProductDefinitionId
 pub cadmpeg_ir::pmi::PmiTarget::ShapeAspect
@@ -10136,6 +10418,7 @@ pub cadmpeg_ir::pmi::PmiAnnotation::definition: cadmpeg_ir::pmi::PmiDefinition
 pub cadmpeg_ir::pmi::PmiAnnotation::id: cadmpeg_ir::ids::PmiId
 pub cadmpeg_ir::pmi::PmiAnnotation::name: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::pmi::PmiAnnotation::targets: alloc::vec::Vec<cadmpeg_ir::pmi::PmiTarget>
+pub cadmpeg_ir::pmi::PmiAnnotation::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::pmi::PmiAnnotation
 pub fn cadmpeg_ir::pmi::PmiAnnotation::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::pmi::PmiAnnotation::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -10309,6 +10592,7 @@ pub cadmpeg_ir::presentation::PresentationLayer::description: core::option::Opti
 pub cadmpeg_ir::presentation::PresentationLayer::id: cadmpeg_ir::ids::LayerId
 pub cadmpeg_ir::presentation::PresentationLayer::items: alloc::vec::Vec<cadmpeg_ir::presentation::PresentationItem>
 pub cadmpeg_ir::presentation::PresentationLayer::name: alloc::string::String
+pub cadmpeg_ir::presentation::PresentationLayer::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::presentation::PresentationLayer
 pub fn cadmpeg_ir::presentation::PresentationLayer::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::presentation::PresentationLayer::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -11143,6 +11427,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::CoverageKey
 pub struct cadmpeg_ir::report::DecodeReport
 pub cadmpeg_ir::report::DecodeReport::container_only: bool
 pub cadmpeg_ir::report::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub cadmpeg_ir::report::DecodeReport::dialects: alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
 pub cadmpeg_ir::report::DecodeReport::format: alloc::string::String
 pub cadmpeg_ir::report::DecodeReport::geometry_transferred: bool
 pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
@@ -11199,6 +11484,7 @@ pub cadmpeg_ir::report::ExportReport::fidelity: cadmpeg_ir::report::FidelityReso
 pub cadmpeg_ir::report::ExportReport::format: alloc::string::String
 pub cadmpeg_ir::report::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
 pub cadmpeg_ir::report::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::report::ExportReport::target: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_ir::report::ExportReport::write_path: cadmpeg_ir::report::WritePath
 impl cadmpeg_ir::report::ExportReport
 pub fn cadmpeg_ir::report::ExportReport::error_count(&self) -> usize
@@ -11784,6 +12070,11 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::Angle
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Angle::first: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Angle::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Angle::second: cadmpeg_ir::sketches::SketchEntityId
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::difference: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::first: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::second: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleDifference::value: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis::axis: cadmpeg_ir::sketches::SketchAxis
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis::entity: cadmpeg_ir::sketches::SketchEntityId
@@ -11829,15 +12120,20 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci::second: cadmpeg_ir::sketches::SketchLocus
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance::first: cadmpeg_ir::sketches::SketchDistancePair
-pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance::second: cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue::distance: cadmpeg_ir::features::Length
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue::parameter: core::option::Option<cadmpeg_ir::features::ParameterId>
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue::second: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::EllipseAngle
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::EllipseAngle::angle: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::EllipseAngle::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Equal
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Equal::first: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Equal::second: cadmpeg_ir::sketches::SketchEntityId
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance::first: cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance::second: cadmpeg_ir::sketches::SketchDistancePair
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Fixed
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Fixed::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Group
@@ -11862,6 +12158,11 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::InternalAlignment::parent:
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Midpoint
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Midpoint::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Midpoint::point: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::MidpointCoordinate
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::MidpointCoordinate::axis: cadmpeg_ir::sketches::SketchCoordinateAxis
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::MidpointCoordinate::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::MidpointCoordinate::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::MidpointCoordinate::value: cadmpeg_ir::features::Length
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Native
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Native::entities: alloc::vec::Vec<cadmpeg_ir::sketches::SketchEntityId>
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Native::native_flags: core::option::Option<u64>
@@ -11885,6 +12186,9 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::ParallelLineSetDistance::s
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Perpendicular
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Perpendicular::first: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Perpendicular::second: cadmpeg_ir::sketches::SketchEntityId
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointCoordinateValues
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointCoordinateValues::point: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointCoordinateValues::values: [cadmpeg_ir::features::Length; 2]
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject::point: cadmpeg_ir::sketches::SketchLocus
@@ -11892,6 +12196,12 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointSymmetric
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointSymmetric::center: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointSymmetric::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::PointSymmetric::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance::angle: core::option::Option<cadmpeg_ir::features::Angle>
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance::distance: cadmpeg_ir::features::Length
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance::distance_parameter: core::option::Option<cadmpeg_ir::features::ParameterId>
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance::second: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Polygon
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::Polygon::entities: alloc::vec::Vec<cadmpeg_ir::sketches::SketchEntityId>
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::ProjectedCopy
@@ -11919,6 +12229,9 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::SameCoordinate
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SameCoordinate::axis: cadmpeg_ir::sketches::SketchCoordinateAxis
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SameCoordinate::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SameCoordinate::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality::first: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality::second: cadmpeg_ir::sketches::SketchSolverScalar
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw::incident: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw::interface: cadmpeg_ir::sketches::SketchEntityId
@@ -12035,28 +12348,6 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
-pub struct cadmpeg_ir::sketches::SketchDistancePair
-pub cadmpeg_ir::sketches::SketchDistancePair::first: cadmpeg_ir::sketches::SketchLocus
-pub cadmpeg_ir::sketches::SketchDistancePair::second: cadmpeg_ir::sketches::SketchLocus
-impl core::clone::Clone for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::clone(&self) -> cadmpeg_ir::sketches::SketchDistancePair
-impl core::cmp::Eq for cadmpeg_ir::sketches::SketchDistancePair
-impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::eq(&self, &cadmpeg_ir::sketches::SketchDistancePair) -> bool
-impl core::fmt::Debug for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchDistancePair
-impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::Send for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::Sync for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistancePair
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
 pub enum cadmpeg_ir::sketches::SketchGeometry
 pub cadmpeg_ir::sketches::SketchGeometry::Arc
 pub cadmpeg_ir::sketches::SketchGeometry::Arc::center: cadmpeg_ir::math::Point2
@@ -12304,6 +12595,10 @@ pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointDistance
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointDistance::first: cadmpeg_ir::sketches::SpatialSketchEntityId
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointDistance::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointDistance::second: cadmpeg_ir::sketches::SpatialSketchEntityId
+pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointLineDistance
+pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointLineDistance::line: cadmpeg_ir::sketches::SpatialSketchEntityId
+pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointLineDistance::parameter: cadmpeg_ir::features::ParameterId
+pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointLineDistance::point: cadmpeg_ir::sketches::SpatialSketchEntityId
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointOnSurface
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointOnSurface::point: cadmpeg_ir::sketches::SpatialSketchEntityId
 pub cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointOnSurface::surface: cadmpeg_ir::sketches::SpatialSketchEntityId
@@ -12512,6 +12807,28 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchConstraintId
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchConstraintId
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchConstraintId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchConstraintId
+pub struct cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::sketches::SketchDistancePair::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchDistancePair::second: cadmpeg_ir::sketches::SketchLocus
+impl core::clone::Clone for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::clone(&self) -> cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::Eq for cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::eq(&self, &cadmpeg_ir::sketches::SketchDistancePair) -> bool
+impl core::fmt::Debug for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchDistancePair
+impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Send for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Sync for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
 pub struct cadmpeg_ir::sketches::SketchEntity
 pub cadmpeg_ir::sketches::SketchEntity::construction: bool
 pub cadmpeg_ir::sketches::SketchEntity::endpoint_refs: alloc::vec::Vec<alloc::string::String>
@@ -12715,6 +13032,35 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchPatternInstance
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchPatternInstance
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchPatternInstance
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchPatternInstance
+pub struct cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::sketches::SketchSolverScalar::key: u32
+pub cadmpeg_ir::sketches::SketchSolverScalar::variable_type: u32
+impl core::clone::Clone for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::clone(&self) -> cadmpeg_ir::sketches::SketchSolverScalar
+impl core::cmp::Eq for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::cmp::Ord for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::cmp(&self, &cadmpeg_ir::sketches::SketchSolverScalar) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::eq(&self, &cadmpeg_ir::sketches::SketchSolverScalar) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::partial_cmp(&self, &cadmpeg_ir::sketches::SketchSolverScalar) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchSolverScalar
+impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::Send for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::Sync for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::Unpin for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchSolverScalar
 pub struct cadmpeg_ir::sketches::SpatialSketch
 pub cadmpeg_ir::sketches::SpatialSketch::configuration: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::sketches::SpatialSketch::id: cadmpeg_ir::sketches::SpatialSketchId
@@ -13085,6 +13431,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::source_fidelity::So
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::source_fidelity::SourceFidelity
 pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION: &str
 pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V1: &str
+pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V2: &str
 pub const cadmpeg_ir::source_fidelity::SOURCE_FIDELITY_VERSION: &str
 pub fn cadmpeg_ir::source_fidelity::decode_sidecar_path(&std::path::Path) -> std::path::PathBuf
 pub mod cadmpeg_ir::spreadsheets
@@ -13216,6 +13563,62 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdEdgeTag
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdEdgeTag
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdEdgeTag
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdEdgeTag
+pub enum cadmpeg_ir::subd::SubdGripDirection
+pub cadmpeg_ir::subd::SubdGripDirection::East
+pub cadmpeg_ir::subd::SubdGripDirection::North
+pub cadmpeg_ir::subd::SubdGripDirection::South
+pub cadmpeg_ir::subd::SubdGripDirection::West
+impl core::clone::Clone for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::clone(&self) -> cadmpeg_ir::subd::SubdGripDirection
+impl core::cmp::Eq for cadmpeg_ir::subd::SubdGripDirection
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::eq(&self, &cadmpeg_ir::subd::SubdGripDirection) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdGripDirection
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::Send for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::Sync for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdGripDirection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdGripDirection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdGripDirection
+pub enum cadmpeg_ir::subd::SubdRadialMapSelector
+pub cadmpeg_ir::subd::SubdRadialMapSelector::Ef
+pub cadmpeg_ir::subd::SubdRadialMapSelector::Er
+pub cadmpeg_ir::subd::SubdRadialMapSelector::Ff
+pub cadmpeg_ir::subd::SubdRadialMapSelector::Fr
+pub cadmpeg_ir::subd::SubdRadialMapSelector::Vf
+pub cadmpeg_ir::subd::SubdRadialMapSelector::Vr
+impl core::clone::Clone for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::clone(&self) -> cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::cmp::Eq for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::cmp::Ord for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::cmp(&self, &cadmpeg_ir::subd::SubdRadialMapSelector) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::eq(&self, &cadmpeg_ir::subd::SubdRadialMapSelector) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::partial_cmp(&self, &cadmpeg_ir::subd::SubdRadialMapSelector) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdRadialMapSelector
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::Send for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::Sync for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdRadialMapSelector
 pub enum cadmpeg_ir::subd::SubdScheme
 pub cadmpeg_ir::subd::SubdScheme::CatmullClark
 impl core::clone::Clone for cadmpeg_ir::subd::SubdScheme
@@ -13238,6 +13641,30 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdScheme
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdScheme
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdScheme
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdScheme
+pub enum cadmpeg_ir::subd::SubdSymmetryKind
+pub cadmpeg_ir::subd::SubdSymmetryKind::Correspondence
+pub cadmpeg_ir::subd::SubdSymmetryKind::Radial
+pub cadmpeg_ir::subd::SubdSymmetryKind::Radial::segments: u32
+pub cadmpeg_ir::subd::SubdSymmetryKind::Radial::sweep: f64
+impl core::clone::Clone for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::clone(&self) -> cadmpeg_ir::subd::SubdSymmetryKind
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::eq(&self, &cadmpeg_ir::subd::SubdSymmetryKind) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdSymmetryKind
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::Send for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::Sync for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSymmetryKind
 pub enum cadmpeg_ir::subd::SubdVertexTag
 pub cadmpeg_ir::subd::SubdVertexTag::Corner
 pub cadmpeg_ir::subd::SubdVertexTag::Crease
@@ -13264,6 +13691,7 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdVertexTag
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdVertexTag
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdVertexTag
 pub struct cadmpeg_ir::subd::SubdEdge
+pub cadmpeg_ir::subd::SubdEdge::knot_interval: core::option::Option<f64>
 pub cadmpeg_ir::subd::SubdEdge::sector_coefficients: [f64; 2]
 pub cadmpeg_ir::subd::SubdEdge::sharpness: [f64; 2]
 pub cadmpeg_ir::subd::SubdEdge::tag: cadmpeg_ir::subd::SubdEdgeTag
@@ -13329,12 +13757,103 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdFace
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdFace
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdFace
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdFace
+pub struct cadmpeg_ir::subd::SubdGripWedge
+pub cadmpeg_ir::subd::SubdGripWedge::edge: core::option::Option<u32>
+pub cadmpeg_ir::subd::SubdGripWedge::phantom: bool
+pub cadmpeg_ir::subd::SubdGripWedge::sector_face: core::option::Option<u32>
+pub cadmpeg_ir::subd::SubdGripWedge::sectors: alloc::vec::Vec<core::option::Option<cadmpeg_ir::subd::SubdSecondaryGrip>>
+pub cadmpeg_ir::subd::SubdGripWedge::spokes: alloc::vec::Vec<core::option::Option<cadmpeg_ir::subd::SubdSecondaryGrip>>
+impl core::clone::Clone for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::clone(&self) -> cadmpeg_ir::subd::SubdGripWedge
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::eq(&self, &cadmpeg_ir::subd::SubdGripWedge) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdGripWedge
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::Send for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::Sync for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdGripWedge
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdGripWedge
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdGripWedge
+pub struct cadmpeg_ir::subd::SubdPlaneFrame
+pub cadmpeg_ir::subd::SubdPlaneFrame::first_axis: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::subd::SubdPlaneFrame::origin: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::subd::SubdPlaneFrame::second_axis: cadmpeg_ir::math::Vector3
+impl core::clone::Clone for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::clone(&self) -> cadmpeg_ir::subd::SubdPlaneFrame
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::eq(&self, &cadmpeg_ir::subd::SubdPlaneFrame) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdPlaneFrame
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::Send for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::Sync for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdPlaneFrame
+pub struct cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub cadmpeg_ir::subd::SubdRadialSymmetryMap::pairs: alloc::vec::Vec<[u64; 2]>
+pub cadmpeg_ir::subd::SubdRadialSymmetryMap::selector: cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::clone::Clone for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::clone(&self) -> cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::eq(&self, &cadmpeg_ir::subd::SubdRadialSymmetryMap) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::Send for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::Sync for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub struct cadmpeg_ir::subd::SubdSecondaryGrip
+pub cadmpeg_ir::subd::SubdSecondaryGrip::point: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::subd::SubdSecondaryGrip::source_index: u32
+pub cadmpeg_ir::subd::SubdSecondaryGrip::weight: f64
+impl core::clone::Clone for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::clone(&self) -> cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::eq(&self, &cadmpeg_ir::subd::SubdSecondaryGrip) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdSecondaryGrip
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::Send for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::Sync for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSecondaryGrip
 pub struct cadmpeg_ir::subd::SubdSurface
 pub cadmpeg_ir::subd::SubdSurface::edges: alloc::vec::Vec<cadmpeg_ir::subd::SubdEdge>
 pub cadmpeg_ir::subd::SubdSurface::faces: alloc::vec::Vec<cadmpeg_ir::subd::SubdFace>
 pub cadmpeg_ir::subd::SubdSurface::id: cadmpeg_ir::ids::SubdId
 pub cadmpeg_ir::subd::SubdSurface::scheme: cadmpeg_ir::subd::SubdScheme
 pub cadmpeg_ir::subd::SubdSurface::source_object: core::option::Option<cadmpeg_ir::SourceObjectAssociation>
+pub cadmpeg_ir::subd::SubdSurface::symmetries: alloc::vec::Vec<cadmpeg_ir::subd::SubdSymmetry>
 pub cadmpeg_ir::subd::SubdSurface::vertices: alloc::vec::Vec<cadmpeg_ir::subd::SubdVertex>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::subd::SubdSurface
 pub fn cadmpeg_ir::subd::SubdSurface::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
@@ -13361,8 +13880,34 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdSurface
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSurface
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSurface
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSurface
+pub struct cadmpeg_ir::subd::SubdSymmetry
+pub cadmpeg_ir::subd::SubdSymmetry::edge_pairs: alloc::vec::Vec<[u32; 2]>
+pub cadmpeg_ir::subd::SubdSymmetry::face_pairs: alloc::vec::Vec<[u32; 2]>
+pub cadmpeg_ir::subd::SubdSymmetry::kind: cadmpeg_ir::subd::SubdSymmetryKind
+pub cadmpeg_ir::subd::SubdSymmetry::plane: cadmpeg_ir::subd::SubdPlaneFrame
+pub cadmpeg_ir::subd::SubdSymmetry::radial_maps: alloc::vec::Vec<cadmpeg_ir::subd::SubdRadialSymmetryMap>
+pub cadmpeg_ir::subd::SubdSymmetry::vertex_pairs: alloc::vec::Vec<[u32; 2]>
+impl core::clone::Clone for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::clone(&self) -> cadmpeg_ir::subd::SubdSymmetry
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::eq(&self, &cadmpeg_ir::subd::SubdSymmetry) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdSymmetry
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::Send for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::Sync for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSymmetry
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSymmetry
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSymmetry
 pub struct cadmpeg_ir::subd::SubdVertex
 pub cadmpeg_ir::subd::SubdVertex::point: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::subd::SubdVertex::secondary_grips: core::option::Option<cadmpeg_ir::subd::SubdVertexGripLayout>
 pub cadmpeg_ir::subd::SubdVertex::tag: cadmpeg_ir::subd::SubdVertexTag
 impl core::clone::Clone for cadmpeg_ir::subd::SubdVertex
 pub fn cadmpeg_ir::subd::SubdVertex::clone(&self) -> cadmpeg_ir::subd::SubdVertex
@@ -13382,6 +13927,27 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdVertex
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdVertex
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdVertex
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdVertex
+pub struct cadmpeg_ir::subd::SubdVertexGripLayout
+pub cadmpeg_ir::subd::SubdVertexGripLayout::direction: cadmpeg_ir::subd::SubdGripDirection
+pub cadmpeg_ir::subd::SubdVertexGripLayout::wedges: alloc::vec::Vec<cadmpeg_ir::subd::SubdGripWedge>
+impl core::clone::Clone for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::clone(&self) -> cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::eq(&self, &cadmpeg_ir::subd::SubdVertexGripLayout) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdVertexGripLayout
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::Send for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::Sync for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdVertexGripLayout
 pub mod cadmpeg_ir::tessellation
 #[non_exhaustive] pub enum cadmpeg_ir::tessellation::TessellationChannelDomain
 pub cadmpeg_ir::tessellation::TessellationChannelDomain::Corner
@@ -14689,6 +15255,32 @@ impl core::marker::Unpin for cadmpeg_ir::features::CurveProjectionDirectionState
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::CurveProjectionDirectionState
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::CurveProjectionDirectionState
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::CurveProjectionDirectionState
+pub enum cadmpeg_ir::DatumTargetForm
+pub cadmpeg_ir::DatumTargetForm::Circle
+pub cadmpeg_ir::DatumTargetForm::CircularCurve
+pub cadmpeg_ir::DatumTargetForm::Line
+pub cadmpeg_ir::DatumTargetForm::Other(alloc::string::String)
+pub cadmpeg_ir::DatumTargetForm::Point
+pub cadmpeg_ir::DatumTargetForm::Rectangle
+impl core::clone::Clone for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::clone(&self) -> cadmpeg_ir::pmi::DatumTargetForm
+impl core::cmp::Eq for cadmpeg_ir::pmi::DatumTargetForm
+impl core::cmp::PartialEq for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::eq(&self, &cadmpeg_ir::pmi::DatumTargetForm) -> bool
+impl core::fmt::Debug for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::pmi::DatumTargetForm
+impl serde_core::ser::Serialize for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::pmi::DatumTargetForm
+pub fn cadmpeg_ir::pmi::DatumTargetForm::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::Send for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::Sync for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::Unpin for cadmpeg_ir::pmi::DatumTargetForm
+impl core::marker::UnsafeUnpin for cadmpeg_ir::pmi::DatumTargetForm
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::pmi::DatumTargetForm
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::pmi::DatumTargetForm
 pub enum cadmpeg_ir::DecodeSidecarParseError
 pub cadmpeg_ir::DecodeSidecarParseError::Fidelity(cadmpeg_ir::source_fidelity::FidelityError)
 pub cadmpeg_ir::DecodeSidecarParseError::Json(serde_json::error::Error)
@@ -14825,6 +15417,8 @@ pub cadmpeg_ir::FeatureDefinition::BoundaryFill
 pub cadmpeg_ir::FeatureDefinition::BoundaryFill::cells: alloc::vec::Vec<cadmpeg_ir::features::BodySelection>
 pub cadmpeg_ir::FeatureDefinition::BoundaryFill::tools: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::BoundarySurfaceUnresolved
+pub cadmpeg_ir::FeatureDefinition::BrepUnresolved
+pub cadmpeg_ir::FeatureDefinition::BridgeCurveUnresolved
 pub cadmpeg_ir::FeatureDefinition::Chamfer
 pub cadmpeg_ir::FeatureDefinition::Chamfer::flip_direction: bool
 pub cadmpeg_ir::FeatureDefinition::Chamfer::groups: alloc::vec::Vec<cadmpeg_ir::features::ChamferGroup>
@@ -14847,6 +15441,8 @@ pub cadmpeg_ir::FeatureDefinition::CompositeCurve::closed: bool
 pub cadmpeg_ir::FeatureDefinition::CompositeCurve::segments: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
 pub cadmpeg_ir::FeatureDefinition::Compound
 pub cadmpeg_ir::FeatureDefinition::Compound::members: cadmpeg_ir::features::BodySelection
+pub cadmpeg_ir::FeatureDefinition::ConeUnresolved
+pub cadmpeg_ir::FeatureDefinition::CopyFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread::diameter: core::option::Option<cadmpeg_ir::features::Length>
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread::extent: core::option::Option<cadmpeg_ir::features::CosmeticThreadExtent>
@@ -14855,9 +15451,11 @@ pub cadmpeg_ir::FeatureDefinition::CutWithSurface
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::tools: cadmpeg_ir::features::FaceSelection
+pub cadmpeg_ir::FeatureDefinition::CylinderUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumAxis
 pub cadmpeg_ir::FeatureDefinition::DatumAxis::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::DatumAxis::origin: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::FeatureDefinition::DatumAxisUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem::x_axis: cadmpeg_ir::math::Vector3
@@ -14894,8 +15492,10 @@ pub cadmpeg_ir::FeatureDefinition::DeleteBody::mode: cadmpeg_ir::features::BodyR
 pub cadmpeg_ir::FeatureDefinition::DeleteFace
 pub cadmpeg_ir::FeatureDefinition::DeleteFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::DeleteFace::heal: bool
+pub cadmpeg_ir::FeatureDefinition::DeleteFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::DerivedGeometry
 pub cadmpeg_ir::FeatureDefinition::DerivedGeometry::source: cadmpeg_ir::features::FeatureId
+pub cadmpeg_ir::FeatureDefinition::DetailedThreadUnresolved
 pub cadmpeg_ir::FeatureDefinition::Dome
 pub cadmpeg_ir::FeatureDefinition::Dome::elliptical: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Dome::faces: cadmpeg_ir::features::FaceSelection
@@ -14931,6 +15531,7 @@ pub cadmpeg_ir::FeatureDefinition::ExtendSurface::faces: cadmpeg_ir::features::F
 pub cadmpeg_ir::FeatureDefinition::ExtendSurface::method: cadmpeg_ir::features::SurfaceExtension
 pub cadmpeg_ir::FeatureDefinition::ExtractBody
 pub cadmpeg_ir::FeatureDefinition::ExtractBody::source: cadmpeg_ir::features::BodySelection
+pub cadmpeg_ir::FeatureDefinition::ExtractFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::Extrude
 pub cadmpeg_ir::FeatureDefinition::Extrude::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Extrude::direction: cadmpeg_ir::features::ExtrudeDirection
@@ -14943,6 +15544,7 @@ pub cadmpeg_ir::FeatureDefinition::Extrude::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::FeatureDefinition::Extrude::profile: cadmpeg_ir::features::ProfileRef
 pub cadmpeg_ir::FeatureDefinition::Extrude::solid: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Extrude::start: cadmpeg_ir::features::ExtrudeStart
+pub cadmpeg_ir::FeatureDefinition::ExtrudeUnresolved
 pub cadmpeg_ir::FeatureDefinition::FaceBlend
 pub cadmpeg_ir::FeatureDefinition::FaceBlend::first_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::FaceBlend::radius: cadmpeg_ir::features::RadiusSpec
@@ -14950,6 +15552,7 @@ pub cadmpeg_ir::FeatureDefinition::FaceBlend::second_faces: cadmpeg_ir::features
 pub cadmpeg_ir::FeatureDefinition::FaceFromShapes
 pub cadmpeg_ir::FeatureDefinition::FaceFromShapes::face_maker_class: alloc::string::String
 pub cadmpeg_ir::FeatureDefinition::FaceFromShapes::sources: cadmpeg_ir::features::BodySelection
+pub cadmpeg_ir::FeatureDefinition::FillHoleUnresolved
 pub cadmpeg_ir::FeatureDefinition::FilledSurface
 pub cadmpeg_ir::FeatureDefinition::FilledSurface::boundary: cadmpeg_ir::features::SurfaceBoundary
 pub cadmpeg_ir::FeatureDefinition::FilledSurface::boundary_continuities: alloc::vec::Vec<cadmpeg_ir::features::SurfaceContinuity>
@@ -14958,6 +15561,7 @@ pub cadmpeg_ir::FeatureDefinition::FilledSurface::merge_result: core::option::Op
 pub cadmpeg_ir::FeatureDefinition::FilledSurface::support_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::Fillet
 pub cadmpeg_ir::FeatureDefinition::Fillet::groups: alloc::vec::Vec<cadmpeg_ir::features::FilletGroup>
+pub cadmpeg_ir::FeatureDefinition::FilletUnresolved
 pub cadmpeg_ir::FeatureDefinition::Flex
 pub cadmpeg_ir::FeatureDefinition::Flex::axis: core::option::Option<cadmpeg_ir::math::Vector3>
 pub cadmpeg_ir::FeatureDefinition::Flex::mode: cadmpeg_ir::features::FlexMode
@@ -15018,12 +15622,13 @@ pub cadmpeg_ir::FeatureDefinition::KnitSurface::merge_entities: core::option::Op
 pub cadmpeg_ir::FeatureDefinition::LineSegment
 pub cadmpeg_ir::FeatureDefinition::LineSegment::end: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::LineSegment::start: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::FeatureDefinition::LinkedFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::Loft
 pub cadmpeg_ir::FeatureDefinition::Loft::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Loft::centerline: core::option::Option<cadmpeg_ir::features::PathRef>
-pub cadmpeg_ir::FeatureDefinition::Loft::check_compatibility: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Loft::closed: bool
 pub cadmpeg_ir::FeatureDefinition::Loft::guides: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
+pub cadmpeg_ir::FeatureDefinition::Loft::linearize: bool
 pub cadmpeg_ir::FeatureDefinition::Loft::max_degree: core::option::Option<u32>
 pub cadmpeg_ir::FeatureDefinition::Loft::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::FeatureDefinition::Loft::ruled: bool
@@ -15032,6 +15637,7 @@ pub cadmpeg_ir::FeatureDefinition::Loft::solid: bool
 pub cadmpeg_ir::FeatureDefinition::LoftUnresolved
 pub cadmpeg_ir::FeatureDefinition::MeshImport
 pub cadmpeg_ir::FeatureDefinition::MeshImport::tessellations: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::FeatureDefinition::MirrorFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::MirrorShape
 pub cadmpeg_ir::FeatureDefinition::MirrorShape::plane_normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::MirrorShape::plane_origin: cadmpeg_ir::math::Point3
@@ -15045,6 +15651,8 @@ pub cadmpeg_ir::FeatureDefinition::MoveBody::translation: cadmpeg_ir::math::Vect
 pub cadmpeg_ir::FeatureDefinition::MoveFace
 pub cadmpeg_ir::FeatureDefinition::MoveFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::MoveFace::motion: cadmpeg_ir::features::FaceMotion
+pub cadmpeg_ir::FeatureDefinition::MoveFaceUnresolved
+pub cadmpeg_ir::FeatureDefinition::MoveObjectUnresolved
 pub cadmpeg_ir::FeatureDefinition::Native
 pub cadmpeg_ir::FeatureDefinition::Native::kind: alloc::string::String
 pub cadmpeg_ir::FeatureDefinition::Native::parameters: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -15114,6 +15722,7 @@ pub cadmpeg_ir::FeatureDefinition::ReverseShape::source: cadmpeg_ir::features::B
 pub cadmpeg_ir::FeatureDefinition::Revolve
 pub cadmpeg_ir::FeatureDefinition::Revolve::construction: cadmpeg_ir::features::RevolutionConstruction
 pub cadmpeg_ir::FeatureDefinition::Revolve::op: cadmpeg_ir::features::BooleanOp
+pub cadmpeg_ir::FeatureDefinition::RevolveUnresolved
 pub cadmpeg_ir::FeatureDefinition::Rib
 pub cadmpeg_ir::FeatureDefinition::Rib::construction: cadmpeg_ir::features::RibConstruction
 pub cadmpeg_ir::FeatureDefinition::Rib::op: cadmpeg_ir::features::BooleanOp
@@ -15179,6 +15788,7 @@ pub cadmpeg_ir::FeatureDefinition::Sphere
 pub cadmpeg_ir::FeatureDefinition::Sphere::center: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::Sphere::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::FeatureDefinition::Sphere::radius: cadmpeg_ir::features::Length
+pub cadmpeg_ir::FeatureDefinition::SphereUnresolved
 pub cadmpeg_ir::FeatureDefinition::SplitBody
 pub cadmpeg_ir::FeatureDefinition::SplitBody::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::SplitBody::tools: cadmpeg_ir::features::FaceSelection
@@ -15186,6 +15796,7 @@ pub cadmpeg_ir::FeatureDefinition::SplitFace
 pub cadmpeg_ir::FeatureDefinition::SplitFace::targets: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::SplitFace::tool: cadmpeg_ir::features::SplitFaceTool
 pub cadmpeg_ir::FeatureDefinition::StoredGeometry
+pub cadmpeg_ir::FeatureDefinition::SubdivisionBodyUnresolved
 pub cadmpeg_ir::FeatureDefinition::Sweep
 pub cadmpeg_ir::FeatureDefinition::Sweep::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Sweep::guide_rail: core::option::Option<cadmpeg_ir::features::SweepGuideRail>
@@ -15206,6 +15817,9 @@ pub cadmpeg_ir::FeatureDefinition::Thicken
 pub cadmpeg_ir::FeatureDefinition::Thicken::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::Thicken::side: core::option::Option<cadmpeg_ir::features::ThickenSide>
 pub cadmpeg_ir::FeatureDefinition::Thicken::thickness: core::option::Option<cadmpeg_ir::features::Length>
+pub cadmpeg_ir::FeatureDefinition::ThreadUnresolved
+pub cadmpeg_ir::FeatureDefinition::ThroughCurveMeshUnresolved
+pub cadmpeg_ir::FeatureDefinition::TopologyOptimizationUnresolved
 pub cadmpeg_ir::FeatureDefinition::Torus
 pub cadmpeg_ir::FeatureDefinition::Torus::axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::Torus::center: cadmpeg_ir::math::Point3
@@ -15221,6 +15835,7 @@ pub cadmpeg_ir::FeatureDefinition::TrimBodies::keep: cadmpeg_ir::features::BodyT
 pub cadmpeg_ir::FeatureDefinition::TrimBodies::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::TrimBodies::tools: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::TrimSurface
+pub cadmpeg_ir::FeatureDefinition::TrimSurface::cell_selection: core::option::Option<cadmpeg_ir::features::TrimCellSelection>
 pub cadmpeg_ir::FeatureDefinition::TrimSurface::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::TrimSurface::keep: cadmpeg_ir::features::TrimRegion
 pub cadmpeg_ir::FeatureDefinition::TrimSurface::tool: cadmpeg_ir::features::PathRef
@@ -15539,6 +16154,10 @@ pub cadmpeg_ir::PmiDefinition::Datum
 pub cadmpeg_ir::PmiDefinition::Datum::identification: alloc::string::String
 pub cadmpeg_ir::PmiDefinition::DatumSystem
 pub cadmpeg_ir::PmiDefinition::DatumSystem::references: alloc::vec::Vec<cadmpeg_ir::pmi::DatumReference>
+pub cadmpeg_ir::PmiDefinition::DatumTarget
+pub cadmpeg_ir::PmiDefinition::DatumTarget::basis: alloc::vec::Vec<cadmpeg_ir::pmi::PmiTarget>
+pub cadmpeg_ir::PmiDefinition::DatumTarget::form: cadmpeg_ir::pmi::DatumTargetForm
+pub cadmpeg_ir::PmiDefinition::DatumTarget::identification: alloc::string::String
 pub cadmpeg_ir::PmiDefinition::Dimension
 pub cadmpeg_ir::PmiDefinition::Dimension::dimension: cadmpeg_ir::pmi::DimensionKind
 pub cadmpeg_ir::PmiDefinition::Dimension::limits_and_fits: core::option::Option<cadmpeg_ir::pmi::LimitsAndFits>
@@ -15629,12 +16248,16 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::pmi::PmiQuantity
 pub enum cadmpeg_ir::PmiTarget
 pub cadmpeg_ir::PmiTarget::Body
 pub cadmpeg_ir::PmiTarget::Body::body: cadmpeg_ir::ids::BodyId
+pub cadmpeg_ir::PmiTarget::Curve
+pub cadmpeg_ir::PmiTarget::Curve::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::PmiTarget::Edge
 pub cadmpeg_ir::PmiTarget::Edge::edge: cadmpeg_ir::ids::EdgeId
 pub cadmpeg_ir::PmiTarget::Face
 pub cadmpeg_ir::PmiTarget::Face::face: cadmpeg_ir::ids::FaceId
 pub cadmpeg_ir::PmiTarget::Occurrence
 pub cadmpeg_ir::PmiTarget::Occurrence::occurrence: cadmpeg_ir::ids::OccurrenceId
+pub cadmpeg_ir::PmiTarget::Point
+pub cadmpeg_ir::PmiTarget::Point::point: cadmpeg_ir::ids::PointId
 pub cadmpeg_ir::PmiTarget::Product
 pub cadmpeg_ir::PmiTarget::Product::product: cadmpeg_ir::ids::ProductDefinitionId
 pub cadmpeg_ir::PmiTarget::ShapeAspect
@@ -15836,6 +16459,11 @@ pub cadmpeg_ir::SketchConstraintDefinition::Angle
 pub cadmpeg_ir::SketchConstraintDefinition::Angle::first: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::Angle::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::SketchConstraintDefinition::Angle::second: cadmpeg_ir::sketches::SketchEntityId
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::difference: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::first: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::second: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::SketchConstraintDefinition::AngleDifference::value: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::SketchConstraintDefinition::AngleToAxis
 pub cadmpeg_ir::SketchConstraintDefinition::AngleToAxis::axis: cadmpeg_ir::sketches::SketchAxis
 pub cadmpeg_ir::SketchConstraintDefinition::AngleToAxis::entity: cadmpeg_ir::sketches::SketchEntityId
@@ -15881,15 +16509,20 @@ pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci
 pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci::second: cadmpeg_ir::sketches::SketchLocus
-pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance
-pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance::first: cadmpeg_ir::sketches::SketchDistancePair
-pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance::second: cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::SketchConstraintDefinition::DistanceLociValue
+pub cadmpeg_ir::SketchConstraintDefinition::DistanceLociValue::distance: cadmpeg_ir::features::Length
+pub cadmpeg_ir::SketchConstraintDefinition::DistanceLociValue::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::DistanceLociValue::parameter: core::option::Option<cadmpeg_ir::features::ParameterId>
+pub cadmpeg_ir::SketchConstraintDefinition::DistanceLociValue::second: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::EllipseAngle
 pub cadmpeg_ir::SketchConstraintDefinition::EllipseAngle::angle: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::SketchConstraintDefinition::EllipseAngle::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::Equal
 pub cadmpeg_ir::SketchConstraintDefinition::Equal::first: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::Equal::second: cadmpeg_ir::sketches::SketchEntityId
+pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance
+pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance::first: cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance::second: cadmpeg_ir::sketches::SketchDistancePair
 pub cadmpeg_ir::SketchConstraintDefinition::Fixed
 pub cadmpeg_ir::SketchConstraintDefinition::Fixed::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::Group
@@ -15914,6 +16547,11 @@ pub cadmpeg_ir::SketchConstraintDefinition::InternalAlignment::parent: cadmpeg_i
 pub cadmpeg_ir::SketchConstraintDefinition::Midpoint
 pub cadmpeg_ir::SketchConstraintDefinition::Midpoint::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::Midpoint::point: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::MidpointCoordinate
+pub cadmpeg_ir::SketchConstraintDefinition::MidpointCoordinate::axis: cadmpeg_ir::sketches::SketchCoordinateAxis
+pub cadmpeg_ir::SketchConstraintDefinition::MidpointCoordinate::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::MidpointCoordinate::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::MidpointCoordinate::value: cadmpeg_ir::features::Length
 pub cadmpeg_ir::SketchConstraintDefinition::Native
 pub cadmpeg_ir::SketchConstraintDefinition::Native::entities: alloc::vec::Vec<cadmpeg_ir::sketches::SketchEntityId>
 pub cadmpeg_ir::SketchConstraintDefinition::Native::native_flags: core::option::Option<u64>
@@ -15937,6 +16575,9 @@ pub cadmpeg_ir::SketchConstraintDefinition::ParallelLineSetDistance::second: all
 pub cadmpeg_ir::SketchConstraintDefinition::Perpendicular
 pub cadmpeg_ir::SketchConstraintDefinition::Perpendicular::first: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::Perpendicular::second: cadmpeg_ir::sketches::SketchEntityId
+pub cadmpeg_ir::SketchConstraintDefinition::PointCoordinateValues
+pub cadmpeg_ir::SketchConstraintDefinition::PointCoordinateValues::point: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::PointCoordinateValues::values: [cadmpeg_ir::features::Length; 2]
 pub cadmpeg_ir::SketchConstraintDefinition::PointOnObject
 pub cadmpeg_ir::SketchConstraintDefinition::PointOnObject::entity: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchConstraintDefinition::PointOnObject::point: cadmpeg_ir::sketches::SketchLocus
@@ -15944,6 +16585,12 @@ pub cadmpeg_ir::SketchConstraintDefinition::PointSymmetric
 pub cadmpeg_ir::SketchConstraintDefinition::PointSymmetric::center: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::PointSymmetric::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::PointSymmetric::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::PolarDistance
+pub cadmpeg_ir::SketchConstraintDefinition::PolarDistance::angle: core::option::Option<cadmpeg_ir::features::Angle>
+pub cadmpeg_ir::SketchConstraintDefinition::PolarDistance::distance: cadmpeg_ir::features::Length
+pub cadmpeg_ir::SketchConstraintDefinition::PolarDistance::distance_parameter: core::option::Option<cadmpeg_ir::features::ParameterId>
+pub cadmpeg_ir::SketchConstraintDefinition::PolarDistance::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::PolarDistance::second: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::Polygon
 pub cadmpeg_ir::SketchConstraintDefinition::Polygon::entities: alloc::vec::Vec<cadmpeg_ir::sketches::SketchEntityId>
 pub cadmpeg_ir::SketchConstraintDefinition::ProjectedCopy
@@ -15971,6 +16618,9 @@ pub cadmpeg_ir::SketchConstraintDefinition::SameCoordinate
 pub cadmpeg_ir::SketchConstraintDefinition::SameCoordinate::axis: cadmpeg_ir::sketches::SketchCoordinateAxis
 pub cadmpeg_ir::SketchConstraintDefinition::SameCoordinate::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::SameCoordinate::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality
+pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality::first: cadmpeg_ir::sketches::SketchSolverScalar
+pub cadmpeg_ir::SketchConstraintDefinition::ScalarEquality::second: cadmpeg_ir::sketches::SketchSolverScalar
 pub cadmpeg_ir::SketchConstraintDefinition::SnellsLaw
 pub cadmpeg_ir::SketchConstraintDefinition::SnellsLaw::incident: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::SnellsLaw::interface: cadmpeg_ir::sketches::SketchEntityId
@@ -16087,28 +16737,6 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
-pub struct cadmpeg_ir::SketchDistancePair
-pub cadmpeg_ir::SketchDistancePair::first: cadmpeg_ir::sketches::SketchLocus
-pub cadmpeg_ir::SketchDistancePair::second: cadmpeg_ir::sketches::SketchLocus
-impl core::clone::Clone for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::clone(&self) -> cadmpeg_ir::sketches::SketchDistancePair
-impl core::cmp::Eq for cadmpeg_ir::sketches::SketchDistancePair
-impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::eq(&self, &cadmpeg_ir::sketches::SketchDistancePair) -> bool
-impl core::fmt::Debug for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchDistancePair
-impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchDistancePair
-pub fn cadmpeg_ir::sketches::SketchDistancePair::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::Send for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::Sync for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistancePair
-impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistancePair
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
 pub enum cadmpeg_ir::SketchGeometry
 pub cadmpeg_ir::SketchGeometry::Arc
 pub cadmpeg_ir::SketchGeometry::Arc::center: cadmpeg_ir::math::Point2
@@ -16340,6 +16968,62 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdEdgeTag
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdEdgeTag
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdEdgeTag
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdEdgeTag
+pub enum cadmpeg_ir::SubdGripDirection
+pub cadmpeg_ir::SubdGripDirection::East
+pub cadmpeg_ir::SubdGripDirection::North
+pub cadmpeg_ir::SubdGripDirection::South
+pub cadmpeg_ir::SubdGripDirection::West
+impl core::clone::Clone for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::clone(&self) -> cadmpeg_ir::subd::SubdGripDirection
+impl core::cmp::Eq for cadmpeg_ir::subd::SubdGripDirection
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::eq(&self, &cadmpeg_ir::subd::SubdGripDirection) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdGripDirection
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdGripDirection
+pub fn cadmpeg_ir::subd::SubdGripDirection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::Send for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::Sync for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdGripDirection
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdGripDirection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdGripDirection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdGripDirection
+pub enum cadmpeg_ir::SubdRadialMapSelector
+pub cadmpeg_ir::SubdRadialMapSelector::Ef
+pub cadmpeg_ir::SubdRadialMapSelector::Er
+pub cadmpeg_ir::SubdRadialMapSelector::Ff
+pub cadmpeg_ir::SubdRadialMapSelector::Fr
+pub cadmpeg_ir::SubdRadialMapSelector::Vf
+pub cadmpeg_ir::SubdRadialMapSelector::Vr
+impl core::clone::Clone for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::clone(&self) -> cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::cmp::Eq for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::cmp::Ord for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::cmp(&self, &cadmpeg_ir::subd::SubdRadialMapSelector) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::eq(&self, &cadmpeg_ir::subd::SubdRadialMapSelector) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::partial_cmp(&self, &cadmpeg_ir::subd::SubdRadialMapSelector) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdRadialMapSelector
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdRadialMapSelector
+pub fn cadmpeg_ir::subd::SubdRadialMapSelector::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::Send for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::Sync for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdRadialMapSelector
 pub enum cadmpeg_ir::SubdScheme
 pub cadmpeg_ir::SubdScheme::CatmullClark
 impl core::clone::Clone for cadmpeg_ir::subd::SubdScheme
@@ -16362,6 +17046,30 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdScheme
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdScheme
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdScheme
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdScheme
+pub enum cadmpeg_ir::SubdSymmetryKind
+pub cadmpeg_ir::SubdSymmetryKind::Correspondence
+pub cadmpeg_ir::SubdSymmetryKind::Radial
+pub cadmpeg_ir::SubdSymmetryKind::Radial::segments: u32
+pub cadmpeg_ir::SubdSymmetryKind::Radial::sweep: f64
+impl core::clone::Clone for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::clone(&self) -> cadmpeg_ir::subd::SubdSymmetryKind
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::eq(&self, &cadmpeg_ir::subd::SubdSymmetryKind) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdSymmetryKind
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdSymmetryKind
+pub fn cadmpeg_ir::subd::SubdSymmetryKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::Send for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::Sync for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSymmetryKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSymmetryKind
 pub enum cadmpeg_ir::SubdVertexTag
 pub cadmpeg_ir::SubdVertexTag::Corner
 pub cadmpeg_ir::SubdVertexTag::Crease
@@ -16598,7 +17306,8 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::document::CadIr
 pub struct cadmpeg_ir::CadirEncoder
 impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::clone(&self) -> cadmpeg_ir::codec::CadirEncoder
 impl core::default::Default for cadmpeg_ir::codec::CadirEncoder
@@ -16762,6 +17471,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::DecodeOptions
 pub struct cadmpeg_ir::DecodeReport
 pub cadmpeg_ir::DecodeReport::container_only: bool
 pub cadmpeg_ir::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub cadmpeg_ir::DecodeReport::dialects: alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
 pub cadmpeg_ir::DecodeReport::format: alloc::string::String
 pub cadmpeg_ir::DecodeReport::geometry_transferred: bool
 pub cadmpeg_ir::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
@@ -16793,12 +17503,12 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::DecodeReport
 impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
-pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> &mut cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::report_mut(&mut self) -> &mut cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
-pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> &mut cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::clone(&self) -> cadmpeg_ir::codec::DecodeResult
 impl core::cmp::PartialEq for cadmpeg_ir::codec::DecodeResult
@@ -16971,6 +17681,7 @@ pub cadmpeg_ir::ExportReport::fidelity: cadmpeg_ir::report::FidelityResolution
 pub cadmpeg_ir::ExportReport::format: alloc::string::String
 pub cadmpeg_ir::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
 pub cadmpeg_ir::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::ExportReport::target: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_ir::ExportReport::write_path: cadmpeg_ir::report::WritePath
 impl cadmpeg_ir::report::ExportReport
 pub fn cadmpeg_ir::report::ExportReport::error_count(&self) -> usize
@@ -17543,6 +18254,7 @@ pub cadmpeg_ir::PmiAnnotation::definition: cadmpeg_ir::pmi::PmiDefinition
 pub cadmpeg_ir::PmiAnnotation::id: cadmpeg_ir::ids::PmiId
 pub cadmpeg_ir::PmiAnnotation::name: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::PmiAnnotation::targets: alloc::vec::Vec<cadmpeg_ir::pmi::PmiTarget>
+pub cadmpeg_ir::PmiAnnotation::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::pmi::PmiAnnotation
 pub fn cadmpeg_ir::pmi::PmiAnnotation::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::pmi::PmiAnnotation::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -17649,6 +18361,7 @@ pub cadmpeg_ir::PresentationLayer::description: core::option::Option<alloc::stri
 pub cadmpeg_ir::PresentationLayer::id: cadmpeg_ir::ids::LayerId
 pub cadmpeg_ir::PresentationLayer::items: alloc::vec::Vec<cadmpeg_ir::presentation::PresentationItem>
 pub cadmpeg_ir::PresentationLayer::name: alloc::string::String
+pub cadmpeg_ir::PresentationLayer::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::presentation::PresentationLayer
 pub fn cadmpeg_ir::presentation::PresentationLayer::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::presentation::PresentationLayer::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -17886,6 +18599,28 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchConstraintId
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchConstraintId
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchConstraintId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchConstraintId
+pub struct cadmpeg_ir::SketchDistancePair
+pub cadmpeg_ir::SketchDistancePair::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchDistancePair::second: cadmpeg_ir::sketches::SketchLocus
+impl core::clone::Clone for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::clone(&self) -> cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::Eq for cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::eq(&self, &cadmpeg_ir::sketches::SketchDistancePair) -> bool
+impl core::fmt::Debug for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchDistancePair
+impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Send for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Sync for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
 pub struct cadmpeg_ir::SketchEntity
 pub cadmpeg_ir::SketchEntity::construction: bool
 pub cadmpeg_ir::SketchEntity::endpoint_refs: alloc::vec::Vec<alloc::string::String>
@@ -18019,8 +18754,39 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchNativeOperand
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchNativeOperand
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchNativeOperand
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchNativeOperand
+pub struct cadmpeg_ir::SketchSolverScalar
+pub cadmpeg_ir::SketchSolverScalar::key: u32
+pub cadmpeg_ir::SketchSolverScalar::variable_type: u32
+impl core::clone::Clone for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::clone(&self) -> cadmpeg_ir::sketches::SketchSolverScalar
+impl core::cmp::Eq for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::cmp::Ord for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::cmp(&self, &cadmpeg_ir::sketches::SketchSolverScalar) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::eq(&self, &cadmpeg_ir::sketches::SketchSolverScalar) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::partial_cmp(&self, &cadmpeg_ir::sketches::SketchSolverScalar) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchSolverScalar
+impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchSolverScalar
+pub fn cadmpeg_ir::sketches::SketchSolverScalar::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::Send for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::Sync for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::Unpin for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchSolverScalar
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchSolverScalar
 pub struct cadmpeg_ir::SourceDiff
 pub cadmpeg_ir::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
+pub cadmpeg_ir::SourceDiff::declared: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
+pub cadmpeg_ir::SourceDiff::dialect_change: core::option::Option<(core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>)>
 pub cadmpeg_ir::SourceDiff::format_change: core::option::Option<(alloc::string::String, alloc::string::String)>
 pub cadmpeg_ir::SourceDiff::local_digests: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 impl cadmpeg_ir::diff::SourceDiff
@@ -18079,6 +18845,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::source_fidelity::So
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::source_fidelity::SourceFidelity
 pub struct cadmpeg_ir::SourceMeta
 pub cadmpeg_ir::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_ir::SourceMeta::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_ir::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_ir::SourceMeta::format: alloc::string::String
 impl core::clone::Clone for cadmpeg_ir::document::SourceMeta
 pub fn cadmpeg_ir::document::SourceMeta::clone(&self) -> cadmpeg_ir::document::SourceMeta
@@ -18441,6 +19209,7 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::annotations::StreamProvenance
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::StreamProvenance
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::StreamProvenance
 pub struct cadmpeg_ir::SubdEdge
+pub cadmpeg_ir::SubdEdge::knot_interval: core::option::Option<f64>
 pub cadmpeg_ir::SubdEdge::sector_coefficients: [f64; 2]
 pub cadmpeg_ir::SubdEdge::sharpness: [f64; 2]
 pub cadmpeg_ir::SubdEdge::tag: cadmpeg_ir::subd::SubdEdgeTag
@@ -18506,12 +19275,103 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdFace
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdFace
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdFace
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdFace
+pub struct cadmpeg_ir::SubdGripWedge
+pub cadmpeg_ir::SubdGripWedge::edge: core::option::Option<u32>
+pub cadmpeg_ir::SubdGripWedge::phantom: bool
+pub cadmpeg_ir::SubdGripWedge::sector_face: core::option::Option<u32>
+pub cadmpeg_ir::SubdGripWedge::sectors: alloc::vec::Vec<core::option::Option<cadmpeg_ir::subd::SubdSecondaryGrip>>
+pub cadmpeg_ir::SubdGripWedge::spokes: alloc::vec::Vec<core::option::Option<cadmpeg_ir::subd::SubdSecondaryGrip>>
+impl core::clone::Clone for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::clone(&self) -> cadmpeg_ir::subd::SubdGripWedge
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::eq(&self, &cadmpeg_ir::subd::SubdGripWedge) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdGripWedge
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdGripWedge
+pub fn cadmpeg_ir::subd::SubdGripWedge::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::Send for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::Sync for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdGripWedge
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdGripWedge
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdGripWedge
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdGripWedge
+pub struct cadmpeg_ir::SubdPlaneFrame
+pub cadmpeg_ir::SubdPlaneFrame::first_axis: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::SubdPlaneFrame::origin: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::SubdPlaneFrame::second_axis: cadmpeg_ir::math::Vector3
+impl core::clone::Clone for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::clone(&self) -> cadmpeg_ir::subd::SubdPlaneFrame
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::eq(&self, &cadmpeg_ir::subd::SubdPlaneFrame) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdPlaneFrame
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdPlaneFrame
+pub fn cadmpeg_ir::subd::SubdPlaneFrame::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::Send for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::Sync for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdPlaneFrame
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdPlaneFrame
+pub struct cadmpeg_ir::SubdRadialSymmetryMap
+pub cadmpeg_ir::SubdRadialSymmetryMap::pairs: alloc::vec::Vec<[u64; 2]>
+pub cadmpeg_ir::SubdRadialSymmetryMap::selector: cadmpeg_ir::subd::SubdRadialMapSelector
+impl core::clone::Clone for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::clone(&self) -> cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::eq(&self, &cadmpeg_ir::subd::SubdRadialSymmetryMap) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub fn cadmpeg_ir::subd::SubdRadialSymmetryMap::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::Send for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::Sync for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdRadialSymmetryMap
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdRadialSymmetryMap
+pub struct cadmpeg_ir::SubdSecondaryGrip
+pub cadmpeg_ir::SubdSecondaryGrip::point: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::SubdSecondaryGrip::source_index: u32
+pub cadmpeg_ir::SubdSecondaryGrip::weight: f64
+impl core::clone::Clone for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::clone(&self) -> cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::eq(&self, &cadmpeg_ir::subd::SubdSecondaryGrip) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdSecondaryGrip
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdSecondaryGrip
+pub fn cadmpeg_ir::subd::SubdSecondaryGrip::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::Send for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::Sync for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSecondaryGrip
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSecondaryGrip
 pub struct cadmpeg_ir::SubdSurface
 pub cadmpeg_ir::SubdSurface::edges: alloc::vec::Vec<cadmpeg_ir::subd::SubdEdge>
 pub cadmpeg_ir::SubdSurface::faces: alloc::vec::Vec<cadmpeg_ir::subd::SubdFace>
 pub cadmpeg_ir::SubdSurface::id: cadmpeg_ir::ids::SubdId
 pub cadmpeg_ir::SubdSurface::scheme: cadmpeg_ir::subd::SubdScheme
 pub cadmpeg_ir::SubdSurface::source_object: core::option::Option<cadmpeg_ir::SourceObjectAssociation>
+pub cadmpeg_ir::SubdSurface::symmetries: alloc::vec::Vec<cadmpeg_ir::subd::SubdSymmetry>
 pub cadmpeg_ir::SubdSurface::vertices: alloc::vec::Vec<cadmpeg_ir::subd::SubdVertex>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::subd::SubdSurface
 pub fn cadmpeg_ir::subd::SubdSurface::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
@@ -18538,8 +19398,34 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdSurface
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSurface
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSurface
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSurface
+pub struct cadmpeg_ir::SubdSymmetry
+pub cadmpeg_ir::SubdSymmetry::edge_pairs: alloc::vec::Vec<[u32; 2]>
+pub cadmpeg_ir::SubdSymmetry::face_pairs: alloc::vec::Vec<[u32; 2]>
+pub cadmpeg_ir::SubdSymmetry::kind: cadmpeg_ir::subd::SubdSymmetryKind
+pub cadmpeg_ir::SubdSymmetry::plane: cadmpeg_ir::subd::SubdPlaneFrame
+pub cadmpeg_ir::SubdSymmetry::radial_maps: alloc::vec::Vec<cadmpeg_ir::subd::SubdRadialSymmetryMap>
+pub cadmpeg_ir::SubdSymmetry::vertex_pairs: alloc::vec::Vec<[u32; 2]>
+impl core::clone::Clone for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::clone(&self) -> cadmpeg_ir::subd::SubdSymmetry
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::eq(&self, &cadmpeg_ir::subd::SubdSymmetry) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdSymmetry
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdSymmetry
+pub fn cadmpeg_ir::subd::SubdSymmetry::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::Send for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::Sync for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdSymmetry
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdSymmetry
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdSymmetry
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdSymmetry
 pub struct cadmpeg_ir::SubdVertex
 pub cadmpeg_ir::SubdVertex::point: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::SubdVertex::secondary_grips: core::option::Option<cadmpeg_ir::subd::SubdVertexGripLayout>
 pub cadmpeg_ir::SubdVertex::tag: cadmpeg_ir::subd::SubdVertexTag
 impl core::clone::Clone for cadmpeg_ir::subd::SubdVertex
 pub fn cadmpeg_ir::subd::SubdVertex::clone(&self) -> cadmpeg_ir::subd::SubdVertex
@@ -18559,6 +19445,27 @@ impl core::marker::Unpin for cadmpeg_ir::subd::SubdVertex
 impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdVertex
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdVertex
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdVertex
+pub struct cadmpeg_ir::SubdVertexGripLayout
+pub cadmpeg_ir::SubdVertexGripLayout::direction: cadmpeg_ir::subd::SubdGripDirection
+pub cadmpeg_ir::SubdVertexGripLayout::wedges: alloc::vec::Vec<cadmpeg_ir::subd::SubdGripWedge>
+impl core::clone::Clone for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::clone(&self) -> cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::cmp::PartialEq for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::eq(&self, &cadmpeg_ir::subd::SubdVertexGripLayout) -> bool
+impl core::fmt::Debug for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::subd::SubdVertexGripLayout
+impl serde_core::ser::Serialize for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::subd::SubdVertexGripLayout
+pub fn cadmpeg_ir::subd::SubdVertexGripLayout::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::Send for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::Sync for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::Unpin for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::marker::UnsafeUnpin for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::subd::SubdVertexGripLayout
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::subd::SubdVertexGripLayout
 pub struct cadmpeg_ir::UnknownRecord
 pub cadmpeg_ir::UnknownRecord::byte_len: u64
 pub cadmpeg_ir::UnknownRecord::data: core::option::Option<alloc::vec::Vec<u8>>
@@ -18653,6 +19560,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::presentation::ViewPres
 pub const cadmpeg_ir::CATIA_ADMISSION_CHECKS: &[cadmpeg_ir::report::Check]
 pub const cadmpeg_ir::DECODE_SIDECAR_VERSION: &str
 pub const cadmpeg_ir::DECODE_SIDECAR_VERSION_V1: &str
+pub const cadmpeg_ir::DECODE_SIDECAR_VERSION_V2: &str
 pub const cadmpeg_ir::DRAFT_CORE_CHECKS: &[cadmpeg_ir::report::Check]
 pub const cadmpeg_ir::IR_VERSION: &str
 pub const cadmpeg_ir::RHINO_DRAFT_CHECKS: &[cadmpeg_ir::report::Check]
@@ -18673,10 +19581,12 @@ pub fn cadmpeg_ir::CodecBackend::id(&self) -> &'static str
 pub fn cadmpeg_ir::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::Encoder
 pub fn cadmpeg_ir::Encoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::Encoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 pub fn cadmpeg_ir::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
 pub fn cadmpeg_ir::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
 pub fn cadmpeg_ir::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport

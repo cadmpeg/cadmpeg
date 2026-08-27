@@ -3191,8 +3191,10 @@ pub(crate) fn declared_sw_version(scan: &ContainerScan) -> Option<String> {
 ///
 /// The reading [`add_solidworks_xml_metadata`] performs over a scanned
 /// document, applied to a single payload. The writer classifies the envelope it
-/// emits through this, so `ExportReport::target` and a re-decode of the written
-/// bytes read the same attribute through the same parser.
+/// emits through this and keeps the last declaration, matching that function's
+/// insert-per-section fold, so `ExportReport::target` and a re-decode of the
+/// written bytes read the same attribute through the same parser and the same
+/// fold.
 pub(crate) fn payload_sw_version(payload: &[u8]) -> Option<String> {
     if container::payload_family(payload) != "xml" {
         return None;

@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at dde088151
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepError
 pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
@@ -29,6 +29,7 @@ pub cadmpeg_codec_step::StepSchema::Ap242Edition2
 pub cadmpeg_codec_step::StepSchema::Ap242Edition3
 impl cadmpeg_codec_step::StepSchema
 pub const fn cadmpeg_codec_step::StepSchema::file_schema(self) -> &'static str
+pub const fn cadmpeg_codec_step::StepSchema::target(self) -> &'static str
 impl core::clone::Clone for cadmpeg_codec_step::StepSchema
 pub fn cadmpeg_codec_step::StepSchema::clone(&self) -> cadmpeg_codec_step::StepSchema
 impl core::cmp::Eq for cadmpeg_codec_step::StepSchema
@@ -77,7 +78,8 @@ pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_step::StepCodec
 pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_step::StepCodec::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_codec_step::StepCodec
 pub fn cadmpeg_codec_step::StepCodec::clone(&self) -> cadmpeg_codec_step::StepCodec
 impl core::default::Default for cadmpeg_codec_step::StepCodec
@@ -96,7 +98,6 @@ pub cadmpeg_codec_step::StepWriteOptions::author: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::originating_system: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::product_name: alloc::string::String
-pub cadmpeg_codec_step::StepWriteOptions::schema: cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepWriteOptions::timestamp: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::unsupported: cadmpeg_codec_step::StepUnsupportedPolicy
 impl core::clone::Clone for cadmpeg_codec_step::StepWriteOptions
@@ -112,4 +113,4 @@ impl core::marker::Unpin for cadmpeg_codec_step::StepWriteOptions
 impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepWriteOptions
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepWriteOptions
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepWriteOptions
-pub fn cadmpeg_codec_step::write_step(&cadmpeg_ir::document::CadIr, &mut impl core::io::write::Write + ?core::marker::Sized, &cadmpeg_codec_step::StepWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_codec_step::StepError>
+pub fn cadmpeg_codec_step::write_step(&cadmpeg_ir::document::CadIr, &mut impl core::io::write::Write + ?core::marker::Sized, cadmpeg_codec_step::StepSchema, &cadmpeg_codec_step::StepWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_codec_step::StepError>

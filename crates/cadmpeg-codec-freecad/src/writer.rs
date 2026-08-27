@@ -49,11 +49,10 @@ pub(crate) fn write_seekable(
 ) -> Result<ExportReport, CodecError> {
     let options = resolution.options();
     let target = dialect::written_dialect(options);
-    let namespace = ir.native.namespace("fcstd").ok_or_else(|| {
-        CodecError::NotImplemented(
-            "source-less FCStd generation requires a constructed native document graph".into(),
-        )
-    })?;
+    let namespace = ir
+        .native
+        .namespace("fcstd")
+        .expect("a Resolution proves the namespace: resolve's retained_baseline required it");
     let entry_records = namespace
         .arenas
         .get("entries")

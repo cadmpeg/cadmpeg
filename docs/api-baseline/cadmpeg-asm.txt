@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at dde088151
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -565,6 +565,17 @@ pub fn cadmpeg_asm::brep::id(cadmpeg_asm::ids::IdFormat<'_>, i64) -> alloc::stri
 pub fn cadmpeg_asm::brep::remap_owned_ids(&mut serde_value::Value, &std::collections::hash::map::HashMap<alloc::string::String, alloc::string::String>)
 pub fn cadmpeg_asm::brep::retain_root_entities(&mut serde_value::Value, &std::collections::hash::set::HashSet<alloc::string::String>)
 pub fn cadmpeg_asm::brep::value_string(&serde_value::Value) -> core::option::Option<&str>
+pub mod cadmpeg_asm::dialect
+pub const cadmpeg_asm::dialect::ACIS_ASM_BINARYFILE_4: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::ACIS_ASM_BINARYFILE_8: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_217: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_BINARY_OTHER: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::VERIFIED_ACIS_MAJORS: [u32; 2]
+pub fn cadmpeg_asm::dialect::acis_band_verified(core::option::Option<u32>) -> bool
+pub fn cadmpeg_asm::dialect::acis_binary_row(core::option::Option<u32>) -> cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_asm::dialect::asm_binary_row(u8) -> cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_asm::dialect::nearest_verified_acis(core::option::Option<u32>) -> cadmpeg_core::dialect::DialectId
 pub mod cadmpeg_asm::edit
 pub struct cadmpeg_asm::edit::AsmEditSet
 impl cadmpeg_asm::edit::AsmEditSet
@@ -757,11 +768,11 @@ pub fn cadmpeg_asm::nurbs::core::curve_cache_resolving_refs(&[cadmpeg_asm::sab::
 pub fn cadmpeg_asm::nurbs::core::decode_curve_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
 pub fn cadmpeg_asm::nurbs::core::decode_owned_curve_cache_at(&[u8], usize) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
 pub fn cadmpeg_asm::nurbs::core::decode_surface_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::NurbsSurface>
-pub fn cadmpeg_asm::nurbs::core::final_curve_patch_layout(&[u8]) -> core::option::Option<cadmpeg_asm::nurbs::core::CurvePatchLayout>
-pub fn cadmpeg_asm::nurbs::core::final_surface_patch_layout(&[u8]) -> core::option::Option<cadmpeg_asm::nurbs::core::SurfacePatchLayout>
-pub fn cadmpeg_asm::nurbs::core::first_curve_patch_layout(&[u8]) -> core::option::Option<cadmpeg_asm::nurbs::core::CurvePatchLayout>
+pub fn cadmpeg_asm::nurbs::core::final_curve_patch_layout(&[u8], usize) -> core::option::Option<cadmpeg_asm::nurbs::core::CurvePatchLayout>
+pub fn cadmpeg_asm::nurbs::core::final_surface_patch_layout(&[u8], usize) -> core::option::Option<cadmpeg_asm::nurbs::core::SurfacePatchLayout>
+pub fn cadmpeg_asm::nurbs::core::first_curve_patch_layout(&[u8], usize) -> core::option::Option<cadmpeg_asm::nurbs::core::CurvePatchLayout>
 pub fn cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::NurbsSurface>
-pub fn cadmpeg_asm::nurbs::core::surface_patch_layout_at(&[u8], usize) -> core::option::Option<cadmpeg_asm::nurbs::core::SurfacePatchLayout>
+pub fn cadmpeg_asm::nurbs::core::surface_patch_layout_at(&[u8], usize, usize) -> core::option::Option<cadmpeg_asm::nurbs::core::SurfacePatchLayout>
 pub mod cadmpeg_asm::nurbs::pcurve
 pub struct cadmpeg_asm::nurbs::pcurve::NurbsPcurve
 pub cadmpeg_asm::nurbs::pcurve::NurbsPcurve::control_points: alloc::vec::Vec<cadmpeg_ir::math::Point2>
@@ -797,7 +808,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::pcurve::Pcurve
 pub fn cadmpeg_asm::nurbs::pcurve::decode_pcurve_cache(&[u8]) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
 pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache(&[cadmpeg_asm::sab::Token]) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
 pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(i64, &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
-pub fn cadmpeg_asm::nurbs::pcurve::final_pcurve_patch_layout(&[u8]) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout>
+pub fn cadmpeg_asm::nurbs::pcurve::final_pcurve_patch_layout(&[u8], usize) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout>
 pub fn cadmpeg_asm::nurbs::pcurve::pcurve_fit_tolerance(&[cadmpeg_asm::sab::Token]) -> core::option::Option<f64>
 pub mod cadmpeg_asm::nurbs::proc_curve
 pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
@@ -1376,6 +1387,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Spline::controls: a
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Spline::knots: alloc::vec::Vec<f64>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Spline::native_id: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Spline::point: cadmpeg_ir::math::Point3
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Text(alloc::string::String)
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Transform
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Transform::enums: [i64; 3]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Transform::scalars: [f64; 13]
@@ -1604,6 +1616,7 @@ pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::data: cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::discontinuity_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::support: cadmpeg_ir::geometry::SurfaceGeometry
 impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
 impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
@@ -1980,6 +1993,7 @@ pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::discontinuities: [all
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::enumeration: i64
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::fit_tolerance: core::option::Option<f64>
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::parameterization: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>
+pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::solved_cache_domains: core::option::Option<[[f64; 2]; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::tail_flag: bool
 impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
 impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
@@ -2122,25 +2136,25 @@ pub fn cadmpeg_asm::sab::payload_subtype_range(&[u8], &cadmpeg_asm::sab::Record,
 pub fn cadmpeg_asm::sab::payload_token_offset(&[u8], &cadmpeg_asm::sab::Record, usize, usize) -> core::option::Option<usize>
 pub fn cadmpeg_asm::sab::payload_token_offsets(&[u8], &cadmpeg_asm::sab::Record, usize, u8) -> core::result::Result<alloc::vec::Vec<usize>, cadmpeg_asm::sab::FrameError>
 pub mod cadmpeg_asm::sat
-pub enum cadmpeg_asm::sat::Dialect
-pub cadmpeg_asm::sat::Dialect::Acis
-pub cadmpeg_asm::sat::Dialect::Asm
-impl core::clone::Clone for cadmpeg_asm::sat::Dialect
-pub fn cadmpeg_asm::sat::Dialect::clone(&self) -> cadmpeg_asm::sat::Dialect
-impl core::cmp::Eq for cadmpeg_asm::sat::Dialect
-impl core::cmp::PartialEq for cadmpeg_asm::sat::Dialect
-pub fn cadmpeg_asm::sat::Dialect::eq(&self, &cadmpeg_asm::sat::Dialect) -> bool
-impl core::fmt::Debug for cadmpeg_asm::sat::Dialect
-pub fn cadmpeg_asm::sat::Dialect::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_asm::sat::Dialect
-impl core::marker::StructuralPartialEq for cadmpeg_asm::sat::Dialect
-impl core::marker::Freeze for cadmpeg_asm::sat::Dialect
-impl core::marker::Send for cadmpeg_asm::sat::Dialect
-impl core::marker::Sync for cadmpeg_asm::sat::Dialect
-impl core::marker::Unpin for cadmpeg_asm::sat::Dialect
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sat::Dialect
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sat::Dialect
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sat::Dialect
+pub enum cadmpeg_asm::sat::Terminator
+pub cadmpeg_asm::sat::Terminator::Acis
+pub cadmpeg_asm::sat::Terminator::Asm
+impl core::clone::Clone for cadmpeg_asm::sat::Terminator
+pub fn cadmpeg_asm::sat::Terminator::clone(&self) -> cadmpeg_asm::sat::Terminator
+impl core::cmp::Eq for cadmpeg_asm::sat::Terminator
+impl core::cmp::PartialEq for cadmpeg_asm::sat::Terminator
+pub fn cadmpeg_asm::sat::Terminator::eq(&self, &cadmpeg_asm::sat::Terminator) -> bool
+impl core::fmt::Debug for cadmpeg_asm::sat::Terminator
+pub fn cadmpeg_asm::sat::Terminator::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_asm::sat::Terminator
+impl core::marker::StructuralPartialEq for cadmpeg_asm::sat::Terminator
+impl core::marker::Freeze for cadmpeg_asm::sat::Terminator
+impl core::marker::Send for cadmpeg_asm::sat::Terminator
+impl core::marker::Sync for cadmpeg_asm::sat::Terminator
+impl core::marker::Unpin for cadmpeg_asm::sat::Terminator
+impl core::marker::UnsafeUnpin for cadmpeg_asm::sat::Terminator
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sat::Terminator
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sat::Terminator
 pub struct cadmpeg_asm::sat::SatError
 pub cadmpeg_asm::sat::SatError::offset: usize
 pub cadmpeg_asm::sat::SatError::reason: alloc::string::String
@@ -2190,9 +2204,9 @@ impl core::marker::UnsafeUnpin for cadmpeg_asm::sat::TextHeader
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sat::TextHeader
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sat::TextHeader
 pub struct cadmpeg_asm::sat::TextStream
-pub cadmpeg_asm::sat::TextStream::dialect: cadmpeg_asm::sat::Dialect
 pub cadmpeg_asm::sat::TextStream::header: cadmpeg_asm::sat::TextHeader
 pub cadmpeg_asm::sat::TextStream::records: alloc::vec::Vec<cadmpeg_asm::sab::Record>
+pub cadmpeg_asm::sat::TextStream::terminator: cadmpeg_asm::sat::Terminator
 impl core::clone::Clone for cadmpeg_asm::sat::TextStream
 pub fn cadmpeg_asm::sat::TextStream::clone(&self) -> cadmpeg_asm::sat::TextStream
 impl core::fmt::Debug for cadmpeg_asm::sat::TextStream

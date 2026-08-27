@@ -1,4 +1,4 @@
-# generated at 16bfc3c35
+# generated at dde088151
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -188,6 +188,46 @@ impl core::marker::Unpin for cadmpeg_registry::DialectEntry
 impl core::marker::UnsafeUnpin for cadmpeg_registry::DialectEntry
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::DialectEntry
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::DialectEntry
+pub struct cadmpeg_registry::DialectProvenance
+pub cadmpeg_registry::DialectProvenance::id: core::option::Option<cadmpeg_core::dialect::DialectId>
+pub cadmpeg_registry::DialectProvenance::read: core::option::Option<cadmpeg_registry::ReadDisposition>
+pub cadmpeg_registry::DialectProvenance::write_targets: alloc::vec::Vec<&'static str>
+impl core::clone::Clone for cadmpeg_registry::DialectProvenance
+pub fn cadmpeg_registry::DialectProvenance::clone(&self) -> cadmpeg_registry::DialectProvenance
+impl core::cmp::Eq for cadmpeg_registry::DialectProvenance
+impl core::cmp::PartialEq for cadmpeg_registry::DialectProvenance
+pub fn cadmpeg_registry::DialectProvenance::eq(&self, &cadmpeg_registry::DialectProvenance) -> bool
+impl core::fmt::Debug for cadmpeg_registry::DialectProvenance
+pub fn cadmpeg_registry::DialectProvenance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_registry::DialectProvenance
+impl core::marker::Freeze for cadmpeg_registry::DialectProvenance
+impl core::marker::Send for cadmpeg_registry::DialectProvenance
+impl core::marker::Sync for cadmpeg_registry::DialectProvenance
+impl core::marker::Unpin for cadmpeg_registry::DialectProvenance
+impl core::marker::UnsafeUnpin for cadmpeg_registry::DialectProvenance
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::DialectProvenance
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::DialectProvenance
+pub struct cadmpeg_registry::DialectRow
+pub cadmpeg_registry::DialectRow::id: &'static cadmpeg_core::dialect::DialectId
+pub cadmpeg_registry::DialectRow::read: core::option::Option<cadmpeg_registry::ReadDisposition>
+pub cadmpeg_registry::DialectRow::target: bool
+pub cadmpeg_registry::DialectRow::title: &'static str
+pub cadmpeg_registry::DialectRow::write: core::option::Option<cadmpeg_registry::WriteDisposition>
+impl core::clone::Clone for cadmpeg_registry::DialectRow
+pub fn cadmpeg_registry::DialectRow::clone(&self) -> cadmpeg_registry::DialectRow
+impl core::cmp::Eq for cadmpeg_registry::DialectRow
+impl core::cmp::PartialEq for cadmpeg_registry::DialectRow
+pub fn cadmpeg_registry::DialectRow::eq(&self, &cadmpeg_registry::DialectRow) -> bool
+impl core::fmt::Debug for cadmpeg_registry::DialectRow
+pub fn cadmpeg_registry::DialectRow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_registry::DialectRow
+impl core::marker::Freeze for cadmpeg_registry::DialectRow
+impl core::marker::Send for cadmpeg_registry::DialectRow
+impl core::marker::Sync for cadmpeg_registry::DialectRow
+impl core::marker::Unpin for cadmpeg_registry::DialectRow
+impl core::marker::UnsafeUnpin for cadmpeg_registry::DialectRow
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::DialectRow
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::DialectRow
 pub struct cadmpeg_registry::Disposition
 pub cadmpeg_registry::Disposition::read: cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::Disposition::write: cadmpeg_registry::WriteDisposition
@@ -207,6 +247,46 @@ impl core::marker::Unpin for cadmpeg_registry::Disposition
 impl core::marker::UnsafeUnpin for cadmpeg_registry::Disposition
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::Disposition
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::Disposition
+pub struct cadmpeg_registry::FormatDialects
+pub cadmpeg_registry::FormatDialects::catalog: core::option::Option<&'static [cadmpeg_ir::codec::TargetDescriptor]>
+pub cadmpeg_registry::FormatDialects::default_target: core::option::Option<&'static str>
+pub cadmpeg_registry::FormatDialects::format: alloc::string::String
+pub cadmpeg_registry::FormatDialects::rows: alloc::vec::Vec<cadmpeg_registry::DialectRow>
+impl core::clone::Clone for cadmpeg_registry::FormatDialects
+pub fn cadmpeg_registry::FormatDialects::clone(&self) -> cadmpeg_registry::FormatDialects
+impl core::cmp::Eq for cadmpeg_registry::FormatDialects
+impl core::cmp::PartialEq for cadmpeg_registry::FormatDialects
+pub fn cadmpeg_registry::FormatDialects::eq(&self, &cadmpeg_registry::FormatDialects) -> bool
+impl core::fmt::Debug for cadmpeg_registry::FormatDialects
+pub fn cadmpeg_registry::FormatDialects::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_registry::FormatDialects
+impl core::marker::Freeze for cadmpeg_registry::FormatDialects
+impl core::marker::Send for cadmpeg_registry::FormatDialects
+impl core::marker::Sync for cadmpeg_registry::FormatDialects
+impl core::marker::Unpin for cadmpeg_registry::FormatDialects
+impl core::marker::UnsafeUnpin for cadmpeg_registry::FormatDialects
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::FormatDialects
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::FormatDialects
+pub struct cadmpeg_registry::FormatRow
+pub cadmpeg_registry::FormatRow::extensions: &'static [&'static str]
+pub cadmpeg_registry::FormatRow::id: &'static str
+pub cadmpeg_registry::FormatRow::read: bool
+pub cadmpeg_registry::FormatRow::write: bool
+impl core::clone::Clone for cadmpeg_registry::FormatRow
+pub fn cadmpeg_registry::FormatRow::clone(&self) -> cadmpeg_registry::FormatRow
+impl core::cmp::Eq for cadmpeg_registry::FormatRow
+impl core::cmp::PartialEq for cadmpeg_registry::FormatRow
+pub fn cadmpeg_registry::FormatRow::eq(&self, &cadmpeg_registry::FormatRow) -> bool
+impl core::fmt::Debug for cadmpeg_registry::FormatRow
+pub fn cadmpeg_registry::FormatRow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_registry::FormatRow
+impl core::marker::Freeze for cadmpeg_registry::FormatRow
+impl core::marker::Send for cadmpeg_registry::FormatRow
+impl core::marker::Sync for cadmpeg_registry::FormatRow
+impl core::marker::Unpin for cadmpeg_registry::FormatRow
+impl core::marker::UnsafeUnpin for cadmpeg_registry::FormatRow
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::FormatRow
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::FormatRow
 pub struct cadmpeg_registry::Identification
 pub cadmpeg_registry::Identification::confidence: cadmpeg_ir::codec::Confidence
 pub cadmpeg_registry::Identification::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -285,10 +365,11 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::UnknownFormat
 pub const cadmpeg_registry::DETECTION_PREFIX_LEN: usize
 pub const cadmpeg_registry::INSPECTION_FLOOR: cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format, cadmpeg_registry::LossPolicy) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::Encoder>
-pub fn cadmpeg_registry::dialect_provenance(&[cadmpeg_core::dialect::DialectMatch], &str) -> core::option::Option<alloc::string::String>
+pub fn cadmpeg_registry::dialect_provenance(&[cadmpeg_core::dialect::DialectMatch], &str) -> core::option::Option<cadmpeg_registry::DialectProvenance>
+pub fn cadmpeg_registry::dialect_table(core::option::Option<&str>) -> core::result::Result<alloc::vec::Vec<cadmpeg_registry::FormatDialects>, cadmpeg_registry::UnknownFormat>
 pub fn cadmpeg_registry::dialects(&str) -> alloc::vec::Vec<&'static cadmpeg_registry::DialectEntry>
+pub fn cadmpeg_registry::format_rows(&cadmpeg_registry::InputCatalog) -> alloc::vec::Vec<cadmpeg_registry::FormatRow>
 pub fn cadmpeg_registry::identify(&mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::io::error::Result<alloc::vec::Vec<cadmpeg_registry::Identification>>
 pub fn cadmpeg_registry::identify_with(&cadmpeg_registry::InputCatalog, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::io::error::Result<alloc::vec::Vec<cadmpeg_registry::Identification>>
-pub fn cadmpeg_registry::print_dialects(core::option::Option<&str>) -> core::result::Result<(), cadmpeg_registry::UnknownFormat>
-pub fn cadmpeg_registry::print_formats(&cadmpeg_registry::InputCatalog)
 pub fn cadmpeg_registry::support(&cadmpeg_core::dialect::DialectId) -> core::option::Option<cadmpeg_registry::Disposition>
+pub fn cadmpeg_registry::write_targets(cadmpeg_registry::Format) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
