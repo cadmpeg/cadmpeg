@@ -773,7 +773,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Decode and atomically commit supported simple geometry.
     pub(crate) fn decode_geometry(&mut self) {
-        if !object_geometry_archive(self.archive()) {
+        if !crate::dialect::is_chunked(self.archive()) {
             return;
         }
         for source_order in 0..self.scan.objects.len() {
@@ -997,20 +997,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Decode semantic dimensions independently of shape carriers.
     pub(crate) fn decode_dimensions(&mut self) {
-        if !matches!(
-            self.archive(),
-            ArchiveVersion::V2
-                | ArchiveVersion::V3
-                | ArchiveVersion::V4
-                | ArchiveVersion::V5
-                | ArchiveVersion::V6
-                | ArchiveVersion::V7
-                | ArchiveVersion::V8
-                | ArchiveVersion::V9
-                // The residual row shares the chunked grammar, so the same
-                // semantic pass runs for it under `AdmittedUnverified`.
-                | ArchiveVersion::Other(_)
-        ) {
+        if !crate::dialect::is_chunked(self.archive()) {
             return;
         }
         for source_order in 0..self.scan.objects.len() {
@@ -3469,23 +3456,6 @@ impl<'a> DecodeContext<'a> {
         self.statuses[source_order] = next;
         true
     }
-}
-
-fn object_geometry_archive(archive: ArchiveVersion) -> bool {
-    matches!(
-        archive,
-        ArchiveVersion::V2
-            | ArchiveVersion::V3
-            | ArchiveVersion::V4
-            | ArchiveVersion::V5
-            | ArchiveVersion::V6
-            | ArchiveVersion::V7
-            | ArchiveVersion::V8
-            | ArchiveVersion::V9
-            // The residual row shares the chunked grammar, so object geometry
-            // is decoded for it under `AdmittedUnverified`.
-            | ArchiveVersion::Other(_)
-    )
 }
 
 fn integrity_diagnostic(message: &str) -> bool {
