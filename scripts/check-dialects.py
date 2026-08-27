@@ -4,9 +4,8 @@
 
 The registry pins format-identity names: an id chosen once is an id forever.
 This checker is its oracle for registry-internal rules -- schema, id grammar,
-witness form, and the IGES admission lattice. The cross-check against emitted
-codec ids arrives with a later phase and is stubbed at the bottom of this file
-so its wiring point is fixed now.
+witness form, the IGES admission lattice, and pinned-id presence in codec
+source.
 
 Rendered support tables are checked by ``scripts/render-format-support.py
 --check``, which regenerates every published table from this registry and
@@ -317,6 +316,7 @@ def check(root: Path) -> tuple[list[str], str]:
         code_debt += int(debt)
 
     check_supersedes_graph([r for r in rows if _is_table(r)], seen, failures)
+    failures.extend(check_codec_emitted_ids(root))
 
     counts = ", ".join(f"{fmt} {n}" for fmt, n in sorted(per_format.items()))
     summary = (
@@ -326,20 +326,33 @@ def check(root: Path) -> tuple[list[str], str]:
     return failures, summary
 
 
-# --------------------------------------------------------------------------
-# Extension points. Later phases replace the body; the contract is fixed now.
-# --------------------------------------------------------------------------
-
-
 def check_codec_emitted_ids(root: Path) -> list[str]:
-    """The ids a codec can emit must equal the registry's set for that format.
+    """Require every pinned registry id as a Rust string literal in a codec."""
+    path = root / REGISTRY_REL
+    try:
+        with path.open("rb") as handle:
+            rows = tomllib.load(handle).get("dialect", [])
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
 
-    Contract: for each ``[format.<id>]``, collect the dialect ids the codec
-    can actually emit at runtime and compare the two sets. A registry id no
-    codec emits is a dead name; an emitted id absent from the registry is an
-    unpinned name. Both are failures once a codec emits ids at all.
-    """
-    return ["not yet enforced"]
+    literals: set[str] = set()
+    crates = root / "crates"
+    if crates.is_dir():
+        for source in crates.glob("*/src/**/*.rs"):
+            try:
+                text = source.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            literals.update(re.findall(r'"([a-z0-9]+:[a-z0-9.-]+)"', text))
+
+    failures: list[str] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not _is_table(row) or row.get("pinned") is False:
+            continue
+        dialect_id = row.get("id")
+        if isinstance(dialect_id, str) and dialect_id not in literals:
+            failures.append(f"{dialect_id}: no string literal under crates/*/src")
+    return failures
 
 
 def self_test() -> int:
