@@ -193,9 +193,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         })
     }
 
-    fn admission_losses(&self) -> Vec<LossNote> {
+    fn admission_losses(&self, primary: &DialectMatch) -> Vec<LossNote> {
         let mut losses = Vec::new();
-        losses.extend(self.global.dialect_loss());
+        losses.extend(self.global.dialect_loss(primary));
         losses.extend(self.global_losses.iter().cloned());
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
@@ -231,12 +231,11 @@ pub(crate) fn inspect(
     source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
     let parse = PhysicalParse::run(window, Some(ctx), ParseMode::Inspect)?;
-    let mut losses = parse.admission_losses();
+    let primary = IgesDialect::classify(representation, &parse.global);
+    let mut losses = parse.admission_losses(&primary);
     losses.extend(parse.record_losses());
     let mut summary = card::summarize(&parse.scan);
-    summary
-        .dialects
-        .push(IgesDialect::classify(representation, &parse.global));
+    summary.dialects.push(primary);
     debug_assert_primary_layer(&summary.dialects, &summary.format);
     summary.notes.extend(parse.global.summary_notes());
     summary
@@ -396,7 +395,7 @@ fn decode_with_occurrence_limits(
     source_fidelity.finalize();
 
     let geometry_transferred = !projection.decoded.is_empty();
-    let mut losses = parse.admission_losses();
+    let mut losses = parse.admission_losses(&primary);
     losses.extend(projection.losses);
     losses.extend(graph::losses(
         &parse.references,

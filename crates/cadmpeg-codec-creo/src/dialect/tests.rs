@@ -230,20 +230,24 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         Layout::LegacyAscii,
         Layout::Unknown,
     ] {
-        let charged = dialect_loss(layout).is_some();
-        assert_eq!(
-            layout_is_declared(layout),
-            !charged,
-            "{layout:?}: the recovery predicate and the charged loss disagree"
-        );
+        let bytes = match layout {
+            Layout::Nd => nd_bytes(),
+            Layout::Depdb => depdb_bytes(),
+            Layout::LegacyAscii => legacy_ascii_bytes(),
+            Layout::Unknown => unknown_bytes(),
+        };
+        let matched = classify(&scan_bytes(bytes.as_slice()));
+        let charged = dialect_loss(&matched).is_some();
+        assert_eq!(matched.admission == Admission::Admitted, !charged);
     }
 
     for case in CASES {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
-        let charged = dialect_loss(scan.framing.layout).is_some();
+        let matched = classify(&scan);
+        let charged = dialect_loss(&matched).is_some();
         assert_eq!(
-            classify(&scan).admission == Admission::Admitted,
+            matched.admission == Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             case.label
@@ -253,7 +257,9 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 
 #[test]
 fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
-    let note = dialect_loss(Layout::Unknown).expect("an unclassified layout charges the loss");
+    let bytes = unknown_bytes();
+    let scan = scan_bytes(bytes.as_slice());
+    let note = dialect_loss(&classify(&scan)).expect("an unclassified layout charges the loss");
     assert_eq!(note.code.as_str(), "creo/source.dialect-unverified");
     assert_eq!(
         note.code.taxonomy(),

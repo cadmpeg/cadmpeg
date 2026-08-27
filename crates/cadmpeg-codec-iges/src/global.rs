@@ -3,6 +3,7 @@
 
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
+use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 
@@ -1524,11 +1525,11 @@ impl ResolvedGlobal {
     /// `None` exactly when [`Self::dialect_recovery`] is
     /// [`DialectRecovery::Verified`], which is also exactly when `crate::dialect`
     /// reports `Admission::Admitted`.
-    pub(crate) fn dialect_loss(&self) -> Option<LossNote> {
-        let recovery = self.dialect_recovery();
-        if recovery == DialectRecovery::Verified {
+    pub(crate) fn dialect_loss(&self, matched: &DialectMatch) -> Option<LossNote> {
+        let Admission::AdmittedUnverified { .. } = &matched.admission else {
             return None;
-        }
+        };
+        let recovery = self.dialect_recovery();
         let declared = self.declared_version_flag;
         let effective = self.effective_version_flag();
         let version = self.version();

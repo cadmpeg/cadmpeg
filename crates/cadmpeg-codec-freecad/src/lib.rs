@@ -1426,7 +1426,7 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        losses.extend(dialect::FcstdDialect::dialect_loss(&scan.document));
+        losses.extend(dialect::FcstdDialect::dialect_loss(&primary));
         ctx.admit_entities(
             ir.model.entity_count() as u64,
             &mut admitted_entities,

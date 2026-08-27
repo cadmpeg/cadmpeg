@@ -1413,7 +1413,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
-    losses.extend(recovery.dialect_loss());
+    losses.extend(recovery.dialect_loss(&primary));
     losses.extend(kernel_layer.as_ref().and_then(kernel_dialect_loss));
     if ctx.container_only() {
         losses.push(

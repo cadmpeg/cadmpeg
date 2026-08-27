@@ -71,42 +71,55 @@ pub(crate) const FORMAT: &str = "step";
 /// is no preservation path that could write them anyway.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: "step:ap203-e1",
+        id: StepSchema::Ap203Edition1.pinned(),
         label: "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
         aliases: &["ap203e1"],
         default: false,
     },
     TargetDescriptor {
-        id: "step:ap203-e2",
+        id: StepSchema::Ap203Edition2.pinned(),
         label: "STEP AP203 edition 2 modular long form",
         aliases: &["ap203e2"],
         default: false,
     },
     TargetDescriptor {
-        id: "step:ap214",
+        id: StepSchema::Ap214.pinned(),
         label: "STEP AP214 AUTOMOTIVE_DESIGN",
         aliases: &["ap214"],
         default: true,
     },
     TargetDescriptor {
-        id: "step:ap242-e1",
+        id: StepSchema::Ap242Edition1.pinned(),
         label: "STEP AP242 edition 1 modular long form",
         aliases: &["ap242e1"],
         default: false,
     },
     TargetDescriptor {
-        id: "step:ap242-e2",
+        id: StepSchema::Ap242Edition2.pinned(),
         label: "STEP AP242 edition 2 modular long form",
         aliases: &["ap242e2"],
         default: false,
     },
     TargetDescriptor {
-        id: "step:ap242-e3",
+        id: StepSchema::Ap242Edition3.pinned(),
         label: "STEP AP242 edition 3 modular long form",
         aliases: &["ap242e3"],
         default: false,
     },
 ];
+
+impl StepSchema {
+    pub(crate) const fn pinned(self) -> &'static str {
+        match self {
+            Self::Ap203Edition1 => "step:ap203-e1",
+            Self::Ap203Edition2 => "step:ap203-e2",
+            Self::Ap214 => "step:ap214",
+            Self::Ap242Edition1 => "step:ap242-e1",
+            Self::Ap242Edition2 => "step:ap242-e2",
+            Self::Ap242Edition3 => "step:ap242-e3",
+        }
+    }
+}
 
 /// The schema a target id names, by id or by alias, or `None` when the id is
 /// outside [`TARGETS`].
