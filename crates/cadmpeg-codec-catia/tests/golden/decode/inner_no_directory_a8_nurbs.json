@@ -189,6 +189,7 @@
         "stream_count": "2",
         "variant": "inner_no_directory"
       },
+      "dialect": "catia:inner-no-directory",
       "format": "catia"
     },
     "tolerances": {
@@ -543,6 +544,13 @@
       "unresolved_unreferenced_relation_expression_count": 0,
       "unselected_object_stream_run_count": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "dialect": "catia:inner-no-directory",
+        "format": "catia"
+      }
+    ],
     "format": "catia",
     "geometry_transferred": true,
     "losses": [

@@ -727,7 +727,18 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:
 # CATIA V5 CATPart
 # --------------------------------------------------------------------------
 # `Variant` (crates/cadmpeg-codec-catia/src/variant.rs:12-33) promoted as-is;
-# the design calls it an instance of the general concept (§3.1).
+# the design calls it an instance of the general concept (§3.1). The pinned-id
+# surface is an inherent impl on that same enum in
+# `crates/cadmpeg-codec-catia/src/dialect.rs`, not a second enum: `Variant::id`
+# maps each variant to the row below, and `dialect::classify` is the only
+# construction path for a `DialectMatch` in the crate.
+#
+# `DialectMatch.declared` carries the `LastSaveVersion` tuple under the keys
+# `last_save_version`, `last_save_release`, `last_save_service_pack`,
+# `last_save_hot_fix`, and `last_save_build_date`. Those keys are pinned in
+# `dialect.rs` beside the enum, not here: the identity registry stays free of
+# producer-side key vocabularies (§4).
+#
 # `identify_variant` (container.rs:1248-1280) is one `match (inner, brep)` over
 # structural evidence read before any parse strategy is chosen: the presence
 # of a nested `V5_CFV2` sub-container with a `CATIA_V5 CB0001` stream
@@ -822,10 +833,23 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_dire
 # Disposition: ADMITTED, not refused. No route in families/mod.rs:46-68
 # matches `Unknown`, so decode falls through to `build_metadata_ir` +
 # `build_container_report(..., false)` (decode.rs:75-77), retains the file as
-# an `UnknownRecord` (assemble.rs:575-596), and charges
-# `GeometryBrepNotTransferred` and `TopologyGraphNotBuilt`
-# (assemble.rs:653-661). This is the `unknown: admitted-unverified` line B4
-# exists to force into the open.
+# an `UnknownRecord` (assemble.rs:580-601), and charges
+# `GeometryBrepNotTransferred` (assemble.rs:665) and `TopologyGraphNotBuilt`
+# (assemble.rs:679). This is the `unknown: admitted-unverified` line B4 exists
+# to force into the open.
+#
+# Those two are geometry and topology losses, not dialect losses. The dialect
+# loss this row carries is `catia/source.dialect-unverified`
+# (`CatiaLossCode::SourceDialectUnverified`), charged from the same predicate
+# that produces the admission (`dialect::admission`), so the two cannot
+# disagree.
+#
+# `Admission::AdmittedUnverified.nearest` names this row itself. The strategy
+# applied is the metadata-IR fallback, which is no other CATIA dialect's
+# declared strategy; `nearest` is typed as a `DialectId` and can only name a
+# dialect, so the self-reference is the only honest referent available. This is
+# a template conflict, recorded rather than resolved by naming a family whose
+# grammar was never applied.
 id = "catia:unknown"
 title = "CATIA V5 unrecognized storage layout"
 discriminants = { variant = "no admitted family" }

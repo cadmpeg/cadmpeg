@@ -29,6 +29,8 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 pub enum CatiaLossCode {
     /// Container-only decode skipped entity transfer.
     ContainerOnlyDecode,
+    /// The storage layout matched no declared dialect's structural invariants.
+    SourceDialectUnverified,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
     /// Transferred model retains unresolved curve or surface carriers.
@@ -89,6 +91,7 @@ impl CatiaLossCode {
     /// Every code, in declaration order.
     pub const ALL: &'static [CatiaLossCode] = &[
         Self::ContainerOnlyDecode,
+        Self::SourceDialectUnverified,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
@@ -123,6 +126,7 @@ impl CatiaLossCode {
     pub const fn code(self) -> &'static str {
         match self {
             Self::ContainerOnlyDecode => "container.decode-only",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
@@ -188,6 +192,7 @@ impl CatiaLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::ContainerOnlyDecode => LossTaxonomy::ContainerOnly,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
@@ -247,6 +252,7 @@ mod tests {
             codes,
             [
                 "container.decode-only",
+                "source.dialect-unverified",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",

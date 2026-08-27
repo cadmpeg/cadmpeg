@@ -100,6 +100,7 @@
         "preview_count": "0",
         "variant": "unknown"
       },
+      "dialect": "catia:unknown",
       "format": "catia"
     },
     "tolerances": {
@@ -446,6 +447,17 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": [
+      {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "catia:unknown"
+          }
+        },
+        "dialect": "catia:unknown",
+        "format": "catia"
+      }
+    ],
     "format": "catia",
     "geometry_transferred": false,
     "losses": [
@@ -466,6 +478,15 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "catia"
+        },
+        "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
+        "severity": "warning"
       }
     ],
     "notes": [

@@ -213,6 +213,7 @@
         "variant": "e5_stream",
         "vertex_records": "2"
       },
+      "dialect": "catia:e5-stream",
       "format": "catia"
     },
     "tolerances": {
@@ -559,6 +560,13 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": [
+      {
+        "admission": "admitted",
+        "dialect": "catia:e5-stream",
+        "format": "catia"
+      }
+    ],
     "format": "catia",
     "geometry_transferred": true,
     "losses": [
