@@ -12,4 +12,5 @@ mod patterns_history;
 mod round_trip;
 mod sketch_tessellation;
 mod swobjects;
+mod targets;
 mod thicken_reference;
