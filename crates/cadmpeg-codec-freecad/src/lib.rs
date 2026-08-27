@@ -1112,14 +1112,6 @@ impl CodecBackend for FcstdCodec {
             "admit FCStd document objects",
         )?;
         let mut admitted_entities = 0_u64;
-        if !options.container_only
-            && !matches!(scan.document.schema_version.as_str(), "2" | "3" | "4")
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "FCStd SchemaVersion={} FileVersion={} persistence layout",
-                scan.document.schema_version, scan.document.file_version
-            )));
-        }
         let mut attributes = BTreeMap::new();
         attributes.insert(
             "schema_version".into(),
@@ -1425,8 +1417,8 @@ impl CodecBackend for FcstdCodec {
             semantic_losses(&ir, &cycle_affected_design_objects, &gui_losses)
         };
         // Charged on both decode branches: a schema outside the declared rows
-        // reaches this point only under `container_only`, since the full path
-        // refused it above, but the charge is not conditioned on the branch.
+        // is read with the schema-4 strategy on either path, so the charge is
+        // not conditioned on the branch.
         losses.extend(dialect::FcstdDialect::dialect_loss(&scan.document));
         ctx.admit_entities(
             ir.model.entity_count() as u64,

@@ -49,14 +49,17 @@ pub fn parse_with_context(
         .ok_or_else(|| {
             CodecError::Malformed("Document element has no SchemaVersion attribute".into())
         })?;
-    let (declarations_tag, data_tag, record_tag) = match schema.as_str() {
-        "2" => ("Features", "FeatureData", "Feature"),
-        "3" | "4" => ("Objects", "ObjectData", "Object"),
-        _ => {
-            return Err(CodecError::NotImplemented(format!(
-                "FCStd SchemaVersion={schema} persistence layout"
-            )));
-        }
+    // Schema 2 is its own element vocabulary. Every other declared schema, and
+    // every undeclared one, is read with the Objects/ObjectData/Object
+    // vocabulary: the nearest declared strategy is attempted rather than
+    // refused on a discriminant allowlist, and the attempt is self-limiting
+    // because an element vocabulary that does not fit fails below exactly as a
+    // corrupt schema-4 document does. `crate::dialect` charges the
+    // dialect-unverified loss for the undeclared case.
+    let (declarations_tag, data_tag, record_tag) = if schema == "2" {
+        ("Features", "FeatureData", "Feature")
+    } else {
+        ("Objects", "ObjectData", "Object")
     };
     let objects_node = unique_section(root, declarations_tag)?;
     let data_node = unique_section(root, data_tag)?;
