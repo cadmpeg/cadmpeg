@@ -142,10 +142,11 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
     );
 }
 
-/// The staged dialect fields are invisible on the wire until a codec populates
-/// them, so adding them moved no persisted byte.
+/// The dialect fields are part of the wire format: a report that named nothing
+/// says so with an empty list and a `null`, rather than by omitting the key.
+/// Reports written before the fields existed still read back.
 #[test]
-fn unclassified_reports_serialize_without_dialect_keys() {
+fn unclassified_reports_serialize_empty_dialect_keys() {
     let decode = DecodeReport {
         format: "rhino".into(),
         container_only: false,
@@ -157,9 +158,17 @@ fn unclassified_reports_serialize_without_dialect_keys() {
         dialects: Vec::new(),
     };
     let rendered = serde_json::to_string(&decode).unwrap();
-    assert!(!rendered.contains("dialects"), "{rendered}");
+    assert!(rendered.contains("\"dialects\":[]"), "{rendered}");
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
+        decode
+    );
+
+    // A report persisted before the field existed omits the key entirely.
+    let legacy = rendered.replace(",\"dialects\":[]", "");
+    assert!(!legacy.contains("dialects"), "{legacy}");
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&legacy).unwrap(),
         decode
     );
 
@@ -176,9 +185,17 @@ fn unclassified_reports_serialize_without_dialect_keys() {
         target: None,
     };
     let rendered = serde_json::to_string(&export).unwrap();
-    assert!(!rendered.contains("\"target\":"), "{rendered}");
+    assert!(rendered.contains("\"target\":null"), "{rendered}");
     assert_eq!(
         serde_json::from_str::<ExportReport>(&rendered).unwrap(),
+        export
+    );
+
+    // An export report persisted before the field existed omits the key.
+    let legacy = rendered.replace(",\"target\":null", "");
+    assert!(!legacy.contains("\"target\":"), "{legacy}");
+    assert_eq!(
+        serde_json::from_str::<ExportReport>(&legacy).unwrap(),
         export
     );
 }

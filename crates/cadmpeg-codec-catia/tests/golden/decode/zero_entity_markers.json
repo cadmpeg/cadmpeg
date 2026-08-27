@@ -151,6 +151,7 @@
         "preview_count": "0",
         "variant": "zero_entity"
       },
+      "declared": {},
       "dialect": "catia:zero-entity",
       "format": "catia"
     },

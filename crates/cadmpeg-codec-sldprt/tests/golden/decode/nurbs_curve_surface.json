@@ -313,6 +313,7 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
+      "declared": {},
       "dialect": "sldprt:unknown",
       "format": "sldprt"
     },

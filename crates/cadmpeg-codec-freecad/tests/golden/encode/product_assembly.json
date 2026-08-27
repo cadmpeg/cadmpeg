@@ -139,6 +139,7 @@
       "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
       "unsupported retained entries and unedited XML records were preserved"
     ],
+    "target": null,
     "write_path": "patched"
   }
 }

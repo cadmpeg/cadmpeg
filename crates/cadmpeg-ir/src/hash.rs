@@ -499,12 +499,31 @@ mod tests {
 
     /// Pins normalization over source metadata: the recorded baseline attribute
     /// is dropped before hashing and every other attribute is kept.
+    ///
+    /// The pin covers the canonical JSON of the normalized document, in which
+    /// the source block reads
+    ///
+    /// ```text
+    ///   "source": {
+    ///     "format": "pin",
+    ///     "attributes": {
+    ///       "file_size": "4096"
+    ///     },
+    ///     "dialect": null,
+    ///     "declared": {}
+    ///   },
+    /// ```
+    ///
+    /// `dialect` and `declared` are the two members the wire-format flip made
+    /// unconditional. This is the only pin the flip moves: the other pinned
+    /// documents carry no source metadata, so their normalized form still
+    /// elides the whole `source` member.
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "3750864814cc4d83c355df4e8c6942c3b7c682dc15c193b5c836540ad8c07d64"
+            "4e3230b5e568283a822d086ac724435bc2d9817b127bd7d391b4168a4675e2a7"
         );
     }
 

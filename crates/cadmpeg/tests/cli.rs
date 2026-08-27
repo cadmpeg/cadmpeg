@@ -667,7 +667,7 @@ fn iges_dump_report_classifies_codec_refusal() {
         .stderr(predicate::str::contains("decode failed"));
 
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "dump");
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "decode");
@@ -705,7 +705,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -1144,7 +1144,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "convert");
     assert_eq!(value["status"], "ok");
     assert!(value["refusal"].is_null());
@@ -1174,7 +1174,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(refusal_report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "export");
     assert_eq!(value["refusal"]["code"], "empty_geometry");
@@ -1208,7 +1208,7 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["export"]["format"], "f3d");
     assert!(value["export"]["notes"]
         .as_array()
@@ -1370,7 +1370,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "check");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -1384,7 +1384,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -1401,7 +1401,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "inspect");
 }
 
@@ -1458,7 +1458,7 @@ fn inspect_report_writes_versioned_summary_to_file() {
         .success()
         .stdout(predicate::str::contains("format: rhino (detected high)"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -1481,7 +1481,7 @@ fn validate_report_writes_versioned_result_to_file() {
         .success()
         .stdout(predicate::str::contains("check: OK"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "check");
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_object());
@@ -1586,7 +1586,7 @@ fn diff_report_writes_versioned_result_to_file() {
         .success()
         .stdout(predicate::str::contains("identical"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "diff");
     assert_eq!(value["different"], false);
     assert!(value["diff"].is_object());
