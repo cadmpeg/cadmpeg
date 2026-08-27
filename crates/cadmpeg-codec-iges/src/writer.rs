@@ -11,7 +11,7 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
@@ -83,33 +83,7 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
     194, 196, 198, 502, 504, 508, 510, 514,
 ];
 
-mod target;
-
-/// Resolve the request against the source, then plan the export it names.
-///
-/// `Explicit(id)` refuses an id outside the synthesis catalog, and is otherwise
-/// the replay law's compare: byte replay is eligible exactly when `id` is the
-/// source's dialect.
-///
-/// `Inherit` asks for preservation instead: a valid retained baseline replays
-/// whatever dialect the source is, Compressed ASCII and Binary included, which
-/// the semantic writer could never synthesize. Where the baseline is not usable,
-/// `Inherit` synthesizes the source's own dialect, and refuses when that dialect
-/// is not a target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is. An IGES
-/// source that records no dialect is refused for the same reason — there is
-/// nothing to preserve, and no identity to default to.
-///
-/// The catalog default supplies the target only when there is nothing to
-/// inherit: the document has no source, or a source of another format. That is
-/// the cross-format path, where the application layer would have built
-/// `Explicit(catalog default)` itself.
-pub(crate) fn plan<'a>(
-    input: EncodeInput<'a>,
-    request: TargetRequest<'_>,
-) -> Result<ExportPlan<'a>, CodecError> {
-    target::plan(input, request)
-}
+pub(crate) mod target;
 
 fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'_> {
     ExportPlan::buffered(

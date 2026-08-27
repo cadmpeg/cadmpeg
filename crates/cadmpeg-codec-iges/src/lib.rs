@@ -191,7 +191,7 @@ impl Encoder for IgesEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        writer::plan(input, request)
+        writer::target::plan(input, request)
     }
 }
 
