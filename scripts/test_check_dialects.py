@@ -221,10 +221,39 @@ class TestWitness(RegistryCase):
             files=["fixtures/demo.bin"],
         )
 
+    def _code(self, witness: str) -> str:
+        return _registry(GOOD_ROW.replace('"spec:Demo specification section 1"', f'"{witness}"'))
+
     def test_code_witness_is_debt_not_an_error(self):
-        text = _registry(GOOD_ROW.replace('"spec:Demo specification section 1"', '"code:src/demo.rs:12"'))
-        summary = self.assertClean(text)
+        summary = self.assertClean(self._code("code:src/demo.rs:12"), files=["src/demo.rs"])
         self.assertIn("1 rows on code: witnesses", summary)
+
+    def test_code_witness_file_must_exist(self):
+        self.assertFires(self._code("code:src/gone.rs:12"), "code witness file not found: src/gone.rs")
+
+    def test_code_witness_without_a_line_must_exist(self):
+        self.assertFires(self._code("code:src/gone.rs"), "code witness file not found: src/gone.rs")
+
+    def test_code_witness_line_is_not_validated(self):
+        # Line drift as the codec changes is expected; only the file is checked.
+        for witness in ("code:src/demo.rs:1", "code:src/demo.rs:999999", "code:src/demo.rs"):
+            with self.subTest(witness=witness):
+                self.assertClean(self._code(witness), files=["src/demo.rs"])
+
+    def test_code_witness_needs_a_path(self):
+        self.assertFires(self._code("code:  "), "code witness names no path")
+
+    def test_code_witness_must_be_repo_relative(self):
+        for bad in ("/etc/passwd:1", "../outside.rs:1"):
+            with self.subTest(path=bad):
+                self.assertFires(self._code(f"code:{bad}"), "code witness must be a repo-relative path")
+
+    def test_code_witness_directory_is_not_a_file(self):
+        self.assertFires(
+            self._code("code:src:12"),
+            "code witness file not found: src",
+            files=["src/demo.rs"],
+        )
 
 
 class TestLattice(RegistryCase):
