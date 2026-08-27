@@ -290,7 +290,7 @@ fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
     // The residual row runs the chunked route, not a header-only stop: the
     // scan reaches the tables and the report names the row whose strategy was
     // substituted.
-    let archive = ArchiveVersion::classify(100);
+    let archive = ArchiveVersion::from_word(100);
     let bytes = minimal_document(
         "100",
         &[

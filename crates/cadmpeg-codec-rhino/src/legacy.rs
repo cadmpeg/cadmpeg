@@ -27,7 +27,6 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
-use crate::dialect::RhinoDialect;
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 
@@ -2126,7 +2125,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     // The flat legacy grammar is the strategy `rhino:archive-1` declares, so
     // this path admits the document on its own row. It reads no properties
     // table, so no openNURBS writer-version stamp is declared.
-    let primary = RhinoDialect::classify(ArchiveVersion::V1, None);
+    let primary = ArchiveVersion::classify(ArchiveVersion::V1, None);
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {

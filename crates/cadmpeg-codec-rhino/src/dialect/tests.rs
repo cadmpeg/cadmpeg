@@ -33,20 +33,20 @@ fn registry_ids() -> BTreeSet<String> {
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = RhinoDialect::ALL
+    let pinned = ArchiveVersion::ALL
         .iter()
         .map(|dialect| dialect.id().as_str().to_owned())
         .collect::<BTreeSet<_>>();
 
     assert_eq!(
         pinned.len(),
-        RhinoDialect::ALL.len(),
+        ArchiveVersion::ALL.len(),
         "two variants pin the same id"
     );
     assert_eq!(
         pinned,
         registry_ids(),
-        "docs/dialects.toml and RhinoDialect disagree; ids are pinned forever, so reconcile the enum"
+        "docs/dialects.toml and ArchiveVersion disagree; ids are pinned forever, so reconcile the enum"
     );
 }
 
@@ -71,7 +71,7 @@ const ENUMERATED: &[(u64, &str)] = &[
 const OUTSIDE: &[u64] = &[6, 7, 40, 49, 51, 61, 71, 81, 89, 91, 100, u64::MAX];
 
 fn classify_word(word: u64) -> cadmpeg_core::dialect::DialectMatch {
-    RhinoDialect::classify(crate::chunks::ArchiveVersion::classify(word), None)
+    ArchiveVersion::classify(crate::chunks::ArchiveVersion::from_word(word), None)
 }
 
 #[test]
@@ -120,8 +120,8 @@ fn admission_is_refused_exactly_where_decode_is_refused() {
         .map(|(word, _)| *word)
         .chain(OUTSIDE.iter().copied());
     for word in words {
-        let archive = crate::chunks::ArchiveVersion::classify(word);
-        let matched = RhinoDialect::classify(archive, None);
+        let archive = crate::chunks::ArchiveVersion::from_word(word);
+        let matched = ArchiveVersion::classify(archive, None);
         assert_eq!(
             matched.admission == Admission::Refused,
             refuses_decode(archive),
@@ -136,7 +136,7 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
     // chunked grammar, so a word no row claims still selects a scan. It names
     // the newest declared row with the width the word selected, and the charge
     // comes from the admission itself.
-    for (word, nearest) in [(49, RhinoDialect::Archive4), (51, RhinoDialect::Archive90)] {
+    for (word, nearest) in [(49, ArchiveVersion::V4), (51, ArchiveVersion::V9)] {
         let matched = classify_word(word);
         assert_eq!(
             matched.admission,
@@ -170,8 +170,8 @@ fn a_verified_row_and_a_refused_row_charge_no_dialect_loss() {
 
 #[test]
 fn only_archive_5_is_refused() {
-    for dialect in RhinoDialect::ALL {
-        let refused = matches!(dialect, RhinoDialect::Archive5);
+    for dialect in ArchiveVersion::ALL {
+        let refused = matches!(dialect, ArchiveVersion::LegacyV5);
         assert_eq!(
             dialect.refuses_decode(),
             refused,
@@ -183,15 +183,15 @@ fn only_archive_5_is_refused() {
 
 #[test]
 fn the_writer_stamp_is_declared_when_the_run_read_it_and_omitted_when_it_did_not() {
-    let archive = crate::chunks::ArchiveVersion::classify(80);
+    let archive = crate::chunks::ArchiveVersion::from_word(80);
 
-    let stamped = RhinoDialect::classify(archive, Some(2_348_836_140));
+    let stamped = ArchiveVersion::classify(archive, Some(2_348_836_140));
     assert_eq!(
         stamped.declared[DECLARED_OPENNURBS_WRITER_VERSION],
         "2348836140"
     );
 
-    let unstamped = RhinoDialect::classify(archive, None);
+    let unstamped = ArchiveVersion::classify(archive, None);
     assert!(!unstamped
         .declared
         .contains_key(DECLARED_OPENNURBS_WRITER_VERSION));
