@@ -106,6 +106,16 @@ jobs:
           python3 -m unittest -v scripts/test_check_dialects.py
           python3 scripts/check-dialects.py
 
+      - name: Dialect capability registry
+        # docs/dialect-support.toml against the identity registry, the fixture
+        # tree, the golden snapshots that pin each fixture's emitted dialect
+        # id, and the encoders' write-target catalogs. Fixture gating lives
+        # here: a row with no fixture cannot claim a read score.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_check_dialect_support.py
+          python3 scripts/check-dialect-support.py
+
       - name: Format check
         run: cargo fmt --all --check
 
@@ -181,6 +191,9 @@ jobs:
 
       - name: Dialect registry unit tests
         run: python3 -m unittest -v scripts/test_check_dialects.py
+
+      - name: Dialect capability registry unit tests
+        run: python3 -m unittest -v scripts/test_check_dialect_support.py
 
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this
