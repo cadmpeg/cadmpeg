@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import re
 import sys
 import tempfile
 import unittest
@@ -49,6 +50,10 @@ class RegistryCase(unittest.TestCase):
             (root / "docs").mkdir()
             if text is not None:
                 (root / "docs" / "dialects.toml").write_text(text, encoding="utf-8")
+                ids = re.findall(r'^id = "([^"]+)"$', text, re.MULTILINE)
+                source = root / "crates" / "demo" / "src" / "dialect.rs"
+                source.parent.mkdir(parents=True)
+                source.write_text("\n".join(f'const _: &str = "{value}";' for value in ids), encoding="utf-8")
             for rel in files or []:
                 target = root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -337,11 +342,29 @@ class TestLattice(RegistryCase):
 
 
 class TestExtensionPoints(unittest.TestCase):
-    def test_stubs_report_not_yet_enforced(self):
-        for stub in (checker.check_codec_emitted_ids,):
-            with self.subTest(stub=stub.__name__):
-                self.assertEqual(stub(REPO), ["not yet enforced"])
-                self.assertTrue(stub.__doc__)
+    def emitted_id_failures(self, row: str, source: str = ""):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            (root / "docs" / "dialects.toml").write_text(
+                _registry(row), encoding="utf-8"
+            )
+            source_path = root / "crates" / "demo" / "src" / "dialect.rs"
+            source_path.parent.mkdir(parents=True)
+            source_path.write_text(source, encoding="utf-8")
+            return checker.check_codec_emitted_ids(root)
+
+    def test_present_codec_id_passes(self):
+        self.assertEqual(self.emitted_id_failures(GOOD_ROW, 'const ID: &str = "demo:one";'), [])
+
+    def test_dead_codec_id_fails(self):
+        self.assertEqual(
+            self.emitted_id_failures(GOOD_ROW.replace("demo:one", "demo:fabricated")),
+            ["demo:fabricated: no string literal under crates/*/src"],
+        )
+
+    def test_explicitly_unpinned_row_is_exempt(self):
+        self.assertEqual(self.emitted_id_failures(GOOD_ROW + "pinned = false\n"), [])
 
     def test_support_tables_moved_to_the_renderer(self):
         """The stub is gone because the rule is enforced, not deferred."""
