@@ -56,17 +56,26 @@ wrote part.step (2125 entities)
 
 ## Format support
 
-- **FreeCAD `.FCStd`**: [L5](docs/format-support.md#support-ladder) (schema 4 / file 1)
-- **Autodesk Fusion `.f3d`**: [L4](docs/format-support.md#support-ladder)
-- **Autodesk Inventor `.ipt`/`.iam`**: [L1](docs/format-support.md#support-ladder)
-- **SolidWorks `.sldprt`**: [L4](docs/format-support.md#support-ladder)
-- **Rhino `.3dm`**: [L1](docs/format-support.md#support-ladder) (archive 2/3/4/50/60/70/80/90 chunked band)
-- **Siemens NX `.prt`**: [L2](docs/format-support.md#support-ladder)
-- **CATIA V5 `.CATPart`**: [L1](docs/format-support.md#support-ladder)
-- **Creo `.prt`**: [L1](docs/format-support.md#support-ladder)
-- **STEP Part 21 AP203/AP214/AP242**: [L9](docs/format-support.md#support-ladder)
-- **IGES 4.0/5.0/5.1/5.2/5.3 Fixed ASCII**: [L9](docs/format-support.md#support-ladder)
-- **ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams**: [L3](docs/format-support.md#support-ladder) (admitted binary and text branches)
+Depth is the highest read level any declared dialect of the format reaches;
+breadth counts its witnessed dialects at read `L1` or higher. Both come from
+`docs/dialects.toml` and `docs/dialect-support.toml`. Run `cadmpeg dialects`
+for the per-dialect rows.
+
+<!-- generated: capability-lines -->
+
+- **FreeCAD `.FCStd`**: depth L5, breadth 1 of >=1 ([profile](docs/format-support.md#freecad-fcstd))
+- **Autodesk Fusion `.f3d`**: depth L4, breadth 1 of >=1 ([profile](docs/format-support.md#fusion-360-f3d))
+- **Autodesk Inventor `.ipt`/`.iam`**: depth none, breadth n/a ([profile](docs/format-support.md#autodesk-inventor-ipt-and-iam))
+- **SolidWorks `.sldprt`**: depth none, breadth n/a ([profile](docs/format-support.md#solidworks-sldprt))
+- **Rhino `.3dm`**: depth L1, breadth 6 of 8 ([profile](docs/format-support.md#rhino-3dm))
+- **Siemens NX `.prt`**: depth none, breadth 0 of >=1 ([profile](docs/format-support.md#siemens-nx-prt))
+- **CATIA V5 `.CATPart`**: depth L1, breadth 6 of >=6 ([profile](docs/format-support.md#catia-v5-catpart))
+- **Creo Parametric `.prt`**: depth L1, breadth 2 of >=2 ([profile](docs/format-support.md#creo-parametric-prt))
+- **STEP Part 21**: depth L9, breadth 4 of >=4 ([profile](docs/format-support.md#step-part-21))
+- **IGES**: depth L9, breadth 1 of 21 ([profile](docs/format-support.md#iges))
+- **ASM/ACIS bare streams**: depth none, breadth n/a ([profile](docs/format-support.md#asmacis-bare-satsmtsmbsab-streams))
+
+<!-- /generated: capability-lines -->
 
 [Format support](docs/format-support.md) holds profiles and scoring rules. [`docs/formats/`](docs/formats/) holds byte semantics and open items.
 

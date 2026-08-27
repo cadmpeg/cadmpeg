@@ -7,6 +7,12 @@ branch. It transfers supported records through [`cadmpeg-asm`][asm] into
 [`cadmpeg-ir`][ir]. The stream content selects the decoder; file extensions do
 not.
 
+<!-- generated: capability -->
+
+Support: depth none, breadth n/a ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#asmacis-bare-satsmtsmbsab-streams)).
+
+<!-- /generated: capability -->
+
 The codec is read-only. It does not read `.f3d` or Inventor containers, and it
 does not encode SAT/SAB output.
 

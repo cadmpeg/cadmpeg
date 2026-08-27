@@ -3,9 +3,14 @@
 `cadmpeg-codec-freecad` decodes FreeCAD `.FCStd` archives into `CadIr` and
 encodes supported `CadIr` documents back to `.FCStd`.
 
-Support level: [L5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-for the schema-4/file-1 envelope. Deterministic retained writes, checked edits,
-and source-less typed application graphs are extras above L5.
+<!-- generated: capability -->
+
+Support: depth L5, breadth 1 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
+
+<!-- /generated: capability -->
+
+Deterministic retained writes, checked edits, and source-less typed application
+graphs are extras above the schema-4/file-1 envelope.
 
 ## Install
 

@@ -7,7 +7,10 @@
 //! logical streams, identifies the storage variant, and decodes the record
 //! families supported for that variant.
 //!
-//! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+//! <!-- generated: capability -->
+//! Support: depth L1, breadth 6 of >=6 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
+//! <!-- /generated: capability -->
+//!
 //! Geometry on the standard-nested layout shows as extras.
 //!
 //! # Decode a part

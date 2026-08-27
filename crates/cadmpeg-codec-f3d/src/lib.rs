@@ -9,8 +9,9 @@
 //! applies supported semantic edits to retained source data, or creates an
 //! archive from the supported source-less profile.
 //!
-//! Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! <!-- generated: capability -->
+//! Support: depth L4, breadth 1 of >=1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
+//! <!-- /generated: capability -->
 //!
 //! # Decode
 //!

@@ -5,7 +5,12 @@
 layouts used by CATPart files and decodes supported analytic surfaces, NURBS
 surfaces, curves, vertices, and B-rep topology.
 
-Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+<!-- generated: capability -->
+
+Support: depth L1, breadth 6 of >=6 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
+
+<!-- /generated: capability -->
+
 Geometry on the standard-nested layout shows as extras.
 
 ## Install

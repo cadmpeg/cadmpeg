@@ -3,11 +3,14 @@
 """Check the dialect identity registry, ``docs/dialects.toml``.
 
 The registry pins format-identity names: an id chosen once is an id forever.
-This checker is its oracle. Version 1 is registry-internal only -- schema,
-id grammar, witness form, and the IGES admission lattice. The cross-checks
-against codec behaviour (emitted ids, rendered support tables) arrive with
-later phases and are stubbed at the bottom of this file so their wiring
-point is fixed now.
+This checker is its oracle for registry-internal rules -- schema, id grammar,
+witness form, and the IGES admission lattice. The cross-check against emitted
+codec ids arrives with a later phase and is stubbed at the bottom of this file
+so its wiring point is fixed now.
+
+Rendered support tables are checked by ``scripts/render-format-support.py
+--check``, which regenerates every published table from this registry and
+``docs/dialect-support.toml`` and compares it byte for byte.
 
 Capability -- what cadmpeg does with each dialect, including fixture gating
 -- lives in ``docs/dialect-support.toml`` and is checked by the sibling
@@ -322,17 +325,6 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
     can actually emit at runtime and compare the two sets. A registry id no
     codec emits is a dead name; an emitted id absent from the registry is an
     unpinned name. Both are failures once a codec emits ids at all.
-    """
-    return ["not yet enforced"]
-
-
-def check_support_tables(root: Path) -> list[str]:
-    """Rendered support tables must match the two registries.
-
-    Contract: every table generated into ``docs/format-support.md`` (and the
-    crate READMEs) is regenerated from ``docs/dialects.toml`` plus
-    ``docs/dialect-support.toml`` and compared byte for byte with what is
-    committed.
     """
     return ["not yet enforced"]
 

@@ -7,8 +7,9 @@
 //! and feature-input records into [`cadmpeg_ir::CadIr`]. It preserves source
 //! blocks and records provenance so supported edits can retain native data.
 //!
-//! Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! <!-- generated: capability -->
+//! Support: depth none, breadth n/a ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
+//! <!-- /generated: capability -->
 //!
 //! # Decode
 //!
