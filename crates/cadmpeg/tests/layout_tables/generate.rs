@@ -98,6 +98,18 @@ pub(crate) fn render(file: &LayoutFile) -> String {
             "Spec §{} · layout: {kind} · size: {size}",
             record.section
         );
+        if !record.dialects.is_empty() {
+            let _ = writeln!(
+                out,
+                "\nDialects: {}",
+                record
+                    .dialects
+                    .iter()
+                    .map(|id| format!("`{id}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
         if !record.note.trim().is_empty() {
             let _ = writeln!(out, "\n{}", record.note.trim());
         }
@@ -451,6 +463,19 @@ pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
             None => {
                 let _ = writeln!(modules, "/// Spec §{}.", record.section);
             }
+        }
+        if !record.dialects.is_empty() {
+            let _ = writeln!(modules, "///");
+            let _ = writeln!(
+                modules,
+                "/// Dialects: {}.",
+                record
+                    .dialects
+                    .iter()
+                    .map(|id| format!("`{id}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
         if !record.note.trim().is_empty() {
             let _ = writeln!(modules, "///");

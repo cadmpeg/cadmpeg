@@ -11,7 +11,7 @@ use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
 use crate::layout::compressed_buffer_prologue as compressed;
-use crate::layout::long_chunk_header_v50 as long_v50;
+use crate::layout::long_chunk_header_wide as long_wide;
 use crate::test_support::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
@@ -40,7 +40,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn open_nurbs_object_record_short_typecodes_decode() {
     let record = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     assert_eq!(
-        &record[long_v50::LEN..long_v50::LEN + 4],
+        &record[long_wide::LEN..long_wide::LEN + 4],
         &0x8200_0071_u32.to_le_bytes()
     );
     assert_eq!(
@@ -823,11 +823,11 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
 fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let mut payload = brep_payload(false);
     let nested_length = i64::from_le_bytes(
-        payload[(1 + long_v50::DECLARED_LENGTH)..=long_v50::LEN]
+        payload[(1 + long_wide::DECLARED_LENGTH)..=long_wide::LEN]
             .try_into()
             .expect("required invariant"),
     ) as usize;
-    let nested_end = 1 + long_v50::LEN + nested_length;
+    let nested_end = 1 + long_wide::LEN + nested_length;
     payload[nested_end - 1] ^= 1;
     let brep = object_record(0x10, BREP_CLASS, &payload);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 1.0, 1.0]));
@@ -854,7 +854,7 @@ fn impossible_outer_object_bound_is_blocking() {
         .windows(typecode.len())
         .position(|window| window == typecode)
         .expect("object record");
-    bytes[record + long_v50::DECLARED_LENGTH..record + long_v50::LEN]
+    bytes[record + long_wide::DECLARED_LENGTH..record + long_wide::LEN]
         .copy_from_slice(&i64::MAX.to_le_bytes());
     RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

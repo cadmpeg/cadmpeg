@@ -12,10 +12,10 @@ use crate::chunks::{
     parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
     TCODE_CRC, TCODE_SHORT,
 };
-use crate::layout::endoffile_record_v50 as eof_v50;
+use crate::layout::endoffile_record_wide as eof_wide;
 use crate::layout::file_header;
-use crate::layout::long_chunk_header_v2 as long_v2;
-use crate::layout::long_chunk_header_v50 as long_v50;
+use crate::layout::long_chunk_header_narrow as long_narrow;
+use crate::layout::long_chunk_header_wide as long_wide;
 use crate::test_support::test_dump::*;
 use crate::{RhinoCodec, MAGIC};
 
@@ -83,12 +83,12 @@ fn parses_widths_short_long_and_bounds() {
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
     assert!(parsed.short);
     assert_eq!(parsed.value, 42);
-    assert_eq!(parsed.next_offset, long_v2::LEN);
+    assert_eq!(parsed.next_offset, long_narrow::LEN);
 
     let bytes = long_chunk(ArchiveVersion::V4, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
-    assert_eq!(parsed.body, long_v2::LEN..11);
+    assert_eq!(parsed.body, long_narrow::LEN..11);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..11);
     assert_eq!(parsed.next_offset, 11);
@@ -96,7 +96,7 @@ fn parses_widths_short_long_and_bounds() {
     let bytes = long_chunk(ArchiveVersion::V5, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).expect("required invariant");
-    assert_eq!(parsed.body, long_v50::LEN..15);
+    assert_eq!(parsed.body, long_wide::LEN..15);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..15);
     assert_eq!(parsed.next_offset, 15);
@@ -188,7 +188,7 @@ fn validates_eof_width_size_and_truncation() {
         let mut mismatch = bytes.clone();
         let size_offset = marker_start
             + if archive.uses_eight_byte_values() {
-                eof_v50::FILE_SIZE
+                eof_wide::FILE_SIZE
             } else {
                 8
             };

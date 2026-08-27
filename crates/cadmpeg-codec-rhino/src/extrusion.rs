@@ -897,7 +897,7 @@ pub(crate) mod tests {
     use crate::chunks::ArchiveVersion;
     use crate::curves::Compound;
     use crate::layout::anonymous_version_prefix as anon_ver;
-    use crate::layout::long_chunk_header_v50 as long_v50;
+    use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1405,7 +1405,7 @@ pub(crate) mod tests {
     #[test]
     fn strict_flags_trim_domains_and_later_minor_versions_are_accepted() {
         let valid = payload(2, [false, false], None);
-        let body_start = long_v50::LEN;
+        let body_start = long_wide::LEN;
         let profile_len = polyline_wrapper(false, true).len();
         let common = body_start + anon_ver::LEN + profile_len;
         let trim_start = common + 48;

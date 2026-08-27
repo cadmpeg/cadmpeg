@@ -17,7 +17,12 @@
 //! * every multi-byte field resolves an endianness, or says in a note that the
 //!   specification does not state one;
 //! * `[[record.code]]` cross-checks assert a literal substring is present in a
-//!   named source file, which is how a table claims agreement with a parser.
+//!   named source file, which is how a table claims agreement with a parser;
+//! * a record's `dialects` key names the `docs/dialects.toml` rows whose
+//!   grammar reads it at these offsets, and every id must be a declared row —
+//!   a table cannot key on a dialect that does not exist. Version scoping used
+//!   to live in record names alone, where nothing could check it and applying
+//!   a fixed offset to the wrong version was invisible.
 //!
 //! After validation the test emits one `src/layout.rs` per mapped table: a
 //! module of `usize` offset constants per byte-layout record, a `*_VALUE`
@@ -121,6 +126,18 @@ struct Record {
     endianness: Option<String>,
     #[serde(default)]
     note: String,
+    /// Registry dialect ids whose grammar reads this record at these offsets.
+    ///
+    /// A positive claim about `docs/dialects.toml` rows and only those rows.
+    /// An empty list makes no claim: it says the table has not scoped the
+    /// record, never that the record is dialect-invariant. Every listed id must
+    /// be a declared row, so a table cannot key on a dialect that does not
+    /// exist.
+    ///
+    /// A version word *inside* a record is not a dialect (design §15.8). Key
+    /// only on discriminants the document declares once, document-wide.
+    #[serde(default)]
+    pub(crate) dialects: Vec<String>,
     /// Parser source paths. A locator, not a substring check.
     #[serde(default, deserialize_with = "deserialize_one_or_many")]
     parsed_by: Vec<String>,
@@ -600,6 +617,8 @@ struct Context {
     root: PathBuf,
     /// Spec path -> section number -> normalized body.
     specs: BTreeMap<String, BTreeMap<String, String>>,
+    /// Every `id` declared by a `[[dialect]]` row in `docs/dialects.toml`.
+    dialects: Option<BTreeSet<String>>,
 }
 
 impl Context {
@@ -607,7 +626,28 @@ impl Context {
         Self {
             root,
             specs: BTreeMap::new(),
+            dialects: None,
         }
+    }
+
+    /// The identity registry's declared dialect ids, read once.
+    fn declared_dialects(&mut self) -> &BTreeSet<String> {
+        self.dialects.get_or_insert_with(|| {
+            #[derive(Deserialize)]
+            struct Registry {
+                #[serde(default, rename = "dialect")]
+                dialects: Vec<Row>,
+            }
+            #[derive(Deserialize)]
+            struct Row {
+                id: String,
+            }
+            let text = read_text(&self.root.join("docs/dialects.toml"))
+                .expect("docs/dialects.toml is readable");
+            let registry: Registry =
+                toml::from_str(&text).expect("docs/dialects.toml parses as TOML");
+            registry.dialects.into_iter().map(|row| row.id).collect()
+        })
     }
 
     fn sections(&mut self, spec: &str) -> Result<&BTreeMap<String, String>, String> {
@@ -808,6 +848,21 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
             &at,
             &mut errors,
         );
+
+        let mut keyed = BTreeSet::new();
+        for id in &record.dialects {
+            if !keyed.insert(id.clone()) {
+                push(&mut errors, format!("{at}: duplicate dialect key `{id}`"));
+            }
+            if !ctx.declared_dialects().contains(id) {
+                push(
+                    &mut errors,
+                    format!(
+                        "{at}: `dialects` names `{id}`, which is not a row in docs/dialects.toml"
+                    ),
+                );
+            }
+        }
 
         for path in &record.parsed_by {
             if path.trim().is_empty() {
@@ -1249,6 +1304,7 @@ fn layout_validator_rejects_broken_tables() {
         ("value-width-mismatch.toml", "value is 2 bytes"),
         ("parsed-by-missing.toml", "`parsed_by` path does not exist"),
         ("code-check-in-tests.toml", "names a test file"),
+        ("unknown-dialect.toml", "is not a row in docs/dialects.toml"),
     ];
     let root = repo_root();
     let dir = root.join("crates/cadmpeg/tests/fixtures/layout-invalid");
