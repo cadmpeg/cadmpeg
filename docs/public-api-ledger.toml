@@ -614,3 +614,17 @@ crate = "cadmpeg-codec-step"
 kind = "signature"
 item = "cadmpeg_codec_step::StepSchema::target"
 reason = "the registry dialect id a schema names, for the same reason"
+
+[[change]]
+commit = "31f5ebdb0"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::application::export_target"
+reason = "a separate step_target parameter, because --reject-step-losses shares the wrong-format guard with --step-target but must not name a target"
+
+[[change]]
+commit = "31f5ebdb0"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_target"
+reason = "the schema --step-target named, separate from step_options, which also carries the loss policy"

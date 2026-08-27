@@ -17,6 +17,7 @@ mod encoding;
 mod free_geometry;
 mod nurbs;
 mod planar;
+mod targets;
 
 pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
     for version in [

@@ -699,4 +699,37 @@ pub(crate) mod tests {
             .expect_err("stale entry metadata must fail");
         assert!(error.to_string().contains("stale length or digest"));
     }
+    /// An explicit target this writer does not produce is refused by `plan`
+    /// itself, with the catalog in the message.
+    ///
+    /// The check runs before any synthesis, so an empty document is enough:
+    /// what is under test is that the request reaches the encoder at all. This
+    /// writer reaches one schema through the trait, which is exactly why the
+    /// refusal must exist — every other id is a claim it cannot honour.
+    #[test]
+    fn plan_refuses_an_explicit_target_outside_the_catalog() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let error = Encoder::plan(
+            &FcstdCodec,
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("fcstd:nonesuch"),
+        )
+        .err()
+        .expect("an id outside the catalog is refused");
+
+        let cadmpeg_core::CodecError::UnsupportedTarget {
+            format,
+            requested,
+            available,
+            ..
+        } = &error
+        else {
+            panic!("expected a target refusal, got {error}");
+        };
+        assert_eq!(format, "fcstd");
+        assert_eq!(requested, "fcstd:nonesuch");
+        for target in Encoder::targets(&FcstdCodec) {
+            assert!(available.contains(target.id), "{available}");
+        }
+    }
 }

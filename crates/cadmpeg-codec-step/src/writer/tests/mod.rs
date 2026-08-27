@@ -3,6 +3,7 @@
 
 mod reports;
 mod round_trips;
+mod targets;
 
 pub(crate) use reports::{
     rejected_step_write_detects_incomplete_datum_system,

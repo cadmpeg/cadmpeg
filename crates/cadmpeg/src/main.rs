@@ -96,8 +96,17 @@ struct StepOutputArgs {
 #[cfg(feature = "step")]
 impl StepOutputArgs {
     /// True when a STEP-only flag was present on the command line.
+    ///
+    /// This is the wrong-format guard, which both flags share. It is not the
+    /// target question: [`StepOutputArgs::target`] answers that, and
+    /// `--reject-step-losses` does not name a target.
     fn flag_present(&self) -> bool {
         self.step_target.is_some() || self.reject_step_losses
+    }
+
+    /// The schema `--step-target` named, and `None` when it was absent.
+    fn target(&self) -> Option<cadmpeg_codec_step::StepSchema> {
+        self.step_target.map(StepTarget::schema)
     }
 
     fn options(&self) -> cadmpeg_codec_step::StepWriteOptions {
@@ -809,6 +818,8 @@ fn main() -> ExitCode {
                     rhino_target: rhino_target.map(RhinoVersion::codec),
                     #[cfg(feature = "step")]
                     step_options: step.flag_present().then(|| step.options()),
+                    #[cfg(feature = "step")]
+                    step_target: step.target(),
                     #[cfg(feature = "step")]
                     step_flag_present: step.flag_present(),
                     #[cfg(feature = "iges")]
