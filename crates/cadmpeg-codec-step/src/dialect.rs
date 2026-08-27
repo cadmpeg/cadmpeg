@@ -28,13 +28,15 @@
 //!
 //! [`DialectMatch::declared`] records what `FILE_SCHEMA` says.
 //! [`DialectMatch::dialect`] records which registry row the document satisfies.
-//! A row matches only when *every* one of its discriminants matches, and the
-//! three AP242 rows carry the object-identifier arcs alongside the schema name.
-//! A bare `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF` therefore satisfies
-//! no AP242 row and lands on [`StepDialect::Unknown`], the mandatory totality
-//! row (design §3.3, B4). Parsing an edition out of an id, or expecting an id
-//! to agree with the identifier beside it, is wrong for exactly the files whose
-//! declarations are incomplete.
+//! A row matches only when *every* one of its discriminants matches. Four rows
+//! share the AP242 schema name and separate on the object identifier, which
+//! Part 21 makes optional: absent is [`StepDialect::Ap242`], the region where
+//! the schema is declared and the edition is not; each declared edition has its
+//! own row; an edition claim naming no declared edition satisfies no row and
+//! lands on [`StepDialect::Unknown`], the mandatory totality row (design §3.3,
+//! B4). Parsing an edition out of an id, or expecting an id to agree with the
+//! identifier beside it, is wrong for exactly the files whose declarations are
+//! incomplete.
 //!
 //! # Alternate encodings
 //!
@@ -91,6 +93,7 @@ pub(crate) enum StepDialect {
     Ap203Edition1,
     Ap203Edition2,
     Ap214,
+    Ap242,
     Ap242Edition1,
     Ap242Edition2,
     Ap242Edition3,
@@ -118,6 +121,13 @@ const NAME_AP203_E2: &str =
     "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF";
 /// Schema name of AP214. One row, so the arcs discriminate nothing.
 const NAME_AP214: &str = "AUTOMOTIVE_DESIGN";
+/// Schema name shared by the four AP242 rows.
+///
+/// The object identifier is optional in a Part 21 schema identifier, so this
+/// name alone is a complete declaration: it declares the schema and leaves the
+/// edition unspecified. That is [`StepDialect::Ap242`]. The same name with arcs
+/// declares an edition, and the arcs select which row.
+const NAME_AP242: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
 
 impl StepDialect {
     /// Every dialect this codec can name.
@@ -126,10 +136,11 @@ impl StepDialect {
     /// the list exists so a variant added without a registry row, or a row
     /// added without a variant, fails a test.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 10] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::Ap203Edition1,
         Self::Ap203Edition2,
         Self::Ap214,
+        Self::Ap242,
         Self::Ap242Edition1,
         Self::Ap242Edition2,
         Self::Ap242Edition3,
@@ -145,6 +156,7 @@ impl StepDialect {
             Self::Ap203Edition1 => "step:ap203-e1",
             Self::Ap203Edition2 => "step:ap203-e2",
             Self::Ap214 => "step:ap214",
+            Self::Ap242 => "step:ap242",
             Self::Ap242Edition1 => "step:ap242-e1",
             Self::Ap242Edition2 => "step:ap242-e2",
             Self::Ap242Edition3 => "step:ap242-e3",
@@ -158,22 +170,38 @@ impl StepDialect {
     /// The row for one `FILE_SCHEMA` identifier, or [`Self::Unknown`] where the
     /// registry declares no such row.
     ///
-    /// The AP242 rows delegate to [`StepSchema::ap242_edition`], which is the
-    /// codec's own edition recognizer and requires the object-identifier arcs.
-    /// The three single-row names match on the name alone, matching the
-    /// reader's own bare-or-arc-bearing name comparison
-    /// (`crate::parse::schema_identifier_matches`).
+    /// The schema name is the first discriminant of every Part 21 row, and the
+    /// three single-row names need nothing else: their arcs, present or absent,
+    /// separate no two rows. This matches the reader's own bare-or-arc-bearing
+    /// name comparison (`crate::parse::schema_identifier_matches`).
+    ///
+    /// The AP242 name is shared by four rows, so the object identifier is the
+    /// second discriminant there and its three states are distinct facts:
+    ///
+    /// - absent — a complete declaration naming no edition, [`Self::Ap242`].
+    ///   The object identifier is optional in Part 21; leaving it out is legal
+    ///   and says the edition is unspecified, not that the file is unrecognized.
+    /// - present and naming an edition — that edition's row, decided by
+    ///   [`StepSchema::ap242_edition`], the codec's own edition recognizer.
+    /// - present and naming no edition — [`Self::Unknown`]. An edition claim
+    ///   that matches nothing this codec declares is an unrecognized
+    ///   declaration, unlike making no claim at all. Arcs that do not read as a
+    ///   numeric object identifier reach the same place, through the same call.
     fn from_schema_identifier(identifier: &str) -> Self {
-        if let Some(edition) = StepSchema::ap242_edition(identifier) {
-            return match edition {
-                "edition 1" => Self::Ap242Edition1,
-                "edition 2" => Self::Ap242Edition2,
-                _ => Self::Ap242Edition3,
-            };
-        }
-        let Some((name, _)) = split_schema_identifier(identifier) else {
+        let Some((name, object_identifier)) = split_schema_identifier(identifier) else {
             return Self::Unknown;
         };
+        if name.eq_ignore_ascii_case(NAME_AP242) {
+            if object_identifier.is_none() {
+                return Self::Ap242;
+            }
+            return match StepSchema::ap242_edition(identifier) {
+                Some("edition 1") => Self::Ap242Edition1,
+                Some("edition 2") => Self::Ap242Edition2,
+                Some(_) => Self::Ap242Edition3,
+                None => Self::Unknown,
+            };
+        }
         if name.eq_ignore_ascii_case(NAME_AP203_E1) {
             Self::Ap203Edition1
         } else if name.eq_ignore_ascii_case(NAME_AP203_E2) {
@@ -199,6 +227,7 @@ impl StepDialect {
             Self::Ap203Edition1
             | Self::Ap203Edition2
             | Self::Ap214
+            | Self::Ap242
             | Self::Ap242Edition1
             | Self::Ap242Edition2
             | Self::Ap242Edition3

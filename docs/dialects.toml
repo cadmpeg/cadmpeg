@@ -369,6 +369,24 @@ discriminants = { file_schema_identifier = "AUTOMOTIVE_DESIGN" }
 witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21"
 
 [[dialect]]
+# The AP242 schema name with no object identifier. Part 21 makes the object
+# identifier optional, so this is a complete, legal declaration: it names the
+# schema and leaves the edition unspecified. No `StepSchema` variant writes this
+# form -- the encoder always emits arcs -- but it is the form 13 in-tree
+# fixtures declare, so the region exists whether or not cadmpeg writes it.
+# `StepDialect::Ap242` (crates/cadmpeg-codec-step/src/dialect.rs) is the only
+# row reached with the AP242 name and no arcs.
+# Disposition: admitted. The reader's single Part 21 grammar is this row's
+# declared strategy, and the edition axis is undeclared rather than substituted,
+# so no dialect-unverified loss is charged and `DecodeMode::Strict` accepts
+# these files.
+id = "step:ap242"
+title = "STEP AP242, edition unspecified"
+discriminants = { file_schema_identifier = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF", long_form_arcs = "absent" }
+seam = "the object identifier is optional in Part 21 and is absent here, so edition-gated behaviour cannot be verified against the declaration"
+witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_geometry.p21"
+
+[[dialect]]
 # `StepSchema::Ap242Edition1` (options.rs:86); recognizer arcs
 # [1,0,10303,442,1,1,4] (options.rs:98). The edition lives in the fifth arc,
 # not the seventh (options.rs:60-62).
@@ -435,12 +453,18 @@ witness = "code:crates/cadmpeg-codec-step/src/codec.rs:399"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). A Part-21 exchange whose FILE_SCHEMA
-# identifier matches no `StepSchema` variant is admitted and decoded: the
-# schema string is recorded (reader/mod.rs:1099-1101) and nothing branches on
-# it. In-tree fixtures land here through two identifiers that match no
-# variant ('AP214', 'AUTOMOTIVE_DESIGN_CC2') and through AP242 declarations
-# that lack the object-identifier arcs an edition requires (`ap242_edition`,
-# options.rs:92-104, matches the arc-bearing form only).
+# identifier satisfies no row above is admitted and decoded: the schema string
+# is recorded (reader/mod.rs) and nothing branches on it. Two kinds of
+# declaration reach here:
+#   - an identifier whose schema name matches no row's name. In-tree fixtures:
+#     'AP214' (strings.p21), 'AUTOMOTIVE_DESIGN_CC2'
+#     (noncanonical_solid_angle.p21), and the literal 'AP242'
+#     (ap242_ed3_sections.p21), none of which is a declared schema name.
+#   - the AP242 schema name carrying an object identifier that names no
+#     declared edition (`ap242_edition`, options.rs:92-104), including arcs
+#     that do not read as a numeric object identifier. An edition claim
+#     matching nothing is an unrecognized declaration; making no claim at all
+#     is `step:ap242`.
 # Disposition: admitted-unverified.
 id = "step:unknown"
 title = "ISO 10303-21 exchange with an unrecognized FILE_SCHEMA identifier"

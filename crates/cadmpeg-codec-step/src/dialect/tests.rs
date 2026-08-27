@@ -100,9 +100,11 @@ struct Case {
 
 /// Declarations spanning every Part 21 row and the totality row.
 ///
-/// Ids come from `docs/dialects.toml`. The AP242 rows carry the arcs as a
-/// discriminant, so a bare AP242 name satisfies no row; the three single-row
-/// names carry only the name, so a bare name satisfies theirs.
+/// Ids come from `docs/dialects.toml`. Four rows share the AP242 schema name
+/// and separate on the object identifier, which Part 21 makes optional: absent
+/// is `step:ap242`, each declared edition has its own row, and an edition claim
+/// naming no declared edition satisfies no row. The three single-row names
+/// carry only the name, so a bare name satisfies theirs.
 const CASES: &[Case] = &[
     Case {
         identifiers: &["CONFIG_CONTROL_DESIGN"],
@@ -148,19 +150,28 @@ const CASES: &[Case] = &[
         id: "step:ap242-e3",
         arcs: Some(" 1 0 10303 442 4 1 4 "),
     },
-    // An AP242 name with no object identifier satisfies the name discriminant
-    // of three rows and the arc discriminant of none, so it satisfies no row.
+    // The AP242 name with no object identifier: a complete declaration naming
+    // no edition. Its own row, not the totality row.
     Case {
         identifiers: &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"],
-        id: "step:unknown",
+        id: "step:ap242",
         arcs: None,
     },
-    // An AP242 name with arcs no edition declares.
+    // The AP242 name with arcs no edition declares: an edition claim matching
+    // nothing, which is unrecognized rather than unspecified.
     Case {
         identifiers: &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 9 1 4 }"],
         id: "step:unknown",
         arcs: Some(" 1 0 10303 442 9 1 4 "),
     },
+    // The AP242 name with arcs that do not read as a numeric object
+    // identifier. Same call, same answer as arcs naming no edition.
+    Case {
+        identifiers: &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 x 442 }"],
+        id: "step:unknown",
+        arcs: Some(" 1 0 x 442 "),
+    },
+    // The literal string 'AP242' is not the AP242 schema name.
     Case {
         identifiers: &["AP242"],
         id: "step:unknown",
@@ -254,6 +265,26 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             );
         }
     }
+}
+
+#[test]
+fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
+    // The AP242 name with no object identifier declares the schema and leaves
+    // the edition unspecified. The reader's single Part 21 grammar is that
+    // row's declared strategy and the edition axis is undeclared rather than
+    // substituted, so this is a verified read: `DecodeMode::Strict` accepts it.
+    let matched = StepDialect::classify(&exchange(
+        &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"],
+        "2;1",
+    ));
+
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("step:ap242")
+    );
+    assert_eq!(matched.admission, Admission::Admitted);
+    assert!(dialect_loss(&matched).is_none());
+    assert!(!matched.declared.contains_key(DECLARED_LONG_FORM_ARCS));
 }
 
 #[test]

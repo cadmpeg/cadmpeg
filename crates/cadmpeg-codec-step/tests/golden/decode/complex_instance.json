@@ -105,7 +105,7 @@
         "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
         "implementation_level": "2;1"
       },
-      "dialect": "step:unknown",
+      "dialect": "step:ap242",
       "format": "step"
     },
     "tolerances": {
@@ -120,31 +120,18 @@
     "container_only": false,
     "dialects": [
       {
-        "admission": {
-          "admitted_unverified": {
-            "nearest": "step:ap242-e3"
-          }
-        },
+        "admission": "admitted",
         "declared": {
           "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
           "implementation_level": "2;1"
         },
-        "dialect": "step:unknown",
+        "dialect": "step:ap242",
         "format": "step"
       }
     ],
     "format": "step",
     "geometry_transferred": true,
     "losses": [
-      {
-        "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "step"
-        },
-        "message": "FILE_SCHEMA identifier AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "geometry.document-length-unit-unresolved",
