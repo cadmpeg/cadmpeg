@@ -378,6 +378,7 @@ fn write_export_plan(
 pub fn export_target(
     format: Format,
     #[cfg(feature = "step")] step_options: Option<cadmpeg_codec_step::StepWriteOptions>,
+    #[cfg(feature = "step")] step_target: Option<cadmpeg_codec_step::StepSchema>,
     #[cfg(feature = "step")] step_flag_present: bool,
     #[cfg(feature = "iges")] iges_options: Option<cadmpeg_codec_iges::IgesWriteOptions>,
     #[cfg(feature = "rhino")] rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
@@ -401,18 +402,23 @@ pub fn export_target(
         });
     }
 
-    // The selection restates the flag as the dialect id the encoder's catalog
-    // uses. A flag that was not given stays unstated: it is the source, not the
-    // command line, that decides between preservation and the catalog default.
+    // The selection restates a target flag as the dialect id the encoder's
+    // catalog uses. A target flag that was not given stays unstated: it is the
+    // source, not the command line, that decides between preservation and the
+    // catalog default.
+    //
+    // Only a target flag may move the selection. `--reject-step-losses` is a
+    // loss-policy flag; it travels in `step_options.unsupported` and says
+    // nothing about which schema to write. Reading it here would turn
+    // `convert a.step -o b.step --reject-step-losses` into an explicit AP214
+    // request, and once STEP resolves its own targets that is a silent schema
+    // rewrite of a file the caller only asked to check for losses.
     let selection = match format {
         Format::Cadir => TargetSelection::Unstated,
         #[cfg(feature = "step")]
-        Format::Step => step_options.as_ref().map_or(
-            TargetSelection::Unstated,
-            |options: &cadmpeg_codec_step::StepWriteOptions| {
-                TargetSelection::Explicit(options.schema.target().to_owned())
-            },
-        ),
+        Format::Step => step_target.map_or(TargetSelection::Unstated, |schema| {
+            TargetSelection::Explicit(schema.target().to_owned())
+        }),
         #[cfg(feature = "fcstd")]
         Format::Fcstd => TargetSelection::Unstated,
         #[cfg(feature = "f3d")]
@@ -498,6 +504,62 @@ mod tests {
         assert_eq!(
             TargetSelection::Unstated.request(&CadirEncoder, Some("cadir")),
             TargetRequest::Inherit
+        );
+    }
+    /// A loss-policy flag is not a target flag.
+    ///
+    /// `--reject-step-losses` and `--step-target` share the wrong-format guard,
+    /// and sharing it once made them share the selection too: `convert a.step
+    /// -o b.step --reject-step-losses` named AP214 explicitly and lost the
+    /// identity default. The loss policy still reaches the encoder through
+    /// `step_options`; only the target flag may say what to write.
+    #[cfg(feature = "step")]
+    #[test]
+    fn rejecting_step_losses_does_not_name_a_target() {
+        let policy_only = cadmpeg_codec_step::StepWriteOptions {
+            unsupported: cadmpeg_codec_step::StepUnsupportedPolicy::Reject,
+            ..Default::default()
+        };
+        let target = export_target(
+            Format::Step,
+            Some(policy_only),
+            None,
+            true,
+            #[cfg(feature = "iges")]
+            None,
+            #[cfg(feature = "rhino")]
+            None,
+        )
+        .expect("a STEP-only flag with STEP output is accepted");
+
+        assert!(
+            matches!(target.selection, TargetSelection::Unstated),
+            "{:?}",
+            target.selection
+        );
+        assert_eq!(
+            target
+                .selection
+                .request(target.encoder.as_ref(), Some("step")),
+            TargetRequest::Inherit
+        );
+
+        let named = export_target(
+            Format::Step,
+            Some(cadmpeg_codec_step::StepWriteOptions::default()),
+            Some(cadmpeg_codec_step::StepSchema::Ap242Edition3),
+            true,
+            #[cfg(feature = "iges")]
+            None,
+            #[cfg(feature = "rhino")]
+            None,
+        )
+        .expect("an explicit STEP target with STEP output is accepted");
+        assert_eq!(
+            named
+                .selection
+                .request(named.encoder.as_ref(), Some("step")),
+            TargetRequest::Explicit("step:ap242-e3")
         );
     }
 }

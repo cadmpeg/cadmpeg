@@ -86,6 +86,13 @@ pub struct ConversionPlan {
     /// STEP writer options when a STEP-only flag was supplied.
     #[cfg(feature = "step")]
     pub step_options: Option<cadmpeg_codec_step::StepWriteOptions>,
+    /// Schema named by `--step-target`, and by that flag alone.
+    ///
+    /// Distinct from [`ConversionPlan::step_options`], which also carries the
+    /// loss policy of `--reject-step-losses`: only a target flag may name a
+    /// target.
+    #[cfg(feature = "step")]
+    pub step_target: Option<cadmpeg_codec_step::StepSchema>,
     /// True when `--step-target` or `--reject-step-losses` was present.
     #[cfg(feature = "step")]
     pub step_flag_present: bool,
@@ -361,6 +368,8 @@ fn execute_conversion(
         format,
         #[cfg(feature = "step")]
         plan.step_options.clone(),
+        #[cfg(feature = "step")]
+        plan.step_target,
         #[cfg(feature = "step")]
         plan.step_flag_present,
         #[cfg(feature = "iges")]
