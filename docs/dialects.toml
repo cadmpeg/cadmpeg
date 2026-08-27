@@ -835,7 +835,7 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 # Siemens NX
 # --------------------------------------------------------------------------
 # Two container parsers, dispatched at
-# crates/cadmpeg-codec-nx/src/decode.rs:214-222. There is no third arm: what
+# crates/cadmpeg-codec-nx/src/decode.rs:215-223. There is no third arm: what
 # is not SPLMSSTR goes to `scan_legacy`, which errors if the CFB evidence is
 # absent.
 #
@@ -844,10 +844,10 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 # (`splmsstr_header::VERSION_TAG`, crates/cadmpeg-codec-nx/src/layout.rs:74),
 # read with `unwrap_or(0)` (container.rs:957) and stored on
 # `Container::version` (container.rs:815-817). Its consumers are all
-# formatting and identity: two report notes (decode.rs:507, :518), the
-# legacy-arm `ugii_version` attribute (decode/emit.rs:1198-1202), and the
+# formatting and identity: two report notes (decode.rs:511, :522), the
+# legacy-arm `ugii_version` attribute (decode/emit.rs:1206-1209), and the
 # modern-arm `splmsstr_version` and `product_version` attributes
-# (decode/emit.rs:1204-1210, the latter from the first OM store section
+# (decode/emit.rs:1211-1217, the latter from the first OM store section
 # carrying a `store_version` record). It is never compared to anything.
 #
 # The product string is provenance too. `product_record_layout`

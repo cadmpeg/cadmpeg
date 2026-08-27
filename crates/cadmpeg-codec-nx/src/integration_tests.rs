@@ -10,6 +10,8 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use super::*;
 use crate::test_support::*;
 
+mod dialect;
+
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     NxCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

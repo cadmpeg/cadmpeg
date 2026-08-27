@@ -275,9 +275,11 @@ pub(crate) fn build_geometry_report(
         ));
     }
 
+    let dialects = vec![crate::dialect::NxDialect::classify(&scan.container)];
+    cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     DecodeReport {
-        dialects: Vec::new(),
-        format: "nx".to_string(),
+        dialects,
+        format: crate::dialect::FORMAT.to_string(),
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),

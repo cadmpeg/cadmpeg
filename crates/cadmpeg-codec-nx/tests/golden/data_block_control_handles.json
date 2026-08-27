@@ -249,6 +249,11 @@
           "splmsstr_version": "6",
           "unclassified_offset_store_control_count": "1"
         },
+        "declared": {
+          "product_version": "NX 2027.3102",
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
         "format": "nx"
       },
       "tolerances": {
@@ -261,6 +266,17 @@
     },
     "report": {
       "container_only": false,
+      "dialects": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "product_version": "NX 2027.3102",
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      ],
       "format": "nx",
       "geometry_transferred": false,
       "losses": [
@@ -397,6 +413,17 @@
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "product_version": "NX 2027.3102",
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    ],
     "entries": [
       {
         "attributes": {
