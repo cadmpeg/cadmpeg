@@ -6,12 +6,14 @@
 #![allow(clippy::unwrap_used)]
 
 mod test_bytes;
+mod test_cfb;
 mod test_deltas;
 mod test_om;
 mod test_prt;
 mod test_streams;
 
 pub(crate) use test_bytes::*;
+pub(crate) use test_cfb::*;
 pub(crate) use test_deltas::*;
 pub(crate) use test_om::*;
 pub(crate) use test_prt::*;
