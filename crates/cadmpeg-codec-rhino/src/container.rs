@@ -1131,7 +1131,8 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
 /// container summary, the container-only report, and the source metadata all
 /// carry the same match.
 fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
-    ArchiveVersion::classify(scan.archive, scan.metadata.properties.writer_version)
+    scan.archive
+        .classify(scan.metadata.properties.writer_version)
 }
 
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {
@@ -1209,12 +1210,12 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
 /// Two disjoint reasons put a version here. Archive 1 has no table sequence and
 /// no mandatory end-of-file chunk, so the chunked scan does not apply to it; its
 /// own flat legacy grammar runs at decode. Archive 5 has no grammar in this
-/// codec at all, which is [`crate::dialect::refuses_decode`] — the predicate
+/// codec at all, which is [`ArchiveVersion::refuses_decode`] — the predicate
 /// that also decides the [`cadmpeg_core::dialect::Admission`] the report
 /// carries. The totality row is not here: an undeclared word selects the same
 /// chunked scan words 2 through 90 use, so it is scanned in full.
 pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
-    crate::dialect::refuses_decode(archive) || matches!(archive, ArchiveVersion::V1)
+    archive.refuses_decode() || matches!(archive, ArchiveVersion::V1)
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
@@ -1224,7 +1225,7 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     if header_only(header.archive_version) {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
-        let dialects = vec![ArchiveVersion::classify(header.archive_version, None)];
+        let dialects = vec![header.archive_version.classify(None)];
         debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         return Ok(ContainerSummary {
             dialects,
@@ -1254,14 +1255,14 @@ pub(crate) fn decode(
     // The single predicate: this is the same function that makes the reported
     // admission `Refused`, so a refused decode and a report claiming admission
     // are not expressible.
-    if crate::dialect::refuses_decode(header.archive_version) {
+    if header.archive_version.refuses_decode() {
         return Err(CodecError::NotImplemented(format!(
             "Rhino archive version {} decode is not implemented",
             header.archive_version.value()
         )));
     }
     let scan = scan(data)?;
-    if container_only && crate::dialect::is_chunked(scan.archive) {
+    if container_only && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }
     Ok(crate::decode::decode(
