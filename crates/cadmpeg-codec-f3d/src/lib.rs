@@ -220,7 +220,8 @@ impl CodecBackend for F3dCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        Ok(container::summarize(&scan))
+        let kernel_layers = dialect::kernel_layers(&scan);
+        Ok(container::summarize(&scan, &kernel_layers.matches))
     }
 
     fn decode_impl(

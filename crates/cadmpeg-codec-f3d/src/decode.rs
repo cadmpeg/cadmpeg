@@ -2094,6 +2094,7 @@ fn try_decode_text_model(
                 is_smbh: false,
                 uncompressed_len: bytes.len() as u64,
                 header: Some(header),
+                acis_header: None,
                 solved_record_limit: None,
                 sha256: sha256_hex(bytes),
             },
@@ -4802,7 +4803,7 @@ fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> Str
 
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let kernel_layers = crate::dialect::kernel_layers(scan);
-    let summary = container::summarize_with_kernel_layers(scan, &kernel_layers.matches);
+    let summary = container::summarize(scan, &kernel_layers.matches);
     let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
@@ -4962,7 +4963,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 /// decode-failure note. Each remaining state gets its own loss description.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let kernel_layers = crate::dialect::kernel_layers(scan);
-    let summary = container::summarize_with_kernel_layers(scan, &kernel_layers.matches);
+    let summary = container::summarize(scan, &kernel_layers.matches);
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);

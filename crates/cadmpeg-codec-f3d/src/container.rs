@@ -19,8 +19,8 @@ use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
-use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
+use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::dialect::{F3dDialect, FORMAT};
 use crate::manifest;
@@ -184,6 +184,8 @@ pub struct BrepFacts {
     pub uncompressed_len: u64,
     /// Parsed ASM header, if the magic was present.
     pub header: Option<KernelHeader>,
+    /// Parsed ACIS header, if the carrier was not ASM and ACIS framing matched.
+    pub acis_header: Option<KernelHeader>,
     /// Exact byte boundary between solved records and construction history.
     pub solved_record_limit: Option<usize>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
@@ -370,7 +372,11 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let view = archive.open(ctx, file)?;
         let buf = view.window();
         if is_brep {
-            let header = asm_header::parse(buf);
+            let (header, acis_header) = if asm_header::has_asm_magic(buf) {
+                (asm_header::parse(buf), None)
+            } else {
+                (None, acis_header::parse(buf))
+            };
             let solved_record_limit = asm_header::solved_record_limit(buf);
             let sha = sha256_hex(buf);
 
@@ -424,6 +430,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                 is_smbh: role == role::BREP_SMBH,
                 uncompressed_len: uncompressed_size,
                 header,
+                acis_header,
                 solved_record_limit,
                 sha256: sha,
             });
@@ -494,12 +501,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
 /// Build a [`ContainerSummary`] without assigning model authority from a ZIP
 /// extension. Design body bindings perform the model selection during decode.
-pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
-    let kernel_layers = crate::dialect::kernel_layers(scan);
-    summarize_with_kernel_layers(scan, &kernel_layers.matches)
-}
-
-pub(crate) fn summarize_with_kernel_layers(
+pub fn summarize(
     scan: &ContainerScan<'_>,
     kernel_layers: &[cadmpeg_core::dialect::DialectMatch],
 ) -> ContainerSummary {
