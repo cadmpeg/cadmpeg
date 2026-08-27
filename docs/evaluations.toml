@@ -1,0 +1,100 @@
+# Maintainer evaluation records. Each entry is evidence for the level it
+# names, recorded from an evaluation the maintainer ran.
+
+[[evaluation]]
+dialect = "iges:4.0-fixed-ascii"
+date = 2026-08-28
+level = 9
+files = 1
+result = "decode, validation clean, write-back re-identifies as the same dialect"
+
+[[evaluation]]
+dialect = "iges:5.1-fixed-ascii"
+date = 2026-08-28
+level = 9
+files = 8
+result = "decode, validation clean, write-back re-identifies as the same dialect"
+
+[[evaluation]]
+dialect = "iges:5.2-fixed-ascii"
+date = 2026-08-28
+level = 9
+files = 4
+result = "decode, validation clean, write-back re-identifies as the same dialect"
+
+[[evaluation]]
+dialect = "step:ap203-e2"
+date = 2026-08-28
+level = 9
+files = 8
+result = "decode, validation clean, write-back re-identifies as the same dialect"
+
+[[evaluation]]
+dialect = "step:ap242-e1"
+date = 2026-08-28
+level = 9
+files = 5
+result = "decode, validation clean, write-back re-identifies as the same dialect"
+
+[[evaluation]]
+dialect = "rhino:archive-2"
+date = 2026-08-28
+level = 1
+files = 2
+result = "decode and validation clean"
+
+[[evaluation]]
+dialect = "f3d:f3z-multi-document"
+date = 2026-08-28
+level = 4
+files = 12
+result = "multi-document archives decode to design-record content; validation findings on legacy-generation inner documents; one archive exceeded the evaluation time budget"
+
+[[evaluation]]
+dialect = "creo:legacy-ascii"
+date = 2026-08-28
+level = 1
+files = 10
+result = "decode clean on eight files, validation findings on two"
+
+[[evaluation]]
+dialect = "sldprt:sw-version-pre-12000"
+date = 2026-08-28
+level = 1
+files = 787
+result = "identified and classified; sampled decodes and validation clean"
+
+[[evaluation]]
+dialect = "sldprt:sw-version-12000-plus"
+date = 2026-08-28
+level = 1
+files = 155
+result = "identified and classified; sampled decodes and validation clean"
+
+[[evaluation]]
+dialect = "inventor:cfb3-rse31-meta8"
+date = 2026-08-28
+level = 1
+files = 142
+result = "identified with storage tree, versions, assets, and references; sampled decodes and validation clean"
+
+[[evaluation]]
+dialect = "nx:splmsstr"
+date = 2026-08-28
+level = 1
+files = 27
+result = "identified; sampled decodes and validation clean"
+
+[[evaluation]]
+dialect = "nx:legacy-cfb"
+date = 2026-08-28
+level = 1
+files = 1
+result = "identified and decoded"
+
+[[evaluation]]
+dialect = "sat:text"
+date = 2026-08-28
+level = 1
+files = 120
+result = "stream kind, save format, units, and record inventory identified; sampled decodes clean, validation findings on two files"
