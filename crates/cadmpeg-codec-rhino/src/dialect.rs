@@ -35,11 +35,68 @@
 //! `crate::container::decode` returns, so the two can never disagree.
 
 use crate::chunks::ArchiveVersion;
+use crate::RhinoArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::codec::{find_target, TargetDescriptor};
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "rhino";
+
+/// The synthesis catalog: the archive versions this writer can produce for any
+/// input, one row per [`RhinoArchiveVersion`] variant.
+///
+/// The chunked band this codec *reads* is wider than the band it writes:
+/// archives 2, 3, 4 and 90 decode but have no writer, and archives 1, 5 and the
+/// totality row decode not at all. None of them is a target, and — unlike IGES
+/// — there is no preservation path that could write them anyway (see
+/// [`crate::RhinoEncoder::resolve`]).
+///
+/// The alias of each row is its bare archive word and its bare Rhino major, the
+/// spellings `--rhino-target` already accepts.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: "rhino:archive-50",
+        label: "Rhino 5 archive (50)",
+        aliases: &["5", "50"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "rhino:archive-60",
+        label: "Rhino 6 archive (60)",
+        aliases: &["6", "60"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "rhino:archive-70",
+        label: "Rhino 7 archive (70)",
+        aliases: &["7", "70"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "rhino:archive-80",
+        label: "Rhino 8 archive (80)",
+        aliases: &["8", "80"],
+        default: true,
+    },
+];
+
+/// The archive version a target id names, by id or by alias, or `None` when the
+/// id is outside [`TARGETS`].
+///
+/// This is also the inherit-path predicate: a source dialect resolves to the
+/// version that reproduces it exactly when it is a catalog row.
+pub(crate) fn target_version(id: &str) -> Option<RhinoArchiveVersion> {
+    let target = find_target(TARGETS, id)?;
+    [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ]
+    .into_iter()
+    .find(|version| version.target() == target.id)
+}
 
 /// Key of the archive-version word in [`DialectMatch::declared`].
 ///

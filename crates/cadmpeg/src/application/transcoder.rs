@@ -445,10 +445,12 @@ pub fn export_target(
         Format::F3d => crate::application::EncoderRequest::Neutral,
         #[cfg(feature = "sldprt")]
         Format::Sldprt => crate::application::EncoderRequest::Neutral,
+        // `--rhino-target` already travels in `selection` above, as an
+        // explicit target. Repeating it here — with archive 80 standing in for
+        // flag absence — is what silently rewrote a Rhino 5 file the caller
+        // only asked to round-trip. The encoder resolves the request instead.
         #[cfg(feature = "rhino")]
-        Format::Rhino => crate::application::EncoderRequest::Rhino(
-            rhino_version.unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
-        ),
+        Format::Rhino => crate::application::EncoderRequest::Neutral,
         #[cfg(feature = "iges")]
         Format::Iges => crate::application::EncoderRequest::Iges(iges_options.unwrap_or_default()),
     };
@@ -504,6 +506,72 @@ mod tests {
         assert_eq!(
             TargetSelection::Unstated.request(&CadirEncoder, Some("cadir")),
             TargetRequest::Inherit
+        );
+    }
+
+    /// `convert old.3dm -o new.3dm` with no target flag writes the archive
+    /// version the file already is.
+    ///
+    /// The whole chain the command line owns, minus argv parsing: no flag makes
+    /// [`export_target`] build a Rhino encoder and an `Unstated` selection, the
+    /// selection resolves to `Inherit` because the source is Rhino too, and the
+    /// encoder resolves `Inherit` against the source's dialect. The source is
+    /// archive 50 and the catalog default is archive 80, so the assertion cannot
+    /// pass by coincidence.
+    ///
+    /// Until this change `export_target` substituted archive 80 for flag
+    /// absence, so the round trip handed a Rhino 5 user a file their own Rhino
+    /// cannot open. `cadmpeg-codec-rhino`'s `writer/tests/targets.rs` covers the
+    /// explicit flag, the cross-format default, and the refusal.
+    #[cfg(feature = "rhino")]
+    #[test]
+    fn a_same_format_rhino_convert_keeps_the_source_archive_version() {
+        use cadmpeg_core::dialect::DialectId;
+        use cadmpeg_ir::codec::Codec;
+
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut archive_50 = Vec::new();
+        cadmpeg_codec_rhino::RhinoEncoder::new(cadmpeg_codec_rhino::RhinoArchiveVersion::V5)
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit("rhino:archive-50"),
+            )
+            .expect("archive 50 is a target")
+            .write_to(&mut archive_50)
+            .expect("the plan writes");
+        let decoded = cadmpeg_codec_rhino::RhinoCodec
+            .decode(
+                &mut std::io::Cursor::new(archive_50),
+                &DecodeOptions::default(),
+            )
+            .expect("the archive decodes");
+
+        let target = export_target(
+            Format::Rhino,
+            #[cfg(feature = "step")]
+            None,
+            #[cfg(feature = "step")]
+            None,
+            #[cfg(feature = "step")]
+            false,
+            #[cfg(feature = "iges")]
+            None,
+            #[cfg(feature = "rhino")]
+            None,
+        )
+        .expect("a Rhino output with no target flag");
+        let request = target
+            .selection
+            .request(target.encoder.as_ref(), source_format(decoded.ir()));
+        assert_eq!(request, TargetRequest::Inherit);
+
+        let plan = target
+            .encoder
+            .plan(EncodeInput::new(decoded.ir(), None), request)
+            .expect("the inherited target is writable");
+        assert_eq!(
+            plan.report().target.as_ref().map(DialectId::as_str),
+            Some("rhino:archive-50")
         );
     }
     /// A loss-policy flag is not a target flag.

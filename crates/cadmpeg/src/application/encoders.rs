@@ -19,9 +19,6 @@ pub enum EncoderRequest {
     /// STEP header and schema options.
     #[cfg(feature = "step")]
     Step(cadmpeg_codec_step::StepWriteOptions),
-    /// Rhino archive version.
-    #[cfg(feature = "rhino")]
-    Rhino(cadmpeg_codec_rhino::RhinoArchiveVersion),
     /// IGES specification version.
     #[cfg(feature = "iges")]
     Iges(cadmpeg_codec_iges::IgesWriteOptions),
@@ -32,7 +29,7 @@ pub enum EncoderRequest {
 /// Cadir and STEP options are distinct request variants, so they are not
 /// representable together.
 #[cfg_attr(
-    not(any(feature = "step", feature = "rhino", feature = "iges")),
+    not(any(feature = "step", feature = "iges")),
     allow(clippy::needless_pass_by_value)
 )]
 pub fn build_encoder(
@@ -68,15 +65,15 @@ pub fn build_encoder(
             require_neutral(&request, "sldprt")?;
             Ok(Box::new(cadmpeg_codec_sldprt::SldprtCodec))
         }
+        // The Rhino writer has no constructor-configured options: the archive
+        // version is a target, and `TargetRequest` carries it. A request
+        // variant here would be the CLI deciding the version again, which is
+        // exactly the defect that turned a Rhino 5 file into archive 80.
         #[cfg(feature = "rhino")]
-        Format::Rhino => match request {
-            EncoderRequest::Rhino(version) => {
-                Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder::new(version)))
-            }
-            _ => Err(CodecError::Malformed(
-                "Rhino encoder requires Rhino target options".into(),
-            )),
-        },
+        Format::Rhino => {
+            require_neutral(&request, "rhino")?;
+            Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder::default()))
+        }
         #[cfg(feature = "iges")]
         Format::Iges => match request {
             EncoderRequest::Iges(options) => {
@@ -92,7 +89,7 @@ pub fn build_encoder(
 // When no option-bearing codec feature is on, Neutral is the only
 // EncoderRequest variant: the Err path is absent and Result is always Ok.
 #[cfg_attr(
-    not(any(feature = "step", feature = "rhino", feature = "iges")),
+    not(any(feature = "step", feature = "iges")),
     allow(clippy::unnecessary_wraps)
 )]
 fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError> {
@@ -104,7 +101,7 @@ fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError>
         // Non-Neutral variants exist only when their codec features are on.
         // With `--features sldprt` alone, Neutral is the sole variant and this
         // arm must not compile, or `-D unreachable-patterns` fails the gate.
-        #[cfg(any(feature = "step", feature = "rhino", feature = "iges"))]
+        #[cfg(any(feature = "step", feature = "iges"))]
         _ => Err(CodecError::malformed(format_args!(
             "target options do not belong to the {id} encoder"
         ))),
@@ -215,10 +212,7 @@ mod tests {
             #[cfg(feature = "sldprt")]
             (Format::Sldprt, EncoderRequest::Neutral),
             #[cfg(feature = "rhino")]
-            (
-                Format::Rhino,
-                EncoderRequest::Rhino(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
-            ),
+            (Format::Rhino, EncoderRequest::Neutral),
             #[cfg(feature = "iges")]
             (
                 Format::Iges,

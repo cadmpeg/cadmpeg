@@ -106,8 +106,22 @@ pub struct RhinoEncoder {
 
 impl RhinoEncoder {
     /// Select a target archive version.
+    ///
+    /// The version is the fallback for a request with nothing to inherit, not
+    /// the encoder's answer to every request: `TargetRequest` decides what gets
+    /// written, and this version is consulted only when a request has nothing
+    /// to inherit.
     pub const fn new(version: RhinoArchiveVersion) -> Self {
         Self { version }
+    }
+}
+
+impl Default for RhinoEncoder {
+    /// The catalog default, [`RhinoArchiveVersion::V8`] — the `default: true`
+    /// row of [`Encoder::targets`], and the same version a cross-format
+    /// conversion into 3DM resolves to.
+    fn default() -> Self {
+        Self::new(RhinoArchiveVersion::V8)
     }
 }
 
@@ -141,34 +155,69 @@ impl CodecBackend for RhinoCodec {
     }
 }
 
-/// The archive versions this writer can produce, one per
-/// [`RhinoArchiveVersion`] variant.
-const RHINO_TARGETS: &[TargetDescriptor] = &[
-    TargetDescriptor {
-        id: "rhino:archive-50",
-        label: "Rhino 5 archive (50)",
-        aliases: &["5", "50"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: "rhino:archive-60",
-        label: "Rhino 6 archive (60)",
-        aliases: &["6", "60"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: "rhino:archive-70",
-        label: "Rhino 7 archive (70)",
-        aliases: &["7", "70"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: "rhino:archive-80",
-        label: "Rhino 8 archive (80)",
-        aliases: &["8", "80"],
-        default: true,
-    },
-];
+impl RhinoEncoder {
+    /// Resolve the request against the source into the archive version to
+    /// write.
+    ///
+    /// `Explicit(id)` refuses an id outside the synthesis catalog and otherwise
+    /// names its archive version outright.
+    ///
+    /// `Inherit` asks for preservation: the source's own dialect, synthesized.
+    /// The replay law is inapplicable here — the 3DM writer builds every chunk
+    /// from the neutral IR and has no retained-source branch, so synthesis is
+    /// the only write path this codec has and `id == source.dialect` is never a
+    /// question about bytes. That makes preservation strictly narrower than in a
+    /// replaying codec: a source dialect outside the catalog cannot be written
+    /// back at all, so `Inherit` refuses it, naming the source dialect and the
+    /// catalog. That band is real — archives 2, 3, 4 and 90 decode without a
+    /// writer, and 1, 5 and unknown words do not decode — and an explicit
+    /// `--rhino-target` is the escape. There is no fall-through to the catalog
+    /// default: a same-format conversion never silently changes what the file
+    /// is, which is exactly the archive-50 source that used to come back as
+    /// archive 80.
+    ///
+    /// `self.version` supplies the target only when there is nothing to
+    /// inherit: the document is not a Rhino document, or it records no dialect.
+    /// Neither case is reachable from the command line, which builds `Inherit`
+    /// only for a Rhino source.
+    fn resolve(
+        self,
+        ir: &cadmpeg_ir::document::CadIr,
+        request: TargetRequest<'_>,
+    ) -> Result<RhinoArchiveVersion, CodecError> {
+        match request {
+            TargetRequest::Explicit(id) => dialect::target_version(id).ok_or_else(|| {
+                cadmpeg_ir::codec::unsupported_target(
+                    dialect::FORMAT,
+                    id,
+                    "not a target this encoder can synthesize",
+                    dialect::TARGETS,
+                )
+            }),
+            TargetRequest::Inherit => {
+                let Some(source_dialect) = ir
+                    .source
+                    .as_ref()
+                    .filter(|source| source.format == dialect::FORMAT)
+                    .and_then(|source| source.dialect.as_ref())
+                else {
+                    // Nothing to inherit: no Rhino source, or one that records
+                    // no dialect.
+                    return Ok(self.version);
+                };
+                dialect::target_version(source_dialect.as_str()).ok_or_else(|| {
+                    cadmpeg_ir::codec::unsupported_target(
+                        dialect::FORMAT,
+                        source_dialect.as_str(),
+                        "the source archive version is one this writer cannot synthesize, and 3DM \
+                         has no byte-replay path that could preserve it",
+                        dialect::TARGETS,
+                    )
+                })
+            }
+        }
+    }
+}
 
 impl Encoder for RhinoEncoder {
     fn id(&self) -> &'static str {
@@ -176,7 +225,7 @@ impl Encoder for RhinoEncoder {
     }
 
     fn targets(&self) -> &'static [TargetDescriptor] {
-        RHINO_TARGETS
+        dialect::TARGETS
     }
 
     fn plan<'a>(
@@ -184,10 +233,10 @@ impl Encoder for RhinoEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        request.check_explicit(self.id(), self.targets())?;
+        let version = self.resolve(input.ir, request)?;
         let mut bytes = Vec::new();
-        writer::write(input.ir, self.version.value(), &mut bytes)?;
-        let vertex_quantization = self.version == RhinoArchiveVersion::V5
+        writer::write(input.ir, version.value(), &mut bytes)?;
+        let vertex_quantization = version == RhinoArchiveVersion::V5
             && input
                 .ir
                 .model
@@ -224,7 +273,7 @@ impl Encoder for RhinoEncoder {
             );
         }
         let report = ExportReport {
-            target: None,
+            target: Some(cadmpeg_core::dialect::DialectId::pinned(version.target())),
             format: "rhino".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
@@ -239,7 +288,7 @@ impl Encoder for RhinoEncoder {
             // retained-source branch.
             write_path: WritePath::Synthesized,
             losses,
-            notes: vec![format!("3DM archive version {}", self.version.value())],
+            notes: vec![format!("3DM archive version {}", version.value())],
         };
         Ok(ExportPlan::buffered(report, bytes))
     }
