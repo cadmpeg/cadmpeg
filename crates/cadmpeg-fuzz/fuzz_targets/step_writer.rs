@@ -18,7 +18,7 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(s) = std::str::from_utf8(data) {
         if let Ok(ir) = CadIr::from_json(s) {
             let mut out = Cursor::new(Vec::new());
-            let _ = write_step(&ir, &mut out, &StepWriteOptions::default());
+            let _ = write_step(&ir, &mut out, cadmpeg_codec_step::StepSchema::default(), &StepWriteOptions::default());
         }
     }
 });

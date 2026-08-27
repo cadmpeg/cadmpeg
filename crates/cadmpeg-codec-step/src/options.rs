@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writer header metadata and target-schema selection.
+//! Writer header metadata and unrepresentable-content policy.
+//!
+//! These configure *how* a target is written. Which target is written is the
+//! export request's answer, resolved against the source: `StepCodec::plan`
+//! takes it from `TargetRequest`, and a direct [`crate::write_step`] caller
+//! names it in the call.
 
 /// Metadata written to the STEP `FILE_NAME` header record.
 ///
@@ -9,13 +14,6 @@
 /// timestamp.
 #[derive(Debug, Clone)]
 pub struct StepWriteOptions {
-    /// Application protocol and edition declared by `FILE_SCHEMA`.
-    ///
-    /// The direct-write input to [`crate::write_step`], for a library caller
-    /// that names the schema itself. It is not encoder target state:
-    /// `StepCodec::plan` overwrites it with the resolution's answer on every
-    /// path, so setting it on a codec decides nothing.
-    pub schema: StepSchema,
     /// Handling of IR content the selected writer cannot represent exactly.
     pub unsupported: StepUnsupportedPolicy,
     /// The `FILE_NAME` name field.
@@ -39,7 +37,6 @@ pub struct StepWriteOptions {
 impl Default for StepWriteOptions {
     fn default() -> Self {
         StepWriteOptions {
-            schema: StepSchema::Ap214,
             unsupported: StepUnsupportedPolicy::Report,
             product_name: "cadmpeg_model".to_string(),
             author: String::new(),

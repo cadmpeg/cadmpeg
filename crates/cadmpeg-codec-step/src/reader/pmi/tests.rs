@@ -106,12 +106,14 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
             semantics: vec![semantic],
         },
     });
-    let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        ..StepWriteOptions::default()
-    };
     let mut output = Vec::new();
-    let report = write_step(result.ir(), &mut output, &options).expect("write semantic PMI");
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write semantic PMI");
     assert!(!report
         .losses
         .iter()
@@ -450,10 +452,8 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write complex geometric tolerance units");
     let output = String::from_utf8(output).expect("STEP output is UTF-8");
@@ -665,10 +665,8 @@ fn supported_geometric_tolerance_kinds_emit_matching_leaf_entities() {
         write_step(
             &ir,
             &mut output,
-            &StepWriteOptions {
-                schema: StepSchema::Ap242Edition3,
-                ..StepWriteOptions::default()
-            },
+            StepSchema::Ap242Edition3,
+            &StepWriteOptions::default(),
         )
         .expect("write geometric tolerance leaf");
         let output = String::from_utf8(output).expect("STEP output is UTF-8");
@@ -847,10 +845,8 @@ fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
     write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write coaxiality tolerance");
     assert!(String::from_utf8(output)
@@ -911,10 +907,8 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
     let report = crate::write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write complex geometric tolerance with report policy");
     assert!(!report.losses.iter().any(|loss| loss.code
@@ -969,12 +963,14 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
-    let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        ..StepWriteOptions::default()
-    };
     let mut output = Vec::new();
-    let report = write_step(result.ir(), &mut output, &options).expect("write presentation PMI");
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write presentation PMI");
     assert!(!report
         .losses
         .iter()
@@ -1173,10 +1169,8 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     let report = write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write dimensions");
     let text = String::from_utf8(output.clone()).unwrap();
@@ -1271,10 +1265,8 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write common datum");
     assert!(String::from_utf8_lossy(&output).contains("COMMON_DATUM_LIST(("));
@@ -1491,10 +1483,8 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     let report = write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write geometric item usage");
     assert!(!report
@@ -1605,10 +1595,8 @@ fn datum_target_writes_and_round_trips() {
     let report = write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write datum target");
     assert!(!report
@@ -1647,10 +1635,8 @@ fn datum_target_writes_and_round_trips() {
     let source_less_report = write_step(
         &source_less_ir,
         &mut source_less_output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write source-less datum target");
     assert!(!source_less_report

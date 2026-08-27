@@ -57,10 +57,8 @@ fn product_descriptions_transfer_from_product_and_definition() {
     write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write described product");
     let roundtrip = StepCodec::default()
@@ -148,12 +146,14 @@ pub(crate) fn decode_builds_product_occurrences_with_relative_placement() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
-    let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        ..StepWriteOptions::default()
-    };
     let mut output = Vec::new();
-    write_step(result.ir(), &mut output, &options).expect("write product graph");
+    write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write product graph");
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written product graph");
@@ -1312,7 +1312,13 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
     let mut ir = unit_cube();
     ir.model.bodies[0].transform = Some(transform);
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write placed body");
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write placed body");
     let mut source = String::from_utf8(output).expect("STEP output is UTF-8");
 
     let mapped_line = source

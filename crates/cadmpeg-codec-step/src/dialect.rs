@@ -54,11 +54,77 @@ use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::{Exchange, Value};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{find_target, TargetDescriptor};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "step";
+
+/// The synthesis catalog: the schemas this writer can put in `FILE_SCHEMA`, one
+/// per [`StepSchema`] variant.
+///
+/// The rows this codec *reads* are wider than the rows it writes: `step:ap242`
+/// and `step:unknown` classify documents that no write target reproduces, and
+/// the Part 28 XML, AP242 BO-Model XML, and Part 26 HDF5 rows are structural
+/// refusals below decode. None of them is a target, and — unlike IGES — there
+/// is no preservation path that could write them anyway.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: "step:ap203-e1",
+        label: "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
+        aliases: &["ap203e1"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap203-e2",
+        label: "STEP AP203 edition 2 modular long form",
+        aliases: &["ap203e2"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap214",
+        label: "STEP AP214 AUTOMOTIVE_DESIGN",
+        aliases: &["ap214"],
+        default: true,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e1",
+        label: "STEP AP242 edition 1 modular long form",
+        aliases: &["ap242e1"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e2",
+        label: "STEP AP242 edition 2 modular long form",
+        aliases: &["ap242e2"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e3",
+        label: "STEP AP242 edition 3 modular long form",
+        aliases: &["ap242e3"],
+        default: false,
+    },
+];
+
+/// The schema a target id names, by id or by alias, or `None` when the id is
+/// outside [`TARGETS`].
+///
+/// This is also the inherit-path predicate: a source dialect resolves to the
+/// schema that reproduces it exactly when it is a catalog row.
+///
+/// Total over the catalog: `find_target` resolves an alias to its canonical
+/// `id`, and every canonical id is some [`StepSchema`]'s `target()`. A `None`
+/// from the second step is catalog/enum drift, which
+/// `crate::writer::tests::targets::the_catalog_is_the_schemas_the_writer_emits`
+/// fails on.
+pub(crate) fn target_schema(id: &str) -> Option<StepSchema> {
+    let target = find_target(TARGETS, id)?;
+    StepSchema::ALL
+        .into_iter()
+        .find(|schema| schema.target() == target.id)
+}
 
 /// Key of the `FILE_SCHEMA` identifier the row keys on, in
 /// [`DialectMatch::declared`].

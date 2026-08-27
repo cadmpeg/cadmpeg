@@ -14,7 +14,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::test_support::export;
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn base_face_with_polygon_loop_gets_an_inferred_plane() {
@@ -833,7 +833,13 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
     );
 
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default()).expect("write named face");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write named face");
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written named face");

@@ -227,8 +227,8 @@ pub(crate) fn step_color_assets_round_trip_names_and_tessellation_targets_strict
         write_step(
             &ir,
             &mut bytes,
+            schema,
             &StepWriteOptions {
-                schema,
                 unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             },
@@ -319,10 +319,8 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
     let report = write_step(
         decoded.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write tessellation layer");
     assert!(!report.losses.iter().any(|loss| {
@@ -733,6 +731,7 @@ fn context_dependent_styles_are_not_flattened_without_context() {
     let error = write_step(
         result.ir(),
         &mut output,
+        StepSchema::default(),
         &StepWriteOptions {
             unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
@@ -1380,7 +1379,13 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     });
 
     let mut bytes = Vec::new();
-    write_step(&ir, &mut bytes, &StepWriteOptions::default()).expect("write body presentation");
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write body presentation");
     let (exchange, diagnostics) = crate::parse::parse(&bytes).expect("parse body presentation");
     assert!(diagnostics.is_empty());
     let layer = exchange
@@ -1499,7 +1504,13 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(false);
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     let s = String::from_utf8(buf).unwrap();
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
     assert!(s.contains("ADVANCED_FACE"));
@@ -1696,8 +1707,13 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     });
 
     let mut bytes = Vec::new();
-    let report =
-        write_step(&ir, &mut bytes, &StepWriteOptions::default()).expect("write point layer");
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write point layer");
     assert!(!report.losses.iter().any(|loss| {
         loss.message
             .contains("layer 'point layer' has 1 item(s) without a writable STEP carrier")
@@ -1826,8 +1842,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     let report = write_step(
         &ir,
         &mut bytes,
+        StepSchema::Ap242Edition3,
         &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
             unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         },

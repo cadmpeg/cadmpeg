@@ -915,3 +915,24 @@ crate = "cadmpeg-codec-freecad"
 kind = "signature"
 item = "cadmpeg_codec_freecad::FcstdCodec::encode_with_options"
 reason = "same Rust signature, different refusal: the band now goes through the writer's one resolution gate, so an undeliverable band returns CodecError::UnsupportedTarget with the catalog instead of a CodecError::NotImplemented transcode string from inside the write"
+
+[[change]]
+commit = "89bacdf79f85008cd0571ff8d0b07fe99b03b24d"
+crate = "cadmpeg-codec-step"
+kind = "field"
+item = "cadmpeg_codec_step::StepWriteOptions::schema"
+reason = "not encoder target state: StepCodec::plan resolved the schema from the TargetRequest and overwrote the field on every path, so setting it on a codec decided nothing. The schema is now an argument to write_step, the direct-write function; StepWriteOptions keeps only how a target is written (unsupported policy and FILE_NAME header metadata)"
+
+[[change]]
+commit = "89bacdf79f85008cd0571ff8d0b07fe99b03b24d"
+crate = "cadmpeg-codec-step"
+kind = "signature"
+item = "cadmpeg_codec_step::write_step"
+reason = "takes the target StepSchema as its third argument, ahead of &StepWriteOptions, now that the schema is not a field of the options"
+
+[[change]]
+commit = "89bacdf79f85008cd0571ff8d0b07fe99b03b24d"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::codec::resolve_catalog_write"
+reason = "design section 8.2: the whole write resolution of a synthesis-only encoder, extracted from the identical private resolvers in StepCodec and RhinoEncoder. Not for a codec that preserves off-catalog dialects by patch or replay (FCStd, IGES)"

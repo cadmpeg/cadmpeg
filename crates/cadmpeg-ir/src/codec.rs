@@ -495,6 +495,99 @@ pub fn resolve_inherit<'a>(
         .ok_or_else(|| unrecorded_source_dialect(format, targets))
 }
 
+/// The whole write resolution of a synthesis-only encoder (design §8.2): the
+/// writer target a request names, and why the source's own dialect is not it.
+///
+/// A synthesis-only encoder has no retained-image path, so every export is
+/// built from the neutral IR and the catalog is the exact set of dialects it
+/// can produce. That makes the resolution a function of the request, the
+/// catalog, and the source alone, identical in every such codec:
+///
+/// - `Explicit(id)` — `parse` it, or refuse it as outside the catalog.
+/// - `Inherit` with nothing to inherit — the catalog default, which `parse`
+///   accepts by construction.
+/// - `Inherit` over a same-format source — that source's own dialect, or a
+///   refusal naming it and the catalog when `parse` rejects it.
+///
+/// `parse` is the codec's catalog-id-to-writer-target function; it must accept
+/// exactly the ids of `targets`, aliases included.
+/// `off_catalog_source_reason` states why *this* writer cannot reproduce a
+/// source dialect the catalog does not carry — the one sentence that is
+/// genuinely per-codec, because the reason is the codec's own write model.
+///
+/// The returned `Option<String>` is the declined sentence: `Some` exactly when
+/// a same-format source declared a dialect that this export does not write, so
+/// the caller charges [`crate::FidelityResolution::Degraded`] with it. `None`
+/// where the write keeps the source's dialect, and `None` where there is no
+/// same-format source at all: nothing was preserved, so nothing was lost.
+///
+/// Not for a codec that preserves off-catalog dialects by patch or replay
+/// (`FCStd`, IGES). There a source dialect outside the catalog is written back
+/// from the retained image rather than refused, so the third bullet is a
+/// different law.
+pub fn resolve_catalog_write<T>(
+    ir: &CadIr,
+    request: TargetRequest<'_>,
+    format: &str,
+    targets: &'static [TargetDescriptor],
+    parse: impl Fn(&str) -> Option<T>,
+    off_catalog_source_reason: &str,
+) -> Result<(T, Option<String>), CodecError> {
+    let id = match request {
+        TargetRequest::Explicit(id) => id,
+        TargetRequest::Inherit => {
+            return match resolve_inherit(ir, format, targets)? {
+                // Nothing to inherit: no source, or one of another format. The
+                // catalog default stands in; no existing file's identity is at
+                // stake.
+                Inherited::Fallback(id) => Ok((
+                    parse(id).unwrap_or_else(|| {
+                        panic!("the {format} catalog default is a synthesis target")
+                    }),
+                    None,
+                )),
+                Inherited::Source(dialect) => parse(dialect.as_str())
+                    .map(|resolved| (resolved, None))
+                    .ok_or_else(|| {
+                        unsupported_target(
+                            format,
+                            dialect.as_str(),
+                            off_catalog_source_reason,
+                            targets,
+                        )
+                    }),
+            };
+        }
+    };
+    let resolved = parse(id).ok_or_else(|| {
+        unsupported_target(
+            format,
+            id,
+            "not a target this encoder can synthesize",
+            targets,
+        )
+    })?;
+    // `parse` accepted the id, so the catalog carries it, and `find_target`
+    // maps the alias the caller may have spelled onto the canonical dialect id
+    // the report and the declined sentence name.
+    let target = find_target(targets, id)
+        .expect("parse accepts exactly the catalog ids")
+        .id;
+    let declined = ir
+        .source
+        .as_ref()
+        .filter(|source| source.format == format)
+        .and_then(|source| source.dialect.as_ref())
+        .filter(|dialect| dialect.as_str() != target)
+        .map(|dialect| {
+            format!(
+                "source is {dialect}, target is {target}; the dialect the source declared is not \
+                 what this export writes"
+            )
+        });
+    Ok((resolved, declined))
+}
+
 fn refusal(
     format: &str,
     requested: Option<String>,

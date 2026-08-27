@@ -15,7 +15,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
@@ -70,8 +70,13 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
     assert_eq!(partials.dv, Vector3::new(0.0, -1.0, 0.0));
 
     let mut output = Vec::new();
-    let report = write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write trimmed surface");
+    let report = write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write trimmed surface");
     let text = String::from_utf8(output.clone()).expect("UTF-8 STEP");
     assert!(text.contains("RECTANGULAR_TRIMMED_SURFACE"));
     assert!(!report.losses.iter().any(|loss| {
@@ -427,8 +432,13 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
         )
     }));
     let mut output = Vec::new();
-    write_step(result.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write opposed-sense trimmed curve");
+    write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::default(),
+        &StepWriteOptions::default(),
+    )
+    .expect("write opposed-sense trimmed curve");
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains(".F.,.PARAMETER."));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
