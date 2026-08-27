@@ -517,6 +517,7 @@ mod tests {
         Container {
             data: Cow::Owned(data),
             version: 0,
+            declared_version: Some(0),
             file_tag: 0,
             footer_offset: 0,
             header_entry_count: 1,

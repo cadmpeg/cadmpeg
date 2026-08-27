@@ -5,6 +5,8 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::container::MAGIC;
+use crate::test_support::single_part_prt;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -37,9 +39,20 @@ fn registry_ids() -> BTreeSet<String> {
 /// Classification reads exactly these two fields, so an empty directory is a
 /// complete input for it.
 fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
+    container_with_declaration(legacy_cfb, version, Some(version))
+}
+
+/// The same, with the declaration stated independently of the value the
+/// decoder proceeds with.
+fn container_with_declaration(
+    legacy_cfb: bool,
+    version: u8,
+    declared_version: Option<u8>,
+) -> Container<'static> {
     Container {
         data: (&[] as &[u8]).into(),
         version,
+        declared_version,
         file_tag: 0,
         footer_offset: 0,
         header_entry_count: 0,
@@ -169,4 +182,48 @@ fn the_version_byte_is_evidence_and_never_moves_the_resolved_id() {
         );
         assert_eq!(matched.admission, Admission::Admitted);
     }
+}
+
+#[test]
+fn an_undeclared_version_byte_is_omitted_rather_than_recorded_as_zero() {
+    // `scan_bytes` substitutes zero when the header is too short to carry the
+    // byte. Recording that as a declaration would be indistinguishable from a
+    // file that really declares zero, so the key is absent instead.
+    let substituted = NxDialect::classify(&container_with_declaration(false, 0, None));
+    assert!(
+        !substituted.declared.contains_key(DECLARED_SPLMSSTR_VERSION),
+        "a synthesized default is not something the source declared"
+    );
+    assert_eq!(
+        substituted.dialect.as_ref().map(DialectId::as_str),
+        Some("nx:splmsstr"),
+        "the missing declaration is evidence, so it does not move the row"
+    );
+    assert_eq!(substituted.admission, Admission::Admitted);
+
+    let declared = NxDialect::classify(&container_with_declaration(false, 0, Some(0)));
+    assert_eq!(declared.declared[DECLARED_SPLMSSTR_VERSION], "0");
+}
+
+#[test]
+fn a_header_too_short_to_declare_a_version_never_scans() {
+    // The substitution is unreachable through the real parser as well: the
+    // HEADER marker sits above the version byte, so every image that scans
+    // carries one. This pins the bound rather than the argument -- move the
+    // marker below offset 8 and this test, not a golden, is what fails.
+    const {
+        assert!(
+            crate::layout::splmsstr_header::HEADER_MARKER
+                > crate::layout::splmsstr_header::VERSION_TAG
+        );
+    }
+    let file = single_part_prt();
+    for truncated_len in MAGIC.len()..=crate::layout::splmsstr_header::HEADER_MARKER {
+        assert!(
+            crate::container::scan_bytes(&file[..truncated_len]).is_err(),
+            "an image of {truncated_len} bytes must not scan"
+        );
+    }
+    let scanned = crate::container::scan_bytes(file).expect("the whole image scans");
+    assert!(scanned.declared_version.is_some());
 }
