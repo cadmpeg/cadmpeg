@@ -35,6 +35,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    TargetDescriptor, TargetRequest,
 };
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
@@ -59,6 +60,18 @@ pub enum IgesVersion {
 }
 
 impl IgesVersion {
+    /// Every version this writer can emit, in registry order.
+    pub(crate) const ALL: [Self; 5] = [Self::V4_0, Self::V5_0, Self::V5_1, Self::V5_2, Self::V5_3];
+
+    /// The registry dialect id this version writes.
+    ///
+    /// The spelling a caller passes as `TargetRequest::Explicit`, and the
+    /// value `ExportReport::target` carries after a synthesis at this version.
+    #[must_use]
+    pub const fn target(self) -> &'static str {
+        dialect::IgesDialect::fixed_ascii(self).pinned()
+    }
+
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::V4_0 => "4.0",
@@ -178,8 +191,16 @@ impl Encoder for IgesEncoder {
         "iges"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        writer::plan(input, self.options)
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        dialect::TARGETS
+    }
+
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        writer::plan(input, self.options, request)
     }
 }
 

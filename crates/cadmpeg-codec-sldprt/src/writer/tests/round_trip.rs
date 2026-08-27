@@ -2,6 +2,8 @@
 //! Spatial-sketch write-back and semantic-write round-trip pins.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::{collections::BTreeMap, io::Cursor};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -68,10 +70,13 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
 fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut first_encoding = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(
+                &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
+                None,
+            ),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut first_encoding))
         .expect("source-less spatial line should encode");
     let mut decoded = SldprtCodec
@@ -88,10 +93,7 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
 
     let mut second_encoding = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut second_encoding))
         .expect("edited retained spatial line should encode");
     let regenerated = SldprtCodec

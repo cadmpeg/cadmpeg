@@ -91,10 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.sldprt")?;
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir(),
-            fidelity: Some(&decoded.source_fidelity()),
-        })?
+        .plan(EncodeInput::new(&decoded.ir(), Some(&decoded.source_fidelity())))?
         .write_to(&mut output)?;
     Ok(())
 }

@@ -2,6 +2,8 @@
 //! Feature-tree typing, class-token, and name-binding decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -180,10 +182,10 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     decoded.ir_mut().model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let regenerated = SldprtCodec

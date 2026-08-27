@@ -10,7 +10,10 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{
+    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor,
+    TargetRequest,
+};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 
@@ -72,6 +75,19 @@ pub enum RhinoArchiveVersion {
 }
 
 impl RhinoArchiveVersion {
+    /// The registry dialect id this version writes.
+    ///
+    /// The spelling a caller passes as `TargetRequest::Explicit`.
+    #[must_use]
+    pub const fn target(self) -> &'static str {
+        match self {
+            Self::V5 => "rhino:archive-50",
+            Self::V6 => "rhino:archive-60",
+            Self::V7 => "rhino:archive-70",
+            Self::V8 => "rhino:archive-80",
+        }
+    }
+
     const fn value(self) -> u64 {
         match self {
             Self::V5 => 50,
@@ -125,12 +141,50 @@ impl CodecBackend for RhinoCodec {
     }
 }
 
+/// The archive versions this writer can produce, one per
+/// [`RhinoArchiveVersion`] variant.
+const RHINO_TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: "rhino:archive-50",
+        label: "Rhino 5 archive (50)",
+        aliases: &["5", "50"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "rhino:archive-60",
+        label: "Rhino 6 archive (60)",
+        aliases: &["6", "60"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "rhino:archive-70",
+        label: "Rhino 7 archive (70)",
+        aliases: &["7", "70"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "rhino:archive-80",
+        label: "Rhino 8 archive (80)",
+        aliases: &["8", "80"],
+        default: true,
+    },
+];
+
 impl Encoder for RhinoEncoder {
     fn id(&self) -> &'static str {
         "rhino"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        RHINO_TARGETS
+    }
+
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        request.check_explicit(self.id(), self.targets())?;
         let mut bytes = Vec::new();
         writer::write(input.ir, self.version.value(), &mut bytes)?;
         let vertex_quantization = self.version == RhinoArchiveVersion::V5

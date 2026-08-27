@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
@@ -352,10 +354,10 @@ fn f3z_archive_merges_identity_occurrences() {
         .all(|id| id.starts_with(&prefix)));
     let mut regenerated = Vec::new();
     let report = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut regenerated))
         .expect("merged F3Z regenerates instead of replaying a member");
     assert!(!regenerated.is_empty());
@@ -464,10 +466,10 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .is_some());
     let mut replayed = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut replayed))
         .expect("unmerged F3Z root member remains replayable");
     assert_eq!(replayed, root);

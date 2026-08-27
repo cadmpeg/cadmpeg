@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -35,10 +37,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -139,10 +138,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -194,10 +190,7 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
     }];
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("does not exactly match"));
@@ -244,10 +237,7 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
 
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -286,10 +276,7 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -328,10 +315,7 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -378,10 +362,7 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -497,10 +478,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -536,10 +514,7 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
     direction.v += 0.25;
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("misses directed edge curve"));
@@ -555,10 +530,7 @@ fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
     }
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("explicit pcurve"));

@@ -5,6 +5,8 @@
 //! Cadir encoder cannot carry STEP options.
 
 use cadmpeg_core::CodecError;
+#[cfg(test)]
+use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::codec::{CadirEncoder, Encoder};
 
 use crate::Format;
@@ -113,9 +115,93 @@ fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError>
 mod tests {
     use super::*;
 
+    /// Every request an encoder catalog can be asked for, checked against the
+    /// identity registry and against the catalog's own rules.
+    ///
+    /// The catalog is a claim about what a format's writer produces, so a typo
+    /// in an id, a second default, or a row that names no declared dialect are
+    /// all failures of the claim, not of style. CADIR is the one encoder with
+    /// no catalog: it writes the neutral document, which has no dialect.
     #[test]
-    fn every_exportable_format_builds_an_encoder() {
-        for (format, request) in [
+    fn every_catalog_names_declared_dialects_with_one_default() {
+        let registry = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/dialects.toml"),
+        )
+        .expect("the dialect registry is readable");
+        for (format, request) in every_exportable_target() {
+            let encoder = build_encoder(format, request).expect("encoder builds");
+            let targets = encoder.targets();
+            let defaults = targets.iter().filter(|target| target.default).count();
+            if targets.is_empty() {
+                assert_eq!(
+                    encoder.id(),
+                    "cadir",
+                    "{}: only the neutral encoder may have no synthesis catalog",
+                    encoder.id()
+                );
+                continue;
+            }
+            assert_eq!(
+                defaults,
+                1,
+                "{}: a catalog has exactly one cross-format default",
+                encoder.id()
+            );
+            let mut seen = std::collections::BTreeSet::new();
+            for target in targets {
+                assert!(
+                    target.id.starts_with(&format!("{}:", encoder.id())),
+                    "{}: target {} is outside this encoder's own namespace",
+                    encoder.id(),
+                    target.id
+                );
+                assert!(
+                    registry.contains(&format!("id = \"{}\"", target.id)),
+                    "{}: target {} has no row in docs/dialects.toml",
+                    encoder.id(),
+                    target.id
+                );
+                assert!(
+                    seen.insert(target.id),
+                    "{}: target {} is listed twice",
+                    encoder.id(),
+                    target.id
+                );
+            }
+        }
+    }
+
+    /// An explicit id the catalog does not carry is refused, and the refusal
+    /// names the catalog so the caller can correct the request.
+    #[test]
+    fn an_unknown_explicit_target_is_refused_with_the_catalog() {
+        for (format, request) in every_exportable_target() {
+            let encoder = build_encoder(format, request).expect("encoder builds");
+            let error = TargetRequest::Explicit("nonesuch:dialect")
+                .check_explicit(encoder.id(), encoder.targets())
+                .expect_err("an id outside the catalog is refused");
+            let CodecError::UnsupportedTarget {
+                requested,
+                available,
+                ..
+            } = &error
+            else {
+                panic!("{}: expected a target refusal, got {error}", encoder.id());
+            };
+            assert_eq!(requested, "nonesuch:dialect");
+            for target in encoder.targets() {
+                assert!(
+                    available.contains(target.id),
+                    "{}: the refusal omits {}",
+                    encoder.id(),
+                    target.id
+                );
+            }
+        }
+    }
+
+    fn every_exportable_target() -> Vec<(Format, EncoderRequest)> {
+        vec![
             (Format::Cadir, EncoderRequest::Neutral),
             #[cfg(feature = "step")]
             (
@@ -138,7 +224,12 @@ mod tests {
                 Format::Iges,
                 EncoderRequest::Iges(cadmpeg_codec_iges::IgesWriteOptions::default()),
             ),
-        ] {
+        ]
+    }
+
+    #[test]
+    fn every_exportable_format_builds_an_encoder() {
+        for (format, request) in every_exportable_target() {
             build_encoder(format, request).expect("encoder builds");
         }
     }

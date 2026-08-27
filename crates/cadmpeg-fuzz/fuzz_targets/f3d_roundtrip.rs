@@ -19,7 +19,7 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     let mut encoded = Vec::new();
-    assert!(codec.plan(cadmpeg_ir::codec::EncodeInput { ir: decoded.ir(), fidelity: None }).and_then(|plan| plan.write_to(&mut encoded)).is_ok());
+    assert!(codec.plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit).and_then(|plan| plan.write_to(&mut encoded)).is_ok());
     let mut round_trip = Cursor::new(encoded);
     assert!(codec
         .decode(&mut round_trip, &DecodeOptions::default())

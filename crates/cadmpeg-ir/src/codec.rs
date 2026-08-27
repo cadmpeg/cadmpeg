@@ -308,13 +308,124 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     }
 }
 
+/// What the caller asked an encoder to write, before resolution picks it.
+///
+/// Synthesis and preservation are different capabilities. Synthesis is static
+/// and input-independent: [`Encoder::targets`] is the whole catalog.
+/// Preservation is input-conditioned — replaying a retained baseline
+/// reproduces dialects no encoder could synthesize for arbitrary input — so it
+/// is asked for by [`TargetRequest::Inherit`], never by a catalog entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetRequest<'a> {
+    /// Preserve the source's dialect. The same-format default.
+    Inherit,
+    /// A synthesis target from [`Encoder::targets`]: an explicit target flag,
+    /// or the catalog default for a cross-format conversion.
+    Explicit(&'a str),
+}
+
+impl TargetRequest<'_> {
+    /// Refuses an explicit id that `targets` does not carry.
+    ///
+    /// The whole request contract for an encoder whose resolution is still its
+    /// current behavior: the id is validated against the catalog it claims, so
+    /// a request can never be silently ignored, while `Inherit` keeps that
+    /// encoder's same-format behavior.
+    pub fn check_explicit(
+        self,
+        format: &str,
+        targets: &[TargetDescriptor],
+    ) -> Result<(), CodecError> {
+        match self {
+            Self::Inherit => Ok(()),
+            Self::Explicit(id) => {
+                if find_target(targets, id).is_some() {
+                    Ok(())
+                } else {
+                    Err(unsupported_target(
+                        format,
+                        id,
+                        "not a target this encoder can synthesize",
+                        targets,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+/// One dialect an encoder can synthesize for any input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetDescriptor {
+    /// Registry dialect id, e.g. `step:ap242-e3`.
+    pub id: &'static str,
+    /// Human-readable name, e.g. `STEP AP242 edition 3`.
+    pub label: &'static str,
+    /// Short spellings accepted for `id`, e.g. `["6"]` for `rhino:archive-60`.
+    pub aliases: &'static [&'static str],
+    /// True on exactly one entry: the cross-format conversion default.
+    pub default: bool,
+}
+
+/// The catalog entry `id` names, by id or by alias.
+#[must_use]
+pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a TargetDescriptor> {
+    targets
+        .iter()
+        .find(|target| target.id == id || target.aliases.contains(&id))
+}
+
+/// The catalog's default target, or `None` for an encoder with no synthesis
+/// catalog.
+#[must_use]
+pub fn default_target(targets: &[TargetDescriptor]) -> Option<&'static str> {
+    targets
+        .iter()
+        .find(|target| target.default)
+        .map(|target| target.id)
+}
+
+/// The typed write refusal, naming what was asked for and the whole catalog.
+#[must_use]
+pub fn unsupported_target(
+    format: &str,
+    requested: &str,
+    reason: &str,
+    targets: &[TargetDescriptor],
+) -> CodecError {
+    let available = targets
+        .iter()
+        .map(|target| target.id)
+        .collect::<Vec<_>>()
+        .join(", ");
+    CodecError::UnsupportedTarget {
+        format: format.to_owned(),
+        requested: requested.to_owned(),
+        reason: reason.to_owned(),
+        available: if available.is_empty() {
+            "none".to_owned()
+        } else {
+            available
+        },
+    }
+}
+
 /// A native-format writer.
 pub trait Encoder {
     /// Stable output format id.
     fn id(&self) -> &'static str;
 
+    /// The static synthesis catalog: dialects this encoder can produce for any
+    /// input. Preservation is not listed here; [`TargetRequest::Inherit`] asks
+    /// for it. Ids come from this encoder's own format namespace only.
+    fn targets(&self) -> &'static [TargetDescriptor];
+
     /// Plans one export without writing to the destination.
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError>;
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError>;
 }
 
 /// Borrowed inputs used to plan an export.
@@ -324,6 +435,14 @@ pub struct EncodeInput<'a> {
     pub ir: &'a CadIr,
     /// Decode-time fidelity state, when available.
     pub fidelity: Option<&'a SourceFidelity>,
+}
+
+impl<'a> EncodeInput<'a> {
+    /// Borrows a document and its decode-time fidelity for one export.
+    #[must_use]
+    pub const fn new(ir: &'a CadIr, fidelity: Option<&'a SourceFidelity>) -> Self {
+        Self { ir, fidelity }
+    }
 }
 
 type DeferredExport<'a> = Box<dyn FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a>;
@@ -397,7 +516,20 @@ impl Encoder for CadirEncoder {
         "cadir"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+    /// Empty. CADIR is the neutral document, not a native format: its version
+    /// is data about cadmpeg, never a dialect, and `ExportReport::target` is
+    /// `None` on every CADIR write. An encoder with no catalog takes
+    /// [`TargetRequest::Inherit`] only.
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        &[]
+    }
+
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        request.check_explicit(self.id(), self.targets())?;
         let report = ExportReport {
             target: None,
             format: "cadir".into(),

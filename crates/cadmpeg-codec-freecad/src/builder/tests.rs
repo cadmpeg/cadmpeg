@@ -2,6 +2,8 @@
 //! Source-less document builder unit tests.
 
 use crate::FcstdCodec;
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 use std::io::Cursor;
 
@@ -68,10 +70,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
 
     let mut encoded = Vec::new();
     FcstdCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("write graph");
     let round_trip = FcstdCodec

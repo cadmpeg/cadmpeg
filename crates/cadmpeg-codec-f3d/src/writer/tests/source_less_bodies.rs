@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -32,10 +34,7 @@ fn generated_source_less_unit_cube_writes_body_transform() {
     source_less.model.bodies[0].transform = Some(expected);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less transformed cube encode");
     let round_trip = F3dCodec
@@ -70,10 +69,7 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less colored cube encode");
     let round_trip = F3dCodec
@@ -101,10 +97,7 @@ fn generated_source_less_rejects_translucent_direct_color() {
     });
 
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -212,10 +205,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less provenance attribute encode");
     let round_trip = F3dCodec
@@ -351,10 +341,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         .creation_timestamps
         .push(duplicate);
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate generated timestamp target must be rejected");
     assert!(error
@@ -394,10 +381,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     drop(native);
 
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate sketch links must not be collapsed");
     assert!(error
@@ -406,10 +390,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 
     f3d_native_mut(&mut source_less).sketch_curve_links.pop();
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("noncanonical persistent link order must not be rewritten");
     assert!(error
@@ -437,10 +418,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             .into();
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate edge metadata must not collapse");
     assert!(error
@@ -460,10 +438,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
         }];
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("tolerant metadata on an ordinary vertex must not be dropped");
     assert!(error
@@ -508,10 +483,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-body encode");
     let round_trip = F3dCodec
@@ -547,10 +519,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less history encode");
     let mut preambleless = source_less.clone();
@@ -561,10 +530,10 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     }
     let mut preambleless_bytes = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &preambleless,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&preambleless, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut preambleless_bytes))
         .expect("source-less preambleless history encode");
     let preambleless_round_trip = F3dCodec
@@ -584,10 +553,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     f3d_native_mut(&mut source_less).asm_histories[0].states[0].bulletin_boards[0].changes[0]
         .kind = crate::history_records::AsmEntityChangeKind::Delete;
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("inconsistent generated history change kind must be rejected");
     assert!(error
@@ -600,10 +566,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         native.asm_histories[0].stream_size = Some(3);
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("incoherent generated history preamble must be rejected");
     assert!(error
@@ -642,10 +605,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
     *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &orphaned,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("orphan history records must not be discarded");
     assert!(error
@@ -663,10 +623,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .expect("delta-state arena");
     states.push(states[0].clone());
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &duplicate,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&duplicate, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate history identities must not multiply children");
     assert!(error
@@ -678,10 +635,10 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     broken_chain.set_native_unknowns("f3d", &[]).unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &broken_chain,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&broken_chain, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unresolved history links must be rejected");
     assert!(error

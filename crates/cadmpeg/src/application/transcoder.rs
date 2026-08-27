@@ -5,7 +5,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use cadmpeg_ir::codec::{DecodeOptions, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
@@ -32,6 +32,57 @@ pub struct ExportTarget {
     pub format: Format,
     /// Encoder for that format.
     pub encoder: Box<dyn Encoder>,
+    /// What the command line asked that encoder to write.
+    pub selection: TargetSelection,
+}
+
+/// The target the command line named, before the source is known.
+///
+/// A target flag names a dialect outright. Flag absence is not a target: it
+/// means "the same kind of file", which is preservation within one format and
+/// the catalog default across formats — and which of the two applies is only
+/// known once the source has been read.
+#[derive(Debug, Clone)]
+pub enum TargetSelection {
+    /// A target flag named this dialect id.
+    Explicit(String),
+    /// No target flag was given.
+    Unstated,
+}
+
+impl TargetSelection {
+    /// Builds the encoder request for a source in `source_format`.
+    ///
+    /// Flag absence within one format is [`TargetRequest::Inherit`], the
+    /// identity default: a no-op round trip keeps the dialect the file already
+    /// is instead of silently rewriting it as the encoder's newest. Across
+    /// formats there is nothing to inherit, so it is the catalog default. An
+    /// encoder with no synthesis catalog — CADIR, which has no dialect at all —
+    /// takes `Inherit` either way.
+    fn request<'a>(
+        &'a self,
+        encoder: &dyn Encoder,
+        source_format: Option<&str>,
+    ) -> TargetRequest<'a> {
+        match self {
+            Self::Explicit(id) => TargetRequest::Explicit(id),
+            Self::Unstated => {
+                if source_format == Some(encoder.id()) {
+                    return TargetRequest::Inherit;
+                }
+                match cadmpeg_ir::codec::default_target(encoder.targets()) {
+                    Some(id) => TargetRequest::Explicit(id),
+                    None => TargetRequest::Inherit,
+                }
+            }
+        }
+    }
+}
+
+/// The format the document came from, which decides whether flag absence
+/// inherits.
+fn source_format(ir: &CadIr) -> Option<&str> {
+    ir.source.as_ref().map(|source| source.format.as_str())
 }
 
 /// Policy controlling validation, loss refusal, and destination rules.
@@ -62,6 +113,7 @@ pub struct PreparedConversion {
     pub validation: Option<ValidationReport>,
     format: Format,
     encoder: Box<dyn Encoder>,
+    selection: TargetSelection,
     destination: Option<PathBuf>,
     input: PathBuf,
     force: bool,
@@ -157,10 +209,12 @@ impl<'a> Transcoder<'a> {
             .into());
         }
 
-        let plan = target.encoder.plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &loaded.ir,
-            fidelity: loaded.fidelity(),
-        })?;
+        let request = target
+            .selection
+            .request(target.encoder.as_ref(), source_format(&loaded.ir));
+        let plan = target
+            .encoder
+            .plan(EncodeInput::new(&loaded.ir, loaded.fidelity()), request)?;
         if policy.reject_lossy && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
                 message: format!(
@@ -181,6 +235,7 @@ impl<'a> Transcoder<'a> {
             validation,
             format,
             encoder: target.encoder,
+            selection: target.selection,
             destination: policy.destination,
             input: source.path.to_path_buf(),
             force: policy.force,
@@ -191,10 +246,13 @@ impl<'a> Transcoder<'a> {
 impl PreparedConversion {
     /// Writes the destination artifact and optional CADIR sidecar.
     pub fn write(self) -> Result<ExportReport> {
-        let plan = self.encoder.plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &self.document.ir,
-            fidelity: self.document.fidelity(),
-        })?;
+        let request = self
+            .selection
+            .request(self.encoder.as_ref(), source_format(&self.document.ir));
+        let plan = self.encoder.plan(
+            EncodeInput::new(&self.document.ir, self.document.fidelity()),
+            request,
+        )?;
         write_export_plan(
             plan,
             self.format,
@@ -311,7 +369,11 @@ fn write_export_plan(
 
 /// Builds an [`ExportTarget`] after checking format-specific flags.
 ///
-/// Wrong-target flags fail before the input is read.
+/// Wrong-target flags still fail before the input is read: a flag that names
+/// the wrong format is wrong whatever the source turns out to be. Whether the
+/// resolved target is available is a different question, and it is answered
+/// after the read, by the encoder, because an inherit request cannot be
+/// resolved without the source's dialect.
 #[allow(clippy::result_large_err)] // refusal carries report context for --report
 pub fn export_target(
     format: Format,
@@ -339,6 +401,34 @@ pub fn export_target(
         });
     }
 
+    // The selection restates the flag as the dialect id the encoder's catalog
+    // uses. A flag that was not given stays unstated: it is the source, not the
+    // command line, that decides between preservation and the catalog default.
+    let selection = match format {
+        Format::Cadir => TargetSelection::Unstated,
+        #[cfg(feature = "step")]
+        Format::Step => step_options.as_ref().map_or(
+            TargetSelection::Unstated,
+            |options: &cadmpeg_codec_step::StepWriteOptions| {
+                TargetSelection::Explicit(options.schema.target().to_owned())
+            },
+        ),
+        #[cfg(feature = "fcstd")]
+        Format::Fcstd => TargetSelection::Unstated,
+        #[cfg(feature = "f3d")]
+        Format::F3d => TargetSelection::Unstated,
+        #[cfg(feature = "sldprt")]
+        Format::Sldprt => TargetSelection::Unstated,
+        #[cfg(feature = "rhino")]
+        Format::Rhino => rhino_version.map_or(TargetSelection::Unstated, |version| {
+            TargetSelection::Explicit(version.target().to_owned())
+        }),
+        #[cfg(feature = "iges")]
+        Format::Iges => iges_options.map_or(TargetSelection::Unstated, |options| {
+            TargetSelection::Explicit(options.version.target().to_owned())
+        }),
+    };
+
     let request = match format {
         Format::Cadir => crate::application::EncoderRequest::Neutral,
         #[cfg(feature = "step")]
@@ -361,5 +451,53 @@ pub fn export_target(
             message: error.to_string(),
         }
     })?;
-    Ok(ExportTarget { format, encoder })
+    Ok(ExportTarget {
+        format,
+        encoder,
+        selection,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::codec::CadirEncoder;
+
+    /// Flag absence is read against the source, not against the format table.
+    ///
+    /// Within one format it inherits, which is what keeps a no-op round trip
+    /// byte-identical. Across formats there is nothing to inherit, so it is the
+    /// catalog default. An encoder with no catalog inherits either way.
+    #[test]
+    fn flag_absence_inherits_only_within_one_format() {
+        #[cfg(feature = "iges")]
+        {
+            let iges = cadmpeg_codec_iges::IgesEncoder::default();
+            assert_eq!(
+                TargetSelection::Unstated.request(&iges, Some("iges")),
+                TargetRequest::Inherit
+            );
+            assert_eq!(
+                TargetSelection::Unstated.request(&iges, Some("step")),
+                TargetRequest::Explicit("iges:5.3-fixed-ascii")
+            );
+            assert_eq!(
+                TargetSelection::Unstated.request(&iges, None),
+                TargetRequest::Explicit("iges:5.3-fixed-ascii")
+            );
+            let named = TargetSelection::Explicit("iges:5.1-fixed-ascii".to_owned());
+            assert_eq!(
+                named.request(&iges, Some("iges")),
+                TargetRequest::Explicit("iges:5.1-fixed-ascii")
+            );
+        }
+        assert_eq!(
+            TargetSelection::Unstated.request(&CadirEncoder, Some("iges")),
+            TargetRequest::Inherit
+        );
+        assert_eq!(
+            TargetSelection::Unstated.request(&CadirEncoder, Some("cadir")),
+            TargetRequest::Inherit
+        );
+    }
 }

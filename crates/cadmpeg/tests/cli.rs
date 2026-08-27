@@ -1898,3 +1898,71 @@ fn closed_stdout_pipe_exits_on_sigpipe_without_panic() {
         "expected SIGPIPE, got {status:?}; stderr={err}"
     );
 }
+
+/// `convert in.igs -o out.igs` on a file that is not the writer's newest
+/// version keeps the bytes it was handed.
+///
+/// The command line builds no target for a same-format conversion, so the
+/// encoder is asked to inherit, and the resolved dialect is the source's. Under
+/// the old CLI-side default the file came back as 5.3 and the replay was
+/// silently dropped, which is the round trip a user's own tool could no longer
+/// open. The explicit target is still the escape, and it produces different
+/// bytes, which is what proves the first conversion preserved rather than
+/// happening to agree.
+#[test]
+#[cfg(feature = "iges")]
+fn a_same_format_convert_replays_a_non_default_iges_version() {
+    let dir = tempdir().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.points.push(cadmpeg_ir::topology::Point {
+        id: cadmpeg_ir::ids::PointId("cadir:model:point#iges".into()),
+        position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
+    });
+    let input = fixture(dir.path(), "point.cadir.json", &ir);
+    let original = dir.path().join("v51.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            original.to_str().unwrap(),
+            "--iges-target",
+            "5.1",
+            "--allow-errors",
+        ])
+        .assert()
+        .success();
+    let original_bytes = fs::read(&original).unwrap();
+
+    let inherited = dir.path().join("inherited.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            original.to_str().unwrap(),
+            "-o",
+            inherited.to_str().unwrap(),
+            "--allow-errors",
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&inherited).unwrap(), original_bytes);
+
+    let upgraded = dir.path().join("upgraded.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            original.to_str().unwrap(),
+            "-o",
+            upgraded.to_str().unwrap(),
+            "--iges-target",
+            "5.3",
+            "--allow-errors",
+        ])
+        .assert()
+        .success();
+    assert_ne!(fs::read(&upgraded).unwrap(), original_bytes);
+}

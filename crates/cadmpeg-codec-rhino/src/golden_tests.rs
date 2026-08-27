@@ -12,7 +12,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use super::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
@@ -91,10 +91,8 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
     let mut encoded = Vec::new();
     let written = Encoder::plan(
         &RhinoEncoder::new(version),
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut encoded));
     Some(match written {

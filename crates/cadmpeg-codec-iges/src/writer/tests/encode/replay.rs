@@ -3,6 +3,7 @@
 
 use super::*;
 use cadmpeg_core::dialect::DialectId;
+use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::report::FidelityResolution;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
@@ -29,10 +30,10 @@ fn encode_reports_a_version_mismatch_as_degraded_fidelity() {
     let plan = IgesEncoder::new(IgesWriteOptions {
         version: IgesVersion::V5_2,
     })
-    .plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: Some(decoded.source_fidelity()),
-    })
+    .plan(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Explicit(IgesVersion::V5_2.target()),
+    )
     .unwrap();
 
     assert_eq!(plan.write_path(), WritePath::Synthesized);
@@ -55,10 +56,10 @@ fn encode_declines_replay_when_the_source_records_no_dialect() {
     let mut unclassified = decoded.ir().clone();
     unclassified.source.as_mut().unwrap().dialect = None;
     let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &unclassified,
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(&unclassified, Some(decoded.source_fidelity())),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .unwrap();
 
     assert_eq!(plan.write_path(), WritePath::Synthesized);
@@ -76,10 +77,10 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
     let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .unwrap();
     assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
 
@@ -104,10 +105,10 @@ fn a_synthesized_export_states_the_target_it_wrote() {
             position: Point3::new(1.0, 2.0, 3.0),
         });
         let plan = IgesEncoder::new(IgesWriteOptions { version })
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.target()),
+            )
             .unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
@@ -131,10 +132,10 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         position: Point3::new(7.0, 8.0, 9.0),
     });
     let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &edited,
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .unwrap();
 
     assert_eq!(plan.write_path(), WritePath::Synthesized);

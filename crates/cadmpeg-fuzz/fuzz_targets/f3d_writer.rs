@@ -31,7 +31,7 @@ fuzz_target!(|data: &[u8]| {
     }
     let codec = F3dCodec;
     let mut encoded = Vec::new();
-    if codec.plan(cadmpeg_ir::codec::EncodeInput { ir: &ir, fidelity: None }).and_then(|plan| plan.write_to(&mut encoded)).is_ok() {
+    if codec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit).and_then(|plan| plan.write_to(&mut encoded)).is_ok() {
         let mut inspect = Cursor::new(encoded.as_slice());
         assert!(codec
             .inspect(&mut inspect, &InspectOptions::default())

@@ -32,10 +32,63 @@ use crate::global::{DialectRecovery, ResolvedGlobal};
 use crate::representation::Representation;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::codec::{find_target, TargetDescriptor};
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "iges";
+
+/// The synthesis catalog: what the semantic writer can produce for any input.
+///
+/// The writer emits Fixed ASCII only, so the five verified Fixed ASCII rows are
+/// the whole of it. Compressed ASCII and Binary are absent by construction, and
+/// so are the seven unverified Fixed ASCII rows: no input makes the writer emit
+/// them. Those dialects are still writable, by preserving a retained source
+/// image under `TargetRequest::Inherit` — preservation, not synthesis.
+///
+/// The alias of each row is its bare version, the spelling `--iges-target`
+/// already uses.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: IgesDialect::V4_0FixedAscii.pinned(),
+        label: "IGES 4.0 Fixed ASCII",
+        aliases: &["4.0"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: IgesDialect::V5_0FixedAscii.pinned(),
+        label: "IGES 5.0 Fixed ASCII",
+        aliases: &["5.0"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: IgesDialect::V5_1FixedAscii.pinned(),
+        label: "IGES 5.1 Fixed ASCII",
+        aliases: &["5.1"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: IgesDialect::V5_2FixedAscii.pinned(),
+        label: "IGES 5.2 Fixed ASCII",
+        aliases: &["5.2"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: IgesDialect::V5_3FixedAscii.pinned(),
+        label: "IGES 5.3 Fixed ASCII",
+        aliases: &["5.3"],
+        default: true,
+    },
+];
+
+/// The write version a target id names, by id or by alias, or `None` when the
+/// id is outside [`TARGETS`].
+pub(crate) fn target_version(id: &str) -> Option<IgesVersion> {
+    let target = find_target(TARGETS, id)?;
+    IgesVersion::ALL
+        .into_iter()
+        .find(|version| IgesDialect::fixed_ascii(*version).pinned() == target.id)
+}
 
 /// Key of the physical representation in [`DialectMatch::declared`].
 const DECLARED_REPRESENTATION: &str = "representation";
@@ -129,7 +182,13 @@ impl IgesDialect {
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
+        DialectId::pinned(self.pinned())
+    }
+
+    /// The pinned registry id as a static string, for the write-target catalog
+    /// and for [`crate::IgesVersion::target`].
+    pub(crate) const fn pinned(self) -> &'static str {
+        match self {
             Self::V1_0FixedAscii => "iges:1.0-fixed-ascii",
             Self::AnsiY1426M1981FixedAscii => "iges:ansi-y14.26m-1981-fixed-ascii",
             Self::V2_0FixedAscii => "iges:2.0-fixed-ascii",
@@ -152,7 +211,7 @@ impl IgesDialect {
             Self::V5_2Binary => "iges:5.2-binary",
             Self::V5_3Binary => "iges:5.3-binary",
             Self::Unknown => "iges:unknown",
-        })
+        }
     }
 
     /// The Fixed ASCII row for a write target.

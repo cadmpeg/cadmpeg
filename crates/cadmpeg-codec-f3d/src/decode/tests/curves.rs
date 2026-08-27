@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -184,10 +186,7 @@ fn decode_retains_generated_helix_construction() {
     let expected = source_less.model.procedural_curves[0].definition.clone();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less helix encode");
     let round_trip = F3dCodec
@@ -254,10 +253,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("cacheless helix source-less encode");
     let round_trip = F3dCodec
@@ -318,10 +314,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less law intcurve encode");
     let round_trip = F3dCodec
@@ -423,10 +416,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less vector-offset encode");
     let round_trip = F3dCodec
@@ -548,10 +538,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less subset encode");
     let round_trip = F3dCodec
@@ -618,10 +605,7 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less exact intcurve encode");
     let round_trip = F3dCodec
@@ -655,10 +639,7 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
 
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less spline carrier encode");
         let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
@@ -840,10 +821,7 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("canonical source-less intcurve encode");
         let round_trip = F3dCodec
@@ -934,10 +912,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound intcurve encode");
     let round_trip = F3dCodec
@@ -1034,10 +1009,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-sided offset encode");
     let round_trip = F3dCodec
@@ -1123,10 +1095,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     let mut expected = source_less.model.procedural_curves[0].definition.clone();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less embedded offset-support encode");
     let round_trip = F3dCodec
@@ -1210,10 +1179,7 @@ fn generated_mixed_offset_supports_write_source_less() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less mixed offset-support encode");
     let round_trip = F3dCodec
@@ -1303,10 +1269,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     let expected_geometries = supports;
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less analytic offset-support encode");
     let round_trip = F3dCodec
@@ -1402,10 +1365,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less surface intersection encode");
     let round_trip = F3dCodec
@@ -1516,10 +1476,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less projection encode");
     let round_trip = F3dCodec
@@ -1594,10 +1551,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less early-close projection encode");
     let round_trip = F3dCodec
@@ -1677,10 +1631,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less three-surface intersection encode");
     let round_trip = F3dCodec
@@ -1762,10 +1713,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec
@@ -1871,10 +1819,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec

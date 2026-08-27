@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -32,10 +34,7 @@ fn source_less_points_round_trip_across_target_versions() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         assert_eq!(
@@ -67,10 +66,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
 
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("coarse absolute tolerance is writable");
     let decoded = RhinoCodec
@@ -98,10 +94,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         ir.tolerances.angular = angular;
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut output))
             .expect_err("invalid tolerance must not be serialized");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -121,10 +114,7 @@ fn rejection_occurs_before_output() {
     });
     let mut output = vec![0xaa];
     assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .is_err());
     assert_eq!(output, [0xaa]);
@@ -145,10 +135,7 @@ fn source_less_circle_round_trips_with_its_frame() {
     });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
@@ -193,10 +180,7 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
@@ -281,10 +265,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -334,10 +315,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -366,10 +344,8 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         },
     );
     assert!(matches!(
-        RhinoEncoder::new(RhinoArchiveVersion::V8).plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        }),
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
@@ -401,10 +377,7 @@ fn mesh_precision_is_target_specific_and_reported() {
         });
     let mut v5 = Vec::new();
     let v5_report = RhinoEncoder::new(RhinoArchiveVersion::V5)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut v5))
         .expect("required invariant");
     assert_eq!(v5_report.losses.len(), 1);
@@ -414,10 +387,7 @@ fn mesh_precision_is_target_specific_and_reported() {
     assert_ne!(decoded_v5.ir().model.tessellations[0].vertices[0].x, 0.1);
     let mut v8 = Vec::new();
     let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut v8))
         .expect("required invariant");
     assert!(v8_report.losses.is_empty());
@@ -474,10 +444,7 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
         });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
@@ -531,10 +498,7 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
 
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("channel bytes are opaque to chunk framing");
     let decoded = RhinoCodec
@@ -600,10 +564,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
     }
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
@@ -630,10 +591,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -644,10 +602,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 
     let mut output = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect("required invariant");
     let rewritten = RhinoCodec
@@ -669,10 +624,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -692,10 +644,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("survival handling"));
@@ -722,10 +671,7 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
     });
     let mut output = vec![0xaa];
     assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .is_err());
     assert_eq!(output, [0xaa]);

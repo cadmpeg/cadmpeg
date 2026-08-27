@@ -7,6 +7,7 @@ use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    TargetDescriptor, TargetRequest,
 };
 use cadmpeg_ir::FidelityResolution;
 
@@ -24,12 +25,63 @@ pub struct StepCodec {
     pub options: StepWriteOptions,
 }
 
+/// The schemas this writer can put in `FILE_SCHEMA`, one per [`StepSchema`]
+/// variant. The XML and HDF5 rows of the registry are read-side identities
+/// with no writer.
+const STEP_TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: "step:ap203-e1",
+        label: "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
+        aliases: &["ap203e1"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap203-e2",
+        label: "STEP AP203 edition 2 modular long form",
+        aliases: &["ap203e2"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap214",
+        label: "STEP AP214 AUTOMOTIVE_DESIGN",
+        aliases: &["ap214"],
+        default: true,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e1",
+        label: "STEP AP242 edition 1 modular long form",
+        aliases: &["ap242e1"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e2",
+        label: "STEP AP242 edition 2 modular long form",
+        aliases: &["ap242e2"],
+        default: false,
+    },
+    TargetDescriptor {
+        id: "step:ap242-e3",
+        label: "STEP AP242 edition 3 modular long form",
+        aliases: &["ap242e3"],
+        default: false,
+    },
+];
+
 impl Encoder for StepCodec {
     fn id(&self) -> &'static str {
         "step"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        STEP_TARGETS
+    }
+
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        request.check_explicit(Encoder::id(self), self.targets())?;
         let mut bytes = Vec::new();
         let mut report =
             write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;

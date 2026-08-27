@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writer unit tests.
 
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -26,7 +27,10 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })
+            .plan(
+                cadmpeg_ir::codec::EncodeInput { ir, fidelity: None },
+                TargetRequest::Inherit,
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec

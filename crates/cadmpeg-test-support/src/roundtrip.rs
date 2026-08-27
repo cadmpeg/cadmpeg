@@ -40,7 +40,7 @@
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::report::{ExportReport, WritePath};
@@ -68,10 +68,8 @@ where
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
     let plan = Encoder::plan(
         codec,
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
     let path = ExportPlan::write_path(&plan);
@@ -152,10 +150,8 @@ pub fn semantic_roundtrip<C>(
     // Plan borrows the document until write completes.
     let written = match Encoder::plan(
         codec,
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     ) {
         Ok(plan) => {
             let path = ExportPlan::write_path(&plan);
@@ -265,10 +261,8 @@ where
     // Plan borrows the document until write completes.
     let written = match Encoder::plan(
         codec,
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     ) {
         Ok(plan) => {
             let path = ExportPlan::write_path(&plan);

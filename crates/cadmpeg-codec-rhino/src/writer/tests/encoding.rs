@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -61,10 +63,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
     });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -90,10 +89,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
 
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("user-string metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
@@ -110,10 +106,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -139,10 +132,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
 
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("mesh modifier metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
@@ -159,10 +149,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     });
     let mut bytes = Vec::new();
     RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let mut decoded = RhinoCodec
@@ -192,10 +179,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
 
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("layer metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
