@@ -98,7 +98,7 @@ fn the_totality_row_absorbs_every_word_the_registry_omits() {
         let matched = classify_word(*word);
         assert_eq!(
             matched.dialect.as_ref().map(DialectId::as_str),
-            Some("rhino:unknown-archive"),
+            Some("rhino:unknown"),
             "archive word {word} has no declared row"
         );
         assert_eq!(
@@ -140,10 +140,7 @@ fn admission_is_refused_exactly_where_decode_is_refused() {
 #[test]
 fn only_archive_5_and_the_totality_row_are_refused() {
     for dialect in RhinoDialect::ALL {
-        let refused = matches!(
-            dialect,
-            RhinoDialect::Archive5 | RhinoDialect::UnknownArchive
-        );
+        let refused = matches!(dialect, RhinoDialect::Archive5 | RhinoDialect::Unknown);
         assert_eq!(
             dialect.refuses_decode(),
             refused,

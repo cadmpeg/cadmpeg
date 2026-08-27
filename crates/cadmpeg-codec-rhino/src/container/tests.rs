@@ -249,7 +249,7 @@ fn a_refused_row_inspects_as_refused_and_a_decoded_row_as_admitted() {
     // its own row even though inspection stops at the header.
     for (version, id) in [
         ("5", "rhino:archive-5"),
-        ("999", "rhino:unknown-archive"),
+        ("999", "rhino:unknown"),
         ("1", "rhino:archive-1"),
     ] {
         let bytes = header(version);
