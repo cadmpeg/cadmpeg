@@ -585,21 +585,28 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # --------------------------------------------------------------------------
 # One discriminant: the `SchemaVersion` attribute on the `<Document>` root of
 # `Document.xml` inside the ZIP
-# (crates/cadmpeg-codec-freecad/src/container.rs:209-210; re-read
+# (crates/cadmpeg-codec-freecad/src/container.rs:214-215; re-read
 # independently at persistence.rs:48-51). The lowercase alias `schemaVersion`
 # alone is refused, and carrying both spellings is refused
-# (container.rs:163-178). `GuiDocument.xml` carries its own unrelated
+# (container.rs:168-182). `GuiDocument.xml` carries its own unrelated
 # `SchemaVersion`; it is not run through this dispatch.
 #
 # `complete = false`: FreeCAD publishes no enumeration of its schema versions
 # in a specification. The space is enumerable from FreeCAD's own source
 # (`Document.cpp`), which the codec owner can cite to flip this to true.
 #
-# `FileVersion` is read (container.rs:211-212, defaulting to "0") and is a
+# The codec's pinned-id surface is `FcstdDialect` (dialect.rs), one variant per
+# row below. `FcstdDialect::classify` is the single construction path for the
+# `DialectMatch` that `ContainerSummary.dialects`, `DecodeReport.dialects`, and
+# the `SourceMeta.dialect` / `SourceMeta.declared` mirror all carry. The
+# declared keys are `schema_version`, `file_version`, and `program_version`,
+# recorded verbatim.
+#
+# `FileVersion` is read (container.rs:216-217, defaulting to "0") and is a
 # write-target component -- `FcstdWriteOptions { schema_version, file_version }`
-# with `Default` (4, 1) (lib.rs:64-79) and a hard writer gate on exactly (4, 1)
+# with `Default` (4, 1) (lib.rs:66-81) and a hard writer gate on exactly (4, 1)
 # (writer.rs:37-42) -- but no decode path branches on it, so it is not a read
-# discriminant.
+# discriminant. It travels in `declared` as evidence.
 [format.fcstd]
 complete = false
 
@@ -608,7 +615,10 @@ complete = false
 # Features/FeatureData/Feature. Schema 2 additionally forbids the dependency
 # envelope (persistence.rs:78-82) and never parses `ObjectDeps`
 # (persistence.rs:84). The same 2-vs-rest split is duplicated in the container
-# scan (container.rs:219, 224, 229).
+# scan (container.rs:224, 229, 234).
+#
+# A strategy is declared for this row, so a schema 2 document is
+# `Admission::Admitted`.
 #
 # No fixture. `corpus/freecad_fcstd/fixtures/` is schema 4 throughout.
 id = "fcstd:schema-2"
@@ -621,7 +631,8 @@ witness = "code:crates/cadmpeg-codec-freecad/src/persistence.rs:53"
 # persistence.rs:52-60, the `"3" | "4"` arm. Schema 3 and schema 4 share one
 # parse path: no `== "3"` or `== "4"` test exists anywhere in the crate. They
 # are still separate identity rows -- identity is exogenous (design §3.2) --
-# and one grammar class.
+# and one grammar class. That grammar is declared for both rows, so schema 3
+# and schema 4 documents are both `Admission::Admitted`.
 id = "fcstd:schema-3"
 title = "FreeCAD FCStd document schema 3"
 discriminants = { schema_version = "3" }
@@ -639,20 +650,24 @@ discriminants = { schema_version = "4" }
 witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
 
 [[dialect]]
-# Mandatory `unknown` row (B4). Disposition is split by decode mode, which is
-# worth writing down because it is invisible today:
+# Mandatory `unknown` row (B4). Disposition is split by decode mode:
 #   full decode      refused, `CodecError::NotImplemented`
-#                    (lib.rs:1112-1119, persistence.rs:55-59)
-#   container-only   ADMITTED and reported, with `schema_version`,
+#                    (lib.rs:1114-1121, persistence.rs:55-59)
+#   container-only   admitted-unverified, charging
+#                    `fcstd/source.dialect-unverified`, with `schema_version`,
 #                    `file_version`, `document_root`, and `object_count`
-#                    attributes (lib.rs:1121-1131); the container scan builds
+#                    attributes (lib.rs:1123-1133); the container scan builds
 #                    `DocumentFacts` for any value using the Object envelope
-#                    because container.rs:219-232 tests `== "2"` with an
+#                    because container.rs:224-237 tests `== "2"` with an
 #                    `else`, not a "3"|"4" whitelist.
+#   inspect          admitted-unverified; `ContainerSummary` carries no losses.
+# `Admission::AdmittedUnverified` names `fcstd:schema-4` as the nearest row:
+# schema 4 is the newer of the two rows sharing the Object envelope and the one
+# the writer's default follows.
 id = "fcstd:unknown"
 title = "FreeCAD FCStd document schema outside 2, 3, 4"
 discriminants = { schema_version = "any other" }
-witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1113"
+witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 
 # --------------------------------------------------------------------------
 # SolidWorks SLDPRT

@@ -19,6 +19,7 @@ mod brep;
 mod builder;
 mod container;
 mod design;
+mod dialect;
 mod drawing;
 mod element_map;
 mod gui;
@@ -1162,10 +1163,14 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
+        // One `classify` call per run feeds `DecodeReport.dialects`, the
+        // `SourceMeta` mirror, and the dialect-unverified loss, so a
+        // classification bug and the report cannot disagree.
+        let primary = dialect::FcstdDialect::classify(&scan.document);
         ir.source = Some(SourceMeta {
-            declared: BTreeMap::new(),
-            dialect: None,
-            format: "fcstd".into(),
+            declared: primary.declared.clone(),
+            dialect: primary.dialect.clone(),
+            format: dialect::FORMAT.into(),
             attributes,
         });
         if let Some((name, bytes)) = thumbnail {
@@ -1413,21 +1418,27 @@ impl CodecBackend for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
         }
-        let losses = if options.container_only {
+        let mut losses = if options.container_only {
             Vec::new()
         } else {
             semantic_losses(&ir, &cycle_affected_design_objects, &gui_losses)
         };
+        // Charged on both decode branches: a schema outside the declared rows
+        // reaches this point only under `container_only`, since the full path
+        // refused it above, but the charge is not conditioned on the branch.
+        losses.extend(dialect::FcstdDialect::dialect_loss(&scan.document));
         ctx.admit_entities(
             ir.model.entity_count() as u64,
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
+        let dialects = vec![primary];
+        cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, dialect::FORMAT);
         Ok(DecodeResult::new(
             ir,
             DecodeReport {
-                dialects: Vec::new(),
-                format: "fcstd".into(),
+                dialects,
+                format: dialect::FORMAT.into(),
                 container_only: options.container_only,
                 geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
