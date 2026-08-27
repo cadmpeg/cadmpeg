@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    find_target, unsupported_target, CodecBackend, Confidence, DecodeOptions, DecodeResult,
-    EncodeInput, Encoder, ExportPlan, Inherited, TargetDescriptor, TargetRequest,
+    unsupported_target, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
+    Encoder, ExportPlan, Inherited, TargetDescriptor, TargetRequest,
 };
 use cadmpeg_ir::{CadIr, FidelityResolution};
 
@@ -23,62 +23,6 @@ use crate::reader;
 pub struct StepCodec {
     /// Header metadata and deterministic writer options.
     pub options: StepWriteOptions,
-}
-
-/// The schemas this writer can put in `FILE_SCHEMA`, one per [`StepSchema`]
-/// variant. The XML and HDF5 rows of the registry are read-side identities
-/// with no writer.
-const STEP_TARGETS: &[TargetDescriptor] = &[
-    TargetDescriptor {
-        id: "step:ap203-e1",
-        label: "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
-        aliases: &["ap203e1"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: "step:ap203-e2",
-        label: "STEP AP203 edition 2 modular long form",
-        aliases: &["ap203e2"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: "step:ap214",
-        label: "STEP AP214 AUTOMOTIVE_DESIGN",
-        aliases: &["ap214"],
-        default: true,
-    },
-    TargetDescriptor {
-        id: "step:ap242-e1",
-        label: "STEP AP242 edition 1 modular long form",
-        aliases: &["ap242e1"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: "step:ap242-e2",
-        label: "STEP AP242 edition 2 modular long form",
-        aliases: &["ap242e2"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: "step:ap242-e3",
-        label: "STEP AP242 edition 3 modular long form",
-        aliases: &["ap242e3"],
-        default: false,
-    },
-];
-
-/// The schema a catalog id or alias names, or `None` when the id is not a row
-/// of [`STEP_TARGETS`].
-///
-/// Total over the catalog: `find_target` resolves an alias to its canonical
-/// `id`, and every canonical id is some [`StepSchema`]'s `target()`. A `None`
-/// from the second step is catalog/enum drift, which
-/// `tests::the_catalog_is_the_schemas_the_writer_emits` fails on.
-fn catalog_schema(id: &str) -> Option<StepSchema> {
-    let target = find_target(STEP_TARGETS, id)?;
-    StepSchema::ALL
-        .into_iter()
-        .find(|schema| schema.target() == target.id)
 }
 
 /// What resolving a [`TargetRequest`] against the source decided (design §8.2).
@@ -107,17 +51,17 @@ impl StepCodec {
                 return match cadmpeg_ir::codec::resolve_inherit(
                     ir,
                     crate::dialect::FORMAT,
-                    STEP_TARGETS,
+                    crate::dialect::TARGETS,
                 )? {
                     // Nothing to inherit: no source, or one of another format.
                     // The catalog default stands in; no existing file's
                     // identity is at stake.
                     Inherited::Fallback(id) => Ok(Resolution {
-                        schema: catalog_schema(id)
+                        schema: crate::dialect::target_schema(id)
                             .expect("the STEP catalog default is a synthesizable schema"),
                         declined: None,
                     }),
-                    Inherited::Source(dialect) => catalog_schema(dialect.as_str())
+                    Inherited::Source(dialect) => crate::dialect::target_schema(dialect.as_str())
                         .map(|schema| Resolution {
                             schema,
                             declined: None,
@@ -129,18 +73,18 @@ impl StepCodec {
                                 "the semantic writer cannot synthesize it, and writing another \
                                  schema would change what the file declares; name a target to \
                                  choose one",
-                                STEP_TARGETS,
+                                crate::dialect::TARGETS,
                             )
                         }),
                 };
             }
         };
-        let schema = catalog_schema(id).ok_or_else(|| {
+        let schema = crate::dialect::target_schema(id).ok_or_else(|| {
             unsupported_target(
                 crate::dialect::FORMAT,
                 id,
                 "not a schema this encoder can synthesize",
-                STEP_TARGETS,
+                crate::dialect::TARGETS,
             )
         })?;
         let target = schema.target();
@@ -166,7 +110,7 @@ impl Encoder for StepCodec {
     }
 
     fn targets(&self) -> &'static [TargetDescriptor] {
-        STEP_TARGETS
+        crate::dialect::TARGETS
     }
 
     /// Resolve the request against the source, then synthesize the schema it
