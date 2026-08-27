@@ -35,17 +35,20 @@ pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    let target = resolve(input, request)?;
+    let (target, declined) = resolve(input, request)?;
     let (written, bytes) = write(input, &target)?;
     check_honesty(&target, &written)?;
-    Ok(finish(input, target, &written, bytes))
+    Ok(finish(input, target, declined, &written, bytes))
 }
 
 /// Resolve an explicit catalog request or inherit the same-format source row.
-fn resolve(input: EncodeInput<'_>, request: TargetRequest<'_>) -> Result<DialectId, CodecError> {
+fn resolve(
+    input: EncodeInput<'_>,
+    request: TargetRequest<'_>,
+) -> Result<(DialectId, Option<String>), CodecError> {
     match resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)? {
-        WriteRequest::Catalog { entry, .. } => Ok(DialectId::pinned(entry.id)),
-        WriteRequest::OffCatalog { dialect } => Ok(dialect.clone()),
+        WriteRequest::Catalog { entry, declined } => Ok((DialectId::pinned(entry.id), declined)),
+        WriteRequest::OffCatalog { dialect } => Ok((dialect.clone(), None)),
     }
 }
 
@@ -102,6 +105,7 @@ fn check_honesty(target: &DialectId, written: &Written) -> Result<(), CodecError
 fn finish<'a>(
     input: EncodeInput<'a>,
     target: DialectId,
+    declined: Option<String>,
     written: &Written,
     bytes: Vec<u8>,
 ) -> ExportPlan<'a> {
@@ -123,17 +127,18 @@ fn finish<'a>(
             .fidelity
             .and_then(|value| value.retained_record(SOURCE_IMAGE_ID))
             .is_some();
-    let fidelity = match (
-        input.fidelity.is_some() || expects_preserved_source,
-        replayed,
-    ) {
-        (_, true) => FidelityResolution::Replayed,
-        (true, false) => FidelityResolution::Degraded {
+    let fidelity = if replayed {
+        FidelityResolution::Replayed
+    } else if let Some(reason) = declined {
+        FidelityResolution::Degraded { reason }
+    } else if input.fidelity.is_some() || expects_preserved_source {
+        FidelityResolution::Degraded {
             reason: "preserved SLDPRT source image is unavailable".into(),
-        },
-        (false, false) => FidelityResolution::NotProvided,
+        }
+    } else {
+        FidelityResolution::NotProvided
     };
-    let losses = matches!(fidelity, FidelityResolution::Degraded { .. })
+    let losses = (matches!(fidelity, FidelityResolution::Degraded { .. }) && replay_eligible)
         .then(|| {
             SldprtLossCode::SourcePreservedImageUnavailable
                 .note("preserved SLDPRT source image is unavailable; regenerated from IR")
