@@ -27,7 +27,6 @@ use std::path::{Path, PathBuf};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::dialect::primary_layer;
-use cadmpeg_ir::codec::Codec;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -62,36 +61,20 @@ fn manifest_path() -> PathBuf {
     repo_root().join("corpus/manifest.toml")
 }
 
-/// The decoder registered for a manifest `format` key.
-///
-/// The manifest's format vocabulary is the CLI's input-catalog ids, so this
-/// match is the catalog restated for a test binary that has no library to read
-/// it from. A key with no arm is a manifest that names a format this build does
-/// not ship, which is a failure and not a skip.
-fn codec_for(format: &str) -> Option<Box<dyn Codec>> {
-    Some(match format {
-        "fcstd" => Box::new(cadmpeg_codec_freecad::FcstdCodec) as Box<dyn Codec>,
-        "f3d" => Box::new(cadmpeg_codec_f3d::F3dCodec),
-        "inventor" => Box::new(cadmpeg_codec_inventor::InventorCodec),
-        "sldprt" => Box::new(cadmpeg_codec_sldprt::SldprtCodec),
-        "catia" => Box::new(cadmpeg_codec_catia::CatiaCodec),
-        "creo" => Box::new(cadmpeg_codec_creo::CreoCodec),
-        "nx" => Box::new(cadmpeg_codec_nx::NxCodec),
-        "rhino" => Box::new(cadmpeg_codec_rhino::RhinoCodec),
-        "step" => Box::new(cadmpeg_codec_step::StepCodec::default()),
-        "iges" => Box::new(cadmpeg_codec_iges::IgesCodec),
-        "sat" => Box::new(cadmpeg_codec_sat::SatCodec),
-        _ => return None,
-    })
-}
-
 /// Classifies one fixture: the primary layer's registry id, as `inspect()` reads it.
+///
+/// The manifest's format vocabulary is the input catalog's ids, and
+/// `cadmpeg-registry` owns that catalog, so the lookup goes through
+/// `InputCatalog::by_id`. A key the catalog does not know is a manifest that
+/// names a format this build does not ship, which is a failure and not a skip.
 ///
 /// `None` means the codec identified no registry row for the primary layer —
 /// a real classification outcome, pinned as `"none"` so the manifest states it
 /// rather than omitting the field.
 fn classify(format: &str, bytes: &[u8]) -> String {
-    let codec = codec_for(format)
+    let catalog = cadmpeg_registry::InputCatalog::with_builtins();
+    let codec = catalog
+        .by_id(format)
         .unwrap_or_else(|| panic!("manifest format {format:?} has no codec in this build"));
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
