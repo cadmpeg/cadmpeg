@@ -103,6 +103,7 @@ pub struct PreparedConversion {
     destination: Option<PathBuf>,
     input: PathBuf,
     force: bool,
+    reject_export_losses: bool,
 }
 
 /// Application workflow that prepares and writes conversions.
@@ -119,7 +120,7 @@ impl<'a> Transcoder<'a> {
         Self { inputs, validators }
     }
 
-    /// Loads, validates, and plans a conversion without writing the destination.
+    /// Loads and validates a conversion without planning or writing it.
     ///
     /// Typed refusals are returned as [`ConversionRefusal`] inside `anyhow`.
     /// Operational load failures are plain `anyhow` errors. Pure with respect
@@ -195,39 +196,6 @@ impl<'a> Transcoder<'a> {
             .into());
         }
 
-        let request = target.selection.request();
-        // Resolution is the encoder's, and so is its refusal: the message
-        // already names the requested id and the whole catalog, and it
-        // reflects this build's feature set. Restating it here would be a
-        // second vocabulary to keep in step with the first.
-        let plan = match target
-            .encoder
-            .plan(EncodeInput::new(&loaded.ir, loaded.fidelity()), request)
-        {
-            Ok(plan) => plan,
-            Err(error) => {
-                return Err(plan_refusal(
-                    error,
-                    policy.reject_export_losses,
-                    decode_report,
-                    validation,
-                ))
-            }
-        };
-        if policy.reject_export_losses && !plan.report().losses.is_empty() {
-            return Err(ConversionRefusal::ExportLossRejected {
-                message: format!(
-                    "export planning reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
-                    plan.report().losses.len(),
-                    format.name()
-                ),
-                decode_report,
-                validation,
-            }
-            .into());
-        }
-        drop(plan);
-
         Ok(PreparedConversion {
             document: loaded,
             notices,
@@ -238,26 +206,74 @@ impl<'a> Transcoder<'a> {
             destination: policy.destination,
             input: source.path.to_path_buf(),
             force: policy.force,
+            reject_export_losses: policy.reject_export_losses,
         })
     }
 }
 
 impl PreparedConversion {
+    /// Plans the export and applies the plan-time refusals.
+    ///
+    /// The plan borrows the loaded document, so it cannot be stored beside it
+    /// in one owned value; it lives in the caller's scope instead, between
+    /// this call and [`PlannedConversion::write`]. That is what makes one plan
+    /// serve both the refusal checks and the write.
+    pub fn plan(&self) -> Result<PlannedConversion<'_>> {
+        // Resolution is the encoder's, and so is its refusal: the message
+        // already names the requested id and the whole catalog, and it
+        // reflects this build's feature set. Restating it here would be a
+        // second vocabulary to keep in step with the first.
+        let plan = match self.encoder.plan(
+            EncodeInput::new(&self.document.ir, self.document.fidelity()),
+            self.selection.request(),
+        ) {
+            Ok(plan) => plan,
+            Err(error) => {
+                return Err(plan_refusal(
+                    error,
+                    self.reject_export_losses,
+                    self.document.decode_report().cloned(),
+                    self.validation.clone(),
+                ))
+            }
+        };
+        if self.reject_export_losses && !plan.report().losses.is_empty() {
+            return Err(ConversionRefusal::ExportLossRejected {
+                message: format!(
+                    "export planning reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
+                    plan.report().losses.len(),
+                    self.format.name()
+                ),
+                decode_report: self.document.decode_report().cloned(),
+                validation: self.validation.clone(),
+            }
+            .into());
+        }
+        Ok(PlannedConversion {
+            plan,
+            prepared: self,
+        })
+    }
+}
+
+/// One planned export, borrowed from the document it was planned against.
+pub struct PlannedConversion<'a> {
+    plan: ExportPlan<'a>,
+    prepared: &'a PreparedConversion,
+}
+
+impl PlannedConversion<'_> {
     /// Writes the destination artifact and optional CADIR sidecar.
     pub fn write(self) -> Result<ExportReport> {
-        let request = self.selection.request();
-        let plan = self.encoder.plan(
-            EncodeInput::new(&self.document.ir, self.document.fidelity()),
-            request,
-        )?;
+        let prepared = self.prepared;
         write_export_plan(
-            plan,
-            self.format,
-            self.destination.as_deref(),
-            &self.input,
-            self.force,
-            self.document.decode_report(),
-            self.document.fidelity(),
+            self.plan,
+            prepared.format,
+            prepared.destination.as_deref(),
+            &prepared.input,
+            prepared.force,
+            prepared.document.decode_report(),
+            prepared.document.fidelity(),
         )
     }
 }
