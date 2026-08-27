@@ -18,15 +18,16 @@ catia = 57
 creo = 84
 f3d = 317
 freecad = 48
-iges = 312
+iges = 324
 inventor = 4
-nx = 103
+nx = 104
 rhino = 136
 sat = 6
 sldprt = 60
-step = 38
+step = 42
 
 [notes]
-inventor = "thinnest fixture-backed net; 2 inspect + 2 decode snapshots; Harness::check_inputs (code-built streams; inspect+decode branches)"
+step = "19 inspect + 19 decode + 4 encode. The branches are not uniform: inspect and decode run over every fixture through Harness::check, while encode runs over the four stems ENCODE_FIXTURES names, through Harness::check_inputs. A written STEP file is much larger than the report describing it, and those four sources already span every target resolution the writer has: Inherit to the catalog default, Inherit to a non-default row, Inherit to an edition carried in a schema object identifier, and the refusal an edition-less AP242 header must produce. Adding a fixture raises this floor by 2, or by 3 if ENCODE_FIXTURES also names it."
+inventor ="thinnest fixture-backed net; 2 inspect + 2 decode snapshots; Harness::check_inputs (code-built streams; inspect+decode branches)"
 sat = "six snapshots from code-built inputs (3 inspect + 3 decode); no fixture files; Harness::check_inputs (code-built streams; inspect+decode branches)"
-nx = "flat golden directory (103 JSON snapshots at tests/golden root); Harness::check_inputs with Branch kind empty. In-tree arena coverage floors and catalogue-count pins live in crates/cadmpeg-codec-nx/src/golden_tests.rs; they check which native arenas the fixtures populate, which this TOML cannot. Fixtures call zlib_compress at test time, so snapshots pin compressor output. Regenerate with UPDATE_GOLDEN=1 cargo test-fast golden. Do not use cargo test -p cadmpeg-codec-nx: an isolated package build can resolve a different flate2 backend (miniz_oxide vs zlib-rs via feature unification) and diverge zlib bytes."
+nx = "flat golden directory (104 JSON snapshots at tests/golden root); Harness::check_inputs with Branch kind empty. In-tree arena coverage floors and catalogue-count pins live in crates/cadmpeg-codec-nx/src/golden_tests.rs; they check which native arenas the fixtures populate, which this TOML cannot. Fixtures call zlib_compress at test time, so snapshots pin compressor output. Regenerate with UPDATE_GOLDEN=1 cargo test-fast golden. Do not use cargo test -p cadmpeg-codec-nx: an isolated package build can resolve a different flate2 backend (miniz_oxide vs zlib-rs via feature unification) and diverge zlib bytes."

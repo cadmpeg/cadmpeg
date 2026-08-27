@@ -1,0 +1,142 @@
+{
+  "explicit_ap242_e3": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#11 = APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2022,#10);\n#12 = PRODUCT_CONTEXT('',#10,'mechanical');\n#13 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#12));\n#14 = PRODUCT_DEFINITION_FORMATION('','',#13);\n#15 = PRODUCT_DEFINITION_CONTEXT('part definition',#10,'design');\n#16 = PRODUCT_DEFINITION('design','',#14,#15);\n#17 = PRODUCT_DEFINITION_SHAPE('','',#16);\n#18 = SHAPE_REPRESENTATION('',(#9),#5);\n#19 = SHAPE_DEFINITION_REPRESENTATION(#17,#18);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS2_PLACEMENT_3D": 1,
+          "CARTESIAN_POINT": 1,
+          "DIRECTION": 2,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "LENGTH_UNIT": 1,
+          "PLANE_ANGLE_UNIT": 1,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1
+        }
+      },
+      "fidelity": {
+        "reason": "source is step:ap242-e2, target is step:ap242-e3; the schema the source declared is not what this export writes",
+        "status": "degraded"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap242-e3",
+      "write_path": "synthesized"
+    }
+  },
+  "explicit_default": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = APPLICATION_CONTEXT('automotive design');\n#11 = APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#10);\n#12 = PRODUCT_CONTEXT('',#10,'mechanical');\n#13 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#12));\n#14 = PRODUCT_DEFINITION_FORMATION('','',#13);\n#15 = PRODUCT_DEFINITION_CONTEXT('part definition',#10,'design');\n#16 = PRODUCT_DEFINITION('design','',#14,#15);\n#17 = PRODUCT_DEFINITION_SHAPE('','',#16);\n#18 = SHAPE_REPRESENTATION('',(#9),#5);\n#19 = SHAPE_DEFINITION_REPRESENTATION(#17,#18);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS2_PLACEMENT_3D": 1,
+          "CARTESIAN_POINT": 1,
+          "DIRECTION": 2,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "LENGTH_UNIT": 1,
+          "PLANE_ANGLE_UNIT": 1,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1
+        }
+      },
+      "fidelity": {
+        "reason": "source is step:ap242-e2, target is step:ap214; the schema the source declared is not what this export writes",
+        "status": "degraded"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap214",
+      "write_path": "synthesized"
+    }
+  },
+  "inherit": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(0.,0.,0.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#11 = APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2020,#10);\n#12 = PRODUCT_CONTEXT('',#10,'mechanical');\n#13 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#12));\n#14 = PRODUCT_DEFINITION_FORMATION('','',#13);\n#15 = PRODUCT_DEFINITION_CONTEXT('part definition',#10,'design');\n#16 = PRODUCT_DEFINITION('design','',#14,#15);\n#17 = PRODUCT_DEFINITION_SHAPE('','',#16);\n#18 = SHAPE_REPRESENTATION('',(#9),#5);\n#19 = SHAPE_DEFINITION_REPRESENTATION(#17,#18);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS2_PLACEMENT_3D": 1,
+          "CARTESIAN_POINT": 1,
+          "DIRECTION": 2,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "LENGTH_UNIT": 1,
+          "PLANE_ANGLE_UNIT": 1,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1
+        }
+      },
+      "fidelity": {
+        "status": "not_provided"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap242-e2",
+      "write_path": "synthesized"
+    }
+  }
+}

@@ -131,12 +131,22 @@ dialect = "iges:2.0-fixed-ascii"
 grammar = "fixed-ascii"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = []
+fixtures = [
+  "crates/cadmpeg-codec-iges/tests/golden/fixtures/legacy_2_0_fixed_ascii.igs",
+]
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified. No fixture declares the flag, so the row cannot claim
-a score. Write is preservation only: `Inherit` replays whatever dialect
+AdmittedUnverified. `legacy_2_0_fixed_ascii.igs` declares field 23 = 3 and
+its Global record stops there, so fields 24, 25, and 26 -- the drafting
+standard, the model creation date, and the application protocol, which
+`global.rs` gives to the 4.0, 5.0, and 5.1 tables respectively -- are
+absent as a 2.0 record requires. The golden pins the row, the
+AdmittedUnverified admission naming `iges:5.3-fixed-ascii` as nearest, and
+the `source.dialect-unverified` loss. The read cell stays
+`unclassified-recovered` because that cell is the mirror of the admission,
+not a fixture-gated placeholder: the fixture confirms the recovery rather
+than lifting it. Write is preservation only: `Inherit` replays whatever dialect
 the source is (`writer.rs:93-97`, `replay_bytes` with no target,
 `writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
 excludes this row by construction. `targets.rs:84` proves the other
@@ -387,12 +397,21 @@ row is absent from the synthesis catalog by construction
 [[support]]
 dialect = "iges:5.3-compressed-ascii"
 grammar = "compressed-ascii"
-read = "detected"
+read = "L1"
 write = "preserved"
-fixtures = []
+fixtures = [
+  "crates/cadmpeg-codec-iges/tests/golden/fixtures/compressed_ascii_5_3.igs",
+]
 reason = """
-decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
-profile calls this a separate envelope and states no score for it. Write
+L1 is what the fixture demonstrates, not the Fixed ASCII band's score.
+`compressed_ascii_5_3.igs` carries the C flag card, the shared Start and
+Global records at field 23 = 11, and two Data records of inherited
+Directory field specifiers with free-form Parameter Data lines.
+`compressed.rs` expands it to fixed cards -- the inspect note
+`normalized_representation=compressed-ascii` records the envelope -- and
+the decode admits it with no loss at all, reaching typed IR for two points.
+That is the envelope navigated, its version identified, and its records
+enumerated: L1. The fixture states nothing above it. Write
 is preservation only: the retained source image is the original bytes, and
 `Inherit` replays them verbatim (Compressed ASCII included,
 `writer.rs:93-97`). The semantic writer emits Fixed ASCII only, so this
@@ -475,10 +494,21 @@ catalog by construction (`dialect.rs:41-47`)"""
 dialect = "iges:unknown"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = []
+fixtures = [
+  "crates/cadmpeg-codec-iges/tests/golden/fixtures/unknown_version_flag_99.igs",
+]
 reason = """
 a version flag outside the declared table (12, 99, or an unreadable field
-23); read with the nearest verified row's Global table. Write is
+23); read with the nearest verified row's Global table.
+`unknown_version_flag_99.igs` declares field 23 = 99. No row's
+`version_flag` discriminant holds 99, so the document lands on the
+totality row, and the golden pins that id, the AdmittedUnverified
+admission naming `iges:5.3-fixed-ascii` as nearest, and a
+`source.dialect-unverified` loss whose message names the clamp to 11 that
+IGES 5.3 section 2.2.4.3.23 requires of a postprocessor. The read cell
+stays `unclassified-recovered` because that cell mirrors the admission:
+a document that matched no row was necessarily read with a grammar no row
+declares for it, and a score would state the opposite. Write is
 preservation only: `replay_bytes` applies no version or representation
 filter, so a source that classifies here replays its own bytes under
 `Inherit` like any other row"""
@@ -491,10 +521,17 @@ filter, so a source that classifies here replays its own bytes under
 dialect = "step:ap203-e1"
 grammar = "part21"
 read = "L9"
-write = "emitted"
+write = "verified"
 fixtures = [
   "crates/cadmpeg-codec-step/tests/fixtures/ap203_sheet.p21",
 ]
+reason = """
+`tests/golden/encode/ap203_sheet.json` freezes the bytes an `Inherit`
+request writes for this row, with `FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'))`
+and `ExportReport.target = step:ap203-e1` in the same artifact.
+`golden_output_is_deterministic` re-runs the branch byte-exactly, and
+`targets.rs` `every_synthesized_target_re_decodes_as_the_dialect_the_report_named`
+puts the written bytes back through the classifier"""
 
 [[support]]
 dialect = "step:ap203-e2"
@@ -510,10 +547,17 @@ schema"""
 dialect = "step:ap214"
 grammar = "part21"
 read = "L9"
-write = "emitted"
+write = "verified"
 fixtures = [
   "crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21",
 ]
+reason = """
+the catalog default. All four encode goldens freeze an `explicit_default`
+arm writing this row -- from an ap203-e1, an ap214, an ap242-e2, and an
+edition-less ap242 source -- each with
+`FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'))` beside
+`ExportReport.target = step:ap214`. `ap214_sheet.json` also shows `Inherit`
+reaching the same row from a source that declares it"""
 
 [[support]]
 dialect = "step:ap242"
@@ -537,7 +581,10 @@ fixtures = [
 ]
 reason = """
 a read-side row: a header with no schema object identifier has no write
-target, because the writer always declares an edition"""
+target, because the writer always declares an edition. The `inherit` arm of
+`tests/golden/encode/ap242_geometry.json` freezes that refusal: a source
+here makes `plan` return `UnsupportedTarget` carrying the whole catalog
+rather than silently writing an edition the source never declared"""
 
 [[support]]
 dialect = "step:ap242-e1"
@@ -553,20 +600,30 @@ schema"""
 dialect = "step:ap242-e2"
 grammar = "part21"
 read = "L9"
-write = "emitted"
+write = "verified"
 fixtures = [
   "crates/cadmpeg-codec-step/tests/fixtures/ap242_minimal.p21",
 ]
+reason = """
+`tests/golden/encode/ap242_minimal.json` freezes the `Inherit` arm writing
+`FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF
+{ 1 0 10303 442 3 1 4 }'))` with `ExportReport.target = step:ap242-e2`, so
+the edition arc in the object identifier and the reported row are pinned
+in one artifact"""
 
 [[support]]
 dialect = "step:ap242-e3"
 grammar = "part21"
 read = "detected"
-write = "emitted"
+write = "verified"
 fixtures = []
 reason = """
-decoded and exported as write target ap242e3, but no fixture declares this
-schema"""
+no fixture declares this schema, so the read cell stays `detected`. The
+write cell is separate evidence: all four encode goldens freeze an
+`explicit_ap242_e3` arm writing
+`FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF
+{ 1 0 10303 442 4 1 4 }'))` with `ExportReport.target = step:ap242-e3`,
+from four different source rows"""
 
 [[support]]
 dialect = "step:part28-xml"
@@ -965,8 +1022,15 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-decoded through the same bounded entry interface, asserted only in
-`integration_tests/dialect.rs`; no legacy CFB file on disk"""
+decoded through the same bounded entry interface. The golden
+`legacy_cfb_with_ug_part` now pins the row at both inspect and decode:
+`container_kind = "cfb"`, the note `legacy CFB container: UGII payload
+version 0x32, 2 directory entries`, three entries at the roles `directory`,
+`part-payload`, and `parasolid-stream`, one retained record, and a blocking
+`geometry.not-transferred` loss. That is what L1 asks for, but the cell
+stays `detected`: the fixture gate counts files on disk, and this input is
+code-built like every other NX golden, so there is no path the `fixtures`
+column could name"""
 
 [[support]]
 dialect = "nx:unknown"

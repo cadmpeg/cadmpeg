@@ -1,0 +1,183 @@
+{
+  "explicit_ap242_e3": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(1.,2.,3.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = PLANE('',#9);\n#11 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#12 = CYLINDRICAL_SURFACE('',#11,5.);\n#13 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#14 = CONICAL_SURFACE('',#13,5.,0.25);\n#15 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#16 = SPHERICAL_SURFACE('',#15,5.);\n#17 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#18 = TOROIDAL_SURFACE('',#17,8.,2.);\n#19 = CARTESIAN_POINT('',(0.,0.,0.));\n#20 = CARTESIAN_POINT('',(0.,1.,0.));\n#21 = CARTESIAN_POINT('',(1.,0.,0.));\n#22 = CARTESIAN_POINT('',(2.,0.,0.));\n#23 = ( BOUNDED_SURFACE() B_SPLINE_SURFACE(1,1,((#19,#20),(#21,#22)),.UNSPECIFIED.,.F.,.F.,.U.) B_SPLINE_SURFACE_WITH_KNOTS((2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE(((1.,1.),(1.,0.75))) REPRESENTATION_ITEM('') SURFACE() );\n#24 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#25 = CIRCLE('',#24,4.);\n#26 = VECTOR('',#7,2.);\n#27 = SURFACE_OF_LINEAR_EXTRUSION('',#25,#26);\n#28 = AXIS1_PLACEMENT('',#6,#7);\n#29 = SURFACE_OF_REVOLUTION('',#25,#28);\n#30 = OFFSET_SURFACE('',#12,0.5,.F.);\n#31 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#32 = DEGENERATE_TOROIDAL_SURFACE('',#31,2.,8.,.T.);\n#33 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#34 = ELLIPSE('',#33,6.,2.);\n#35 = ( BOUNDED_CURVE() B_SPLINE_CURVE(2,(#19,#21,#22),.UNSPECIFIED.,.F.,.U.) B_SPLINE_CURVE_WITH_KNOTS((3,3),(0.,1.),.UNSPECIFIED.) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE((1.,0.5,1.)) REPRESENTATION_ITEM('') );\n#36 = TRIMMED_CURVE('',#25,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.T.,.PARAMETER.);\n#37 = OFFSET_CURVE_3D('',#25,1.,.U.,#7);\n#38 = TRIMMED_CURVE('',#25,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.T.,.PARAMETER.);\n#39 = COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#38);\n#40 = COMPOSITE_CURVE('',(#39),.F.);\n#41 = B_SPLINE_CURVE_WITH_KNOTS('',1,(#19,#21,#22),.UNSPECIFIED.,.F.,.U.,(2,1,2),(0.,1.,2.),.UNSPECIFIED.);\n#42 = VECTOR('',#7,1.);\n#43 = LINE('',#6,#42);\n#44 = GEOMETRIC_SET('',(#10,#12,#14,#16,#18,#23,#27,#29,#30,#32,#34,#35,#36,#37,#38,#40,#41,#43,#6));\n#45 = AXIS2_PLACEMENT_3D('',#19,#7,#8);\n#46 = APPLICATION_CONTEXT('managed model based 3d engineering');\n#47 = APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2022,#46);\n#48 = PRODUCT_CONTEXT('',#46,'mechanical');\n#49 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#48));\n#50 = PRODUCT_DEFINITION_FORMATION('','',#49);\n#51 = PRODUCT_DEFINITION_CONTEXT('part definition',#46,'design');\n#52 = PRODUCT_DEFINITION('design','',#50,#51);\n#53 = PRODUCT_DEFINITION_SHAPE('','',#52);\n#54 = SHAPE_REPRESENTATION('',(#44,#45),#5);\n#55 = SHAPE_DEFINITION_REPRESENTATION(#53,#54);\n#56 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#57 = DRAUGHTING_PRE_DEFINED_CURVE_FONT('continuous');\n#58 = CURVE_STYLE('',#57,POSITIVE_LENGTH_MEASURE(0.1),#56);\n#59 = PRESENTATION_STYLE_ASSIGNMENT((#58));\n#60 = STYLED_ITEM('color',(#59),#25);\n#61 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#62 = FILL_AREA_STYLE_COLOUR('',#61);\n#63 = FILL_AREA_STYLE('',(#62));\n#64 = SURFACE_STYLE_FILL_AREA(#63);\n#65 = SURFACE_SIDE_STYLE('',(#64));\n#66 = SURFACE_STYLE_USAGE(.BOTH.,#65);\n#67 = PRESENTATION_STYLE_ASSIGNMENT((#66));\n#68 = STYLED_ITEM('color',(#67),#10);\n#69 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#70 = POINT_STYLE('',.DOT.,POSITIVE_LENGTH_MEASURE(1.),#69);\n#71 = PRESENTATION_STYLE_ASSIGNMENT((#70));\n#72 = STYLED_ITEM('color',(#71),#6);\n#73 = STYLED_ITEM('color',(#71),#6);\n#74 = STYLED_ITEM('color',(#59),#25);\n#75 = STYLED_ITEM('color',(#59),#41);\n#76 = MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#60,#68,#72,#73,#74,#75),#5);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS1_PLACEMENT": 1,
+          "AXIS2_PLACEMENT_3D": 9,
+          "B_SPLINE_CURVE_WITH_KNOTS": 2,
+          "B_SPLINE_SURFACE_WITH_KNOTS": 1,
+          "CARTESIAN_POINT": 5,
+          "CIRCLE": 1,
+          "COLOUR_RGB": 3,
+          "COMPOSITE_CURVE": 1,
+          "COMPOSITE_CURVE_SEGMENT": 1,
+          "CONICAL_SURFACE": 1,
+          "CURVE_STYLE": 1,
+          "CYLINDRICAL_SURFACE": 1,
+          "DEGENERATE_TOROIDAL_SURFACE": 1,
+          "DIRECTION": 2,
+          "DRAUGHTING_PRE_DEFINED_CURVE_FONT": 1,
+          "ELLIPSE": 1,
+          "FILL_AREA_STYLE": 1,
+          "FILL_AREA_STYLE_COLOUR": 1,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "GEOMETRIC_SET": 1,
+          "LENGTH_UNIT": 1,
+          "LINE": 1,
+          "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION": 1,
+          "OFFSET_CURVE_3D": 1,
+          "OFFSET_SURFACE": 1,
+          "PLANE": 1,
+          "PLANE_ANGLE_UNIT": 1,
+          "POINT_STYLE": 1,
+          "PRESENTATION_STYLE_ASSIGNMENT": 3,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "SPHERICAL_SURFACE": 1,
+          "STYLED_ITEM": 6,
+          "SURFACE_OF_LINEAR_EXTRUSION": 1,
+          "SURFACE_OF_REVOLUTION": 1,
+          "SURFACE_SIDE_STYLE": 1,
+          "SURFACE_STYLE_FILL_AREA": 1,
+          "SURFACE_STYLE_USAGE": 1,
+          "TOROIDAL_SURFACE": 1,
+          "TRIMMED_CURVE": 2,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+          "VECTOR": 2
+        }
+      },
+      "fidelity": {
+        "reason": "source is step:ap242, target is step:ap242-e3; the schema the source declared is not what this export writes",
+        "status": "degraded"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
+        },
+        {
+          "code": {
+            "code": "appearance.reduced-to-base-color",
+            "kind": "appearance_reduced",
+            "namespace": "step"
+          },
+          "message": "1 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap242-e3",
+      "write_path": "synthesized"
+    }
+  },
+  "explicit_default": {
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(1.,2.,3.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = PLANE('',#9);\n#11 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#12 = CYLINDRICAL_SURFACE('',#11,5.);\n#13 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#14 = CONICAL_SURFACE('',#13,5.,0.25);\n#15 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#16 = SPHERICAL_SURFACE('',#15,5.);\n#17 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#18 = TOROIDAL_SURFACE('',#17,8.,2.);\n#19 = CARTESIAN_POINT('',(0.,0.,0.));\n#20 = CARTESIAN_POINT('',(0.,1.,0.));\n#21 = CARTESIAN_POINT('',(1.,0.,0.));\n#22 = CARTESIAN_POINT('',(2.,0.,0.));\n#23 = ( BOUNDED_SURFACE() B_SPLINE_SURFACE(1,1,((#19,#20),(#21,#22)),.UNSPECIFIED.,.F.,.F.,.U.) B_SPLINE_SURFACE_WITH_KNOTS((2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE(((1.,1.),(1.,0.75))) REPRESENTATION_ITEM('') SURFACE() );\n#24 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#25 = CIRCLE('',#24,4.);\n#26 = VECTOR('',#7,2.);\n#27 = SURFACE_OF_LINEAR_EXTRUSION('',#25,#26);\n#28 = AXIS1_PLACEMENT('',#6,#7);\n#29 = SURFACE_OF_REVOLUTION('',#25,#28);\n#30 = OFFSET_SURFACE('',#12,0.5,.F.);\n#31 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#32 = DEGENERATE_TOROIDAL_SURFACE('',#31,2.,8.,.T.);\n#33 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#34 = ELLIPSE('',#33,6.,2.);\n#35 = ( BOUNDED_CURVE() B_SPLINE_CURVE(2,(#19,#21,#22),.UNSPECIFIED.,.F.,.U.) B_SPLINE_CURVE_WITH_KNOTS((3,3),(0.,1.),.UNSPECIFIED.) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE((1.,0.5,1.)) REPRESENTATION_ITEM('') );\n#36 = TRIMMED_CURVE('',#25,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.T.,.PARAMETER.);\n#37 = OFFSET_CURVE_3D('',#25,1.,.U.,#7);\n#38 = TRIMMED_CURVE('',#25,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.T.,.PARAMETER.);\n#39 = COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#38);\n#40 = COMPOSITE_CURVE('',(#39),.F.);\n#41 = B_SPLINE_CURVE_WITH_KNOTS('',1,(#19,#21,#22),.UNSPECIFIED.,.F.,.U.,(2,1,2),(0.,1.,2.),.UNSPECIFIED.);\n#42 = VECTOR('',#7,1.);\n#43 = LINE('',#6,#42);\n#44 = GEOMETRIC_SET('',(#10,#12,#14,#16,#18,#23,#27,#29,#30,#32,#34,#35,#36,#37,#38,#40,#41,#43,#6));\n#45 = AXIS2_PLACEMENT_3D('',#19,#7,#8);\n#46 = APPLICATION_CONTEXT('automotive design');\n#47 = APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#46);\n#48 = PRODUCT_CONTEXT('',#46,'mechanical');\n#49 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#48));\n#50 = PRODUCT_DEFINITION_FORMATION('','',#49);\n#51 = PRODUCT_DEFINITION_CONTEXT('part definition',#46,'design');\n#52 = PRODUCT_DEFINITION('design','',#50,#51);\n#53 = PRODUCT_DEFINITION_SHAPE('','',#52);\n#54 = SHAPE_REPRESENTATION('',(#44,#45),#5);\n#55 = SHAPE_DEFINITION_REPRESENTATION(#53,#54);\n#56 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#57 = DRAUGHTING_PRE_DEFINED_CURVE_FONT('continuous');\n#58 = CURVE_STYLE('',#57,POSITIVE_LENGTH_MEASURE(0.1),#56);\n#59 = PRESENTATION_STYLE_ASSIGNMENT((#58));\n#60 = STYLED_ITEM('color',(#59),#25);\n#61 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#62 = FILL_AREA_STYLE_COLOUR('',#61);\n#63 = FILL_AREA_STYLE('',(#62));\n#64 = SURFACE_STYLE_FILL_AREA(#63);\n#65 = SURFACE_SIDE_STYLE('',(#64));\n#66 = SURFACE_STYLE_USAGE(.BOTH.,#65);\n#67 = PRESENTATION_STYLE_ASSIGNMENT((#66));\n#68 = STYLED_ITEM('color',(#67),#10);\n#69 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#70 = POINT_STYLE('',.DOT.,POSITIVE_LENGTH_MEASURE(1.),#69);\n#71 = PRESENTATION_STYLE_ASSIGNMENT((#70));\n#72 = STYLED_ITEM('color',(#71),#6);\n#73 = STYLED_ITEM('color',(#71),#6);\n#74 = STYLED_ITEM('color',(#59),#25);\n#75 = STYLED_ITEM('color',(#59),#41);\n#76 = MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#60,#68,#72,#73,#74,#75),#5);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS1_PLACEMENT": 1,
+          "AXIS2_PLACEMENT_3D": 9,
+          "B_SPLINE_CURVE_WITH_KNOTS": 2,
+          "B_SPLINE_SURFACE_WITH_KNOTS": 1,
+          "CARTESIAN_POINT": 5,
+          "CIRCLE": 1,
+          "COLOUR_RGB": 3,
+          "COMPOSITE_CURVE": 1,
+          "COMPOSITE_CURVE_SEGMENT": 1,
+          "CONICAL_SURFACE": 1,
+          "CURVE_STYLE": 1,
+          "CYLINDRICAL_SURFACE": 1,
+          "DEGENERATE_TOROIDAL_SURFACE": 1,
+          "DIRECTION": 2,
+          "DRAUGHTING_PRE_DEFINED_CURVE_FONT": 1,
+          "ELLIPSE": 1,
+          "FILL_AREA_STYLE": 1,
+          "FILL_AREA_STYLE_COLOUR": 1,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "GEOMETRIC_SET": 1,
+          "LENGTH_UNIT": 1,
+          "LINE": 1,
+          "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION": 1,
+          "OFFSET_CURVE_3D": 1,
+          "OFFSET_SURFACE": 1,
+          "PLANE": 1,
+          "PLANE_ANGLE_UNIT": 1,
+          "POINT_STYLE": 1,
+          "PRESENTATION_STYLE_ASSIGNMENT": 3,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "SPHERICAL_SURFACE": 1,
+          "STYLED_ITEM": 6,
+          "SURFACE_OF_LINEAR_EXTRUSION": 1,
+          "SURFACE_OF_REVOLUTION": 1,
+          "SURFACE_SIDE_STYLE": 1,
+          "SURFACE_STYLE_FILL_AREA": 1,
+          "SURFACE_STYLE_USAGE": 1,
+          "TOROIDAL_SURFACE": 1,
+          "TRIMMED_CURVE": 2,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+          "VECTOR": 2
+        }
+      },
+      "fidelity": {
+        "reason": "source is step:ap242, target is step:ap214; the schema the source declared is not what this export writes",
+        "status": "degraded"
+      },
+      "format": "step",
+      "losses": [
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
+        },
+        {
+          "code": {
+            "code": "appearance.reduced-to-base-color",
+            "kind": "appearance_reduced",
+            "namespace": "step"
+          },
+          "message": "1 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
+          "severity": "info"
+        }
+      ],
+      "notes": [],
+      "target": "step:ap214",
+      "write_path": "synthesized"
+    }
+  },
+  "inherit": {
+    "encode_error": "step cannot write step:ap242: the semantic writer cannot synthesize it, and writing another schema would change what the file declares; name a target to choose one; available targets: step:ap203-e1, step:ap203-e2, step:ap214, step:ap242-e1, step:ap242-e2, step:ap242-e3"
+  }
+}
