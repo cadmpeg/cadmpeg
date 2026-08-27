@@ -14,8 +14,8 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 use cadmpeg_registry::{
-    build_encoder, ForcedInput, Format, InputCatalog, LossPolicy, ResolveSourceError,
-    ResolvedSource, DETECTION_PREFIX_LEN,
+    build_encoder, ForcedInput, Format, InputCatalog, LossPolicy, ResolvedSource,
+    DETECTION_PREFIX_LEN,
 };
 
 use crate::application::{
@@ -137,10 +137,7 @@ pub fn inspect(
                 path.display()
             ));
         }
-        Err(ResolveSourceError::UnsupportedFormat(id)) => {
-            return Err(anyhow!("unsupported input format {id}"));
-        }
-        Err(error) => return Err(anyhow!(error.to_string())),
+        Err(error) => return Err(loader::detection_failure(&error)),
     };
     let mut file = File::open(path)?;
     let summary = codec

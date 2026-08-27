@@ -936,3 +936,10 @@ crate = "cadmpeg-registry"
 kind = "addition"
 item = "cadmpeg_registry::write_targets"
 reason = "the catalog is static per format, so reading it needed no encoder instance; `catalog_of` was boxing an encoder with a dummy LossPolicy::Report to reach a 'static table"
+
+[[change]]
+commit = "46d15a7ac16f2b5aef46751ff6e7cb14fb625a0f"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::ResolveSourceError::Ambiguous Display"
+reason = "the message states the ambiguity and stops; `pass --input-format` names a flag only the CLI has, and the CLI appends it in `loader::detection_failure`"
