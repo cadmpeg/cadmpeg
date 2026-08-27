@@ -71,9 +71,9 @@ pub fn build_encoder(format: Format, losses: LossPolicy) -> Box<dyn Encoder> {
 ///
 /// The catalog is static per format and independent of every constructor
 /// knob: per-codec options configure how a target is written, never which
-/// ones exist. Reading it therefore needs no encoder instance, and a caller
-/// that only wants the table does not have to invent a [`LossPolicy`] to get
-/// one.
+/// ones exist. The unit and default values below exist only to reach the
+/// instance method required by [`Encoder`]; a caller that only wants the table
+/// does not have to invent a [`LossPolicy`].
 #[must_use]
 pub fn write_targets(format: Format) -> &'static [TargetDescriptor] {
     match format {
