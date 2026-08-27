@@ -161,9 +161,11 @@ impl FcstdDialect {
     /// The row whose element vocabulary reads a document this codec declares no
     /// strategy for.
     ///
-    /// [`crate::container::parse_document`] tests `schema_version == "2"` with
-    /// an `else`, not a `"3" | "4"` whitelist, so every undeclared schema is
-    /// scanned with the `Objects`/`ObjectData`/`Object` vocabulary. Schema 4 is
+    /// [`crate::container::parse_document`] and
+    /// [`crate::persistence::parse_with_context`] both test
+    /// `schema_version == "2"` with an `else`, not a `"3" | "4"` whitelist, so
+    /// every undeclared schema is scanned with the
+    /// `Objects`/`ObjectData`/`Object` vocabulary. Schema 4 is
     /// the newer of the two rows sharing that vocabulary and the one the
     /// writer's own default follows, so it names the strategy used.
     const NEAREST_VERIFIED: Self = Self::Schema4;
@@ -188,10 +190,10 @@ impl FcstdDialect {
     ///
     /// Reached only after [`crate::container::parse_document`] has accepted the
     /// document element, so `SchemaVersion` is present and reads as an
-    /// unsigned integer. `Admission::Refused` is unreachable here: a full
-    /// decode of an undeclared schema returns `CodecError::NotImplemented` and
-    /// produces no report at all, while a container-only decode and every
-    /// inspect admit the document with the `Objects` vocabulary.
+    /// unsigned integer. `Admission::Refused` is unreachable here: every
+    /// decode path, container-only or full, and every inspect reads an
+    /// undeclared schema with the `Objects` vocabulary rather than refusing on
+    /// the discriminant.
     pub(crate) fn classify(document: &DocumentFacts) -> DialectMatch {
         let dialect = Self::from_schema_version(&document.schema_version);
         let admission = if Self::grammar_is_declared(&document.schema_version) {
