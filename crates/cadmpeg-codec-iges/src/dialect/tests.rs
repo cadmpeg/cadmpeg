@@ -6,8 +6,11 @@
 
 use super::*;
 use crate::loss::IgesLossCode;
-use crate::test_support::fixed_ascii_with_global;
+use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
+use crate::IgesCodec;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use std::collections::BTreeSet;
+use std::io::Cursor;
 use std::path::PathBuf;
 
 /// Path of the identity registry, from this crate's manifest directory.
@@ -119,7 +122,7 @@ fn resolved_global(version_flag: &str) -> crate::global::ResolvedGlobal {
 }
 
 /// Whether `global` charges [`IgesLossCode::SourceDialectUnverified`].
-fn charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> bool {
+fn global_charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> bool {
     let expected = IgesLossCode::SourceDialectUnverified
         .note(String::new())
         .code;
@@ -225,7 +228,7 @@ const CASES: &[Case] = &[
 fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     for case in CASES {
         let global = resolved_global(case.declaration);
-        let charged = charges_dialect_unverified(&global);
+        let charged = global_charges_dialect_unverified(&global);
         assert_eq!(
             case.admitted, !charged,
             "field 23 {:?}: the case table and the charged loss disagree",
@@ -299,6 +302,126 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
             assert_eq!(matched.admission, expected_admission, "{context}");
         }
     }
+}
+
+/// The one dialect match of a report. The primary-layer invariant makes it the
+/// primary layer, so no consumer here indexes by position for any other reason.
+fn only_match(dialects: &[DialectMatch]) -> &DialectMatch {
+    assert_eq!(dialects.len(), 1, "{dialects:#?}");
+    assert_eq!(dialects[0].format, "iges");
+    &dialects[0]
+}
+
+/// A 26-field Global record carrying `version_flag` in field 23.
+fn global_with_version_flag(version_flag: &str) -> Vec<u8> {
+    format!(
+        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,\
+         2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{version_flag},0,0H,0H;"
+    )
+    .into_bytes()
+}
+
+fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
+    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+    IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("synthesized IGES stream should decode")
+}
+
+/// Whether `result` charges the dialect-unverified loss.
+fn charges_dialect_unverified(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
+    result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
+}
+
+#[test]
+fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
+    // ANSI Y14.26M-1981 is version flag 2. It has a registry row of its own and
+    // no Global table this codec verified, so identity and admission part
+    // company: the row is named, and the admission says the grammar that read
+    // the file was a substitute.
+    let bytes = point_file_with_global(&global_with_version_flag("2"));
+    let decoded = decode(bytes.clone());
+
+    let matched = only_match(&decoded.report().dialects);
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("iges:ansi-y14.26m-1981-fixed-ascii")
+    );
+    assert_eq!(
+        matched.admission,
+        Admission::AdmittedUnverified {
+            nearest: DialectId::pinned("iges:5.3-fixed-ascii"),
+        }
+    );
+    assert_eq!(matched.declared["version_flag"], "2");
+    assert_eq!(matched.declared["effective_version"], "ANSI-Y14.26M-1981");
+    assert!(charges_dialect_unverified(&decoded));
+
+    let source = decoded.ir().source.as_ref().unwrap();
+    assert_eq!(source.dialect, matched.dialect);
+    assert_eq!(source.declared, matched.declared);
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(only_match(&summary.dialects), matched);
+}
+
+#[test]
+fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
+    // Flag 99 clamps to effective version 5.3, but no row declares
+    // `version_flag = "99"`, so the document satisfies none of them. The
+    // declaration survives in `declared` while the id states only that nothing
+    // matched.
+    let bytes = point_file_with_global(&global_with_version_flag("99"));
+    let decoded = decode(bytes.clone());
+
+    let matched = only_match(&decoded.report().dialects);
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("iges:unknown")
+    );
+    assert_eq!(
+        matched.admission,
+        Admission::AdmittedUnverified {
+            nearest: DialectId::pinned("iges:5.3-fixed-ascii"),
+        }
+    );
+    assert_eq!(matched.declared["version_flag"], "99");
+    assert_eq!(matched.declared["effective_version"], "5.3");
+    assert!(charges_dialect_unverified(&decoded));
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(only_match(&summary.dialects), matched);
+}
+
+#[test]
+fn a_verified_fixed_ascii_declaration_is_admitted_with_no_dialect_loss() {
+    // The other side of the biconditional through the whole codec: flag 6 names
+    // IGES 4.0, whose Global table this codec verified, so the row is named,
+    // the admission is plain, and no dialect loss is charged.
+    let bytes = point_file_with_global(&global_with_version_flag("6"));
+    let decoded = decode(bytes);
+
+    let matched = only_match(&decoded.report().dialects);
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("iges:4.0-fixed-ascii")
+    );
+    assert_eq!(matched.admission, Admission::Admitted);
+    assert!(!charges_dialect_unverified(&decoded));
 }
 
 #[test]
