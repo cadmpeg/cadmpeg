@@ -23,12 +23,6 @@ pub const SOURCE_FIDELITY_VERSION: &str = "3";
 /// strings. Both migrate on read.
 pub const DECODE_SIDECAR_VERSION: &str = "3";
 
-/// Decode-sidecar versions [`DecodeSidecar::from_json`] accepts and migrates.
-///
-/// Ordered oldest first. Migration is cumulative: a sidecar entering at one
-/// version runs every later step in turn.
-pub const DECODE_SIDECAR_VERSIONS_ACCEPTED: &[&str] = &["1", "2", "3"];
-
 /// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
 pub const DECODE_SIDECAR_VERSION_V1: &str = "1";
 
@@ -533,15 +527,6 @@ mod tests {
         assert_eq!(from_v2.version(), DECODE_SIDECAR_VERSION);
         assert!(from_v2.report.dialects.is_empty());
         assert_eq!(from_v2, migrated);
-
-        assert_eq!(
-            DECODE_SIDECAR_VERSIONS_ACCEPTED,
-            [
-                DECODE_SIDECAR_VERSION_V1,
-                DECODE_SIDECAR_VERSION_V2,
-                DECODE_SIDECAR_VERSION
-            ]
-        );
     }
 
     #[test]

@@ -38,7 +38,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         executable.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         return executable
 
-    def test_accepts_v6_decode_refusal(self) -> None:
+    def test_accepts_v7_decode_refusal(self) -> None:
         refusal = {
             "stage": "decode",
             "code": "decode_failed",
@@ -46,7 +46,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         }
         self.write(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
@@ -61,7 +61,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def test_rejects_success_report_as_refusal(self) -> None:
         self.write(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "command": "dump",
                 "status": "ok",
                 "refusal": None,
@@ -90,7 +90,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         actual, error = MODULE.load_decode_refusal(self.path)
 
         self.assertIsNone(actual)
-        self.assertEqual(error, "decode refusal report does not use schema_version 6")
+        self.assertEqual(error, "decode refusal report does not use schema_version 7")
 
     def test_gate_rejects_unclassified_decode_exit(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"
@@ -121,7 +121,7 @@ import sys
 report = pathlib.Path(sys.argv[sys.argv.index('--report') + 1])
 assert sys.argv[1] == 'dump'
 report.write_text(json.dumps({
-    'schema_version': 6,
+    'schema_version': 7,
     'command': 'dump',
     'status': 'refused',
     'refusal': {
