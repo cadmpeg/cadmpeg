@@ -227,34 +227,22 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
     let mut matches = Vec::new();
     let mut losses = Vec::new();
     for brep in &scan.breps {
-        let parsed = scan.entry_bytes(&brep.name).ok().and_then(|bytes| {
-            let (header, dialect, admission) = if cadmpeg_asm::asm_header::has_asm_magic(bytes) {
-                let header = cadmpeg_asm::asm_header::parse(bytes)?;
-                let dialect = cadmpeg_asm::dialect::asm_binary_row(header.width);
-                (header, dialect, Admission::Admitted)
-            } else {
-                let header = cadmpeg_asm::acis_header::parse(bytes)?;
-                let major = header.save_format_major();
-                let dialect = cadmpeg_asm::dialect::acis_binary_row(major);
-                let admission = cadmpeg_asm::dialect::acis_admission(major);
-                (header, dialect, admission)
-            };
-            let mut declared = BTreeMap::new();
-            declared.insert("carrier".to_owned(), brep.name.clone());
-            if let Some(major) = header.save_format_major() {
-                declared.insert("save_format_major".to_owned(), major.to_string());
-            }
-            if let Some(minor) = header.save_format_minor() {
-                declared.insert("save_format_minor".to_owned(), minor.to_string());
-            }
-            declared.insert("reference_width".to_owned(), header.width.to_string());
-            Some(DialectMatch {
-                format: "acis".to_owned(),
-                dialect: Some(dialect),
-                declared,
-                admission,
+        let parsed = brep
+            .header
+            .as_ref()
+            .map(cadmpeg_asm::dialect::KernelHeaderRef::Asm)
+            .or_else(|| {
+                brep.acis_header
+                    .as_ref()
+                    .map(cadmpeg_asm::dialect::KernelHeaderRef::Acis)
             })
-        });
+            .map(cadmpeg_asm::dialect::classify)
+            .map(|mut matched| {
+                matched
+                    .declared
+                    .insert("carrier".to_owned(), brep.name.clone());
+                matched
+            });
         if let Some(matched) = parsed {
             matches.push(matched);
         } else {

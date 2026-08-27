@@ -561,7 +561,8 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
         assert!(!fallback.is_smbh);
         assert!(container::select_history_brep(scan).is_none());
         assert!(container::legacy_design_model_breps(scan).is_none());
-        let summary = container::summarize(scan);
+        let kernel_layers = crate::dialect::kernel_layers(scan);
+        let summary = container::summarize(scan, &kernel_layers.matches);
         assert!(summary
             .notes
             .iter()
