@@ -3,6 +3,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{self, Read};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
@@ -1323,6 +1324,68 @@ impl CompoundPrefixProbe {
             Self::DirectoryEvidence(paths) => Some(paths),
             _ => None,
         }
+    }
+}
+
+/// Reads the prefix used for native-format detection.
+///
+/// Non-CFB inputs stop at `prefix_len`. CFB inputs continue until the
+/// directory probe settles or `max_bytes` is reached. `FileTooLarge` reports a
+/// CFB input that continues beyond that limit.
+pub fn read_detection_prefix(
+    source: &mut dyn Read,
+    prefix_len: usize,
+    max_bytes: u64,
+) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(prefix_len);
+    let mut chunk =
+        cadmpeg_core::decode::alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
+            .map_err(io::Error::other)?
+            .into_boxed_slice();
+    while bytes.len() < prefix_len {
+        let chunk_len = (prefix_len - bytes.len()).min(chunk.len());
+        let read = source.read(&mut chunk[..chunk_len])?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    if matches!(
+        CompoundPrefixProbe::inspect(&bytes),
+        CompoundPrefixProbe::NotCompound
+    ) {
+        return Ok(bytes);
+    }
+    if bytes.len() as u64 > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::FileTooLarge,
+            "compound detection input exceeds its byte limit",
+        ));
+    }
+
+    loop {
+        if !matches!(
+            CompoundPrefixProbe::inspect(&bytes),
+            CompoundPrefixProbe::Incomplete
+        ) {
+            return Ok(bytes);
+        }
+        if bytes.len() as u64 >= max_bytes {
+            if source.read(&mut [0_u8; 1])? != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::FileTooLarge,
+                    "compound detection input exceeds its byte limit",
+                ));
+            }
+            return Ok(bytes);
+        }
+        let remaining = max_bytes - bytes.len() as u64;
+        let chunk_len = remaining.min(chunk.len() as u64) as usize;
+        let read = source.read(&mut chunk[..chunk_len])?;
+        if read == 0 {
+            return Ok(bytes);
+        }
+        bytes.extend_from_slice(&chunk[..read]);
     }
 }
 

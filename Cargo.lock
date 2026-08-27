@@ -440,6 +440,7 @@ dependencies = [
  "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
+ "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
  "crc32fast",

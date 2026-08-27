@@ -1020,3 +1020,10 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::codec::{WriteRequest,resolve_write_request}"
 reason = "all native encoders resolve explicit catalog requests and inherited source identity once before applying their codec-owned preservation, synthesis, patch, or replay delivery law"
+
+[[change]]
+commit = "fb9a11f1c5a24fd1a955e70d67dc3c8af85fa519"
+crate = "cadmpeg-container"
+kind = "addition"
+item = "cadmpeg_container::compound::read_detection_prefix"
+reason = "library identification and the CLI must extend a CFB prefix through the same bounded directory-evidence reader"

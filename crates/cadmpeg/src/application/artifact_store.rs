@@ -12,8 +12,7 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_container::compound::CompoundPrefixProbe;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_ir::codec::ExportPlan;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar, SourceFidelity};
@@ -41,57 +40,17 @@ impl ArtifactStore {
     /// input ceiling.
     pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>> {
         let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-        let mut bytes = Vec::with_capacity(prefix_len);
-        let mut chunk =
-            alloc_filled(64 * 1024, 0_u8, "cli artifact detection chunk")?.into_boxed_slice();
-        while bytes.len() < prefix_len {
-            let chunk_len = (prefix_len - bytes.len()).min(chunk.len());
-            let read = file.read(&mut chunk[..chunk_len])?;
-            if read == 0 {
-                break;
+        read_detection_prefix(&mut file, prefix_len, max_bytes).map_err(|error| {
+            if error.kind() == io::ErrorKind::FileTooLarge {
+                anyhow!(
+                    "{} exceeds the configured {}-byte input limit",
+                    path.display(),
+                    max_bytes
+                )
+            } else {
+                error.into()
             }
-            bytes.extend_from_slice(&chunk[..read]);
-        }
-        if matches!(
-            CompoundPrefixProbe::inspect(&bytes),
-            CompoundPrefixProbe::NotCompound
-        ) {
-            return Ok(bytes);
-        }
-        if bytes.len() as u64 > max_bytes {
-            return Err(anyhow!(
-                "{} exceeds the configured {}-byte input limit",
-                path.display(),
-                max_bytes
-            ));
-        }
-
-        loop {
-            if !matches!(
-                CompoundPrefixProbe::inspect(&bytes),
-                CompoundPrefixProbe::Incomplete
-            ) {
-                return Ok(bytes);
-            }
-            if bytes.len() as u64 >= max_bytes {
-                let read = file.read(&mut [0_u8; 1])?;
-                if read != 0 {
-                    return Err(anyhow!(
-                        "{} exceeds the configured {}-byte input limit",
-                        path.display(),
-                        max_bytes
-                    ));
-                }
-                return Ok(bytes);
-            }
-            let remaining = max_bytes - bytes.len() as u64;
-            let chunk_len = remaining.min(chunk.len() as u64) as usize;
-            let read = file.read(&mut chunk[..chunk_len])?;
-            if read == 0 {
-                return Ok(bytes);
-            }
-            bytes.extend_from_slice(&chunk[..read]);
-        }
+        })
     }
 
     /// Read a UTF-8 text file, refusing payloads above `max_bytes`.
@@ -300,9 +259,13 @@ impl Write for TempFileWriter<'_> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::default_trait_access)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
+    use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
+    use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
 
     #[test]
     fn matching_sidecar_loads_and_mismatch_fails_closed() {
@@ -360,5 +323,127 @@ mod tests {
 
         let detected = ArtifactStore::read_detection_input(&path, 8, 1024).unwrap();
         assert_eq!(detected, bytes);
+    }
+
+    #[cfg(feature = "nx")]
+    #[test]
+    fn identify_and_cli_detection_reach_remote_compound_directory_evidence() {
+        let bytes = cfb_with_remote_ug_part_directory();
+        assert!(bytes.len() > DETECTION_PREFIX_LEN);
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("remote-directory.prt");
+        std::fs::write(&path, &bytes).unwrap();
+        let cli_prefix =
+            ArtifactStore::read_detection_input(&path, DETECTION_PREFIX_LEN, bytes.len() as u64)
+                .unwrap();
+        assert_eq!(cli_prefix, bytes);
+
+        let cli_candidates = InputCatalog::with_builtins()
+            .candidates(&cli_prefix)
+            .into_iter()
+            .map(|(descriptor, confidence)| (descriptor.format_id(), confidence))
+            .collect::<Vec<_>>();
+        let mut source = Cursor::new(bytes);
+        let library_candidates = identify(&mut source, &InspectOptions::default())
+            .unwrap()
+            .into_iter()
+            .map(|identified| (identified.format, identified.confidence))
+            .collect::<Vec<_>>();
+
+        assert!(cli_candidates.iter().any(|(format, _)| *format == "nx"));
+        assert_eq!(library_candidates, cli_candidates);
+    }
+
+    #[cfg(feature = "nx")]
+    fn cfb_with_remote_ug_part_directory() -> Vec<u8> {
+        const SECTOR: usize = 512;
+        const DIRECTORY_SECTOR: usize = 256;
+        const END: u32 = 0xffff_fffe;
+        const FREE: u32 = 0xffff_ffff;
+        const FAT: u32 = 0xffff_fffd;
+        let mut file = vec![0; SECTOR * (DIRECTORY_SECTOR + 2)];
+        file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+        put_u16(&mut file, 24, 0x003e);
+        put_u16(&mut file, 26, 3);
+        put_u16(&mut file, 28, 0xfffe);
+        put_u16(&mut file, 30, 9);
+        put_u16(&mut file, 32, 6);
+        put_u32(&mut file, 44, 3);
+        put_u32(&mut file, 48, DIRECTORY_SECTOR as u32);
+        put_u32(&mut file, 56, 4096);
+        put_u32(&mut file, 60, END);
+        put_u32(&mut file, 68, END);
+        for index in 0..109 {
+            put_u32(&mut file, 76 + index * 4, FREE);
+        }
+        for index in 0..3 {
+            put_u32(&mut file, 76 + index * 4, index as u32);
+            file[SECTOR * (index + 1)..SECTOR * (index + 2)].fill(0xff);
+            put_u32(&mut file, SECTOR + index * 4, FAT);
+        }
+        put_u32(&mut file, SECTOR * 3 + (DIRECTORY_SECTOR - 256) * 4, END);
+
+        let directory = SECTOR * (DIRECTORY_SECTOR + 1);
+        directory_entry(
+            &mut file[directory..directory + SECTOR],
+            0,
+            "Root Entry",
+            5,
+            FREE,
+            1,
+        );
+        directory_entry(
+            &mut file[directory..directory + SECTOR],
+            1,
+            "UG_PART",
+            1,
+            FREE,
+            2,
+        );
+        directory_entry(
+            &mut file[directory..directory + SECTOR],
+            2,
+            "UG_PART",
+            2,
+            END,
+            FREE,
+        );
+        file
+    }
+
+    #[cfg(feature = "nx")]
+    fn directory_entry(
+        directory: &mut [u8],
+        index: usize,
+        name: &str,
+        kind: u8,
+        start: u32,
+        child: u32,
+    ) {
+        const FREE: u32 = 0xffff_ffff;
+        let entry = &mut directory[index * 128..(index + 1) * 128];
+        let mut encoded = name.encode_utf16().collect::<Vec<_>>();
+        encoded.push(0);
+        for (offset, word) in encoded.iter().enumerate() {
+            put_u16(entry, offset * 2, *word);
+        }
+        put_u16(entry, 64, (encoded.len() * 2) as u16);
+        entry[66] = kind;
+        entry[67] = 1;
+        put_u32(entry, 68, FREE);
+        put_u32(entry, 72, FREE);
+        put_u32(entry, 76, child);
+        put_u32(entry, 116, start);
+    }
+
+    #[cfg(feature = "nx")]
+    fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    #[cfg(feature = "nx")]
+    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 }
