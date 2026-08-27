@@ -85,7 +85,7 @@ fn refusal(error: &CodecError) -> (&str, Option<&str>, &str) {
 /// catalog default keeps the schema it was handed.
 ///
 /// The encoder's constructor schema is AP214 here, exactly as the command line
-/// builds it when no `--step-target` is given. Reading it under `Inherit` is the
+/// builds it when `--to` names no dialect. Reading it under `Inherit` is the
 /// defect: this AP203 edition 1 file would come back declaring
 /// `AUTOMOTIVE_DESIGN`, a different application protocol, with the report
 /// claiming success. The resolution reads the source instead, and the emitted

@@ -60,8 +60,8 @@ pub(crate) const FORMAT: &str = "rhino";
 /// — there is no preservation path that could write them anyway (see
 /// [`crate::RhinoEncoder::resolve`]).
 ///
-/// The alias of each row is its bare archive word and its bare Rhino major, the
-/// spellings `--rhino-target` already accepts.
+/// The alias of each row is its bare archive word and its bare Rhino major, so
+/// `--to 60` and `--to rhino:archive-60` name the same row.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
         id: "rhino:archive-50",

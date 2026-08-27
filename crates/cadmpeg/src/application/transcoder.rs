@@ -554,13 +554,10 @@ mod tests {
     }
     /// The loss policy is not a target.
     ///
-    /// `--reject-step-losses` and `--step-target` once shared a wrong-format
-    /// guard, and sharing it made them share the selection too: `convert
-    /// a.step -o b.step --reject-step-losses` named AP214 explicitly and lost
-    /// the identity default. `--reject-lossy=export` is the same predicate one
-    /// layer down and must stay outside the selection: it reaches the encoder
-    /// as [`LossPolicy`] at construction, and only `--to` may say what to
-    /// write.
+    /// A loss flag that also named a target would turn `convert a.step -o
+    /// b.step --reject-lossy=export` into an explicit AP214 request and lose
+    /// the identity default. `--reject-lossy=export` reaches the encoder as
+    /// [`LossPolicy`] at construction, and only `--to` may say what to write.
     #[cfg(feature = "step")]
     #[test]
     fn rejecting_export_losses_does_not_name_a_target() {

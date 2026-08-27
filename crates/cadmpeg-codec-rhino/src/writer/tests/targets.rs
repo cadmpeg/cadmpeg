@@ -213,7 +213,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
 /// Archives 2, 3, 4 and 90 decode and have no writer, and 3DM has no byte-replay
 /// path that could preserve them, so preservation is impossible and the honest
 /// answer is a refusal naming the source dialect and every target. An explicit
-/// `--rhino-target` is the escape.
+/// `--to rhino:<archive>` is the escape.
 #[test]
 fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
     let ir = source_in("rhino:archive-3");

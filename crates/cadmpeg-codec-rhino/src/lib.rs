@@ -173,7 +173,7 @@ impl RhinoEncoder {
     /// back at all, so `Inherit` refuses it, naming the source dialect and the
     /// catalog. That band is real — archives 2, 3, 4 and 90 decode without a
     /// writer, and 1, 5 and unknown words do not decode — and an explicit
-    /// `--rhino-target` is the escape. There is no fall-through to the catalog
+    /// `--to rhino:<archive>` is the escape. There is no fall-through to the catalog
     /// default: a same-format conversion never silently changes what the file
     /// is, which is exactly the archive-50 source that used to come back as
     /// archive 80.
