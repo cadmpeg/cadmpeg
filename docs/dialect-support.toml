@@ -28,7 +28,10 @@
 # listed fixture is a frozen input of a per-codec golden suite whose
 # checked-in snapshot pins the dialect id the decoder emitted for it, and
 # `check_snapshot_dialects` compares the two. A path with no such snapshot
-# cannot be smuggled in as evidence.
+# cannot be smuggled in as evidence, and the listing is complete in the other
+# direction too: a fixture a golden suite already pins to a dialect must
+# appear under that dialect's row, so the evidence column cannot fall behind
+# the suites that produce it.
 #
 # How the read cell is chosen.
 #

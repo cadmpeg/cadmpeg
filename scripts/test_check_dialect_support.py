@@ -260,7 +260,9 @@ class TestFixtureGating(SupportCase):
         self.assertClean(
             GOOD_SUPPORT.replace('read = "L2"', 'read = "detected"').replace(
                 f'fixtures = ["{FIXTURE}"]', 'fixtures = []\nreason = "no file yet"'
-            )
+            ),
+            # No golden pins this dialect, so nothing is owed to the row.
+            snapshot_id=None,
         )
 
     def test_a_score_needs_a_fixture_a_snapshot_confirms(self):
@@ -280,6 +282,19 @@ class TestFixtureGating(SupportCase):
                 ),
             },
             snapshot_id=None,
+        )
+
+    def test_a_pinned_fixture_the_row_omits_is_refused(self):
+        self.assertFires(
+            GOOD_SUPPORT,
+            "but the support row does not list it",
+            files={
+                FIXTURE: "demo bytes",
+                "crates/cadmpeg-codec-demo/tests/golden/fixtures/second.demo": "more bytes",
+                "crates/cadmpeg-codec-demo/tests/golden/decode/second.json": json.dumps(
+                    {"dialects": [{"dialect": "demo:one"}]}
+                ),
+            },
         )
 
     def test_a_flat_snapshot_layout_confirms_a_fixture(self):

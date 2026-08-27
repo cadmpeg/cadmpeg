@@ -354,10 +354,13 @@ def check_snapshot_dialects(
     is the golden harness itself, which re-decodes every frozen fixture and
     compares it with the snapshot on every test run.
 
-    Two rules fire here. A listed fixture whose snapshot pins a different id
+    Three rules fire here. A listed fixture whose snapshot pins a different id
     is a failure. A row claiming a read score must have at least one fixture
     that is pinned at all -- otherwise an arbitrary file on disk would satisfy
-    the fixture gate without any decoder ever confirming its dialect.
+    the fixture gate without any decoder ever confirming its dialect. And the
+    listing is complete in the other direction too: a fixture a golden suite
+    already pins to a dialect must appear under that dialect's row, so the
+    evidence column cannot quietly fall behind the suites that produce it.
     """
     pinned = snapshot_dialects(root)
     checked = 0
@@ -379,6 +382,13 @@ def check_snapshot_dialects(
                 f"{dialect_id}: read {reads[dialect_id]} with no fixture confirmed by a golden "
                 "snapshot; a score needs a decoder that reads this id back"
             )
+    for path, emitted in sorted(pinned.items()):
+        for dialect_id in sorted(emitted):
+            if dialect_id in fixtures_by_dialect and path not in fixtures_by_dialect[dialect_id]:
+                failures.append(
+                    f"{dialect_id}: a golden snapshot pins {path} to this dialect, "
+                    "but the support row does not list it"
+                )
     return checked
 
 
