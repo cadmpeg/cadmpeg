@@ -41,6 +41,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    TargetDescriptor, TargetRequest,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
@@ -1440,12 +1441,34 @@ impl CodecBackend for FcstdCodec {
     }
 }
 
+/// The one dialect this encoder synthesizes through the trait.
+///
+/// [`FcstdCodec::encode_with_options`] accepts any schema version, but
+/// [`Encoder::plan`] passes `FcstdWriteOptions::default()` — schema 4 — and
+/// nothing selects another. Reaching the other schemas through the request is
+/// this codec's own resolution wave.
+const FCSTD_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
+    id: "fcstd:schema-4",
+    label: "FreeCAD Document.xml schema version 4",
+    aliases: &["4"],
+    default: true,
+}];
+
 impl Encoder for FcstdCodec {
     fn id(&self) -> &'static str {
         "fcstd"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        FCSTD_TARGETS
+    }
+
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        request.check_explicit(Encoder::id(self), self.targets())?;
         let mut bytes = Vec::new();
         let mut report =
             self.encode_with_options(input.ir, &mut bytes, FcstdWriteOptions::default())?;

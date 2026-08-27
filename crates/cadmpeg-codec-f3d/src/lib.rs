@@ -37,6 +37,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
+//! use cadmpeg_ir::codec::TargetRequest;
 //! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions, Encoder};
 //! use std::fs::File;
 //!
@@ -49,7 +50,7 @@
 //!     .plan(cadmpeg_ir::codec::EncodeInput {
 //!         ir: result.ir(),
 //!         fidelity: Some(result.source_fidelity()),
-//!     })?
+//!     }, TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -114,7 +115,10 @@ mod zip_write;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{
+    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor,
+    TargetRequest,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::ExportReport;
@@ -224,12 +228,34 @@ impl CodecBackend for F3dCodec {
     }
 }
 
+/// The one dialect this writer synthesizes.
+///
+/// `manifest::write` pins the top-level manifest version to
+/// `TOP_LEVEL_MANIFEST_VERSION`, so a generated archive can be no other row.
+/// The multi-document F3Z row is reachable only by replaying a retained
+/// archive, which is preservation, not synthesis.
+const F3D_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
+    id: "f3d:manifest-3-2-0-0",
+    label: "Fusion 360 archive with top-level manifest 3-2-0-0",
+    aliases: &["3-2-0-0"],
+    default: true,
+}];
+
 impl Encoder for F3dCodec {
     fn id(&self) -> &'static str {
         "f3d"
     }
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        F3D_TARGETS
+    }
+
+    fn plan<'a>(
+        &self,
+        input: EncodeInput<'a>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan<'a>, CodecError> {
+        request.check_explicit(Encoder::id(self), self.targets())?;
         let replay = input
             .fidelity
             .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))

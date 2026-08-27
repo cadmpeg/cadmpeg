@@ -53,10 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.f3d")?;
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &result.ir(),
-            fidelity: Some(&result.source_fidelity()),
-        })?
+        .plan(EncodeInput::new(&result.ir(), Some(&result.source_fidelity())))?
         .write_to(&mut output)?;
     Ok(())
 }

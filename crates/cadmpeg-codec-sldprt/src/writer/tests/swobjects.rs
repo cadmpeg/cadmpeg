@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -84,10 +86,7 @@ fn encoder_writes_source_less_ir() {
 
     let mut encoded = Vec::new();
     let report = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     // No retained source content reached the writer, so it authored every byte.
@@ -129,10 +128,7 @@ fn semantic_writer_emits_face_records_deterministically() {
     for _ in 0..4 {
         let mut encoded = Vec::new();
         SldprtCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         if let Some(expected) = &expected {
@@ -188,10 +184,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     });
 
     let error = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(error
@@ -472,10 +465,7 @@ fn encoder_writes_source_less_line_sketches() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let scan = container::scan_bytes(&encoded);
@@ -744,10 +734,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let mut regenerated = SldprtCodec
@@ -874,10 +861,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     });
 
     let error = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));

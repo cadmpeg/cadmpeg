@@ -360,10 +360,10 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
-    let outcome = match F3dCodec.plan(EncodeInput {
-        ir: result.ir(),
-        fidelity: Some(result.source_fidelity()),
-    }) {
+    let outcome = match F3dCodec.plan(
+        EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+        TargetRequest::Inherit,
+    ) {
         Ok(plan) => {
             let path = plan.write_path();
             match plan.write_to(&mut out) {

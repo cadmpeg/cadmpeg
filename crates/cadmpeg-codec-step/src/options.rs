@@ -77,6 +77,21 @@ pub enum StepSchema {
 }
 
 impl StepSchema {
+    /// The registry dialect id this schema writes.
+    ///
+    /// The spelling a caller passes as `TargetRequest::Explicit`.
+    #[must_use]
+    pub const fn target(self) -> &'static str {
+        match self {
+            Self::Ap203Edition1 => "step:ap203-e1",
+            Self::Ap203Edition2 => "step:ap203-e2",
+            Self::Ap214 => "step:ap214",
+            Self::Ap242Edition1 => "step:ap242-e1",
+            Self::Ap242Edition2 => "step:ap242-e2",
+            Self::Ap242Edition3 => "step:ap242-e3",
+        }
+    }
+
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {
         match self {

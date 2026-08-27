@@ -84,10 +84,10 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .retain(|pcurve| used_pcurves.contains(&pcurve.id));
     }
 
-    let result = IgesEncoder::default().plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: None,
-    });
+    let result = IgesEncoder::default().plan(
+        EncodeInput::new(decoded.ir(), None),
+        TargetRequest::Explicit(IgesVersion::V5_3.target()),
+    );
     assert!(matches!(result, Err(CodecError::NotImplemented(_))));
 }
 
@@ -237,10 +237,10 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     });
 
     let plan = crate::IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .expect("NURBS curve has a supported semantic writer profile");
     let mut written = Vec::new();
     plan.write_to(&mut written)
@@ -335,10 +335,10 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     });
 
     let plan = crate::IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .expect("neutral tolerance floor is writable");
     let mut written = Vec::new();
     let report = plan
@@ -369,10 +369,10 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
     assert_eq!(decoded.ir().tolerances.linear, 0.001);
 
     let plan = crate::IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .expect("source resolution witness is writable");
     let mut written = Vec::new();
     let report = plan
@@ -502,10 +502,10 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("fixture decodes");
         let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            )
             .expect("fixture has a semantic writer profile");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("writer succeeds");

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -55,10 +57,7 @@ fn planar_sheet_round_trips_object_attributes() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -102,10 +101,7 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -170,10 +166,7 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -244,10 +237,7 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -313,10 +303,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
     ] {
         let mut bytes = Vec::new();
         RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -349,10 +336,7 @@ fn open_planar_solid_is_rejected_before_output() {
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
     let mut output = vec![0xaa];
     let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("incidence"));

@@ -8,6 +8,8 @@
 //! source fidelity; `encode` pins writer output and deliberate refusals.
 //! Shared harness: [`cadmpeg_test_support::golden`].
 
+use crate::IgesVersion;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -86,10 +88,8 @@ fn encode_snapshot(bytes: &[u8]) -> String {
         };
     let outcome = Encoder::plan(
         &IgesEncoder::default(),
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        },
+        EncodeInput::new(decoded.ir(), None),
+        TargetRequest::Explicit(IgesVersion::V5_3.target()),
     )
     .and_then(|plan| {
         let mut produced = Vec::new();

@@ -2,6 +2,8 @@
 //! Synthetic `.f3d` ZIP archive builders.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -44,10 +46,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less revision surface encode");
     let round_trip = F3dCodec

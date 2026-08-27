@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -512,10 +514,7 @@ fn encoder_writes_source_less_curved_sketches() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let decoded = SldprtCodec
@@ -797,10 +796,7 @@ fn encoder_writes_source_less_curved_sketches() {
     parameter.expression = "5mm".into();
     parameter.value = Some(ParameterValue::Length(Length(5.0)));
     let error = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(error
@@ -869,10 +865,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let decoded = SldprtCodec
@@ -1103,10 +1096,7 @@ fn encoder_writes_source_less_native_features() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let scan = container::scan_bytes(&encoded);

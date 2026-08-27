@@ -2,6 +2,8 @@
 //! The semantic writer admits both quarantine arenas as native passthrough.
 #![allow(clippy::unwrap_used)]
 
+use crate::IgesVersion;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
@@ -53,10 +55,10 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
     );
 
     let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .unwrap();
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     let mut written = Vec::new();

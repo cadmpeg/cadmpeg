@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use cadmpeg_ir::codec::TargetRequest;
 
 #[test]
 fn encode_emits_the_typed_ellipse_form_for_v5_0() {
@@ -14,10 +15,10 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
     let plan = IgesEncoder::new(IgesWriteOptions {
         version: IgesVersion::V5_0,
     })
-    .plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: None,
-    })
+    .plan(
+        EncodeInput::new(decoded.ir(), None),
+        TargetRequest::Explicit(IgesVersion::V5_0.target()),
+    )
     .expect("V5.0 admits a typed ellipse");
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).expect("V5.0 ellipse writes");

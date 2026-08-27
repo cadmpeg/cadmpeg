@@ -214,6 +214,7 @@ mod product_roundtrip {
 
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_codec_step::StepCodec;
+    use cadmpeg_ir::codec::TargetRequest;
     use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput};
     use cadmpeg_ir::products::{AssemblyGraph, Occurrence, OccurrenceParent, PrototypeReference};
     use cadmpeg_ir::{CadIr, Encoder};
@@ -378,10 +379,7 @@ mod product_roundtrip {
 
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput {
-                ir: &source,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP assembly");
         let decoded = StepCodec::default()

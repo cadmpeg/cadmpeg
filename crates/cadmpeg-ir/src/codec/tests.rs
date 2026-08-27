@@ -20,10 +20,10 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube();
     let mut encoded = Vec::new();
     CadirEncoder
-        .plan(crate::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(
+            crate::codec::EncodeInput::new(&ir, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let mut canonical = ir.to_canonical_json().unwrap();
@@ -36,10 +36,10 @@ fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum();
     let validation_counts = validate_neutral(&ir, Vec::new()).entity_counts;
     let plan = CadirEncoder
-        .plan(crate::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(
+            crate::codec::EncodeInput::new(&ir, None),
+            TargetRequest::Inherit,
+        )
         .expect("plan CADIR export");
 
     assert_eq!(plan.report().census.counts, validation_counts);

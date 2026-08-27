@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -397,10 +399,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         }];
     let mut generated = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("source-less embedded use curves");
     let generated = F3dCodec
@@ -630,10 +629,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first spring encode");
     let round_trip = F3dCodec
@@ -686,10 +682,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first parametric encode");
     let round_trip = F3dCodec
@@ -764,10 +757,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first surface-offset encode");
     let round_trip = F3dCodec

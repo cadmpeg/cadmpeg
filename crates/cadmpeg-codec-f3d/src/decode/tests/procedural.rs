@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -74,10 +76,7 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
         source_less.model.procedural_curves[0].cache_fit_tolerance = None;
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{family} source-less encode: {error}"));
         let round_trip = F3dCodec
@@ -163,10 +162,10 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     let mut missing_tolerance = source_less.clone();
     missing_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = None;
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &missing_tolerance,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&missing_tolerance, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("compound loft without its required tolerance must be rejected");
     assert!(
@@ -187,10 +186,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound-loft encode");
     let round_trip = F3dCodec
@@ -297,10 +293,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         construction.tail = expected.clone();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less compound-loft encode");
         let round_trip = F3dCodec
@@ -405,20 +398,17 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     let mut missing_tolerance = source_less.clone();
     missing_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = None;
     assert!(F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &missing_tolerance,
-            fidelity: None
-        })
+        .plan(
+            EncodeInput::new(&missing_tolerance, None),
+            TargetRequest::Inherit
+        )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("full scaled compound loft without tolerance must fail")
         .to_string()
         .contains("full shape requires a native cache-fit tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less scaled compound-loft encode");
     let round_trip = F3dCodec
@@ -495,10 +485,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         construction.branch = branch;
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less scaled compound-loft encode");
         let round_trip = F3dCodec
@@ -572,20 +559,17 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     let mut unexpected_tolerance = source_less.clone();
     unexpected_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.04);
     assert!(F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &unexpected_tolerance,
-            fidelity: None
-        })
+        .plan(
+            EncodeInput::new(&unexpected_tolerance, None),
+            TargetRequest::Inherit
+        )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("none-shape scaled compound loft with tolerance must fail")
         .to_string()
         .contains("none shape cannot carry a cache-fit tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less scaled compound-loft none-shape encode");
     let round_trip = F3dCodec
@@ -642,10 +626,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less skin surface encode");
     let round_trip = F3dCodec
@@ -711,10 +692,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
@@ -780,10 +758,7 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
@@ -861,10 +836,7 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
@@ -928,10 +900,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less structural-law encode");
     let round_trip = F3dCodec
@@ -1001,10 +970,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less expanded skin encode");
     let round_trip = F3dCodec
@@ -1075,10 +1041,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less algebraic skin encode");
     let round_trip = F3dCodec
@@ -1115,10 +1078,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         operands: Vec::new(),
     };
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(error.to_string().contains("requires 1 operands, got 0"));
@@ -1133,10 +1093,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         operands: vec![LawExpression::Double { value: 1.0 }],
     };
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(error.to_string().contains("unresolved variable arity"));
@@ -1204,10 +1161,7 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let round_trip = F3dCodec

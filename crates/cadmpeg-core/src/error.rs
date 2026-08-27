@@ -75,6 +75,26 @@ pub enum CodecError {
         /// Why the identified dialect is not supported.
         message: String,
     },
+    /// The encoder cannot write the dialect the caller asked for.
+    ///
+    /// The write-side counterpart of [`CodecError::UnsupportedDialect`]. It
+    /// carries no [`DialectMatch`]: nothing is being classified, and the
+    /// requested id can name no declared dialect at all. Both write refusals
+    /// use it: an explicit target outside the synthesis catalog, and an
+    /// inherit request whose source dialect can be neither preserved nor
+    /// synthesized.
+    #[error("{format} cannot write {requested}: {reason}; available targets: {available}")]
+    UnsupportedTarget {
+        /// Format layer that refused.
+        format: String,
+        /// The dialect asked for: an explicit id, or the source's dialect
+        /// under an inherit request.
+        requested: String,
+        /// Why that dialect is unavailable.
+        reason: String,
+        /// The synthesis catalog, comma separated, in catalog order.
+        available: String,
+    },
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),

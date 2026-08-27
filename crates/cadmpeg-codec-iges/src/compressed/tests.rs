@@ -3,7 +3,9 @@
 
 use super::*;
 use crate::test_support::{point_file, point_file_with_global};
+use crate::IgesVersion;
 use crate::{IgesCodec, IgesEncoder};
+use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::report::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
@@ -161,10 +163,10 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     // claimed Fixed ASCII. `TargetRequest::Inherit` (design section 8.1) is what
     // asks for preservation; the encoder trait does not carry it yet.
     let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: result.ir(),
-            fidelity: Some(result.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        )
         .unwrap();
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     match plan.fidelity_resolution() {

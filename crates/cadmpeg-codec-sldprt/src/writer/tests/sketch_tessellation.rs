@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
@@ -45,10 +47,10 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     );
 
     let error = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));

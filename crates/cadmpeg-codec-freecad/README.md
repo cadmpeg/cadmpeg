@@ -55,10 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &result.ir(),
-            fidelity: None,
-        })?
+        .plan(EncodeInput::new(&result.ir(), None))?
         .write_to(&mut output)?;
     Ok(())
 }

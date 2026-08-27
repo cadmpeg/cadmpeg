@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::EncodeInput;
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
@@ -404,10 +406,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("selector-zero source-less encode");
     let round_trip = F3dCodec
@@ -766,10 +765,7 @@ fn record_level_surface_bounds_round_trip() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("record-bounds encode");
     let round_trip = F3dCodec
@@ -876,10 +872,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less vertex-blend encode");
         let round_trip = F3dCodec
@@ -1379,10 +1372,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rolling-ball encode");
     let round_trip = F3dCodec
@@ -1431,10 +1421,7 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("canonical rolling-ball encode");
         let round_trip = F3dCodec

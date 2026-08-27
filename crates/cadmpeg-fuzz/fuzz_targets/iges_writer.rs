@@ -47,18 +47,12 @@ fuzz_target!(|data: &[u8]| {
             }],
         );
         assert!(encoder
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .is_err());
         return;
     }
 
-    let Ok(plan) = encoder.plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Ok(plan) = encoder.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
         return;
     };
     let mut encoded = Vec::new();
@@ -92,10 +86,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     let replay = encoder
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())), TargetRequest::Inherit)
         .expect("writer output must plan after the optional source edit");
     if control & 0x40 == 0 {
         assert_eq!(replay.write_path(), WritePath::VerbatimReplay);

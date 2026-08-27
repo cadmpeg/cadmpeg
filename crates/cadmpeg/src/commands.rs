@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Command execution, artifact writing, and human-readable reports.
 
+use cadmpeg_ir::codec::TargetRequest;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -710,10 +711,13 @@ fn export_ir(
         ArtifactStore::check_output_path(input, path, force)?;
     }
     let encoder = build_encoder(format, encoder_request)?;
-    let plan = encoder.plan(cadmpeg_ir::codec::EncodeInput {
-        ir,
-        fidelity: source_fidelity,
-    })?;
+    let plan = encoder.plan(
+        cadmpeg_ir::codec::EncodeInput {
+            ir,
+            fidelity: source_fidelity,
+        },
+        TargetRequest::Inherit,
+    )?;
     let needs_sidecar_digest =
         format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
     let report = if let Some(path) = out {

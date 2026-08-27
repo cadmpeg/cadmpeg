@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
+use cadmpeg_ir::codec::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
@@ -177,10 +178,10 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             options: options.clone(),
         };
         let plan = codec
-            .plan(EncodeInput {
-                ir: &edited,
-                fidelity: Some(result.source_fidelity()),
-            })
+            .plan(
+                EncodeInput::new(&edited, Some(result.source_fidelity())),
+                TargetRequest::Inherit,
+            )
             .expect("edited STEP document plan");
         assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Synthesized);
         assert_eq!(

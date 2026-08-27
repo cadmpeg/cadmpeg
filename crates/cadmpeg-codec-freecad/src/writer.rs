@@ -462,6 +462,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::test_support::*;
     use crate::FcstdCodec;
+    use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
     use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
     use std::io::Cursor;
 
@@ -554,10 +555,7 @@ pub(crate) mod tests {
 
         let mut encoded = Vec::new();
         let report = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &edited,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("encode edit");
         assert!(report.losses.is_empty());
@@ -624,10 +622,7 @@ pub(crate) mod tests {
 
         let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         let missing_graph = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut Vec::new()))
             .expect_err("missing graph must fail");
         assert!(missing_graph.to_string().contains("source-less"));
@@ -643,10 +638,7 @@ pub(crate) mod tests {
             .expect("decode source");
         let mut staged = Vec::new();
         FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut staged))
             .expect("write-only fallback");
         let mut streamed = Cursor::new(Vec::new());
@@ -679,10 +671,10 @@ pub(crate) mod tests {
             .set_arena("objects", &objects)
             .expect("replace objects");
         let error = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &declaration_edit,
-                fidelity: None,
-            })
+            .plan(
+                EncodeInput::new(&declaration_edit, None),
+                TargetRequest::Inherit,
+            )
             .and_then(|plan| plan.write_to(&mut Vec::new()))
             .expect_err("unserialized declaration edit must fail");
         assert!(error.to_string().contains("declaration edits"));
@@ -702,10 +694,7 @@ pub(crate) mod tests {
             .set_arena("entries", &entries)
             .expect("replace entries");
         let error = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &stale_entry,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&stale_entry, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut Vec::new()))
             .expect_err("stale entry metadata must fail");
         assert!(error.to_string().contains("stale length or digest"));
