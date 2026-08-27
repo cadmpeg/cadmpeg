@@ -445,9 +445,10 @@ impl F3dLossCode {
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
-            Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
-            | Self::KernelDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
         }
     }
 

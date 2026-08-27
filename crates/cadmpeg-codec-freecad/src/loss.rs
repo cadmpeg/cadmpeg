@@ -89,9 +89,8 @@ impl FreecadLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
-            Self::SourceDialectUnverified | Self::SourceDialectDisplaced => {
-                LossTaxonomy::SourceDialectUnverified
-            }
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
         }
     }
 

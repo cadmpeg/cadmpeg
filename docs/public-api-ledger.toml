@@ -1139,3 +1139,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::{default_target,resolve_catalog_write}"
 reason = "default_target now carries the canonical descriptor directly, and resolve_catalog_write returns that descriptor without reparsing its id through a caller-supplied function"
+
+[[change]]
+commit = "9a3a86eefc57d4abc73826aeedcd8963ae8e7c6f"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::report::LossTaxonomy::SourceDialectDisplaced"
+reason = "distinguish write-side source dialect identity displacement from an unverified decode-side declaration"

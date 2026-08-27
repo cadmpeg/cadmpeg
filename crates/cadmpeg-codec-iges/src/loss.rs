@@ -259,9 +259,8 @@ impl IgesLossCode {
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::SourceDialectUnverified | Self::SourceDialectDisplaced => {
-                LossTaxonomy::SourceDialectUnverified
-            }
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,

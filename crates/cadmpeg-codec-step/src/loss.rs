@@ -670,9 +670,8 @@ impl StepLossCode {
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::SourceDialectUnverified | Self::SourceDialectDisplaced => {
-                LossTaxonomy::SourceDialectUnverified
-            }
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered

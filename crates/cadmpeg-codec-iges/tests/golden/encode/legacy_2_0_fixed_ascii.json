@@ -15,7 +15,7 @@
       {
         "code": {
           "code": "target.source-dialect-displaced",
-          "kind": "source_dialect_unverified",
+          "kind": "source_dialect_displaced",
           "namespace": "iges"
         },
         "message": "source dialect iges:2.0-fixed-ascii was displaced by target dialect iges:5.3-fixed-ascii; the source dialect identity is not preserved",

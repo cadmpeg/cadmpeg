@@ -282,9 +282,10 @@ impl RhinoLossCode {
             Self::MeshVertexPrecisionReduced | Self::MeshNormalPrecisionReduced => {
                 LossTaxonomy::MeshVertexPrecision
             }
-            Self::SourceWriterStampUnverified
-            | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
     }
