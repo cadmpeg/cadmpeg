@@ -1130,8 +1130,9 @@ witness = "code:crates/cadmpeg-codec-f3d/src/container.rs"
 # `F3dDialect::classify_document` returns this row with
 # `Admission::AdmittedUnverified`, names `f3d:manifest-3-2-0-0` as the applied
 # strategy, and decode charges `f3d/source.dialect-unverified`
-# (dialect.rs:140-207). A manifest whose structure does not fit is refused as
-# structural failure; the declared version itself is not an allowlist gate.
+# (dialect.rs:140-207). The layout is attempted regardless of the declared
+# version. A manifest that fits decodes. If the layout fails under an
+# unrecognized version, the error names that version as the probable cause.
 id = "f3d:unknown"
 title = "Fusion .f3d archive with an unrecognized top-level manifest version"
 discriminants = { top_level_manifest_version = "any other" }
