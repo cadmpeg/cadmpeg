@@ -482,7 +482,7 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # `ArchiveVersion::Other(_)`.
 #
 # `crates/cadmpeg-codec-rhino/src/dialect.rs` maps that partition onto the rows
-# below: `ArchiveVersion::id` selects the row, `ArchiveVersion::classify` is
+# below: `ArchiveVersion::id` selects the row, `dialect::classify` is
 # the sole `DialectMatch` construction path, and `ArchiveVersion::refuses_decode`
 # is the sole disposition predicate -- it decides both the reported
 # `Admission` and the refusal `container::decode` returns.
