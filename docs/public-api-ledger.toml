@@ -1104,3 +1104,10 @@ crate = "cadmpeg-container"
 kind = "addition"
 item = "cadmpeg_container::compound::read_detection_prefix"
 reason = "library identification and the CLI must extend a CFB prefix through the same bounded directory-evidence reader"
+
+[[change]]
+commit = "d0abbc3d0314de9bf7ea14561968fea36691aa3e"
+crate = "cadmpeg-asm"
+kind = "addition"
+item = "cadmpeg_asm::dialect::{ACIS_TEXT_ASM,ACIS_TEXT_ACIS,ACIS_UNKNOWN}"
+reason = "the shared ACIS kernel namespace owns and pins the three text or unframed identity rows even though host codecs do not emit a separate kernel-layer match"

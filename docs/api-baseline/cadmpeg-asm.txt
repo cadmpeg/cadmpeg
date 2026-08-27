@@ -1,4 +1,4 @@
-# generated at 796cb27fc
+# generated at d0abbc3d0
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -571,6 +571,9 @@ pub const cadmpeg_asm::dialect::ACIS_ASM_BINARYFILE_8: cadmpeg_core::dialect::Di
 pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_217: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_BINARY_OTHER: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::ACIS_TEXT_ACIS: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::ACIS_TEXT_ASM: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::ACIS_UNKNOWN: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::VERIFIED_ACIS_MAJORS: [u32; 2]
 pub fn cadmpeg_asm::dialect::acis_admission(core::option::Option<u32>) -> cadmpeg_core::dialect::Admission
 pub fn cadmpeg_asm::dialect::acis_band_verified(core::option::Option<u32>) -> bool
