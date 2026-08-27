@@ -13,6 +13,10 @@
         "save_date": "Tue Mar 31 16:16:19 2026",
         "solved_record_len": "1987",
         "zip_entry_count": "3"
+      },
+      "dialect": "f3d:manifest-3-2-0-0",
+      "declared": {
+        "top_level_manifest_version": "3-2-0-0"
       }
     },
     "units": {
@@ -501,6 +505,16 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (2000 bytes uncompressed)"
+    ],
+    "dialects": [
+      {
+        "format": "f3d",
+        "dialect": "f3d:manifest-3-2-0-0",
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "admission": "admitted"
+      }
     ]
   },
   "source_fidelity": {

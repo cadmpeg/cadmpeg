@@ -87,6 +87,7 @@ mod bytes;
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod design;
+pub(crate) mod dialect;
 mod error;
 #[allow(dead_code)] // Multi-document helpers remain behind the codec facade.
 pub(crate) mod f3z;

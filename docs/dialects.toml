@@ -1048,10 +1048,12 @@ witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt
 # --------------------------------------------------------------------------
 # The discriminant is the leading length-prefixed ASCII field of the ZIP-root
 # `Manifest.dat`, compared for exact equality against "3-2-0-0"
-# (`parse_top_level`, crates/cadmpeg-codec-f3d/src/manifest.rs:179-198;
-# routing at container.rs:435-436). Two co-discriminants follow immediately
-# and are equally exact: the ASCII kind "FusionDocType" (manifest.rs:199) and
-# the UTF-16 extension ".f3d" (manifest.rs:200).
+# (`parse_top_level`, crates/cadmpeg-codec-f3d/src/manifest.rs; routing in
+# `container::scan`). Two co-discriminants follow immediately and are equally
+# exact: the ASCII kind "FusionDocType" and the UTF-16 extension ".f3d".
+#
+# The classification lives in crates/cadmpeg-codec-f3d/src/dialect.rs and runs
+# inside `container::scan`, beside the branch that chooses the parse strategy.
 #
 # Open grammar question, not decided here. Two further document-wide forks
 # live inside the same manifest and would each be a B1 boundary if the codec
@@ -1076,7 +1078,7 @@ witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt
 complete = false
 
 [[dialect]]
-# manifest.rs:190-191. Fixture verified: the top-level `Manifest.dat` of
+# `parse_top_level`. Fixture verified: the top-level `Manifest.dat` of
 # attributes.f3d opens `07 00 00 00` + "3-2-0-0", then "FusionDocType", then
 # UTF-16 ".f3d"; generation 1234; asset revision 20.
 id = "f3d:manifest-3-2-0-0"
@@ -1085,26 +1087,28 @@ discriminants = { top_level_manifest_version = "3-2-0-0", top_level_manifest_kin
 witness = "corpus:crates/cadmpeg-codec-f3d/tests/golden/fixtures/attributes.f3d"
 
 [[dialect]]
-# container.rs:445-451. Reached when the ZIP has no root `Manifest.dat` but
-# does have `Manifest.json`, `DesignDescription.json`, and a root-level
-# `*.f3d`. This branch performs NO version check at all -- it is a
-# filename-presence test -- so it is a distinct identity row with an
-# unbounded interior.
+# `container::scan`. Reached when the ZIP has no root `Manifest.dat` but does
+# have `Manifest.json`, `DesignDescription.json`, and a root-level `*.f3d`.
+# This branch performs NO version check at all -- it is a filename-presence
+# test -- so it is a distinct identity row with an unbounded interior. The
+# root-level `*.f3d` clause is part of the discriminant: the two JSON members
+# alone do not select this branch.
 id = "f3d:f3z-multi-document"
 title = "Fusion multi-document archive (F3Z manifest set)"
-discriminants = { root_manifest_dat = "absent", manifest_json = "present", design_description_json = "present" }
+discriminants = { root_manifest_dat = "absent", manifest_json = "present", design_description_json = "present", root_f3d_member = "present" }
 seam = "no binary manifest and no version field; the document set is named by JSON"
-witness = "code:crates/cadmpeg-codec-f3d/src/container.rs:445"
+witness = "code:crates/cadmpeg-codec-f3d/src/container.rs"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). Disposition: refused with
-# `CodecError::NotImplemented` naming the observed version
-# (manifest.rs:191-198); structural corruption stays `Malformed`. This row
-# is the first `UnsupportedDialect` migration target.
+# `CodecError::NotImplemented` naming the observed version, before any report
+# exists; structural corruption stays `Malformed`. The row is therefore pinned
+# in `F3dDialect` with no runtime producer: no `DialectMatch` carries it. This
+# row is the first `UnsupportedDialect` migration target.
 id = "f3d:unknown"
 title = "Fusion .f3d archive with an unrecognized top-level manifest version"
 discriminants = { top_level_manifest_version = "any other" }
-witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs:190"
+witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs"
 
 # --------------------------------------------------------------------------
 # Autodesk Inventor
