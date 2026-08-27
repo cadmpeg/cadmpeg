@@ -267,7 +267,7 @@ class TestWitness(RegistryCase):
         )
 
 
-class TestLattice(RegistryCase):
+class TestSupersedes(RegistryCase):
     IGES_FORMATS = "[format.iges]\ncomplete = true\n[format.demo]\ncomplete = true\n"
 
     def iges(self, extra: str) -> str:
@@ -279,33 +279,14 @@ class TestLattice(RegistryCase):
         )
         return _registry(base + extra, formats=self.IGES_FORMATS)
 
-    def test_lattice_keys_rejected_off_iges(self):
-        for key in ("supersedes", "adds", "subtracts"):
-            with self.subTest(key=key):
-                self.assertFires(
-                    _registry(GOOD_ROW + f'{key} = ["402:6"]\n', formats=self.IGES_FORMATS),
-                    "admitted only on iges rows",
-                )
+    def test_supersedes_rejected_off_iges(self):
+        self.assertFires(
+            _registry(GOOD_ROW + 'supersedes = ["demo:zero"]\n', formats=self.IGES_FORMATS),
+            "admitted only on iges rows",
+        )
 
-    def test_lattice_keys_must_be_lists_of_strings(self):
-        for key in ("supersedes", "adds", "subtracts"):
-            with self.subTest(key=key):
-                self.assertFires(self.iges(f"{key} = [7]\n"), f"{key} must be a list of strings")
-
-    def test_subtracts_shape(self):
-        self.assertFires(self.iges('subtracts = ["402"]\n'), "is not type:form")
-
-    def test_subtracts_rejects_a_range(self):
-        self.assertFires(self.iges('subtracts = ["406:19-26"]\n'), "is not type:form")
-
-    def test_adds_shape(self):
-        self.assertFires(self.iges('adds = ["141:x"]\n'), "is not type:form or type:low-high")
-
-    def test_adds_inverted_range(self):
-        self.assertFires(self.iges('adds = ["406:26-19"]\n'), "inverted form range")
-
-    def test_adds_accepts_point_and_range(self):
-        self.assertClean(self.iges('adds = ["141:0", "406:19-26", "228:5001-9999"]\n'))
+    def test_supersedes_must_be_a_list_of_strings(self):
+        self.assertFires(self.iges("supersedes = [7]\n"), "supersedes must be a list of strings")
 
     def test_supersedes_unknown_id(self):
         self.assertFires(
@@ -314,7 +295,7 @@ class TestLattice(RegistryCase):
         )
 
     def test_supersedes_resolves(self):
-        self.assertClean(self.iges('supersedes = ["iges:4.0-fixed-ascii"]\nsubtracts = ["402:6"]\n'))
+        self.assertClean(self.iges('supersedes = ["iges:4.0-fixed-ascii"]\n'))
 
     def test_supersedes_self_cycle(self):
         self.assertFires(self.iges('supersedes = ["iges:5.0-fixed-ascii"]\n'), "supersedes cycle")
