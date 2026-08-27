@@ -929,7 +929,7 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
     // `layout` attribute above stays exactly as it was: the duplication is
     // deliberate for this phase, and retiring the ad-hoc attribute keys is a
     // later one.
-    let primary = crate::dialect::CreoDialect::classify(scan);
+    let primary = crate::dialect::classify(scan);
     (
         SourceMeta {
             declared: primary.declared,
