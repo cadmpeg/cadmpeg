@@ -123,8 +123,9 @@ fn charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> bool {
     let expected = IgesLossCode::SourceDialectUnverified
         .note(String::new())
         .code;
+    let matched = IgesDialect::classify(Representation::FixedAscii, global);
     global
-        .dialect_loss()
+        .dialect_loss(&matched)
         .is_some_and(|note| note.code == expected)
 }
 

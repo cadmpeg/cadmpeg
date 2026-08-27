@@ -65,30 +65,41 @@ pub(crate) const FORMAT: &str = "rhino";
 /// `--to 60` and `--to rhino:archive-60` name the same row.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: "rhino:archive-50",
+        id: RhinoArchiveVersion::V5.pinned(),
         label: "Rhino 5 archive (50)",
         aliases: &["5", "50"],
         default: false,
     },
     TargetDescriptor {
-        id: "rhino:archive-60",
+        id: RhinoArchiveVersion::V6.pinned(),
         label: "Rhino 6 archive (60)",
         aliases: &["6", "60"],
         default: false,
     },
     TargetDescriptor {
-        id: "rhino:archive-70",
+        id: RhinoArchiveVersion::V7.pinned(),
         label: "Rhino 7 archive (70)",
         aliases: &["7", "70"],
         default: false,
     },
     TargetDescriptor {
-        id: "rhino:archive-80",
+        id: RhinoArchiveVersion::V8.pinned(),
         label: "Rhino 8 archive (80)",
         aliases: &["8", "80"],
         default: true,
     },
 ];
+
+impl RhinoArchiveVersion {
+    pub(crate) const fn pinned(self) -> &'static str {
+        match self {
+            Self::V5 => "rhino:archive-50",
+            Self::V6 => "rhino:archive-60",
+            Self::V7 => "rhino:archive-70",
+            Self::V8 => "rhino:archive-80",
+        }
+    }
+}
 
 /// The archive version a target id names, by id or by alias, or `None` when the
 /// id is outside [`TARGETS`].

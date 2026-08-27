@@ -97,11 +97,10 @@ pub(in super::super) fn build_report(
     let mut losses = Vec::new();
 
     // The admission charge, first: it describes how the whole document was
-    // read, not what any one record cost. `crate::dialect::layout_is_declared` is
-    // the same predicate that decides the `Admission` in this report's
-    // `dialects` entry, so the report cannot claim a verified admission while
-    // charging the loss.
-    losses.extend(crate::dialect::dialect_loss(scan.framing.layout));
+    // read, not what any one record cost. The loss reads the completed primary
+    // match, so the report cannot claim a verified admission while charging it.
+    let primary = crate::dialect::classify(scan);
+    losses.extend(crate::dialect::dialect_loss(&primary));
 
     if container_only {
         losses.push(
@@ -160,7 +159,7 @@ pub(in super::super) fn build_report(
     push_structural_layer_notes(&mut losses, scan);
     push_coverage_drop_losses(&mut losses, &coverage);
 
-    let dialects = vec![crate::dialect::classify(scan)];
+    let dialects = vec![primary];
     debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     DecodeReport {
         dialects,

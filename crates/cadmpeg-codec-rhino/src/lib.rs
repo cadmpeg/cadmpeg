@@ -82,12 +82,7 @@ impl RhinoArchiveVersion {
     /// The spelling a caller passes as `TargetRequest::Explicit`.
     #[must_use]
     pub const fn target(self) -> &'static str {
-        match self {
-            Self::V5 => "rhino:archive-50",
-            Self::V6 => "rhino:archive-60",
-            Self::V7 => "rhino:archive-70",
-            Self::V8 => "rhino:archive-80",
-        }
+        self.pinned()
     }
 
     const fn value(self) -> u64 {

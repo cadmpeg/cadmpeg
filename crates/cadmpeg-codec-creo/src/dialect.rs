@@ -32,8 +32,8 @@
 //! unclassified document simply runs the layout-independent path and skips all
 //! of them. That is a real recovery strategy and it is charged as one:
 //! [`Admission::AdmittedUnverified`] plus
-//! [`CreoLossCode::SourceDialectUnverified`], both derived from
-//! [`layout_is_declared`] so they cannot disagree.
+//! [`CreoLossCode::SourceDialectUnverified`]. The loss reads the completed
+//! [`DialectMatch::admission`] so the two facts cannot disagree.
 
 use crate::container::{ContainerScan, Layout};
 use crate::loss::CreoLossCode;
@@ -62,34 +62,13 @@ const DECLARED_LEGACY_ASCII_SCHEMA: &str = "legacy_ascii_schema";
 /// no `Version` or `Release` word.
 const DECLARED_LEGACY_ASCII_PRODUCT_RELEASE: &str = "legacy_ascii_product_release";
 
-/// Whether the layout classification named a dialect whose own declared decode
-/// strategy this run then applied.
-///
-/// The single predicate behind two facts that must never disagree: the
-/// [`Admission`] in [`classify`] and the
-/// [`CreoLossCode::SourceDialectUnverified`] charge in [`dialect_loss`]. Both
-/// call this; neither recomputes it, so the biconditional the decode policy
-/// requires holds by construction rather than by two authors agreeing.
-///
-/// True when a layout discriminant matched and the decode gates for that
-/// layout ran — the only state that charges no loss. False when no discriminant
-/// matched, so the decode ran the layout-independent path and skipped every
-/// layout gate.
-pub(crate) const fn layout_is_declared(layout: Layout) -> bool {
-    match layout {
-        Layout::Nd | Layout::Depdb | Layout::LegacyAscii => true,
-        Layout::Unknown => false,
-    }
-}
-
 /// The loss charged when no layout discriminant matched.
 ///
-/// `None` exactly when [`layout_is_declared`] holds, which is also exactly
-/// when [`classify`] reports [`Admission::Admitted`].
-pub(crate) fn dialect_loss(layout: Layout) -> Option<LossNote> {
-    if layout_is_declared(layout) {
+/// `None` exactly when the completed match reports [`Admission::Admitted`].
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    let Admission::AdmittedUnverified { .. } = &matched.admission else {
         return None;
-    }
+    };
     Some(CreoLossCode::SourceDialectUnverified.note(
         "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the \
          p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII \
@@ -142,12 +121,12 @@ impl Layout {
 /// not do.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
     let layout = scan.framing.layout;
-    let admission = if layout_is_declared(layout) {
-        Admission::Admitted
-    } else {
+    let admission = if layout == Layout::Unknown {
         Admission::AdmittedUnverified {
             nearest: Layout::Unknown.id(),
         }
+    } else {
+        Admission::Admitted
     };
     let mut declared = BTreeMap::new();
     declared.insert(

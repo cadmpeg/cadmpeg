@@ -97,14 +97,7 @@ impl StepSchema {
     /// The spelling a caller passes as `TargetRequest::Explicit`.
     #[must_use]
     pub const fn target(self) -> &'static str {
-        match self {
-            Self::Ap203Edition1 => "step:ap203-e1",
-            Self::Ap203Edition2 => "step:ap203-e2",
-            Self::Ap214 => "step:ap214",
-            Self::Ap242Edition1 => "step:ap242-e1",
-            Self::Ap242Edition2 => "step:ap242-e2",
-            Self::Ap242Edition3 => "step:ap242-e3",
-        }
+        self.pinned()
     }
 
     /// Exact schema identifier written in `FILE_SCHEMA`.

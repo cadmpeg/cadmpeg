@@ -149,14 +149,16 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         .code;
     for case in CASES {
         let facts = document(case.declaration);
-        let charged = FcstdDialect::dialect_loss(&facts).is_some_and(|note| note.code == expected);
+        let matched = FcstdDialect::classify(&facts);
+        let charged =
+            FcstdDialect::dialect_loss(&matched).is_some_and(|note| note.code == expected);
         assert_eq!(
             case.admitted, !charged,
             "SchemaVersion {:?}: the case table and the charged loss disagree",
             case.declaration
         );
         assert_eq!(
-            FcstdDialect::classify(&facts).admission == Admission::Admitted,
+            matched.admission == Admission::Admitted,
             !charged,
             "SchemaVersion {:?}: admission and the dialect-unverified loss must agree",
             case.declaration

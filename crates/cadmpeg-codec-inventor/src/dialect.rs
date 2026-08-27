@@ -176,15 +176,9 @@ impl DialectRecovery {
         }
     }
 
-    /// Whether every declaration this document carries selects a grammar this
-    /// codec implements, and it carries one of each.
-    ///
-    /// The single predicate behind two facts that must never disagree: the
-    /// [`InventorLossCode::SourceDialectUnverified`] charge in
-    /// [`Self::dialect_loss`] and the [`Admission`] in [`Self::dialect_match`].
-    /// Both call this; neither recomputes it.
-    pub(crate) fn is_verified(&self) -> bool {
-        !self.schemas.is_empty()
+    /// Admission derived from every declaration this document carries.
+    fn admission(&self) -> Admission {
+        if !self.schemas.is_empty()
             && self
                 .schemas
                 .iter()
@@ -194,25 +188,22 @@ impl DialectRecovery {
                 .meta_streams
                 .iter()
                 .all(MetaStreamDeclaration::is_verified)
-    }
-
-    /// The row whose discriminants this document satisfies.
-    fn dialect(&self) -> InventorDialect {
-        if self.is_verified() {
-            InventorDialect::Cfb3Rse31Meta8
-        } else {
-            InventorDialect::Unknown
-        }
-    }
-
-    /// This document's [`DialectMatch`], identity and admission together.
-    pub(crate) fn dialect_match(&self) -> DialectMatch {
-        let admission = if self.is_verified() {
+        {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
                 nearest: InventorDialect::Cfb3Rse31Meta8.id(),
             }
+        }
+    }
+
+    /// This document's [`DialectMatch`], identity and admission together.
+    pub(crate) fn dialect_match(&self) -> DialectMatch {
+        let admission = self.admission();
+        let dialect = if admission == Admission::Admitted {
+            InventorDialect::Cfb3Rse31Meta8
+        } else {
+            InventorDialect::Unknown
         };
         let mut declared = BTreeMap::new();
         declared.insert(
@@ -245,7 +236,7 @@ impl DialectRecovery {
         }
         DialectMatch {
             format: FORMAT.into(),
-            dialect: Some(self.dialect().id()),
+            dialect: Some(dialect.id()),
             declared,
             admission,
         }
@@ -256,10 +247,10 @@ impl DialectRecovery {
     ///
     /// `None` exactly when [`Self::is_verified`] holds, which is also exactly
     /// when [`Self::dialect_match`] reports [`Admission::Admitted`].
-    pub(crate) fn dialect_loss(&self) -> Option<LossNote> {
-        if self.is_verified() {
+    pub(crate) fn dialect_loss(&self, matched: &DialectMatch) -> Option<LossNote> {
+        let Admission::AdmittedUnverified { .. } = &matched.admission else {
             return None;
-        }
+        };
         let mut reasons = Vec::new();
         if self.schemas.is_empty() {
             reasons.push("no RSe database stream declares a schema".to_owned());

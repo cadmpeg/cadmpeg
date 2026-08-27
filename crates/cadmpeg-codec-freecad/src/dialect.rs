@@ -170,20 +170,6 @@ impl FcstdDialect {
     /// writer's own default follows, so it names the strategy used.
     const NEAREST_VERIFIED: Self = Self::Schema4;
 
-    /// Whether the parse strategy this codec used is the one declared for the
-    /// document's own schema.
-    ///
-    /// The single predicate behind both the [`Admission`] in [`Self::classify`]
-    /// and the [`FreecadLossCode::SourceDialectUnverified`] charge in
-    /// [`Self::dialect_loss`]. Both call this; neither recomputes it. Every
-    /// declared row has a strategy — schema 2 has its own, schemas 3 and 4
-    /// share one — so the predicate is exactly "the discriminant matched a
-    /// declared row", and the biconditional the decode policy requires holds by
-    /// construction rather than by two authors agreeing.
-    fn grammar_is_declared(schema_version: &str) -> bool {
-        Self::from_schema_version(schema_version) != Self::Unknown
-    }
-
     /// Classifies one document. The single construction path for a
     /// [`DialectMatch`] in this codec, so a classification bug and the report
     /// can never disagree.
@@ -196,12 +182,12 @@ impl FcstdDialect {
     /// the discriminant.
     pub(crate) fn classify(document: &DocumentFacts) -> DialectMatch {
         let dialect = Self::from_schema_version(&document.schema_version);
-        let admission = if Self::grammar_is_declared(&document.schema_version) {
-            Admission::Admitted
-        } else {
+        let admission = if dialect == Self::Unknown {
             Admission::AdmittedUnverified {
                 nearest: Self::NEAREST_VERIFIED.id(),
             }
+        } else {
+            Admission::Admitted
         };
         let mut declared = BTreeMap::new();
         declared.insert(
@@ -222,15 +208,18 @@ impl FcstdDialect {
 
     /// The loss charged when the document's schema names no declared row.
     ///
-    /// `None` exactly when [`Self::grammar_is_declared`] holds, which is also
-    /// exactly when [`Self::classify`] reports [`Admission::Admitted`].
-    pub(crate) fn dialect_loss(document: &DocumentFacts) -> Option<LossNote> {
-        if Self::grammar_is_declared(&document.schema_version) {
+    /// `None` exactly when the completed match reports
+    /// [`Admission::Admitted`].
+    pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+        let Admission::AdmittedUnverified { .. } = &matched.admission else {
             return None;
-        }
+        };
+        let schema_version = matched
+            .declared
+            .get(DECLARED_SCHEMA_VERSION)
+            .map_or("absent", String::as_str);
         Some(FreecadLossCode::SourceDialectUnverified.note(format!(
-            "FCStd SchemaVersion={} names no declared persistence layout; this decode scanned the document with the Objects/ObjectData/Object vocabulary declared for schemas 3 and 4",
-            document.schema_version
+            "FCStd SchemaVersion={schema_version} names no declared persistence layout; this decode scanned the document with the Objects/ObjectData/Object vocabulary declared for schemas 3 and 4"
         )))
     }
 }
