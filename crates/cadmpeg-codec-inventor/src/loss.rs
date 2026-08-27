@@ -89,6 +89,8 @@ pub enum InventorLossCode {
     AssemblyPlacementNotTransferred,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
+    /// The active kernel carrier used an unverified Spatial ACIS grammar band.
+    KernelDialectUnverified,
 }
 
 impl InventorLossCode {
@@ -126,6 +128,7 @@ impl InventorLossCode {
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
         Self::SourceDialectUnverified,
+        Self::KernelDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -165,6 +168,7 @@ impl InventorLossCode {
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
 
@@ -213,7 +217,9 @@ impl InventorLossCode {
                 LossTaxonomy::AssemblyComponentsExternal
             }
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
         }
     }
 
@@ -276,6 +282,7 @@ mod tests {
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
                 "source.dialect-unverified",
+                "source.kernel-dialect-unverified",
             ]
         );
     }

@@ -83,7 +83,7 @@ pub(crate) fn decode_kernel_carrier(
         KernelFamily::Acis => {
             // Every save-format band frames and decodes the same way. The band
             // moves the carrier's `acis:` admission and its
-            // source.dialect-unverified mark (`decode::kernel_layer`), never
+            // source.kernel-dialect-unverified mark (`dialect::kernel_layer`), never
             // whether the records are read.
             let header = acis_header::parse(bytes).ok_or_else(|| {
                 CodecError::Malformed("Inventor ACIS carrier has no parseable header".into())

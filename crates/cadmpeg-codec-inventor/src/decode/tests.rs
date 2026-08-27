@@ -254,7 +254,9 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     );
     assert_eq!(layer.declared["save_format_major"], "700");
     assert!(
-        codes.iter().any(|code| code.contains("dialect-unverified")),
+        codes
+            .iter()
+            .any(|code| { code.contains(InventorLossCode::KernelDialectUnverified.code()) }),
         "{codes:?}"
     );
 }
@@ -297,7 +299,7 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
+            .any(|loss| loss.code == InventorLossCode::KernelDialectUnverified.kind())
     };
     assert!(charged(&unverified));
     assert!(!charged(&verified));
