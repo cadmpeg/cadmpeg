@@ -13,6 +13,6 @@ pub use catalogs::{
     ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError, ResolvedSource,
 };
 pub use document::{LoadOrigin, LoadedDocument};
-pub use encoders::{build_encoder, EncoderRequest};
+pub use encoders::{build_encoder, LossPolicy};
 pub use refusal::ConversionRefusal;
 pub use transcoder::{export_target, ConversionPolicy, SourceRequest, Transcoder};

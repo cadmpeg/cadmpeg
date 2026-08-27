@@ -700,6 +700,83 @@ item = "impl Default for cadmpeg_codec_rhino::RhinoEncoder"
 reason = "the catalog default archive version, so a caller with no version to state does not have to name one; the constructor version is now only the fallback for a request with nothing to inherit"
 
 [[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "deletion"
+item = "cadmpeg::application::EncoderRequest"
+reason = "the per-format request type is gone with the per-format target flags; what an encoder writes is a target and TargetRequest carries it, so construction has nothing format-specific left to decide"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::application::build_encoder"
+reason = "takes the format and a format-independent LossPolicy and returns the encoder directly; total over Format and infallible, and constructing it under no codec feature is what dissolved the dead-code failure of a codec-only build"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::application::export_target"
+reason = "takes the output format, the unresolved dialect half of --to, and the loss policy, and returns the target without a Result; the wrong-format guards died with the flags they guarded, and the dialect is refused by the encoder's plan after the read"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_target"
+reason = "deleted with --step-target; the dialect half of --to travels unresolved and the encoder resolves it"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_options"
+reason = "deleted with --step-target/--reject-step-losses; the only surviving writer option is the loss policy, which build_encoder now takes format-independently"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::step_flag_present"
+reason = "deleted with the wrong-format guard it fed; a wrong combination is no longer expressible, so there is nothing to guard"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::iges_options"
+reason = "deleted with --iges-target; the IGES version is a target and TargetRequest carries it"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::rhino_target"
+reason = "deleted with --rhino-target, for the same reason"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::commands::ConversionPlan::reject_lossy"
+reason = "split into reject_decode_losses and reject_export_losses for --reject-lossy[=decode|export|any]; one bool could not express the scope the folded --reject-step-losses needed"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "field"
+item = "cadmpeg::application::ConversionPolicy::reject_lossy"
+reason = "split into reject_decode_losses and reject_export_losses, mirroring the plan"
+
+[[change]]
+commit = "6fc5f4e6ff706752eaffdfa1b2bd641e8cd8cc55"
+crate = "cadmpeg"
+kind = "signature"
+item = "cadmpeg::commands::convert"
+reason = "takes the raw --to value instead of a parsed Format, because the value carries a dialect half clap cannot type"
+
+[[change]]
 commit = "PENDING-UNIFY-WRITE-RESOLUTION"
 crate = "cadmpeg-core"
 kind = "field"
@@ -726,3 +803,10 @@ crate = "cadmpeg-codec-rhino"
 kind = "deletion"
 item = "cadmpeg_codec_rhino::RhinoEncoder::new"
 reason = "RhinoEncoder holds no target state; the constructor version was a fourth answer to which dialect and overrode the other three"
+
+[[change]]
+commit = "PENDING-UNIFY-WRITE-RESOLUTION-MERGE"
+crate = "cadmpeg-codec-iges"
+kind = "deletion"
+item = "cadmpeg_codec_iges::IgesWriteOptions"
+reason = "sole field was the target version and its last reader was the deleted --iges-target plumbing; a one-field options struct nothing constructs and nothing reads is not an options struct"

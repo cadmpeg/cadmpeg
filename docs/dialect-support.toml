@@ -12,7 +12,7 @@
 #                          an identity row.
 #                read      `L0`..`L9`, `detected`, `refused`, or
 #                          `unclassified-recovered`.
-#                write     `verified`, `emitted`, or `none`.
+#                write     `verified`, `emitted`, `preserved`, or `none`.
 #                fixtures  repo-relative paths to files this row decodes.
 #                          Every path must exist.
 #                reason    required when `read = "refused"` or `fixtures` is
@@ -52,20 +52,38 @@
 #   no fixture for, the cell is `detected` and the reason says so. No score
 #   here was invented; none was copied past the gate.
 #
-# How the write cell is chosen. `verified` means the target has checked-in
-# golden artifacts proving deterministic output that re-decodes, or a stated
-# independent-application acceptance gate. `emitted` means the encoder
-# exports the target and the profile states it is emitted, without that
-# evidence. `none` means no encoder writes the dialect. The ids each
-# encoder's `targets()` exports are a subset of that format's identity rows;
-# the checker proves it, and proves each exported id is not `write = "none"`.
+# How the write cell is chosen. There are two write capabilities, and the
+# column never conflates them.
 #
-# Two namespaces have no code producer at all. `acis:` is registry-only: its
-# streams are wrapped by the `sat:` rows. `parasolid:` has no owning crate,
-# and its schema tokens are read as attributes inside the sldprt and nx
-# readers. The schema has no cell for "identity row with no consumer", so
-# these twelve rows carry the disposition the wrapping code enforces and say
-# so in the reason.
+#   SYNTHESIS builds the dialect from neutral IR for arbitrary input. It is
+#   static: the encoder's `targets()` catalog enumerates it. `verified` means
+#   that target has checked-in golden artifacts proving deterministic output
+#   that re-decodes, or a stated independent-application acceptance gate.
+#   `emitted` means the encoder exports the target and the profile states it
+#   is emitted, without that evidence.
+#
+#   PRESERVATION reproduces a dialect only when the source already is one --
+#   verbatim byte replay or a patch of the retained baseline, asked for with
+#   `TargetRequest::Inherit`. It is input-conditioned, so it is never a
+#   catalog row: a `targets()` that listed it would advertise an output
+#   arbitrary input cannot reach. `preserved` is that cell.
+#
+#   `none` means no encoder writes the dialect on any path.
+#
+# The checker holds the two apart in both directions: a `preserved` row must
+# not appear in any `targets()` catalog, and a `verified`/`emitted` row on a
+# format that has a catalog must appear in it. It also proves each exported
+# id is a subset of that format's identity rows and is not `write = "none"`.
+#
+# Two namespaces have no owning crate, so nothing classifies them on the read
+# side. `acis:` is registry-only: its streams are wrapped by the `sat:` rows.
+# `parasolid:` schema tokens are read as attributes inside the sldprt and nx
+# readers. The schema has no cell for "identity row with no reader", so these
+# twelve rows carry the disposition the wrapping code enforces and say so in
+# the reason. Two of them are written even so: the sldprt writer stamps a
+# Parasolid schema token on every stream it generates, which is synthesis at
+# the kernel layer, and an embedded-kernel dialect is never its host's
+# `targets()` row.
 
 
 # --------------------------------------------------------------------------
@@ -76,56 +94,86 @@
 dialect = "iges:1.0-fixed-ascii"
 grammar = "fixed-ascii"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified"""
+AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+a score. Write is preservation only: `Inherit` replays whatever dialect
+the source is (`writer.rs:93-97`, `replay_bytes` with no target,
+`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
+excludes this row by construction. `targets.rs:84` proves the other
+half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
+refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:ansi-y14.26m-1981-fixed-ascii"
 grammar = "fixed-ascii"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified"""
+AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+a score. Write is preservation only: `Inherit` replays whatever dialect
+the source is (`writer.rs:93-97`, `replay_bytes` with no target,
+`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
+excludes this row by construction. `targets.rs:84` proves the other
+half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
+refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:2.0-fixed-ascii"
 grammar = "fixed-ascii"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified"""
+AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+a score. Write is preservation only: `Inherit` replays whatever dialect
+the source is (`writer.rs:93-97`, `replay_bytes` with no target,
+`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
+excludes this row by construction. `targets.rs:84` proves the other
+half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
+refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:3.0-fixed-ascii"
 grammar = "fixed-ascii"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified"""
+AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+a score. Write is preservation only: `Inherit` replays whatever dialect
+the source is (`writer.rs:93-97`, `replay_bytes` with no target,
+`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
+excludes this row by construction. `targets.rs:84` proves the other
+half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
+refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:asme-ansi-y14.26m-1987-fixed-ascii"
 grammar = "fixed-ascii"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified"""
+AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+a score. Write is preservation only: `Inherit` replays whatever dialect
+the source is (`writer.rs:93-97`, `replay_bytes` with no target,
+`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
+excludes this row by construction. `targets.rs:84` proves the other
+half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
+refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:4.0-fixed-ascii"
@@ -142,12 +190,18 @@ dialect evidence here"""
 dialect = "iges:asme-y14.26m-1989-fixed-ascii"
 grammar = "fixed-ascii"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified"""
+AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+a score. Write is preservation only: `Inherit` replays whatever dialect
+the source is (`writer.rs:93-97`, `replay_bytes` with no target,
+`writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
+excludes this row by construction. `targets.rs:84` proves the other
+half on `iges:1.0-fixed-ascii`: with the retained image gone, `Inherit`
+refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:5.0-fixed-ascii"
@@ -272,110 +326,160 @@ fixtures = [
 dialect = "iges:4.0-compressed-ascii"
 grammar = "compressed-ascii"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
-profile calls this a separate envelope and states no score for it"""
+profile calls this a separate envelope and states no score for it. Write
+is preservation only: the retained source image is the original bytes, and
+`Inherit` replays them verbatim (Compressed ASCII included,
+`writer.rs:93-97`). The semantic writer emits Fixed ASCII only, so this
+row is absent from the synthesis catalog by construction
+(`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.0-compressed-ascii"
 grammar = "compressed-ascii"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
-profile calls this a separate envelope and states no score for it"""
+profile calls this a separate envelope and states no score for it. Write
+is preservation only: the retained source image is the original bytes, and
+`Inherit` replays them verbatim (Compressed ASCII included,
+`writer.rs:93-97`). The semantic writer emits Fixed ASCII only, so this
+row is absent from the synthesis catalog by construction
+(`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.1-compressed-ascii"
 grammar = "compressed-ascii"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
-profile calls this a separate envelope and states no score for it"""
+profile calls this a separate envelope and states no score for it. Write
+is preservation only: the retained source image is the original bytes, and
+`Inherit` replays them verbatim (Compressed ASCII included,
+`writer.rs:93-97`). The semantic writer emits Fixed ASCII only, so this
+row is absent from the synthesis catalog by construction
+(`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.2-compressed-ascii"
 grammar = "compressed-ascii"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
-profile calls this a separate envelope and states no score for it"""
+profile calls this a separate envelope and states no score for it. Write
+is preservation only: the retained source image is the original bytes, and
+`Inherit` replays them verbatim (Compressed ASCII included,
+`writer.rs:93-97`). The semantic writer emits Fixed ASCII only, so this
+row is absent from the synthesis catalog by construction
+(`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.3-compressed-ascii"
 grammar = "compressed-ascii"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
-profile calls this a separate envelope and states no score for it"""
+profile calls this a separate envelope and states no score for it. Write
+is preservation only: the retained source image is the original bytes, and
+`Inherit` replays them verbatim (Compressed ASCII included,
+`writer.rs:93-97`). The semantic writer emits Fixed ASCII only, so this
+row is absent from the synthesis catalog by construction
+(`dialect.rs:41-47`); `compressed/tests.rs:193`
+`compressed_ascii_replays_its_own_bytes_under_an_inherit_request` proves
+this row on that path"""
 
 [[support]]
 dialect = "iges:4.0-binary"
 grammar = "binary"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
-this a read-only separate envelope and states no score for it"""
+this a separate envelope and states no score for it. Write is preservation
+only: the retained source image is the original bytes, and `Inherit`
+replays them verbatim (Binary included, `writer.rs:93-97`). The semantic
+writer emits Fixed ASCII only, so this row is absent from the synthesis
+catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.0-binary"
 grammar = "binary"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
-this a read-only separate envelope and states no score for it"""
+this a separate envelope and states no score for it. Write is preservation
+only: the retained source image is the original bytes, and `Inherit`
+replays them verbatim (Binary included, `writer.rs:93-97`). The semantic
+writer emits Fixed ASCII only, so this row is absent from the synthesis
+catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.1-binary"
 grammar = "binary"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
-this a read-only separate envelope and states no score for it"""
+this a separate envelope and states no score for it. Write is preservation
+only: the retained source image is the original bytes, and `Inherit`
+replays them verbatim (Binary included, `writer.rs:93-97`). The semantic
+writer emits Fixed ASCII only, so this row is absent from the synthesis
+catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.2-binary"
 grammar = "binary"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
-this a read-only separate envelope and states no score for it"""
+this a separate envelope and states no score for it. Write is preservation
+only: the retained source image is the original bytes, and `Inherit`
+replays them verbatim (Binary included, `writer.rs:93-97`). The semantic
+writer emits Fixed ASCII only, so this row is absent from the synthesis
+catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.3-binary"
 grammar = "binary"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
-this a read-only separate envelope and states no score for it"""
+this a separate envelope and states no score for it. Write is preservation
+only: the retained source image is the original bytes, and `Inherit`
+replays them verbatim (Binary included, `writer.rs:93-97`). The semantic
+writer emits Fixed ASCII only, so this row is absent from the synthesis
+catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:unknown"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 a version flag outside the declared table (12, 99, or an unreadable field
-23); read with the nearest verified row's Global table"""
+23); read with the nearest verified row's Global table. Write is
+preservation only: `replay_bytes` applies no version or representation
+filter, so a source that classifies here replays its own bytes under
+`Inherit` like any other row"""
 
 # --------------------------------------------------------------------------
 # step
@@ -641,21 +745,34 @@ attempted"""
 dialect = "fcstd:schema-2"
 grammar = "features-vocabulary"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
-admitted for decode as a separate legacy profile and never written; no
-schema 2 fixture exists"""
+admitted for decode as a separate legacy profile and never synthesized; no
+schema 2 fixture exists, so the row cannot claim a score. It is written on
+the preservation path: `Inherit` repacks the retained entry set and
+patches `Document.xml` inside it, reproducing whatever schema the source
+declared (`writer.rs:41-48`, `retained_baseline` at `writer.rs:141-155`).
+Proven by `writer.rs:944`
+`inherit_preserves_a_schema_two_source_outside_the_catalog`, which also
+asserts the id is absent from `targets()`. The path is `Patched`, not
+verbatim replay: the output is entry-for-entry payload-identical, not
+byte-identical"""
 
 [[support]]
 dialect = "fcstd:schema-3"
 grammar = "objects-vocabulary"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
-admitted for decode as a separate legacy profile and never written; no
-schema 3 fixture exists"""
+admitted for decode as a separate legacy profile and never synthesized; no
+schema 3 fixture exists, so the row cannot claim a score. It is written on
+the same preservation branch as `fcstd:schema-2`: `retained_baseline`
+(`writer.rs:141-155`) is version-generic, rebuilding the write options
+from the retained `DocumentFacts` and gating on `written_dialect(options)
+== source_dialect`. No test covers schema 3 specifically; schema 2 and
+schema 4 cover the branch"""
 
 [[support]]
 dialect = "fcstd:schema-4"
@@ -694,22 +811,30 @@ exists"""
 dialect = "sldprt:sw-version-pre-12000"
 grammar = "form-code-padding-4"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded with four-byte form-code padding, but every golden fixture
 declares no swVersion, so the profile's L4 has no fixture-backed row on
-this side of the padding seam"""
+this side of the padding seam. Write is preservation only: the replay path
+(`lib.rs:186-216`) is an unconditional whole-file byte copy of the
+retained source image once the digest matches, so it reproduces any
+swVersion the source carried, and the patch path keeps the retained
+`Contents/SolidWorks` payload (`writer.rs:250-259`). Synthesis emits no
+swVersion at all, which is why `sldprt:unknown` is the whole catalog. No
+test covers this row on any path"""
 
 [[support]]
 dialect = "sldprt:sw-version-12000-plus"
 grammar = "form-code-padding-8"
 read = "detected"
-write = "none"
+write = "preserved"
 fixtures = []
 reason = """
 decoded with eight-byte form-code padding, but no fixture declares a
-swVersion"""
+swVersion. Write is preservation only, by the same whole-file replay and
+retained-payload patch as `sldprt:sw-version-pre-12000`. No test covers
+this row on any path"""
 
 [[support]]
 dialect = "sldprt:unknown"
@@ -1169,12 +1294,14 @@ same streams"""
 [[support]]
 dialect = "parasolid:sch-sw-33103"
 read = "detected"
-write = "none"
+write = "emitted"
 fixtures = []
 reason = """
-no code emits this id: the `parasolid:` namespace has no owning crate, and
-the schema token is read as an attribute inside the sldprt and nx readers
-rather than classified"""
+the `parasolid:` namespace has no owning crate, so no code classifies this
+id on the read side: the schema token is read as an attribute inside the
+sldprt and nx readers. It is synthesized, though. The sldprt writer stamps
+`SCH_SW_33103_11000` on every Parasolid stream it generates whose bodies are
+all solid (writer.rs:126-130), which is the default branch"""
 
 [[support]]
 dialect = "parasolid:sch-sw-32001"
@@ -1182,10 +1309,11 @@ read = "detected"
 write = "emitted"
 fixtures = []
 reason = """
-no code emits this id: the `parasolid:` namespace has no owning crate, and
-the schema token is read as an attribute inside the sldprt and nx readers
-rather than classified; the sldprt writer stamps this schema token on the
-Parasolid stream it generates"""
+the `parasolid:` namespace has no owning crate, so no code classifies this
+id on the read side: the schema token is read as an attribute inside the
+sldprt and nx readers. It is synthesized, though. The sldprt writer stamps
+`SCH_SW_32001_11000` on a generated Parasolid stream when any body is a
+sheet (writer.rs:120-130)"""
 
 [[support]]
 dialect = "parasolid:format-13006"

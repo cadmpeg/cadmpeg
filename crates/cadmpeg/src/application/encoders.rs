@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Encoder construction at the CLI boundary.
 //!
-//! Format-specific write options are chosen before calling these helpers, so a
-//! Cadir encoder cannot carry STEP options.
+//! One function, total over the output formats this build carries, and no
+//! per-format request type. What an encoder writes is a target, and
+//! `TargetRequest` carries it; the only thing left for construction to decide
+//! is what to do about content the writer cannot represent, which is a policy
+//! every format shares.
 
+#[cfg(test)]
 use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::TargetRequest;
@@ -11,94 +15,55 @@ use cadmpeg_ir::codec::{CadirEncoder, Encoder};
 
 use crate::Format;
 
-/// Format-specific options required to construct an encoder.
-#[derive(Debug, Clone)]
-pub enum EncoderRequest {
-    /// Neutral encoder with no format-specific options.
-    Neutral,
-    /// STEP header metadata and loss policy.
-    ///
-    /// Not the schema: `--step-target` travels in `TargetSelection`, and the
-    /// encoder resolves the request against the source.
-    #[cfg(feature = "step")]
-    Step(cadmpeg_codec_step::StepWriteOptions),
-}
-
-/// Builds the encoder for an export format from an already-selected request.
+/// What an encoder does with content it cannot represent exactly.
 ///
-/// Cadir and STEP options are distinct request variants, so they are not
-/// representable together.
-#[cfg_attr(not(feature = "step"), allow(clippy::needless_pass_by_value))]
-pub fn build_encoder(
-    format: Format,
-    request: EncoderRequest,
-) -> Result<Box<dyn Encoder>, CodecError> {
-    match format {
-        Format::Cadir => {
-            require_neutral(&request, "cadir")?;
-            Ok(Box::new(CadirEncoder))
-        }
-        #[cfg(feature = "step")]
-        Format::Step => match request {
-            EncoderRequest::Step(options) => {
-                Ok(Box::new(cadmpeg_codec_step::StepCodec { options }))
-            }
-            EncoderRequest::Neutral => Err(CodecError::Malformed(
-                "STEP encoder requires STEP target options".into(),
-            )),
-        },
-        #[cfg(feature = "fcstd")]
-        Format::Fcstd => {
-            require_neutral(&request, "fcstd")?;
-            Ok(Box::new(cadmpeg_codec_freecad::FcstdCodec))
-        }
-        #[cfg(feature = "f3d")]
-        Format::F3d => {
-            require_neutral(&request, "f3d")?;
-            Ok(Box::new(cadmpeg_codec_f3d::F3dCodec))
-        }
-        #[cfg(feature = "sldprt")]
-        Format::Sldprt => {
-            require_neutral(&request, "sldprt")?;
-            Ok(Box::new(cadmpeg_codec_sldprt::SldprtCodec))
-        }
-        // The Rhino writer has no constructor-configured options: the archive
-        // version is a target, and `TargetRequest` carries it. A request
-        // variant here would be the CLI deciding the version again, which is
-        // exactly the defect that turned a Rhino 5 file into archive 80.
-        #[cfg(feature = "rhino")]
-        Format::Rhino => {
-            require_neutral(&request, "rhino")?;
-            Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder))
-        }
-        // `--iges-target` already travels in `selection` as an explicit
-        // target. Repeating it here as encoder state gave the encoder a fourth
-        // answer to "which dialect", and the one that won when a request had
-        // nothing to inherit — the same defect Rhino's `--rhino-target` had.
-        #[cfg(feature = "iges")]
-        Format::Iges => {
-            require_neutral(&request, "iges")?;
-            Ok(Box::new(cadmpeg_codec_iges::IgesEncoder))
-        }
-    }
+/// The typed form of `--reject-lossy=export` at the construction boundary.
+/// Format-independent by construction: a policy that named one codec would be
+/// a target flag wearing a policy's name, which is the confusion
+/// `--reject-step-losses` embodied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LossPolicy {
+    /// Write the representable subset and report the losses.
+    #[default]
+    Report,
+    /// Refuse before writing any byte.
+    Reject,
 }
 
-// When no option-bearing codec feature is on, Neutral is the only
-// EncoderRequest variant: the Err path is absent and Result is always Ok.
-#[cfg_attr(not(feature = "step"), allow(clippy::unnecessary_wraps))]
-fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError> {
-    match request {
-        EncoderRequest::Neutral => {
-            let _ = id;
-            Ok(())
-        }
-        // Non-Neutral variants exist only when their codec features are on.
-        // With `--features sldprt` alone, Neutral is the sole variant and this
-        // arm must not compile, or `-D unreachable-patterns` fails the gate.
+/// Builds the encoder for an export format.
+///
+/// Total and infallible: `Format` is the set of formats this build can write,
+/// and nothing an encoder needs at construction can be wrong by then. What can
+/// be wrong is the dialect, and that is `plan`'s question, not this one's.
+#[cfg_attr(not(feature = "step"), allow(clippy::needless_pass_by_value))]
+pub fn build_encoder(format: Format, losses: LossPolicy) -> Box<dyn Encoder> {
+    let _ = losses;
+    match format {
+        Format::Cadir => Box::new(CadirEncoder),
         #[cfg(feature = "step")]
-        _ => Err(CodecError::malformed(format_args!(
-            "target options do not belong to the {id} encoder"
-        ))),
+        Format::Step => Box::new(cadmpeg_codec_step::StepCodec {
+            options: cadmpeg_codec_step::StepWriteOptions {
+                unsupported: match losses {
+                    LossPolicy::Report => cadmpeg_codec_step::StepUnsupportedPolicy::Report,
+                    LossPolicy::Reject => cadmpeg_codec_step::StepUnsupportedPolicy::Reject,
+                },
+                ..Default::default()
+            },
+        }),
+        #[cfg(feature = "fcstd")]
+        Format::Fcstd => Box::new(cadmpeg_codec_freecad::FcstdCodec),
+        #[cfg(feature = "f3d")]
+        Format::F3d => Box::new(cadmpeg_codec_f3d::F3dCodec),
+        #[cfg(feature = "sldprt")]
+        Format::Sldprt => Box::new(cadmpeg_codec_sldprt::SldprtCodec),
+        // Neither the Rhino nor the IGES encoder takes a constructed version.
+        // The archive version and the specification version are targets, and
+        // `TargetRequest` carries them; deciding one here is what silently
+        // rewrote a Rhino 5 file as archive 80.
+        #[cfg(feature = "rhino")]
+        Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder),
+        #[cfg(feature = "iges")]
+        Format::Iges => Box::new(cadmpeg_codec_iges::IgesEncoder),
     }
 }
 
@@ -119,8 +84,8 @@ mod tests {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/dialects.toml"),
         )
         .expect("the dialect registry is readable");
-        for (format, request) in every_exportable_target() {
-            let encoder = build_encoder(format, request).expect("encoder builds");
+        for format in Format::ALL {
+            let encoder = build_encoder(*format, LossPolicy::Report);
             let targets = encoder.targets();
             let defaults = targets.iter().filter(|target| target.default).count();
             if targets.is_empty() {
@@ -166,8 +131,8 @@ mod tests {
     /// names the catalog so the caller can correct the request.
     #[test]
     fn an_unknown_explicit_target_is_refused_with_the_catalog() {
-        for (format, request) in every_exportable_target() {
-            let encoder = build_encoder(format, request).expect("encoder builds");
+        for format in Format::ALL {
+            let encoder = build_encoder(*format, LossPolicy::Report);
             let error = TargetRequest::Explicit("nonesuch:dialect")
                 .check_explicit(encoder.id(), encoder.targets())
                 .expect_err("an id outside the catalog is refused");
@@ -191,31 +156,35 @@ mod tests {
         }
     }
 
-    fn every_exportable_target() -> Vec<(Format, EncoderRequest)> {
-        vec![
-            (Format::Cadir, EncoderRequest::Neutral),
-            #[cfg(feature = "step")]
-            (
-                Format::Step,
-                EncoderRequest::Step(cadmpeg_codec_step::StepWriteOptions::default()),
-            ),
-            #[cfg(feature = "fcstd")]
-            (Format::Fcstd, EncoderRequest::Neutral),
-            #[cfg(feature = "f3d")]
-            (Format::F3d, EncoderRequest::Neutral),
-            #[cfg(feature = "sldprt")]
-            (Format::Sldprt, EncoderRequest::Neutral),
-            #[cfg(feature = "rhino")]
-            (Format::Rhino, EncoderRequest::Neutral),
-            #[cfg(feature = "iges")]
-            (Format::Iges, EncoderRequest::Neutral),
-        ]
+    /// No target alias collides with an output-format name.
+    ///
+    /// The Rust half of the checker rule that keeps `--to VALUE` unambiguous:
+    /// a bare value is read as a format first and as a dialect alias second,
+    /// so an alias that is also a format name would be unreachable.
+    /// `scripts/check-dialect-support.py` proves the same thing across every
+    /// catalog in the tree, including the ones this build does not compile.
+    #[test]
+    fn no_target_alias_is_an_output_format_name() {
+        for format in Format::ALL {
+            let encoder = build_encoder(*format, LossPolicy::Report);
+            for target in encoder.targets() {
+                for alias in target.aliases {
+                    assert!(
+                        Format::from_name(alias).is_none(),
+                        "{}: alias {alias} of {} is also an output format name",
+                        encoder.id(),
+                        target.id
+                    );
+                }
+            }
+        }
     }
 
     #[test]
     fn every_exportable_format_builds_an_encoder() {
-        for (format, request) in every_exportable_target() {
-            build_encoder(format, request).expect("encoder builds");
+        for format in Format::ALL {
+            let encoder = build_encoder(*format, LossPolicy::Report);
+            assert_eq!(encoder.id(), format.name());
         }
     }
 }

@@ -10,7 +10,7 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 use crate::application::{
-    ArtifactStore, ConversionRefusal, ForcedInput, InputCatalog, LoadedDocument,
+    ArtifactStore, ConversionRefusal, ForcedInput, InputCatalog, LoadedDocument, LossPolicy,
     NativeValidatorCatalog, SidecarPersistOutcome,
 };
 use crate::loader::{self, LoadNotice};
@@ -38,15 +38,15 @@ pub struct ExportTarget {
 
 /// The target the command line named, before the source is known.
 ///
-/// A target flag names a dialect outright. Flag absence is not a target: it
-/// means "the same kind of file", which is preservation within one format and
-/// the catalog default across formats — and which of the two applies is only
-/// known once the source has been read.
+/// `--to` names a dialect outright. A `--to` that names only a format, or no
+/// `--to` at all, is not a target: it means "the same kind of file", which is
+/// preservation within one format and the catalog default across formats — and
+/// which of the two applies is only known once the source has been read.
 #[derive(Debug, Clone)]
 pub enum TargetSelection {
-    /// A target flag named this dialect id.
+    /// `--to` named this dialect, as a registry id or a catalog alias.
     Explicit(String),
-    /// No target flag was given.
+    /// `--to` named no dialect.
     Unstated,
 }
 
@@ -97,8 +97,10 @@ pub struct ConversionPolicy {
     pub allow_errors: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
-    /// Refuse to export when decode or export planning reported any loss.
-    pub reject_lossy: bool,
+    /// Refuse to export when the decode reported any loss.
+    pub reject_decode_losses: bool,
+    /// Refuse to export when export planning reported any loss.
+    pub reject_export_losses: bool,
     /// Destination path; `None` writes the artifact to standard output.
     pub destination: Option<PathBuf>,
 }
@@ -166,7 +168,7 @@ impl<'a> Transcoder<'a> {
         let decode_report = loaded.decode_report().cloned();
 
         if let Some(refusal) =
-            decode_lossy_refusal(policy.reject_lossy, decode_report.as_ref(), format)
+            decode_lossy_refusal(policy.reject_decode_losses, decode_report.as_ref(), format)
         {
             return Err(refusal.into());
         }
@@ -212,10 +214,25 @@ impl<'a> Transcoder<'a> {
         let request = target
             .selection
             .request(target.encoder.as_ref(), source_format(&loaded.ir));
-        let plan = target
+        // Resolution is the encoder's, and so is its refusal: the message
+        // already names the requested id and the whole catalog, and it
+        // reflects this build's feature set. Restating it here would be a
+        // second vocabulary to keep in step with the first.
+        let plan = match target
             .encoder
-            .plan(EncodeInput::new(&loaded.ir, loaded.fidelity()), request)?;
-        if policy.reject_lossy && !plan.report().losses.is_empty() {
+            .plan(EncodeInput::new(&loaded.ir, loaded.fidelity()), request)
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                return Err(plan_refusal(
+                    error,
+                    policy.reject_export_losses,
+                    decode_report,
+                    validation,
+                ))
+            }
+        };
+        if policy.reject_export_losses && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
                 message: format!(
                     "export planning reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
@@ -265,6 +282,50 @@ impl PreparedConversion {
     }
 }
 
+/// Restates a plan-time codec error as a typed refusal where it is one.
+///
+/// Two of them are verdicts about the request rather than operational
+/// failures, so they exit 1 and reach `--report` with a code:
+///
+/// * a dialect the encoder cannot write, which the encoder already describes
+///   with its whole catalog; and
+/// * the writer's own refusal to emit unrepresentable content, which only
+///   exists because `--reject-lossy=export` constructed the writer with
+///   [`LossPolicy::Reject`]. The gate is the same predicate as the
+///   application's own export-loss refusal below, but it fires inside the
+///   writer and so never yields a plan to count losses from; `reject_exports`
+///   is what makes the attribution safe, because without the flag the CLI
+///   never asks a writer to reject.
+///
+/// Everything else stays operational.
+fn plan_refusal(
+    error: cadmpeg_core::CodecError,
+    reject_exports: bool,
+    decode_report: Option<DecodeReport>,
+    validation: Option<ValidationReport>,
+) -> anyhow::Error {
+    match error {
+        cadmpeg_core::CodecError::UnsupportedTarget { .. } => {
+            ConversionRefusal::UnsupportedTarget {
+                message: error.to_string(),
+            }
+            .into()
+        }
+        cadmpeg_core::CodecError::NotImplemented(ref message) if reject_exports => {
+            ConversionRefusal::ExportLossRejected {
+                message: format!(
+                    "the writer refused unrepresentable content: {message} (omit --reject-lossy to \
+                     write the representable subset and report the loss)"
+                ),
+                decode_report,
+                validation,
+            }
+            .into()
+        }
+        _ => error.into(),
+    }
+}
+
 fn validate_ir(
     validators: &NativeValidatorCatalog,
     ir: &CadIr,
@@ -286,11 +347,11 @@ fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
 }
 
 fn decode_lossy_refusal(
-    reject_lossy: bool,
+    reject_decode_losses: bool,
     report: Option<&DecodeReport>,
     format: Format,
 ) -> Option<ConversionRefusal> {
-    if !reject_lossy {
+    if !reject_decode_losses {
         return None;
     }
     let report = report?;
@@ -367,105 +428,31 @@ fn write_export_plan(
     Ok(report)
 }
 
-/// Builds an [`ExportTarget`] after checking format-specific flags.
+/// Builds an [`ExportTarget`] for one output format and its named dialect.
 ///
-/// Wrong-target flags still fail before the input is read: a flag that names
-/// the wrong format is wrong whatever the source turns out to be. Whether the
-/// resolved target is available is a different question, and it is answered
-/// after the read, by the encoder, because an inherit request cannot be
-/// resolved without the source's dialect.
-#[allow(clippy::result_large_err)] // refusal carries report context for --report
-pub fn export_target(
-    format: Format,
-    #[cfg(feature = "step")] step_options: Option<cadmpeg_codec_step::StepWriteOptions>,
-    #[cfg(feature = "step")] step_target: Option<cadmpeg_codec_step::StepSchema>,
-    #[cfg(feature = "step")] step_flag_present: bool,
-    #[cfg(feature = "iges")] iges_options: Option<cadmpeg_codec_iges::IgesWriteOptions>,
-    #[cfg(feature = "rhino")] rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
-) -> Result<ExportTarget, ConversionRefusal> {
-    #[cfg(feature = "rhino")]
-    if rhino_version.is_some() && format != Format::Rhino {
-        return Err(ConversionRefusal::UnsupportedTarget {
-            message: "--rhino-target requires Rhino output".into(),
-        });
-    }
-    #[cfg(feature = "iges")]
-    if iges_options.is_some() && format != Format::Iges {
-        return Err(ConversionRefusal::UnsupportedTarget {
-            message: "--iges-target requires IGES output".into(),
-        });
-    }
-    #[cfg(feature = "step")]
-    if step_flag_present && format != Format::Step {
-        return Err(ConversionRefusal::UnsupportedTarget {
-            message: "--step-target/--reject-step-losses require STEP output".into(),
-        });
-    }
-
-    // The selection restates a target flag as the dialect id the encoder's
-    // catalog uses. A target flag that was not given stays unstated: it is the
-    // source, not the command line, that decides between preservation and the
-    // catalog default.
-    //
-    // Only a target flag may move the selection. `--reject-step-losses` is a
-    // loss-policy flag; it travels in `step_options.unsupported` and says
-    // nothing about which schema to write. Reading it here would turn
-    // `convert a.step -o b.step --reject-step-losses` into an explicit AP214
-    // request, and once STEP resolves its own targets that is a silent schema
-    // rewrite of a file the caller only asked to check for losses.
-    let selection = match format {
-        Format::Cadir => TargetSelection::Unstated,
-        #[cfg(feature = "step")]
-        Format::Step => step_target.map_or(TargetSelection::Unstated, |schema| {
-            TargetSelection::Explicit(schema.target().to_owned())
-        }),
-        #[cfg(feature = "fcstd")]
-        Format::Fcstd => TargetSelection::Unstated,
-        #[cfg(feature = "f3d")]
-        Format::F3d => TargetSelection::Unstated,
-        #[cfg(feature = "sldprt")]
-        Format::Sldprt => TargetSelection::Unstated,
-        #[cfg(feature = "rhino")]
-        Format::Rhino => rhino_version.map_or(TargetSelection::Unstated, |version| {
-            TargetSelection::Explicit(version.target().to_owned())
-        }),
-        #[cfg(feature = "iges")]
-        Format::Iges => iges_options.map_or(TargetSelection::Unstated, |options| {
-            TargetSelection::Explicit(options.version.target().to_owned())
-        }),
-    };
-
-    let request = match format {
-        Format::Cadir => crate::application::EncoderRequest::Neutral,
-        #[cfg(feature = "step")]
-        Format::Step => crate::application::EncoderRequest::Step(step_options.unwrap_or_default()),
-        #[cfg(feature = "fcstd")]
-        Format::Fcstd => crate::application::EncoderRequest::Neutral,
-        #[cfg(feature = "f3d")]
-        Format::F3d => crate::application::EncoderRequest::Neutral,
-        #[cfg(feature = "sldprt")]
-        Format::Sldprt => crate::application::EncoderRequest::Neutral,
-        // `--rhino-target` already travels in `selection` above, as an
-        // explicit target. Repeating it here — with archive 80 standing in for
-        // flag absence — is what silently rewrote a Rhino 5 file the caller
-        // only asked to round-trip. The encoder resolves the request instead.
-        #[cfg(feature = "rhino")]
-        Format::Rhino => crate::application::EncoderRequest::Neutral,
-        // `--iges-target` already travels in `selection` above, as an explicit
-        // target, exactly as `--rhino-target` does.
-        #[cfg(feature = "iges")]
-        Format::Iges => crate::application::EncoderRequest::Neutral,
-    };
-    let encoder = crate::application::build_encoder(format, request).map_err(|error| {
-        ConversionRefusal::UnsupportedTarget {
-            message: error.to_string(),
-        }
-    })?;
-    Ok(ExportTarget {
+/// `dialect` is the dialect half of `--to`, unresolved: a registry id or a
+/// catalog alias, whichever the caller typed. It is not checked here. Whether
+/// the encoder can produce it is the encoder's question and is answered after
+/// the read, by `plan`, because an inherit request cannot be resolved without
+/// the source's dialect and because a single refusal path is what keeps the
+/// catalog out of the CLI. The format half is already resolved by the time
+/// this runs, so a `--to` naming a format this build cannot write has failed
+/// before the input is opened.
+///
+/// `losses` is a policy, never a target: reading it as one would turn
+/// `convert a.step -o b.step --reject-lossy=export` into an explicit AP214
+/// request, silently rewriting the schema of a file the caller only asked to
+/// check for losses.
+#[must_use]
+pub fn export_target(format: Format, dialect: Option<&str>, losses: LossPolicy) -> ExportTarget {
+    ExportTarget {
         format,
-        encoder,
-        selection,
-    })
+        encoder: crate::application::build_encoder(format, losses),
+        selection: match dialect {
+            Some(dialect) => TargetSelection::Explicit(dialect.to_owned()),
+            None => TargetSelection::Unstated,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -548,20 +535,7 @@ mod tests {
             )
             .expect("the archive decodes");
 
-        let target = export_target(
-            Format::Rhino,
-            #[cfg(feature = "step")]
-            None,
-            #[cfg(feature = "step")]
-            None,
-            #[cfg(feature = "step")]
-            false,
-            #[cfg(feature = "iges")]
-            None,
-            #[cfg(feature = "rhino")]
-            None,
-        )
-        .expect("a Rhino output with no target flag");
+        let target = export_target(Format::Rhino, None, LossPolicy::Report);
         let request = target
             .selection
             .request(target.encoder.as_ref(), source_format(decoded.ir()));
@@ -576,31 +550,19 @@ mod tests {
             Some("rhino:archive-50")
         );
     }
-    /// A loss-policy flag is not a target flag.
+    /// The loss policy is not a target.
     ///
-    /// `--reject-step-losses` and `--step-target` share the wrong-format guard,
-    /// and sharing it once made them share the selection too: `convert a.step
-    /// -o b.step --reject-step-losses` named AP214 explicitly and lost the
-    /// identity default. The loss policy still reaches the encoder through
-    /// `step_options`; only the target flag may say what to write.
+    /// `--reject-step-losses` and `--step-target` once shared a wrong-format
+    /// guard, and sharing it made them share the selection too: `convert
+    /// a.step -o b.step --reject-step-losses` named AP214 explicitly and lost
+    /// the identity default. `--reject-lossy=export` is the same predicate one
+    /// layer down and must stay outside the selection: it reaches the encoder
+    /// as [`LossPolicy`] at construction, and only `--to` may say what to
+    /// write.
     #[cfg(feature = "step")]
     #[test]
-    fn rejecting_step_losses_does_not_name_a_target() {
-        let policy_only = cadmpeg_codec_step::StepWriteOptions {
-            unsupported: cadmpeg_codec_step::StepUnsupportedPolicy::Reject,
-            ..Default::default()
-        };
-        let target = export_target(
-            Format::Step,
-            Some(policy_only),
-            None,
-            true,
-            #[cfg(feature = "iges")]
-            None,
-            #[cfg(feature = "rhino")]
-            None,
-        )
-        .expect("a STEP-only flag with STEP output is accepted");
+    fn rejecting_export_losses_does_not_name_a_target() {
+        let target = export_target(Format::Step, None, LossPolicy::Reject);
 
         assert!(
             matches!(target.selection, TargetSelection::Unstated),
@@ -614,22 +576,62 @@ mod tests {
             TargetRequest::Inherit
         );
 
-        let named = export_target(
-            Format::Step,
-            Some(cadmpeg_codec_step::StepWriteOptions::default()),
-            Some(cadmpeg_codec_step::StepSchema::Ap242Edition3),
-            true,
-            #[cfg(feature = "iges")]
-            None,
-            #[cfg(feature = "rhino")]
-            None,
-        )
-        .expect("an explicit STEP target with STEP output is accepted");
+        let named = export_target(Format::Step, Some("step:ap242-e3"), LossPolicy::Reject);
         assert_eq!(
             named
                 .selection
                 .request(named.encoder.as_ref(), Some("step")),
             TargetRequest::Explicit("step:ap242-e3")
         );
+    }
+
+    /// `--to` carries the dialect half verbatim; the encoder resolves it.
+    ///
+    /// Both spellings the grammar admits reach `plan` unchanged, and both
+    /// resolve, because `find_target` matches a catalog row by id or by alias.
+    /// Resolving here instead would put a second copy of every catalog in the
+    /// CLI, which is the drift the registries exist to kill.
+    #[cfg(feature = "rhino")]
+    #[test]
+    fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
+        use cadmpeg_core::dialect::DialectId;
+
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        for spelling in ["rhino:archive-60", "60"] {
+            let target = export_target(Format::Rhino, Some(spelling), LossPolicy::Report);
+            assert_eq!(
+                target.selection.request(target.encoder.as_ref(), None),
+                TargetRequest::Explicit(spelling)
+            );
+            let plan = target
+                .encoder
+                .plan(
+                    EncodeInput::new(&ir, None),
+                    TargetRequest::Explicit(spelling),
+                )
+                .expect("the catalog carries the row under both spellings");
+            assert_eq!(
+                plan.report().target.as_ref().map(DialectId::as_str),
+                Some("rhino:archive-60")
+            );
+        }
+    }
+
+    /// A dialect outside the catalog is refused by the encoder, with the
+    /// catalog in the message. The CLI writes no vocabulary of its own.
+    #[cfg(feature = "iges")]
+    #[test]
+    fn an_unknown_dialect_is_refused_by_the_encoder_with_its_catalog() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let target = export_target(Format::Iges, Some("ap242e3"), LossPolicy::Report);
+        let Err(error) = target.encoder.plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("ap242e3"),
+        ) else {
+            panic!("a STEP alias is not an IGES target");
+        };
+        let message = error.to_string();
+        assert!(message.contains("ap242e3"), "{message}");
+        assert!(message.contains("iges:5.3-fixed-ascii"), "{message}");
     }
 }

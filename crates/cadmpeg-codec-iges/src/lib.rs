@@ -93,13 +93,6 @@ impl IgesVersion {
     }
 }
 
-/// Options controlling a semantic IGES write.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct IgesWriteOptions {
-    /// Target specification version.
-    pub version: IgesVersion,
-}
-
 /// Codec for IGES files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;

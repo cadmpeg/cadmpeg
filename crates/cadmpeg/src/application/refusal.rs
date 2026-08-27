@@ -23,7 +23,7 @@ pub enum RefusalCode {
     ExportLossRejected,
     /// Geometry export with no transferred geometry.
     EmptyGeometry,
-    /// Format-specific target flag used with the wrong output format.
+    /// The encoder cannot write the dialect `--to` named.
     UnsupportedTarget,
     /// Binary container would stream to stdout without `--binary-stdout`.
     BinaryStdoutRejected,
@@ -128,7 +128,8 @@ pub enum ConversionRefusal {
         /// Validation report available for an optional `--report`.
         validation: Option<ValidationReport>,
     },
-    /// A target-only flag was supplied for a different output format.
+    /// The encoder cannot write the dialect `--to` named. The message is the
+    /// encoder's own, and carries its catalog.
     UnsupportedTarget {
         /// Human-readable message.
         message: String,

@@ -11,6 +11,7 @@ mod commands;
 mod inspect;
 mod loader;
 mod query;
+mod registry;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,109 +21,31 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use crate::application::{ForcedInput, InputCatalog, NativeValidatorCatalog};
 use crate::commands::AppCatalogs;
 
-#[cfg(feature = "step")]
-#[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum StepTarget {
-    Ap203e1,
-    Ap203e2,
-    #[default]
-    Ap214,
-    Ap242e1,
-    Ap242e2,
-    Ap242e3,
+/// Which losses `--reject-lossy` refuses on.
+///
+/// One predicate at two stages. Decode loss is what the reader could not carry
+/// into the neutral document; export loss is what the writer cannot put in the
+/// output. `Any` is both, and is what the bare flag means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum LossScope {
+    /// Refuse when the decode reported any loss.
+    Decode,
+    /// Refuse when export planning reported any loss, and make the writer
+    /// reject unrepresentable content before it emits a byte.
+    Export,
+    /// Refuse on either.
+    Any,
 }
 
-#[cfg(feature = "step")]
-impl StepTarget {
-    fn schema(self) -> cadmpeg_codec_step::StepSchema {
-        match self {
-            Self::Ap203e1 => cadmpeg_codec_step::StepSchema::Ap203Edition1,
-            Self::Ap203e2 => cadmpeg_codec_step::StepSchema::Ap203Edition2,
-            Self::Ap214 => cadmpeg_codec_step::StepSchema::Ap214,
-            Self::Ap242e1 => cadmpeg_codec_step::StepSchema::Ap242Edition1,
-            Self::Ap242e2 => cadmpeg_codec_step::StepSchema::Ap242Edition2,
-            Self::Ap242e3 => cadmpeg_codec_step::StepSchema::Ap242Edition3,
-        }
-    }
-}
-
-#[cfg(feature = "iges")]
-#[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum IgesTarget {
-    /// IGES 5.3 Fixed ASCII.
-    #[default]
-    #[value(name = "5.3", alias = "v5.3", alias = "v5_3")]
-    V5_3,
-    /// IGES 5.2 Fixed ASCII.
-    #[value(name = "5.2", alias = "v5.2", alias = "v5_2")]
-    V5_2,
-    /// IGES 5.1 Fixed ASCII.
-    #[value(name = "5.1", alias = "v5.1", alias = "v5_1")]
-    V5_1,
-    /// IGES 5.0 Fixed ASCII.
-    #[value(name = "5.0", alias = "v5.0", alias = "v5_0")]
-    V5_0,
-    /// IGES 4.0 Fixed ASCII.
-    #[value(name = "4.0", alias = "v4.0", alias = "v4_0")]
-    V4_0,
-}
-
-#[cfg(feature = "iges")]
-impl IgesTarget {
-    const fn options(self) -> cadmpeg_codec_iges::IgesWriteOptions {
-        cadmpeg_codec_iges::IgesWriteOptions {
-            version: match self {
-                Self::V4_0 => cadmpeg_codec_iges::IgesVersion::V4_0,
-                Self::V5_0 => cadmpeg_codec_iges::IgesVersion::V5_0,
-                Self::V5_1 => cadmpeg_codec_iges::IgesVersion::V5_1,
-                Self::V5_3 => cadmpeg_codec_iges::IgesVersion::V5_3,
-                Self::V5_2 => cadmpeg_codec_iges::IgesVersion::V5_2,
-            },
-        }
-    }
-}
-
-#[cfg(feature = "step")]
-#[derive(Debug, Clone, Args)]
-struct StepOutputArgs {
-    /// STEP application protocol and edition; valid only for STEP output.
-    #[arg(long, value_enum)]
-    step_target: Option<StepTarget>,
-    /// Do not write STEP if the export would report any loss.
-    #[arg(long)]
-    reject_step_losses: bool,
-}
-
-#[cfg(feature = "step")]
-impl StepOutputArgs {
-    /// True when a STEP-only flag was present on the command line.
-    ///
-    /// This is the wrong-format guard, which both flags share. It is not the
-    /// target question: [`StepOutputArgs::target`] answers that, and
-    /// `--reject-step-losses` does not name a target.
-    fn flag_present(&self) -> bool {
-        self.step_target.is_some() || self.reject_step_losses
+impl LossScope {
+    /// Whether a decode loss refuses the conversion.
+    const fn covers_decode(self) -> bool {
+        matches!(self, Self::Decode | Self::Any)
     }
 
-    /// The schema `--step-target` named, and `None` when it was absent.
-    fn target(&self) -> Option<cadmpeg_codec_step::StepSchema> {
-        self.step_target.map(StepTarget::schema)
-    }
-
-    fn options(&self) -> cadmpeg_codec_step::StepWriteOptions {
-        // `schema` is deliberately left at its default. `--step-target`
-        // travels in `TargetSelection` as an explicit target, and the encoder
-        // resolves the request against the source. Restating it here as
-        // encoder state — with AP214 standing in for flag absence — is the
-        // same defect `--rhino-target` had.
-        cadmpeg_codec_step::StepWriteOptions {
-            unsupported: if self.reject_step_losses {
-                cadmpeg_codec_step::StepUnsupportedPolicy::Reject
-            } else {
-                cadmpeg_codec_step::StepUnsupportedPolicy::Report
-            },
-            ..Default::default()
-        }
+    /// Whether an export loss refuses the conversion.
+    const fn covers_export(self) -> bool {
+        matches!(self, Self::Export | Self::Any)
     }
 }
 
@@ -145,12 +68,16 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// An output format this build can write.
+///
+/// Not a `ValueEnum`: `--to` takes `FORMAT[:DIALECT]`, and clap cannot parse
+/// the dialect half. [`Format::from_name`] is the whole output-format
+/// vocabulary, aliases included.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Format {
-    /// CADIR JSON.
-    #[value(alias = "json")]
+    /// CADIR JSON. Also spelled `json`.
     Cadir,
-    /// ISO 10303-21 STEP AP214.
+    /// ISO 10303-21 STEP.
     #[cfg(feature = "step")]
     Step,
     /// `FreeCAD` `.FCStd`.
@@ -162,46 +89,66 @@ pub(crate) enum Format {
     /// `SolidWorks` `.sldprt`.
     #[cfg(feature = "sldprt")]
     Sldprt,
-    /// Rhino `.3dm`.
+    /// Rhino `.3dm`. Also spelled `3dm`.
     #[cfg(feature = "rhino")]
-    #[value(alias = "3dm")]
     Rhino,
-    /// IGES `.igs` or `.iges`.
+    /// IGES `.igs` or `.iges`. Also spelled `igs`.
     #[cfg(feature = "iges")]
-    #[value(alias = "igs")]
     Iges,
 }
 
-#[cfg(feature = "rhino")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum RhinoVersion {
-    /// Rhino 5 archive version 50.
-    #[value(name = "50", alias = "5")]
-    V5,
-    /// Rhino 6 archive version 60.
-    #[value(name = "60", alias = "6")]
-    V6,
-    /// Rhino 7 archive version 70.
-    #[value(name = "70", alias = "7")]
-    V7,
-    /// Rhino 8 archive version 80.
-    #[value(name = "80", alias = "8")]
-    V8,
-}
+impl Format {
+    /// Every output format this build carries, in help and listing order.
+    pub(crate) const ALL: &'static [Self] = &[
+        Self::Cadir,
+        #[cfg(feature = "step")]
+        Self::Step,
+        #[cfg(feature = "fcstd")]
+        Self::Fcstd,
+        #[cfg(feature = "f3d")]
+        Self::F3d,
+        #[cfg(feature = "sldprt")]
+        Self::Sldprt,
+        #[cfg(feature = "rhino")]
+        Self::Rhino,
+        #[cfg(feature = "iges")]
+        Self::Iges,
+    ];
 
-#[cfg(feature = "rhino")]
-impl RhinoVersion {
-    const fn codec(self) -> cadmpeg_codec_rhino::RhinoArchiveVersion {
-        match self {
-            Self::V5 => cadmpeg_codec_rhino::RhinoArchiveVersion::V5,
-            Self::V6 => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
-            Self::V7 => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
-            Self::V8 => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
+    /// The format an output-format word names, by id or by accepted alias.
+    ///
+    /// Total over the `--to` format vocabulary, and the reason a bare `--to`
+    /// value is unambiguous: a value this returns `Some` for is a format, and
+    /// every other bare value is a dialect of the inferred output format.
+    /// `scripts/check-dialect-support.py` proves no target alias lands here.
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "cadir" | "json" => Some(Self::Cadir),
+            #[cfg(feature = "step")]
+            "step" => Some(Self::Step),
+            #[cfg(feature = "fcstd")]
+            "fcstd" => Some(Self::Fcstd),
+            #[cfg(feature = "f3d")]
+            "f3d" => Some(Self::F3d),
+            #[cfg(feature = "sldprt")]
+            "sldprt" => Some(Self::Sldprt),
+            #[cfg(feature = "rhino")]
+            "rhino" | "3dm" => Some(Self::Rhino),
+            #[cfg(feature = "iges")]
+            "iges" | "igs" => Some(Self::Iges),
+            _ => None,
         }
     }
-}
 
-impl Format {
+    /// The output-format words this build accepts, for a refusal message.
+    pub(crate) fn vocabulary() -> String {
+        Self::ALL
+            .iter()
+            .map(|format| format.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn from_extension(extension: &str) -> Option<Self> {
         match extension.to_ascii_lowercase().as_str() {
             "cadir" | "json" => Some(Self::Cadir),
@@ -419,12 +366,16 @@ enum Command {
     /// Convert a CAD file to another format.
     ///
     /// Reads a CAD file, checks it, and writes another format.
-    /// The output path's extension selects the format. Pass `-f` when writing to stdout.
+    /// The output path's extension selects the format. Pass `--to` when writing to stdout.
+    ///
+    /// `--to FORMAT:DIALECT` names the output dialect as well as the format.
+    /// With no `--to`, a same-format conversion keeps the dialect the input
+    /// already is, and a cross-format conversion writes the format's default.
     ///
     /// `--allow-errors` writes the file even if the check finds errors.
     #[command(
         display_order = 1,
-        after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.f3d -f step"
+        after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.sldprt -o out.3dm --to rhino:archive-80\n  cadmpeg convert part.f3d -o out.igs --to 5.1\n  cadmpeg convert part.f3d --to step"
     )]
     Convert {
         /// CAD file to convert.
@@ -445,9 +396,11 @@ enum Command {
         /// Stream a binary output format to standard output anyway.
         #[arg(long, hide = true)]
         binary_stdout: bool,
-        /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, visible_alias = "to", value_enum)]
-        format: Option<Format>,
+        /// Output format and dialect: `FORMAT`, `FORMAT:DIALECT`, or a bare
+        /// dialect of the format the output path implies. Inferred from the
+        /// output extension when omitted.
+        #[arg(short, long, visible_alias = "to", value_name = "FORMAT[:DIALECT]")]
+        format: Option<String>,
         /// Output file; omit to write to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -463,24 +416,38 @@ enum Command {
         /// Write output even if no geometry was decoded.
         #[arg(long)]
         allow_empty: bool,
-        /// Do not write if decoding or export planning reported any loss.
-        #[arg(long)]
-        reject_lossy: bool,
-        /// Target Rhino archive version; valid only for Rhino output.
-        #[cfg(feature = "rhino")]
-        #[arg(long, value_enum)]
-        rhino_target: Option<RhinoVersion>,
-        /// Target IGES specification version; valid only for IGES output.
-        #[cfg(feature = "iges")]
-        #[arg(long, value_enum)]
-        iges_target: Option<IgesTarget>,
+        /// Do not write if a loss was reported. `--reject-lossy=decode` refuses
+        /// only on decode loss, `=export` only on export loss, and the bare
+        /// flag on either.
+        #[arg(
+            long,
+            value_enum,
+            num_args = 0..=1,
+            require_equals = true,
+            default_missing_value = "any",
+            value_name = "SCOPE"
+        )]
+        reject_lossy: Option<LossScope>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
         decode: DecodeArgs,
-        #[cfg(feature = "step")]
-        #[command(flatten)]
-        step: StepOutputArgs,
+    },
+    /// List the formats this build reads and writes.
+    #[command(display_order = 7)]
+    Formats,
+    /// List the dialects of each format, and what this build does with them.
+    ///
+    /// The identity registry crossed with the capability registry: which
+    /// dialects exist, how well each is read, and which are write targets of
+    /// this build's encoders.
+    #[command(
+        display_order = 8,
+        after_help = "Examples:\n  cadmpeg dialects\n  cadmpeg dialects rhino"
+    )]
+    Dialects {
+        /// Show only this format's rows.
+        format: Option<String>,
     },
     /// Show what is inside a CAD file.
     ///
@@ -799,14 +766,8 @@ fn main() -> ExitCode {
             allow_errors,
             allow_empty,
             reject_lossy,
-            #[cfg(feature = "rhino")]
-            rhino_target,
-            #[cfg(feature = "iges")]
-            iges_target,
             input_args,
             decode,
-            #[cfg(feature = "step")]
-            step,
         } => {
             if json {
                 Err(misdirected_json("convert"))
@@ -817,23 +778,14 @@ fn main() -> ExitCode {
                     binary_stdout,
                     allow_errors,
                     allow_empty,
-                    reject_lossy,
-                    #[cfg(feature = "rhino")]
-                    rhino_target: rhino_target.map(RhinoVersion::codec),
-                    #[cfg(feature = "step")]
-                    step_options: step.flag_present().then(|| step.options()),
-                    #[cfg(feature = "step")]
-                    step_target: step.target(),
-                    #[cfg(feature = "step")]
-                    step_flag_present: step.flag_present(),
-                    #[cfg(feature = "iges")]
-                    iges_options: iges_target.map(IgesTarget::options),
+                    reject_decode_losses: reject_lossy.is_some_and(LossScope::covers_decode),
+                    reject_export_losses: reject_lossy.is_some_and(LossScope::covers_export),
                     forced_input: input_args.forced(),
                 };
                 commands::convert(
                     &catalogs,
                     &resolve_input(input, input_flag),
-                    format,
+                    format.as_deref(),
                     output.as_deref(),
                     &plan,
                     &decode,
@@ -841,6 +793,13 @@ fn main() -> ExitCode {
             }
         }
         .map(|()| ExitCode::SUCCESS),
+        Command::Formats => {
+            registry::print_formats(&catalogs.inputs);
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Dialects { format } => {
+            registry::print_dialects(format.as_deref()).map(|()| ExitCode::SUCCESS)
+        }
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");

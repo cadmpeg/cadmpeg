@@ -36,33 +36,45 @@ cargo install cadmpeg
 
 ```sh
 cadmpeg convert bracket.f3d -o bracket.step
-cadmpeg convert bracket.f3d -o bracket.ap242.step --step-target ap242e3
-cadmpeg convert bracket.f3d -o bracket.step --reject-step-losses
-cadmpeg convert bracket.f3d -o bracket.igs --iges-target 5.3
+cadmpeg convert bracket.f3d -o bracket.ap242.step --to step:ap242-e3
+cadmpeg convert bracket.f3d -o bracket.step --reject-lossy=export
+cadmpeg convert bracket.f3d -o bracket.igs --to 5.3
+cadmpeg convert bracket.f3d -o bracket.3dm --to rhino:archive-80
 ```
 
-`--step-target` selects the STEP application protocol and edition
-(`ap203e1`, `ap203e2`, `ap214` default, `ap242e1`, `ap242e2`, `ap242e3`).
-`--reject-step-losses` refuses STEP output before writing when any STEP loss
-note would be reported.
+### `--to FORMAT[:DIALECT]`
 
-`--iges-target 4.0`, `5.0`, `5.1`, `5.2`, or `5.3` selects the IGES target. It
-is valid only for IGES output. Without it, IGES-to-IGES conversion keeps the
-dialect the source already is, replaying the original bytes where they are
-still current — Compressed ASCII and Binary included, which the writer cannot
-synthesize. Conversion from another format writes `5.3`. A source dialect this
-writer cannot produce, and whose original bytes are no longer available, is
-refused rather than silently rewritten; name a target to write it anyway.
+One flag names the output format and, when you want to say so, the dialect of
+it. `--to` is a spelling of `-f`/`--format`; the three are the same flag.
 
-`--rhino-target 50`, `60`, `70`, or `80` selects the Rhino archive version. The
-default is `80`. It is valid only for Rhino output.
+- `--to rhino:archive-80` names both halves. The format half may use any
+  spelling `--to` accepts, so `--to 3dm:archive-80` is the same request.
+- `--to step` names the format alone. It says which kind of file to write, not
+  which dialect of it, so a same-format conversion still preserves the input's
+  dialect.
+- `--to 5.1` names a dialect of the format the output path implies. Each
+  format's own short vocabulary works here: `5.1` for IGES, `60` for Rhino,
+  `ap242e3` for STEP. A bare value is read as a format first, and no dialect
+  spelling collides with a format name.
+
+Omitting `--to` is the identity default: converting a file to its own format
+keeps the dialect it already is, and converting across formats writes the
+target format's default. `cadmpeg dialects FORMAT` lists every id, and
+`cadmpeg inspect FILE` prints the id of the file in front of you — the same
+string you would pass to `--to`.
+
+A dialect the writer cannot produce is refused by name, with the whole catalog
+of what it can produce, rather than silently rewritten. For IGES this covers
+Compressed ASCII and Binary sources: converting one back to IGES replays the
+original bytes, which the writer could not synthesize, and asking for a
+different target is a synthesis request that says so.
 
 The output extension selects `step`, `iges`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
-`cadir`. Pass `--format` (alias `--to`) when the filename does not identify
-the format, or when a text format (`cadir`, `step`) goes to standard output:
+`cadir`. Pass `--to` when the filename does not identify the format, or when a
+text format (`cadir`, `step`) goes to standard output:
 
 ```sh
-cadmpeg convert bracket.f3d --format step > bracket.step
+cadmpeg convert bracket.f3d --to step > bracket.step
 ```
 
 Binary formats (`fcstd`, `f3d`, `sldprt`, `rhino`) are refused on standard
@@ -200,16 +212,20 @@ inputs positionally only.
 Output formats are:
 
 - `cadir` for canonical CADIR JSON; `json` is an alias.
-- `step` for ISO 10303-21 Part 21; `--step-target` selects AP203 edition 1 or 2,
-  AP214, or AP242 edition 1, 2, or 3.
+- `step` for ISO 10303-21 Part 21; `iges` for IGES fixed ASCII.
 - `fcstd`, `f3d`, `rhino`, and `sldprt` for the native writers' supported subsets.
+
+`cadmpeg formats` lists what this build reads and writes. `cadmpeg dialects
+[FORMAT]` lists the dialects of each format: the id, how well cadmpeg reads it,
+whether anything writes it, and which of them are write targets of this build's
+encoders.
 
 Native writers use retained source data where the format requires it, and reject
 unsupported edits. The [format support page][support] defines each reader and
 writer's current semantic coverage.
 
 File output is atomic. cadmpeg refuses to replace its input or an existing
-output unless `--force` is present. An explicit `--format` takes precedence
+output unless `--force` is present. An explicit `--to` format takes precedence
 over a conflicting output extension and emits a warning.
 
 ## Losses and machine-readable reports

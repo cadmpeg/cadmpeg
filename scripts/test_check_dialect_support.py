@@ -181,6 +181,10 @@ class TestVocabulary(SupportCase):
             GOOD_SUPPORT.replace('write = "none"', 'write = "partial"', 1), "write must be one of"
         )
 
+    def test_preserved_is_accepted_without_a_catalog(self):
+        # Preservation is input-conditioned, so it needs no `targets()` row.
+        self.assertClean(GOOD_SUPPORT.replace('write = "none"', 'write = "preserved"', 1))
+
     def test_every_ladder_rung_is_accepted(self):
         for rung in (f"L{n}" for n in range(10)):
             with self.subTest(rung=rung):
@@ -343,35 +347,68 @@ class TestTargetCatalogs(SupportCase):
     def test_a_literal_catalog_is_a_subset_of_the_identity_rows(self):
         self.assertClean(
             GOOD_SUPPORT.replace('write = "none"', 'write = "verified"', 1),
-            files=self.catalog('TargetDescriptor { id: "demo:one", default: true }'),
+            files=self.catalog('TargetDescriptor { id: "demo:one", aliases: &[], default: true }'),
         )
 
     def test_a_target_outside_the_identity_rows(self):
         self.assertFires(
             GOOD_SUPPORT,
             "demo:nine: write target is not an identity row",
-            files=self.catalog('TargetDescriptor { id: "demo:nine", default: true }'),
+            files=self.catalog('TargetDescriptor { id: "demo:nine", aliases: &[], default: true }'),
         )
 
     def test_a_target_the_support_row_says_is_not_written(self):
         self.assertFires(
             GOOD_SUPPORT,
             'exported as a write target but the support row says write = "none"',
+            files=self.catalog('TargetDescriptor { id: "demo:one", aliases: &[], default: true }'),
+        )
+
+    def test_a_preserved_row_exported_as_a_synthesis_target(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "preserved"', 1),
+            "preservation is input-conditioned and is never a targets() row",
             files=self.catalog('TargetDescriptor { id: "demo:one", default: true }'),
+        )
+
+    def two_is_the_only_target(self, one_write: str) -> str:
+        """`demo:two` is the catalog's sole target; `demo:one` writes some other way."""
+        return (
+            '[[support]]\ndialect = "demo:one"\nread = "L2"\n'
+            f'write = "{one_write}"\nfixtures = ["{FIXTURE}"]\n'
+            '\n[[support]]\ndialect = "demo:two"\nread = "detected"\n'
+            'write = "verified"\nfixtures = []\nreason = "synthesized, never observed"\n'
+        )
+
+    def test_a_synthesis_claim_the_catalog_does_not_export(self):
+        # `demo:one` claims synthesis, but the catalog exports only `demo:two`,
+        # so the table and the encoder have drifted apart.
+        self.assertFires(
+            self.two_is_the_only_target("emitted"),
+            "the demo targets() catalog does not export it",
+            files=self.catalog('TargetDescriptor { id: "demo:two", default: true }'),
+        )
+
+    def test_a_preserved_row_beside_a_catalog_that_omits_it(self):
+        # The same shape with `preserved` is exactly right: preservation is
+        # reachable without a catalog row, synthesis is not.
+        self.assertClean(
+            self.two_is_the_only_target("preserved"),
+            files=self.catalog('TargetDescriptor { id: "demo:two", aliases: &[], default: true }'),
         )
 
     def test_a_catalog_for_a_format_with_no_identity_rows(self):
         self.assertFires(
             GOOD_SUPPORT,
             "other: write-target catalog for a format with no identity rows",
-            files=self.catalog('TargetDescriptor { id: "other:one", default: true }'),
+            files=self.catalog('TargetDescriptor { id: "other:one", aliases: &[], default: true }'),
         )
 
     def test_a_target_id_without_a_format_prefix(self):
         self.assertFires(
             GOOD_SUPPORT,
             "is not <format>:<name>",
-            files=self.catalog('TargetDescriptor { id: "bare", default: true }'),
+            files=self.catalog('TargetDescriptor { id: "bare", aliases: &[], default: true }'),
         )
 
     def test_a_pinned_call_resolves_through_the_match_arms(self):
@@ -379,7 +416,7 @@ class TestTargetCatalogs(SupportCase):
             GOOD_SUPPORT.replace('write = "none"', 'write = "emitted"', 1),
             files=self.catalog(
                 'const fn pinned(self) -> &str { match self { Self::One => "demo:one", } }\n'
-                "TargetDescriptor { id: Demo::One.pinned(), default: true }"
+                "TargetDescriptor { id: Demo::One.pinned(), aliases: &[], default: true }"
             ),
         )
 
@@ -402,6 +439,92 @@ class TestTargetCatalogs(SupportCase):
             GOOD_SUPPORT,
             "TargetDescriptor literal has no id field",
             files=self.catalog("TargetDescriptor { label: \"no id here\", default: true }"),
+        )
+
+    def test_a_literal_without_an_aliases_field_is_loud(self):
+        self.assertFires(
+            GOOD_SUPPORT,
+            "TargetDescriptor literal has no aliases field",
+            files=self.catalog('TargetDescriptor { id: "demo:one", default: true }'),
+        )
+
+    def test_an_unresolvable_alias_expression_is_loud(self):
+        self.assertFires(
+            GOOD_SUPPORT,
+            "cannot resolve alias expression",
+            files=self.catalog(
+                'TargetDescriptor { id: "demo:one", aliases: &[SHORT], default: true }'
+            ),
+        )
+
+
+class TestAliasCollisions(SupportCase):
+    """No target alias is a word `--to` would read as an output format."""
+
+    CATALOG = "crates/cadmpeg-codec-demo/src/lib.rs"
+    # The CLI file the checker reads `--to`'s vocabulary from.
+    CLI = "crates/cadmpeg/src/main.rs"
+    FROM_NAME = (
+        "impl Format {\n"
+        "    fn from_name(name: &str) -> Option<Self> {\n"
+        '        match name {\n            "cadir" | "json" => Some(Self::Cadir),\n'
+        '            "demo" | "dm" => Some(Self::Demo),\n'
+        "            _ => None,\n        }\n    }\n}\n"
+    )
+
+    def catalog(self, aliases: str, cli: str | None = FROM_NAME) -> dict[str, str]:
+        files = {
+            FIXTURE: "demo bytes",
+            self.CATALOG: (
+                f'TargetDescriptor {{ id: "demo:one", aliases: &[{aliases}], default: true }}'
+            ),
+        }
+        if cli is not None:
+            files[self.CLI] = cli
+        return files
+
+    def test_a_short_alias_is_clean(self):
+        self.assertClean(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "emitted"', 1),
+            files=self.catalog('"1", "one"'),
+        )
+
+    def test_an_alias_equal_to_a_registry_format_id_is_refused(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "emitted"', 1),
+            "demo:one: alias 'demo' is also an output-format word",
+            files=self.catalog('"demo"'),
+        )
+
+    def test_an_alias_equal_to_a_cli_format_alias_is_refused(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "emitted"', 1),
+            "demo:one: alias 'dm' is also an output-format word",
+            files=self.catalog('"dm"'),
+        )
+
+    def test_cadir_is_reserved_without_an_identity_row(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "emitted"', 1),
+            "demo:one: alias 'cadir' is also an output-format word",
+            files=self.catalog('"cadir"', cli=None),
+        )
+
+    def test_a_cli_file_without_from_name_is_loud(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "emitted"', 1),
+            "no Format::from_name to read --to's vocabulary from",
+            files=self.catalog('"1"', cli="fn main() {}\n"),
+        )
+
+    def test_a_from_name_that_names_no_formats_is_loud(self):
+        self.assertFires(
+            GOOD_SUPPORT.replace('write = "none"', 'write = "emitted"', 1),
+            "Format::from_name names no output formats",
+            files=self.catalog(
+                '"1"',
+                cli="    fn from_name(name: &str) -> Option<Self> {\n        None\n    }\n",
+            ),
         )
 
 
