@@ -75,6 +75,18 @@ pub(crate) fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+/// The same archive as [`f3d_with_smbh`], with the top-level manifest
+/// declaring `version`. The two archives differ in the version field alone.
+pub(crate) fn f3d_with_smbh_and_manifest_version(smbh: &[u8], version: &str) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests_with_version(&mut zip, stored, version);
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
 pub(crate) fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);

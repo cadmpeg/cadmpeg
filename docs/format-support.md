@@ -63,7 +63,7 @@ cadmpeg gains a decoder.
 | Format                          | Depth | Breadth  | Identity rows | Refused |
 | ------------------------------- | ----- | -------- | ------------- | ------- |
 | FreeCAD `.FCStd`                | L5    | 1 of >=1 | 4             | 0       |
-| Autodesk Fusion `.f3d`          | L4    | 1 of >=1 | 3             | 1       |
+| Autodesk Fusion `.f3d`          | L4    | 1 of >=1 | 3             | 0       |
 | Autodesk Inventor `.ipt`/`.iam` | none  | n/a      | 2             | 0       |
 | SolidWorks `.sldprt`            | none  | n/a      | 3             | 0       |
 | Rhino `.3dm`                    | L1    | 6 of 8   | 11            | 2       |
@@ -333,11 +333,11 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 **Ladder: depth L4, breadth 1 of >=1.**
 
-| Dialect                  | Read     | Write    | Fixtures |
-| ------------------------ | -------- | -------- | -------- |
-| `f3d:manifest-3-2-0-0`   | L4       | verified | 61       |
-| `f3d:f3z-multi-document` | detected | none     | 0        |
-| `f3d:unknown`            | refused  | none     | 0        |
+| Dialect                  | Read                   | Write    | Fixtures |
+| ------------------------ | ---------------------- | -------- | -------- |
+| `f3d:manifest-3-2-0-0`   | L4                     | verified | 61       |
+| `f3d:f3z-multi-document` | detected               | none     | 0        |
+| `f3d:unknown`            | unclassified-recovered | none     | 0        |
 
 <!-- /generated: dialects f3d -->
 

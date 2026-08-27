@@ -14,8 +14,10 @@ const MAX_REGISTRY_ENTRIES: usize = 64;
 const MAX_ASSET_FOLDERS: usize = 64;
 const MAX_TOP_LEVEL_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
-/// The only top-level manifest version this codec parses.
-const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
+/// The top-level manifest version whose layout this codec declares. Every
+/// other readable version is parsed with the same layout and classified on the
+/// recovery row.
+pub(crate) const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
 
 pub(crate) const GENERATED_DESIGN_ASSET_BASE: &str = "FusionAssetName";
 pub(crate) const GENERATED_DESIGN_ASSET_FOLDER: &str = "FusionAssetName[Active]";
@@ -31,10 +33,10 @@ const GENERATED_PHYSICAL_CHANGE_GUID: &str = "00000000-0000-4000-8000-0000000000
 pub(crate) struct TopLevelManifest {
     /// Leading length-prefixed ASCII version field, as the cursor read it.
     ///
-    /// [`parse_top_level`] admits one value and refuses every other, so this is
-    /// the reading rather than a range. It is the evidence the dialect match
-    /// records, kept beside the parse instead of re-derived at the report
-    /// boundary.
+    /// [`parse_top_level`] reads every manifest with the `3-2-0-0` layout and
+    /// keeps whatever version the field declared, so this is the reading rather
+    /// than a constant. It is the evidence the dialect match records, kept
+    /// beside the parse instead of re-derived at the report boundary.
     version: String,
     asset_folder_bases: Vec<String>,
 }
@@ -190,6 +192,13 @@ impl<'a> Cursor<'a> {
 
 /// Parse the top-level `Manifest.dat` header, capability registry, and exact
 /// asset-folder tail.
+///
+/// The version field selects no layout. Every readable version is parsed with
+/// the `3-2-0-0` layout, and the anchors inside that layout are the backstop:
+/// `FusionDocType`, `.f3d`, and two hyphenated GUIDs must all match, so a
+/// generation that moved the layout fails within the first few fields. A
+/// failed attempt on a version this codec does not know is reported as the
+/// version refusal it is, not as corruption.
 pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecError> {
     if bytes.len() > MAX_TOP_LEVEL_MANIFEST_BYTES {
         return Err(malformed(
@@ -201,15 +210,29 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
         ));
     }
     let mut cursor = Cursor::new(bytes);
+    // An unreadable version field is corrupt bytes: nothing names a generation,
+    // so there is no recognized document to refuse.
     let version = cursor.ascii("top-level manifest version")?;
-    if version != TOP_LEVEL_MANIFEST_VERSION {
-        // A readable version that names another writer generation is a
-        // recognized document this codec does not parse, not corrupt bytes.
-        return Err(CodecError::NotImplemented(format!(
-            "F3D manifest version {version} is not supported \
-             (expected {TOP_LEVEL_MANIFEST_VERSION})"
-        )));
+    match parse_top_level_body(bytes, cursor) {
+        Ok(asset_folder_bases) => Ok(TopLevelManifest {
+            version,
+            asset_folder_bases,
+        }),
+        Err(error) if version != TOP_LEVEL_MANIFEST_VERSION => {
+            // The known layout does not fit and the document names another
+            // writer generation. That is a recognized document this codec does
+            // not parse, not corrupt bytes.
+            Err(CodecError::NotImplemented(format!(
+                "F3D manifest version {version} is not supported \
+                 (expected {TOP_LEVEL_MANIFEST_VERSION}): {error}"
+            )))
+        }
+        Err(error) => Err(error),
     }
+}
+
+/// The `3-2-0-0` top-level manifest layout after the version field.
+fn parse_top_level_body(bytes: &[u8], mut cursor: Cursor<'_>) -> Result<Vec<String>, CodecError> {
     cursor.expect_ascii("top-level manifest kind", "FusionDocType")?;
     cursor.expect_utf16("top-level manifest extension", ".f3d")?;
     let _display_name = cursor.utf16("top-level manifest display name")?;
@@ -248,11 +271,7 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
         let _value = cursor.u32(&format!("top-level manifest registry value {ordinal}"))?;
     }
 
-    let asset_folder_bases = parse_asset_tail(bytes, cursor.position())?;
-    Ok(TopLevelManifest {
-        version,
-        asset_folder_bases,
-    })
+    parse_asset_tail(bytes, cursor.position())
 }
 
 /// The asset-folder base run of the one exact tail framing.
@@ -689,6 +708,22 @@ pub(crate) fn generated_top_level() -> Result<Vec<u8>, CodecError> {
     encode_top_level(GENERATED_ASSET_FOLDER_GUID, &[GENERATED_DESIGN_ASSET_BASE])
 }
 
+/// The generated top-level manifest with its version field replaced.
+///
+/// Nothing else moves: every field after the version is the byte sequence
+/// [`generated_top_level`] wrote, so the archive differs from a known-version
+/// archive in the declared version alone.
+#[cfg(test)]
+pub(crate) fn generated_top_level_with_version(version: &str) -> Vec<u8> {
+    let bytes = generated_top_level().expect("generated top-level manifest");
+    let mut known = Vec::new();
+    push_ascii(&mut known, TOP_LEVEL_MANIFEST_VERSION).expect("known version prefix");
+    let mut replacement = Vec::new();
+    push_ascii(&mut replacement, version).expect("replacement version prefix");
+    assert!(bytes.starts_with(&known), "the version field leads");
+    [replacement.as_slice(), &bytes[known.len()..]].concat()
+}
+
 pub(crate) fn generated_design_asset() -> Result<Vec<u8>, CodecError> {
     encode_design_asset(GENERATED_DESIGN_ASSET_BASE, GENERATED_ASSET_FOLDER_GUID)
 }
@@ -907,21 +942,69 @@ mod tests {
         assert_eq!(folder, "Design Base");
     }
 
-    #[test]
-    fn unsupported_top_level_manifest_version_is_not_corruption() {
-        let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    /// Replace the leading version field, keeping every later byte.
+    fn with_version(bytes: &[u8], version: &str) -> Vec<u8> {
         let mut supported = Vec::new();
         push_ascii(&mut supported, TOP_LEVEL_MANIFEST_VERSION).unwrap();
         assert!(bytes.starts_with(&supported));
         let mut replacement = Vec::new();
-        push_ascii(&mut replacement, "3-3-0-0").unwrap();
-        bytes.splice(0..supported.len(), replacement);
+        push_ascii(&mut replacement, version).unwrap();
+        [replacement.as_slice(), &bytes[supported.len()..]].concat()
+    }
+
+    #[test]
+    fn an_unknown_version_is_parsed_with_the_known_layout() {
+        // Version-only drift: the attempt runs the same parse the known version
+        // runs, and the reading of the version survives to the classifier.
+        let known = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+        let bytes = with_version(&known, "3-3-0-0");
+
+        let manifest = parse_top_level(&bytes).unwrap();
+        assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+        assert_eq!(manifest.declared_version(), "3-3-0-0");
+    }
+
+    #[test]
+    fn an_unknown_version_whose_layout_does_not_fit_is_not_corruption() {
+        // Layout drift: the `FusionDocType` anchor fails, and the failure is
+        // reported as the version this codec does not parse, not as corruption.
+        let known = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+        let mut bytes = with_version(&known, "3-3-0-0");
+        let mut anchor = Vec::new();
+        push_ascii(&mut anchor, "FusionDocType").unwrap();
+        let at = bytes
+            .windows(anchor.len())
+            .position(|window| window == anchor)
+            .expect("the kind anchor is present");
+        let mut moved = Vec::new();
+        push_ascii(&mut moved, "FusionDocTypX").unwrap();
+        bytes.splice(at..at + anchor.len(), moved);
 
         let error = parse_top_level(&bytes).unwrap_err();
         assert!(
             matches!(&error, CodecError::NotImplemented(message) if message.contains("3-3-0-0")
                 && message.contains(TOP_LEVEL_MANIFEST_VERSION)),
             "expected an unsupported-version refusal, found {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_in_version_manifest_with_a_broken_layout_stays_malformed() {
+        let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+        let mut anchor = Vec::new();
+        push_ascii(&mut anchor, "FusionDocType").unwrap();
+        let at = bytes
+            .windows(anchor.len())
+            .position(|window| window == anchor)
+            .expect("the kind anchor is present");
+        let mut moved = Vec::new();
+        push_ascii(&mut moved, "FusionDocTypX").unwrap();
+        bytes.splice(at..at + anchor.len(), moved);
+
+        let error = parse_top_level(&bytes).unwrap_err();
+        assert!(
+            matches!(error, CodecError::Malformed(_)),
+            "expected corruption of an in-version manifest, found {error:?}"
         );
     }
 
