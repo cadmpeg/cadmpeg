@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("check-public-api-ledger.py")
 SPEC = importlib.util.spec_from_file_location("check_public_api_ledger", SCRIPT)
@@ -125,6 +126,32 @@ class SnapshotChecks(unittest.TestCase):
                 ledger.crates_for_diff(baseline, set()),
                 ["cadmpeg-core", "cadmpeg-ir"],
             )
+
+    def test_missing_public_api_tooling_soft_skips_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline = root / "docs" / "api-baseline"
+            baseline.mkdir(parents=True)
+            (baseline / "cadmpeg-core.txt").touch()
+            with mock.patch.object(ledger, "public_api_available", return_value=False):
+                failures, skipped = ledger.check_api_diff(root, set())
+            self.assertEqual(failures, [])
+            self.assertTrue(skipped)
+
+    def test_missing_public_api_tooling_fails_when_required(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline = root / "docs" / "api-baseline"
+            baseline.mkdir(parents=True)
+            (baseline / "cadmpeg-core.txt").touch()
+            with mock.patch.object(ledger, "public_api_available", return_value=False):
+                failures, skipped = ledger.check_api_diff(
+                    root, set(), require_tooling=True
+                )
+            self.assertEqual(
+                failures, ["public API diff requires nightly cargo-public-api"]
+            )
+            self.assertFalse(skipped)
 
 
 REALISTIC_LEDGER_DIFF = """\
