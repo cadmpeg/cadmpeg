@@ -16,8 +16,19 @@
 //! unverified version still classifies into its own identity row and is
 //! admitted as [`Admission::AdmittedUnverified`], naming the row whose Global
 //! table actually parsed it.
+//!
+//! # The declaration is evidence; the id is identity
+//!
+//! [`DialectMatch::declared`] records what Global field 23 says.
+//! [`DialectMatch::dialect`] records which registry row the document satisfies.
+//! They are different statements and a consumer must not join them. A
+//! declaration of `99` yields `iges:unknown`, not `iges:5.3-fixed-ascii`,
+//! because a row matches only when every one of its discriminants matches and
+//! no row declares `version_flag = "99"`. Parse a version out of an id, or
+//! expect an id to agree with the `version_flag` beside it, and the answer is
+//! wrong for exactly the files whose declarations are wrong.
 
-use crate::global::ResolvedGlobal;
+use crate::global::{DialectRecovery, ResolvedGlobal};
 use crate::representation::Representation;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
@@ -31,8 +42,8 @@ const DECLARED_REPRESENTATION: &str = "representation";
 /// Key of Global field 23 as declared, in [`DialectMatch::declared`].
 ///
 /// The specification default 3 stands in for an absent or unreadable field, so
-/// this key is the resolved declaration rather than raw bytes. When field 23
-/// does not read as an integer the raw text is preserved verbatim under
+/// this key is the resolved declaration rather than raw bytes. A field 23 that
+/// does not read as an integer is described under
 /// [`DECLARED_VERSION_FLAG_DECLARATION`].
 const DECLARED_VERSION_FLAG: &str = "version_flag";
 /// Key of the version after the postprocessor clamp, in
@@ -40,15 +51,23 @@ const DECLARED_VERSION_FLAG: &str = "version_flag";
 ///
 /// The same value as the `iges_version` source attribute.
 const DECLARED_EFFECTIVE_VERSION: &str = "effective_version";
-/// Key of a Global field 23 that does not read as an integer, in
+/// Key describing a Global field 23 that does not read as an integer, in
 /// [`DialectMatch::declared`]. Absent when field 23 reads.
+///
+/// Not the raw bytes of the field. It is the value the Global resolver
+/// recovered: a Hollerith declaration of `1Hx` appears here as its decoded
+/// content `x`, and a string carrying a byte the dialect forbids appears as a
+/// sentence naming that condition rather than as a declaration at all. Treat it
+/// as a description of the defect, not as a transcript of the card.
 const DECLARED_VERSION_FLAG_DECLARATION: &str = "version_flag_declaration";
 
 /// One row of `docs/dialects.toml` under the `iges` namespace.
 ///
-/// Fixed ASCII carries a variant per clamped version flag. Compressed ASCII and
-/// Binary carry only the versions the registry cites a specification for; the
-/// remaining pairs land on [`IgesDialect::Unknown`], the mandatory totality row
+/// Fixed ASCII carries a variant per declared version flag the specification
+/// enumerates, 1 through 11. Compressed ASCII and Binary carry only the versions
+/// the registry cites a specification for. Every other declaration — a flag the
+/// version table does not contain, or a representation and version pair no row
+/// states — lands on [`IgesDialect::Unknown`], the mandatory totality row
 /// (design §3.3, B4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum IgesDialect {
@@ -151,8 +170,17 @@ impl IgesDialect {
         }
     }
 
-    /// The row for a representation at the clamped version flag, or
+    /// The row for a representation at a declared version flag, or
     /// [`Self::Unknown`] where the registry declares no such pair.
+    ///
+    /// A registry row matches only when *every* one of its discriminants
+    /// matches, and each row above carries `version_flag` alongside
+    /// `effective_version`. A flag of 12 or 99 has the effective version of
+    /// `iges:5.3-fixed-ascii` but not its `version_flag`, so it matches that row
+    /// no more than a flag of 0 does: both land on [`Self::Unknown`], whose
+    /// residual discriminant is exactly "matches no row above". Keying identity
+    /// on the clamped flag instead would file such a document under a row whose
+    /// own discriminant contradicts what the file declares.
     const fn from_representation_and_flag(representation: Representation, flag: i64) -> Self {
         match (representation, flag) {
             (Representation::FixedAscii, 1) => Self::V1_0FixedAscii,
@@ -202,16 +230,23 @@ impl IgesDialect {
     /// [`DialectMatch`] in this codec, so a classification bug and the report
     /// can never disagree.
     ///
-    /// The clamped version flag decides identity, not the declared one: the
-    /// dialect is what the bytes obey, and the declaration is kept as evidence
-    /// in [`DialectMatch::declared`] (design §3.4).
+    /// Identity is the row whose discriminants the document satisfies, and
+    /// admission is [`ResolvedGlobal::dialect_recovery`]. The two are computed
+    /// from one predicate each and never from each other: a document can carry a
+    /// registry row of its own while its bytes are read with a newer grammar,
+    /// which is the whole legacy Fixed ASCII range.
+    ///
+    /// `Admission::Admitted` holds exactly when
+    /// [`ResolvedGlobal::dialect_loss`] is `None`, because both read
+    /// `dialect_recovery`. That biconditional is what the decode policy
+    /// requires, and it is structural here rather than maintained by hand.
     pub(crate) fn classify(
         representation: Representation,
         global: &ResolvedGlobal,
     ) -> DialectMatch {
-        let flag = global.effective_version_flag();
-        let dialect = Self::from_representation_and_flag(representation, flag);
-        let admission = if global.grammar_is_verified() {
+        let dialect =
+            Self::from_representation_and_flag(representation, global.declared_version_flag());
+        let admission = if global.dialect_recovery() == DialectRecovery::Verified {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
