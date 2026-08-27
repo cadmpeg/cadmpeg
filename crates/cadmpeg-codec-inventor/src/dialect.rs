@@ -17,10 +17,10 @@
 //! the `RSe` Meta Stream marker and version. So a document that satisfies
 //! `inventor:cfb3-rse31-meta8` is exactly a document read with the grammar that
 //! row declares, and everything else is `inventor:unknown` read with a grammar
-//! no row declares for it. One predicate — [`DialectRecovery::is_verified`] —
+//! no row declares for it. One value — [`DialectRecovery::admission`] —
 //! therefore decides both, and [`DialectRecovery::dialect_loss`] is `None`
-//! exactly when it holds. The biconditional the decode policy requires is
-//! structural, not maintained by two authors agreeing.
+//! exactly when that value is [`Admission::Admitted`]. The biconditional the
+//! decode policy requires is structural, not maintained by two authors agreeing.
 //!
 //! # The row absorbs what the codec does not gate
 //!
@@ -245,8 +245,8 @@ impl DialectRecovery {
     /// The loss charged when the document's declarations do not select the
     /// grammar this codec read it with.
     ///
-    /// `None` exactly when [`Self::is_verified`] holds, which is also exactly
-    /// when [`Self::dialect_match`] reports [`Admission::Admitted`].
+    /// `None` exactly when `matched.admission` is [`Admission::Admitted`].
+    /// [`Self::dialect_match`] reports the same admission value.
     pub(crate) fn dialect_loss(&self, matched: &DialectMatch) -> Option<LossNote> {
         let Admission::AdmittedUnverified { .. } = &matched.admission else {
             return None;
