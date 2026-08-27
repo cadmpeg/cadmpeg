@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Validate ``docs/public-api-ledger.toml`` and its API snapshots.
 
-CI does not install cargo-public-api. This checker confirms the ledger TOML
-parses, required fields are present, every ``commit`` is a 40-character SHA
-and a known git object when history is available, and each snapshot file under
-``docs/api-baseline/`` exists and starts with ``# generated at``.
+This checker confirms the ledger TOML parses, required fields are present,
+every ``commit`` is a 40-character SHA and a known git object when history is
+available, and each snapshot file under ``docs/api-baseline/`` exists and
+starts with ``# generated at``.
 
 Regenerate snapshots with ``cargo +nightly public-api`` as documented in
 ``docs/api-baseline/README.md``.
@@ -13,7 +13,8 @@ Regenerate snapshots with ``cargo +nightly public-api`` as documented in
 Run ``--self-test`` to execute the unit tests in
 ``scripts/test_check_public_api_ledger.py``. Run ``--diff`` to regenerate and
 compare snapshots for crates whose source is staged, or all snapshot crates
-when the index is empty.
+when the index is empty. Add ``--require-tooling`` to fail instead of skipping
+the diff when nightly cargo-public-api is unavailable.
 """
 
 from __future__ import annotations
@@ -319,13 +320,17 @@ def bounded_api_diff(crate: str, expected: bytes, actual: bytes) -> list[str]:
     return lines
 
 
-def check_api_diff(root: Path, staged_paths: set[str]) -> tuple[list[str], bool]:
+def check_api_diff(
+    root: Path, staged_paths: set[str], require_tooling: bool = False
+) -> tuple[list[str], bool]:
     """Regenerate selected APIs and return failures and a tooling-skip flag."""
     snapshot_dir = root / "docs" / "api-baseline"
     crates = crates_for_diff(snapshot_dir, staged_paths)
     if not crates:
         return [], False
     if not public_api_available(root):
+        if require_tooling:
+            return ["public API diff requires nightly cargo-public-api"], False
         return [], True
     failures: list[str] = []
     with tempfile.TemporaryDirectory(prefix="cadmpeg-public-api-") as tmp:
@@ -389,6 +394,11 @@ def main(argv: list[str] | None = None) -> int:
         help="regenerate and compare APIs for staged source crates",
     )
     parser.add_argument(
+        "--require-tooling",
+        action="store_true",
+        help="fail a requested API diff when nightly cargo-public-api is unavailable",
+    )
+    parser.add_argument(
         "--self-test",
         action="store_true",
         help="run the unit tests instead of checking the ledger",
@@ -427,7 +437,9 @@ def main(argv: list[str] | None = None) -> int:
             failures.extend(check_staged_coupling(staged_diff, staged_paths))
 
     if args.diff:
-        diff_failures, tooling_skipped = check_api_diff(ROOT, staged_paths)
+        diff_failures, tooling_skipped = check_api_diff(
+            ROOT, staged_paths, require_tooling=args.require_tooling
+        )
         failures.extend(diff_failures)
         if tooling_skipped:
             print("warning: public API diff skipped: nightly cargo-public-api is unavailable")
