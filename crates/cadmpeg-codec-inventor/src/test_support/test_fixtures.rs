@@ -115,6 +115,15 @@ pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
 }
 
 pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) -> Vec<u8> {
+    primary_envelope_fixture_with_kernel(declarations, &asm_kernel_stream())
+}
+
+/// The primary envelope carrying one caller-supplied kernel stream, so a test
+/// can put an ACIS carrier at any save format inside a well-formed document.
+pub(crate) fn primary_envelope_fixture_with_kernel(
+    declarations: EnvelopeDeclarations,
+    kernel: &[u8],
+) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
     const V1: usize = 2;
@@ -130,7 +139,7 @@ pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) 
     const FREE_SECTOR: u32 = 0xffff_ffff;
     const FAT_SECTOR: u32 = 0xffff_fffd;
 
-    let carrier = kernel_carrier_fixture();
+    let carrier = kernel_carrier_fixture(kernel);
     let meta = meta_stream_fixture(carrier.len(), declarations);
     let bulk = bulk_stream_fixture(&carrier);
     let database = database_fixture(declarations.schema);
@@ -444,11 +453,28 @@ fn bulk_stream_fixture(carrier: &[u8]) -> Vec<u8> {
     bytes
 }
 
-fn kernel_carrier_fixture() -> Vec<u8> {
+/// The `ASM BinaryFile4` stream the primary envelope carries by default.
+fn asm_kernel_stream() -> Vec<u8> {
     let mut kernel = b"ASM BinaryFile4".to_vec();
     kernel.extend_from_slice(&700_u32.to_le_bytes());
     kernel.extend_from_slice(&[0_u8; 12]);
-    for value in ["Inventor", "synthetic ASM", "2000-01-01"] {
+    kernel_trailer(&mut kernel, "synthetic ASM");
+    kernel
+}
+
+/// An `ACIS BinaryFile` stream at one save format, for the band tests.
+pub(crate) fn acis_kernel_stream(save_format_version: u32) -> Vec<u8> {
+    let mut kernel = b"ACIS BinaryFile".to_vec();
+    for value in [save_format_version, 0, 0, 0] {
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel_trailer(&mut kernel, "synthetic ACIS");
+    kernel
+}
+
+/// The product strings and the scale/tolerance triple both headers end with.
+fn kernel_trailer(kernel: &mut Vec<u8>, product: &str) {
+    for value in ["Inventor", product, "2000-01-01"] {
         kernel.push(0x07);
         kernel.push(value.len() as u8);
         kernel.extend_from_slice(value.as_bytes());
@@ -457,12 +483,15 @@ fn kernel_carrier_fixture() -> Vec<u8> {
         kernel.push(0x06);
         kernel.extend_from_slice(&value.to_le_bytes());
     }
+}
+
+fn kernel_carrier_fixture(kernel: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend_from_slice(&2_u16.to_le_bytes());
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(&4_u32.to_le_bytes());
-    bytes.extend_from_slice(&kernel);
+    bytes.extend_from_slice(kernel);
     bytes.extend_from_slice(&5_u32.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&(-1_i32).to_le_bytes());

@@ -497,6 +497,16 @@
         },
         "dialect": "inventor:cfb3-rse31-meta8",
         "format": "inventor"
+      },
+      {
+        "admission": "admitted",
+        "declared": {
+          "reference_width": "4",
+          "save_format_major": "7",
+          "save_format_minor": "0"
+        },
+        "dialect": "acis:asm-binaryfile-4",
+        "format": "acis"
       }
     ],
     "format": "inventor",
@@ -525,6 +535,16 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 95,
+        "data": "QVNNIEJpbmFyeUZpbGU0vAIAAAAAAAAAAAAAAAAAAAcISW52ZW50b3IHDXN5bnRoZXRpYyBBU00HCjIwMDAtMDEtMDEGAAAAAAAA8D8Gje21oPfGsD4Gu73X2d982z0=",
+        "id": "inventor:kernel:carrier#seg-0",
+        "offset": 18,
+        "sha256": "a7035f79b059782669443978e618f275354009908bdcc551817b03b87532ca0d",
+        "stream": "RSeStorage/Bseg:expanded"
+      }
+    ],
     "version": "3"
   }
 }

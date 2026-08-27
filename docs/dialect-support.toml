@@ -77,15 +77,17 @@
 # format that has a catalog must appear in it. It also proves each exported
 # id is a subset of that format's identity rows and is not `write = "none"`.
 #
-# Two namespaces have no owning crate, so nothing classifies them on the read
-# side. `acis:` is registry-only: its streams are wrapped by the `sat:` rows.
-# `parasolid:` schema tokens are read as attributes inside the sldprt and nx
-# readers. The schema has no cell for "identity row with no reader", so these
-# twelve rows carry the disposition the wrapping code enforces and say so in
-# the reason. Two of them are written even so: the sldprt writer stamps a
-# Parasolid schema token on every stream it generates, which is synthesis at
-# the kernel layer, and an embedded-kernel dialect is never its host's
-# `targets()` row.
+# `parasolid:` has no owning crate, so nothing classifies it on the read side:
+# its schema tokens are read as attributes inside the sldprt and nx readers.
+# The schema has no cell for "identity row with no reader", so those four rows
+# carry the disposition the wrapping code enforces and say so in the reason.
+# Two of them are written even so: the sldprt writer stamps a Parasolid schema
+# token on every stream it generates, which is synthesis at the kernel layer,
+# and an embedded-kernel dialect is never its host's `targets()` row.
+#
+# `acis:` does have an owner, `cadmpeg-asm`, which pins its rows and the
+# save-format band its record decoders are verified against. The hosts emit
+# those ids as non-primary `DialectMatch` layers and cite the band.
 
 
 # --------------------------------------------------------------------------
@@ -1253,8 +1255,10 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-decoded at save format 217 or 218 and refused outside that band; the
-golden that pins it is code-built"""
+decoded at every save format: majors 217 and 218 are Admitted, and any
+other band is read with the nearer of those two grammars under
+`Admission::AdmittedUnverified` and a source.dialect-unverified charge.
+The golden that pins it is code-built"""
 
 [[support]]
 dialect = "sat:text"
@@ -1263,8 +1267,10 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-decoded on an End-of-ASM-data terminator at any save format and on End-of-
-ACIS-data at 217 or 218; the golden that pins it is code-built"""
+decoded at any save format under either terminator; an End-of-ACIS-data
+stream outside majors 217 and 218 is `Admission::AdmittedUnverified` with
+a source.dialect-unverified charge. The golden that pins it is code-
+built"""
 
 [[support]]
 dialect = "sat:unknown"
@@ -1284,9 +1290,9 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+admitted at every save format: the ASM record decoders compare none. The
+Inventor decode emits this id as the non-primary kernel layer of a
+four-byte-width carrier; the goldens that pin it are code-built"""
 
 [[support]]
 dialect = "acis:asm-binaryfile-8"
@@ -1294,9 +1300,8 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+the eight-byte-width half of `acis:asm-binaryfile-4`, under the same
+note"""
 
 [[support]]
 dialect = "acis:save-format-217"
@@ -1304,9 +1309,9 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+a verified band: `Admission::Admitted` on the Inventor kernel layer, and
+the `nearest` grammar `cadmpeg-codec-sat` names when it recovers a band
+below 218. The goldens that pin it are code-built"""
 
 [[support]]
 dialect = "acis:save-format-218"
@@ -1314,21 +1319,21 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+a verified band, under the same note as `acis:save-format-217`: named as
+the `nearest` grammar for an unverified band at or above major 218"""
 
 [[support]]
 dialect = "acis:save-format-binary-other"
-read = "refused"
+read = "unclassified-recovered"
 write = "none"
 fixtures = []
 reason = """
-the refused save-format band: structurally identified and semantically
-refused, in `cadmpeg-codec-sat` and again in `cadmpeg-codec-inventor`'s
-kernel gate. no code emits this id: the `acis:` namespace is registry-
-only, and the disposition is enforced indirectly through the `sat:` rows
-that wrap the same streams"""
+the unverified save-format band: framed and decoded with the nearer
+verified band's record grammar, in `cadmpeg-codec-sat` and again in
+`cadmpeg-codec-inventor`, which emits this id as the kernel layer of such
+a carrier. Both charge source.dialect-unverified on an
+`Admission::AdmittedUnverified` match; the goldens are code-built, so the
+row lists no fixture"""
 
 [[support]]
 dialect = "acis:text-asm"

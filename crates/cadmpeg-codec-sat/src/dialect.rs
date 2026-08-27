@@ -16,33 +16,36 @@
 //!
 //! The host rows are discriminated by the stream's leading bytes alone
 //! ([`StreamKind`]), which are read exactly: `ASM BinaryFile4`/`8`, `ACIS
-//! BinaryFile`, or the two text header lines. Nothing about that reading is
-//! approximate, so this codec has no dialect-unverified state and charges no
-//! dialect-unverified loss. [`Admission::AdmittedUnverified`] is unreachable
-//! here, and a test pins that.
+//! BinaryFile`, or the two text header lines. A stream that stops at its own
+//! discriminant — the magic matched and nothing past it parsed — is
+//! structurally unframed and takes [`Admission::Refused`]. That state is
+//! reachable at inspect only; decode returns a malformed error on the same
+//! bytes.
 //!
 //! What *is* banded is the kernel save format inside the stream. The Spatial
-//! ACIS record decoders cover majors 217 and 218; the ASM record decoders
-//! compare no save format at all. A stream outside the covered band is
-//! structurally identified — it keeps its `sat:` row — and refused semantic
-//! decode, which is exactly [`Admission::Refused`]. That refusal is a refusal
-//! mark, not an unverified mark: it is charged as
-//! [`SatLossCode::ContainerAcisSaveFormatUnsupported`] on an empty-IR result,
-//! never as a recovery.
+//! ACIS record decoders are verified against majors 217 and 218; the ASM record
+//! decoders compare no save format at all. A stream outside the verified band
+//! is not refused: its records are read with the verified band's grammar, which
+//! is [`Admission::AdmittedUnverified`] exactly, and `nearest` names the
+//! verified `acis:` row whose grammar was substituted. The recovery is charged
+//! as [`SatLossCode::SourceDialectUnverified`] by [`dialect_loss`], on a result
+//! that carries whatever those records decoded.
 //!
-//! [`admits_semantic_decode`] is the single predicate behind both. The decode
-//! paths branch on the admission it produced rather than re-testing the band,
-//! so the report and the result can never disagree.
+//! [`admission`] is the single construction path for both, so the report and
+//! the result can never disagree.
 //!
-//! [`SatLossCode::ContainerAcisSaveFormatUnsupported`]:
-//!     crate::loss::SatLossCode::ContainerAcisSaveFormatUnsupported
+//! [`SatLossCode::SourceDialectUnverified`]:
+//!     crate::loss::SatLossCode::SourceDialectUnverified
 
 use crate::detect::StreamKind;
+use cadmpeg_asm::dialect::{acis_band_verified, nearest_verified_acis};
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 /// Key of the stream encoding in [`DialectMatch::declared`].
@@ -58,17 +61,6 @@ const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 /// Key of the text stream's terminator line in [`DialectMatch::declared`].
 /// Absent on the binary branches, which carry no terminator.
 const DECLARED_TERMINATOR: &str = "terminator";
-
-/// Save-format majors the Spatial ACIS record decoders cover.
-const ADMITTED_ACIS_MAJORS: [u32; 2] = [217, 218];
-
-/// Whether a Spatial ACIS save format is one the record decoders cover.
-///
-/// A header without a readable save-format word declares no band, so it is not
-/// in the covered one.
-fn acis_band_covered(save_format_major: Option<u32>) -> bool {
-    save_format_major.is_some_and(|major| ADMITTED_ACIS_MAJORS.contains(&major))
-}
 
 /// One row of `docs/dialects.toml` under the `sat` namespace.
 ///
@@ -124,9 +116,9 @@ impl SatDialect {
 /// The text branch's evidence.
 ///
 /// The terminator line selects the branch, and the header carries the save
-/// format the ACIS branch is gated on. The gate keys on the terminator, not on
+/// format the ACIS branch is banded on. The band keys on the terminator, not on
 /// the product family the header names, so an ASM product string under an ACIS
-/// terminator is refused outside the band, symmetrically with binary.
+/// terminator recovers outside the band, symmetrically with binary.
 pub(crate) struct TextEvidence<'a> {
     /// Branch the terminator line selected.
     pub(crate) branch: sat::Dialect,
@@ -172,25 +164,59 @@ impl StreamEvidence<'_> {
     }
 }
 
-/// Whether the record decoders cover this stream, and so whether semantic
-/// decode proceeds.
+/// How this stream was admitted.
 ///
-/// The one predicate behind [`Admission::Refused`] and the
-/// `container.acis-save-format-unsupported` refusal mark alike. The ASM binary
-/// and ASM text branches compare no save format, so they are covered at any
-/// band; both ACIS branches take the same 217/218 gate.
-pub(crate) fn admits_semantic_decode(evidence: &StreamEvidence<'_>) -> bool {
-    match evidence {
-        StreamEvidence::AsmBinary(header) => header.is_some(),
-        StreamEvidence::AcisBinary(header) => {
-            header.is_some_and(|header| acis_band_covered(header.save_format_major()))
-        }
+/// The one construction path for the admission, and so for the
+/// `source.dialect-unverified` recovery mark [`dialect_loss`] charges from it.
+/// [`Admission::Refused`] here is structural and nothing else: the discriminant
+/// matched but the stream did not frame. Both ACIS branches take the same band
+/// comparison, and both recover outside it; the ASM binary and ASM text
+/// branches compare no save format, so they are admitted at any band.
+fn admission(evidence: &StreamEvidence<'_>) -> Admission {
+    let major = match evidence {
+        StreamEvidence::AsmBinary(Some(_)) => return Admission::Admitted,
+        StreamEvidence::AcisBinary(Some(header)) => header.save_format_major(),
         StreamEvidence::Text(Some(text)) => match text.branch {
-            sat::Dialect::Asm => true,
-            sat::Dialect::Acis => acis_band_covered(text.header.save_format_major()),
+            sat::Dialect::Asm => return Admission::Admitted,
+            sat::Dialect::Acis => text.header.save_format_major(),
         },
-        StreamEvidence::Text(None) | StreamEvidence::Unknown => false,
+        StreamEvidence::AsmBinary(None)
+        | StreamEvidence::AcisBinary(None)
+        | StreamEvidence::Text(None)
+        | StreamEvidence::Unknown => return Admission::Refused,
+    };
+    if acis_band_verified(major) {
+        Admission::Admitted
+    } else {
+        Admission::AdmittedUnverified {
+            nearest: nearest_verified_acis(major),
+        }
     }
+}
+
+/// The recovery loss a match charges, if it recovered.
+///
+/// `Some` exactly when [`classify`] reported [`Admission::AdmittedUnverified`],
+/// which is exactly when the Spatial ACIS record grammar of a verified band was
+/// substituted for the band the stream declared. The message states the
+/// declaration and the substitution; it is not the contract, the code is.
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+        return None;
+    };
+    let declared = match (
+        matched.declared.get(DECLARED_SAVE_FORMAT_MAJOR),
+        matched.declared.get(DECLARED_SAVE_FORMAT_MINOR),
+    ) {
+        (Some(major), Some(minor)) => format!("save format {major}.{minor}"),
+        (Some(major), None) => format!("save format major {major}"),
+        (None, _) => "no save format".to_owned(),
+    };
+    Some(SatLossCode::SourceDialectUnverified.note(format!(
+        "the stream declares {declared}, which no verified Spatial ACIS band declares; its \
+         records were read with the grammar `{nearest}` declares, and what they decoded is \
+         reported as it decoded"
+    )))
 }
 
 /// The declarations the stream made, verbatim, under keys pinned above.
@@ -238,19 +264,15 @@ pub(crate) const fn terminator_line(branch: sat::Dialect) -> &'static str {
 /// in this codec, so a classification bug and the report can never disagree.
 ///
 /// Identity is the row the leading discriminant satisfies; admission is
-/// [`admits_semantic_decode`]. The two are computed independently and never
-/// from each other: an ACIS stream outside the covered band keeps its own
-/// registry row while its semantic decode is refused.
+/// [`admission`]. The two are computed independently and never from each other:
+/// an ACIS stream outside the verified band keeps its own registry row while
+/// its records are read with a verified band's grammar.
 pub(crate) fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
     DialectMatch {
         format: FORMAT.into(),
         dialect: Some(SatDialect::from_stream_kind(evidence.kind()).id()),
         declared: declared(evidence),
-        admission: if admits_semantic_decode(evidence) {
-            Admission::Admitted
-        } else {
-            Admission::Refused
-        },
+        admission: admission(evidence),
     }
 }
 

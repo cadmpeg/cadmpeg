@@ -5,7 +5,10 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
 use super::*;
 use crate::loss::InventorLossCode;
-use crate::test_support::{fixture, primary_envelope_fixture};
+use crate::test_support::{
+    acis_kernel_stream, fixture, primary_envelope_fixture, primary_envelope_fixture_with_kernel,
+    EnvelopeDeclarations,
+};
 use crate::InventorCodec;
 
 #[test]
@@ -175,4 +178,79 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         crate::native::ActiveCarrierRecordState::Selected
     );
     assert!(crate::validate_native(decoded.ir()).is_empty());
+}
+
+/// The `acis:` kernel layer one decode reported, with the losses beside it.
+fn kernel_layer_of(bytes: &[u8]) -> (cadmpeg_core::dialect::DialectMatch, Vec<String>) {
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes.to_vec()),
+            &DecodeOptions::default(),
+        )
+        .expect("the save-format band degrades rather than refuses");
+    let report = decoded.report();
+    let layer = report
+        .dialects
+        .iter()
+        .find(|matched| matched.format == "acis")
+        .unwrap_or_else(|| panic!("a kernel layer, got {:#?}", report.dialects))
+        .clone();
+    let codes = report
+        .losses
+        .iter()
+        .map(|loss| format!("{:?}", loss.code))
+        .collect::<Vec<_>>();
+    (layer, codes)
+}
+
+#[test]
+fn a_verified_acis_carrier_reports_its_band_admitted() {
+    let bytes = primary_envelope_fixture_with_kernel(
+        EnvelopeDeclarations::default(),
+        &acis_kernel_stream(21_800),
+    );
+    let (layer, codes) = kernel_layer_of(&bytes);
+
+    assert_eq!(
+        layer
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("acis:save-format-218")
+    );
+    assert_eq!(layer.admission, cadmpeg_core::dialect::Admission::Admitted);
+    assert!(
+        !codes.iter().any(|code| code.contains("dialect-unverified")),
+        "{codes:?}"
+    );
+}
+
+#[test]
+fn an_unverified_acis_carrier_is_read_and_marked() {
+    // The band is not a gate: the carrier is framed and decoded, the kernel
+    // layer says which grammar was substituted, and the recovery is charged.
+    let bytes = primary_envelope_fixture_with_kernel(
+        EnvelopeDeclarations::default(),
+        &acis_kernel_stream(70_000),
+    );
+    let (layer, codes) = kernel_layer_of(&bytes);
+
+    assert_eq!(
+        layer
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("acis:save-format-binary-other")
+    );
+    assert_eq!(
+        layer.admission,
+        cadmpeg_core::dialect::Admission::AdmittedUnverified {
+            nearest: cadmpeg_core::dialect::DialectId::pinned("acis:save-format-218")
+        }
+    );
+    assert_eq!(layer.declared["save_format_major"], "700");
+    assert!(
+        codes.iter().any(|code| code.contains("dialect-unverified")),
+        "{codes:?}"
+    );
 }

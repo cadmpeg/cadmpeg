@@ -73,7 +73,7 @@ cadmpeg gains a decoder.
 | STEP Part 21                    | L9    | 4 of >=4 | 11            | 3       |
 | IGES                            | L9    | 2 of 21  | 22            | 0       |
 | ASM/ACIS bare streams           | none  | n/a      | 4             | 1       |
-| ACIS save formats               | none  | 0 of >=2 | 8             | 2       |
+| ACIS save formats               | none  | 0 of >=2 | 8             | 1       |
 | Parasolid schemas               | none  | 0 of >=1 | 4             | 0       |
 
 <!-- /generated: ladder-table -->
@@ -101,7 +101,7 @@ lists. Every profile below describes the envelope its rows cover.
 Structural detection requires directory evidence. The codec enumerates the complete CFB hierarchy, versioned databases, registry and revision tables, exact segment pairs, metadata tables, typed bulk records, OLE property sets, previews when present, Protein package entries and decoded catalog assets, and `UFRxDoc` external references. Optional or unknown segments remain named native records.
 
 - **Part geometry: extra above L1.** One typed active carrier in one `PmBRep` segment transfers through `cadmpeg-asm`. The kernel header controls width, units, tolerances, and SAB framing. Kernel unknown records and source annotations are retained. An empty or invalid decoded carrier produces blocking `geometry_not_transferred`.
-- **ACIS 217/218 part carriers: extra above L1.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder. Connected B-rep validation and direct-carrier parity pass for this finite subset. Other ACIS save-format bands remain retained and produce blocking `geometry_not_transferred`.
+- **ACIS part carriers: extra above L1.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::AdmittedUnverified`, and charges `source.dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
 - **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
 - **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
 - **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
@@ -113,7 +113,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 **Model:** Standalone ShapeManager or Spatial ACIS B-rep stream outside any CAD container
 
-**Primary structural envelope:** `ASM BinaryFile4`, `ASM BinaryFile8`, `ACIS BinaryFile` save-format 217 or 218, text SAT/SMT streams that terminate with `End-of-ASM-data` at any save format, and text streams that terminate with `End-of-ACIS-data` at save-format 217 or 218. Stream content selects the decoder; file extensions do not. Other ACIS save-format bands, binary and text, are separate envelopes.
+**Primary structural envelope:** `ASM BinaryFile4`, `ASM BinaryFile8`, `ACIS BinaryFile`, and text SAT/SMT streams that terminate with `End-of-ASM-data` or `End-of-ACIS-data`, at any save format. Stream content selects the decoder; file extensions do not. Spatial ACIS save-format majors 217 and 218 are the verified bands. An ACIS-branch stream outside them is framed and decoded with the nearer verified band's record grammar, reported as `Admission::AdmittedUnverified`, and charged `source.dialect-unverified`.
 
 <!-- generated: dialects sat -->
 
@@ -128,7 +128,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 <!-- /generated: dialects sat -->
 
-Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. An empty or unsupported decoded carrier produces blocking `geometry_not_transferred`. Feature history, assemblies, presentation documents, and native writing are inapplicable or absent for this envelope.
+Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. A stream that frames but decodes no carrier produces blocking `geometry_not_transferred`. Feature history, assemblies, presentation documents, and native writing are inapplicable or absent for this envelope.
 
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 

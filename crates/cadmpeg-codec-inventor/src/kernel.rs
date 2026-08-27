@@ -81,15 +81,13 @@ pub(crate) fn decode_kernel_carrier(
             asm_header::solved_record_limit(bytes),
         ),
         KernelFamily::Acis => {
+            // Every save-format band frames and decodes the same way. The band
+            // moves the carrier's `acis:` admission and its
+            // source.dialect-unverified mark (`decode::kernel_layer`), never
+            // whether the records are read.
             let header = acis_header::parse(bytes).ok_or_else(|| {
                 CodecError::Malformed("Inventor ACIS carrier has no parseable header".into())
             })?;
-            if !matches!(header.save_format_major(), Some(217 | 218)) {
-                return Err(CodecError::NotImplemented(format!(
-                    "Inventor ACIS save-format band {:?} is not implemented",
-                    header.save_format_major()
-                )));
-            }
             (
                 header,
                 acis_header::record_stream_start(bytes).ok_or_else(|| {
@@ -367,6 +365,42 @@ mod tests {
         assert!(decoded.brep.unknowns.is_empty());
     }
 
+    #[test]
+    fn an_acis_carrier_outside_the_verified_band_uses_the_same_decoder() {
+        // The save format bands the label the decode carries, never whether the
+        // carrier is read: this one frames and decodes exactly as 21800 does.
+        let acis = acis_fixture(70_000);
+        let bytes = carrier_fixture(&acis, 17);
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic carrier fits policy");
+        let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
+
+        assert_eq!(carrier.family, KernelFamily::Acis);
+        assert_eq!(decoded.header.width, 4);
+        assert_eq!(decoded.header.save_format_version, Some(70_000));
+        assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
+        assert!(decoded.brep.unknowns.is_empty());
+    }
+
+    #[test]
+    fn a_carrier_whose_header_does_not_parse_is_still_refused() {
+        // Structural refusal stands: the magic matched and the fixed header did
+        // not read, so there is nothing to frame.
+        let mut acis = b"ACIS BinaryFile".to_vec();
+        acis.extend_from_slice(&70_000_u32.to_le_bytes());
+        let bytes = carrier_fixture(&acis, 17);
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic carrier fits policy");
+        let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+        assert!(matches!(
+            decode_kernel_carrier(&ctx, &carrier),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+
     fn carrier_fixture(carrier: &[u8], version: u8) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&1_u32.to_le_bytes());
@@ -404,8 +438,14 @@ mod tests {
     }
 
     fn empty_acis_fixture() -> Vec<u8> {
+        acis_fixture(21_800)
+    }
+
+    /// The same carrier at one save format, so a band no `acis:` row verifies
+    /// can be read beside a verified one.
+    fn acis_fixture(save_format_version: u32) -> Vec<u8> {
         let mut bytes = b"ACIS BinaryFile".to_vec();
-        for value in [21_800_u32, 0, 0, 0] {
+        for value in [save_format_version, 0, 0, 0] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         for value in ["Inventor", "ASM 218 test", "2000-01-01"] {
