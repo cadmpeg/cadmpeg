@@ -77,6 +77,19 @@ pub enum StepSchema {
 }
 
 impl StepSchema {
+    /// Every schema the Part 21 writer can emit, and so every row of the
+    /// synthesis catalog. Resolution maps a dialect id back to a schema through
+    /// this list, and `crate::codec` pins the two sets equal in both
+    /// directions.
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Ap203Edition1,
+        Self::Ap203Edition2,
+        Self::Ap214,
+        Self::Ap242Edition1,
+        Self::Ap242Edition2,
+        Self::Ap242Edition3,
+    ];
+
     /// The registry dialect id this schema writes.
     ///
     /// The spelling a caller passes as `TargetRequest::Explicit`.

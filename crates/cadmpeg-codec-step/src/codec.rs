@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
-    TargetDescriptor, TargetRequest,
+    find_target, unsupported_target, CodecBackend, Confidence, DecodeOptions, DecodeResult,
+    EncodeInput, Encoder, ExportPlan, TargetDescriptor, TargetRequest,
 };
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{CadIr, FidelityResolution};
 
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
@@ -67,6 +67,66 @@ const STEP_TARGETS: &[TargetDescriptor] = &[
     },
 ];
 
+/// The schema a catalog id or alias names, or `None` when the id is not a row
+/// of [`STEP_TARGETS`].
+///
+/// Total over the catalog: `find_target` resolves an alias to its canonical
+/// `id`, and every canonical id is some [`StepSchema`]'s `target()`. A `None`
+/// from the second step is catalog/enum drift, which
+/// `tests::the_catalog_is_the_schemas_the_writer_emits` fails on.
+fn catalog_schema(id: &str) -> Option<StepSchema> {
+    let target = find_target(STEP_TARGETS, id)?;
+    StepSchema::ALL
+        .into_iter()
+        .find(|schema| schema.target() == target.id)
+}
+
+impl StepCodec {
+    /// The design §8.2 resolution: which schema this export writes.
+    fn resolve(&self, ir: &CadIr, request: TargetRequest<'_>) -> Result<StepSchema, CodecError> {
+        match request {
+            TargetRequest::Explicit(id) => catalog_schema(id).ok_or_else(|| {
+                unsupported_target(
+                    crate::dialect::FORMAT,
+                    id,
+                    "not a schema this encoder can synthesize",
+                    STEP_TARGETS,
+                )
+            }),
+            TargetRequest::Inherit => {
+                let Some(source) = ir
+                    .source
+                    .as_ref()
+                    .filter(|source| source.format == crate::dialect::FORMAT)
+                else {
+                    // Nothing to inherit: no source, or one of another format.
+                    return Ok(self.options.schema);
+                };
+                let Some(dialect) = source.dialect.as_ref() else {
+                    // A STEP source that records no dialect. Choosing a schema
+                    // for it would be choosing an identity it never declared.
+                    return Err(unsupported_target(
+                        crate::dialect::FORMAT,
+                        crate::dialect::FORMAT,
+                        "the source is a STEP document that records no dialect, so there is no \
+                         schema to preserve; name a target to write one",
+                        STEP_TARGETS,
+                    ));
+                };
+                catalog_schema(dialect.as_str()).ok_or_else(|| {
+                    unsupported_target(
+                        crate::dialect::FORMAT,
+                        dialect.as_str(),
+                        "the semantic writer cannot synthesize it, and writing another schema \
+                         would change what the file declares; name a target to choose one",
+                        STEP_TARGETS,
+                    )
+                })
+            }
+        }
+    }
+}
+
 impl Encoder for StepCodec {
     fn id(&self) -> &'static str {
         "step"
@@ -76,15 +136,41 @@ impl Encoder for StepCodec {
         STEP_TARGETS
     }
 
+    /// Resolve the request against the source, then synthesize the schema it
+    /// names.
+    ///
+    /// `Explicit(id)` refuses an id outside the synthesis catalog and otherwise
+    /// writes that schema. The replay law's compare has no branch to gate here:
+    /// this codec has no retained-image path, so every export is synthesis and
+    /// `id == source.dialect` only means the writer reproduces the declaration
+    /// the source already carried.
+    ///
+    /// `Inherit` asks for preservation. The nearest this writer can come is to
+    /// synthesize the source's own schema, which it does whenever the source's
+    /// dialect is one of the six catalog rows. Where it is not — `step:ap242`,
+    /// `step:unknown` — it refuses, naming the source dialect and the catalog.
+    /// There is no fall-through to the catalog default: a same-format
+    /// conversion never silently changes what the file is, and for an
+    /// edition-unspecified source that change is concrete, because every schema
+    /// this writer emits stamps object-identifier arcs the source never
+    /// declared. An explicit target is the escape.
+    ///
+    /// `self.options.schema` supplies the target only when there is nothing to
+    /// inherit: the document has no source, or a source of another format.
+    /// Neither is reachable from the command line, which builds `Inherit` only
+    /// for a STEP source.
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        request.check_explicit(Encoder::id(self), self.targets())?;
+        let schema = self.resolve(input.ir, request)?;
+        let options = StepWriteOptions {
+            schema,
+            ..self.options.clone()
+        };
         let mut bytes = Vec::new();
-        let mut report =
-            write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
+        let mut report = write_step(input.ir, &mut bytes, &options).map_err(CodecError::from)?;
         // `write_step` takes no fidelity sidecar, so the report it returns
         // states the only resolution it can see. Whether the caller supplied
         // one is known here, and only here.
