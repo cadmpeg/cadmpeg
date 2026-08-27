@@ -2129,10 +2129,9 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {
-        declared: primary.declared.clone(),
-        dialect: primary.dialect.clone(),
         format: crate::dialect::FORMAT.to_string(),
         attributes: BTreeMap::from([("archive_version".to_string(), "1".to_string())]),
+        ..Default::default()
     });
     let mut decoded = 0_usize;
     let mut decoded_curves = 0_usize;

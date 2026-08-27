@@ -3701,17 +3701,17 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [source_image]);
-    ir.finalize();
-    // Stamped last, over the finalized document, so the write path can ask
-    // whether anything moved since this decode. See `document_local_sha256`.
-    let hash = document_local_sha256(&ir);
-    if let Some(source) = &mut ir.source {
+    let mut result = DecodeResult::new(ir, report, source_fidelity);
+    // Stamped after construction projects the primary dialect, so the write
+    // path compares against the exact finalized document it returns.
+    let hash = document_local_sha256(result.ir());
+    if let Some(source) = &mut result.ir_mut().source {
         source.attributes.insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
     }
-    Ok(DecodeResult::new(ir, report, source_fidelity))
+    Ok(result)
 }
 
 fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
@@ -4750,7 +4750,7 @@ fn source_and_tolerances(
         }
     }
 
-    (source_meta(scan, attributes), tolerances)
+    (source_meta(attributes), tolerances)
 }
 
 /// The recovery charge for the archive's primary layer, if the layer was read
@@ -4775,20 +4775,15 @@ fn dialect_losses(
     losses
 }
 
-/// Source metadata carrying `attributes`, with the primary-layer match mirrored
-/// into [`SourceMeta::dialect`] and [`SourceMeta::declared`].
+/// Source metadata carrying `attributes`.
 ///
 /// The existing attribute keys stay. Retiring the ad-hoc keys that duplicate a
 /// declared key is a later phase.
-fn source_meta(
-    scan: &ContainerScan,
-    attributes: std::collections::BTreeMap<String, String>,
-) -> SourceMeta {
+fn source_meta(attributes: std::collections::BTreeMap<String, String>) -> SourceMeta {
     SourceMeta {
-        declared: scan.dialect.declared.clone(),
-        dialect: scan.dialect.dialect.clone(),
         format: crate::dialect::FORMAT.to_string(),
         attributes,
+        ..Default::default()
     }
 }
 
@@ -4953,7 +4948,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
         });
     }
 
-    ir.source = Some(source_meta(scan, attributes));
+    ir.source = Some(source_meta(attributes));
     (ir, unknowns)
 }
 

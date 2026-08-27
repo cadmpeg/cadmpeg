@@ -1163,15 +1163,13 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
-        // One `classify` call per run feeds `DecodeReport.dialects`, the
-        // `SourceMeta` mirror, and the dialect-unverified loss, so a
-        // classification bug and the report cannot disagree.
+        // One `classify` call per run feeds `DecodeReport.dialects` and the
+        // dialect-unverified loss.
         let primary = dialect::FcstdDialect::classify(&scan.document);
         ir.source = Some(SourceMeta {
-            declared: primary.declared.clone(),
-            dialect: primary.dialect.clone(),
             format: dialect::FORMAT.into(),
             attributes,
+            ..Default::default()
         });
         if let Some((name, bytes)) = thumbnail {
             ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;

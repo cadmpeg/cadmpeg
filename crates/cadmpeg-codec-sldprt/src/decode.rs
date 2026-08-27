@@ -195,8 +195,9 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
-    stamp_local_digests(&mut ir);
-    Ok(DecodeResult::new(ir, report, source_fidelity))
+    let mut result = DecodeResult::new(ir, report, source_fidelity);
+    stamp_local_digests(&mut result.ir_mut());
+    Ok(result)
 }
 
 fn incomplete_pattern(
@@ -3095,21 +3096,15 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
 /// Mirrors the primary-layer match into [`SourceMeta::dialect`] and
 /// [`SourceMeta::declared`].
 ///
-/// The declaration comes from `attributes["sw_version"]`, which
-/// [`add_solidworks_xml_metadata`] has already written, so the mirror and the
-/// report entry classify the same string. The `sw_version` attribute stays
-/// where it is, and so does every other key: absence in this map is
-/// load-bearing at the sites that read it, `sw_name` and
+/// The `sw_version` attribute stays where it is, and so does every other key:
+/// absence in this map is load-bearing at the sites that read it, `sw_name` and
 /// `sldprt_active_partition_unresolved` gate the writer, and these fields are
 /// additive. Retiring the ad-hoc keys is a later phase.
 fn source_meta_with_dialect(attributes: BTreeMap<String, String>) -> SourceMeta {
-    let primary =
-        crate::dialect::SldprtDialect::classify(attributes.get("sw_version").map(String::as_str));
     SourceMeta {
-        declared: primary.declared,
-        dialect: primary.dialect,
         format: crate::dialect::FORMAT.to_string(),
         attributes,
+        ..Default::default()
     }
 }
 

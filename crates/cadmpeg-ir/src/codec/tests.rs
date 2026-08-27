@@ -231,6 +231,38 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     assert!(staged.report().dialects.is_empty());
 }
 
+#[test]
+fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
+    let mut ir = unit_cube();
+    ir.source = Some(crate::SourceMeta {
+        format: "test".into(),
+        dialect: Some(DialectId::pinned("test:wrong")),
+        declared: BTreeMap::from([("wrong".into(), "value".into())]),
+        ..Default::default()
+    });
+    let mut primary = dialect_layer("test", "test:only");
+    primary.declared = BTreeMap::from([("version".into(), "only".into())]);
+    let report = DecodeReport {
+        dialects: vec![primary.clone()],
+        format: "test".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+
+    let result = DecodeResult::new(ir, report, SourceFidelity::default());
+    let source = result
+        .ir()
+        .source
+        .as_ref()
+        .expect("source metadata remains");
+    assert_eq!(source.dialect, primary.dialect);
+    assert_eq!(source.declared, primary.declared);
+}
+
 /// The gate is a `debug_assert`, which compiles out under `--release`. Without
 /// this attribute a release-profile test run would report a spurious failure:
 /// nothing panics, so `#[should_panic]` is unsatisfied.

@@ -117,7 +117,7 @@ pub fn decode(
     // the report states the outer archive's row. Restated before the
     // container-only return and before the digest stamp below, so both paths
     // carry it.
-    restate_outer_dialect(&mut root, scan);
+    root = restate_outer_dialect(root, scan);
     if ctx.container_only() {
         return Ok(root);
     }
@@ -156,14 +156,12 @@ pub fn decode(
 /// archive, whose own scan classified it as `f3d:f3z-multi-document`, so the
 /// report and [`cadmpeg_ir::document::SourceMeta`] state that row. Exactly one
 /// entry either way: both rows are the `f3d` primary layer.
-fn restate_outer_dialect(root: &mut DecodeResult, scan: &ContainerScan<'_>) {
+fn restate_outer_dialect(root: DecodeResult, scan: &ContainerScan<'_>) -> DecodeResult {
     let dialects = vec![scan.dialect.clone()];
     debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
-    root.report_mut().dialects = dialects;
-    if let Some(source) = &mut root.ir_mut().source {
-        source.dialect.clone_from(&scan.dialect.dialect);
-        source.declared.clone_from(&scan.dialect.declared);
-    }
+    let (ir, mut report, fidelity) = root.into_parts();
+    report.dialects = dialects;
+    DecodeResult::new(ir, report, fidelity)
 }
 
 fn model_root_member(

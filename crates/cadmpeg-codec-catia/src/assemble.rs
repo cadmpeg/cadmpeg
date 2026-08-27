@@ -456,16 +456,10 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
             format!("0x{:08x}", segment.type_word),
         );
     }
-    // The primary-layer mirror. `attributes` keeps every key it already had,
-    // including `variant` and the `catia_*` release tuple: the typed fields are
-    // the contract going forward, and removing an attribute would be a separate
-    // decision from adding them.
-    let primary = crate::dialect::classify(scan);
     SourceMeta {
-        declared: primary.declared,
-        dialect: primary.dialect,
         format: crate::dialect::FORMAT.to_string(),
         attributes,
+        ..Default::default()
     }
 }
 
