@@ -23,10 +23,12 @@ use crate::{DecodeArgs, Format};
 
 /// CLI command-report envelope version.
 ///
-/// Independent of `CadIr.ir_version` and `DECODE_SIDECAR_VERSION`. Version 6
-/// adds top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code,
-/// message }` or null).
-pub(crate) const CLI_SCHEMA_VERSION: u32 = 6;
+/// Independent of `CadIr.ir_version` and `DECODE_SIDECAR_VERSION`. Version 7
+/// always emits the dialect fields: `dialects` on every container summary and
+/// decode report, `target` on every export report, and `dialect` and `declared`
+/// on every source metadata block. Version 6 added top-level `status` (`ok` |
+/// `refused`) and `refusal` (`{ stage, code, message }` or null).
+pub(crate) const CLI_SCHEMA_VERSION: u32 = 7;
 
 /// Catalogs required by CLI command handlers.
 pub struct AppCatalogs {

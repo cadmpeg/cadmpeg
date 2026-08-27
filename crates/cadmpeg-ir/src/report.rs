@@ -651,12 +651,15 @@ pub struct DecodeReport {
     pub transfer_ledger: TransferLedger,
     /// Dialect identification, one entry per format layer the decode read.
     ///
-    /// Empty while a codec has not yet been migrated to classify. Once
-    /// populated, exactly one entry's `format` equals [`Self::format`]: that
-    /// entry is the primary layer, and it is the one mirrored into
+    /// Empty only when the decode identified no layer at all. Once populated,
+    /// exactly one entry's `format` equals [`Self::format`]: that entry is the
+    /// primary layer, and it is the one mirrored into
     /// [`crate::document::SourceMeta::dialect`]. See
     /// [`cadmpeg_core::dialect::debug_assert_primary_layer`].
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ///
+    /// Always serialized. Reports written before the field existed omit the key
+    /// and read back empty.
+    #[serde(default)]
     pub dialects: Vec<DialectMatch>,
 }
 
@@ -802,8 +805,11 @@ pub struct ExportReport {
     /// The concrete dialect written, including on replay and patch paths, where
     /// the encoder states what the preserved dialect was.
     ///
-    /// `None` while an encoder has not yet been migrated to state its target.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `None` when the encoder wrote a form the registry does not name.
+    ///
+    /// Always serialized, as `null` when absent. Reports written before the
+    /// field existed omit the key and read back `None`.
+    #[serde(default)]
     pub target: Option<DialectId>,
 }
 

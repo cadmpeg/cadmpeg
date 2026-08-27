@@ -628,3 +628,59 @@ crate = "cadmpeg"
 kind = "field"
 item = "cadmpeg::commands::ConversionPlan::step_target"
 reason = "the schema --step-target named, separate from step_options, which also carries the loss policy"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::ContainerSummary::dialects"
+reason = "always serialized: an empty list is the summary stating it identified no layer, which omission cannot express"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::DecodeReport::dialects"
+reason = "always serialized, for the same reason"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::ExportReport::target"
+reason = "always serialized as `null` when the encoder wrote a form the registry does not name"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::document::SourceMeta::dialect"
+reason = "always serialized as `null` when absent; stays `Option` because synthetic documents have no honest id, and `DecodeResult::new` debug-asserts the mirror a decode owes instead"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::document::SourceMeta::declared"
+reason = "always serialized; this is the member that moves the document digest of every document carrying source metadata"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION"
+reason = "2 to 3, because `report.dialects` is now always written; v1 and v2 sidecars still load and restamp"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V2"
+reason = "names the version that omits `dialects`, so a reader can spell the accepted set instead of hardcoding it"
+
+[[change]]
+commit = "0d2be2134"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSIONS_ACCEPTED"
+reason = "the accepted versions oldest first, so migration order is data rather than a match arm a caller cannot see"

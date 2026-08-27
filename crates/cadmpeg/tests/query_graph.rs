@@ -20,7 +20,7 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
-  "schema_version": 6,
+  "schema_version": 7,
   "command": "check",
   "status": "ok",
   "refusal": null
@@ -155,7 +155,7 @@ fn graph_json_envelope() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "query graph");
     let graph = value["graph"].as_array().unwrap();
     assert_eq!(graph.len(), 2);

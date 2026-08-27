@@ -106,7 +106,9 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        ..Default::default()
+        declared: BTreeMap::new(),
+        dialect: None,
+        format: String::new(),
     });
     let body = BodyId("body:active".into());
 
@@ -147,7 +149,9 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        ..Default::default()
+        declared: BTreeMap::new(),
+        dialect: None,
+        format: String::new(),
     });
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),

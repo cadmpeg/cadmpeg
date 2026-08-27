@@ -730,6 +730,7 @@
         "variant": "standard_nested",
         "vertex_records": "4"
       },
+      "declared": {},
       "dialect": "catia:standard-nested",
       "format": "catia"
     },

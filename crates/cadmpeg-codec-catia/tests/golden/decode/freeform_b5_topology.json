@@ -111,6 +111,7 @@
         "variant": "float_packed_inner_no_fbb",
         "vertex_records": "3"
       },
+      "declared": {},
       "dialect": "catia:float-packed-inner-no-fbb",
       "format": "catia"
     },

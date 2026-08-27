@@ -213,6 +213,7 @@
         "variant": "e5_stream",
         "vertex_records": "2"
       },
+      "declared": {},
       "dialect": "catia:e5-stream",
       "format": "catia"
     },

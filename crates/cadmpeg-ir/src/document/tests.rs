@@ -210,11 +210,12 @@ fn current_document_excludes_source_byte_accounting() {
     assert!(json.get("byte_ledger").is_none());
 }
 
-/// A `SourceMeta` written before the dialect fields existed still reads, and
-/// writing it back produces the same object. This is what keeps every stored
-/// CADIR document and every document digest stable across the staging.
+/// A `SourceMeta` written before the dialect fields existed still reads, with
+/// both fields absent. Writing it back now states their absence explicitly,
+/// which is what moves every document digest over a document that has source
+/// metadata.
 #[test]
-fn pre_migration_source_metadata_round_trips_without_the_dialect_keys() {
+fn pre_migration_source_metadata_reads_back_and_gains_the_dialect_keys() {
     let stored = "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"}}";
     let source: SourceMeta = serde_json::from_str(stored).unwrap();
 
@@ -223,7 +224,13 @@ fn pre_migration_source_metadata_round_trips_without_the_dialect_keys() {
     assert!(source.declared.is_empty());
 
     let rewritten = serde_json::to_string(&source).unwrap();
-    assert!(!rewritten.contains("dialect"), "{rewritten}");
-    assert!(!rewritten.contains("declared"), "{rewritten}");
-    assert_eq!(rewritten, stored);
+    assert_eq!(
+        rewritten,
+        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\
+         \"dialect\":null,\"declared\":{}}"
+    );
+    assert_eq!(
+        serde_json::from_str::<SourceMeta>(&rewritten).unwrap(),
+        source
+    );
 }

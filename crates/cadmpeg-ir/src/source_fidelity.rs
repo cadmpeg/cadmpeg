@@ -17,12 +17,23 @@ pub const SOURCE_FIDELITY_VERSION: &str = "3";
 
 /// Current serialized decode-sidecar version.
 ///
-/// Version 2 carries namespaced [`crate::LossKind`] objects. Version 1 sidecars
-/// with bare `snake_case` loss codes migrate on read.
-pub const DECODE_SIDECAR_VERSION: &str = "2";
+/// Version 3 always carries `report.dialects`. Version 2 carries namespaced
+/// [`crate::LossKind`] objects and omits `dialects` when the decode named no
+/// layer. Version 1 additionally spells loss codes as bare `snake_case`
+/// strings. Both migrate on read.
+pub const DECODE_SIDECAR_VERSION: &str = "3";
+
+/// Decode-sidecar versions [`DecodeSidecar::from_json`] accepts and migrates.
+///
+/// Ordered oldest first. Migration is cumulative: a sidecar entering at one
+/// version runs every later step in turn.
+pub const DECODE_SIDECAR_VERSIONS_ACCEPTED: &[&str] = &["1", "2", "3"];
 
 /// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
 pub const DECODE_SIDECAR_VERSION_V1: &str = "1";
+
+/// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
+pub const DECODE_SIDECAR_VERSION_V2: &str = "2";
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -78,9 +89,14 @@ impl DecodeSidecar {
 
     /// Parses and validates a decode sidecar.
     ///
-    /// Version [`DECODE_SIDECAR_VERSION_V1`] documents migrate in place to
-    /// version [`DECODE_SIDECAR_VERSION`]: bare loss `code` strings become
-    /// namespaced objects under the `shared` namespace.
+    /// Reads the version first, then applies the migration steps that version
+    /// still owes, oldest first, and only then imposes the current version's
+    /// field expectations. Version [`DECODE_SIDECAR_VERSION_V1`] rewrites bare
+    /// loss `code` strings into namespaced objects under the `shared`
+    /// namespace. Version [`DECODE_SIDECAR_VERSION_V2`] needs no rewrite: the
+    /// v3 field it lacks, `report.dialects`, is `#[serde(default)]` and reads
+    /// back empty, which is what a v2 decode meant by omitting it. Both are
+    /// restamped to [`DECODE_SIDECAR_VERSION`].
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
         let mut value: serde_json::Value =
             serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
@@ -88,6 +104,10 @@ impl DecodeSidecar {
         match version {
             DECODE_SIDECAR_VERSION_V1 => {
                 migrate_sidecar_v1_to_v2(&mut value)?;
+                migrate_sidecar_v2_to_v3(&mut value);
+            }
+            DECODE_SIDECAR_VERSION_V2 => {
+                migrate_sidecar_v2_to_v3(&mut value);
             }
             DECODE_SIDECAR_VERSION => {}
             found => {
@@ -110,8 +130,19 @@ impl DecodeSidecar {
     }
 }
 
-fn migrate_sidecar_v1_to_v2(value: &mut serde_json::Value) -> Result<(), DecodeSidecarParseError> {
+/// Restamp a v2 sidecar as v3.
+///
+/// The only v3 addition is an always-present `report.dialects`, and its
+/// `#[serde(default)]` already yields the empty list a v2 sidecar meant. So
+/// there is nothing to rewrite, only the stamp to move — and the stamp must
+/// move, because [`DecodeSidecar::from_json`] rejects any parsed sidecar whose
+/// version is not the current one.
+fn migrate_sidecar_v2_to_v3(value: &mut serde_json::Value) {
     value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION.into());
+}
+
+fn migrate_sidecar_v1_to_v2(value: &mut serde_json::Value) -> Result<(), DecodeSidecarParseError> {
+    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION_V2.into());
     let Some(losses) = value
         .pointer_mut("/report/losses")
         .and_then(|losses| losses.as_array_mut())
@@ -455,8 +486,8 @@ mod tests {
 
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert_eq!(DecodeSidecar::from_json(&json).unwrap(), sidecar);
-        assert!(json.contains("\"version\":\"2\""));
-        let wrong_version = json.replacen("\"version\":\"2\"", "\"version\":\"9\"", 1);
+        assert!(json.contains("\"version\":\"3\""));
+        let wrong_version = json.replacen("\"version\":\"3\"", "\"version\":\"9\"", 1);
         assert!(matches!(
             DecodeSidecar::from_json(&wrong_version),
             Err(DecodeSidecarParseError::Version { .. })
@@ -479,6 +510,38 @@ mod tests {
             crate::LossTaxonomy::MetadataNotTransferred
         );
         assert_eq!(loss.message, "thumbnail");
+    }
+
+    /// A v2 sidecar omits `report.dialects`, which v3 always writes. It must
+    /// still load, and load as an empty list — that is what a v2 decode meant
+    /// by omitting the key. The v1 fixture reaches v3 through the same path,
+    /// one step further back.
+    #[test]
+    fn decode_sidecar_loads_every_accepted_version() {
+        let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
+        let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
+
+        let v3 = migrated.to_canonical_json().expect("serialize sidecar");
+        assert!(v3.contains("\"dialects\":[]"), "{v3}");
+
+        let v2 = v3
+            .replacen("\"version\":\"3\"", "\"version\":\"2\"", 1)
+            .replace(",\"dialects\":[]", "");
+        assert!(!v2.contains("dialects"), "{v2}");
+
+        let from_v2 = DecodeSidecar::from_json(&v2).expect("migrate v2 sidecar");
+        assert_eq!(from_v2.version(), DECODE_SIDECAR_VERSION);
+        assert!(from_v2.report.dialects.is_empty());
+        assert_eq!(from_v2, migrated);
+
+        assert_eq!(
+            DECODE_SIDECAR_VERSIONS_ACCEPTED,
+            [
+                DECODE_SIDECAR_VERSION_V1,
+                DECODE_SIDECAR_VERSION_V2,
+                DECODE_SIDECAR_VERSION
+            ]
+        );
     }
 
     #[test]

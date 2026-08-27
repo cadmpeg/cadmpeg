@@ -45,14 +45,17 @@ pub struct ContainerSummary {
     pub notes: Vec<String>,
     /// Dialect identification, one entry per format layer the inspection read.
     ///
-    /// Empty while a codec has not yet been migrated to classify. Once
+    /// Empty only when the inspection identified no layer at all. Once
     /// populated, exactly one entry's `format` equals [`Self::format`]: that
     /// entry is the primary layer.
     ///
     /// Enforced by `cadmpeg_ir::codec::Codec::inspect`, the one wrapper every
     /// backend's summary passes through on its way to a caller. See
     /// [`crate::dialect::debug_assert_primary_layer`].
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ///
+    /// Always serialized. Summaries written before the field existed omit the
+    /// key and read back empty.
+    #[serde(default)]
     pub dialects: Vec<DialectMatch>,
 }
 
@@ -63,10 +66,11 @@ mod tests {
     use super::{ContainerSummary, DialectMatch};
     use crate::dialect::{Admission, DialectId};
 
-    /// The staged field is invisible on the wire until a codec populates it, so
-    /// adding it moved no persisted byte.
+    /// The field is part of the wire format: a summary that named no layer says
+    /// so with an empty list rather than by omitting the key. A summary written
+    /// before the field existed still reads back.
     #[test]
-    fn an_unclassified_summary_serializes_without_a_dialects_key() {
+    fn an_unclassified_summary_serializes_an_empty_dialects_key() {
         let mut summary = ContainerSummary {
             format: "rhino".into(),
             container_kind: "flat".into(),
@@ -76,9 +80,16 @@ mod tests {
         };
 
         let bare = serde_json::to_string(&summary).expect("a summary serializes");
-        assert!(!bare.contains("dialects"), "{bare}");
+        assert!(bare.contains("\"dialects\":[]"), "{bare}");
         assert_eq!(
             serde_json::from_str::<ContainerSummary>(&bare).expect("a summary round-trips"),
+            summary
+        );
+
+        // A summary persisted before the field existed omits the key entirely.
+        let legacy = r#"{"format":"rhino","container_kind":"flat","entries":[],"notes":[]}"#;
+        assert_eq!(
+            serde_json::from_str::<ContainerSummary>(legacy).expect("a legacy summary reads"),
             summary
         );
 

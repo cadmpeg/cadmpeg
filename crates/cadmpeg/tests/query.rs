@@ -21,7 +21,7 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
-  "schema_version": 6,
+  "schema_version": 7,
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -210,7 +210,7 @@ fn query_json_wraps_the_projection_in_the_versioned_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "query findings");
     assert_eq!(value["findings"].as_array().unwrap().len(), 2);
     assert_eq!(value["findings"][0]["check"], "identity");
@@ -520,7 +520,7 @@ fn item_json_envelope_uses_item_payload_key() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "query item");
     assert_eq!(value["item"].as_array().unwrap().len(), 1);
     assert_eq!(
