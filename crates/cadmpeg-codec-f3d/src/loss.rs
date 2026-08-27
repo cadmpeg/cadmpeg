@@ -168,6 +168,8 @@ pub enum F3dLossCode {
     SourceDialectUnverified,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
+    /// An embedded kernel carrier could not be framed for dialect inspection.
+    KernelCarrierUnparseable,
 }
 
 impl F3dLossCode {
@@ -247,6 +249,7 @@ impl F3dLossCode {
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
+        Self::KernelCarrierUnparseable,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -332,6 +335,7 @@ impl F3dLossCode {
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
+            Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
         }
     }
 
@@ -366,6 +370,7 @@ impl F3dLossCode {
             Self::DimensionCompanionUntyped
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
+            | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
@@ -543,6 +548,7 @@ mod tests {
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
+                "source.kernel-carrier-unparseable",
             ]
         );
     }
