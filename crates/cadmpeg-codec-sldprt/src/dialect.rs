@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: Apache-2.0
+//! SLDPRT dialect identity: which registry row a document is, and how it was
+//! admitted.
+//!
+//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
+//! strings are the boundary, [`SldprtDialect::classify`] is the one
+//! construction path, and the vocabulary is closed. Every variant here has a
+//! row in `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row`
+//! fails on drift in either direction.
+//!
+//! # The axis is `swVersion`, and it is the only one that selects a layout
+//!
+//! `[format.sldprt]` declares `complete = false`: the vendor's release space
+//! is not enumerable from any published document, so the rows are grammar
+//! classes plus the mandatory `unknown` row (design §3.2, §3.3 B4).
+//!
+//! Two document-wide discriminants exist and only one is a grammar boundary.
+//! The container branch — compound file versus native block envelope
+//! ([`crate::container::looks_like_sldprt`]) — is the pre-parse dispatch, but
+//! the outer version word it yields is never compared to anything: `scan` hard
+//! -sets it to `0` on the compound-file branch and reads a big-endian `u32` at
+//! offset 4 on the native branch, and both values only reach the
+//! `outer_version` attribute. It is provenance, not evidence, and for that
+//! reason it is not a declared key here either: a value cadmpeg synthesizes on
+//! one of the two branches is not something the source declared.
+//!
+//! `swVersion` is the axis. It is not in the container header: it is an
+//! attribute of a `swSolidWorks` XML payload extracted after the scan, and it
+//! is the sole input to [`form_code_padding`], which selects the byte width of
+//! the feature-operation form-code padding — four bytes below 12000, eight at
+//! 12000 and above. That padding shifts every feature-operation read, so the
+//! boundary is B1.
+//!
+//! # The declaration is evidence; the id is identity
+//!
+//! [`DialectMatch::declared`] records the `swVersion` attribute verbatim, as
+//! the source wrote it. [`DialectMatch::dialect`] records which registry row
+//! the document satisfies. They are different statements and a consumer must
+//! not join them: `swVersion="SW2019"` is recorded verbatim and classifies as
+//! `sldprt:unknown`, because the row's discriminant is a usable numeric
+//! declaration and that string is not one. Parse a version out of an id and
+//! the answer is wrong for exactly the files whose declarations are wrong.
+//!
+//! # Every decodable path is `Admitted`
+//!
+//! There is no [`Admission::AdmittedUnverified`] here and no
+//! `SourceDialectUnverified` loss, because there is nothing to name as
+//! `nearest`. Each of the three rows is read with the strategy declared for
+//! that row: the padding filter narrowed to four bytes, narrowed to eight, or
+//! — on `sldprt:unknown` — not applied at all, with the ambiguity resolver
+//! running unconstrained and requiring the two candidate offsets to agree
+//! before it binds an operation code. The unknown row is not a legacy grammar
+//! substituted for a newer one; it is its own declared strategy, so charging a
+//! dialect-unverified loss against it would name a substitution that did not
+//! happen. [`Admission::Refused`] is likewise unreachable: this codec refuses
+//! only on container framing, I/O, and entity-budget grounds, all of which
+//! return [`cadmpeg_core::CodecError`] before any report exists, and none of
+//! which is a dialect judgement.
+//!
+//! Where the padding filter is absent and the candidates disagree, the
+//! resolver binds nothing. That is a loss inside a dialect, expressed through
+//! the ordinary loss vocabulary, not an admission state (design §3.3, B2).
+
+use crate::container::ContainerScan;
+use crate::resolved_features::operations::{form_code_padding, FormCodePadding};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use std::collections::BTreeMap;
+
+/// The format layer every match here classifies.
+pub(crate) const FORMAT: &str = "sldprt";
+
+/// Key of the `swSolidWorks` `swVersion` attribute in
+/// [`DialectMatch::declared`].
+///
+/// Absent when the document declares no `swVersion`, which is every document
+/// carrying no `swSolidWorks` XML payload at all. The value is the attribute
+/// text exactly as written, including declarations that do not read as a
+/// number; it is the same string that reaches
+/// `SourceMeta::attributes["sw_version"]`.
+pub(crate) const DECLARED_SW_VERSION: &str = "sw_version";
+
+/// One row of `docs/dialects.toml` under the `sldprt` namespace.
+///
+/// Three rows, and the classification is total over them: the two grammar
+/// classes `form_code_padding` selects, plus the mandatory `unknown` row that
+/// absorbs every declaration it cannot use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum SldprtDialect {
+    SwVersionPre12000,
+    SwVersion12000Plus,
+    Unknown,
+}
+
+impl SldprtDialect {
+    /// Every dialect this codec can name.
+    ///
+    /// The registry cross-check is its only consumer, and that is the point:
+    /// the list exists so a variant added without a registry row, or a row
+    /// added without a variant, fails a test.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 3] = [
+        Self::SwVersionPre12000,
+        Self::SwVersion12000Plus,
+        Self::Unknown,
+    ];
+
+    /// The pinned registry id. The only string boundary this enum has.
+    pub(crate) const fn id(self) -> DialectId {
+        DialectId::pinned(match self {
+            Self::SwVersionPre12000 => "sldprt:sw-version-pre-12000",
+            Self::SwVersion12000Plus => "sldprt:sw-version-12000-plus",
+            Self::Unknown => "sldprt:unknown",
+        })
+    }
+
+    /// The row a `swVersion` declaration selects.
+    ///
+    /// Derived from [`form_code_padding`] rather than from a second reading of
+    /// the same string: the padding this returns *is* the discriminant, so a
+    /// classification bug and a decode bug cannot be different bugs. The
+    /// boundary value 12000 belongs to the `Eight` arm, and every declaration
+    /// the padding rule cannot use — absent, non-numeric, negative,
+    /// wider than `u32`, or zero — lands on [`Self::Unknown`].
+    fn from_declaration(sw_version: Option<&str>) -> Self {
+        match form_code_padding(sw_version) {
+            Some(FormCodePadding::Four) => Self::SwVersionPre12000,
+            Some(FormCodePadding::Eight) => Self::SwVersion12000Plus,
+            None => Self::Unknown,
+        }
+    }
+
+    /// Classifies one document from its `swVersion` declaration. The single
+    /// construction path for a [`DialectMatch`] in this codec, so a
+    /// classification bug and the report can never disagree.
+    ///
+    /// Admission is [`Admission::Admitted`] on every row; the module
+    /// documentation states why that is the honest answer rather than a
+    /// missing case.
+    pub(crate) fn classify(sw_version: Option<&str>) -> DialectMatch {
+        let mut declared = BTreeMap::new();
+        if let Some(value) = sw_version {
+            declared.insert(DECLARED_SW_VERSION.into(), value.to_owned());
+        }
+        DialectMatch {
+            format: FORMAT.into(),
+            dialect: Some(Self::from_declaration(sw_version).id()),
+            declared,
+            admission: Admission::Admitted,
+        }
+    }
+
+    /// Classifies one scanned document, reading the declaration from the scan.
+    ///
+    /// The read is [`crate::decode::declared_sw_version`], which is the same
+    /// extraction that fills `SourceMeta::attributes["sw_version"]`. Callers
+    /// that have already built those attributes read the key from there and
+    /// call [`Self::classify`] instead, so the two never diverge.
+    pub(crate) fn classify_scan(scan: &ContainerScan<'_>) -> DialectMatch {
+        Self::classify(crate::decode::declared_sw_version(scan).as_deref())
+    }
+}
+
+#[cfg(test)]
+mod tests;

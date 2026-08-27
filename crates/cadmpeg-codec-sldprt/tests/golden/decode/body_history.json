@@ -442,6 +442,7 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
+      "dialect": "sldprt:unknown",
       "format": "sldprt"
     },
     "tolerances": {
@@ -454,6 +455,13 @@
   },
   "report": {
     "container_only": false,
+    "dialects": [
+      {
+        "admission": "admitted",
+        "dialect": "sldprt:unknown",
+        "format": "sldprt"
+      }
+    ],
     "format": "sldprt",
     "geometry_transferred": true,
     "losses": [

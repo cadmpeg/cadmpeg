@@ -1,5 +1,12 @@
 {
   "container_kind": "sldprt-blocks",
+  "dialects": [
+    {
+      "admission": "admitted",
+      "dialect": "sldprt:unknown",
+      "format": "sldprt"
+    }
+  ],
   "entries": [
     {
       "attributes": {
