@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::document::Model;
+use crate::document::{Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::report::Check;
 use crate::validate::validate_neutral;
@@ -208,4 +208,22 @@ fn current_document_excludes_source_byte_accounting() {
 
     assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
+}
+
+/// A `SourceMeta` written before the dialect fields existed still reads, and
+/// writing it back produces the same object. This is what keeps every stored
+/// CADIR document and every document digest stable across the staging.
+#[test]
+fn pre_migration_source_metadata_round_trips_without_the_dialect_keys() {
+    let stored = "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"}}";
+    let source: SourceMeta = serde_json::from_str(stored).unwrap();
+
+    assert_eq!(source.format, "rhino");
+    assert_eq!(source.dialect, None);
+    assert!(source.declared.is_empty());
+
+    let rewritten = serde_json::to_string(&source).unwrap();
+    assert!(!rewritten.contains("dialect"), "{rewritten}");
+    assert!(!rewritten.contains("declared"), "{rewritten}");
+    assert_eq!(rewritten, stored);
 }
