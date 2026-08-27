@@ -709,8 +709,8 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 # --------------------------------------------------------------------------
 # SolidWorks SLDPRT
 # --------------------------------------------------------------------------
-# This format's inventory needs its codec owner. Two independent document-wide
-# discriminants exist and neither dominates:
+# Two document-wide discriminants exist. `swVersion` is the identity axis;
+# the container branch is provenance:
 #
 #   container branch -- the real pre-parse dispatch, and the only one that is
 #     read from the leading bytes. `looks_like_sldprt`
@@ -726,16 +726,20 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 #     stringification into an `outer_version` attribute (container.rs:802,
 #     decode.rs:3059, decode.rs:3349). It is provenance, not evidence.
 #
-#   sw_version band -- the axis this registry uses, because it is the version
-#     axis the design's §12 names and the only one that selects a byte layout.
-#     It is not read from the container header: it is the `swVersion`
-#     attribute of a `swSolidWorks` XML payload extracted after the scan
-#     (decode.rs:3158-3179) into `SourceMeta.attributes["sw_version"]`.
+#   sw_version band -- the identity axis, because it is the only one that
+#     selects a byte layout. It is not read from the container header: it is
+#     the `swVersion` attribute of a `swSolidWorks` XML payload extracted after
+#     the scan (decode.rs:3172-3191) into `SourceMeta.attributes["sw_version"]`
+#     and, verbatim, into the match's `sw_version` declared key.
 #
-# The rows below use the sw_version band. If the codec owner decides the
-# container branch is the identity axis instead, these ids retire and
-# `sldprt:compound-file` / `sldprt:block-envelope` replace them -- which is a
-# boundary redraw needing a stated structural reason in the diff (design §3.3).
+# `crates/cadmpeg-codec-sldprt/src/dialect.rs` pins one enum variant per row
+# below and derives the row from `form_code_padding` itself, so the
+# discriminant the classifier reads and the discriminant the decoder branches
+# on are one expression. The two versioned rows are `Admitted`; the residual
+# row is `AdmittedUnverified` and charges `source.dialect-unverified` from the
+# same predicate, so the biconditional holds by construction. Refusal is never
+# a dialect judgement here -- this codec refuses only on container framing,
+# I/O, and entity-budget grounds.
 #
 # The design's §12 question was whether the padding branch is B1 (a dialect)
 # or B2 (within-dialect adaptation). Verified against the code, the honest
@@ -771,18 +775,32 @@ seam = "eight-byte feature-operation form-code padding"
 witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:33"
 
 [[dialect]]
-# Mandatory `unknown` row (B4), and the largest of the three in practice. A
-# part reaches it when `swVersion` is absent, non-numeric, or zero
-# (operations.rs:32-33 returns `None` in all three cases), which includes
-# every file on the CFB container branch, since that branch enumerates
-# compound streams only (container.rs:403) and no golden fixture carries a
-# `swSolidWorks` block at all.
-# Disposition: admitted; the padding filter is simply not applied
-# (operations.rs:70, :111) and the ambiguity resolver runs unconstrained
-# (operations.rs:82-91).
+# Mandatory `unknown` row (B4), and the only row any golden fixture reaches:
+# no golden carries a `swSolidWorks` block, so all twenty classify here.
+# A part reaches it when `swVersion` is absent or does not read as a `u32`
+# above zero (operations.rs:32-33 returns `None` for an absent attribute, for
+# a `parse::<u32>()` failure -- which is every non-numeric, negative, or
+# over-wide declaration -- and for zero).
+# The container branch does not decide this row. `add_solidworks_xml_metadata`
+# (decode.rs:3172-3191) walks `ContainerScan::sections`, which chains blocks
+# AND compound streams (container.rs:256-261), and `payload_family` returns
+# "xml" for any payload starting `<?xml` (container.rs:63-67). A compound-file
+# part whose stream carries the `swSolidWorks` document therefore classifies
+# by its `swVersion` like any other. The hard-set `0` at container.rs:403 is
+# the outer version word, a different field that no row reads.
+# Disposition: admitted-unverified, naming itself as `nearest`. The padding
+# filter is simply not applied (operations.rs:70, :111) and the ambiguity
+# resolver runs unconstrained (operations.rs:82-91), so the strategy
+# substituted for the missing declaration is this row's own fallback and no
+# other row lent its grammar. That fallback binds an operation code only where
+# the four- and eight-byte candidates agree, but agreement between candidates
+# is consistency, not a declaration: admission verifies a declared identity and
+# this row is the absence of one. A residual row is therefore never `Admitted`,
+# and the codec charges `source.dialect-unverified` here, which `DecodeMode::
+# Strict` refuses.
 id = "sldprt:unknown"
 title = "SolidWorks part with no usable swVersion declaration"
-discriminants = { sw_version = "absent, non-numeric, or 0" }
+discriminants = { sw_version = "absent, not a u32 above zero" }
 witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:32"
 
 # --------------------------------------------------------------------------

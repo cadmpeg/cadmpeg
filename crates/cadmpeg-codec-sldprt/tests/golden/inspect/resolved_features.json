@@ -1,5 +1,16 @@
 {
   "container_kind": "sldprt-blocks",
+  "dialects": [
+    {
+      "admission": {
+        "admitted_unverified": {
+          "nearest": "sldprt:unknown"
+        }
+      },
+      "dialect": "sldprt:unknown",
+      "format": "sldprt"
+    }
+  ],
   "entries": [
     {
       "attributes": {

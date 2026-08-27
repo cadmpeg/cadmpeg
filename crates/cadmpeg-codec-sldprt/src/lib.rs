@@ -100,6 +100,7 @@ mod classification;
 pub(crate) mod container;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
 pub(crate) mod decode;
+mod dialect;
 mod feature_schema;
 #[doc(hidden)]
 pub mod fuzz;
@@ -248,7 +249,12 @@ impl CodecBackend for SldprtCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        Ok(container::summarize(&scan))
+        let mut summary = container::summarize(&scan);
+        summary
+            .dialects
+            .push(dialect::SldprtDialect::classify_scan(&scan));
+        cadmpeg_core::dialect::debug_assert_primary_layer(&summary.dialects, &summary.format);
+        Ok(summary)
     }
 
     fn decode_impl(
