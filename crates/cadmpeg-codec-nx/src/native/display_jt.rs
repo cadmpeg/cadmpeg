@@ -3927,6 +3927,7 @@ mod tests {
         let container = Container {
             data: data.clone().into(),
             version: 6,
+            declared_version: Some(6),
             file_tag: 0,
             footer_offset: 0,
             header_entry_count: 0,
@@ -4040,6 +4041,7 @@ mod tests {
         let container = Container {
             data: data.into(),
             version: 6,
+            declared_version: Some(6),
             file_tag: 0,
             footer_offset: 0,
             header_entry_count: 0,
@@ -4142,6 +4144,7 @@ mod tests {
         let container = Container {
             data: data.into(),
             version: 6,
+            declared_version: Some(6),
             file_tag: 0,
             footer_offset: 0,
             header_entry_count: 0,
@@ -5051,6 +5054,7 @@ mod tests {
         let container = crate::container::Container {
             data: data.into(),
             version: 1,
+            declared_version: Some(1),
             file_tag: 0,
             footer_offset: 0,
             header_entry_count: 0,

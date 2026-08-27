@@ -416,6 +416,7 @@ mod tests {
             container: crate::container::Container {
                 data: Vec::new().into(),
                 version: 0,
+                declared_version: Some(0),
                 file_tag: 0,
                 footer_offset: 0,
                 header_entry_count: 0,
@@ -468,6 +469,7 @@ mod tests {
             container: crate::container::Container {
                 data: Vec::new().into(),
                 version: 0,
+                declared_version: Some(0),
                 file_tag: 0,
                 footer_offset: 0,
                 header_entry_count: 0,

@@ -26,12 +26,19 @@
 //!
 //! # The version byte is provenance, not a discriminant
 //!
-//! `Container::version` is a `u8` — file offset 8 on the modern arm, read with
-//! `unwrap_or(0)`; byte 8 of the UGII payload prefix on the legacy arm. No
-//! branch in this codec reads it. Its consumers are report notes and the source
-//! attributes, which is exactly the role [`DialectMatch::declared`] exists for.
-//! It is recorded verbatim under the key the arm that read it already used, and
-//! it never moves the resolved id.
+//! `Container::version` is a `u8` — file offset 8 on the modern arm, byte 8 of
+//! the UGII payload prefix on the legacy arm. No branch in this codec reads it.
+//! Its consumers are report notes and the source attributes, which is exactly
+//! the role [`DialectMatch::declared`] exists for. It is recorded verbatim
+//! under the key the arm that read it already used, and it never moves the
+//! resolved id.
+//!
+//! Verbatim means the declaration, not the value the decoder proceeded with.
+//! The modern arm substitutes zero for a header too short to carry the byte, so
+//! `declared` records `Container::declared_version` and omits the key entirely
+//! when the source declared nothing. A synthesized default recorded as a
+//! declaration would be indistinguishable from a real declared zero, and every
+//! consumer of `declared` reads it as evidence about the source.
 //!
 //! # `nx:unknown` is a declared row this codec never emits
 //!
@@ -52,7 +59,15 @@ pub(crate) const FORMAT: &str = "nx";
 
 /// Key of the modern container version byte in [`DialectMatch::declared`].
 ///
-/// The same value as the `splmsstr_version` source attribute.
+/// Present only when the header actually carried the byte. `scan_bytes`
+/// substitutes zero for a header too short to hold it, and a value cadmpeg
+/// synthesizes is not something the source declared — so this key reads
+/// `Container::declared_version`, not `Container::version`, and is omitted
+/// rather than recording a substituted zero indistinguishable from a real one.
+///
+/// The `splmsstr_version` source attribute keeps recording the substituted
+/// value; it reports what the decoder proceeded with, which is a different
+/// statement from what the file declared.
 const DECLARED_SPLMSSTR_VERSION: &str = "splmsstr_version";
 /// Key of the first object-model store's version in [`DialectMatch::declared`].
 ///
@@ -157,10 +172,9 @@ impl NxDialect {
             // `Unknown`, which shares the modern arm only to keep the match
             // total.
             Self::Splmsstr | Self::Unknown => {
-                declared.insert(
-                    DECLARED_SPLMSSTR_VERSION.into(),
-                    container.version.to_string(),
-                );
+                if let Some(version) = container.declared_version {
+                    declared.insert(DECLARED_SPLMSSTR_VERSION.into(), version.to_string());
+                }
                 if let Some(header) = crate::native::store_headers(container).first() {
                     declared.insert(DECLARED_PRODUCT_VERSION.into(), header.version.clone());
                 }
