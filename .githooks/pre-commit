@@ -30,6 +30,15 @@ if git diff --cached --name-only \
   python3 scripts/check-dialect-support.py
 fi
 
+# Public API ledger rows and snapshots move together. Crate source changes also
+# run the structural check so this gate remains attached to the API inputs.
+if git diff --cached --name-only \
+    | grep -qE '^docs/public-api-ledger\.toml$|^docs/api-baseline/.*\.txt$|^crates/[^/]+/src/|^scripts/(check-public-api-ledger\.py|test_check_public_api_ledger\.py)$'; then
+  echo "pre-commit: scripts/check-public-api-ledger.py"
+  python3 scripts/check-public-api-ledger.py --self-test
+  python3 scripts/check-public-api-ledger.py
+fi
+
 # Every published capability table is rendered from the two registries. A
 # registry edit without a re-render, or a hand edit inside a generated region,
 # must not reach a commit. Run it whenever a registry, the renderer, or a file

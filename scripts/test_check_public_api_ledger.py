@@ -98,6 +98,73 @@ class SnapshotChecks(unittest.TestCase):
                 [],
             )
 
+    def test_header_stripping_comparison(self) -> None:
+        generated = b"pub mod cadmpeg_core\npub struct Widget\n"
+        snapshot = b"# generated at abcdef0\n" + generated
+        self.assertTrue(ledger.snapshot_matches(snapshot, generated))
+        self.assertFalse(
+            ledger.snapshot_matches(snapshot, generated + b"pub enum New {}\n")
+        )
+
+    def test_diff_selection_uses_staged_source_crates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            baseline = Path(tmp)
+            (baseline / "cadmpeg-core.txt").touch()
+            (baseline / "cadmpeg-ir.txt").touch()
+            self.assertEqual(
+                ledger.crates_for_diff(
+                    baseline,
+                    {
+                        "crates/cadmpeg-core/src/lib.rs",
+                        "docs/api-baseline/cadmpeg-ir.txt",
+                    },
+                ),
+                ["cadmpeg-core"],
+            )
+            self.assertEqual(
+                ledger.crates_for_diff(baseline, set()),
+                ["cadmpeg-core", "cadmpeg-ir"],
+            )
+
+
+REALISTIC_LEDGER_DIFF = """\
+diff --git a/docs/public-api-ledger.toml b/docs/public-api-ledger.toml
+index 1111111..2222222 100644
+--- a/docs/public-api-ledger.toml
++++ b/docs/public-api-ledger.toml
+@@ -20,0 +21,7 @@
++[[change]]
++commit = "0123456789abcdef0123456789abcdef01234567"
++crate = "cadmpeg-core"
++kind = "addition"
++item = "cadmpeg_core::Widget"
++reason = "test fixture"
+"""
+
+
+class StagedCouplingChecks(unittest.TestCase):
+    def test_staged_row_with_snapshot_passes(self) -> None:
+        staged = {
+            "docs/public-api-ledger.toml",
+            "docs/api-baseline/cadmpeg-core.txt",
+        }
+        self.assertEqual(ledger.check_staged_coupling(REALISTIC_LEDGER_DIFF, staged), [])
+
+    def test_staged_row_without_snapshot_fails_and_names_crate(self) -> None:
+        failures = ledger.check_staged_coupling(
+            REALISTIC_LEDGER_DIFF, {"docs/public-api-ledger.toml"}
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("cadmpeg-core", failures[0])
+        self.assertIn("cargo +nightly public-api -p cadmpeg-core", failures[0])
+
+    def test_nothing_staged_passes(self) -> None:
+        self.assertEqual(ledger.check_staged_coupling("", set()), [])
+
+    def test_crate_outside_added_change_block_is_ignored(self) -> None:
+        diff = REALISTIC_LEDGER_DIFF + "\n+[[metadata]]\n+crate = \"not-a-change\"\n"
+        self.assertEqual(ledger.added_change_crates(diff), {"cadmpeg-core"})
+
 
 if __name__ == "__main__":
     unittest.main()
