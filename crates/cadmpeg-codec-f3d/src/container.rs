@@ -495,6 +495,14 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 /// Build a [`ContainerSummary`] without assigning model authority from a ZIP
 /// extension. Design body bindings perform the model selection during decode.
 pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
+    let kernel_layers = crate::dialect::kernel_layers(scan);
+    summarize_with_kernel_layers(scan, &kernel_layers.matches)
+}
+
+pub(crate) fn summarize_with_kernel_layers(
+    scan: &ContainerScan<'_>,
+    kernel_layers: &[cadmpeg_core::dialect::DialectMatch],
+) -> ContainerSummary {
     let mut notes = Vec::new();
     if let Some(folder) = scan.design_asset_folder() {
         notes.push(format!("Design asset folder (from manifests): {folder}"));
@@ -536,7 +544,7 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
     );
 
     let mut dialects = vec![scan.dialect.clone()];
-    dialects.extend(crate::dialect::kernel_layers(scan));
+    dialects.extend_from_slice(kernel_layers);
     debug_assert_primary_layer(&dialects, FORMAT);
     ContainerSummary {
         dialects,

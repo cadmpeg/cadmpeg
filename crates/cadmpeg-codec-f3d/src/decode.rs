@@ -4759,16 +4759,18 @@ fn source_and_tolerances(
 /// `DecodeReport::dialects` come from the same match and cannot disagree.
 fn dialect_losses(
     scan: &ContainerScan,
-    kernel_layers: &[cadmpeg_core::dialect::DialectMatch],
+    kernel_layers: &crate::dialect::KernelLayers,
 ) -> Vec<cadmpeg_ir::report::LossNote> {
     let mut losses = crate::dialect::dialect_loss(&scan.dialect)
         .into_iter()
         .collect::<Vec<_>>();
     losses.extend(
         kernel_layers
+            .matches
             .iter()
             .filter_map(crate::dialect::kernel_dialect_loss),
     );
+    losses.extend(kernel_layers.losses.iter().cloned());
     losses
 }
 
@@ -4799,8 +4801,8 @@ fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> Str
 }
 
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
-    let summary = container::summarize(scan);
-    let kernel_layers = &summary.dialects[1..];
+    let kernel_layers = crate::dialect::kernel_layers(scan);
+    let summary = container::summarize_with_kernel_layers(scan, &kernel_layers.matches);
     let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
@@ -4882,7 +4884,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         "Materials/appearances (.protein assets, ACT/design assignments) were not \
          transferred.",
     ));
-    losses.extend(dialect_losses(scan, kernel_layers));
+    losses.extend(dialect_losses(scan, &kernel_layers));
 
     DecodeReport {
         dialects: summary.dialects,
@@ -4959,8 +4961,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 /// The report names the BREP carrier state. A failed binary decode gets a
 /// decode-failure note. Each remaining state gets its own loss description.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
-    let summary = container::summarize(scan);
-    let kernel_layers = &summary.dialects[1..];
+    let kernel_layers = crate::dialect::kernel_layers(scan);
+    let summary = container::summarize_with_kernel_layers(scan, &kernel_layers.matches);
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);
@@ -5043,7 +5045,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         ));
     }
 
-    losses.extend(dialect_losses(scan, kernel_layers));
+    losses.extend(dialect_losses(scan, &kernel_layers));
 
     DecodeReport {
         dialects: summary.dialects,

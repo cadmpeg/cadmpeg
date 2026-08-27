@@ -208,6 +208,56 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
     );
 }
 
+#[test]
+fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
+    let base = f3d_without_brep("part-design", "part.f3d", &[]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        let name = entry.name().to_owned();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    let valid_path = "FusionAssetName[Active]/Breps.BlobParts/BREP.valid.smb";
+    zip.start_file(valid_path, stored).unwrap();
+    zip.write_all(&synthetic_smbh()).unwrap();
+    let corrupt_path = "FusionAssetName[Active]/Breps.BlobParts/BREP.corrupt.smb";
+    zip.start_file(corrupt_path, stored).unwrap();
+    zip.write_all(b"not an ACIS kernel stream").unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+
+    let kernel_layers = decoded
+        .report()
+        .dialects
+        .iter()
+        .filter(|matched| matched.format == "acis")
+        .collect::<Vec<_>>();
+    assert_eq!(kernel_layers.len(), 1);
+    assert_eq!(kernel_layers[0].declared["carrier"], valid_path);
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::KernelCarrierUnparseable.kind())
+        .expect("the corrupt carrier is visible as a loss");
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert!(loss.message.contains(corrupt_path), "{}", loss.message);
+}
+
 /// The text encoding of an ASM stream carries the same entity model as the
 /// binary one, so its archive members are geometry carriers and must classify as
 /// such. Leaving them unclassified is what let the report state that a document

@@ -217,12 +217,17 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     }
 }
 
-/// Kernel dialect layers declared by the binary B-rep streams.
-pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
-    scan.breps
-        .iter()
-        .filter_map(|brep| {
-            let bytes = scan.entry_bytes(&brep.name).ok()?;
+/// Kernel dialect layers and visibility losses from the binary B-rep streams.
+pub(crate) struct KernelLayers {
+    pub(crate) matches: Vec<DialectMatch>,
+    pub(crate) losses: Vec<LossNote>,
+}
+
+pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> KernelLayers {
+    let mut matches = Vec::new();
+    let mut losses = Vec::new();
+    for brep in &scan.breps {
+        let parsed = scan.entry_bytes(&brep.name).ok().and_then(|bytes| {
             let (header, dialect, admission) = if cadmpeg_asm::asm_header::has_asm_magic(bytes) {
                 let header = cadmpeg_asm::asm_header::parse(bytes)?;
                 let dialect = cadmpeg_asm::dialect::asm_binary_row(header.width);
@@ -249,8 +254,18 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<D
                 declared,
                 admission,
             })
-        })
-        .collect()
+        });
+        if let Some(matched) = parsed {
+            matches.push(matched);
+        } else {
+            losses.push(F3dLossCode::KernelCarrierUnparseable.note(format!(
+                "kernel carrier {} could not be framed for dialect inspection; its retained \
+                 source bytes remain available",
+                brep.name
+            )));
+        }
+    }
+    KernelLayers { matches, losses }
 }
 
 /// The recovery loss a kernel layer charges, if it recovered.
