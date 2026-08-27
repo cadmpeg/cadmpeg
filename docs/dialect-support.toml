@@ -1246,8 +1246,10 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-decoded at save format 217 or 218 and refused outside that band; the
-golden that pins it is code-built"""
+decoded at every save format: majors 217 and 218 are Admitted, and any
+other band is read with the nearer of those two grammars under
+`Admission::AdmittedUnverified` and a source.dialect-unverified charge.
+The golden that pins it is code-built"""
 
 [[support]]
 dialect = "sat:text"
@@ -1256,8 +1258,10 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-decoded on an End-of-ASM-data terminator at any save format and on End-of-
-ACIS-data at 217 or 218; the golden that pins it is code-built"""
+decoded at any save format under either terminator; an End-of-ACIS-data
+stream outside majors 217 and 218 is `Admission::AdmittedUnverified` with
+a source.dialect-unverified charge. The golden that pins it is code-
+built"""
 
 [[support]]
 dialect = "sat:unknown"
@@ -1297,9 +1301,9 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+a verified band. The `acis:` namespace is registry-only on the identity
+side, so no host row is ever this id; `cadmpeg-codec-sat` does name it as
+the `nearest` grammar an unverified band was read with"""
 
 [[support]]
 dialect = "acis:save-format-218"
@@ -1307,21 +1311,21 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no code emits this id: the `acis:` namespace is registry-only, and the
-disposition is enforced indirectly through the `sat:` rows that wrap the
-same streams"""
+a verified band, under the same note as `acis:save-format-217`: named as
+the `nearest` grammar for an unverified band at or above major 218"""
 
 [[support]]
 dialect = "acis:save-format-binary-other"
-read = "refused"
+read = "unclassified-recovered"
 write = "none"
 fixtures = []
 reason = """
-the refused save-format band: structurally identified and semantically
-refused, in `cadmpeg-codec-sat` and again in `cadmpeg-codec-inventor`'s
-kernel gate. no code emits this id: the `acis:` namespace is registry-
-only, and the disposition is enforced indirectly through the `sat:` rows
-that wrap the same streams"""
+the unverified save-format band: framed and decoded with the nearer
+verified band's record grammar, in `cadmpeg-codec-sat` and again in
+`cadmpeg-codec-inventor`'s kernel carrier path. The host `sat:` row it
+wraps carries `Admission::AdmittedUnverified` and the
+source.dialect-unverified charge; no code emits this id itself, because
+the `acis:` namespace is registry-only"""
 
 [[support]]
 dialect = "acis:text-asm"

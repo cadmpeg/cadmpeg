@@ -7,7 +7,10 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use std::io::Cursor;
 
 use crate::loss::SatLossCode;
-use crate::test_support::{binary_sphere_stream, text_sphere_stream, BinaryFixtureKind};
+use crate::test_support::{
+    acis_text_sphere_stream, binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
+    UNVERIFIED_SAVE_FORMAT,
+};
 use crate::{SatCodec, FORMAT};
 
 fn decode_bytes(bytes: &[u8]) -> DecodeResult {
@@ -71,48 +74,80 @@ fn native_arenas_live_under_the_sat_namespace() {
 }
 
 #[test]
-fn an_unadmitted_acis_binary_band_is_identified_and_reported() {
-    let mut bytes = b"ACIS BinaryFile".to_vec();
-    bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0u8; 28]);
-    let result = decode_bytes(&bytes);
-    assert!(!result.report().geometry_transferred);
+fn an_unverified_acis_binary_band_is_decoded_and_marked() {
+    // A band no row verifies takes the same framing and record decode as a
+    // verified one; only the mark on the result differs.
+    let result = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand));
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
     assert!(result
         .report()
         .losses
         .iter()
-        .any(|loss| loss.message.contains("Spatial ACIS binary stream")));
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
-    assert_eq!(source.attributes["acis_save_format_version"], "100");
-    assert!(result.ir().model.bodies.is_empty());
+    assert_eq!(
+        source.attributes["acis_save_format_version"],
+        UNVERIFIED_SAVE_FORMAT.to_string()
+    );
 }
 
 #[test]
-fn an_unadmitted_acis_text_band_is_identified_and_reported() {
+fn an_unverified_acis_text_band_is_decoded_and_marked() {
+    let result = decode_bytes(&acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT));
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(source.attributes["kernel_family"], "acis");
+    assert_eq!(source.attributes["encoding"], "text");
+}
+
+#[test]
+fn an_unverified_band_that_decodes_nothing_reports_honest_coverage() {
+    // Recovery is not a promise of content: an unverified band whose records
+    // this codec does not type keeps both marks and reports what it did not
+    // read.
     let mut text = String::new();
-    text.push_str("700 0 1 0 \n");
+    text.push_str("70000 0 1 0 \n");
     text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
     text.push_str("1 1e-06 1.0e-10 \n");
-    text.push_str("body $-1 -1 $-1 $-1 $-1 $-1 #\n");
+    text.push_str("mystery_record $-1 -1 42 #\n");
     text.push_str("End-of-ACIS-data \n");
     let result = decode_bytes(text.as_bytes());
     assert!(!result.report().geometry_transferred);
-    assert!(result
+    assert!(result.report().coverage.contains_key("unknown_records"));
+    let codes = result
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code == SatLossCode::ContainerAcisSaveFormatUnsupported.kind()));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("Spatial ACIS text stream")));
-    let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.attributes["kernel_family"], "acis");
-    assert_eq!(source.attributes["acis_save_format_version"], "700");
-    assert_eq!(source.attributes["encoding"], "text");
-    assert!(result.ir().model.bodies.is_empty());
+        .map(|loss| loss.code.clone())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&SatLossCode::SourceDialectUnverified.kind()));
+    assert!(codes.contains(&SatLossCode::GeometryFramedWithoutCarriers.kind()));
+}
+
+#[test]
+fn a_framing_failure_is_still_refused() {
+    // Structural refusal stands: an ACIS magic whose header does not carry a
+    // record stream is malformed, not recovered.
+    let mut bytes = b"ACIS BinaryFile".to_vec();
+    bytes.extend_from_slice(&UNVERIFIED_SAVE_FORMAT.to_le_bytes());
+    bytes.extend_from_slice(&[0u8; 4]);
+    let error = SatCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .unwrap_err();
+    assert!(matches!(error, CodecError::Malformed(_)), "{error:?}");
 }
 
 #[test]

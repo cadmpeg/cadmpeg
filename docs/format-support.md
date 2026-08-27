@@ -73,7 +73,7 @@ cadmpeg gains a decoder.
 | STEP Part 21                    | L9    | 4 of >=4 | 11            | 3       |
 | IGES                            | L9    | 2 of 21  | 22            | 0       |
 | ASM/ACIS bare streams           | none  | n/a      | 4             | 1       |
-| ACIS save formats               | none  | 0 of >=2 | 8             | 2       |
+| ACIS save formats               | none  | 0 of >=2 | 8             | 1       |
 | Parasolid schemas               | none  | 0 of >=1 | 4             | 0       |
 
 <!-- /generated: ladder-table -->
@@ -113,7 +113,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 **Model:** Standalone ShapeManager or Spatial ACIS B-rep stream outside any CAD container
 
-**Primary structural envelope:** `ASM BinaryFile4`, `ASM BinaryFile8`, `ACIS BinaryFile` save-format 217 or 218, text SAT/SMT streams that terminate with `End-of-ASM-data` at any save format, and text streams that terminate with `End-of-ACIS-data` at save-format 217 or 218. Stream content selects the decoder; file extensions do not. Other ACIS save-format bands, binary and text, are separate envelopes.
+**Primary structural envelope:** `ASM BinaryFile4`, `ASM BinaryFile8`, `ACIS BinaryFile`, and text SAT/SMT streams that terminate with `End-of-ASM-data` or `End-of-ACIS-data`, at any save format. Stream content selects the decoder; file extensions do not. Spatial ACIS save-format majors 217 and 218 are the verified bands. An ACIS-branch stream outside them is framed and decoded with the nearer verified band's record grammar, reported as `Admission::AdmittedUnverified`, and charged `source.dialect-unverified`.
 
 <!-- generated: dialects sat -->
 
@@ -128,7 +128,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 <!-- /generated: dialects sat -->
 
-Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. An empty or unsupported decoded carrier produces blocking `geometry_not_transferred`. Feature history, assemblies, presentation documents, and native writing are inapplicable or absent for this envelope.
+Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. A stream that frames but decodes no carrier produces blocking `geometry_not_transferred`. Feature history, assemblies, presentation documents, and native writing are inapplicable or absent for this envelope.
 
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 

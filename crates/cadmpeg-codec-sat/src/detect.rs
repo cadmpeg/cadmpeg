@@ -6,15 +6,12 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::debug_assert_primary_layer;
+use cadmpeg_core::dialect::{debug_assert_primary_layer, Admission};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
 
-use crate::dialect::{
-    admits_semantic_decode, classify as classify_dialect, terminator_line, StreamEvidence,
-    TextEvidence,
-};
+use crate::dialect::{classify as classify_dialect, terminator_line, StreamEvidence, TextEvidence};
 use crate::FORMAT;
 
 /// The stream encoding a byte prefix selects.
@@ -127,10 +124,15 @@ pub(crate) fn inspect(
         StreamKind::AcisBinary => {
             let header = acis_header::parse(bytes);
             let evidence = StreamEvidence::AcisBinary(header.as_ref());
+            let matched = classify_dialect(&evidence);
             if let Some(header) = &header {
                 header_attributes(header, "acis", &mut attributes);
-                if !admits_semantic_decode(&evidence) {
-                    notes.push("the ACIS binary save-format band is not decoded".into());
+                if matches!(matched.admission, Admission::AdmittedUnverified { .. }) {
+                    notes.push(
+                        "the ACIS binary save-format band is outside the verified band; decode \
+                         reads its records with a verified band's grammar"
+                            .into(),
+                    );
                 } else if header.has_history_partition() {
                     notes.push(
                         "the stream declares a construction-history partition; decode reads \
@@ -139,7 +141,7 @@ pub(crate) fn inspect(
                     );
                 }
             }
-            classify_dialect(&evidence)
+            matched
         }
         StreamKind::Text => {
             // The kernel header is bound here so the evidence can borrow it

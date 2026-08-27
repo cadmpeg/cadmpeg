@@ -1,11 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text and binary sphere-stream fixtures.
 
+/// Save-format word of a band no Spatial ACIS row verifies: major 700.
+pub(crate) const UNVERIFIED_SAVE_FORMAT: u32 = 70_000;
+
 /// A text stream carrying one loopless closed sphere face at header scale
 /// `scale` millimetres per unit.
 pub(crate) fn text_sphere_stream(scale: f64) -> Vec<u8> {
+    text_sphere_stream_with(23_200, scale, "End-of-ASM-data")
+}
+
+/// The same solid under the `End-of-ACIS-data` terminator at
+/// `save_format_version`, so a text stream outside the verified Spatial ACIS
+/// band carries real geometry to recover.
+pub(crate) fn acis_text_sphere_stream(save_format_version: u32) -> Vec<u8> {
+    text_sphere_stream_with(save_format_version, 1.0, "End-of-ACIS-data")
+}
+
+/// The sphere text stream at one save format, scale, and terminator.
+fn text_sphere_stream_with(save_format_version: u32, scale: f64, terminator: &str) -> Vec<u8> {
     let mut text = String::new();
-    text.push_str("23200 0 2 2 \n");
+    text.push_str(&save_format_version.to_string());
+    text.push_str(" 0 2 2 \n");
     text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
     text.push_str(&scale.to_string());
     text.push_str(" 9.999999999999999547e-07 1.000000000000000036e-10 \n");
@@ -15,7 +31,8 @@ pub(crate) fn text_sphere_stream(scale: f64) -> Vec<u8> {
     text.push_str("shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n");
     text.push_str("face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n");
     text.push_str("sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n");
-    text.push_str("End-of-ASM-data\n");
+    text.push_str(terminator);
+    text.push('\n');
     text.into_bytes()
 }
 
@@ -25,6 +42,9 @@ pub(crate) fn text_sphere_stream(scale: f64) -> Vec<u8> {
 pub(crate) enum BinaryFixtureKind {
     Asm,
     Acis,
+    /// `ACIS BinaryFile` declaring [`UNVERIFIED_SAVE_FORMAT`]: the same records
+    /// under a band no row verifies.
+    AcisUnverifiedBand,
 }
 
 pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
@@ -38,9 +58,13 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
             bytes.extend_from_slice(&2u64.to_le_bytes()); // revision 1, no history
             8
         }
-        BinaryFixtureKind::Acis => {
+        BinaryFixtureKind::Acis | BinaryFixtureKind::AcisUnverifiedBand => {
             bytes.extend_from_slice(b"ACIS BinaryFile");
-            for value in [21_800_u32, 0, 2, 2] {
+            let save_format = match kind {
+                BinaryFixtureKind::AcisUnverifiedBand => UNVERIFIED_SAVE_FORMAT,
+                _ => 21_800,
+            };
+            for value in [save_format, 0, 2, 2] {
                 bytes.extend_from_slice(&value.to_le_bytes());
             }
             4

@@ -64,7 +64,7 @@ text is not unique to SAT/SMT.
 | --- | --- | --- |
 | `ASM BinaryFile4` | High | Fixed ASM header, SAB framing at the declared reference width, solved-record transfer. |
 | `ASM BinaryFile8` | High | Fixed ASM header, 64-bit entity/reference fields, SAB framing, solved-record transfer. |
-| `ACIS BinaryFile` save-format 217 or 218 | High | 32-bit ACIS header, four-byte SAB framing, solved-record transfer. |
+| `ACIS BinaryFile` | High | 32-bit ACIS header, four-byte SAB framing, solved-record transfer. |
 | Text ASM SAT/SMT | Medium | Four-word ASCII header, counted strings and numeric records, `End-of-ASM-data` termination. |
 | Text ACIS SAT/SMT | Medium | Four-word ASCII header, numeric records, `End-of-ACIS-data` termination. |
 
@@ -74,10 +74,14 @@ history-bearing stream declares the boundary between solved records and
 construction history; the model transfer reads the solved partition and keeps
 the remaining record identity as native data where available.
 
-ACIS 217/218 uses the supported 32-bit header and the same SAB record decoder.
-Other ACIS binary save-format bands are identified during inspection but are
-not decoded; they return a blocking geometry loss with the header facts in
-source metadata.
+Save-format majors 217 and 218 are the verified Spatial ACIS bands. An
+ACIS-branch stream, binary or text, outside those majors takes the same header
+reading, SAB or text framing, and record decode: the save format bands the
+admission, not the decode. Such a stream reports
+`Admission::AdmittedUnverified`, whose `nearest` names the verified band whose
+grammar was substituted, and charges `source.dialect-unverified`. What its
+records decoded is reported as it decoded, down to `unknown_records` coverage
+and a blocking geometry loss when nothing carried.
 
 Text streams use the line-oriented SAT/SMT grammar. Their header scale is
 applied by the shared ASM transfer path, and the terminal line determines the

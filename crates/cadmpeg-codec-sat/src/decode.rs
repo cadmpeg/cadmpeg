@@ -9,7 +9,7 @@ use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::dialect::{debug_assert_primary_layer, Admission, DialectMatch};
+use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -18,7 +18,9 @@ use cadmpeg_ir::units::{Tolerances, Units};
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
-use crate::dialect::{classify as classify_dialect, terminator_line, StreamEvidence, TextEvidence};
+use crate::dialect::{
+    classify as classify_dialect, dialect_loss, terminator_line, StreamEvidence, TextEvidence,
+};
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
@@ -80,19 +82,10 @@ pub(crate) fn decode_acis_binary(
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
-    // One predicate decides both: `classify` sets `Admission::Refused` from
-    // the same save-format band this branch refuses on.
+    // Every band frames and decodes the same way. `classify` states whether the
+    // grammar applied is the one the stream's own save format declares; it
+    // gates nothing.
     let matched = classify_dialect(&StreamEvidence::AcisBinary(Some(&header)));
-    if matched.admission == Admission::Refused {
-        let mut attributes = BTreeMap::new();
-        header_attributes(&header, "acis", &mut attributes);
-        attributes.insert("encoding".to_string(), "binary".to_string());
-        return Ok(unsupported_result(
-            "Spatial ACIS binary stream: this save-format band is not decoded",
-            attributes,
-            matched,
-        ));
-    }
     let start = acis_header::record_stream_start(bytes).ok_or_else(|| {
         CodecError::Malformed("ACIS binary header without a record stream".to_string())
     })?;
@@ -132,19 +125,12 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
     attributes.insert("terminator".to_string(), dialect.to_string());
     // The ACIS branch carries the same save-format band as the ACIS binary
-    // stream, so it takes the same admission gate — literally the same
-    // predicate, through `classify`.
+    // stream, so it takes the same admission — literally the same code path,
+    // through `classify`. Neither branch gates the record decode on it.
     let matched = classify_dialect(&StreamEvidence::Text(Some(TextEvidence {
         branch: stream.dialect,
         header: &header,
     })));
-    if matched.admission == Admission::Refused {
-        return Ok(unsupported_result(
-            "Spatial ACIS text stream: this save-format band is not decoded",
-            attributes,
-            matched,
-        ));
-    }
     let brep = decode_with_header(
         &stream.records,
         bytes,
@@ -196,6 +182,7 @@ fn build_result(
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     let mut losses = Vec::new();
+    losses.extend(dialect_loss(&matched));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{dialect}`.")
@@ -237,39 +224,6 @@ fn build_result(
             CodecError::malformed(format_args!("unknown-record retention failed: {error}"))
         })?;
     Ok(DecodeResult::new(ir, report, source_fidelity))
-}
-
-/// A result for an identified stream the decoders do not cover.
-///
-/// Identity survives refusal: the stream keeps its `sat:` row in both the
-/// report and [`SourceMeta`], and `matched.admission` is
-/// [`Admission::Refused`]. The loss charged here is a refusal mark, not a
-/// recovery mark — nothing was read with a substituted grammar.
-fn unsupported_result(
-    message: &str,
-    attributes: BTreeMap<String, String>,
-    matched: DialectMatch,
-) -> DecodeResult {
-    debug_assert_eq!(
-        matched.admission,
-        Admission::Refused,
-        "an unsupported result must carry a refused admission"
-    );
-    let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(source_meta(attributes, &matched));
-    let dialects = vec![matched];
-    debug_assert_primary_layer(&dialects, FORMAT);
-    let report = DecodeReport {
-        dialects,
-        format: FORMAT.to_string(),
-        container_only: false,
-        geometry_transferred: false,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: vec![SatLossCode::ContainerAcisSaveFormatUnsupported.note(message)],
-        notes: Vec::new(),
-    };
-    DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default())
 }
 
 #[cfg(test)]
