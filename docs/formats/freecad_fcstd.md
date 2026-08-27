@@ -11,12 +11,17 @@ Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may u
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
 independently optional.
 
-The write envelope targets exactly schema 4/file 1. A retained document write regenerates the ZIP
-container deterministically, writes `Document.xml` first, preserves every unedited XML record and
-every named side entry, and serializes checked leaf-value edits with XML escaping. An edit to a
-nested value without a typed serializer is refused rather than flattening or discarding children.
-Schema/file targets outside the declared band and retained-document transcoding across bands are
-explicitly refused.
+The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
+retained document write regenerates the ZIP container deterministically, writes `Document.xml`
+first, preserves every unedited XML record and every named side entry, and serializes checked
+leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
+declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
+without a typed serializer is refused rather than flattening or discarding children.
+Retained-document transcoding across bands is explicitly refused: the writer regenerates no
+`Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
+by name rather than emitted. A preserving write of a source whose retained document graph is
+unusable is refused with the source's own dialect and the catalog, never silently rewritten to
+schema 4.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
 recursive typed property values, and named side entries. It materializes the same native graph

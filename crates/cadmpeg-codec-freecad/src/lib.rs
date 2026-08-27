@@ -51,7 +51,6 @@ use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::FidelityResolution;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FreecadLossCode;
@@ -1452,26 +1451,13 @@ impl CodecBackend for FcstdCodec {
     }
 }
 
-/// The one dialect this encoder synthesizes through the trait.
-///
-/// [`FcstdCodec::encode_with_options`] accepts any schema version, but
-/// [`Encoder::plan`] passes `FcstdWriteOptions::default()` — schema 4 — and
-/// nothing selects another. Reaching the other schemas through the request is
-/// this codec's own resolution wave.
-const FCSTD_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: "fcstd:schema-4",
-    label: "FreeCAD Document.xml schema version 4",
-    aliases: &["4"],
-    default: true,
-}];
-
 impl Encoder for FcstdCodec {
     fn id(&self) -> &'static str {
-        "fcstd"
+        dialect::FORMAT
     }
 
     fn targets(&self) -> &'static [TargetDescriptor] {
-        FCSTD_TARGETS
+        dialect::TARGETS
     }
 
     fn plan<'a>(
@@ -1479,19 +1465,7 @@ impl Encoder for FcstdCodec {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        request.check_explicit(Encoder::id(self), self.targets())?;
-        let mut bytes = Vec::new();
-        let mut report =
-            self.encode_with_options(input.ir, &mut bytes, FcstdWriteOptions::default())?;
-        // `encode_with_options` takes no fidelity sidecar, so the report it
-        // returns states the only resolution it can see. Whether the caller
-        // supplied one is known here, and only here.
-        report.fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        };
-        Ok(ExportPlan::buffered(report, bytes))
+        writer::plan(input, request)
     }
 }
 

@@ -2,7 +2,8 @@
 
 The primary profile is ZIP-packaged `SchemaVersion=4`, `FileVersion=1`. Each row requires an
 independently authored, redistribution-cleared public fixture and the listed machine assertion.
-Schemas 2 and 3 are decode-only profiles. The write profile is schema 4/file 1.
+Schema 4/file 1 is the one synthesis target. Schemas 2 and 3 are preserving-write profiles: a
+retained document graph writes back the band it declares, and nothing regenerates one.
 
 | Gate | Fixture classes                                                                                                         | Machine assertion                                                                                                                                                                                                                                |
 | ---- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
