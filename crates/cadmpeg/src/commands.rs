@@ -64,23 +64,11 @@ fn print_load_notices(notices: &[LoadNotice]) {
 }
 
 /// CLI-facing conversion arguments assembled before [`Transcoder::prepare`].
-#[allow(clippy::struct_excessive_bools)]
 pub struct ConversionPlan {
-    /// Replace an existing output or report file.
-    pub force: bool,
+    /// Application conversion policy.
+    pub policy: ConversionPolicy,
     /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
-    /// Stream a binary output format to standard output instead of refusing.
-    pub binary_stdout: bool,
-    /// Write even if the check finds errors.
-    pub allow_errors: bool,
-    /// Export a geometry format when decoding transferred no geometry.
-    pub allow_empty: bool,
-    /// Refuse to export when the decode reported any loss.
-    pub reject_decode_losses: bool,
-    /// Refuse to export when export planning reported any loss, and construct
-    /// writers that reject unrepresentable content before emitting a byte.
-    pub reject_export_losses: bool,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -88,7 +76,7 @@ pub struct ConversionPlan {
 impl ConversionPlan {
     /// The construction-time loss policy `--reject-lossy`'s scope implies.
     const fn loss_policy(&self) -> LossPolicy {
-        if self.reject_export_losses {
+        if self.policy.reject_export_losses {
             LossPolicy::Reject
         } else {
             LossPolicy::Report
@@ -381,7 +369,7 @@ fn execute_conversion(
             write_command_report(
                 path,
                 plan.report.as_deref(),
-                plan.force,
+                plan.policy.force,
                 "convert",
                 CommandReportBody {
                     decode_report: refusal.decode_report(),
@@ -394,19 +382,7 @@ fn execute_conversion(
         Ok(())
     };
 
-    let prepared = match transcoder.prepare(
-        &source,
-        target,
-        ConversionPolicy {
-            force: plan.force,
-            binary_stdout: plan.binary_stdout,
-            allow_errors: plan.allow_errors,
-            allow_empty: plan.allow_empty,
-            reject_decode_losses: plan.reject_decode_losses,
-            reject_export_losses: plan.reject_export_losses,
-            destination: out.map(Path::to_path_buf),
-        },
-    ) {
+    let prepared = match transcoder.prepare(&source, target, plan.policy.clone()) {
         Ok(prepared) => prepared,
         Err(error) => {
             render_refusal(&error)?;
@@ -440,7 +416,7 @@ fn execute_conversion(
     write_command_report(
         path,
         plan.report.as_deref(),
-        plan.force,
+        plan.policy.force,
         "convert",
         CommandReportBody {
             decode_report: decode_report.as_ref(),
