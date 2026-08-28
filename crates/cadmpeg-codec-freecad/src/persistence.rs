@@ -40,6 +40,10 @@ pub struct Graph {
 }
 
 /// Recover the persistence graph without interpreting geometry.
+#[allow(
+    dead_code,
+    reason = "the declaration-reading entry point remains the schema identity owner"
+)]
 pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;

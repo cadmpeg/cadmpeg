@@ -84,7 +84,11 @@ pub(crate) fn write_seekable(
     validate_entry(&source_document)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
     drop(source_document);
-    let written_graph = crate::persistence::parse(&document_xml)?;
+    let written_graph = crate::persistence::parse_with_context(
+        &document_xml,
+        crate::dialect::FcstdDialect::from_schema_version(&options.schema_version.to_string()),
+        None,
+    )?;
     validate_declarations(
         &objects,
         &extensions,

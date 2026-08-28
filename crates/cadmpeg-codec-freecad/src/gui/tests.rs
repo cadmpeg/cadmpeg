@@ -169,6 +169,38 @@ fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
 }
 
 #[test]
+fn a_failed_foreign_gui_parse_does_not_apply_staged_appearances() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="2">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3424269311"/></Property>
+<Property name="LineWidth" type="App::PropertyFloatConstraint"><Float value="-1"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("broken foreign GUI schema degrades");
+
+    assert!(result.ir().model.appearances.is_empty());
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    assert!(result.ir().model.presentation_documents.is_empty());
+    assert!(result.ir().model.view_presentations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.code == "source.gui-schema-unverified"));
+}
+
+#[test]
 fn rejects_invalid_schema_one_camera_values() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
