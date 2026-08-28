@@ -45,6 +45,7 @@ fn resolve(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
 ) -> Result<(DialectId, Option<DialectId>), CodecError> {
+    // This writer has no synthesize fallback, so it flattens the request locally.
     match resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)? {
         WriteRequest::Catalog { entry, displaced } => Ok((DialectId::pinned(entry.id), displaced)),
         WriteRequest::OffCatalog { dialect } => Ok((dialect.clone(), None)),

@@ -505,48 +505,6 @@ pub enum WriteRequest<'a> {
     },
 }
 
-/// Resolve the common preserve-else-synthesize write shape.
-///
-/// A catalog request without a displaced source first tries `preserve`; a
-/// displaced catalog request synthesizes immediately. An off-catalog request
-/// must preserve or return the codec-specific refusal. `D::default()` is the
-/// preservation-decline detail when no attempt was eligible.
-pub fn resolve_preserving_write<T, D, P, S, R>(
-    request: WriteRequest<'_>,
-    mut preserve: P,
-    synthesize: S,
-    off_catalog_refusal: R,
-) -> Result<T, CodecError>
-where
-    D: Default,
-    P: FnMut(&cadmpeg_core::dialect::DialectId) -> Result<Result<T, D>, CodecError>,
-    S: FnOnce(
-        &'static TargetDescriptor,
-        Option<&cadmpeg_core::dialect::DialectId>,
-        D,
-    ) -> Result<T, CodecError>,
-    R: FnOnce(&cadmpeg_core::dialect::DialectId, D) -> Result<T, CodecError>,
-{
-    match request {
-        WriteRequest::Catalog { entry, displaced } => {
-            let target = cadmpeg_core::dialect::DialectId::pinned(entry.id);
-            let declined = if displaced.is_none() {
-                match preserve(&target)? {
-                    Ok(written) => return Ok(written),
-                    Err(declined) => declined,
-                }
-            } else {
-                D::default()
-            };
-            synthesize(entry, displaced.as_ref(), declined)
-        }
-        WriteRequest::OffCatalog { dialect } => match preserve(dialect)? {
-            Ok(written) => Ok(written),
-            Err(declined) => off_catalog_refusal(dialect, declined),
-        },
-    }
-}
-
 /// Resolve target syntax and inheritance once, before codec-specific delivery.
 pub fn resolve_write_request<'a>(
     ir: &'a CadIr,

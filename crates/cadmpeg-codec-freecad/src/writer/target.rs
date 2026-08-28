@@ -134,6 +134,7 @@ pub(in crate::writer) fn resolve(
     ir: &CadIr,
     request: TargetRequest<'_>,
 ) -> Result<Resolution, CodecError> {
+    // This writer has no synthesize fallback, so it flattens the request locally.
     let (target, displaced) = match cadmpeg_ir::codec::resolve_write_request(
         ir,
         request,

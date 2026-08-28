@@ -1270,6 +1270,13 @@ item = "cadmpeg_asm::dialect::FORMAT"
 reason = "the shared ACIS dialect owner supplies one format id to kernel classification and every host-layer comparison"
 
 [[change]]
+commit = "af653959aaba73937fe708e0b394f7696a4158fe"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::resolve_preserving_write"
+reason = "F3D and IGES have distinct preservation outcomes and fallback laws, so each writer resolves its own `WriteRequest` branches directly"
+
+[[change]]
 commit = "855cbb586aa1fe80c9c56d66af32ac0e992e3320"
 crate = "cadmpeg-ir"
 kind = "addition"
