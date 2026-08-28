@@ -88,7 +88,7 @@ fn global_charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> 
         .note(String::new())
         .code;
     let matched = IgesDialect::classify(Representation::FixedAscii, global);
-    dialect_loss(global, &matched).is_some_and(|note| note.code == expected)
+    dialect_loss(&matched).is_some_and(|note| note.code == expected)
 }
 
 /// One matrix row: a field-23 declaration and what each representation must

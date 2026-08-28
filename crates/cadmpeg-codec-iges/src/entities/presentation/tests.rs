@@ -12,7 +12,7 @@ use crate::test_support::*;
 use crate::IgesCodec;
 
 use super::{
-    general_note_font_valid_for_dialect, mirror_flag_valid, standard_color,
+    general_note_font_valid_for_global_table, mirror_flag_valid, standard_color,
     vertical_text_flag_valid,
 };
 
@@ -126,13 +126,13 @@ fn presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
+            general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
+            !general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
@@ -159,22 +159,22 @@ fn presentation_enumerations_match_the_iges_tables() {
 fn general_note_font_codes_follow_the_declared_dialect() {
     let entries = BTreeMap::new();
 
-    assert!(!general_note_font_valid_for_dialect(
+    assert!(!general_note_font_valid_for_global_table(
         2001,
         &entries,
         GlobalTable::V4_0
     ));
-    assert!(general_note_font_valid_for_dialect(
+    assert!(general_note_font_valid_for_global_table(
         2001,
         &entries,
         GlobalTable::V5_0
     ));
-    assert!(!general_note_font_valid_for_dialect(
+    assert!(!general_note_font_valid_for_global_table(
         3001,
         &entries,
         GlobalTable::V5_0
     ));
-    assert!(general_note_font_valid_for_dialect(
+    assert!(general_note_font_valid_for_global_table(
         3001,
         &entries,
         GlobalTable::V5_1

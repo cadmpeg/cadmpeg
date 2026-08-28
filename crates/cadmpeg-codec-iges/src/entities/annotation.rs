@@ -3,7 +3,7 @@
 
 use super::geometry::{curve_geometry_coplanar, entity_loss, resolve_transform, ProjectionOutcome};
 use super::presentation::{
-    general_note_font_valid_for_dialect, new_general_note_charset_valid,
+    general_note_font_valid_for_global_table, new_general_note_charset_valid,
     new_general_note_font_valid,
 };
 use crate::directory::DirectoryEntry;
@@ -170,7 +170,7 @@ fn hexadecimal_byte(bytes: &[u8]) -> Option<u8> {
     Some((high << 4) | low)
 }
 
-fn general_note_text_valid_for_dialect(
+fn general_note_text_valid_for_global_table(
     text: &[u8],
     font: i64,
     global_table: GlobalTable,
@@ -195,14 +195,14 @@ fn general_note_text_valid_for_dialect(
         })
 }
 
-fn general_note_valid_for_dialect(
+fn general_note_valid_for_global_table(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
     form: i64,
 ) -> bool {
     let parameter_end =
-        crate::parameter::entity_primary_end_for_dialect(record, entries, global_table)
+        crate::parameter::entity_primary_end_for_global_table(record, entries, global_table)
             .unwrap_or_else(|| record.parameter_end());
     if !general_note_suffix_structurally_valid(record, parameter_end) {
         return false;
@@ -234,8 +234,8 @@ fn general_note_valid_for_dialect(
                     .integer_or(start + 3, 1)
                     .zip(text)
                     .is_some_and(|(font, text)| {
-                        general_note_font_valid_for_dialect(font, entries, global_table)
-                            && general_note_text_valid_for_dialect(
+                        general_note_font_valid_for_global_table(font, entries, global_table)
+                            && general_note_text_valid_for_global_table(
                                 text,
                                 font,
                                 global_table,
@@ -404,7 +404,7 @@ fn new_general_note_valid(
         })
 }
 
-fn leader_valid_for_dialect(
+fn leader_valid_for_global_table(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
     global_table: GlobalTable,
@@ -464,10 +464,13 @@ fn child_valid(
             && records
                 .get(&sequence)
                 .is_some_and(|record| match entity_type {
-                    212 => {
-                        general_note_valid_for_dialect(record, entries, global_table, entry.form)
-                    }
-                    214 => leader_valid_for_dialect(entry, record, global_table),
+                    212 => general_note_valid_for_global_table(
+                        record,
+                        entries,
+                        global_table,
+                        entry.form,
+                    ),
+                    214 => leader_valid_for_global_table(entry, record, global_table),
                     106 => witness_valid(record),
                     _ => false,
                 })
@@ -486,7 +489,7 @@ fn general_note_child_valid(
             && entry.status.is_physically_dependent()
             && entry.status.use_flag == 1
             && records.get(&sequence).is_some_and(|record| {
-                general_note_valid_for_dialect(record, entries, global_table, entry.form)
+                general_note_valid_for_global_table(record, entries, global_table, entry.form)
             })
     })
 }
@@ -943,7 +946,7 @@ pub(crate) fn section_boundary_type(entry: &DirectoryEntry) -> bool {
     )
 }
 
-fn fill_pattern_valid_for_dialect(pattern: i64, global_table: GlobalTable) -> bool {
+fn fill_pattern_valid_for_global_table(pattern: i64, global_table: GlobalTable) -> bool {
     if matches!(global_table, GlobalTable::V4_0) {
         return (0..=19).contains(&pattern);
     }
@@ -1027,7 +1030,7 @@ fn sectioned_area_valid(
         );
     let pattern = record
         .integer(2)
-        .filter(|value| fill_pattern_valid_for_dialect(*value, global_table));
+        .filter(|value| fill_pattern_valid_for_global_table(*value, global_table));
     let pattern_parameters_valid = pattern.is_some_and(|pattern| {
         if matches!(pattern, 0 | 19) || pattern > 19 {
             (3..=7).all(|index| zero_or_omitted(record, index))
@@ -1101,7 +1104,7 @@ pub(super) fn project(
                         &records,
                         global.global_table(),
                     ),
-                    AnnotationKind::GeneralNote => general_note_valid_for_dialect(
+                    AnnotationKind::GeneralNote => general_note_valid_for_global_table(
                         record,
                         &entries,
                         global.global_table(),
@@ -1109,7 +1112,7 @@ pub(super) fn project(
                     ),
                     AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
                     AnnotationKind::Leader => {
-                        leader_valid_for_dialect(entry, record, global.global_table())
+                        leader_valid_for_global_table(entry, record, global.global_table())
                     }
                     AnnotationKind::GeneralSymbol => general_symbol_valid(
                         record,

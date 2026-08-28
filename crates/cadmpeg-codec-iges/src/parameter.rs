@@ -348,7 +348,7 @@ pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
     })
 }
 
-fn analyze_trailing_pointer_groups_for_dialect(
+fn analyze_trailing_pointer_groups_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
@@ -366,7 +366,7 @@ fn analyze_trailing_pointer_groups_for_dialect(
     analyze_trailing_pointer_groups_from_end(
         record,
         directory,
-        entity_primary_end_for_dialect(record, directory, global_table),
+        entity_primary_end_for_global_table(record, directory, global_table),
     )
 }
 
@@ -377,10 +377,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_for_dialect(record, directory, GlobalTable::V5_3)
+    analyze_trailing_pointer_groups_for_global_table(record, directory, GlobalTable::V5_3)
 }
 
-fn analyze_trailing_pointer_groups_with_records_for_dialect(
+fn analyze_trailing_pointer_groups_with_records_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
@@ -400,10 +400,10 @@ fn analyze_trailing_pointer_groups_with_records_for_dialect(
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
     if !is_attribute_table_instance {
-        return analyze_trailing_pointer_groups_for_dialect(record, directory, global_table);
+        return analyze_trailing_pointer_groups_for_global_table(record, directory, global_table);
     }
     let primary_end =
-        entity_primary_end_with_records_for_dialect(record, directory, records, global_table);
+        entity_primary_end_with_records_for_global_table(record, directory, records, global_table);
     analyze_trailing_pointer_groups_from_end(record, directory, primary_end)
 }
 
@@ -413,7 +413,7 @@ fn analyze_trailing_pointer_groups_with_records(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_with_records_for_dialect(
+    analyze_trailing_pointer_groups_with_records_for_global_table(
         record,
         directory,
         records,
@@ -828,7 +828,7 @@ fn connect_node_primary_end(record: &ParameterRecord) -> usize {
     connect_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
 }
 
-pub(crate) fn entity_primary_end_for_dialect(
+pub(crate) fn entity_primary_end_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
@@ -986,10 +986,10 @@ pub(crate) fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
-    entity_primary_end_for_dialect(record, directory, GlobalTable::V5_3)
+    entity_primary_end_for_global_table(record, directory, GlobalTable::V5_3)
 }
 
-fn entity_primary_end_with_records_for_dialect(
+fn entity_primary_end_with_records_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
@@ -1001,7 +1001,7 @@ fn entity_primary_end_with_records_for_dialect(
             record, entry, directory, records,
         ));
     }
-    entity_primary_end_for_dialect(record, directory, global_table)
+    entity_primary_end_for_global_table(record, directory, global_table)
 }
 
 #[cfg(test)]
@@ -1010,7 +1010,7 @@ fn entity_primary_end_with_records(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Option<usize> {
-    entity_primary_end_with_records_for_dialect(record, directory, records, GlobalTable::V5_3)
+    entity_primary_end_with_records_for_global_table(record, directory, records, GlobalTable::V5_3)
 }
 
 fn counted_primary_end(record: &ParameterRecord) -> usize {
@@ -3607,7 +3607,7 @@ pub(crate) fn assemble_with_context(
             .map(|record| (record.directory_sequence, record))
             .collect::<BTreeMap<_, _>>();
         for record in &records {
-            let analysis = analyze_trailing_pointer_groups_with_records_for_dialect(
+            let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
                 record,
                 &entries,
                 &record_by_directory,
