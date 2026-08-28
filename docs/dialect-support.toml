@@ -1286,8 +1286,9 @@ reason = """
 `manifest::parse_top_level` parses any readable version with the 3-2-0-0
 layout, so a document that declares another version and fits that layout is
 admitted unverified on `f3d:manifest-3-2-0-0` and charges
-`source.dialect-unverified`; a document whose layout does not fit is refused
-with NotImplemented. No .f3d file of another generation is in the repository"""
+`source.dialect-unverified`; a document whose layout does not fit produces a
+structural malformed error that names its declared version as the probable
+cause. No .f3d file of another generation is in the repository"""
 
 # --------------------------------------------------------------------------
 # inventor
