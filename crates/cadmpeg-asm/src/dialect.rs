@@ -131,6 +131,14 @@ pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
     }
 }
 
+/// Describe recovery through the nearest verified Spatial ACIS grammar.
+#[must_use]
+pub fn acis_recovery_message(subject: &str, declared: &str, nearest: &DialectId) -> String {
+    format!(
+        "{subject} declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{nearest}` declares, and what they decoded is reported as it decoded"
+    )
+}
+
 /// The `acis:` binary row one save format satisfies.
 #[must_use]
 pub fn acis_binary_row(save_format_major: Option<u32>) -> DialectId {

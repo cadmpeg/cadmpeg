@@ -247,12 +247,7 @@ impl DialectRecovery {
                 ),
             );
         }
-        DialectMatch {
-            format: FORMAT.into(),
-            dialect: Some(dialect.id()),
-            declared,
-            admission,
-        }
+        DialectMatch::layer(FORMAT, dialect.id(), declared, admission)
     }
 
     /// The loss charged when the document's declarations do not select the
@@ -341,11 +336,13 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
-    Some(InventorLossCode::KernelDialectUnverified.note(format!(
-        "the active kernel carrier declares {declared}, which no verified Spatial ACIS band \
-         declares; its records were read with the grammar `{nearest}` declares, and what they \
-         decoded is reported as it decoded"
-    )))
+    Some(InventorLossCode::KernelDialectUnverified.note(
+        cadmpeg_asm::dialect::acis_recovery_message(
+            "the active kernel carrier",
+            &declared,
+            nearest,
+        ),
+    ))
 }
 
 #[cfg(test)]

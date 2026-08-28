@@ -178,12 +178,7 @@ impl SldprtDialect {
             declared.insert(DECLARED_SW_VERSION.into(), value.to_owned());
         }
         let dialect = Self::from_declaration(sw_version);
-        DialectMatch {
-            format: FORMAT.into(),
-            dialect: Some(dialect.id()),
-            declared,
-            admission: dialect.admission(),
-        }
+        DialectMatch::layer(FORMAT, dialect.id(), declared, dialect.admission())
     }
 
     /// Classifies one scanned document, reading the declaration from the scan.

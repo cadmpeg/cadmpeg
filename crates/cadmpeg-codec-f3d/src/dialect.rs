@@ -184,12 +184,7 @@ impl F3dDialect {
     /// The one [`DialectMatch`] construction path in this codec, so a
     /// classification bug and the report can never disagree.
     fn matched(self, declared: BTreeMap<String, String>) -> DialectMatch {
-        DialectMatch {
-            format: FORMAT.to_owned(),
-            dialect: Some(self.id()),
-            declared,
-            admission: self.admission(),
-        }
+        DialectMatch::layer(FORMAT, self.id(), declared, self.admission())
     }
 }
 
@@ -306,11 +301,13 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
-    Some(F3dLossCode::KernelDialectUnverified.note(format!(
-        "the kernel carrier {carrier} declares {declared}, which no verified Spatial ACIS band \
-         declares; its records were read with the grammar `{nearest}` declares, and what they \
-         decoded is reported as it decoded"
-    )))
+    Some(
+        F3dLossCode::KernelDialectUnverified.note(cadmpeg_asm::dialect::acis_recovery_message(
+            &format!("the kernel carrier {carrier}"),
+            &declared,
+            nearest,
+        )),
+    )
 }
 
 #[cfg(test)]

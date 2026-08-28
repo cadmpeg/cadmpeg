@@ -361,12 +361,7 @@ impl IgesDialect {
         if let Some(text) = global.unreadable_version_declaration() {
             declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());
         }
-        DialectMatch {
-            format: FORMAT.into(),
-            dialect: Some(dialect.id()),
-            declared,
-            admission,
-        }
+        DialectMatch::layer(FORMAT, dialect.id(), declared, admission)
     }
 }
 

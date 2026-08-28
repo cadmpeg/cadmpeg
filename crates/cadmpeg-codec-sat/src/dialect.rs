@@ -187,11 +187,13 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         (Some(major), None) => format!("save format major {major}"),
         (None, _) => "no save format".to_owned(),
     };
-    Some(SatLossCode::SourceDialectUnverified.note(format!(
-        "the stream declares {declared}, which no verified Spatial ACIS band declares; its \
-         records were read with the grammar `{nearest}` declares, and what they decoded is \
-         reported as it decoded"
-    )))
+    Some(
+        SatLossCode::SourceDialectUnverified.note(cadmpeg_asm::dialect::acis_recovery_message(
+            "the stream",
+            &declared,
+            nearest,
+        )),
+    )
 }
 
 /// The declarations the stream made, verbatim, under keys pinned above.
@@ -243,12 +245,12 @@ pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
 /// an ACIS stream outside the verified band keeps its own registry row while
 /// its records are read with a verified band's grammar.
 pub(crate) fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
-    DialectMatch {
-        format: FORMAT.into(),
-        dialect: Some(evidence.kind().id()),
-        declared: declared(evidence),
-        admission: admission(evidence),
-    }
+    DialectMatch::layer(
+        FORMAT,
+        evidence.kind().id(),
+        declared(evidence),
+        admission(evidence),
+    )
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.

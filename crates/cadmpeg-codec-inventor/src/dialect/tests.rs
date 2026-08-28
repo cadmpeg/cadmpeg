@@ -8,8 +8,6 @@
 
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeSet;
-
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossNote;
@@ -23,20 +21,9 @@ use crate::InventorCodec;
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = InventorDialect::ALL
-        .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        InventorDialect::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("inventor"),
-        "docs/dialects.toml and InventorDialect disagree; ids are pinned forever, so reconcile the enum"
+    cadmpeg_test_support::assert_registry_closed(
+        "inventor",
+        &InventorDialect::ALL.map(InventorDialect::id),
     );
 }
 

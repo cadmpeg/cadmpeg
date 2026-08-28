@@ -13,21 +13,7 @@ use std::path::PathBuf;
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = Variant::ALL
-        .iter()
-        .map(|variant| variant.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        Variant::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("catia"),
-        "docs/dialects.toml and Variant disagree; ids are pinned forever, so reconcile the enum"
-    );
+    cadmpeg_test_support::assert_registry_closed("catia", &Variant::ALL.map(Variant::id));
 }
 
 /// One registry row: the witness fixture it cites and the id it must classify

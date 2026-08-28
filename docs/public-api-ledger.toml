@@ -1223,3 +1223,17 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::codec::resolve_preserving_write"
 reason = "preserving encoders share one preserve-else-synthesize resolution law while keeping codec-specific preservation outcomes, synthesis, and refusal text"
+
+[[change]]
+commit = "fc3799ee0f800d3601485bf7445f89a3dd17b819"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::dialect::DialectMatch::layer"
+reason = "codec identity classifiers construct identified dialect layers through one shared literal shape"
+
+[[change]]
+commit = "fc3799ee0f800d3601485bf7445f89a3dd17b819"
+crate = "cadmpeg-asm"
+kind = "addition"
+item = "cadmpeg_asm::dialect::acis_recovery_message"
+reason = "kernel hosts report the shared unverified Spatial ACIS recovery consequence with one sentence template"

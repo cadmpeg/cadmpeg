@@ -180,12 +180,7 @@ impl NxDialect {
                 }
             }
         }
-        DialectMatch {
-            format: FORMAT.into(),
-            dialect: Some(dialect.id()),
-            declared,
-            admission: dialect.admission(),
-        }
+        DialectMatch::layer(FORMAT, dialect.id(), declared, dialect.admission())
     }
 }
 
