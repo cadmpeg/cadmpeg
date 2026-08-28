@@ -1,4 +1,4 @@
-# generated at fc3799ee0
+# generated at 47be18d1a
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -816,7 +816,8 @@ pub cadmpeg_core::dialect::DialectMatch::admission: cadmpeg_core::dialect::Admis
 pub cadmpeg_core::dialect::DialectMatch::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub cadmpeg_core::dialect::DialectMatch::dialect: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_core::dialect::DialectMatch::format: alloc::string::String
-pub fn cadmpeg_core::dialect::DialectMatch::layer(impl core::convert::Into<alloc::string::String>, cadmpeg_core::dialect::DialectId, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>, cadmpeg_core::dialect::Admission) -> cadmpeg_core::dialect::DialectMatch
+impl cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::layer(impl core::convert::Into<alloc::string::String>, cadmpeg_core::dialect::DialectId, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>, cadmpeg_core::dialect::Admission) -> Self
 impl core::clone::Clone for cadmpeg_core::dialect::DialectMatch
 pub fn cadmpeg_core::dialect::DialectMatch::clone(&self) -> cadmpeg_core::dialect::DialectMatch
 impl core::cmp::Eq for cadmpeg_core::dialect::DialectMatch
