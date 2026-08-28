@@ -62,14 +62,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the carrier grammar and field semantics to construct the exact offset surface and preserve its orientation.
 
-### GC-05. Variable-radius blend carriers
-
-**Question.** Which native carrier stores the result and radius law of a variable-radius blend, and how does it bind to the feature history?
-
-**Known.** `sldprt.md` §7.4 defines the generic `00 7c` B-spline surface-use wrapper and NURBS carrier. Feature history separately carries variable-radius design intent.
-
-**Need.** We must define the native relation that binds one variable-radius history feature and its radius law to one result carrier.
-
 ### GC-08. Duplicate geometry carrier identities
 
 **Question.** Which occurrence is authoritative when one stream contains multiple valid geometry carriers with the same stream-local attribute?
