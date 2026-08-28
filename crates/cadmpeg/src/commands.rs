@@ -11,24 +11,22 @@ use reporting::{
 
 use cadmpeg_ir::codec::TargetRequest;
 use std::fs::File;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::report::{DecodeReport, ExportReport};
-use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use cadmpeg_registry::{
     build_encoder, dialect_table, ForcedInput, Format, InputCatalog, LossPolicy, ResolvedSource,
     DETECTION_PREFIX_LEN,
 };
 
-use crate::application::transcoder::{classify_decode_failure, validate_ir};
+use crate::application::transcoder::{classify_decode_failure, emit_export_plan, validate_ir};
 use crate::application::{
     export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, NativeValidatorCatalog,
-    SidecarPersistOutcome, SourceRequest, Transcoder,
+    SourceRequest, Transcoder,
 };
 use crate::loader::{self, read_detection_input, LoadNotice};
 use crate::DecodeArgs;
@@ -204,6 +202,9 @@ pub fn dump(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> Result<()> {
+    if let Some(out) = out {
+        ArtifactStore::check_output_path(path, out, force)?;
+    }
     let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -231,14 +232,17 @@ pub fn dump(
     };
     print_load_notices(&outcome.notices);
     let loaded = &outcome.document;
-    export_ir(
-        &loaded.ir,
-        loaded.decode_report(),
-        loaded.fidelity(),
+    let encoder = build_encoder(Format::Cadir, LossPolicy::Report);
+    let plan = encoder.plan(
+        cadmpeg_ir::codec::EncodeInput::new(&loaded.ir, loaded.fidelity()),
+        TargetRequest::Inherit,
+    )?;
+    emit_export_plan(
+        plan,
         Format::Cadir,
         out,
-        path,
-        force,
+        loaded.decode_report(),
+        loaded.fidelity(),
     )?;
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
@@ -649,78 +653,4 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
             );
         }
     }
-}
-
-/// Writes CADIR for the dump command (no conversion refusals).
-fn export_ir(
-    ir: &CadIr,
-    decode_report: Option<&DecodeReport>,
-    source_fidelity: Option<&SourceFidelity>,
-    format: Format,
-    out: Option<&Path>,
-    input: &Path,
-    force: bool,
-) -> Result<ExportReport> {
-    if let Some(path) = out {
-        ArtifactStore::check_output_path(input, path, force)?;
-    }
-    // Dump writes the neutral document. It has no dialect, so no loss policy
-    // of a native writer applies to it.
-    let encoder = build_encoder(format, LossPolicy::Report);
-    let plan = encoder.plan(
-        cadmpeg_ir::codec::EncodeInput {
-            ir,
-            fidelity: source_fidelity,
-        },
-        TargetRequest::Inherit,
-    )?;
-    let needs_sidecar_digest =
-        format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
-    let report = if let Some(path) = out {
-        let (report, cadir_sha256) =
-            ArtifactStore::write_plan_atomic(path, plan, needs_sidecar_digest)?;
-        if format == Format::Cadir {
-            match ArtifactStore::persist_decode_sidecar(
-                path,
-                cadir_sha256.as_deref(),
-                decode_report,
-                source_fidelity,
-            )? {
-                SidecarPersistOutcome::Wrote(sidecar) => {
-                    eprintln!("wrote decode sidecar {}", sidecar.display());
-                }
-                SidecarPersistOutcome::RemovedStale(sidecar) => {
-                    eprintln!("removed stale decode sidecar {}", sidecar.display());
-                }
-                SidecarPersistOutcome::Absent => {}
-            }
-        }
-        eprintln!(
-            "wrote {} ({} entities)",
-            path.display(),
-            report.census.total()
-        );
-        report
-    } else {
-        let stdout = io::stdout().lock();
-        let mut writer = BufWriter::with_capacity(64 * 1024, stdout);
-        let report = plan.write_to(&mut writer)?;
-        writer.flush()?;
-        if format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some() {
-            eprintln!("note: CADIR written to stdout cannot carry its decode-fidelity sidecar");
-        }
-        report
-    };
-    if !report.losses.is_empty() {
-        eprintln!("{} export losses:", report.format);
-        for loss in &report.losses {
-            eprintln!(
-                "  [{}/{}] {}",
-                loss.severity,
-                loss.code.category(),
-                loss.message
-            );
-        }
-    }
-    Ok(report)
 }
