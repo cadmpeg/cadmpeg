@@ -64,7 +64,7 @@
 #                      to 3 and a flag at or above 11 maps to 11, so every
 #                      declared value classifies.
 # The declared flag survives verbatim in the match as evidence; the row
-# reflects the effective version (design §3.4).
+# reflects the effective version because classification uses the clamped value.
 [format.iges]
 complete = true
 
@@ -72,8 +72,8 @@ complete = true
 # not verified against their own specifications; `Dialect::from_effective_flag`
 # groups them as `Dialect::Legacy` (global.rs:70-79) and decode charges
 # `iges/source.dialect-unverified` (global.rs:1464-1490). They are still
-# distinct identity rows: identity is exogenous, grammar is endogenous
-# (design §3.2). `VERIFIED_VERSIONS` is ["4.0","5.0","5.1","5.2","5.3"]
+# distinct identity rows although several rows use the same fallback grammar.
+# `VERIFIED_VERSIONS` is ["4.0","5.0","5.1","5.2","5.3"]
 # (global.rs:282).
 #
 # Compressed ASCII and Binary rows exist only for the version values whose
@@ -238,7 +238,7 @@ seam = "Binary Flag Section plus per-section identifier/count headers; a depreca
 witness = "spec:IGES 5.3 Appendix H.1"
 
 [[dialect]]
-# The mandatory totality row (design §3.3, B4). The Fixed ASCII block above
+# The mandatory totality row. The Fixed ASCII block above
 # covers every value of the clamped version flag, but the Compressed ASCII and
 # Binary blocks stop at the flags whose representation this repository can cite
 # a specification for: 6, 8, 9, 10, and 11. A Compressed ASCII or Binary file
@@ -264,13 +264,12 @@ witness = "code:crates/cadmpeg-codec-iges/src/dialect.rs"
 # STEP
 # --------------------------------------------------------------------------
 # STEP has two independent document-wide discriminants and this registry uses
-# only one of them as the identity axis. Recorded as an open question rather
-# than decided (design §12, "STEP read basis"):
+# only one of them as the identity axis:
 #
 #   FILE_SCHEMA identifier -- the identity axis used below. It is what the
 #     encoder's write targets name (`StepSchema::file_schema`,
-#     crates/cadmpeg-codec-step/src/options.rs:81-90) and what the design
-#     pins as `step:ap242-e3`. Decode never branches on it: it is read after
+#     crates/cadmpeg-codec-step/src/options.rs:81-90). The registry pins
+#     `step:ap242-e3`. Decode never branches on it: it is read after
 #     the parse, for reporting (reader/mod.rs:1076-1101) and for DATA-section
 #     name matching (parse.rs:790-797).
 #
@@ -289,8 +288,8 @@ witness = "code:crates/cadmpeg-codec-iges/src/dialect.rs"
 #
 # The RFC's draft inventory called the AP schema "a *target* axis, not a read
 # dialect". Code disagrees in one direction: it is not a read *dispatch* axis,
-# but the encoder's targets are dialect ids under design §8.1, so the schema
-# rows must exist. The RFC's `part21-clear-text` / `zip-packaged` /
+# but the encoder's targets name dialect ids, so the schema rows must exist.
+# The RFC's `part21-clear-text` / `zip-packaged` /
 # `part28-xml` triple is not a partition: ZIP packaging is a container fact
 # whose `ISO-10303.p21` root still carries a FILE_SCHEMA and classifies into a
 # schema row (archive.rs:11, codec.rs:224-226), so it is not an identity row.
@@ -454,9 +453,8 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # the sole `DialectMatch` construction path. `ArchiveVersion::is_chunked`
 # selects the chunked grammar.
 #
-# The design's open question -- whether archives 2-4 and 50-90 are one read
-# grammar or two -- is a grammar question, not an identity question, and is
-# left open here. Verified for the record: they are one grammar today.
+# Whether archives 2-4 and 50-90 use one read grammar or two does not change
+# their identities. They use one grammar today.
 # `scan_with_record_limit` (container.rs) is the single path for V2..V9; the
 # version-dependence inside it is field-width and checksum parameterization,
 # not a second parser (`ArchiveVersion::uses_eight_byte_values` = value >= 50;
@@ -467,7 +465,7 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # PROPERTIES table only when an OBJECTS table follows (`scan_with_record_limit`)
 # and gates field presence inside records (mesh.rs, brep.rs,
 # `BoundedReader::bool_with_writer_version`). It is provenance-shaped evidence
-# with a grammar role inside a dialect -- design §3.4 -- and stays out of the
+# with a grammar role inside a dialect and stays out of the
 # discriminant set. It is recorded verbatim as the `opennurbs_writer_version`
 # declared key on the paths that read the PROPERTIES table, and a missing stamp
 # is charged per record as `rhino/source.writer-stamp-unverified`
@@ -633,8 +631,8 @@ witness = "code:crates/cadmpeg-codec-freecad/src/persistence.rs:53"
 [[dialect]]
 # persistence.rs:52-60, the `"3" | "4"` arm. Schema 3 and schema 4 share one
 # parse path: no `== "3"` or `== "4"` test exists anywhere in the crate. They
-# are still separate identity rows -- identity is exogenous (design §3.2) --
-# and one grammar class. That grammar is declared for both rows, so schema 3
+# are still separate identity rows and one grammar class. That grammar is
+# declared for both rows, so schema 3
 # and schema 4 documents are both `Admission::Admitted`.
 id = "fcstd:schema-3"
 title = "FreeCAD FCStd document schema 3"
@@ -701,9 +699,8 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 # a dialect judgement here -- this codec refuses only on container framing,
 # I/O, and entity-budget grounds.
 #
-# The design's §12 question was whether the padding branch is B1 (a dialect)
-# or B2 (within-dialect adaptation). Verified against the code, the honest
-# answer leans B2: `form_code_padding` does not select a parse strategy for
+# The padding branch is within-dialect adaptation: `form_code_padding` does not
+# select a parse strategy for
 # the document. It supplies a filter that narrows a candidate list of two
 # byte offsets ([8, 4], operations.rs:65-81 and :104-118), and when the
 # version is absent the resolver still binds an operation code by requiring
@@ -766,9 +763,8 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:
 # --------------------------------------------------------------------------
 # CATIA V5 CATPart
 # --------------------------------------------------------------------------
-# `Variant` (crates/cadmpeg-codec-catia/src/variant.rs:12-33) promoted as-is;
-# the design calls it an instance of the general concept (§3.1). The pinned-id
-# surface is an inherent impl on that same enum in
+# `Variant` (crates/cadmpeg-codec-catia/src/variant.rs:12-33) is promoted as-is.
+# The pinned-id surface is an inherent impl on that same enum in
 # `crates/cadmpeg-codec-catia/src/dialect.rs`, not a second enum: `Variant::id`
 # maps each variant to the row below, and `dialect::classify` is the only
 # construction path for a `DialectMatch` in the crate.
@@ -777,7 +773,7 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:
 # `last_save_version`, `last_save_release`, `last_save_service_pack`,
 # `last_save_hot_fix`, and `last_save_build_date`. Those keys are pinned in
 # `dialect.rs` beside the enum, not here: the identity registry stays free of
-# producer-side key vocabularies (§4).
+# producer-side key vocabularies.
 #
 # `identify_variant` (container.rs:1248-1280) is one `match (inner, brep)` over
 # structural evidence read before any parse strategy is chosen: the presence
@@ -796,8 +792,8 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:
 # container.rs:293-314) is provenance: it is not an argument to
 # `identify_variant` and appears in no conditional in the crate. It surfaces
 # only as report text (container.rs:1533-1541) and IR attributes
-# (assemble.rs:426-435). The numbers 276 and 288 in the design's §13.7 doc
-# corrections are cadmpeg's own native-namespace schema version
+# (assemble.rs:426-435). The numbers 276 and 288 are cadmpeg's own native-
+# namespace schema version
 # (`CATIA_NATIVE_VERSION`, native.rs:25), not a file version; they do not
 # belong in this registry.
 #
@@ -903,8 +899,7 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 # is not SPLMSSTR goes to `scan_legacy`, which errors if the CFB evidence is
 # absent.
 #
-# The container version byte is provenance, and this is the design's §13.5
-# defect stated exactly. It is a u8 at file offset 8
+# The container version byte is provenance. It is a u8 at file offset 8
 # (`splmsstr_header::VERSION_TAG`, crates/cadmpeg-codec-nx/src/layout.rs:74),
 # read with `unwrap_or(0)` (container.rs:957) and stored on
 # `Container::version` (container.rs:815-817). Its consumers are all
@@ -1131,7 +1126,7 @@ witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs"
 # --------------------------------------------------------------------------
 # Autodesk Inventor
 # --------------------------------------------------------------------------
-# The design's id `inventor:cfb3-rse31-meta8` is pinned and used verbatim, but
+# The id `inventor:cfb3-rse31-meta8` is pinned and used verbatim, but
 # it names three things the code does not do together. Recorded, not silently
 # corrected:
 #
@@ -1246,9 +1241,8 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
 # ACIS / ASM kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
 # Owned by `cadmpeg-asm`, cited by `sat`, `f3d`, and `inventor`. These ids are
-# never targets of a host encoder (design §8.1); they appear as
-# `ExportReport.emitted_layers` facts and as non-primary `DialectMatch`
-# entries.
+# never targets of a host encoder. Decode reports carry them as non-primary
+# `DialectMatch` entries beside the host dialect.
 #
 # Rows are disjoint on the leading magic, then on the save-format major.
 # `save_format_version` is `major * 100 + minor` and is read at four sites,
@@ -1368,7 +1362,7 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 # workspace: Parasolid is reached only as an embedded stream.
 #
 # `complete = false`: Siemens publishes no schema-token enumeration, and the
-# ids below follow the design's pinned `parasolid:sch-sw-33103` shape, which
+# ids below follow the pinned `parasolid:sch-sw-33103` shape, which
 # truncates the format suffix. The full token is in `discriminants`.
 [format.parasolid]
 complete = false
@@ -1389,9 +1383,9 @@ witness = "corpus:crates/cadmpeg-codec-sldprt/tests/golden/fixtures/document_env
 [[dialect]]
 # Emitted by the SLDPRT writer when any body in the scope is
 # `BodyKind::Sheet` (writer.rs:120-134 at the top level, writer.rs:747-761
-# inside `configuration_partitions`), so one file can carry both schemas --
-# which is why `ExportReport.emitted_layers` is a Vec (design §8.3). The token
-# is not cosmetic: it changes emitted discriminants (face-list head 0x0015 vs
+# inside `configuration_partitions`), so one file can carry both schemas. This
+# is a within-file emission rule, not an export-report field. The token is not
+# cosmetic: it changes emitted discriminants (face-list head 0x0015 vs
 # 0x0013 at writer.rs:2677; face attribute 0x001f vs 0x0015 at
 # writer.rs:2733-2736).
 # Per B3 the sheet-body test is a within-dialect emission rule, never a

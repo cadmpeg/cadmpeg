@@ -8,8 +8,8 @@
 //! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row` fails on
 //! drift in either direction.
 //!
-//! Identity is exogenous and grammar is endogenous (design §3.2), and IGES
-//! shows the gap plainly. The registry enumerates eleven Fixed ASCII versions
+//! Identity rows and parser grammars are independent, and IGES shows the gap
+//! plainly. The registry enumerates eleven Fixed ASCII versions
 //! because IGES 5.3 section 2.2.4.3.23 enumerates eleven version flags; this
 //! codec has verified Global tables for five of them
 //! ([`crate::global::GlobalTable`] groups the rest as `Legacy`). A document at an
@@ -153,8 +153,7 @@ const DECLARED_VERSION_FLAG_DECLARATION: &str = "version_flag_declaration";
 /// enumerates, 1 through 11. Compressed ASCII and Binary carry only the versions
 /// the registry cites a specification for. Every other declaration — a flag the
 /// version table does not contain, or a representation and version pair no row
-/// states — lands on [`IgesDialect::Unknown`], the mandatory totality row
-/// (design §3.3, B4).
+/// states — lands on [`IgesDialect::Unknown`], the mandatory totality row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum IgesDialect {
     V1_0FixedAscii,

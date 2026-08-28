@@ -19,8 +19,7 @@ use crate::{ids, F3dCodec};
 /// the generator and the catalog cannot name different rows.
 const SYNTHESIS_TARGET: &str = dialect::SYNTHESIS_TARGET_ID;
 
-/// Resolve the request against the source, then plan the export it names
-/// (design §8.2).
+/// Resolve the request against the source, then plan the export it names.
 ///
 /// `Explicit(id)` refuses an id outside the synthesis catalog, and is
 /// otherwise the replay law's compare: preserving the retained archive is

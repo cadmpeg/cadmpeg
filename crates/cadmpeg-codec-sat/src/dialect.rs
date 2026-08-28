@@ -75,8 +75,8 @@ impl StreamKind {
     ///
     /// One row of `docs/dialects.toml` under the `sat` namespace per stream
     /// kind: the discriminant is the leading magic, or the two-line header shape
-    /// for text. [`Self::Unknown`] is the mandatory totality row (design §3.3,
-    /// B4); `detect::confidence` reports [`Confidence::No`] for it, so it is
+    /// for text. [`Self::Unknown`] is the mandatory totality row;
+    /// `detect::confidence` reports [`Confidence::No`] for it, so it is
     /// unreachable through the normal catalog and exists to keep classification
     /// total.
     ///

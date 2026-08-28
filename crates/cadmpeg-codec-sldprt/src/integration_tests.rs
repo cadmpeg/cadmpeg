@@ -231,8 +231,8 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
 }
 
 // --------------------------------------------------------------------------
-// Resolution of a write request against the source (design §8.2), and the
-// §8.3 honesty invariant on every write path.
+// Resolution of a write request against the source and target-report honesty
+// on every write path.
 // --------------------------------------------------------------------------
 
 /// A part declaring `swVersion`, so its dialect is a versioned row this writer

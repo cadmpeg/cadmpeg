@@ -134,8 +134,8 @@ struct Record {
     /// be a declared row, so a table cannot key on a dialect that does not
     /// exist.
     ///
-    /// A version word *inside* a record is not a dialect (design §15.8). Key
-    /// only on discriminants the document declares once, document-wide.
+    /// A version word *inside* a record is not a dialect. Key only on
+    /// discriminants the document declares once, document-wide.
     #[serde(default)]
     pub(crate) dialects: Vec<String>,
     /// Parser source paths. A locator, not a substring check.

@@ -13,8 +13,7 @@ use crate::dialect;
 use crate::loss::SldprtLossCode;
 use crate::{source_records, ReplaySkipped, SemanticFidelity, SldprtCodec, Written};
 
-/// Resolve the request against the source, then plan the export it names
-/// (design §8.2).
+/// Resolve the request against the source, then plan the export it names.
 ///
 /// `Explicit(id)` refuses an id outside the synthesis catalog, and is
 /// otherwise the replay law's compare: replaying the retained image is

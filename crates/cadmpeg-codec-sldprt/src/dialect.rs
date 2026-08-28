@@ -12,7 +12,7 @@
 //!
 //! `[format.sldprt]` declares `complete = false`: the vendor's release space
 //! is not enumerable from any published document, so the rows are grammar
-//! classes plus the mandatory `unknown` row (design §3.2, §3.3 B4).
+//! classes plus the mandatory `unknown` row.
 //!
 //! Two document-wide discriminants exist and only one is a grammar boundary.
 //! The container branch — compound file versus native block envelope
@@ -58,7 +58,7 @@
 //! nothing must stay distinguishable in the ladder from a part whose
 //! declaration was checked. Every golden fixture in this crate is synthetic
 //! and version-less, so every one of them sits on this row; making that
-//! visible is exactly what the totality row is for (design §3.3, B4).
+//! visible is exactly what the totality row is for.
 //!
 //! [`Admission::Refused`] is unreachable: this codec refuses only on container
 //! framing, I/O, and entity-budget grounds, all of which return
@@ -67,7 +67,7 @@
 //!
 //! Where the padding filter is absent and the candidates disagree, the
 //! resolver binds nothing. That is a loss inside a dialect, expressed through
-//! the ordinary loss vocabulary, not an admission state (design §3.3, B2).
+//! the ordinary loss vocabulary, not an admission state.
 
 use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;

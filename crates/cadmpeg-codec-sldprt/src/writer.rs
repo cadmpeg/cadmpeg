@@ -36,7 +36,7 @@ pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 /// The returned id is read back out of the `swSolidWorks` envelope this call
 /// emits, whether that envelope survived from the retained blocks or was
 /// generated here, so a re-decode of these bytes classifies exactly what the
-/// caller reports as `ExportReport::target` (design §8.3).
+/// caller reports as `ExportReport::target`.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,

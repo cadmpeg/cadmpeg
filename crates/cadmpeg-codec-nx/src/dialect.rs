@@ -42,7 +42,7 @@
 //!
 //! # `nx:unknown` is a declared row this codec never emits
 //!
-//! The registry's mandatory totality row (design §3.3, B4) covers a part file
+//! The registry's mandatory totality row covers a part file
 //! matching neither container. NX refuses such a file at the container
 //! boundary — `NxCodec::detect` reports
 //! [`cadmpeg_ir::codec::Confidence::No`], and a forced scan returns

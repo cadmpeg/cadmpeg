@@ -15,7 +15,7 @@
 //! ([`ArchiveVersion::from_word`]). It is exact-equality: word 51 is not
 //! "archive 50 with extras", it is [`ArchiveVersion::Other`]. Ten words
 //! carry their own row and every other positive word lands on the mandatory
-//! totality row (design §3.3, B4).
+//! totality row.
 //!
 //! The ~235 per-record version words inside an admitted archive never split a
 //! dialect (B2). They are losses inside a dialect, and the openNURBS

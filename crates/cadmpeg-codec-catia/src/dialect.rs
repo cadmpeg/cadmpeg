@@ -4,10 +4,9 @@
 //!
 //! The `*LossCode` template: the enum is internal to the crate, [`DialectId`]
 //! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. The enum is [`Variant`] itself — the design (§3.1)
-//! names CATIA's `Variant` an instance of the general dialect concept, so this
-//! module gives that existing enum a pinned-id surface instead of standing up a
-//! second enum that would have to be kept in step with it by hand. Every
+//! vocabulary is closed. The enum is [`Variant`] itself, so this module gives
+//! that existing enum a pinned-id surface instead of standing up a second enum
+//! that would have to be kept in step with it by hand. Every
 //! variant has a row in `docs/dialects.toml`;
 //! `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
 //! fails on drift in either direction.
@@ -22,8 +21,8 @@
 //! either exhibits a family's invariants or it does not.
 //!
 //! The one declaration the codec reads, the `LastSaveVersion` release tuple, is
-//! provenance in the §3.4 sense: it is not an argument to `identify_variant`
-//! and appears in no conditional in the crate. It is recorded in
+//! provenance: it is not an argument to `identify_variant` and appears in no
+//! conditional in the crate. It is recorded in
 //! [`DialectMatch::declared`] as evidence and branched on nowhere.
 //!
 //! # `nearest` on the totality row
