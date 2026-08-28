@@ -47,11 +47,6 @@ pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
     }
 }
 
-/// Read the bounded byte image used for content-based format detection.
-pub fn read_detection_input(path: &Path, n: usize, max_bytes: u64) -> Result<Vec<u8>> {
-    ArtifactStore::read_detection_input(path, n, max_bytes)
-}
-
 /// Load CADIR from a native CAD file or CADIR JSON.
 ///
 /// An explicit input format bypasses detection. Without one, the registered
@@ -94,13 +89,12 @@ pub fn load_artifact(
             });
         }
         ResolvedSource::Cadir => {}
-    }
-
-    if forced.is_none() && prefix.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
-        return Err(anyhow!(
-            "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, .cadir.json; use --input-format to override detection",
-            path.display()
-        ));
+        ResolvedSource::Unrecognized => {
+            return Err(anyhow!(
+                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, .cadir.json; use --input-format to override detection",
+                path.display()
+            ));
+        }
     }
 
     let max_bytes = options.policy.limits.max_input_bytes;
