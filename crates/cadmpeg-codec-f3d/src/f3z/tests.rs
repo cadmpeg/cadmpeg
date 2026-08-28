@@ -387,8 +387,7 @@ fn f3z_archive_merges_identity_occurrences() {
     assert!(!regenerated.is_empty());
     assert_eq!(
         report
-            .target
-            .as_ref()
+            .target()
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("f3d:manifest-3-2-0-0")
     );

@@ -267,8 +267,7 @@ fn plan<'a>(
 
 fn named_target(plan: &cadmpeg_ir::codec::ExportPlan<'_>) -> String {
     plan.report()
-        .target
-        .as_ref()
+        .target()
         .expect("a SLDPRT write always names its dialect")
         .to_string()
 }

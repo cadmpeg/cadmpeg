@@ -84,7 +84,10 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
 
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert_eq!(report.target, decoded.ir().source.as_ref().unwrap().dialect);
+    assert_eq!(
+        report.target(),
+        decoded.ir().source.as_ref().unwrap().dialect.as_ref()
+    );
 }
 
 #[test]
@@ -110,11 +113,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
             .unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
-        assert_eq!(
-            report.target.as_ref().map(DialectId::as_str),
-            Some(id),
-            "{id}"
-        );
+        assert_eq!(report.target().map(DialectId::as_str), Some(id), "{id}");
     }
 }
 

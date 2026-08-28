@@ -63,7 +63,7 @@ fn written_text(plan: ExportPlan<'_>) -> String {
 }
 
 fn target_of(plan: &ExportPlan<'_>) -> Option<String> {
-    plan.report().target.as_ref().map(ToString::to_string)
+    plan.report().target().map(ToString::to_string)
 }
 
 /// Encoder planning always returns its typed loss rows, even when a direct
@@ -482,8 +482,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
         let claimed = plan
             .report()
-            .target
-            .clone()
+            .target()
+            .cloned()
             .expect("a STEP write always names its schema");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");

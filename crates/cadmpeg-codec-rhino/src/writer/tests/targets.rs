@@ -59,8 +59,7 @@ fn resolved(ir: &CadIr, encoder: RhinoEncoder, request: TargetRequest<'_>) -> St
     Encoder::plan(&encoder, EncodeInput::new(ir, None), request)
         .expect("the request resolves")
         .report()
-        .target
-        .as_ref()
+        .target()
         .expect("a Rhino write always names its archive version")
         .as_str()
         .to_owned()
@@ -274,8 +273,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = plan
             .report()
-            .target
-            .clone()
+            .target()
+            .cloned()
             .expect("a Rhino write always names its archive version");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");

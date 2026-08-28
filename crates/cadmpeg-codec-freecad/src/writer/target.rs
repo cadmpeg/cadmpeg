@@ -118,8 +118,7 @@ fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'
     };
     if let Some(source) = displaced.as_ref() {
         let target = report
-            .target
-            .as_ref()
+            .target()
             .expect("FCStd report constructed without a target");
         report
             .losses
