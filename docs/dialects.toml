@@ -596,7 +596,10 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # independently at persistence.rs:48-51). The lowercase alias `schemaVersion`
 # alone is refused, and carrying both spellings is refused
 # (container.rs:168-182). `GuiDocument.xml` carries its own unrelated
-# `SchemaVersion`; it is not run through this dispatch.
+# `SchemaVersion`; it is not run through this dispatch. Every GUI schema uses
+# the schema-1 vocabulary. A foreign declaration that fits is retained with
+# `fcstd/source.gui-schema-unverified`; a failed foreign-schema attempt drops
+# only GUI presentation data and charges the same warning.
 #
 # `complete = false`: FreeCAD publishes no enumeration of its schema versions
 # in a specification. The space is enumerable from FreeCAD's own source

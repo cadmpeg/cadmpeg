@@ -16,6 +16,7 @@ use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
+use crate::loss::FreecadLossCode;
 use crate::native::{
     ElementMapGroup, ElementMapRecord, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
@@ -61,33 +62,91 @@ pub(crate) fn transfer(
     element_maps: &[ElementMapRecord],
     requires_alpha_conversion: bool,
 ) -> Result<Graph, CodecError> {
+    let schema_version = declared_schema_version(bytes)?;
+    if schema_version == Some(1) {
+        return transfer_schema_one(
+            ir,
+            bytes,
+            entries,
+            objects,
+            properties,
+            payloads,
+            element_maps,
+            requires_alpha_conversion,
+        );
+    }
+
+    let declaration = schema_version.map_or_else(|| "missing".into(), |value| value.to_string());
+    let mut staged_ir = ir.clone();
+    match transfer_schema_one(
+        &mut staged_ir,
+        bytes,
+        entries,
+        objects,
+        properties,
+        payloads,
+        element_maps,
+        requires_alpha_conversion,
+    ) {
+        Ok(mut graph) => {
+            *ir = staged_ir;
+            graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
+                "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
+            )));
+            Ok(graph)
+        }
+        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => Ok(Graph {
+            losses: vec![FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
+                "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
+            ))],
+            ..Graph::default()
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+fn declared_schema_version(bytes: &[u8]) -> Result<Option<u32>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
     let root = xml.root_element();
-    let schema_version =
-        crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
-            .map(|value| {
-                value.parse::<u32>().map_err(|_| {
-                    CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
-                })
+    crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
+        .map(|value| {
+            value.parse::<u32>().map_err(|_| {
+                CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
             })
-            .transpose()?;
+        })
+        .transpose()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transfer_schema_one(
+    ir: &mut CadIr,
+    bytes: &[u8],
+    entries: &BTreeMap<String, View<'_>>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+    element_maps: &[ElementMapRecord],
+    requires_alpha_conversion: bool,
+) -> Result<Graph, CodecError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
+    let xml = roxmltree::Document::parse(text)
+        .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
+    let root = xml.root_element();
+    let schema_version = declared_schema_version(bytes)?;
     let camera_count = root
         .children()
         .filter(|node| node.has_tag_name("Camera"))
         .count();
-    let camera_error = if schema_version != Some(1) {
-        Some(format!(
-            "GuiDocument.xml supports only schema 1, found {schema_version:?}"
-        ))
-    } else if camera_count != 1 {
+    let camera_error = if camera_count == 1 {
+        None
+    } else {
         Some(format!(
             "GuiDocument.xml schema 1 requires one Camera record, found {camera_count}"
         ))
-    } else {
-        None
     };
     if let Some(message) = camera_error {
         return Err(CodecError::Malformed(message));
