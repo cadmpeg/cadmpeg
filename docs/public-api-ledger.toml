@@ -1352,3 +1352,10 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::report::ExportReport::{target,target()}"
 reason = "native reports require a target through `ExportReport::native`; private storage prevents target-less native struct literals while the accessor preserves read access and serde compatibility"
+
+[[change]]
+commit = "0aadf343554408d0d34b7133d7aeb2a390b022d8"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::report::ExportReport::cadir"
+reason = "the neutral report constructor now fixes `format` to `cadir`, so callers cannot construct a target-less report for a native format"

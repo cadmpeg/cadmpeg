@@ -405,7 +405,6 @@ impl Encoder for CadirEncoder {
             ));
         }
         let report = ExportReport::cadir(
-            "cadir".into(),
             EntityCensus {
                 basis: CensusBasis::IrArenas,
                 counts: input.ir.census(),

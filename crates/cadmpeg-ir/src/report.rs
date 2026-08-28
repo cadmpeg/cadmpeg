@@ -917,7 +917,6 @@ impl ExportReport {
     /// dialect target.
     #[must_use]
     pub fn cadir(
-        format: String,
         census: EntityCensus,
         fidelity: FidelityResolution,
         write_path: WritePath,
@@ -925,7 +924,7 @@ impl ExportReport {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            format,
+            format: "cadir".into(),
             census,
             fidelity,
             write_path,
