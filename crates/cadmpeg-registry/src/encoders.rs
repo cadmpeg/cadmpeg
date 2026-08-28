@@ -3,9 +3,8 @@
 //!
 //! One function, total over the output formats this build carries, and no
 //! per-format request type. What an encoder writes is a target, and
-//! `TargetRequest` carries it; the only thing left for construction to decide
-//! is what to do about content the writer cannot represent, which is a policy
-//! every format shares.
+//! `TargetRequest` carries it. Export-loss rejection is an application decision
+//! over the completed plan, not an encoder-construction option.
 
 #[cfg(test)]
 use cadmpeg_core::CodecError;
@@ -15,41 +14,16 @@ use cadmpeg_ir::codec::{CadirEncoder, Encoder, TargetDescriptor};
 
 use crate::Format;
 
-/// What an encoder does with content it cannot represent exactly.
-///
-/// The typed form of `--reject-lossy=export` at the construction boundary.
-/// Format-independent by construction: a policy that named one codec would be
-/// a target flag wearing a policy's name, which is the confusion
-/// `--reject-step-losses` embodied.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LossPolicy {
-    /// Write the representable subset and report the losses.
-    #[default]
-    Report,
-    /// Refuse before writing any byte.
-    Reject,
-}
-
 /// Builds the encoder for an export format.
 ///
 /// Total and infallible: `Format` is the set of formats this build can write,
 /// and nothing an encoder needs at construction can be wrong by then. What can
 /// be wrong is the dialect, and that is `plan`'s question, not this one's.
-#[cfg_attr(not(feature = "step"), allow(clippy::needless_pass_by_value))]
-pub fn build_encoder(format: Format, losses: LossPolicy) -> Box<dyn Encoder> {
-    let _ = losses;
+pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
     match format {
         Format::Cadir => Box::new(CadirEncoder),
         #[cfg(feature = "step")]
-        Format::Step => Box::new(cadmpeg_codec_step::StepCodec {
-            options: cadmpeg_codec_step::StepWriteOptions {
-                unsupported: match losses {
-                    LossPolicy::Report => cadmpeg_codec_step::StepUnsupportedPolicy::Report,
-                    LossPolicy::Reject => cadmpeg_codec_step::StepUnsupportedPolicy::Reject,
-                },
-                ..Default::default()
-            },
-        }),
+        Format::Step => Box::new(cadmpeg_codec_step::StepCodec::default()),
         #[cfg(feature = "fcstd")]
         Format::Fcstd => Box::new(cadmpeg_codec_freecad::FcstdCodec),
         #[cfg(feature = "f3d")]
@@ -72,8 +46,7 @@ pub fn build_encoder(format: Format, losses: LossPolicy) -> Box<dyn Encoder> {
 /// The catalog is static per format and independent of every constructor
 /// knob: per-codec options configure how a target is written, never which
 /// ones exist. The unit and default values below exist only to reach the
-/// instance method required by [`Encoder`]; a caller that only wants the table
-/// does not have to invent a [`LossPolicy`].
+/// instance method required by [`Encoder`].
 #[must_use]
 pub fn write_targets(format: Format) -> &'static [TargetDescriptor] {
     match format {
@@ -111,7 +84,7 @@ mod tests {
         )
         .expect("the dialect registry is readable");
         for format in Format::ALL {
-            let encoder = build_encoder(*format, LossPolicy::Report);
+            let encoder = build_encoder(*format);
             let targets = encoder.targets();
             let defaults = targets.iter().filter(|target| target.default).count();
             if targets.is_empty() {
@@ -164,7 +137,7 @@ mod tests {
     fn an_unknown_explicit_target_is_refused_with_the_catalog() {
         let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         for format in Format::ALL {
-            let encoder = build_encoder(*format, LossPolicy::Report);
+            let encoder = build_encoder(*format);
             let error = encoder
                 .plan(
                     cadmpeg_ir::codec::EncodeInput::new(&ir, None),
@@ -202,7 +175,7 @@ mod tests {
     #[test]
     fn no_target_alias_is_an_output_format_name() {
         for format in Format::ALL {
-            let encoder = build_encoder(*format, LossPolicy::Report);
+            let encoder = build_encoder(*format);
             for target in encoder.targets() {
                 for alias in target.aliases {
                     assert!(
@@ -219,7 +192,7 @@ mod tests {
     #[test]
     fn every_exportable_format_builds_an_encoder() {
         for format in Format::ALL {
-            let encoder = build_encoder(*format, LossPolicy::Report);
+            let encoder = build_encoder(*format);
             assert_eq!(encoder.id(), format.name());
         }
     }
