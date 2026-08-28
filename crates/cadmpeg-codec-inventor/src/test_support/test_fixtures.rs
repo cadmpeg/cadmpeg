@@ -115,13 +115,28 @@ pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
 }
 
 pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) -> Vec<u8> {
-    primary_envelope_fixture_with_kernel_and_database(declarations, &asm_kernel_stream(), false)
+    primary_envelope_fixture_with_kernel_and_failures(
+        declarations,
+        &asm_kernel_stream(),
+        false,
+        false,
+    )
 }
 
 pub(crate) fn primary_envelope_fixture_with_broken_database() -> Vec<u8> {
-    primary_envelope_fixture_with_kernel_and_database(
+    primary_envelope_fixture_with_kernel_and_failures(
         EnvelopeDeclarations::default(),
         &asm_kernel_stream(),
+        true,
+        false,
+    )
+}
+
+pub(crate) fn primary_envelope_fixture_with_broken_metadata() -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_failures(
+        EnvelopeDeclarations::default(),
+        &asm_kernel_stream(),
+        false,
         true,
     )
 }
@@ -132,13 +147,14 @@ pub(crate) fn primary_envelope_fixture_with_kernel(
     declarations: EnvelopeDeclarations,
     kernel: &[u8],
 ) -> Vec<u8> {
-    primary_envelope_fixture_with_kernel_and_database(declarations, kernel, false)
+    primary_envelope_fixture_with_kernel_and_failures(declarations, kernel, false, false)
 }
 
-fn primary_envelope_fixture_with_kernel_and_database(
+fn primary_envelope_fixture_with_kernel_and_failures(
     declarations: EnvelopeDeclarations,
     kernel: &[u8],
     break_database_body: bool,
+    break_metadata_body: bool,
 ) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
@@ -156,7 +172,10 @@ fn primary_envelope_fixture_with_kernel_and_database(
     const FAT_SECTOR: u32 = 0xffff_fffd;
 
     let carrier = kernel_carrier_fixture(kernel);
-    let meta = meta_stream_fixture(carrier.len(), declarations);
+    let mut meta = meta_stream_fixture(carrier.len(), declarations);
+    if break_metadata_body {
+        meta.push(0xff);
+    }
     let bulk = bulk_stream_fixture(&carrier);
     let mut database = database_fixture(declarations.schema);
     if break_database_body {
