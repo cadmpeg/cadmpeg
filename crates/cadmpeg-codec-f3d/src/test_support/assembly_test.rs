@@ -74,6 +74,11 @@ pub(crate) fn synthetic_asm_text_stream() -> Vec<u8> {
 /// only. This is the shape of an early-generation archive: the text streams
 /// are the document's geometry carriers.
 pub(crate) fn f3d_with_text_brep(members: &[&str]) -> Vec<u8> {
+    f3d_with_text_brep_stream(members, &synthetic_asm_text_stream())
+}
+
+/// A BREP-less `.f3d` with the supplied text kernel stream under each member.
+pub(crate) fn f3d_with_text_brep_stream(members: &[&str], stream: &[u8]) -> Vec<u8> {
     let base = f3d_without_brep("part-design", "part.f3d", &[]);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -88,7 +93,7 @@ pub(crate) fn f3d_with_text_brep(members: &[&str]) -> Vec<u8> {
     }
     for member in members {
         zip.start_file(*member, stored).unwrap();
-        zip.write_all(&synthetic_asm_text_stream()).unwrap();
+        zip.write_all(stream).unwrap();
     }
     zip.finish().unwrap().into_inner()
 }

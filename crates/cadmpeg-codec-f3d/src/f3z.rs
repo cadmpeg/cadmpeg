@@ -12,7 +12,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_value::Value;
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::dialect::debug_assert_primary_layer;
+use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
@@ -149,19 +149,46 @@ pub fn decode(
     Ok(DecodeResult::new(ir, report, fidelity))
 }
 
-/// Replace the root member's dialect match with the outer archive's.
+/// Replace the root member's primary dialect match with the outer archive's.
 ///
 /// [`crate::decode::decode`] runs on the root `.f3d` member and classifies that
 /// member as `f3d:manifest-3-2-0-0`. The document under decode is the `.f3z`
 /// archive, whose own scan classified it as `f3d:f3z-multi-document`, so the
-/// report and [`cadmpeg_ir::document::SourceMeta`] state that row. Exactly one
-/// entry either way: both rows are the `f3d` primary layer.
+/// report and [`cadmpeg_ir::document::SourceMeta`] state that row. Non-primary
+/// `acis:` kernel rows remain attached to their kernel losses.
 fn restate_outer_dialect(root: DecodeResult, scan: &ContainerScan<'_>) -> DecodeResult {
-    let dialects = vec![scan.dialect.clone()];
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     let (ir, mut report, fidelity) = root.into_parts();
+    let mut dialects = vec![scan.dialect.clone()];
+    dialects.extend(
+        report
+            .dialects
+            .drain(..)
+            .filter(|matched| matched.format == "acis"),
+    );
+    report
+        .losses
+        .retain(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind());
+    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     report.dialects = dialects;
     DecodeResult::new(ir, report, fidelity)
+}
+
+/// Attach a merged component's kernel rows to the same occurrence prefix as
+/// its losses. The component's `f3d:` row is document-local and does not travel.
+fn merge_component_kernel_layers(
+    target: &mut Vec<DialectMatch>,
+    component: Vec<DialectMatch>,
+    label: &str,
+) {
+    for mut matched in component
+        .into_iter()
+        .filter(|matched| matched.format == "acis")
+    {
+        if let Some(carrier) = matched.declared.get_mut("carrier") {
+            *carrier = format!("xref {label}: {carrier}");
+        }
+        target.push(matched);
+    }
 }
 
 fn model_root_member(
@@ -349,7 +376,15 @@ fn merge_references(
         )?;
         merged += descendants + 1;
         parent.report_mut().geometry_transferred |= component_report.geometry_transferred;
+        merge_component_kernel_layers(
+            &mut parent.report_mut().dialects,
+            component_report.dialects,
+            &label,
+        );
         for mut loss in component_report.losses {
+            if loss.code == F3dLossCode::SourceDialectUnverified.kind() {
+                continue;
+            }
             loss.message = format!("xref {label}: {}", loss.message);
             parent.report_mut().losses.push(loss);
         }
