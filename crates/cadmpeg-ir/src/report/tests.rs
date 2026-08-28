@@ -173,7 +173,6 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
     );
 
     let export = ExportReport::cadir(
-        "cadir".into(),
         EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts: BTreeMap::new(),
