@@ -62,7 +62,7 @@ fn every_version_flag_class_maps_to_its_specification_version() {
         let (parsed, _) = resolve_global_fields(&fields);
         assert_eq!(parsed.declared_version_flag(), declared, "{value}");
         assert_eq!(parsed.effective_version_flag(), effective, "{value}");
-        assert_eq!(parsed.version(), version, "{value}");
+        assert_eq!(parsed.version_name(), version, "{value}");
     }
 }
 
@@ -261,7 +261,7 @@ fn the_4_0_global_contract_accepts_twenty_four_fields_and_the_short_date() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.version(), "4.0");
+    assert_eq!(parsed.version(), Some(crate::IgesVersion::V4_0));
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -322,7 +322,7 @@ fn the_5_0_global_contract_stops_at_model_date_and_keeps_the_short_date() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.version(), "5.0");
+    assert_eq!(parsed.version(), Some(crate::IgesVersion::V5_0));
     assert!(losses.is_empty(), "{losses:#?}");
 }
 

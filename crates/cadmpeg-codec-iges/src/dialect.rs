@@ -101,7 +101,7 @@ pub(crate) fn dialect_loss(global: &ResolvedGlobal, matched: &DialectMatch) -> O
     let recovery = global.dialect_recovery();
     let declared = global.declared_version_flag();
     let effective = global.effective_version_flag();
-    let version = global.version();
+    let version = global.version_name();
     let declaration = match global.unreadable_version_declaration() {
         Some(text) => format!(
             "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
@@ -117,7 +117,9 @@ pub(crate) fn dialect_loss(global: &ResolvedGlobal, matched: &DialectMatch) -> O
     };
     Some(crate::loss::IgesLossCode::SourceDialectUnverified.note(format!(
         "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
-        crate::global::VERIFIED_VERSIONS.join(", ")
+        IgesVersion::ALL
+            .map(IgesVersion::name)
+            .join(", ")
     )))
 }
 
@@ -354,7 +356,7 @@ impl IgesDialect {
         );
         declared.insert(
             DECLARED_EFFECTIVE_VERSION.into(),
-            global.version().to_owned(),
+            global.version_name().to_owned(),
         );
         if let Some(text) = global.unreadable_version_declaration() {
             declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());

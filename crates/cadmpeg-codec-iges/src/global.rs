@@ -3,6 +3,7 @@
 
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
+use crate::IgesVersion;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 
@@ -99,6 +100,17 @@ impl GlobalTable {
             10 => Self::V5_2,
             11 => Self::V5_3,
             _ => Self::Legacy,
+        }
+    }
+
+    const fn version(self) -> Option<IgesVersion> {
+        match self {
+            Self::Legacy => None,
+            Self::V4_0 => Some(IgesVersion::V4_0),
+            Self::V5_0 => Some(IgesVersion::V5_0),
+            Self::V5_1 => Some(IgesVersion::V5_1),
+            Self::V5_2 => Some(IgesVersion::V5_2),
+            Self::V5_3 => Some(IgesVersion::V5_3),
         }
     }
 
@@ -303,8 +315,6 @@ const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
 
 const FALLBACK_SIGNIFICANCE: u32 = 17;
 const FALLBACK_MINIMUM_RESOLUTION: f64 = 0.0;
-pub(crate) const VERIFIED_VERSIONS: [&str; 5] = ["4.0", "5.0", "5.1", "5.2", "5.3"];
-
 const METADATA_CONSEQUENCE: &str = "its value was not transferred";
 const SIGNIFICANCE_CONSEQUENCE: &str =
     "the decoder substituted 17 significant decimal digits from its own specification";
@@ -727,19 +737,30 @@ fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
 // numeric range. This is decoder recovery policy, not an extension of the
 // IGES 4.0 version table: preserve the declaration and report a dialect loss
 // whenever the recovery changes it.
-const fn effective_version(declared: i64) -> (i64, &'static str) {
+const fn effective_version_flag(declared: i64) -> i64 {
     match declared {
-        1 => (1, "1.0"),
-        2 => (2, "ANSI-Y14.26M-1981"),
-        4 => (4, "3.0"),
-        5 => (5, "ASME-ANSI-Y14.26M-1987"),
-        6 => (6, "4.0"),
-        7 => (7, "ASME-Y14.26M-1989"),
-        8 => (8, "5.0"),
-        9 => (9, "5.1"),
-        10 => (10, "5.2"),
-        value if value >= 11 => (11, "5.3"),
-        _ => (3, "2.0"),
+        1 => 1,
+        2 => 2,
+        4 => 4,
+        5 => 5,
+        6 => 6,
+        7 => 7,
+        8 => 8,
+        9 => 9,
+        10 => 10,
+        value if value >= 11 => 11,
+        _ => 3,
+    }
+}
+
+const fn unverified_version_name(effective_flag: i64) -> &'static str {
+    match effective_flag {
+        1 => "1.0",
+        2 => "ANSI-Y14.26M-1981",
+        4 => "3.0",
+        5 => "ASME-ANSI-Y14.26M-1987",
+        7 => "ASME-Y14.26M-1989",
+        _ => "2.0",
     }
 }
 
@@ -1271,7 +1292,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             Supplied::Value(value) => (value, None),
             Supplied::Malformed => (3, Some(resolution.declaration_text(FIELD_VERSION_FLAG))),
         };
-    let effective_flag = effective_version(declared_version_flag).0;
+    let effective_flag = effective_version_flag(declared_version_flag);
     let global_table = GlobalTable::from_effective_flag(effective_flag);
     resolution.apply_string_policy(global_table);
     let global_field_count = global_table.global_field_count();
@@ -1281,7 +1302,9 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             .losses
             .push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
                 "IGES Global record has {field_count} fields; IGES {} Table 1 defines {global_field_count} and the decoder ignored the rest",
-                effective_version(declared_version_flag).1,
+                global_table
+                    .version()
+                    .map_or_else(|| unverified_version_name(effective_flag), IgesVersion::name),
             )));
     }
 
@@ -1450,7 +1473,7 @@ impl ResolvedGlobal {
 
     /// The declared version flag after the specification's postprocessor clamp.
     pub(crate) fn effective_version_flag(&self) -> i64 {
-        effective_version(self.declared_version_flag).0
+        effective_version_flag(self.declared_version_flag)
     }
 
     /// Why this decode did not read the file with a Global table verified for
@@ -1471,22 +1494,22 @@ impl ResolvedGlobal {
             DialectRecovery::UnreadableDeclaration
         } else if self.declared_version_flag != self.effective_version_flag() {
             DialectRecovery::Clamped
-        } else if VERIFIED_VERSIONS.contains(&self.version()) {
+        } else if self.version().is_some() {
             DialectRecovery::Verified
         } else {
             DialectRecovery::UnverifiedVersion
         }
     }
 
-    pub(crate) fn version(&self) -> &'static str {
-        match self.global_table {
-            GlobalTable::V4_0 => "4.0",
-            GlobalTable::V5_0 => "5.0",
-            GlobalTable::V5_1 => "5.1",
-            GlobalTable::V5_2 => "5.2",
-            GlobalTable::V5_3 => "5.3",
-            GlobalTable::Legacy => effective_version(self.declared_version_flag).1,
-        }
+    pub(crate) const fn version(&self) -> Option<IgesVersion> {
+        self.global_table.version()
+    }
+
+    pub(crate) fn version_name(&self) -> &'static str {
+        self.version().map_or_else(
+            || unverified_version_name(self.effective_version_flag()),
+            IgesVersion::name,
+        )
     }
 
     pub(crate) fn global_table(&self) -> GlobalTable {
@@ -1539,7 +1562,7 @@ impl ResolvedGlobal {
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
         }
-        notes.push(format!("iges_version={}", self.version()));
+        notes.push(format!("iges_version={}", self.version_name()));
         if self.declared_version_flag != self.effective_version_flag() {
             notes.push(format!("iges_version_flag={}", self.declared_version_flag));
         }
