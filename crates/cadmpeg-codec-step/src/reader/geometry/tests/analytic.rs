@@ -18,7 +18,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
 const EPS_APLL_POINT: f64 = 1.0e-12;
@@ -122,18 +122,6 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
             surface.definition,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { .. }
         )));
-    let mut rejected = Vec::new();
-    assert!(write_step(
-        bounded.ir(),
-        &mut rejected,
-        StepSchema::default(),
-        &StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
-            ..StepWriteOptions::default()
-        }
-    )
-    .is_err());
-    assert!(rejected.is_empty());
 }
 
 #[test]

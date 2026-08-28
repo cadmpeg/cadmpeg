@@ -16,7 +16,7 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::units::Units;
 
 use crate::codec::StepCodec;
-use crate::options::{StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+use crate::options::{StepSchema, StepWriteOptions};
 
 /// A decoded STEP document whose `FILE_SCHEMA` declares `identifier`.
 ///
@@ -81,7 +81,6 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     ir.finalize();
     let encoder = StepCodec {
         options: StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         },
     };

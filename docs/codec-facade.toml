@@ -74,7 +74,6 @@ names = [
     "StepCodec",
     "StepWriteOptions",
     "StepSchema",
-    "StepUnsupportedPolicy",
     "write_step",
     "StepError",
 ]

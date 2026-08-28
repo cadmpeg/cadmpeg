@@ -20,7 +20,7 @@ use cadmpeg_ir::CadIr;
 
 use crate::loss::StepLossCode;
 use crate::test_support::export;
-use crate::{write_step, StepCodec, StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeometry> {
     let point = |point: Point2| Point3::new(point.u, point.v, 0.0);
@@ -409,7 +409,6 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
         ],
     });
     let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
@@ -464,7 +463,6 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         native_ref: None,
     });
     let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
@@ -1277,7 +1275,6 @@ fn writer_declares_each_supported_target_schema_exactly() {
         StepSchema::Ap242Edition3,
     ] {
         let options = StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         };
         let mut bytes = Vec::new();

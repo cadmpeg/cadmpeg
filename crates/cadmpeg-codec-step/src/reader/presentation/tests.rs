@@ -43,9 +43,7 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn presentation_layer_expands_all_product_definition_views() {
@@ -229,7 +227,6 @@ pub(crate) fn step_color_assets_round_trip_names_and_tessellation_targets_strict
             &mut bytes,
             schema,
             &StepWriteOptions {
-                unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             },
         )
@@ -727,19 +724,6 @@ fn context_dependent_styles_are_not_flattened_without_context() {
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let mut output = Vec::new();
-    let error = write_step(
-        result.ir(),
-        &mut output,
-        StepSchema::default(),
-        &StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
-            ..StepWriteOptions::default()
-        },
-    )
-    .expect_err("strict write must reject retained context styles");
-    assert!(matches!(error, StepError::Unsupported(_)));
-    assert!(output.is_empty());
 }
 
 #[test]
@@ -1844,7 +1828,6 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         &mut bytes,
         StepSchema::Ap242Edition3,
         &StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         },
     )

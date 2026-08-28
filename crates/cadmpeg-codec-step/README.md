@@ -51,15 +51,12 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_codec_step::{
-    write_step, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use cadmpeg_codec_step::{write_step, StepSchema, StepWriteOptions};
 
 let ir = unit_cube();
 let file = File::create("cube.step")?;
 let mut output = BufWriter::new(file);
 let options = StepWriteOptions {
-    unsupported: StepUnsupportedPolicy::Reject,
     product_name: "cube".into(),
     author: "Example Author".into(),
     organization: "Example Organization".into(),
@@ -94,8 +91,7 @@ declares millimetres. Supply geometry in millimetres before export. The context
 uses the IR linear tolerance as its uncertainty value; plane and solid angles
 use radians and steradians.
 
-[`StepWriteOptions`] controls `FILE_NAME` metadata and the unsupported-content
-policy; the target [`StepSchema`] is `write_step`'s own argument, never encoder
+[`StepWriteOptions`] controls `FILE_NAME` metadata; the target [`StepSchema`] is `write_step`'s own argument, never encoder
 state. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
 default output deterministic. The first body name, when present, supplies the
 STEP product name. `product_name` supplies the `FILE_NAME` name instead.
@@ -104,9 +100,6 @@ STEP product name. `product_name` supplies the `FILE_NAME` name instead.
 
 The writer exports representable geometry and records reductions in
 [`ExportReport::losses`]. Review these notes before accepting the file.
-[`StepUnsupportedPolicy::Report`] writes the representable subset.
-[`StepUnsupportedPolicy::Reject`] returns [`StepError::Unsupported`] before any
-output byte is written.
 
 In particular:
 
@@ -161,8 +154,6 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [`StepError::Io`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html#variant.Io
 [`StepError::Unsupported`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html#variant.Unsupported
 [`StepSchema`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepSchema.html
-[`StepUnsupportedPolicy::Reject`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepUnsupportedPolicy.html#variant.Reject
-[`StepUnsupportedPolicy::Report`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepUnsupportedPolicy.html#variant.Report
 [`StepWriteOptions`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/struct.StepWriteOptions.html
 [`std::io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
 [`write_step`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/fn.write_step.html

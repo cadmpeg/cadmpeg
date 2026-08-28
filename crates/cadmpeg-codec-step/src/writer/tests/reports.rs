@@ -16,9 +16,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::StepLossCode;
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 use super::round_trips::cylinder_surface_doc;
 
@@ -760,21 +758,6 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
             assert!(loss.message.contains("test:binding#blue"));
         }
         assert!(!String::from_utf8_lossy(&forward_output).contains("STYLED_ITEM"));
-
-        let mut strict_output = Vec::new();
-        assert!(matches!(
-            write_step(
-                &duplicate_target_style_ir(body_target, false, false),
-                &mut strict_output,
-                StepSchema::default(),
-                &StepWriteOptions {
-                    unsupported: StepUnsupportedPolicy::Reject,
-                    ..StepWriteOptions::default()
-                }
-            ),
-            Err(StepError::Unsupported(_))
-        ));
-        assert!(strict_output.is_empty());
     }
 
     let mut equivalent_output = Vec::new();
@@ -918,20 +901,6 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("omitted void shell")
     }));
-
-    let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
-        ..StepWriteOptions::default()
-    };
-    assert!(matches!(
-        write_step(
-            &missing_void,
-            &mut Vec::new(),
-            StepSchema::default(),
-            &options
-        ),
-        Err(StepError::Unsupported(_))
-    ));
 }
 
 #[test]
@@ -964,15 +933,6 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
-
-    let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
-        ..StepWriteOptions::default()
-    };
-    assert!(matches!(
-        write_step(&ir, &mut Vec::new(), StepSchema::default(), &options),
-        Err(StepError::Unsupported(message)) if message.contains("pcurve")
-    ));
 }
 
 #[test]
@@ -1009,15 +969,6 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
-
-    let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
-        ..StepWriteOptions::default()
-    };
-    assert!(matches!(
-        write_step(&ir, &mut Vec::new(), StepSchema::default(), &options),
-        Err(StepError::Unsupported(message)) if message.contains("pcurve")
-    ));
 }
 
 #[test]
@@ -1044,15 +995,6 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(curve_id.as_str())
     }));
-
-    let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
-        ..StepWriteOptions::default()
-    };
-    assert!(matches!(
-        write_step(&ir, &mut Vec::new(), StepSchema::default(), &options),
-        Err(StepError::Unsupported(message)) if message.contains("geometry carrier")
-    ));
 }
 
 #[test]
@@ -1075,7 +1017,6 @@ fn consumed_unit_and_pmi_wrapper_records_are_strictly_writable() {
             &mut bytes,
             StepSchema::Ap242Edition3,
             &StepWriteOptions {
-                unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             },
         )
@@ -1182,71 +1123,6 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
 }
 
 #[test]
-pub(crate) fn rejected_step_write_detects_incomplete_datum_system() {
-    use cadmpeg_ir::ids::PmiId;
-    use cadmpeg_ir::pmi::PmiDefinition;
-
-    let mut ir = StepCodec::default()
-        .decode(
-            &mut Cursor::new(include_bytes!(
-                "../../../tests/fixtures/ap242_semantic_pmi.p21"
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap()
-        .into_parts()
-        .0;
-    let system = ir
-        .model
-        .pmi
-        .iter_mut()
-        .find(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. }))
-        .unwrap();
-    let PmiDefinition::DatumSystem { references } = &mut system.definition else {
-        unreachable!()
-    };
-    references[0].datum = PmiId("test:model:pmi#missing".into());
-    let mut output = Vec::new();
-    assert!(matches!(
-        write_step(
-            &ir,
-            &mut output,
-            StepSchema::Ap242Edition3,
-            &StepWriteOptions {
-                unsupported: StepUnsupportedPolicy::Reject,
-                ..StepWriteOptions::default()
-            }
-        ),
-        Err(StepError::Unsupported(_))
-    ));
-    assert!(output.is_empty());
-
-    let system = ir
-        .model
-        .pmi
-        .iter_mut()
-        .find(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. }))
-        .unwrap();
-    let PmiDefinition::DatumSystem { references } = &mut system.definition else {
-        unreachable!()
-    };
-    references.clear();
-    assert!(matches!(
-        write_step(
-            &ir,
-            &mut output,
-            StepSchema::Ap242Edition3,
-            &StepWriteOptions {
-                unsupported: StepUnsupportedPolicy::Reject,
-                ..StepWriteOptions::default()
-            }
-        ),
-        Err(StepError::Unsupported(_))
-    ));
-    assert!(output.is_empty());
-}
-
-#[test]
 fn step_writer_rejects_unknown_datum_reference_modifiers() {
     use cadmpeg_ir::pmi::PmiDefinition;
 
@@ -1284,21 +1160,6 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
         || loss.code == StepLossCode::SemanticAnnotationOmitted.kind()));
     assert!(!String::from_utf8_lossy(&output).contains(".UNKNOWN_MODIFIER."));
     assert!(!String::from_utf8_lossy(&output).contains("DATUM_REFERENCE_MODIFIER_WITH_VALUE"));
-
-    let mut strict_output = Vec::new();
-    assert!(matches!(
-        write_step(
-            &ir,
-            &mut strict_output,
-            StepSchema::Ap242Edition3,
-            &StepWriteOptions {
-                unsupported: StepUnsupportedPolicy::Reject,
-                ..StepWriteOptions::default()
-            }
-        ),
-        Err(StepError::Unsupported(_))
-    ));
-    assert!(strict_output.is_empty());
 }
 
 /// PMI is dropped whole when the target schema has no semantic PMI. The drop is
@@ -1344,25 +1205,6 @@ fn pmi_dropped_by_schema_without_semantic_pmi_is_charged() {
             loss.code == StepLossCode::PmiAnnotationNotWritten.kind()
                 && loss.message.contains(&format!("{annotations} PMI"))
         }));
-
-        let mut strict_output = Vec::new();
-        assert!(
-            matches!(
-                write_step(
-                    &ir,
-                    &mut strict_output,
-                    schema,
-                    &StepWriteOptions {
-                        unsupported: StepUnsupportedPolicy::Reject,
-                        ..StepWriteOptions::default()
-                    }
-                ),
-                Err(StepError::Unsupported(_))
-            ),
-            "{}",
-            schema.file_schema()
-        );
-        assert!(strict_output.is_empty());
     }
 }
 
@@ -1638,40 +1480,6 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
 }
 
 #[test]
-fn strict_export_rejects_an_unwritable_procedural_carrier() {
-    let mut ir = CadIr::empty(Units::default());
-    let curve_id = CurveId("step:test:curve#strict-unsupported".into());
-    let construction_id =
-        ProceduralCurveId("step:test:construction:curve#strict-unsupported".into());
-    ir.model.curves.push(Curve {
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Procedural {
-            construction: construction_id.clone(),
-        },
-        source_object: None,
-    });
-    ir.model
-        .procedural_curves
-        .push(cadmpeg_ir::geometry::ProceduralCurve {
-            id: construction_id,
-            curve: curve_id,
-            definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
-            cache_fit_tolerance: None,
-        });
-
-    let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
-        ..StepWriteOptions::default()
-    };
-    let mut output = Vec::new();
-    assert!(matches!(
-        write_step(&ir, &mut output, StepSchema::default(), &options),
-        Err(StepError::Unsupported(message)) if message.contains("geometry carrier")
-    ));
-    assert!(output.is_empty());
-}
-
-#[test]
 fn signed_analytic_radius_normalization_is_reported() {
     let mut ir = unit_cube();
     ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
@@ -1820,61 +1628,4 @@ fn incomplete_nurbs_surface_is_omitted_and_reported() {
     assert!(!String::from_utf8(bytes)
         .expect("STEP output is UTF-8")
         .contains("B_SPLINE_SURFACE_WITH_KNOTS"));
-
-    let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
-        ..StepWriteOptions::default()
-    };
-    let mut strict_bytes = Vec::new();
-    let error = write_step(&ir, &mut strict_bytes, StepSchema::default(), &options)
-        .expect_err("strict rejection");
-    assert!(matches!(error, StepError::Unsupported(_)));
-    assert!(strict_bytes.is_empty());
-}
-
-#[test]
-pub(crate) fn strict_writer_rejects_before_emitting_bytes() {
-    let mut ir = unit_cube();
-    ir.native.namespace_mut("f3d").arenas.insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            "asm-history-0",
-            Default::default(),
-        )],
-    );
-    ir.finalize();
-    let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
-        ..StepWriteOptions::default()
-    };
-
-    let mut bytes = Vec::new();
-    let error =
-        write_step(&ir, &mut bytes, StepSchema::default(), &options).expect_err("strict rejection");
-    assert!(matches!(error, StepError::Unsupported(_)));
-    assert!(bytes.is_empty());
-}
-
-#[test]
-pub(crate) fn strict_writer_refuses_retained_opaque_step_records_atomically() {
-    let decoded = StepCodec::default()
-        .decode(
-            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap242_minimal.p21")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode opaque STEP records");
-    assert_eq!(decoded.ir().native_unknowns("step").unwrap().len(), 2);
-
-    let mut bytes = Vec::new();
-    let result = write_step(
-        decoded.ir(),
-        &mut bytes,
-        StepSchema::Ap242Edition3,
-        &StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
-            ..StepWriteOptions::default()
-        },
-    );
-    assert!(matches!(result, Err(StepError::Unsupported(_))));
-    assert!(bytes.is_empty());
 }

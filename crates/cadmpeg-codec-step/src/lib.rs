@@ -36,9 +36,8 @@
 //! # Ok::<(), cadmpeg_codec_step::StepError>(())
 //! ```
 //!
-//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining report-mode
-//! output. [`StepUnsupportedPolicy::Reject`] rejects all such losses before any
-//! output byte is written. Opaque records, source attributes, unsupported
+//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining output. Opaque
+//! records, source attributes, unsupported
 //! procedural definitions, and target-schema incompatibilities are reported or
 //! rejected rather than silently discarded. Body and face colors become
 //! per-face `STYLED_ITEM` presentation; direct geometry and tessellation
@@ -49,9 +48,7 @@
 //! and surfaces map to their corresponding STEP carriers. Rational and
 //! non-rational NURBS use the `*_WITH_KNOTS` entities.
 //!
-//! [`StepError`] reports [`StepError::Unsupported`] under
-//! [`StepUnsupportedPolicy::Reject`] before any output is written, and
-//! [`StepError::Io`] for output-sink failures. Because the writer streams the
+//! [`StepError`] reports [`StepError::Io`] for output-sink failures. Because the writer streams the
 //! header and DATA section after acceptance, an I/O failure can leave partial
 //! output.
 
@@ -79,7 +76,7 @@ pub mod fuzz;
 pub use codec::StepCodec;
 pub use error::StepError;
 pub use export::write_step;
-pub use options::{StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+pub use options::{StepSchema, StepWriteOptions};
 
 #[cfg(test)]
 mod golden_tests;

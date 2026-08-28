@@ -5,11 +5,6 @@ mod reports;
 mod round_trips;
 mod targets;
 
-pub(crate) use reports::{
-    rejected_step_write_detects_incomplete_datum_system,
-    strict_writer_refuses_retained_opaque_step_records_atomically,
-    strict_writer_rejects_before_emitting_bytes,
-};
 pub(crate) use round_trips::{
     analytic_conics_round_trip_through_step,
     ap242_writer_round_trips_indexed_tessellation_and_exact_body_link,

@@ -26,7 +26,7 @@ use cadmpeg_ir::{FidelityResolution, WritePath};
 use crate::error::StepError;
 use crate::geometry;
 use crate::loss::StepLossCode;
-use crate::options::{StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{real, refs, string, Emitter, Ref};
 
 const EPS_IDENTITY: f64 = 1.0e-12;
@@ -38,9 +38,7 @@ const EPS_IDENTITY: f64 = 1.0e-12;
 /// values are not rescaled. The IR linear tolerance becomes the representation
 /// context's uncertainty value.
 ///
-/// Geometry conversion completes before this function writes the header. Under
-/// [`StepUnsupportedPolicy::Reject`], unsupported content returns
-/// [`StepError::Unsupported`] before any output byte is written. Otherwise the
+/// Geometry conversion completes before this function writes the header. The
 /// function streams the header, DATA instances, and closing records to `w`. An
 /// I/O error can therefore leave a partial file and returns no report.
 ///
@@ -56,17 +54,6 @@ pub fn write_step(
     b.build();
     let report = b.finish_report();
     let lines = b.emitter.into_lines();
-
-    if opts.unsupported == StepUnsupportedPolicy::Reject && !report.losses.is_empty() {
-        return Err(StepError::Unsupported(
-            report
-                .losses
-                .iter()
-                .map(|loss| loss.message.as_str())
-                .collect::<Vec<_>>()
-                .join("; "),
-        ));
-    }
 
     write_header(w, schema, opts)?;
     writeln!(w, "DATA;")?;
