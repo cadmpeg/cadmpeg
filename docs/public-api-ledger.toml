@@ -917,6 +917,13 @@ item = "cadmpeg_registry::InputCatalog::candidates"
 reason = "identify needs every candidate the prefix allows, where detect collapses them to one selection; detect is now written on top of it"
 
 [[change]]
+commit = "c4ff88808ed16db9cc1bf0b01f1b0d85f6762a86"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::{Identification,Inspection,ResolvedSource}"
+reason = "`identify` now preserves the complete inspection summary or typed failure, and source resolution distinguishes CADIR JSON from unrecognized bytes"
+
+[[change]]
 commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
 crate = "cadmpeg-registry"
 kind = "addition"

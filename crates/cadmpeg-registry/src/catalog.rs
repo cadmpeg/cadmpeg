@@ -68,6 +68,8 @@ pub enum ResolvedSource<'a> {
     },
     /// No native codec selected; the caller may parse CADIR JSON.
     Cadir,
+    /// No native codec recognized the bytes, and they do not begin as CADIR.
+    Unrecognized,
 }
 
 /// Failure resolving an input source.
@@ -233,8 +235,8 @@ impl InputCatalog {
 
     /// Resolves a forced format or content detection into a source selection.
     ///
-    /// Shared by inspect and load. Cadir fallback means "no native codec"; the
-    /// caller decides whether JSON parsing or a hard error is appropriate.
+    /// Shared by inspect and load. CADIR is selected only when the prefix begins
+    /// as a JSON object; an unmatched non-JSON prefix remains unrecognized.
     pub fn resolve_source<'a>(
         &'a self,
         prefix: &[u8],
@@ -253,7 +255,8 @@ impl InputCatalog {
             }
             Some(ForcedInput::Cadir) => Ok(ResolvedSource::Cadir),
             None => match self.detect(prefix) {
-                DetectionOutcome::None => Ok(ResolvedSource::Cadir),
+                DetectionOutcome::None if is_cadir_prefix(prefix) => Ok(ResolvedSource::Cadir),
+                DetectionOutcome::None => Ok(ResolvedSource::Unrecognized),
                 DetectionOutcome::Detected {
                     descriptor,
                     confidence,
@@ -282,6 +285,14 @@ impl InputCatalog {
             },
         }
     }
+}
+
+/// Whether a byte prefix begins as a CADIR JSON object.
+///
+/// Accepts UTF-8 BOM and ASCII whitespace before the opening object delimiter.
+pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
+    let prefix = prefix.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(prefix);
+    prefix.iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&b'{')
 }
 
 fn input(
@@ -374,5 +385,26 @@ mod tests {
             assert_eq!(format_id, "step");
             assert!(confidence.is_none());
         }
+    }
+
+    #[test]
+    fn resolve_source_distinguishes_cadir_from_unrecognized_bytes() {
+        let catalog = InputCatalog::with_builtins();
+        assert!(matches!(
+            catalog
+                .resolve_source(b" \n{\"ir_version\": 1}", None)
+                .unwrap(),
+            ResolvedSource::Cadir
+        ));
+        assert!(matches!(
+            catalog
+                .resolve_source(b"\xef\xbb\xbf\t{\"ir_version\": 1}", None)
+                .unwrap(),
+            ResolvedSource::Cadir
+        ));
+        assert!(matches!(
+            catalog.resolve_source(b"not CAD or JSON", None).unwrap(),
+            ResolvedSource::Unrecognized
+        ));
     }
 }

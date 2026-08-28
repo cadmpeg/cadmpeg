@@ -37,7 +37,7 @@ pub use catalog::{
 pub use encoders::{build_encoder, write_targets};
 pub use format::Format;
 pub use identify::{
-    identify, identify_with, Identification, DETECTION_PREFIX_LEN, INSPECTION_FLOOR,
+    identify, identify_with, Identification, Inspection, DETECTION_PREFIX_LEN, INSPECTION_FLOOR,
 };
 pub use support::{
     dialect_provenance, dialect_table, dialects, format_rows, support, DialectEntry,

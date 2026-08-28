@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! "What is this file?", answered at inspection depth.
 
-use std::collections::BTreeMap;
 use std::io::SeekFrom;
 
 use cadmpeg_container::compound::read_detection_prefix;
+use cadmpeg_core::container::ContainerSummary;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::{primary_layer, DialectId};
+use cadmpeg_core::dialect::primary_layer;
 use cadmpeg_core::ReadSeek;
 use cadmpeg_ir::codec::Confidence;
 
+use crate::catalog::is_cadir_prefix;
 use crate::support::{support, Disposition};
 use crate::InputCatalog;
 
@@ -28,6 +29,17 @@ pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
 /// budget proving what the prefix already said: this file is ambiguous. A
 /// candidate below the floor is reported with no dialect.
 pub const INSPECTION_FLOOR: Confidence = Confidence::Medium;
+
+/// Result of opening an identification candidate at inspection depth.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Inspection {
+    /// The codec classified the container and returned its complete summary.
+    Classified(ContainerSummary),
+    /// The codec recognized the prefix but inspection failed.
+    Failed(String),
+    /// Inspection was not applicable or the confidence stayed below its floor.
+    Skipped,
+}
 
 /// What cadmpeg makes of one file, before any semantic decode.
 ///
@@ -49,28 +61,14 @@ pub struct Identification {
     pub format: &'static str,
     /// How strongly the byte prefix named this format.
     ///
-    /// Detection confidence, not classification confidence. A `High` here with
-    /// a `None` dialect means the format is certain and the dialect is not.
+    /// Detection confidence, not classification confidence. A `High` here can
+    /// still accompany a failed or skipped inspection.
     pub confidence: Confidence,
-    /// The registry dialect id of the primary format layer.
-    ///
-    /// `None` when the candidate stayed below [`INSPECTION_FLOOR`], when the
-    /// inspection exhausted its budget or failed, or when the discriminants
-    /// matched no declared dialect.
-    pub dialect: Option<DialectId>,
-    /// Version fields the source declared, verbatim, under keys pinned per
-    /// codec in the registry.
-    ///
-    /// Evidence, never a control input: the dialect is what the bytes obey,
-    /// not what they declare. Copied from the primary layer together with
-    /// [`Self::dialect`], so it is empty when no inspection ran — below the
-    /// floor, out of budget, or failed. It is independent of whether a
-    /// dialect settled: a layer whose discriminants matched no registry row
-    /// keeps its declarations under `dialect: None`, though the residual
-    /// `<format>:unknown` rows make that combination rare in practice.
-    pub declared: BTreeMap<String, String>,
+    /// Typed inspection result, including the complete successful summary or
+    /// the failure that prevented classification.
+    pub inspection: Inspection,
     /// What the capability registry declares cadmpeg does with
-    /// [`Self::dialect`].
+    /// the primary dialect in [`Self::inspection`].
     ///
     /// `None` when no dialect was settled, and also when a settled id carries
     /// no capability row — a registry break the checkers forbid.
@@ -88,15 +86,16 @@ pub struct Identification {
 /// resource limits an inspection gets and with no *semantic* decode: no
 /// geometry is read and no [`cadmpeg_ir::CadIr`] is built.
 ///
-/// Strongest candidate first. Empty when no codec recognized the prefix; more
+/// Strongest candidate first. CADIR JSON is one skipped-inspection candidate.
+/// Empty when no codec recognized the prefix and it does not begin as CADIR; more
 /// than one entry when the prefix is genuinely ambiguous, which a ZIP carrying
 /// no format marker is by design. An entry whose inspection ran out of budget
-/// or failed keeps its format and confidence and reports no dialect: the
-/// prefix evidence survives a failed reconstruction.
+/// or failed keeps its format, confidence, and typed failure: the prefix
+/// evidence and the cause both survive a failed reconstruction.
 ///
 /// The `Err` is I/O on `source` itself — reading the prefix, or seeking back
 /// to the start before each inspection. A codec's own failure is not an error
-/// here; it is a candidate with no dialect.
+/// here; it is recorded in [`Inspection::Failed`].
 pub fn identify(
     source: &mut dyn ReadSeek,
     options: &InspectOptions,
@@ -117,16 +116,18 @@ pub fn identify_with(
     let prefix = read_prefix(source, options)?;
     let candidates = catalog.candidates(&prefix);
 
+    if candidates.is_empty() && is_cadir_prefix(&prefix) {
+        return Ok(vec![Identification {
+            format: "cadir",
+            confidence: Confidence::High,
+            inspection: Inspection::Skipped,
+            disposition: None,
+        }]);
+    }
+
     let mut identifications = Vec::with_capacity(candidates.len());
     for (descriptor, confidence) in candidates {
-        let mut identification = Identification {
-            format: descriptor.format_id(),
-            confidence,
-            dialect: None,
-            declared: BTreeMap::new(),
-            disposition: None,
-        };
-        if confidence >= INSPECTION_FLOOR {
+        let inspection = if confidence >= INSPECTION_FLOOR {
             // Every candidate carries a codec: detection asked one for the
             // confidence that put the descriptor in this list.
             let codec = descriptor
@@ -134,14 +135,25 @@ pub fn identify_with(
                 .as_deref()
                 .expect("a detected descriptor has a codec");
             source.seek(SeekFrom::Start(0))?;
-            if let Ok(summary) = codec.inspect(source, options) {
-                if let Some(entry) = primary_layer(&summary.dialects, &summary.format) {
-                    identification.dialect.clone_from(&entry.dialect);
-                    identification.declared.clone_from(&entry.declared);
-                }
+            match codec.inspect(source, options) {
+                Ok(summary) => Inspection::Classified(summary),
+                Err(error) => Inspection::Failed(error.to_string()),
             }
-        }
-        identification.disposition = identification.dialect.as_ref().and_then(support);
+        } else {
+            Inspection::Skipped
+        };
+        let disposition = match &inspection {
+            Inspection::Classified(summary) => primary_layer(&summary.dialects, &summary.format)
+                .and_then(|entry| entry.dialect.as_ref())
+                .and_then(support),
+            Inspection::Failed(_) | Inspection::Skipped => None,
+        };
+        let identification = Identification {
+            format: descriptor.format_id(),
+            confidence,
+            inspection,
+            disposition,
+        };
         identifications.push(identification);
     }
     Ok(identifications)
@@ -164,6 +176,7 @@ mod tests {
     use std::io::Cursor;
 
     use cadmpeg_core::decode::ResourceLimits;
+    use cadmpeg_core::dialect::DialectId;
 
     use super::*;
 
@@ -176,6 +189,13 @@ mod tests {
     fn run(bytes: &[u8], options: &InspectOptions) -> Vec<Identification> {
         let mut reader = Cursor::new(bytes.to_vec());
         identify(&mut reader, options).expect("a Cursor neither fails to read nor to seek")
+    }
+
+    fn summary(identification: &Identification) -> Option<&ContainerSummary> {
+        match &identification.inspection {
+            Inspection::Classified(summary) => Some(summary),
+            Inspection::Failed(_) | Inspection::Skipped => None,
+        }
     }
 
     #[cfg(feature = "nx")]
@@ -402,8 +422,12 @@ mod tests {
                     case.format,
                     winner.confidence
                 );
+                let summary = summary(winner)
+                    .unwrap_or_else(|| panic!("{}: inspection did not classify", case.format));
                 assert_eq!(
-                    winner.dialect.as_ref().map(DialectId::as_str),
+                    primary_layer(&summary.dialects, &summary.format)
+                        .and_then(|entry| entry.dialect.as_ref())
+                        .map(DialectId::as_str),
                     Some(case.dialect),
                     "{}: dialect",
                     case.format
@@ -434,9 +458,8 @@ mod tests {
         assert!(found.len() > 1, "{found:?}");
         for identification in &found {
             assert_eq!(identification.confidence, Confidence::Low);
-            assert_eq!(identification.dialect, None);
+            assert_eq!(identification.inspection, Inspection::Skipped);
             assert_eq!(identification.disposition, None);
-            assert!(identification.declared.is_empty());
         }
         let formats = found
             .iter()
@@ -456,7 +479,7 @@ mod tests {
     /// dialect here would be reporting one nothing read.
     #[cfg(feature = "rhino")]
     #[test]
-    fn an_exhausted_budget_keeps_the_format_and_drops_the_dialect() {
+    fn an_exhausted_budget_keeps_the_format_and_reports_the_failure() {
         let bytes = include_bytes!("../../cadmpeg-codec-rhino/tests/golden/fixtures/arc.3dm");
         let starved = InspectOptions {
             limits: ResourceLimits {
@@ -472,12 +495,32 @@ mod tests {
         let winner = found.first().expect("the prefix still names rhino");
         assert_eq!(winner.format, "rhino");
         assert_eq!(winner.confidence, Confidence::High);
-        assert_eq!(winner.dialect, None);
+        let Inspection::Failed(message) = &winner.inspection else {
+            panic!("expected a typed inspection failure: {winner:?}");
+        };
+        assert!(message.contains("resource limit"), "{message}");
         assert_eq!(winner.disposition, None);
 
         // The same bytes under the default budget do settle the dialect, so
         // the difference above is the budget and not the fixture.
-        assert!(run(bytes, &inspection())[0].dialect.is_some());
+        assert!(matches!(
+            run(bytes, &inspection())[0].inspection,
+            Inspection::Classified(_)
+        ));
+    }
+
+    #[test]
+    fn cadir_json_is_identified_without_container_inspection() {
+        for bytes in [
+            b" \n{\"ir_version\": 1}".as_slice(),
+            b"\xef\xbb\xbf\t{\"ir_version\": 1}".as_slice(),
+        ] {
+            let found = run(bytes, &inspection());
+            assert_eq!(found.len(), 1);
+            assert_eq!(found[0].format, "cadir");
+            assert_eq!(found[0].confidence, Confidence::High);
+            assert_eq!(found[0].inspection, Inspection::Skipped);
+        }
     }
 
     /// Bytes no codec recognizes produce no candidates at all.

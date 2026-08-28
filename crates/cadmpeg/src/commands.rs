@@ -19,8 +19,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 
 use cadmpeg_registry::{
-    build_encoder, dialect_table, ForcedInput, Format, InputCatalog, ResolvedSource,
-    DETECTION_PREFIX_LEN,
+    build_encoder, dialect_table, identify_with, ForcedInput, Format, InputCatalog, Inspection,
+    ResolveSourceError,
 };
 
 use crate::application::transcoder::{classify_decode_failure, emit_export_plan, validate_ir};
@@ -28,7 +28,7 @@ use crate::application::{
     export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, NativeValidatorCatalog,
     SourceRequest, Transcoder,
 };
-use crate::loader::{self, read_detection_input, LoadNotice};
+use crate::loader::{self, LoadNotice};
 use crate::DecodeArgs;
 
 /// CLI command-report envelope version.
@@ -95,23 +95,44 @@ pub fn inspect(
     if matches!(forced, Some(ForcedInput::Cadir)) {
         bail!("inspect requires a container input, not cadir");
     }
-    let prefix = read_detection_input(path, DETECTION_PREFIX_LEN, limits.max_input_bytes)?;
-    let (codec, confidence) = match catalogs.inputs.resolve_source(&prefix, forced) {
-        Ok(ResolvedSource::Native {
-            codec, confidence, ..
-        }) => (codec, confidence),
-        Ok(ResolvedSource::Cadir) => {
-            return Err(anyhow!(
-                "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection",
-                path.display()
-            ));
-        }
-        Err(error) => return Err(loader::detection_failure(&error)),
-    };
     let mut file = File::open(path)?;
-    let summary = codec
-        .inspect(&mut file, &InspectOptions { limits })
-        .with_context(|| format!("inspecting {}", path.display()))?;
+    let (summary, confidence) = if let Some(ForcedInput::Codec(id)) = forced {
+        let codec = catalogs
+            .inputs
+            .by_id(id)
+            .ok_or_else(|| loader::detection_failure(&ResolveSourceError::UnsupportedFormat(id)))?;
+        let summary = codec
+            .inspect(&mut file, &InspectOptions { limits })
+            .with_context(|| format!("inspecting {}", path.display()))?;
+        (summary, None)
+    } else {
+        let identified = identify_with(&catalogs.inputs, &mut file, &InspectOptions { limits })?;
+        let Some(winner) = identified.first() else {
+            return Err(inspect_unrecognized(path));
+        };
+        let tied = identified
+            .iter()
+            .take_while(|candidate| candidate.confidence == winner.confidence)
+            .collect::<Vec<_>>();
+        if tied.len() > 1 {
+            return Err(loader::detection_failure(&ResolveSourceError::Ambiguous {
+                confidence: winner.confidence,
+                candidates: tied
+                    .iter()
+                    .map(|candidate| candidate.format)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            }));
+        }
+        match &winner.inspection {
+            Inspection::Classified(summary) => (summary.clone(), Some(winner.confidence)),
+            Inspection::Failed(message) => {
+                return Err(anyhow!(message.clone()))
+                    .with_context(|| format!("inspecting {}", path.display()));
+            }
+            Inspection::Skipped => return Err(inspect_unrecognized(path)),
+        }
+    };
     write_json_report(
         path,
         report_path,
@@ -167,6 +188,13 @@ pub fn inspect(
         }
     }
     Ok(())
+}
+
+fn inspect_unrecognized(path: &Path) -> anyhow::Error {
+    anyhow!(
+        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection",
+        path.display()
+    )
 }
 
 /// Dump a native CAD file and write CADIR JSON.

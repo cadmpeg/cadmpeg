@@ -1,4 +1,4 @@
-# generated at 3d6a0c879
+# generated at c4ff88808
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -66,6 +66,25 @@ impl core::marker::Unpin for cadmpeg_registry::Format
 impl core::marker::UnsafeUnpin for cadmpeg_registry::Format
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::Format
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::Format
+pub enum cadmpeg_registry::Inspection
+pub cadmpeg_registry::Inspection::Classified(cadmpeg_core::container::ContainerSummary)
+pub cadmpeg_registry::Inspection::Failed(alloc::string::String)
+pub cadmpeg_registry::Inspection::Skipped
+impl core::clone::Clone for cadmpeg_registry::Inspection
+pub fn cadmpeg_registry::Inspection::clone(&self) -> cadmpeg_registry::Inspection
+impl core::cmp::Eq for cadmpeg_registry::Inspection
+impl core::cmp::PartialEq for cadmpeg_registry::Inspection
+pub fn cadmpeg_registry::Inspection::eq(&self, &cadmpeg_registry::Inspection) -> bool
+impl core::fmt::Debug for cadmpeg_registry::Inspection
+pub fn cadmpeg_registry::Inspection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_registry::Inspection
+impl core::marker::Freeze for cadmpeg_registry::Inspection
+impl core::marker::Send for cadmpeg_registry::Inspection
+impl core::marker::Sync for cadmpeg_registry::Inspection
+impl core::marker::Unpin for cadmpeg_registry::Inspection
+impl core::marker::UnsafeUnpin for cadmpeg_registry::Inspection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::Inspection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::Inspection
 pub enum cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::ReadDisposition::Detected
 pub cadmpeg_registry::ReadDisposition::Level(u8)
@@ -117,6 +136,7 @@ pub cadmpeg_registry::ResolvedSource::Native
 pub cadmpeg_registry::ResolvedSource::Native::codec: &'a dyn cadmpeg_ir::codec::Codec
 pub cadmpeg_registry::ResolvedSource::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
 pub cadmpeg_registry::ResolvedSource::Native::format_id: &'static str
+pub cadmpeg_registry::ResolvedSource::Unrecognized
 impl<'a> core::marker::Freeze for cadmpeg_registry::ResolvedSource<'a>
 impl<'a> !core::marker::Send for cadmpeg_registry::ResolvedSource<'a>
 impl<'a> !core::marker::Sync for cadmpeg_registry::ResolvedSource<'a>
@@ -267,10 +287,9 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::FormatRow
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::FormatRow
 pub struct cadmpeg_registry::Identification
 pub cadmpeg_registry::Identification::confidence: cadmpeg_ir::codec::Confidence
-pub cadmpeg_registry::Identification::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_registry::Identification::dialect: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_registry::Identification::disposition: core::option::Option<cadmpeg_registry::Disposition>
 pub cadmpeg_registry::Identification::format: &'static str
+pub cadmpeg_registry::Identification::inspection: cadmpeg_registry::Inspection
 impl core::clone::Clone for cadmpeg_registry::Identification
 pub fn cadmpeg_registry::Identification::clone(&self) -> cadmpeg_registry::Identification
 impl core::cmp::Eq for cadmpeg_registry::Identification
