@@ -1245,19 +1245,6 @@ pub(crate) fn decode(
     if header.archive_version == ArchiveVersion::V1 {
         return crate::legacy::decode_v1(data);
     }
-    // The single predicate: this is the same function that makes the reported
-    // admission `Refused`, so a refused decode and a report claiming admission
-    // are not expressible.
-    if header.archive_version.refuses_decode() {
-        return Err(CodecError::UnsupportedDialect {
-            format: crate::dialect::FORMAT.into(),
-            dialect_match: Box::new(header.archive_version.classify(None)),
-            message: format!(
-                "Rhino archive version {} decode is not implemented",
-                header.archive_version.value()
-            ),
-        });
-    }
     let scan = scan(data)?;
     if container_only && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));

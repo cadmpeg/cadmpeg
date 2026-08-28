@@ -36,11 +36,8 @@
 //! [`dialect_loss`] charges
 //! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] for it.
 //!
-//! Word 5 is the one structural refusal: the pre-chunk grammar it names has no
-//! reader here, so no scan applies to it at all.
-//! [`ArchiveVersion::refuses_decode`] is the single predicate: it decides the
-//! [`Admission`] this module reports *and* the refusal
-//! `crate::container::decode` returns, so the two can never disagree.
+//! Archive word 5 uses the same typecode, four-byte chunk-value, and CRC
+//! framing as words 2 through 4. It therefore selects the same chunked scan.
 
 use crate::chunks::ArchiveVersion;
 use crate::RhinoArchiveVersion;
@@ -186,34 +183,14 @@ impl ArchiveVersion {
         }
     }
 
-    /// Whether this codec declines to decode the row at all.
-    ///
-    /// The single predicate. `crate::container::decode` refuses exactly the
-    /// rows for which this is true, and [`Self::admission`] reports
-    /// [`Admission::Refused`] for exactly those rows, so the refusal and the
-    /// reported admission cannot drift apart.
-    ///
-    /// Archive word 5 alone has no grammar in this codec: it names the
-    /// pre-chunk archive form, which no reader here implements. Every other row
-    /// has one: word 1 the flat legacy records, words 2 through 90 the chunked
-    /// scan, and the totality row that same chunked scan under
-    /// [`Admission::AdmittedUnverified`].
-    pub(crate) const fn refuses_decode(self) -> bool {
-        matches!(self, Self::LegacyV5)
-    }
-
     /// How a run admitted a document on this row.
     ///
     /// The one predicate behind both the report's [`Admission`] and
     /// [`dialect_loss`]. A declared row that this codec reads carries a
     /// verified identity; the totality row carries no declared identity at all,
-    /// so it names the row whose strategy was substituted for it; and word 5 is
-    /// refused, which [`Self::refuses_decode`] decides for the decode branch
-    /// too.
+    /// so it names the row whose strategy was substituted for it.
     fn admission(self) -> Admission {
-        if self.refuses_decode() {
-            Admission::Refused
-        } else if matches!(self, Self::Other(_)) {
+        if matches!(self, Self::Other(_)) {
             Admission::AdmittedUnverified {
                 nearest: if self.uses_eight_byte_values() {
                     Self::V9.id()
@@ -243,7 +220,7 @@ impl ArchiveVersion {
 
     /// Whether the archive word selects the chunked grammar.
     pub(crate) const fn is_chunked(self) -> bool {
-        !self.refuses_decode() && !matches!(self, Self::V1)
+        !matches!(self, Self::V1)
     }
 }
 
