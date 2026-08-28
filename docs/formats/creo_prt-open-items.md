@@ -79,6 +79,11 @@ DICT reconstruction `0xbf2c + prefix`. The specification limits this range to
 
 **Need.** We must know the other grammars to keep the counted slot boundary aligned.
 
+**Conflict.** `e0 03 string_xar\0` is the named-record header after the array,
+not a counted terminal null. In a model heap, `e5` contributes two logical
+placeholder slots and `e8 26 d6 95` contributes no slot. A unit-system heap
+uses its own ten-scalar lane.
+
 ### SE-08. Variable-length `e5` slots
 
 **Question.** What bounds and semantics apply to a variable-length `e5` slot in `double_xar`?
