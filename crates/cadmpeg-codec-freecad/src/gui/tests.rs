@@ -114,12 +114,66 @@ fn requires_one_camera_in_schema_one_gui_document() {
 }
 
 #[test]
-fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
+fn a_foreign_gui_schema_uses_the_schema_one_vocabulary() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 1 0 }"/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("foreign GUI schema with schema-1 vocabulary");
+
+    assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.code == "source.gui-schema-unverified")
+        .expect("GUI schema warning");
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert!(loss.message.contains("declares schema 2"));
+    assert!(loss.message.contains("schema-1 vocabulary"));
+}
+
+#[test]
+fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="first"/><Camera settings="second"/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("broken foreign GUI schema degrades");
+
+    assert!(result.ir().model.presentation_documents.is_empty());
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.code == "source.gui-schema-unverified")
+        .expect("GUI schema warning");
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert!(loss
+        .message
+        .contains("declared schema 2 is the probable cause"));
+}
+
+#[test]
+fn rejects_invalid_schema_one_camera_values() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui_documents = [
         r#"<Document schemaVersion="1"><ViewProviderData Count="0"/></Document>"#,
-        r#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="first"/><Camera settings="second"/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position NaN 1 2 orientation 0 0 1 0 }"/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation NaN 0 0 1 }"/></Document>"#,
@@ -135,7 +189,7 @@ fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid GUI schema or camera value");
+            .expect_err("invalid schema-one camera value");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
 }

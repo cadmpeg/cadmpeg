@@ -33,6 +33,8 @@ pub enum FreecadLossCode {
     AppearanceTopologyColorCountMismatch,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,
+    /// The GUI document used schema-1 vocabulary under another declaration.
+    SourceGuiSchemaUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
 }
@@ -47,6 +49,7 @@ impl FreecadLossCode {
         Self::SketchNativeConstraint,
         Self::AppearanceTopologyColorCountMismatch,
         Self::SourceDialectUnverified,
+        Self::SourceGuiSchemaUnverified,
         Self::SourceDialectDisplaced,
     ];
 
@@ -62,6 +65,7 @@ impl FreecadLossCode {
                 "appearance.topology-color-count-mismatch"
             }
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
         }
     }
@@ -76,6 +80,7 @@ impl FreecadLossCode {
             | Self::SketchNativeConstraint => Severity::Blocking,
             Self::AppearanceTopologyColorCountMismatch
             | Self::SourceDialectUnverified
+            | Self::SourceGuiSchemaUnverified
             | Self::SourceDialectDisplaced => Severity::Warning,
         }
     }
@@ -90,6 +95,7 @@ impl FreecadLossCode {
             }
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
         }
     }
@@ -129,6 +135,7 @@ mod tests {
                 "sketch.native-constraint",
                 "appearance.topology-color-count-mismatch",
                 "source.dialect-unverified",
+                "source.gui-schema-unverified",
                 "target.source-dialect-displaced",
             ]
         );
