@@ -409,7 +409,8 @@ pub struct TargetDescriptor {
     pub default: bool,
 }
 
-fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
+/// Panics when a static encoder target catalog violates its uniqueness rules.
+pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
     let defaults = targets.iter().filter(|target| target.default).count();
     assert!(
         defaults <= 1,
@@ -443,7 +444,6 @@ fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
 /// The catalog entry `id` names, by id or by alias.
 #[must_use]
 pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a TargetDescriptor> {
-    assert_valid_target_catalog(targets);
     targets
         .iter()
         .find(|target| target.id == id || target.aliases.contains(&id))
@@ -453,7 +453,6 @@ pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a 
 /// catalog.
 #[must_use]
 pub fn default_target(targets: &'static [TargetDescriptor]) -> Option<&'static TargetDescriptor> {
-    assert_valid_target_catalog(targets);
     targets.iter().find(|target| target.default)
 }
 

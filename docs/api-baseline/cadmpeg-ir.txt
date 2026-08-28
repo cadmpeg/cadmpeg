@@ -1,4 +1,4 @@
-# generated at 9d28e7674
+# generated at 855cbb586
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -699,6 +699,7 @@ impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+pub fn cadmpeg_ir::codec::assert_valid_target_catalog(&[cadmpeg_ir::codec::TargetDescriptor])
 pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::resolve_catalog_write(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::result::Result<(&'static cadmpeg_ir::codec::TargetDescriptor, core::option::Option<cadmpeg_core::dialect::DialectId>), cadmpeg_core::error::CodecError>

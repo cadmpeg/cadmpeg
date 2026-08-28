@@ -1265,3 +1265,10 @@ crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::dialect::FORMAT"
 reason = "the shared ACIS dialect owner supplies one format id to kernel classification and every host-layer comparison"
+
+[[change]]
+commit = "855cbb586aa1fe80c9c56d66af32ac0e992e3320"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::codec::assert_valid_target_catalog"
+reason = "the registry-wide compiled-catalog test validates each static encoder catalog once while lookup accessors remain allocation-free for arbitrary caller slices"
