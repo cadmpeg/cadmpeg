@@ -243,7 +243,14 @@ impl CodecBackend for StepCodec {
         let edition = identifiers
             .first()
             .and_then(|identifier| StepSchema::ap242_edition(identifier))
-            .unwrap_or("edition unspecified");
+            .map_or("edition unspecified", |schema| match schema {
+                StepSchema::Ap242Edition1 => "edition 1",
+                StepSchema::Ap242Edition2 => "edition 2",
+                StepSchema::Ap242Edition3 => "edition 3",
+                StepSchema::Ap203Edition1 | StepSchema::Ap203Edition2 | StepSchema::Ap214 => {
+                    unreachable!("AP242 edition recognition returns an AP242 schema")
+                }
+            });
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         let dialects = vec![StepDialect::classify(&exchange)];

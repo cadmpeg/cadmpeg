@@ -99,16 +99,16 @@ impl StepSchema {
         }
     }
 
-    pub(crate) fn ap242_edition(identifier: &str) -> Option<&'static str> {
+    pub(crate) fn ap242_edition(identifier: &str) -> Option<StepSchema> {
         const NAME: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
         let (name, oid) = schema_identifier_arcs(identifier)?;
         if !name.eq_ignore_ascii_case(NAME) {
             return None;
         }
         match oid.as_deref() {
-            Some([1, 0, 10303, 442, 1, 1, 4]) => Some("edition 1"),
-            Some([1, 0, 10303, 442, 3, 1, 4]) => Some("edition 2"),
-            Some([1, 0, 10303, 442, 4, 1, 4]) => Some("edition 3"),
+            Some([1, 0, 10303, 442, 1, 1, 4]) => Some(StepSchema::Ap242Edition1),
+            Some([1, 0, 10303, 442, 3, 1, 4]) => Some(StepSchema::Ap242Edition2),
+            Some([1, 0, 10303, 442, 4, 1, 4]) => Some(StepSchema::Ap242Edition3),
             _ => None,
         }
     }

@@ -286,12 +286,13 @@ impl StepDialect {
     /// Maps the edition recognizer's result without treating a future word as
     /// a verified edition-3 declaration. The reader still uses edition 3 as
     /// the nearest recovery strategy for [`Self::Unknown`].
-    fn from_ap242_edition(edition: Option<&str>) -> Self {
+    fn from_ap242_edition(edition: Option<StepSchema>) -> Self {
         match edition {
-            Some("edition 1") => Self::Ap242Edition1,
-            Some("edition 2") => Self::Ap242Edition2,
-            Some("edition 3") => Self::Ap242Edition3,
-            Some(_) | None => Self::Unknown,
+            Some(StepSchema::Ap242Edition1) => Self::Ap242Edition1,
+            Some(StepSchema::Ap242Edition2) => Self::Ap242Edition2,
+            Some(StepSchema::Ap242Edition3) => Self::Ap242Edition3,
+            Some(StepSchema::Ap203Edition1 | StepSchema::Ap203Edition2 | StepSchema::Ap214)
+            | None => Self::Unknown,
         }
     }
 
