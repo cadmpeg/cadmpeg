@@ -19,8 +19,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 
 use cadmpeg_registry::{
-    build_encoder, dialect_table, identify_with, ForcedInput, Format, InputCatalog, Inspection,
-    ResolveSourceError,
+    build_encoder, dialect_table, ForcedInput, Format, InputCatalog, ResolvedSource,
+    DETECTION_PREFIX_LEN,
 };
 
 use crate::application::transcoder::{classify_decode_failure, emit_export_plan, validate_ir};
@@ -95,45 +95,22 @@ pub fn inspect(
     if matches!(forced, Some(ForcedInput::Cadir)) {
         bail!("inspect requires a container input, not cadir");
     }
-    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let (summary, confidence) = if let Some(ForcedInput::Codec(id)) = forced {
-        let codec = catalogs
-            .inputs
-            .by_id(id)
-            .ok_or_else(|| loader::detection_failure(&ResolveSourceError::UnsupportedFormat(id)))?;
-        let summary = codec
-            .inspect(&mut file, &InspectOptions { limits })
-            .with_context(|| format!("inspecting {}", path.display()))?;
-        (summary, None)
-    } else {
-        let identified = identify_with(&catalogs.inputs, &mut file, &InspectOptions { limits })
-            .map_err(|error| inspect_io_error(path, limits.max_input_bytes, error))?;
-        let Some(winner) = identified.first() else {
-            return Err(inspect_unrecognized(path));
-        };
-        let tied = identified
-            .iter()
-            .take_while(|candidate| candidate.confidence == winner.confidence)
-            .collect::<Vec<_>>();
-        if tied.len() > 1 {
-            return Err(loader::detection_failure(&ResolveSourceError::Ambiguous {
-                confidence: winner.confidence,
-                candidates: tied
-                    .iter()
-                    .map(|candidate| candidate.format)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            }));
-        }
-        match &winner.inspection {
-            Inspection::Classified(summary) => (summary.clone(), Some(winner.confidence)),
-            Inspection::Failed(message) => {
-                return Err(anyhow!(message.clone()))
-                    .with_context(|| format!("inspecting {}", path.display()));
-            }
-            Inspection::Skipped => return Err(inspect_unrecognized(path)),
-        }
+    let prefix =
+        ArtifactStore::read_detection_input(path, DETECTION_PREFIX_LEN, limits.max_input_bytes)?;
+    let resolved = catalogs
+        .inputs
+        .resolve_source(&prefix, forced)
+        .map_err(|error| loader::detection_failure(&error))?;
+    let ResolvedSource::Native {
+        codec, confidence, ..
+    } = resolved
+    else {
+        return Err(inspect_unrecognized(path));
     };
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let summary = codec
+        .inspect(&mut file, &InspectOptions { limits })
+        .with_context(|| format!("inspecting {}", path.display()))?;
     write_json_report(
         path,
         report_path,
@@ -198,6 +175,7 @@ fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     )
 }
 
+#[cfg(test)]
 fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyhow::Error {
     if error.kind() == io::ErrorKind::FileTooLarge {
         anyhow!(

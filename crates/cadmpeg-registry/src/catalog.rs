@@ -235,8 +235,8 @@ impl InputCatalog {
 
     /// Resolves a forced format or content detection into a source selection.
     ///
-    /// Shared by inspect and load. CADIR is selected only when the prefix begins
-    /// as a JSON object; an unmatched non-JSON prefix remains unrecognized.
+    /// Resolves the shared inspect/load source selection. CADIR is selected only
+    /// when the prefix begins as a JSON object; unmatched non-JSON stays unrecognized.
     pub fn resolve_source<'a>(
         &'a self,
         prefix: &[u8],
