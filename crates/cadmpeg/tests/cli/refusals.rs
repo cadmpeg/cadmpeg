@@ -360,7 +360,10 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .assert()
         .code(1)
         .stderr(
-            predicate::str::contains("refused unrepresentable content")
+            predicate::str::contains("export planning reported 1 loss(es)")
+                .and(predicate::str::contains(
+                    "uninterpreted passthrough record(s)",
+                ))
                 .and(predicate::str::contains("decode reported").not()),
         );
 

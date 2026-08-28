@@ -16,7 +16,7 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::units::Units;
 
 use crate::codec::StepCodec;
-use crate::options::{StepSchema, StepWriteOptions};
+use crate::options::{StepSchema, StepUnsupportedPolicy, StepWriteOptions};
 
 /// A decoded STEP document whose `FILE_SCHEMA` declares `identifier`.
 ///
@@ -64,6 +64,39 @@ fn written_text(plan: ExportPlan<'_>) -> String {
 
 fn target_of(plan: &ExportPlan<'_>) -> Option<String> {
     plan.report().target.as_ref().map(ToString::to_string)
+}
+
+/// Encoder planning always returns its typed loss rows, even when a direct
+/// `write_step` caller configured the legacy strict-write option.
+#[test]
+fn planning_reports_unrepresentable_content_under_strict_write_options() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.native.namespace_mut("f3d").arenas.insert(
+        "asm_histories".into(),
+        vec![cadmpeg_ir::NativeRecord::new(
+            "asm-history-0",
+            serde_json::Map::default(),
+        )],
+    );
+    ir.finalize();
+    let encoder = StepCodec {
+        options: StepWriteOptions {
+            unsupported: StepUnsupportedPolicy::Reject,
+            ..StepWriteOptions::default()
+        },
+    };
+
+    let plan = encoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("planning returns the representable subset and its losses");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("source-native record(s)")),
+        "{:?}",
+        plan.report().losses
+    );
 }
 
 fn refusal(error: &CodecError) -> (&str, Option<&str>, &str) {

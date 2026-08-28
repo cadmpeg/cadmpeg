@@ -26,6 +26,20 @@ measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 #       addition
 
 [[change]]
+commit = "33f4951fdcae3f6b9d3342a529e62e2673732c7a"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::LossPolicy"
+reason = "export-loss refusal is one application decision over a completed plan; encoder construction no longer carries a second loss-rejection mechanism"
+
+[[change]]
+commit = "33f4951fdcae3f6b9d3342a529e62e2673732c7a"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::build_encoder"
+reason = "takes only Format because every encoder plans and reports losses before the application decides whether those rows refuse export"
+
+[[change]]
 commit = "5c122163b4c7308a36378c994bafa7139542b005"
 crate = "cadmpeg-core"
 kind = "deletion"

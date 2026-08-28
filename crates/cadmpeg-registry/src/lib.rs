@@ -34,7 +34,7 @@ pub use catalog::{
     DetectionOutcome, ForcedInput, InputCatalog, InputDescriptor, ResolveSourceError,
     ResolvedSource,
 };
-pub use encoders::{build_encoder, write_targets, LossPolicy};
+pub use encoders::{build_encoder, write_targets};
 pub use format::Format;
 pub use identify::{
     identify, identify_with, Identification, DETECTION_PREFIX_LEN, INSPECTION_FLOOR,

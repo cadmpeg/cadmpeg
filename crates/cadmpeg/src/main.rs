@@ -32,8 +32,7 @@ use crate::commands::AppCatalogs;
 pub(crate) enum LossScope {
     /// Refuse when the decode reported any loss.
     Decode,
-    /// Refuse when export planning reported any loss, and make the writer
-    /// reject unrepresentable content before it emits a byte.
+    /// Refuse when export planning reported any loss.
     Export,
     /// Refuse on either.
     Any,

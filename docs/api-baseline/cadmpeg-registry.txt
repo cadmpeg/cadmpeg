@@ -1,4 +1,4 @@
-# generated at dde088151
+# generated at 33f4951fd
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -66,27 +66,6 @@ impl core::marker::Unpin for cadmpeg_registry::Format
 impl core::marker::UnsafeUnpin for cadmpeg_registry::Format
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::Format
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::Format
-pub enum cadmpeg_registry::LossPolicy
-pub cadmpeg_registry::LossPolicy::Reject
-pub cadmpeg_registry::LossPolicy::Report
-impl core::clone::Clone for cadmpeg_registry::LossPolicy
-pub fn cadmpeg_registry::LossPolicy::clone(&self) -> cadmpeg_registry::LossPolicy
-impl core::cmp::Eq for cadmpeg_registry::LossPolicy
-impl core::cmp::PartialEq for cadmpeg_registry::LossPolicy
-pub fn cadmpeg_registry::LossPolicy::eq(&self, &cadmpeg_registry::LossPolicy) -> bool
-impl core::default::Default for cadmpeg_registry::LossPolicy
-pub fn cadmpeg_registry::LossPolicy::default() -> cadmpeg_registry::LossPolicy
-impl core::fmt::Debug for cadmpeg_registry::LossPolicy
-pub fn cadmpeg_registry::LossPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_registry::LossPolicy
-impl core::marker::StructuralPartialEq for cadmpeg_registry::LossPolicy
-impl core::marker::Freeze for cadmpeg_registry::LossPolicy
-impl core::marker::Send for cadmpeg_registry::LossPolicy
-impl core::marker::Sync for cadmpeg_registry::LossPolicy
-impl core::marker::Unpin for cadmpeg_registry::LossPolicy
-impl core::marker::UnsafeUnpin for cadmpeg_registry::LossPolicy
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::LossPolicy
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::LossPolicy
 pub enum cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::ReadDisposition::Detected
 pub cadmpeg_registry::ReadDisposition::Level(u8)
@@ -364,7 +343,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::UnknownFormat
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::UnknownFormat
 pub const cadmpeg_registry::DETECTION_PREFIX_LEN: usize
 pub const cadmpeg_registry::INSPECTION_FLOOR: cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format, cadmpeg_registry::LossPolicy) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::Encoder>
+pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::Encoder>
 pub fn cadmpeg_registry::dialect_provenance(&[cadmpeg_core::dialect::DialectMatch], &str) -> core::option::Option<cadmpeg_registry::DialectProvenance>
 pub fn cadmpeg_registry::dialect_table(core::option::Option<&str>) -> core::result::Result<alloc::vec::Vec<cadmpeg_registry::FormatDialects>, cadmpeg_registry::UnknownFormat>
 pub fn cadmpeg_registry::dialects(&str) -> alloc::vec::Vec<&'static cadmpeg_registry::DialectEntry>

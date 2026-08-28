@@ -19,7 +19,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 
 use cadmpeg_registry::{
-    build_encoder, dialect_table, ForcedInput, Format, InputCatalog, LossPolicy, ResolvedSource,
+    build_encoder, dialect_table, ForcedInput, Format, InputCatalog, ResolvedSource,
     DETECTION_PREFIX_LEN,
 };
 
@@ -71,17 +71,6 @@ pub struct ConversionPlan {
     pub report: Option<PathBuf>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
-}
-
-impl ConversionPlan {
-    /// The construction-time loss policy `--reject-lossy`'s scope implies.
-    const fn loss_policy(&self) -> LossPolicy {
-        if self.policy.reject_export_losses {
-            LossPolicy::Reject
-        } else {
-            LossPolicy::Report
-        }
-    }
 }
 
 /// One input to a structural diff and its optional format override.
@@ -220,7 +209,7 @@ pub fn dump(
     };
     print_load_notices(&outcome.notices);
     let loaded = &outcome.document;
-    let encoder = build_encoder(Format::Cadir, LossPolicy::Report);
+    let encoder = build_encoder(Format::Cadir);
     let plan = encoder.plan(
         cadmpeg_ir::codec::EncodeInput::new(&loaded.ir, loaded.fidelity()),
         TargetRequest::Inherit,
@@ -342,7 +331,7 @@ fn execute_conversion(
 ) -> Result<()> {
     let selection = OutputSelection::resolve(to, out)?;
     let format = selection.format;
-    let target = export_target(format, selection.dialect.as_deref(), plan.loss_policy());
+    let target = export_target(format, selection.dialect.as_deref());
 
     let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
     let source = SourceRequest {

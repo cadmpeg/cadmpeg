@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetR
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
-use cadmpeg_registry::{ForcedInput, Format, InputCatalog, LossPolicy};
+use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::{
     ArtifactStore, ConversionRefusal, LoadedDocument, NativeValidatorCatalog, SidecarPersistOutcome,
@@ -230,7 +230,6 @@ impl PreparedConversion {
             Err(error) => {
                 return Err(plan_refusal(
                     error,
-                    self.reject_export_losses,
                     self.document.decode_report().cloned(),
                     self.validation.clone(),
                 ))
@@ -239,8 +238,14 @@ impl PreparedConversion {
         if self.reject_export_losses && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
                 message: format!(
-                    "export planning reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
+                    "export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)",
                     plan.report().losses.len(),
+                    plan.report()
+                        .losses
+                        .iter()
+                        .map(|loss| loss.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; "),
                     self.format.name()
                 ),
                 decode_report: self.document.decode_report().cloned(),
@@ -275,25 +280,12 @@ impl PlannedConversion<'_> {
     }
 }
 
-/// Restates a plan-time codec error as a typed refusal where it is one.
+/// Restates an unsupported target as a typed refusal.
 ///
-/// Two of them are verdicts about the request rather than operational
-/// failures, so they exit 1 and reach `--report` with a code:
-///
-/// * a dialect the encoder cannot write, which the encoder already describes
-///   with its whole catalog; and
-/// * the writer's own refusal to emit unrepresentable content, which only
-///   exists because `--reject-lossy=export` constructed the writer with
-///   [`LossPolicy::Reject`]. The gate is the same predicate as the
-///   application's own export-loss refusal below, but it fires inside the
-///   writer and so never yields a plan to count losses from; `reject_exports`
-///   is what makes the attribution safe, because without the flag the CLI
-///   never asks a writer to reject.
-///
-/// Everything else stays operational.
+/// Every other plan failure stays operational. Export-loss refusal is made
+/// only from a completed plan's typed loss rows.
 fn plan_refusal(
     error: cadmpeg_core::CodecError,
-    reject_exports: bool,
     decode_report: Option<DecodeReport>,
     validation: Option<ValidationReport>,
 ) -> anyhow::Error {
@@ -301,17 +293,6 @@ fn plan_refusal(
         cadmpeg_core::CodecError::UnsupportedTarget { .. } => {
             ConversionRefusal::UnsupportedTarget {
                 message: error.to_string(),
-                decode_report,
-                validation,
-            }
-            .into()
-        }
-        cadmpeg_core::CodecError::NotImplemented(ref message) if reject_exports => {
-            ConversionRefusal::ExportLossRejected {
-                message: format!(
-                    "the writer refused unrepresentable content: {message} (omit --reject-lossy to \
-                     write the representable subset and report the loss)"
-                ),
                 decode_report,
                 validation,
             }
@@ -449,10 +430,10 @@ pub(crate) fn emit_export_plan(
 /// request, silently rewriting the schema of a file the caller only asked to
 /// check for losses.
 #[must_use]
-pub fn export_target(format: Format, dialect: Option<&str>, losses: LossPolicy) -> ExportTarget {
+pub fn export_target(format: Format, dialect: Option<&str>) -> ExportTarget {
     ExportTarget {
         format,
-        encoder: cadmpeg_registry::build_encoder(format, losses),
+        encoder: cadmpeg_registry::build_encoder(format),
         selection: match dialect {
             Some(dialect) => TargetSelection::Explicit(dialect.to_owned()),
             None => TargetSelection::Unstated,
@@ -464,6 +445,136 @@ pub fn export_target(format: Format, dialect: Option<&str>, losses: LossPolicy) 
 mod tests {
     use super::*;
     use cadmpeg_ir::codec::CadirEncoder;
+
+    fn prepared(
+        ir: CadIr,
+        format: Format,
+        encoder: Box<dyn Encoder>,
+        reject_export_losses: bool,
+    ) -> PreparedConversion {
+        PreparedConversion {
+            document: LoadedDocument::neutral(ir),
+            notices: Vec::new(),
+            validation: None,
+            format,
+            encoder,
+            selection: TargetSelection::Unstated,
+            destination: None,
+            reject_export_losses,
+        }
+    }
+
+    #[cfg(feature = "step")]
+    fn step_ir_with_unrepresentable_native_content() -> CadIr {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.native.namespace_mut("f3d").arenas.insert(
+            "asm_histories".into(),
+            vec![cadmpeg_ir::NativeRecord::new(
+                "asm-history-0",
+                serde_json::Map::default(),
+            )],
+        );
+        ir.finalize();
+        ir
+    }
+
+    /// STEP planning returns concrete loss rows, and the shared application
+    /// gate names them when export-loss rejection is active.
+    #[cfg(feature = "step")]
+    #[test]
+    fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
+        let conversion = prepared(
+            step_ir_with_unrepresentable_native_content(),
+            Format::Step,
+            Box::new(cadmpeg_codec_step::StepCodec::default()),
+            true,
+        );
+        let Err(error) = conversion.plan() else {
+            panic!("the plan loss must refuse");
+        };
+        let refusal = error
+            .downcast_ref::<ConversionRefusal>()
+            .expect("the shared gate returns a typed refusal");
+        assert!(
+            matches!(refusal, ConversionRefusal::ExportLossRejected { .. }),
+            "{refusal:?}"
+        );
+        assert!(
+            refusal.message().contains("source-native record(s)"),
+            "{}",
+            refusal.message()
+        );
+    }
+
+    /// Without export-loss rejection the same STEP plan succeeds and retains
+    /// the loss rows for the caller and report.
+    #[cfg(feature = "step")]
+    #[test]
+    fn step_export_losses_remain_on_the_plan_without_rejection() {
+        let conversion = prepared(
+            step_ir_with_unrepresentable_native_content(),
+            Format::Step,
+            Box::new(cadmpeg_codec_step::StepCodec::default()),
+            false,
+        );
+        let planned = conversion.plan().expect("loss reporting is not refusal");
+        assert!(
+            planned
+                .plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("source-native record(s)")),
+            "{:?}",
+            planned.plan.report().losses
+        );
+    }
+
+    struct NotImplementedEncoder;
+
+    impl Encoder for NotImplementedEncoder {
+        fn id(&self) -> &'static str {
+            "not-implemented-test"
+        }
+
+        fn targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor] {
+            &[]
+        }
+
+        fn plan<'a>(
+            &self,
+            _input: EncodeInput<'a>,
+            _request: TargetRequest<'_>,
+        ) -> Result<ExportPlan<'a>, cadmpeg_core::CodecError> {
+            Err(cadmpeg_core::CodecError::NotImplemented(
+                "writer path is not implemented".into(),
+            ))
+        }
+    }
+
+    /// A writer implementation failure is not evidence of an export loss,
+    /// even when the application would reject real plan losses.
+    #[test]
+    fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
+        let conversion = prepared(
+            CadIr::empty(cadmpeg_ir::units::Units::default()),
+            Format::Cadir,
+            Box::new(NotImplementedEncoder),
+            true,
+        );
+        let Err(error) = conversion.plan() else {
+            panic!("the synthetic writer is not implemented");
+        };
+        assert!(
+            matches!(
+                error.downcast_ref::<cadmpeg_core::CodecError>(),
+                Some(cadmpeg_core::CodecError::NotImplemented(message))
+                    if message == "writer path is not implemented"
+            ),
+            "{error:#}"
+        );
+        assert!(error.downcast_ref::<ConversionRefusal>().is_none());
+    }
 
     /// Flag absence is always `Inherit`; the encoder decides what that means.
     ///
@@ -551,7 +662,7 @@ mod tests {
             )
             .expect("the archive decodes");
 
-        let target = export_target(Format::Rhino, None, LossPolicy::Report);
+        let target = export_target(Format::Rhino, None);
         let request = target.selection.request();
         assert_eq!(request, TargetRequest::Inherit);
 
@@ -564,16 +675,15 @@ mod tests {
             Some("rhino:archive-50")
         );
     }
-    /// The loss policy is not a target.
+    /// Export-loss rejection is not a target.
     ///
     /// A loss flag that also named a target would turn `convert a.step -o
     /// b.step --reject-lossy=export` into an explicit AP214 request and lose
-    /// the identity default. `--reject-lossy=export` reaches the encoder as
-    /// [`LossPolicy`] at construction, and only `--to` may say what to write.
+    /// the identity default. Only `--to` may say what to write.
     #[cfg(feature = "step")]
     #[test]
     fn rejecting_export_losses_does_not_name_a_target() {
-        let target = export_target(Format::Step, None, LossPolicy::Reject);
+        let target = export_target(Format::Step, None);
 
         assert!(
             matches!(target.selection, TargetSelection::Unstated),
@@ -582,7 +692,7 @@ mod tests {
         );
         assert_eq!(target.selection.request(), TargetRequest::Inherit);
 
-        let named = export_target(Format::Step, Some("step:ap242-e3"), LossPolicy::Reject);
+        let named = export_target(Format::Step, Some("step:ap242-e3"));
         assert_eq!(
             named.selection.request(),
             TargetRequest::Explicit("step:ap242-e3")
@@ -602,7 +712,7 @@ mod tests {
 
         let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         for spelling in ["rhino:archive-60", "60"] {
-            let target = export_target(Format::Rhino, Some(spelling), LossPolicy::Report);
+            let target = export_target(Format::Rhino, Some(spelling));
             assert_eq!(
                 target.selection.request(),
                 TargetRequest::Explicit(spelling)
@@ -627,7 +737,7 @@ mod tests {
     #[test]
     fn an_unknown_dialect_is_refused_by_the_encoder_with_its_catalog() {
         let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-        let target = export_target(Format::Iges, Some("ap242e3"), LossPolicy::Report);
+        let target = export_target(Format::Iges, Some("ap242e3"));
         let Err(error) = target.encoder.plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit("ap242e3"),
