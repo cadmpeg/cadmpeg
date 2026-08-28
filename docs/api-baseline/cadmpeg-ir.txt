@@ -1,4 +1,4 @@
-# generated at d4c61cbe8
+# generated at e766e84ae
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -702,6 +702,7 @@ pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::
 pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::resolve_catalog_write(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::result::Result<(&'static cadmpeg_ir::codec::TargetDescriptor, core::option::Option<cadmpeg_core::dialect::DialectId>), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::resolve_preserving_write<T, D, P, S, R>(cadmpeg_ir::codec::WriteRequest<'_>, P, S, R) -> core::result::Result<T, cadmpeg_core::error::CodecError> where D: core::default::Default, P: core::ops::function::FnMut(&cadmpeg_core::dialect::DialectId) -> core::result::Result<core::result::Result<T, D>, cadmpeg_core::error::CodecError>, S: core::ops::function::FnOnce(&'static cadmpeg_ir::codec::TargetDescriptor, core::option::Option<&cadmpeg_core::dialect::DialectId>, D) -> core::result::Result<T, cadmpeg_core::error::CodecError>, R: core::ops::function::FnOnce(&cadmpeg_core::dialect::DialectId, D) -> core::result::Result<T, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::resolve_write_request<'a>(&'a cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::WriteRequest<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::source_dialect_displaced_message(&cadmpeg_core::dialect::DialectId, &cadmpeg_core::dialect::DialectId) -> alloc::string::String
 pub fn cadmpeg_ir::codec::unsupported_target(&str, &str, &str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError

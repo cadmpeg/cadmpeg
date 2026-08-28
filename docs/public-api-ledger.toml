@@ -1216,3 +1216,10 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::codec::unrecorded_source_dialect"
 reason = "only resolve_write_request constructs this refusal; callers should use the complete write-resolution operation instead of its one branch helper"
+
+[[change]]
+commit = "e766e84ae787d73f8c99c3dba969e4421d9de032"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::codec::resolve_preserving_write"
+reason = "preserving encoders share one preserve-else-synthesize resolution law while keeping codec-specific preservation outcomes, synthesis, and refusal text"
