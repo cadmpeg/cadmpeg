@@ -7,7 +7,6 @@
 use super::*;
 use crate::container::MAGIC;
 use crate::test_support::single_part_prt;
-use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 /// A container carrying nothing but the dispatch flag and the version byte.
@@ -45,21 +44,7 @@ fn container_with_declaration(
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = NxDialect::ALL
-        .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        NxDialect::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("nx"),
-        "docs/dialects.toml and NxDialect disagree; ids are pinned forever, so reconcile the enum"
-    );
+    cadmpeg_test_support::assert_registry_closed("nx", &NxDialect::ALL.map(NxDialect::id));
 }
 
 #[test]

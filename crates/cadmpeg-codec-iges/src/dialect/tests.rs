@@ -9,26 +9,11 @@ use crate::loss::IgesLossCode;
 use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
 use crate::IgesCodec;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use std::collections::BTreeSet;
 use std::io::Cursor;
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = IgesDialect::ALL
-        .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        IgesDialect::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("iges"),
-        "docs/dialects.toml and IgesDialect disagree; ids are pinned forever, so reconcile the enum"
-    );
+    cadmpeg_test_support::assert_registry_closed("iges", &IgesDialect::ALL.map(IgesDialect::id));
 }
 
 #[test]

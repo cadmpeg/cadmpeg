@@ -5,7 +5,6 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use std::collections::BTreeSet;
 
 /// A document element carrying `schema_version`, with the other declarations
 /// fixed.
@@ -24,21 +23,7 @@ fn document(schema_version: &str) -> DocumentFacts {
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = FcstdDialect::ALL
-        .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        FcstdDialect::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("fcstd"),
-        "docs/dialects.toml and FcstdDialect disagree; ids are pinned forever, so reconcile the enum"
-    );
+    cadmpeg_test_support::assert_registry_closed("fcstd", &FcstdDialect::ALL.map(FcstdDialect::id));
 }
 
 /// One matrix row: a `SchemaVersion` declaration and what it must classify as.

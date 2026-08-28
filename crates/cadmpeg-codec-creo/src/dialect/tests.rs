@@ -11,25 +11,10 @@
 use super::*;
 use crate::container::scan_bytes;
 use crate::test_support::{build_prt, build_prt_raw};
-use std::collections::BTreeSet;
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = Layout::ALL
-        .iter()
-        .map(|layout| layout.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        Layout::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("creo"),
-        "docs/dialects.toml and Layout disagree; ids are pinned forever, so reconcile the enum"
-    );
+    cadmpeg_test_support::assert_registry_closed("creo", &Layout::ALL.map(Layout::id));
 }
 
 /// A PSB file whose only section carries the `ND:` raw-name decoration.

@@ -142,6 +142,24 @@ pub struct DialectMatch {
     pub admission: Admission,
 }
 
+impl DialectMatch {
+    /// Construct one identified dialect layer.
+    #[must_use]
+    pub fn layer(
+        format: impl Into<String>,
+        dialect: DialectId,
+        declared: BTreeMap<String, String>,
+        admission: Admission,
+    ) -> Self {
+        Self {
+            format: format.into(),
+            dialect: Some(dialect),
+            declared,
+            admission,
+        }
+    }
+}
+
 /// Returns the primary-layer match in `dialects`, the one whose `format` equals
 /// the reporting layer's own `format`.
 ///

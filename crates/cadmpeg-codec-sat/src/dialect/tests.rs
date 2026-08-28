@@ -13,26 +13,11 @@ use crate::test_support::{
 use crate::SatCodec;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use std::collections::BTreeSet;
 use std::io::Cursor;
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = StreamKind::ALL
-        .iter()
-        .map(|kind| kind.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        StreamKind::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("sat"),
-        "docs/dialects.toml and StreamKind disagree; ids are pinned forever, so reconcile the enum"
-    );
+    cadmpeg_test_support::assert_registry_closed("sat", &StreamKind::ALL.map(StreamKind::id));
 }
 
 /// A kernel header declaring `save_format_version` and nothing else that

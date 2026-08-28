@@ -36,20 +36,9 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = SldprtDialect::ALL
-        .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        SldprtDialect::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("sldprt"),
-        "docs/dialects.toml and SldprtDialect disagree; ids are pinned forever, so reconcile the enum"
+    cadmpeg_test_support::assert_registry_closed(
+        "sldprt",
+        &SldprtDialect::ALL.map(SldprtDialect::id),
     );
 }
 

@@ -313,12 +313,7 @@ impl StepDialect {
     /// Classifies one structurally identified alternate encoding at refusal.
     fn classify_refused(self) -> DialectMatch {
         debug_assert!(self.alternate_encoding_refusal().is_some());
-        DialectMatch {
-            format: FORMAT.into(),
-            dialect: Some(self.id()),
-            declared: BTreeMap::new(),
-            admission: Admission::Refused,
-        }
+        DialectMatch::layer(FORMAT, self.id(), BTreeMap::new(), Admission::Refused)
     }
 
     /// Classifies one Part 21 exchange. The single construction path for a
@@ -369,12 +364,7 @@ impl StepDialect {
         } else {
             Admission::Admitted
         };
-        DialectMatch {
-            format: FORMAT.into(),
-            dialect: Some(dialect.id()),
-            declared,
-            admission,
-        }
+        DialectMatch::layer(FORMAT, dialect.id(), declared, admission)
     }
 }
 

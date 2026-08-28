@@ -5,25 +5,10 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use std::collections::BTreeSet;
 
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    let pinned = F3dDialect::ALL
-        .iter()
-        .map(|dialect| dialect.id().as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        pinned.len(),
-        F3dDialect::ALL.len(),
-        "two variants pin the same id"
-    );
-    assert_eq!(
-        pinned,
-        cadmpeg_test_support::registry_ids("f3d"),
-        "docs/dialects.toml and F3dDialect disagree; ids are pinned forever, so reconcile the enum"
-    );
+    cadmpeg_test_support::assert_registry_closed("f3d", &F3dDialect::ALL.map(F3dDialect::id));
 }
 
 #[test]
