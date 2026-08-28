@@ -19,7 +19,8 @@ use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
 use crate::dialect::{
-    classify as classify_dialect, dialect_loss, terminator_line, StreamEvidence, TextEvidence,
+    classify as classify_dialect, dialect_loss, kernel_layer, terminator_line, StreamEvidence,
+    TextEvidence,
 };
 use crate::loss::SatLossCode;
 use crate::FORMAT;
@@ -68,8 +69,10 @@ pub(crate) fn decode_asm_binary(
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "asm", &mut attributes);
     attributes.insert("encoding".to_string(), "binary".to_string());
-    let matched = classify_dialect(&StreamEvidence::AsmBinary(Some(&header)));
-    build_result(ctx, brep, attributes, &header, None, matched)
+    let evidence = StreamEvidence::AsmBinary(Some(&header));
+    let matched = classify_dialect(&evidence);
+    let kernel = kernel_layer(&evidence);
+    build_result(ctx, brep, attributes, &header, None, matched, kernel)
 }
 
 pub(crate) fn decode_acis_binary(
@@ -85,7 +88,9 @@ pub(crate) fn decode_acis_binary(
     // Every band frames and decodes the same way. `classify` states whether the
     // grammar applied is the one the stream's own save format declares; it
     // gates nothing.
-    let matched = classify_dialect(&StreamEvidence::AcisBinary(Some(&header)));
+    let evidence = StreamEvidence::AcisBinary(Some(&header));
+    let matched = classify_dialect(&evidence);
+    let kernel = kernel_layer(&evidence);
     let start = acis_header::record_stream_start(bytes).ok_or_else(|| {
         CodecError::Malformed("ACIS binary header without a record stream".to_string())
     })?;
@@ -106,7 +111,7 @@ pub(crate) fn decode_acis_binary(
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "acis", &mut attributes);
     attributes.insert("encoding".to_string(), "binary".to_string());
-    build_result(ctx, brep, attributes, &header, None, matched)
+    build_result(ctx, brep, attributes, &header, None, matched, kernel)
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
@@ -127,10 +132,12 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
     // through `classify`. Neither branch gates the record decode on it.
-    let matched = classify_dialect(&StreamEvidence::Text(Some(TextEvidence {
+    let evidence = StreamEvidence::Text(Some(TextEvidence {
         branch: stream.terminator,
         header: &header,
-    })));
+    }));
+    let matched = classify_dialect(&evidence);
+    let kernel = kernel_layer(&evidence);
     let brep = decode_with_header(
         &stream.records,
         bytes,
@@ -139,7 +146,15 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         IdFormat(FORMAT),
         DecodePurpose::Model,
     );
-    build_result(ctx, brep, attributes, &header, Some(dialect), matched)
+    build_result(
+        ctx,
+        brep,
+        attributes,
+        &header,
+        Some(dialect),
+        matched,
+        kernel,
+    )
 }
 
 /// Mirrors the primary-layer match into [`SourceMeta`], beside the attributes
@@ -163,6 +178,7 @@ fn build_result(
     header: &KernelHeader,
     text_dialect: Option<&str>,
     matched: DialectMatch,
+    kernel: DialectMatch,
 ) -> Result<DecodeResult, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(attributes));
@@ -203,7 +219,7 @@ fn build_result(
         "unknown_surface_faces".to_string(),
         stats.unknown_surface_faces,
     );
-    let dialects = vec![matched];
+    let dialects = vec![matched, kernel];
     debug_assert_primary_layer(&dialects, FORMAT);
     let report = DecodeReport {
         dialects,

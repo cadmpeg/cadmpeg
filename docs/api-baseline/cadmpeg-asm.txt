@@ -1,4 +1,4 @@
-# generated at f6e212928
+# generated at 400e8e001
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -573,6 +573,9 @@ pub mod cadmpeg_asm::dialect
 pub enum cadmpeg_asm::dialect::KernelHeaderRef<'a>
 pub cadmpeg_asm::dialect::KernelHeaderRef::Acis(&'a cadmpeg_asm::kernel_header::KernelHeader)
 pub cadmpeg_asm::dialect::KernelHeaderRef::Asm(&'a cadmpeg_asm::kernel_header::KernelHeader)
+pub cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&'a cadmpeg_asm::kernel_header::KernelHeader)
+pub cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&'a cadmpeg_asm::kernel_header::KernelHeader)
+pub cadmpeg_asm::dialect::KernelHeaderRef::Unknown
 impl<'a> core::clone::Clone for cadmpeg_asm::dialect::KernelHeaderRef<'a>
 pub fn cadmpeg_asm::dialect::KernelHeaderRef<'a>::clone(&self) -> cadmpeg_asm::dialect::KernelHeaderRef<'a>
 impl<'a> core::fmt::Debug for cadmpeg_asm::dialect::KernelHeaderRef<'a>

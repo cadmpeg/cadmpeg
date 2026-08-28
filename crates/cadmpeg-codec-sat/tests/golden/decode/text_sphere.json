@@ -184,6 +184,15 @@
         },
         "dialect": "sat:text",
         "format": "sat"
+      },
+      {
+        "admission": "admitted",
+        "declared": {
+          "save_format_major": "232",
+          "save_format_minor": "0"
+        },
+        "dialect": "acis:text-asm",
+        "format": "acis"
       }
     ],
     "format": "sat",

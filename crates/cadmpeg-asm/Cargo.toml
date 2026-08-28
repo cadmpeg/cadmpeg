@@ -21,5 +21,8 @@ serde.workspace = true
 serde-value.workspace = true
 schemars = { workspace = true, optional = true }
 
+[dev-dependencies]
+cadmpeg-test-support.workspace = true
+
 [lints]
 workspace = true

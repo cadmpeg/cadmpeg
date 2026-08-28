@@ -32,29 +32,49 @@ pub enum KernelHeaderRef<'a> {
     Acis(&'a KernelHeader),
     /// An Autodesk Shape Manager binary header.
     Asm(&'a KernelHeader),
+    /// A text stream terminated by `End-of-ASM-data`.
+    TextAsm(&'a KernelHeader),
+    /// A text stream terminated by `End-of-ACIS-data`.
+    TextAcis(&'a KernelHeader),
+    /// A carrier whose kernel framing did not parse.
+    Unknown,
 }
 
-/// Classify an already-parsed binary ACIS or ASM kernel header.
+/// Classify a parsed binary or text ACIS/ASM kernel header, or unframed carrier.
 #[must_use]
 pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
-    let parsed = match header {
-        KernelHeaderRef::Acis(header) | KernelHeaderRef::Asm(header) => header,
-    };
     let mut declared = BTreeMap::new();
-    if let Some(major) = parsed.save_format_major() {
-        declared.insert("save_format_major".to_owned(), major.to_string());
+    let parsed = match header {
+        KernelHeaderRef::Acis(header)
+        | KernelHeaderRef::Asm(header)
+        | KernelHeaderRef::TextAsm(header)
+        | KernelHeaderRef::TextAcis(header) => Some(header),
+        KernelHeaderRef::Unknown => None,
+    };
+    if let Some(parsed) = parsed {
+        if let Some(major) = parsed.save_format_major() {
+            declared.insert("save_format_major".to_owned(), major.to_string());
+        }
+        if let Some(minor) = parsed.save_format_minor() {
+            declared.insert("save_format_minor".to_owned(), minor.to_string());
+        }
     }
-    if let Some(minor) = parsed.save_format_minor() {
-        declared.insert("save_format_minor".to_owned(), minor.to_string());
-    }
-    declared.insert("reference_width".to_owned(), parsed.width.to_string());
 
     let (dialect, admission) = match header {
         KernelHeaderRef::Acis(header) => {
+            declared.insert("reference_width".to_owned(), header.width.to_string());
             let major = header.save_format_major();
             (acis_binary_row(major), acis_admission(major))
         }
-        KernelHeaderRef::Asm(header) => (asm_binary_row(header.width), Admission::Admitted),
+        KernelHeaderRef::Asm(header) => {
+            declared.insert("reference_width".to_owned(), header.width.to_string());
+            (asm_binary_row(header.width), Admission::Admitted)
+        }
+        KernelHeaderRef::TextAsm(_) => (ACIS_TEXT_ASM, Admission::Admitted),
+        KernelHeaderRef::TextAcis(header) => {
+            (ACIS_TEXT_ACIS, acis_admission(header.save_format_major()))
+        }
+        KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
     };
     DialectMatch {
         format: "acis".to_owned(),
@@ -150,10 +170,11 @@ mod tests {
     use super::{
         acis_admission, acis_band_verified, acis_binary_row, classify, nearest_verified_acis,
         KernelHeaderRef, ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218,
-        ACIS_SAVE_FORMAT_BINARY_OTHER,
+        ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM, ACIS_UNKNOWN,
     };
     use crate::kernel_header::KernelHeader;
     use cadmpeg_core::dialect::{Admission, DialectMatch};
+    use std::collections::BTreeSet;
 
     fn header(width: u8, save_format_version: Option<u32>) -> KernelHeader {
         KernelHeader {
@@ -236,5 +257,44 @@ mod tests {
                 admission: Admission::Admitted,
             }
         );
+
+        assert_eq!(
+            classify(KernelHeaderRef::TextAsm(&asm)).dialect,
+            Some(ACIS_TEXT_ASM)
+        );
+        assert_eq!(
+            classify(KernelHeaderRef::TextAcis(&acis)).dialect,
+            Some(ACIS_TEXT_ACIS)
+        );
+        let unknown = classify(KernelHeaderRef::Unknown);
+        assert_eq!(unknown.dialect, Some(ACIS_UNKNOWN));
+        assert_eq!(unknown.admission, Admission::Refused);
+        assert!(unknown.declared.is_empty());
+    }
+
+    #[test]
+    fn every_acis_registry_row_is_produced() {
+        let acis = header(4, Some(21_700));
+        let asm4 = header(4, Some(70_000));
+        let asm8 = header(8, Some(70_000));
+        let ids: BTreeSet<_> = [
+            classify(KernelHeaderRef::Acis(&acis)),
+            classify(KernelHeaderRef::Acis(&header(4, Some(21_800)))),
+            classify(KernelHeaderRef::Acis(&header(4, Some(23_200)))),
+            classify(KernelHeaderRef::Asm(&asm4)),
+            classify(KernelHeaderRef::Asm(&asm8)),
+            classify(KernelHeaderRef::TextAsm(&asm8)),
+            classify(KernelHeaderRef::TextAcis(&acis)),
+            classify(KernelHeaderRef::Unknown),
+        ]
+        .into_iter()
+        .map(|matched| {
+            matched
+                .dialect
+                .expect("classifier always names a row")
+                .to_string()
+        })
+        .collect();
+        assert_eq!(ids, cadmpeg_test_support::registry_ids("acis"));
     }
 }

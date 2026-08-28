@@ -156,6 +156,23 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
+    let kernel = decoded
+        .report()
+        .dialects
+        .iter()
+        .find(|matched| matched.format == "acis")
+        .expect("text carrier has a shared kernel identity");
+    assert_eq!(
+        kernel
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("acis:text-asm")
+    );
+    assert_eq!(
+        kernel.declared["carrier"],
+        "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"
+    );
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.surfaces.len(), 1);

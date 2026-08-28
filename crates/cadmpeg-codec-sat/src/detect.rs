@@ -106,7 +106,7 @@ pub(crate) fn inspect(
     let kind = classify(bytes);
     // Inspect classifies from the same evidence decode would read, so the two
     // report the same `sat:` row and the same admission for the same bytes.
-    let matched = match kind {
+    let (matched, kernel) = match kind {
         StreamKind::AsmBinary => {
             let header = asm_header::parse(bytes);
             if let Some(header) = &header {
@@ -119,7 +119,11 @@ pub(crate) fn inspect(
                     );
                 }
             }
-            classify_dialect(&StreamEvidence::AsmBinary(header.as_ref()))
+            let evidence = StreamEvidence::AsmBinary(header.as_ref());
+            (
+                classify_dialect(&evidence),
+                crate::dialect::kernel_layer(&evidence),
+            )
         }
         StreamKind::AcisBinary => {
             let header = acis_header::parse(bytes);
@@ -141,7 +145,8 @@ pub(crate) fn inspect(
                     );
                 }
             }
-            matched
+            let kernel = crate::dialect::kernel_layer(&evidence);
+            (matched, kernel)
         }
         StreamKind::Text => {
             // The kernel header is bound here so the evidence can borrow it
@@ -170,7 +175,11 @@ pub(crate) fn inspect(
                     None
                 }
             };
-            classify_dialect(&StreamEvidence::Text(text))
+            let evidence = StreamEvidence::Text(text);
+            (
+                classify_dialect(&evidence),
+                crate::dialect::kernel_layer(&evidence),
+            )
         }
         StreamKind::Unknown => {
             return Err(CodecError::Malformed(
@@ -178,7 +187,7 @@ pub(crate) fn inspect(
             ))
         }
     };
-    let dialects = vec![matched];
+    let dialects = vec![matched, kernel];
     debug_assert_primary_layer(&dialects, FORMAT);
     Ok(ContainerSummary {
         dialects,

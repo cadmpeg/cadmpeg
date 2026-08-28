@@ -227,6 +227,7 @@ struct Case {
     label: &'static str,
     bytes: Vec<u8>,
     id: &'static str,
+    kernel_id: &'static str,
     admission: Admission,
 }
 
@@ -236,24 +237,28 @@ fn cases() -> Vec<Case> {
             label: "asm text sphere",
             bytes: text_sphere_stream(1.0),
             id: "sat:text",
+            kernel_id: "acis:text-asm",
             admission: Admission::Admitted,
         },
         Case {
             label: "asm binary sphere",
             bytes: binary_sphere_stream(BinaryFixtureKind::Asm),
             id: "sat:asm-binary",
+            kernel_id: "acis:asm-binaryfile-8",
             admission: Admission::Admitted,
         },
         Case {
             label: "acis binary sphere at 218",
             bytes: binary_sphere_stream(BinaryFixtureKind::Acis),
             id: "sat:acis-binary",
+            kernel_id: "acis:save-format-218",
             admission: Admission::Admitted,
         },
         Case {
             label: "acis text at 700",
             bytes: acis_text(700),
             id: "sat:text",
+            kernel_id: "acis:text-acis",
             admission: Admission::AdmittedUnverified {
                 nearest: DialectId::pinned("acis:save-format-217"),
             },
@@ -262,6 +267,7 @@ fn cases() -> Vec<Case> {
             label: "acis text sphere outside the verified band",
             bytes: acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT),
             id: "sat:text",
+            kernel_id: "acis:text-acis",
             admission: Admission::AdmittedUnverified {
                 nearest: DialectId::pinned("acis:save-format-218"),
             },
@@ -270,6 +276,7 @@ fn cases() -> Vec<Case> {
             label: "acis binary sphere outside the verified band",
             bytes: binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand),
             id: "sat:acis-binary",
+            kernel_id: "acis:save-format-binary-other",
             admission: Admission::AdmittedUnverified {
                 nearest: DialectId::pinned("acis:save-format-218"),
             },
@@ -278,6 +285,7 @@ fn cases() -> Vec<Case> {
             label: "acis text at 218",
             bytes: acis_text(21_800),
             id: "sat:text",
+            kernel_id: "acis:text-acis",
             admission: Admission::Admitted,
         },
     ]
@@ -345,12 +353,19 @@ fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source
             .unwrap_or_else(|error| panic!("{}: {error}", case.label));
         let dialects = &result.report().dialects;
 
-        assert_eq!(dialects.len(), 1, "{}", case.label);
+        assert_eq!(dialects.len(), 2, "{}", case.label);
         let matched = &dialects[0];
         assert_eq!(matched.format, FORMAT, "{}", case.label);
         assert_eq!(
             matched.dialect.as_ref().map(DialectId::as_str),
             Some(case.id),
+            "{}",
+            case.label
+        );
+        assert_eq!(dialects[1].format, "acis", "{}", case.label);
+        assert_eq!(
+            dialects[1].dialect.as_ref().map(DialectId::as_str),
+            Some(case.kernel_id),
             "{}",
             case.label
         );
@@ -383,10 +398,10 @@ fn inspect_and_decode_agree_on_the_row_and_the_admission() {
             )
             .unwrap_or_else(|error| panic!("{}: {error}", case.label));
 
-        assert_eq!(summary.dialects.len(), 1, "{}", case.label);
+        assert_eq!(summary.dialects.len(), 2, "{}", case.label);
         assert_eq!(
-            summary.dialects[0],
-            decoded.report().dialects[0],
+            summary.dialects,
+            decoded.report().dialects,
             "{}: inspect and decode read the same evidence",
             case.label
         );

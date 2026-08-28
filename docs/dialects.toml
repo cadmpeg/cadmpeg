@@ -1334,7 +1334,7 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs:63"
 id = "acis:text-asm"
 title = "ACIS/ASM text stream terminated End-of-ASM-data"
 discriminants = { header_line_1 = "four integer fields", terminator = "End-of-ASM-data" }
-witness = "code:crates/cadmpeg-asm/src/sat.rs:29"
+witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 
 [[dialect]]
 # `sat::Terminator::Acis` (sat.rs:27-33), terminator `End-of-ACIS-data`. Save
@@ -1348,14 +1348,14 @@ id = "acis:text-acis"
 title = "ACIS text stream terminated End-of-ACIS-data"
 discriminants = { header_line_1 = "four integer fields", terminator = "End-of-ACIS-data" }
 seam = "the legacy subtype spellings and the save-format-700 record layouts travel with this terminator"
-witness = "code:crates/cadmpeg-asm/src/sat.rs:30"
+witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). No magic and no valid four-field header line.
 id = "acis:unknown"
 title = "Kernel stream matching no ACIS or ASM framing"
 discriminants = { magic = "none", header_line_1 = "not four integer fields" }
-witness = "code:crates/cadmpeg-asm/src/asm_header.rs:60"
+witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 
 # --------------------------------------------------------------------------
 # Parasolid kernel namespace (embedded layer)
