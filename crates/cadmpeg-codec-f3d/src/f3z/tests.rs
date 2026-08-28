@@ -647,6 +647,10 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect, inspected.dialect);
     assert_eq!(source.declared, inspected.declared);
+    let primary =
+        cadmpeg_core::dialect::primary_layer(&decoded.report().dialects, &decoded.report().format)
+            .unwrap();
+    assert_eq!(source.dialect, primary.dialect);
 }
 
 fn unverified_acis_text_member() -> Vec<u8> {
