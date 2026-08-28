@@ -4,7 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
+    resolve_preserving_write, resolve_write_request, unsupported_target, EncodeInput, ExportPlan,
+    TargetRequest,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -13,42 +14,34 @@ pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    match resolve_write_request(
+    let resolved = resolve_write_request(
         input.ir,
         request,
         crate::dialect::FORMAT,
         crate::dialect::TARGETS,
-    )? {
-        WriteRequest::Catalog { entry, displaced } => {
-            let version = crate::dialect::target_version(entry)?;
-            let target = crate::dialect::IgesDialect::fixed_ascii(version).id();
-            let replay_declined = if displaced.is_none() {
-                match replay_bytes(input.ir, input.fidelity, &target)? {
-                    Replay::Replayed { bytes, dialect } => {
-                        return Ok(super::replayed_plan(input.ir, dialect, bytes));
-                    }
-                    Replay::Declined { reason } => reason,
-                }
-            } else {
-                None
-            };
-            super::synthesized_plan(input, version, displaced.as_ref(), replay_declined)
-        }
-        WriteRequest::OffCatalog { dialect } => {
-            match replay_bytes(input.ir, input.fidelity, dialect)? {
-                Replay::Replayed { bytes, dialect } => {
-                    Ok(super::replayed_plan(input.ir, dialect, bytes))
-                }
-                Replay::Declined { .. } => Err(unsupported_target(
-                    crate::dialect::FORMAT,
-                    dialect.as_str(),
-                    "its retained source image is unavailable for byte replay and the semantic \
-                     writer cannot synthesize it",
-                    crate::dialect::TARGETS,
-                )),
+    )?;
+    resolve_preserving_write(
+        resolved,
+        |target| match replay_bytes(input.ir, input.fidelity, target)? {
+            Replay::Replayed { bytes, dialect } => {
+                Ok(Ok(super::replayed_plan(input.ir, dialect, bytes)))
             }
-        }
-    }
+            Replay::Declined { reason } => Ok(Err(reason)),
+        },
+        |entry, displaced, replay_declined| {
+            let version = crate::dialect::target_version(entry)?;
+            super::synthesized_plan(input, version, displaced, replay_declined)
+        },
+        |dialect, _| {
+            Err(unsupported_target(
+                crate::dialect::FORMAT,
+                dialect.as_str(),
+                "its retained source image is unavailable for byte replay and the semantic \
+                     writer cannot synthesize it",
+                crate::dialect::TARGETS,
+            ))
+        },
+    )
 }
 
 enum Replay {
