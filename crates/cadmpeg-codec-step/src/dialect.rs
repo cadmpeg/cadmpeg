@@ -108,14 +108,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[
 
 impl StepSchema {
     pub(crate) const fn pinned(self) -> &'static str {
-        match self {
-            Self::Ap203Edition1 => "step:ap203-e1",
-            Self::Ap203Edition2 => "step:ap203-e2",
-            Self::Ap214 => "step:ap214",
-            Self::Ap242Edition1 => "step:ap242-e1",
-            Self::Ap242Edition2 => "step:ap242-e2",
-            Self::Ap242Edition3 => "step:ap242-e3",
-        }
+        StepDialect::from_write_schema(self).pinned()
     }
 }
 
@@ -197,6 +190,17 @@ const NAME_AP214: &str = "AUTOMOTIVE_DESIGN";
 const NAME_AP242: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
 
 impl StepDialect {
+    const fn from_write_schema(schema: StepSchema) -> Self {
+        match schema {
+            StepSchema::Ap203Edition1 => Self::Ap203Edition1,
+            StepSchema::Ap203Edition2 => Self::Ap203Edition2,
+            StepSchema::Ap214 => Self::Ap214,
+            StepSchema::Ap242Edition1 => Self::Ap242Edition1,
+            StepSchema::Ap242Edition2 => Self::Ap242Edition2,
+            StepSchema::Ap242Edition3 => Self::Ap242Edition3,
+        }
+    }
+
     /// Every dialect this codec can name.
     ///
     /// The registry cross-check is its only consumer, and that is the point:
@@ -219,7 +223,11 @@ impl StepDialect {
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
+        DialectId::pinned(self.pinned())
+    }
+
+    const fn pinned(self) -> &'static str {
+        match self {
             Self::Ap203Edition1 => "step:ap203-e1",
             Self::Ap203Edition2 => "step:ap203-e2",
             Self::Ap214 => "step:ap214",
@@ -231,7 +239,7 @@ impl StepDialect {
             Self::Ap242BoModelXml => "step:ap242-bo-model-xml",
             Self::Part26Hdf5 => "step:part26-hdf5",
             Self::Unknown => "step:unknown",
-        })
+        }
     }
 
     /// The row for one `FILE_SCHEMA` identifier, or [`Self::Unknown`] where the

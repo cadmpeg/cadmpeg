@@ -93,12 +93,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[
 
 impl RhinoArchiveVersion {
     pub(crate) const fn pinned(self) -> &'static str {
-        match self {
-            Self::V5 => "rhino:archive-50",
-            Self::V6 => "rhino:archive-60",
-            Self::V7 => "rhino:archive-70",
-            Self::V8 => "rhino:archive-80",
-        }
+        ArchiveVersion::from_write_version(self).pinned()
     }
 }
 
@@ -141,6 +136,15 @@ const DECLARED_ARCHIVE_VERSION: &str = "archive_version";
 const DECLARED_OPENNURBS_WRITER_VERSION: &str = "opennurbs_writer_version";
 
 impl ArchiveVersion {
+    const fn from_write_version(version: RhinoArchiveVersion) -> Self {
+        match version {
+            RhinoArchiveVersion::V5 => Self::V5,
+            RhinoArchiveVersion::V6 => Self::V6,
+            RhinoArchiveVersion::V7 => Self::V7,
+            RhinoArchiveVersion::V8 => Self::V8,
+        }
+    }
+
     /// Every dialect this codec can name.
     ///
     /// The registry cross-check is its only consumer, and that is the point:
@@ -163,7 +167,11 @@ impl ArchiveVersion {
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
+        DialectId::pinned(self.pinned())
+    }
+
+    const fn pinned(self) -> &'static str {
+        match self {
             Self::V1 => "rhino:archive-1",
             Self::V2 => "rhino:archive-2",
             Self::V3 => "rhino:archive-3",
@@ -175,7 +183,7 @@ impl ArchiveVersion {
             Self::V8 => "rhino:archive-80",
             Self::V9 => "rhino:archive-90",
             Self::Other(_) => "rhino:unknown",
-        })
+        }
     }
 
     /// Whether this codec declines to decode the row at all.
