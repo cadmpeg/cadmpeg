@@ -163,7 +163,7 @@ fn inherit_preserves_a_schema_four_source_entry_for_entry() {
 
     assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Patched);
     assert_eq!(
-        plan.report().target.as_ref().map(ToString::to_string),
+        plan.report().target().map(ToString::to_string),
         Some("fcstd:schema-4".to_owned())
     );
     let mut written = Vec::new();
@@ -204,7 +204,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
 
     let plan = inherit(decoded.ir()).expect("schema 2 is preserved");
     assert_eq!(
-        plan.report().target.as_ref().map(ToString::to_string),
+        plan.report().target().map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );
     let mut written = Vec::new();
@@ -367,8 +367,8 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
             .unwrap_or_else(|error| panic!("{label} is preserved, got {error}"));
         let claimed = plan
             .report()
-            .target
-            .clone()
+            .target()
+            .cloned()
             .expect("an FCStd write always names its dialect");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");

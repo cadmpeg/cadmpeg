@@ -203,7 +203,7 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
 
     assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
     assert_eq!(
-        plan.report().target.as_ref().map(ToString::to_string),
+        plan.report().target().map(ToString::to_string),
         Some("iges:5.3-compressed-ascii".to_owned())
     );
     assert!(matches!(

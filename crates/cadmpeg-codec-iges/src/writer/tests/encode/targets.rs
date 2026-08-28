@@ -40,7 +40,7 @@ fn inherit_replays_a_non_default_version_verbatim() {
 
     assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
     assert_eq!(
-        plan.report().target.as_ref().map(ToString::to_string),
+        plan.report().target().map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
     assert!(matches!(
@@ -66,7 +66,7 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
 
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     assert_eq!(
-        plan.report().target.as_ref().map(ToString::to_string),
+        plan.report().target().map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
     assert!(plan
@@ -131,7 +131,7 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
 
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     assert_eq!(
-        plan.report().target.as_ref().map(ToString::to_string),
+        plan.report().target().map(ToString::to_string),
         Some("iges:5.3-fixed-ascii".to_owned())
     );
     assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotProvided);
@@ -222,8 +222,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = plan
             .report()
-            .target
-            .clone()
+            .target()
+            .cloned()
             .expect("an IGES write always names its dialect");
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();

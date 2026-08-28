@@ -1,4 +1,4 @@
-# generated at 855cbb586
+# generated at 0415224a1
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -11490,12 +11490,12 @@ pub cadmpeg_ir::report::ExportReport::fidelity: cadmpeg_ir::report::FidelityReso
 pub cadmpeg_ir::report::ExportReport::format: alloc::string::String
 pub cadmpeg_ir::report::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
 pub cadmpeg_ir::report::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::report::ExportReport::target: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_ir::report::ExportReport::write_path: cadmpeg_ir::report::WritePath
 impl cadmpeg_ir::report::ExportReport
 pub fn cadmpeg_ir::report::ExportReport::cadir(alloc::string::String, cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::report::ExportReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::report::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::report::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
 impl core::clone::Clone for cadmpeg_ir::report::ExportReport
 pub fn cadmpeg_ir::report::ExportReport::clone(&self) -> cadmpeg_ir::report::ExportReport
 impl core::cmp::PartialEq for cadmpeg_ir::report::ExportReport
@@ -17690,12 +17690,12 @@ pub cadmpeg_ir::ExportReport::fidelity: cadmpeg_ir::report::FidelityResolution
 pub cadmpeg_ir::ExportReport::format: alloc::string::String
 pub cadmpeg_ir::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
 pub cadmpeg_ir::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::ExportReport::target: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_ir::ExportReport::write_path: cadmpeg_ir::report::WritePath
 impl cadmpeg_ir::report::ExportReport
 pub fn cadmpeg_ir::report::ExportReport::cadir(alloc::string::String, cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::report::ExportReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::report::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::report::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
 impl core::clone::Clone for cadmpeg_ir::report::ExportReport
 pub fn cadmpeg_ir::report::ExportReport::clone(&self) -> cadmpeg_ir::report::ExportReport
 impl core::cmp::PartialEq for cadmpeg_ir::report::ExportReport

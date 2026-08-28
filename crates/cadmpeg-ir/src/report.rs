@@ -821,7 +821,7 @@ pub struct ExportReport {
     /// Always serialized, as `null` when absent. Reports written before the
     /// field existed omit the key and read back `None`.
     #[serde(default)]
-    pub target: Option<DialectId>,
+    target: Option<DialectId>,
 }
 
 /// Which of an encoder's write paths produced the exported bytes.
@@ -907,6 +907,12 @@ impl EntityCensus {
 }
 
 impl ExportReport {
+    /// The concrete native dialect written, or `None` for neutral CADIR.
+    #[must_use]
+    pub fn target(&self) -> Option<&DialectId> {
+        self.target.as_ref()
+    }
+
     /// Constructs a report for the neutral CADIR document, which has no native
     /// dialect target.
     #[must_use]

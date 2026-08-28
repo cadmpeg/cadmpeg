@@ -671,7 +671,7 @@ mod tests {
             .plan(EncodeInput::new(decoded.ir(), None), request)
             .expect("the inherited target is writable");
         assert_eq!(
-            plan.report().target.as_ref().map(DialectId::as_str),
+            plan.report().target().map(DialectId::as_str),
             Some("rhino:archive-50")
         );
     }
@@ -725,7 +725,7 @@ mod tests {
                 )
                 .expect("the catalog carries the row under both spellings");
             assert_eq!(
-                plan.report().target.as_ref().map(DialectId::as_str),
+                plan.report().target().map(DialectId::as_str),
                 Some("rhino:archive-60")
             );
         }

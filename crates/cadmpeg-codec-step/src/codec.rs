@@ -64,8 +64,7 @@ impl Encoder for StepCodec {
         let mut report =
             write_step(input.ir, &mut bytes, schema, &self.options).map_err(CodecError::from)?;
         let target = report
-            .target
-            .as_ref()
+            .target()
             .expect("STEP report constructed without a target");
         if let Some(source) = displaced.as_ref() {
             report
