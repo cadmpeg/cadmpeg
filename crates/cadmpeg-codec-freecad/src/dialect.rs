@@ -161,10 +161,10 @@ impl FcstdDialect {
     /// The row whose element vocabulary reads a document this codec declares no
     /// strategy for.
     ///
-    /// [`crate::container::parse_document`] and
-    /// [`crate::persistence::parse_with_context`] both test
-    /// `schema_version == "2"` with an `else`, not a `"3" | "4"` whitelist, so
-    /// every undeclared schema is scanned with the
+    /// [`crate::container::parse_document`] maps the declaration once and both
+    /// container and persistence parsing match the resulting enum with a
+    /// [`Self::Schema2`] arm and an `else`, not a [`Self::Schema3`] or
+    /// [`Self::Schema4`] whitelist. Thus, every undeclared schema is scanned with the
     /// `Objects`/`ObjectData`/`Object` vocabulary. Schema 4 is
     /// the newer of the two rows sharing that vocabulary and the one the
     /// writer's own default follows, so it names the strategy used.
@@ -180,8 +180,7 @@ impl FcstdDialect {
     /// decode path, container-only or full, and every inspect reads an
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
-    pub(crate) fn classify(document: &DocumentFacts) -> DialectMatch {
-        let dialect = Self::from_schema_version(&document.schema_version);
+    pub(crate) fn classify(document: &DocumentFacts, dialect: Self) -> DialectMatch {
         let admission = if dialect == Self::Unknown {
             Admission::AdmittedUnverified {
                 nearest: Self::NEAREST_VERIFIED.id(),

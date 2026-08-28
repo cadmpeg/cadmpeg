@@ -1165,7 +1165,7 @@ impl CodecBackend for FcstdCodec {
         let mut gui_losses = Vec::new();
         // One `classify` call per run feeds `DecodeReport.dialects` and the
         // dialect-unverified loss.
-        let primary = dialect::FcstdDialect::classify(&scan.document);
+        let primary = dialect::FcstdDialect::classify(&scan.document, scan.schema);
         ir.source = Some(SourceMeta {
             format: dialect::FORMAT.into(),
             attributes,
@@ -1199,7 +1199,7 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph = persistence::parse_with_context(document_bytes, Some(ctx))?;
+            let graph = persistence::parse_with_context(document_bytes, scan.schema, Some(ctx))?;
             for property in &graph.properties {
                 for side_entry in &property.side_entries {
                     if !scan.data.contains_key(side_entry) {

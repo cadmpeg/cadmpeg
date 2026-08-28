@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
+use crate::dialect::FcstdDialect;
 use crate::native::{
     DynamicPropertyMeta, ExtensionRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord,
     ValueRecord,
@@ -15,11 +16,10 @@ const MAX_OBJECTS: usize = 1_000_000;
 const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 /// Element vocabulary selected by a persistence schema declaration.
-pub(crate) fn persistence_tags(schema: &str) -> (&'static str, &'static str, &'static str) {
-    if schema == "2" {
-        ("Features", "FeatureData", "Feature")
-    } else {
-        ("Objects", "ObjectData", "Object")
+pub(crate) fn persistence_tags(schema: FcstdDialect) -> (&'static str, &'static str, &'static str) {
+    match schema {
+        FcstdDialect::Schema2 => ("Features", "FeatureData", "Feature"),
+        _ => ("Objects", "ObjectData", "Object"),
     }
 }
 
@@ -41,14 +41,6 @@ pub struct Graph {
 
 /// Recover the persistence graph without interpreting geometry.
 pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
-    parse_with_context(bytes, None)
-}
-
-/// Recover the persistence graph, charging retained property XML against the session.
-pub fn parse_with_context(
-    bytes: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -58,6 +50,29 @@ pub fn parse_with_context(
         .ok_or_else(|| {
             CodecError::Malformed("Document element has no SchemaVersion attribute".into())
         })?;
+    parse_document(text, &xml, FcstdDialect::from_schema_version(&schema), None)
+}
+
+/// Recover the persistence graph, charging retained property XML against the session.
+pub fn parse_with_context(
+    bytes: &[u8],
+    schema: FcstdDialect,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Graph, CodecError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
+    let xml = roxmltree::Document::parse(text)
+        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
+    parse_document(text, &xml, schema, ctx)
+}
+
+fn parse_document(
+    text: &str,
+    xml: &roxmltree::Document<'_>,
+    schema: FcstdDialect,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Graph, CodecError> {
+    let root = xml.root_element();
     // Schema 2 is its own element vocabulary. Every other declared schema, and
     // every undeclared one, is read with the Objects/ObjectData/Object
     // vocabulary: the nearest declared strategy is attempted rather than
@@ -65,7 +80,7 @@ pub fn parse_with_context(
     // because an element vocabulary that does not fit fails below exactly as a
     // corrupt schema-4 document does. `crate::dialect` charges the
     // dialect-unverified loss for the undeclared case.
-    let (declarations_tag, data_tag, record_tag) = persistence_tags(&schema);
+    let (declarations_tag, data_tag, record_tag) = persistence_tags(schema);
     let objects_node = unique_section(root, declarations_tag)?;
     let data_node = unique_section(root, data_tag)?;
 
@@ -83,13 +98,14 @@ pub fn parse_with_context(
     if declared_count > object_limit {
         return Err(CodecError::Malformed("object count limit exceeded".into()));
     }
-    if schema == "2" && objects_node.attribute("Dependencies").is_some() {
+    if schema == FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some() {
         return Err(CodecError::Malformed(
             "schema 2 Features cannot carry object dependencies".into(),
         ));
     }
 
-    let dependencies_enabled = schema != "2" && objects_node.attribute("Dependencies").is_some();
+    let dependencies_enabled =
+        schema != FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some();
     let mut saw_object_declaration = false;
     for child in objects_node.children().filter(roxmltree::Node::is_element) {
         if child.has_tag_name(record_tag) {
