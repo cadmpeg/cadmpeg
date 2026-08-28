@@ -12,6 +12,33 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
 use crate::StepCodec;
 
+fn assert_unsupported_dialect(
+    error: cadmpeg_core::CodecError,
+    expected_id: &str,
+    expected_message: &str,
+) {
+    let cadmpeg_core::CodecError::UnsupportedDialect {
+        dialect_match,
+        message,
+        ..
+    } = error
+    else {
+        panic!("expected a typed STEP dialect refusal, found {error:?}");
+    };
+    assert_eq!(
+        dialect_match
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(expected_id)
+    );
+    assert_eq!(
+        dialect_match.admission,
+        cadmpeg_core::dialect::Admission::Refused
+    );
+    assert_eq!(message, expected_message);
+}
+
 #[test]
 fn parser_enforces_the_part21_header_contract() {
     let cases = [
@@ -636,11 +663,10 @@ fn part28_configuration_witnesses_are_refused_before_schema_admission() {
             schema_matches_ap238
         );
         assert_eq!(codec.detect(bytes), Confidence::Medium);
-        assert!(matches!(
-            codec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::NotImplemented(message))
-                if message == "STEP Part 28 XML encoding"
-        ));
+        let error = codec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect_err("Part 28 refusal");
+        assert_unsupported_dialect(error, "step:part28-xml", "STEP Part 28 XML encoding");
     }
 }
 
@@ -761,50 +787,53 @@ fn part28_schema_mapping_witnesses_stop_at_the_caller_boundary() {
         include_bytes!("data/ce04_part28_ap238_unbound_schema.xml").as_slice(),
     ] {
         assert_eq!(codec.detect(bytes), Confidence::Medium);
-        assert!(matches!(
-            codec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::NotImplemented(message))
-                if message == "STEP Part 28 XML encoding"
-        ));
+        let error = codec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect_err("Part 28 refusal");
+        assert_unsupported_dialect(error, "step:part28-xml", "STEP Part 28 XML encoding");
     }
 }
 
 #[test]
 fn codec_refuses_out_of_envelope_encodings_by_name() {
     let codec = StepCodec::default();
-    let cases: &[(&[u8], &str)] = &[
+    let cases: &[(&[u8], &str, &str)] = &[
         (
             b"\x89HDF\r\n\x1a\ncontent",
+            "step:part26-hdf5",
             "STEP Part 26 binary/HDF5 encoding",
         ),
         (
             b"<?xml version='1.0'?><iso_10303_28/>",
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/ce03_part28_ap242.xml").as_slice(),
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/ce03_part28_ap238_step_tools.xml").as_slice(),
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/ce03_part28_configured_uos.xml").as_slice(),
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/bm01_ap242_bo_model_ed2.stpx").as_slice(),
+            "step:ap242-bo-model-xml",
             "AP242 BO-Model XML sidecar",
         ),
     ];
-    for &(bytes, reason) in cases {
+    for &(bytes, dialect, reason) in cases {
         let error = codec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message == reason)
-        );
+        assert_unsupported_dialect(error, dialect, reason);
     }
     assert_eq!(
         codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
@@ -817,14 +846,14 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     let mut hdf5_user_block = vec![0u8; 512];
     hdf5_user_block.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
     assert_eq!(codec.detect(&hdf5_user_block), Confidence::Medium);
-    assert!(matches!(
-        codec.decode(
-            &mut Cursor::new(hdf5_user_block),
-            &DecodeOptions::default()
-        ),
-        Err(cadmpeg_core::CodecError::NotImplemented(message))
-            if message == "STEP Part 26 binary/HDF5 encoding"
-    ));
+    let error = codec
+        .decode(&mut Cursor::new(hdf5_user_block), &DecodeOptions::default())
+        .expect_err("Part 26 refusal");
+    assert_unsupported_dialect(
+        error,
+        "step:part26-hdf5",
+        "STEP Part 26 binary/HDF5 encoding",
+    );
     let mut invalid_hdf5_offset = vec![0u8; 256];
     invalid_hdf5_offset.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
     assert_eq!(codec.detect(&invalid_hdf5_offset), Confidence::No);
@@ -915,11 +944,14 @@ fn codec_refuses_schema_marked_part26_hdf5_population() {
 
     let codec = StepCodec::default();
     assert_eq!(codec.detect(&bytes), Confidence::Medium);
-    assert!(matches!(
-        codec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
-        Err(cadmpeg_core::CodecError::NotImplemented(message))
-            if message == "STEP Part 26 binary/HDF5 encoding"
-    ));
+    let error = codec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect_err("Part 26 refusal");
+    assert_unsupported_dialect(
+        error,
+        "step:part26-hdf5",
+        "STEP Part 26 binary/HDF5 encoding",
+    );
 }
 
 #[test]
@@ -1086,10 +1118,13 @@ fn bo_model_does_not_compose_with_explicit_part21_file_reference() {
         assert!(xml
             .windows(value.len())
             .any(|window| window == value.as_bytes()));
-        assert!(matches!(
-            codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::NotImplemented(message))
-                if message == "AP242 BO-Model XML sidecar"
-        ));
+        let error = codec
+            .decode(&mut Cursor::new(xml), &DecodeOptions::default())
+            .expect_err("BO-Model refusal");
+        assert_unsupported_dialect(
+            error,
+            "step:ap242-bo-model-xml",
+            "AP242 BO-Model XML sidecar",
+        );
     }
 }

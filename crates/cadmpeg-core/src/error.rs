@@ -71,10 +71,16 @@ pub enum CodecError {
     /// made. Identity survives refusal, so a caller can name what it was handed
     /// even though nothing was decoded.
     ///
+    /// Rhino archive rows without a read grammar and STEP alternate-encoding
+    /// rows construct this variant at their refusal boundaries.
+    ///
     /// The identification is boxed: it is the widest payload any variant of
     /// this enum carries, and every `Result<_, CodecError>` in the workspace
     /// would otherwise grow to its width.
-    #[error("unsupported {format} dialect: {message}")]
+    #[error(
+        "unsupported {format} dialect {}: {message}",
+        .dialect_match.dialect.as_ref().map_or("unclassified", crate::dialect::DialectId::as_str)
+    )]
     UnsupportedDialect {
         /// Format layer that refused.
         format: String,
@@ -180,7 +186,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "unsupported acis dialect: save format 700 has no read grammar"
+            "unsupported acis dialect acis:save-format-binary-other: save format 700 has no read grammar"
         );
         let CodecError::UnsupportedDialect { dialect_match, .. } = &error else {
             panic!("the variant just built is the one matched");

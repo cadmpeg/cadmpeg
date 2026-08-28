@@ -236,7 +236,27 @@ fn the_refused_band_inspects_without_scanning_and_does_not_decode() {
             ..Default::default()
         },
     );
-    assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+    let Err(CodecError::UnsupportedDialect {
+        dialect_match,
+        message,
+        ..
+    }) = result
+    else {
+        panic!("archive word 5 must return a typed dialect refusal");
+    };
+    assert_eq!(
+        dialect_match
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("rhino:archive-5")
+    );
+    assert_eq!(dialect_match.declared["archive_version"], "5");
+    assert_eq!(
+        dialect_match.admission,
+        cadmpeg_core::dialect::Admission::Refused
+    );
+    assert_eq!(message, "Rhino archive version 5 decode is not implemented");
 }
 
 #[test]
@@ -275,7 +295,7 @@ fn a_refused_row_inspects_as_refused_and_a_decoded_row_as_admitted() {
                     ..Default::default()
                 },
             ),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedDialect { .. })
         );
         assert_eq!(
             matched.admission == cadmpeg_core::dialect::Admission::Refused,
