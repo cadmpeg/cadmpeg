@@ -907,6 +907,50 @@ impl EntityCensus {
 }
 
 impl ExportReport {
+    /// Constructs a report for the neutral CADIR document, which has no native
+    /// dialect target.
+    #[must_use]
+    pub fn cadir(
+        format: String,
+        census: EntityCensus,
+        fidelity: FidelityResolution,
+        write_path: WritePath,
+        losses: Vec<LossNote>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            format,
+            census,
+            fidelity,
+            write_path,
+            losses,
+            notes,
+            target: None,
+        }
+    }
+
+    /// Constructs a native-format report with its required dialect target.
+    #[must_use]
+    pub fn native(
+        target: DialectId,
+        format: String,
+        census: EntityCensus,
+        fidelity: FidelityResolution,
+        write_path: WritePath,
+        losses: Vec<LossNote>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            format,
+            census,
+            fidelity,
+            write_path,
+            losses,
+            notes,
+            target: Some(target),
+        }
+    }
+
     /// Count loss notes at or above [`Severity::Error`].
     pub fn error_count(&self) -> usize {
         self.losses

@@ -1195,3 +1195,10 @@ crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::{asm_header,acis_header}::{record_stream_start_with_header,solved_record_limit_with_header}"
 reason = "frame already-classified kernel carriers without reparsing their shared header"
+
+[[change]]
+commit = "2d6a7146435ab956f2e8683bfa8becf752fa3404"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::report::ExportReport::{cadir,native}"
+reason = "construction distinguishes the neutral report with no dialect from native reports that require a concrete target, while serde still accepts target absence in older artifacts"

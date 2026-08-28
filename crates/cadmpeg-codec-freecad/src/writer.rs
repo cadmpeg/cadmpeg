@@ -129,26 +129,26 @@ pub(crate) fn write_seekable(
             CodecError::malformed(format_args!("cannot finish FCStd archive: {error}"))
         })?;
     }
-    Ok(ExportReport {
-        target: Some(target.clone()),
-        format: "fcstd".into(),
-        census: cadmpeg_ir::EntityCensus {
+    Ok(ExportReport::native(
+        target.clone(),
+        "fcstd".into(),
+        cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: ir.census(),
         },
-        fidelity: cadmpeg_ir::FidelityResolution::NotProvided,
+        cadmpeg_ir::FidelityResolution::NotProvided,
         // Refuses without a retained `fcstd` native graph, then rewrites
         // `Document.xml` inside that entry set and repacks the rest.
-        write_path: cadmpeg_ir::WritePath::Patched,
-        losses: Vec::new(),
-        notes: vec![
+        cadmpeg_ir::WritePath::Patched,
+        Vec::new(),
+        vec![
             format!(
                 "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
                 options.schema_version, options.file_version
             ),
             "unsupported retained entries and unedited XML records were preserved".into(),
         ],
-    })
+    ))
 }
 
 struct EntrySlot {

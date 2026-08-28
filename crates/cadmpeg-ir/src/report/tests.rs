@@ -172,18 +172,17 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         decode
     );
 
-    let export = ExportReport {
-        format: "rhino".into(),
-        census: EntityCensus {
+    let export = ExportReport::cadir(
+        "cadir".into(),
+        EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts: BTreeMap::new(),
         },
-        fidelity: FidelityResolution::NotProvided,
-        write_path: WritePath::Synthesized,
-        losses: Vec::new(),
-        notes: Vec::new(),
-        target: None,
-    };
+        FidelityResolution::NotProvided,
+        WritePath::Synthesized,
+        Vec::new(),
+        Vec::new(),
+    );
     let rendered = serde_json::to_string(&export).unwrap();
     assert!(rendered.contains("\"target\":null"), "{rendered}");
     assert_eq!(

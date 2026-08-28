@@ -217,26 +217,26 @@ impl Encoder for RhinoEncoder {
                  so no other target avoids it",
             ));
         }
-        let report = ExportReport {
-            target: Some(target),
-            format: "rhino".into(),
-            census: cadmpeg_ir::EntityCensus {
+        let report = ExportReport::native(
+            target,
+            "rhino".into(),
+            cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: input.ir.census(),
             },
             // Dialect displacement is an export loss. Fidelity states only
             // whether the optional sidecar was consumed by this writer.
-            fidelity: if input.fidelity.is_some() {
+            if input.fidelity.is_some() {
                 FidelityResolution::NotConsumed
             } else {
                 FidelityResolution::NotProvided
             },
             // The 3DM writer builds every chunk from the neutral IR; it has no
             // retained-source branch.
-            write_path: WritePath::Synthesized,
+            WritePath::Synthesized,
             losses,
-            notes: vec![format!("3DM archive version {}", version.value())],
-        };
+            vec![format!("3DM archive version {}", version.value())],
+        );
         Ok(ExportPlan::buffered(report, bytes))
     }
 }

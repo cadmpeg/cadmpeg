@@ -717,24 +717,23 @@ impl Encoder for CadirEncoder {
                 self.targets(),
             ));
         }
-        let report = ExportReport {
-            target: None,
-            format: "cadir".into(),
-            census: EntityCensus {
+        let report = ExportReport::cadir(
+            "cadir".into(),
+            EntityCensus {
                 basis: CensusBasis::IrArenas,
                 counts: input.ir.census(),
             },
-            fidelity: if input.fidelity.is_some() {
+            if input.fidelity.is_some() {
                 FidelityResolution::NotConsumed
             } else {
                 FidelityResolution::NotProvided
             },
             // CADIR is the neutral document itself: there is no container to
             // replay or patch, so this encoder has one path and states it.
-            write_path: WritePath::Synthesized,
-            losses: Vec::new(),
-            notes: Vec::new(),
-        };
+            WritePath::Synthesized,
+            Vec::new(),
+            Vec::new(),
+        );
         Ok(ExportPlan::deferred(report, move |writer| {
             serde_json::to_writer_pretty(&mut *writer, input.ir)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
