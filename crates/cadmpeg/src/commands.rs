@@ -95,7 +95,7 @@ pub fn inspect(
     if matches!(forced, Some(ForcedInput::Cadir)) {
         bail!("inspect requires a container input, not cadir");
     }
-    let mut file = File::open(path)?;
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let (summary, confidence) = if let Some(ForcedInput::Codec(id)) = forced {
         let codec = catalogs
             .inputs
@@ -106,7 +106,8 @@ pub fn inspect(
             .with_context(|| format!("inspecting {}", path.display()))?;
         (summary, None)
     } else {
-        let identified = identify_with(&catalogs.inputs, &mut file, &InspectOptions { limits })?;
+        let identified = identify_with(&catalogs.inputs, &mut file, &InspectOptions { limits })
+            .map_err(|error| inspect_io_error(path, limits.max_input_bytes, error))?;
         let Some(winner) = identified.first() else {
             return Err(inspect_unrecognized(path));
         };
@@ -195,6 +196,18 @@ fn inspect_unrecognized(path: &Path) -> anyhow::Error {
         "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection",
         path.display()
     )
+}
+
+fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyhow::Error {
+    if error.kind() == io::ErrorKind::FileTooLarge {
+        anyhow!(
+            "{} exceeds the configured {}-byte input limit",
+            path.display(),
+            max_input_bytes
+        )
+    } else {
+        anyhow!(error).context(format!("inspecting {}", path.display()))
+    }
 }
 
 /// Dump a native CAD file and write CADIR JSON.
@@ -645,5 +658,53 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
                 named.name()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_core::decode::ResourceLimits;
+
+    fn catalogs() -> AppCatalogs {
+        AppCatalogs {
+            inputs: InputCatalog::with_builtins(),
+            validators: NativeValidatorCatalog::with_builtins(),
+        }
+    }
+
+    #[test]
+    fn inspect_open_errors_name_the_path() {
+        let path = Path::new("missing-inspect-input.3dm");
+        let error = inspect(
+            &catalogs(),
+            path,
+            None,
+            false,
+            None,
+            false,
+            ResourceLimits::desktop(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "opening missing-inspect-input.3dm");
+    }
+
+    #[test]
+    fn inspect_input_limit_errors_name_the_path_and_limit() {
+        let path = Path::new("oversize.3dm");
+        let error = inspect_io_error(
+            path,
+            2,
+            io::Error::new(io::ErrorKind::FileTooLarge, "input limit exceeded"),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "{} exceeds the configured 2-byte input limit",
+                path.display()
+            )
+        );
     }
 }

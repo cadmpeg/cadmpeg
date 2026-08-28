@@ -64,8 +64,8 @@ pub struct Identification {
     /// Detection confidence, not classification confidence. A `High` here can
     /// still accompany a failed or skipped inspection.
     pub confidence: Confidence,
-    /// Typed inspection result, including the complete successful summary or
-    /// the failure that prevented classification.
+    /// Inspection outcome, including the complete successful summary or the
+    /// display message of the error that prevented classification.
     pub inspection: Inspection,
     /// What the capability registry declares cadmpeg does with
     /// the primary dialect in [`Self::inspection`].
@@ -90,7 +90,7 @@ pub struct Identification {
 /// Empty when no codec recognized the prefix and it does not begin as CADIR; more
 /// than one entry when the prefix is genuinely ambiguous, which a ZIP carrying
 /// no format marker is by design. An entry whose inspection ran out of budget
-/// or failed keeps its format, confidence, and typed failure: the prefix
+/// or failed keeps its format, confidence, and failure message: the prefix
 /// evidence and the cause both survive a failed reconstruction.
 ///
 /// The `Err` is I/O on `source` itself — reading the prefix, or seeking back

@@ -673,13 +673,14 @@ fn f3z_restatement_retains_the_root_kernel_row_and_loss() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(
-        decoded.report().dialects[0]
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("f3d:f3z-multi-document")
-    );
+    assert!(decoded.report().dialects.iter().any(|matched| {
+        matched.format == crate::dialect::FORMAT
+            && matched
+                .dialect
+                .as_ref()
+                .map(cadmpeg_core::dialect::DialectId::as_str)
+                == Some("f3d:f3z-multi-document")
+    }));
     assert!(
         decoded.report().dialects.iter().any(|matched| {
             matched.format == "acis"
@@ -741,13 +742,15 @@ fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    let kernel = decoded
+    let carriers = decoded
         .report()
         .dialects
         .iter()
-        .find(|matched| matched.format == "acis")
-        .expect("component kernel row travels to the merged report");
-    assert!(kernel.declared["carrier"].starts_with("xref component0: "));
+        .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
+        .map(|matched| matched.declared["carrier"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(carriers.len(), 1);
+    assert!(carriers[0].starts_with(&format!("xref {XREF_ROLE}/occurrence-0: ")));
     let loss = decoded
         .report()
         .losses

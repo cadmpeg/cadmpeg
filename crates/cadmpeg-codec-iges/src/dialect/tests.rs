@@ -111,7 +111,7 @@ struct Case {
 
 /// Declarations spanning every arm of the version table.
 ///
-/// Ids come from `docs/dialects.toml`, admission from `VERIFIED_VERSIONS`
+/// Ids come from `docs/dialects.toml`; admission follows the verified flag rows
 /// (4.0, 5.0, 5.1, 5.2, 5.3), and the default of 3 for an absent or unreadable
 /// field 23 from IGES 5.3 section 2.2.4.3.23. Flags 12 and 99 sit outside the
 /// version table, so no row's `version_flag` discriminant matches them, and the
