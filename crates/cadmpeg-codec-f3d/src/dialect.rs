@@ -27,7 +27,7 @@
 //!
 //! The two identity rows are [`Admission::Admitted`]: each is parsed with the
 //! strategy its own row declares. [`F3dDialect::Unknown`] is the mandatory
-//! totality row (design 3.3, B4) and it is
+//! totality row and it is
 //! [`Admission::AdmittedUnverified`], naming `f3d:manifest-3-2-0-0` as the
 //! strategy applied to it, with [`dialect_loss`] charging
 //! `source.dialect-unverified` on exactly that admission. Refusal stays

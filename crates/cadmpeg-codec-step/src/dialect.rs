@@ -10,8 +10,8 @@
 //!
 //! # The identity axis is the `FILE_SCHEMA` identifier
 //!
-//! Identity is exogenous and grammar is endogenous (design §3.2), and STEP is
-//! the extreme case of the gap. The codec has exactly one Part 21 read grammar:
+//! Identity rows and parser grammars are independent, and STEP is the extreme
+//! case of the gap. The codec has exactly one Part 21 read grammar:
 //! nothing in the reader branches on the declared schema. The schema identifier
 //! is read after the parse, recorded, and used for DATA-section name matching.
 //! It is nonetheless the identity axis, because it is what the write targets
@@ -33,8 +33,8 @@
 //! Part 21 makes optional: absent is [`StepDialect::Ap242`], the region where
 //! the schema is declared and the edition is not; each declared edition has its
 //! own row; an edition claim naming no declared edition satisfies no row and
-//! lands on [`StepDialect::Unknown`], the mandatory totality row (design §3.3,
-//! B4). Parsing an edition out of an id, or expecting an id to agree with the
+//! lands on [`StepDialect::Unknown`], the mandatory totality row. Parsing an
+//! edition out of an id, or expecting an id to agree with the
 //! identifier beside it, is wrong for exactly the files whose declarations are
 //! incomplete.
 //!

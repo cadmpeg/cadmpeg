@@ -91,8 +91,8 @@ impl Layout {
     /// One row of `docs/dialects.toml` under the `creo` namespace, and the only
     /// registry string boundary this enum has. `docs/dialects.toml` declares
     /// `complete = false` for this format: the rows are the grammar classes this
-    /// codec branches on plus the mandatory [`Layout::Unknown`] totality row
-    /// (design §3.3, B4), not an enumeration of anything PTC publishes.
+    /// codec branches on plus the mandatory [`Layout::Unknown`] totality row, not
+    /// an enumeration of anything PTC publishes.
     ///
     /// Total by construction: [`Layout`] is closed and this match is
     /// exhaustive, so `detect`'s whole domain classifies.

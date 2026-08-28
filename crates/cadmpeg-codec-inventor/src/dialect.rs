@@ -111,7 +111,7 @@ fn join(values: impl IntoIterator<Item = String>) -> String {
 pub(crate) enum InventorDialect {
     /// `RSeDb` schema 31 and `RSe` Meta Stream version 8, both declared.
     Cfb3Rse31Meta8,
-    /// The mandatory totality row (design §3.3, B4): any other declaration, and
+    /// The mandatory totality row: any other declaration, and
     /// the absence of one. Admitted and degraded, never refused.
     Unknown,
 }

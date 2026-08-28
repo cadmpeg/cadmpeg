@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Target resolution: what an `FCStd` write is allowed to be (design §8.2).
+//! Target resolution: what an `FCStd` write is allowed to be.
 //!
 //! The one gate on this codec's write law. Every door into the writer —
 //! [`Encoder::plan`] and [`crate::FcstdCodec::encode_with_options`] — resolves
@@ -20,7 +20,7 @@ use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use crate::FcstdWriteOptions;
 
-/// What resolving a [`TargetRequest`] against the source decided (design §8.2).
+/// What resolving a [`TargetRequest`] against the source decided.
 ///
 /// One field, because this writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
@@ -129,7 +129,7 @@ fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'
     Ok(ExportPlan::buffered(report, bytes))
 }
 
-/// Decide what to write, from the request and the source (design §8.2).
+/// Decide what to write, from the request and the source.
 pub(in crate::writer) fn resolve(
     ir: &CadIr,
     request: TargetRequest<'_>,

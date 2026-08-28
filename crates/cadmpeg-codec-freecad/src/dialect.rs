@@ -13,9 +13,8 @@
 //! chosen. Schema 2 selects `Features`/`FeatureData`/`Feature` and schemas 3
 //! and 4 select `Objects`/`ObjectData`/`Object`
 //! ([`crate::persistence::parse_with_context`]), so identity has three declared
-//! rows and the grammar has two classes: identity is exogenous, grammar is
-//! endogenous (design §3.2). Schemas 3 and 4 are one grammar class and two
-//! rows, and both are `Admitted` because a strategy is declared for each.
+//! rows and the grammar has two classes. Schemas 3 and 4 are one grammar class
+//! and two rows, and both are `Admitted` because a strategy is declared for each.
 //!
 //! # `FileVersion` is provenance, not evidence
 //!
@@ -57,7 +56,7 @@ const TARGET_FILE_VERSION: u32 = 1;
 /// The synthesis catalog: the dialects this encoder produces for an input whose
 /// retained document graph already declares them.
 ///
-/// Preservation is not listed here (design §8.2). [`crate::writer`] repacks the
+/// Preservation is not listed here. [`crate::writer`] repacks the
 /// retained entry set and patches `Document.xml` in place, so it preserves every
 /// schema this codec reads — schema 2 included — while it regenerates none. The
 /// catalog is what an explicit `--to` may name; [`TargetRequest::Inherit`] asks
@@ -115,7 +114,7 @@ const DECLARED_PROGRAM_VERSION: &str = "program_version";
 ///
 /// `FreeCAD` publishes no schema-version specification, so `[format.fcstd]`
 /// declares `complete = false` and the rows are the schemas the codec's own
-/// dispatch enumerates plus the mandatory totality row (design §3.3, B4).
+/// dispatch enumerates plus the mandatory totality row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum FcstdDialect {
     Schema2,

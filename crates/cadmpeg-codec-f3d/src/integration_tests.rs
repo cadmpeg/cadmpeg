@@ -261,8 +261,8 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
 }
 
 // --------------------------------------------------------------------------
-// Resolution of a write request against the source (design §8.2), and the
-// §8.3 honesty invariant on every write path.
+// Resolution of a write request against the source and target-report honesty
+// on every write path.
 // --------------------------------------------------------------------------
 
 fn plan<'a>(

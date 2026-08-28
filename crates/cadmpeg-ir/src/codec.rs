@@ -468,7 +468,7 @@ pub fn unsupported_target(
 }
 
 /// Why every encoder refuses `Inherit` over a same-format source that records
-/// no dialect (design §8.2).
+/// no dialect.
 ///
 /// Preservation needs something to preserve. With no recorded dialect the
 /// identity default cannot know what the file is, so writing any catalog row
@@ -607,7 +607,7 @@ pub fn source_dialect_displaced_message(
     )
 }
 
-/// The whole write resolution of a synthesis-only encoder (design §8.2): the
+/// The whole write resolution of a synthesis-only encoder: the
 /// writer target a request names, and why the source's own dialect is not it.
 ///
 /// A synthesis-only encoder has no retained-image path, so every export is
