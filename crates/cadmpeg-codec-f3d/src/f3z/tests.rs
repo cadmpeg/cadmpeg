@@ -637,10 +637,121 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.report().dialects, inspected_dialects);
+    assert_eq!(decoded.report().dialects[0], inspected_dialects[0]);
+    assert!(decoded
+        .report()
+        .dialects
+        .iter()
+        .skip(1)
+        .all(|matched| matched.format == "acis"));
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect, inspected.dialect);
     assert_eq!(source.declared, inspected.declared);
+}
+
+fn unverified_acis_text_member() -> Vec<u8> {
+    b"23200 0 1 0 \n\
+      16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n\
+      1 9.999999999999999547e-07 1.000000000000000036e-10 \n\
+      body $-1 -1 $-1 $-1 $-1 $-1 #\n\
+      End-of-ACIS-data \n"
+        .to_vec()
+}
+
+#[test]
+fn f3z_restatement_retains_the_root_kernel_row_and_loss() {
+    let stream = unverified_acis_text_member();
+    let root = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
+        &stream,
+    );
+    let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded.report().dialects[0]
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("f3d:f3z-multi-document")
+    );
+    assert!(
+        decoded.report().dialects.iter().any(|matched| {
+            matched.format == "acis"
+                && matched
+                    .dialect
+                    .as_ref()
+                    .map(cadmpeg_core::dialect::DialectId::as_str)
+                    == Some("acis:text-acis")
+        }),
+        "{:?}",
+        decoded.report().dialects
+    );
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind()));
+}
+
+#[test]
+fn f3z_restatement_drops_the_displaced_member_dialect_loss() {
+    let root = f3d_with_smbh_and_manifest_version(&synthetic_smbh(), "9-9-9-9");
+    let member = F3dCodec
+        .decode(&mut Cursor::new(root.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(member
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::SourceDialectUnverified.kind()));
+    let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind()));
+}
+
+#[test]
+fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
+    let stream = unverified_acis_text_member();
+    let component = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
+        &stream,
+    );
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("comp.f3d", component.as_slice()),
+        ],
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let kernel = decoded
+        .report()
+        .dialects
+        .iter()
+        .find(|matched| matched.format == "acis")
+        .expect("component kernel row travels to the merged report");
+    assert!(kernel.declared["carrier"].starts_with("xref component0: "));
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind())
+        .expect("component kernel loss travels with its row");
+    assert!(loss.message.starts_with("xref component0: "));
 }
 
 /// A single-document archive names its own row, not the F3Z one.
