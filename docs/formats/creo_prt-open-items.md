@@ -66,6 +66,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the remaining prefixes to decode geometry records that contain negative values.
 
+**Conflict.** In the first directrix-coordinate lane, `a7..b1` use the signed
+DICT reconstruction `0xbf2c + prefix`. The specification limits this range to
+`a7..ae`, and the decoder assigns the generic `bf <tail6> 00` form to
+`af..b1`.
+
 ### SE-07. Other `double_xar` slots
 
 **Question.** What grammar does each `double_xar` slot use when it is not a defined literal, scalar, placeholder, or terminal slot?
