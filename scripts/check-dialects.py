@@ -56,6 +56,8 @@ WITNESS_PREFIXES = ("spec:", "corpus:", "code:")
 FORMAT_ID = re.compile(r"[a-z0-9]+")
 # Dots are legal in a dialect name: `iges:5.3-fixed-ascii`.
 DIALECT_NAME = re.compile(r"[a-z0-9.-]+")
+
+
 def _is_table(value: object) -> bool:
     return isinstance(value, dict)
 
@@ -292,6 +294,9 @@ def check(root: Path) -> tuple[list[str], str]:
         code_debt += int(debt)
 
     check_supersedes_graph([r for r in rows if _is_table(r)], seen, failures)
+    for fmt, body in formats.items():
+        if body.get("complete") is False and f"{fmt}:unknown" not in seen:
+            failures.append(f"format {fmt}: complete = false requires {fmt}:unknown")
     failures.extend(check_codec_emitted_ids(root))
 
     counts = ", ".join(f"{fmt} {n}" for fmt, n in sorted(per_format.items()))
@@ -305,8 +310,9 @@ def check(root: Path) -> tuple[list[str], str]:
 def check_codec_emitted_ids(root: Path) -> list[str]:
     """Require each pinned id in non-comment Rust text under workspace crates.
 
-    This text scan removes ``//`` line comments but does not parse Rust syntax
-    or exclude code disabled by ``cfg`` attributes.
+    This text scan removes ``//`` line comments and non-nested ``/* ... */``
+    block comments. It does not parse Rust syntax, distinguish comment markers
+    inside string literals, or exclude code disabled by ``cfg`` attributes.
     """
     path = root / REGISTRY_REL
     try:
@@ -323,6 +329,7 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
                 text = source.read_text(encoding="utf-8")
             except OSError:
                 continue
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
             text = re.sub(r"//.*$", "", text, flags=re.MULTILINE)
             literals.update(re.findall(r'"([a-z0-9]+:[a-z0-9.-]+)"', text))
 

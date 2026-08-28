@@ -104,6 +104,20 @@ class TestFileLevel(RegistryCase):
             "complete must be a boolean",
         )
 
+    def test_incomplete_format_requires_its_unknown_row(self):
+        self.assertFires(
+            _registry(GOOD_ROW, formats="[format.demo]\ncomplete = false\n"),
+            "format demo: complete = false requires demo:unknown",
+        )
+
+    def test_incomplete_format_accepts_its_unknown_row(self):
+        unknown = GOOD_ROW.replace('"demo:one"', '"demo:unknown"').replace(
+            '"Demo one"', '"Demo unknown"'
+        )
+        self.assertClean(
+            _registry(GOOD_ROW + unknown, formats="[format.demo]\ncomplete = false\n")
+        )
+
     def test_no_dialect_rows(self):
         self.assertFires(_registry(""), "no [[dialect]] rows")
 
@@ -346,6 +360,14 @@ class TestExtensionPoints(unittest.TestCase):
 
     def test_id_present_only_in_line_comment_fails(self):
         for source in ('// "demo:one"', '/// "demo:one"'):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    self.emitted_id_failures(GOOD_ROW, source),
+                    ["demo:one: no string literal under crates/*/src"],
+                )
+
+    def test_id_present_only_in_block_comment_fails(self):
+        for source in ('/* "demo:one" */', '/* first line\n"demo:one"\nlast line */'):
             with self.subTest(source=source):
                 self.assertEqual(
                     self.emitted_id_failures(GOOD_ROW, source),
