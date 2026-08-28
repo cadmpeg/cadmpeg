@@ -568,6 +568,7 @@ mod tests {
 
         for format in Format::ALL {
             let targets = write_targets(*format);
+            cadmpeg_ir::codec::assert_valid_target_catalog(targets);
             let prefix = format!("{}:", format.name());
             for target in targets {
                 assert!(

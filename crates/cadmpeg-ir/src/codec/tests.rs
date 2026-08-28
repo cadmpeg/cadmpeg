@@ -33,7 +33,7 @@ fn a_target_catalog_rejects_multiple_defaults() {
         target("test:first", NO_ALIASES, true),
         target("test:second", NO_ALIASES, true),
     ];
-    let _ = find_target(&targets, "test:first");
+    assert_valid_target_catalog(&targets);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn a_target_catalog_rejects_duplicate_ids() {
         target("test:same", NO_ALIASES, false),
         target("test:same", NO_ALIASES, false),
     ];
-    let _ = find_target(&targets, "test:same");
+    assert_valid_target_catalog(&targets);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn a_target_catalog_rejects_duplicate_aliases() {
         target("test:first", &["same"], false),
         target("test:second", &["same"], false),
     ];
-    let _ = find_target(&targets, "same");
+    assert_valid_target_catalog(&targets);
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn a_target_catalog_rejects_an_alias_that_is_an_id() {
         target("test:first", &["test:second"], false),
         target("test:second", NO_ALIASES, false),
     ];
-    let _ = find_target(&targets, "test:second");
+    assert_valid_target_catalog(&targets);
 }
 
 #[test]
