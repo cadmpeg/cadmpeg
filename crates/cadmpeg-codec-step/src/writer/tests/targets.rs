@@ -239,7 +239,7 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
 fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {
-        format: "step".to_owned(),
+        format: crate::dialect::FORMAT.to_owned(),
         dialect: None,
         ..SourceMeta::default()
     });

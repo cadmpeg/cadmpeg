@@ -4775,10 +4775,7 @@ fn dialect_losses(
     losses
 }
 
-/// Source metadata carrying `attributes`.
-///
-/// The existing attribute keys stay. Retiring the ad-hoc keys that duplicate a
-/// declared key is a later phase.
+/// Source metadata carrying non-dialect attributes.
 fn source_meta(attributes: std::collections::BTreeMap<String, String>) -> SourceMeta {
     SourceMeta {
         format: crate::dialect::FORMAT.to_string(),

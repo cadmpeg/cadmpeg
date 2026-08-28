@@ -101,7 +101,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         let mut report = DecodeReport {
             dialects,
-            format: "step".into(),
+            format: crate::dialect::FORMAT.into(),
             container_only,
             geometry_transferred: false,
             coverage: BTreeMap::new(),
@@ -129,7 +129,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             };
             code.note(diagnostic.message.clone())
                 .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "step".into(),
+                    format: crate::dialect::FORMAT.into(),
                     stream: String::new(),
                     offset: diagnostic.offset as u64,
                     tag: Some(tag.into()),
@@ -896,7 +896,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
 
 fn direct_carrier_association(id: u64) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "step".into(),
+        format: crate::dialect::FORMAT.into(),
         object_id: format!("#{id}"),
         name: None,
         color: None,

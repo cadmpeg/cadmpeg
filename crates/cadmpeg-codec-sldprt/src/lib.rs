@@ -373,12 +373,7 @@ impl CodecBackend for SldprtCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        let mut summary = container::summarize(&scan);
-        summary
-            .dialects
-            .push(dialect::SldprtDialect::classify_scan(&scan));
-        cadmpeg_core::dialect::debug_assert_primary_layer(&summary.dialects, &summary.format);
-        Ok(summary)
+        Ok(container::summarize(&scan))
     }
 
     fn decode_impl(

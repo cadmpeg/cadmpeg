@@ -376,7 +376,7 @@ pub(super) fn decode(
                 surface
                     .source_object
                     .get_or_insert_with(|| SourceObjectAssociation {
-                        format: "step".into(),
+                        format: crate::dialect::FORMAT.into(),
                         object_id: format!("#{id}"),
                         name: None,
                         color: None,
@@ -406,7 +406,7 @@ pub(super) fn decode(
                 || unresolved_items.contains(&id)
                 || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
             .then(|| SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{id}"),
                 name: None,
                 color: None,

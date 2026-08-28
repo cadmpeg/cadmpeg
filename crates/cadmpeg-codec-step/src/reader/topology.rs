@@ -235,7 +235,7 @@ pub(super) fn decode(
                     record.id
                 ))
                 .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "step".into(),
+                    format: crate::dialect::FORMAT.into(),
                     stream: String::new(),
                     offset: record.span.start as u64,
                     tag: Some("oriented_shell".into()),
@@ -2028,7 +2028,7 @@ fn build_one(
                     "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier and retaining the source face, bounds, loops, and enclosing records as opaque"
                 ));
                 losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "step".into(),
+                    format: crate::dialect::FORMAT.into(),
                     stream: String::new(),
                     offset: fr.span.start as u64,
                     tag: Some("face".into()),
@@ -2533,7 +2533,7 @@ fn build_one(
                     face_ids.len(),
                 ));
             losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 stream: String::new(),
                 offset: sr.span.start as u64,
                 tag: Some(shell_type.to_ascii_lowercase()),

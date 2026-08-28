@@ -140,15 +140,13 @@
     "source": {
       "attributes": {
         "acis_save_format_version": "23200",
-        "encoding": "text",
         "kernel_entity_count": "2",
         "kernel_family": "asm",
         "kernel_flags": "2",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic",
-        "scale": "1",
-        "terminator": "End-of-ASM-data"
+        "scale": "1"
       },
       "declared": {
         "encoding": "text",

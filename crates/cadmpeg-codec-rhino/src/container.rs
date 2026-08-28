@@ -1130,7 +1130,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
 /// Every report this module builds from a [`Scan`] goes through here, so the
 /// container summary, the container-only report, and the source metadata all
 /// carry the same match.
-fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
+pub(crate) fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
     scan.archive
         .classify(scan.metadata.properties.writer_version)
 }

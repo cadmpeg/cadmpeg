@@ -4484,7 +4484,7 @@ impl<'a> Builder<'a> {
             // rather than from the caller's request, so the reported target
             // and the `FILE_SCHEMA` record cannot disagree.
             DialectId::pinned(self.schema.target()),
-            "step".into(),
+            crate::dialect::FORMAT.into(),
             cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::TargetRecords,
                 counts: self.emitter.counts(),
