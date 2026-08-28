@@ -90,31 +90,7 @@ impl DecodeResult {
     /// producer contradiction panics in every build because it is a codec bug,
     /// not an input refusal.
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
-        let primary = if report.dialects.is_empty() {
-            None
-        } else {
-            Some(
-                cadmpeg_core::dialect::primary_layer(&report.dialects, &report.format)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "primary-layer invariant failed: populated dialects for format {:?} must contain exactly one entry naming it",
-                            report.format
-                        )
-                    }),
-            )
-        };
-        if let Some(source) = ir.source.as_mut() {
-            match primary {
-                Some(matched) => {
-                    source.dialect.clone_from(&matched.dialect);
-                    source.declared.clone_from(&matched.declared);
-                }
-                None => {
-                    source.dialect = None;
-                    source.declared.clear();
-                }
-            }
-        }
+        project_primary_layer(&mut ir, &report);
         ir.finalize();
         source_fidelity.finalize();
         Self {
@@ -139,12 +115,13 @@ impl DecodeResult {
         &self.report
     }
 
-    /// Borrow the transfer report mutably.
-    ///
-    /// This does not re-project source metadata after construction. Post-hoc
-    /// report mutation is a separate consistency responsibility.
-    pub fn report_mut(&mut self) -> &mut DecodeReport {
-        &mut self.report
+    /// Edits the transfer report and re-projects source metadata when the
+    /// returned guard is dropped.
+    pub fn report_mut(&mut self) -> impl DerefMut<Target = DecodeReport> + '_ {
+        ReportEdit {
+            ir: &mut self.ir,
+            report: &mut self.report,
+        }
     }
 
     /// Borrow source fidelity.
@@ -160,6 +137,61 @@ impl DecodeResult {
     /// Consume into IR, report, and source fidelity.
     pub fn into_parts(self) -> (CadIr, DecodeReport, SourceFidelity) {
         (self.ir, self.report, self.source_fidelity)
+    }
+}
+
+fn project_primary_layer(ir: &mut CadIr, report: &DecodeReport) {
+    let primary = if report.dialects.is_empty() {
+        None
+    } else {
+        Some(
+            cadmpeg_core::dialect::primary_layer(&report.dialects, &report.format).unwrap_or_else(
+                || {
+                    panic!(
+                        "primary-layer invariant failed: populated dialects for format {:?} must contain exactly one entry naming it",
+                        report.format
+                    )
+                },
+            ),
+        )
+    };
+    if let Some(source) = ir.source.as_mut() {
+        match primary {
+            Some(matched) => {
+                source.dialect.clone_from(&matched.dialect);
+                source.declared.clone_from(&matched.declared);
+            }
+            None => {
+                source.dialect = None;
+                source.declared.clear();
+            }
+        }
+    }
+}
+
+#[must_use = "the guard keeps the DecodeResult mutably borrowed until source metadata is re-projected"]
+struct ReportEdit<'a> {
+    ir: &'a mut CadIr,
+    report: &'a mut DecodeReport,
+}
+
+impl Deref for ReportEdit<'_> {
+    type Target = DecodeReport;
+
+    fn deref(&self) -> &Self::Target {
+        self.report
+    }
+}
+
+impl DerefMut for ReportEdit<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.report
+    }
+}
+
+impl Drop for ReportEdit<'_> {
+    fn drop(&mut self) {
+        project_primary_layer(self.ir, self.report);
     }
 }
 
@@ -266,7 +298,7 @@ pub trait Codec: CodecBackend + sealed::Sealed {
     /// This is the only path from a backend's `ContainerSummary` to a caller,
     /// so it is where the primary-layer invariant is checked: a populated
     /// [`ContainerSummary::dialects`] names the summary's own `format` exactly
-    /// once. See [`cadmpeg_core::dialect::debug_assert_primary_layer`].
+    /// once.
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -306,7 +338,15 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
         if let Ok(summary) = &result {
-            cadmpeg_core::dialect::debug_assert_primary_layer(&summary.dialects, &summary.format);
+            if !summary.dialects.is_empty()
+                && cadmpeg_core::dialect::primary_layer(&summary.dialects, &summary.format)
+                    .is_none()
+            {
+                panic!(
+                    "primary-layer invariant failed: populated dialects for format {:?} must contain exactly one entry naming it",
+                    summary.format
+                );
+            }
         }
         result
     }
