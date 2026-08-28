@@ -304,6 +304,33 @@ fn existing_output_requires_force() {
 }
 
 #[test]
+fn existing_output_is_refused_before_decode() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("malformed.igs");
+    let output = dir.path().join("existing.step");
+    fs::write(&input, b"not an IGES file").unwrap();
+    fs::write(&output, b"keep").unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "--input-format",
+            "iges",
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("pass --force to overwrite")
+                .and(predicate::str::contains("decode failed").not()),
+        );
+    assert_eq!(fs::read(output).unwrap(), b"keep");
+}
+
+#[test]
 fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "part.tmp", &unit_cube());

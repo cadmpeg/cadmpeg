@@ -100,8 +100,6 @@ pub struct PreparedConversion {
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
     destination: Option<PathBuf>,
-    input: PathBuf,
-    force: bool,
     reject_export_losses: bool,
 }
 
@@ -143,6 +141,9 @@ impl<'a> Transcoder<'a> {
                 ),
             }
             .into());
+        }
+        if let Some(destination) = &policy.destination {
+            ArtifactStore::check_output_path(source.path, destination, policy.force)?;
         }
 
         let outcome =
@@ -204,8 +205,6 @@ impl<'a> Transcoder<'a> {
             encoder: target.encoder,
             selection: target.selection,
             destination: policy.destination,
-            input: source.path.to_path_buf(),
-            force: policy.force,
             reject_export_losses: policy.reject_export_losses,
         })
     }
@@ -266,12 +265,10 @@ impl PlannedConversion<'_> {
     /// Writes the destination artifact and optional CADIR sidecar.
     pub fn write(self) -> Result<ExportReport> {
         let prepared = self.prepared;
-        write_export_plan(
+        emit_export_plan(
             self.plan,
             prepared.format,
             prepared.destination.as_deref(),
-            &prepared.input,
-            prepared.force,
             prepared.document.decode_report(),
             prepared.document.fidelity(),
         )
@@ -377,18 +374,14 @@ fn decode_lossy_refusal(
     })
 }
 
-fn write_export_plan(
+/// Emits one built plan to its destination and maintains CADIR sidecars.
+pub(crate) fn emit_export_plan(
     plan: ExportPlan<'_>,
     format: Format,
     out: Option<&Path>,
-    input: &Path,
-    force: bool,
     decode_report: Option<&DecodeReport>,
     source_fidelity: Option<&SourceFidelity>,
 ) -> Result<ExportReport> {
-    if let Some(path) = out {
-        ArtifactStore::check_output_path(input, path, force)?;
-    }
     let needs_sidecar_digest =
         format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
     let report = if let Some(path) = out {
