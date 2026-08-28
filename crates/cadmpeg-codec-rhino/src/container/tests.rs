@@ -238,7 +238,9 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
     assert!(!summary.entries.is_empty());
     assert_eq!(
         summary.dialects[0].admission,
-        cadmpeg_core::dialect::Admission::Admitted
+        cadmpeg_core::dialect::Admission::AdmittedUnverified {
+            nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50")
+        }
     );
 
     let decoded = RhinoCodec
@@ -251,6 +253,17 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
         )
         .expect("archive word 5 reaches chunked container decode");
     assert!(decoded.report().container_only);
+    assert_eq!(
+        decoded.report().dialects[0].admission,
+        cadmpeg_core::dialect::Admission::AdmittedUnverified {
+            nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50")
+        }
+    );
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == crate::loss::RhinoLossCode::SourceDialectUnverified.kind() }));
 }
 
 #[test]

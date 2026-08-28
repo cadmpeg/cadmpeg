@@ -140,9 +140,9 @@ impl CodecBackend for RhinoCodec {
 /// [`dialect::TARGETS`].
 ///
 /// The one per-codec sentence of the shared catalog-write resolution. The band
-/// is real — archives 1, 2, 3, 4 and 90 decode without a writer, archive 5 is
-/// refused, and unknown words decode as admitted-unverified — and 3DM has no
-/// retained-image path that could write any of them back.
+/// is real — archives 1, 2, 3, 4, 5 and 90 decode without a writer, archive 5
+/// and unknown words decode as admitted-unverified, and 3DM has no retained-
+/// image path that could write any of them back.
 const OFF_CATALOG_SOURCE_REASON: &str =
     "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
