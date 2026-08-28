@@ -1485,10 +1485,9 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no reader reports this id today: SAT is single-layer, so a text stream's
-kernel layer is not separately emitted and its disposition is enforced
-through the `sat:text` row that wraps the same stream. `cadmpeg-asm`
-pins the id"""
+SAT emits this kernel row after an ASM-terminated text stream alongside
+the primary `sat:text` host row. The SAT goldens are code-built, so no
+stream file on disk backs the profile's L3"""
 
 [[support]]
 dialect = "acis:text-acis"
@@ -1496,10 +1495,9 @@ read = "detected"
 write = "none"
 fixtures = []
 reason = """
-no reader reports this id today: SAT is single-layer, so a text stream's
-kernel layer is not separately emitted and its disposition is enforced
-through the `sat:text` row that wraps the same stream. `cadmpeg-asm`
-pins the id"""
+SAT emits this kernel row after an ACIS-terminated text stream alongside
+the primary `sat:text` host row. The SAT goldens are code-built, so no
+stream file on disk backs the profile's L3"""
 
 [[support]]
 dialect = "acis:unknown"
@@ -1509,8 +1507,8 @@ fixtures = []
 reason = """
 a kernel stream whose framing markers match no declared row: no header,
 terminator, or width selects a record grammar, so there is no strategy
-to attempt. Unreachable today — every emitted kernel-layer id comes from
-a framed carrier"""
+to attempt. SAT reports it when only the host discriminant frames, and
+F3D reports it for unframed kernel carriers"""
 
 # --------------------------------------------------------------------------
 # parasolid
