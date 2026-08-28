@@ -240,7 +240,7 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 | `rhino:archive-2`  | detected               | none    | 0        |
 | `rhino:archive-3`  | L1                     | none    | 1        |
 | `rhino:archive-4`  | L1                     | none    | 1        |
-| `rhino:archive-5`  | refused                | none    | 0        |
+| `rhino:archive-5`  | detected               | none    | 0        |
 | `rhino:archive-50` | L1                     | emitted | 17       |
 | `rhino:archive-60` | L1                     | emitted | 4        |
 | `rhino:archive-70` | L1                     | emitted | 1        |
@@ -250,7 +250,7 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 <!-- /generated: dialects rhino -->
 
-Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above the scored rows. V1 decodes through the legacy flat-record path, and archive 5 has bounded header inspection only.
+Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above the scored rows. V1 decodes through the legacy flat-record path. Archive 5 uses the four-byte chunk scan and is admitted unverified against archive 50.
 
 ### Read profile
 

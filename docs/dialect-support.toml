@@ -788,12 +788,14 @@ fixtures = [
 [[support]]
 dialect = "rhino:archive-5"
 grammar = "chunked"
-read = "refused"
+read = "detected"
 write = "none"
 fixtures = []
 reason = """
-pre-chunk grammar not decoded; header-only inspection,
-`Admission::Refused`"""
+the decoder attempts the same four-byte chunk-value scan used for archive words
+2 through 4. It reports `Admission::AdmittedUnverified` with
+`rhino:archive-50` as nearest and charges `source.dialect-unverified`; no frozen
+fixture exists, so the row cannot claim a score"""
 
 [[support]]
 dialect = "rhino:archive-50"
