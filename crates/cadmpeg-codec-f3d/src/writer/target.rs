@@ -191,17 +191,17 @@ fn report(
     write_path: WritePath,
     losses: Vec<cadmpeg_ir::LossNote>,
 ) -> ExportReport {
-    ExportReport {
-        target: Some(target),
-        format: dialect::FORMAT.into(),
-        census: cadmpeg_ir::EntityCensus {
+    ExportReport::native(
+        target,
+        dialect::FORMAT.into(),
+        cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: ir.census(),
         },
         fidelity,
         write_path,
         losses,
-        notes: vec![
+        vec![
             match write_path {
                 WritePath::VerbatimReplay => "preserved source container replayed verbatim",
                 WritePath::Patched => "preserved source container replayed with semantic patches",
@@ -210,5 +210,5 @@ fn report(
             .into(),
             "entity counts are derived from the IR".into(),
         ],
-    }
+    )
 }

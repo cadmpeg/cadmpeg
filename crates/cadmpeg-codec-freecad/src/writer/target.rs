@@ -120,7 +120,7 @@ fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'
         let target = report
             .target
             .as_ref()
-            .expect("FCStd writes name their target");
+            .expect("FCStd report constructed without a target");
         report
             .losses
             .push(FreecadLossCode::SourceDialectDisplaced.note(

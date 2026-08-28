@@ -4479,23 +4479,23 @@ impl<'a> Builder<'a> {
     }
 
     fn finish_report(&self) -> ExportReport {
-        ExportReport {
+        ExportReport::native(
             // The schema this builder emitted, read back from the builder
             // rather than from the caller's request, so the reported target
             // and the `FILE_SCHEMA` record cannot disagree.
-            target: Some(DialectId::pinned(self.schema.target())),
-            format: "step".into(),
-            census: cadmpeg_ir::EntityCensus {
+            DialectId::pinned(self.schema.target()),
+            "step".into(),
+            cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::TargetRecords,
                 counts: self.emitter.counts(),
             },
-            fidelity: FidelityResolution::NotProvided,
+            FidelityResolution::NotProvided,
             // STEP is a target-only format here: every record is emitted from
             // the neutral IR, with no source container to replay or patch.
-            write_path: WritePath::Synthesized,
-            losses: self.losses.clone(),
-            notes: self.notes.clone(),
-        }
+            WritePath::Synthesized,
+            self.losses.clone(),
+            self.notes.clone(),
+        )
     }
 }
 

@@ -147,17 +147,17 @@ fn finish<'a>(
         ));
     }
     ExportPlan::buffered(
-        ExportReport {
-            target: Some(target),
-            format: dialect::FORMAT.into(),
-            census: cadmpeg_ir::EntityCensus {
+        ExportReport::native(
+            target,
+            dialect::FORMAT.into(),
+            cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: input.ir.census(),
             },
             fidelity,
             write_path,
             losses,
-            notes: vec![
+            vec![
                 match write_path {
                     WritePath::VerbatimReplay => "preserved source container replayed verbatim",
                     WritePath::Patched => {
@@ -168,7 +168,7 @@ fn finish<'a>(
                 .into(),
                 "entity counts are derived from the IR".into(),
             ],
-        },
+        ),
         bytes,
     )
 }

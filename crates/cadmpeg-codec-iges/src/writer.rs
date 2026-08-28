@@ -171,18 +171,18 @@ fn report(
     note: &str,
     counts: BTreeMap<String, usize>,
 ) -> ExportReport {
-    ExportReport {
-        target: Some(target),
-        format: crate::dialect::FORMAT.into(),
-        census: EntityCensus {
+    ExportReport::native(
+        target,
+        crate::dialect::FORMAT.into(),
+        EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts,
         },
         fidelity,
         write_path,
         losses,
-        notes: vec![note.into()],
-    }
+        vec![note.into()],
+    )
 }
 
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {

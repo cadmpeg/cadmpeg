@@ -70,7 +70,7 @@ impl Encoder for StepCodec {
         let target = report
             .target
             .as_ref()
-            .expect("STEP writes name their target");
+            .expect("STEP report constructed without a target");
         if let Some(source) = displaced.as_ref() {
             report
                 .losses
