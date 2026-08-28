@@ -3176,31 +3176,32 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
 /// `SourceMeta::attributes["sw_version"]`. Callers that already hold those
 /// attributes read the key directly instead of calling this.
 pub(crate) fn declared_sw_version(scan: &ContainerScan) -> Option<String> {
-    let mut attributes = BTreeMap::new();
-    add_solidworks_xml_metadata(scan, &mut attributes);
-    attributes.remove("sw_version")
+    first_declared_sw_version(scan.sections().map(container::Section::payload))
 }
 
-/// The `swVersion` one payload declares, or `None` when the payload is not a
-/// `swSolidWorks` XML envelope or declares no version.
+/// The declaration on the first `swSolidWorks` envelope, if it has one.
 ///
-/// The reading [`add_solidworks_xml_metadata`] performs over a scanned
-/// document, applied to a single payload. The writer classifies the envelope it
-/// emits through this and keeps the last declaration, matching that function's
-/// insert-per-section fold, so `ExportReport::target` and a re-decode of the
-/// written bytes read the same attribute through the same parser and the same
-/// fold.
-pub(crate) fn payload_sw_version(payload: &[u8]) -> Option<String> {
-    if container::payload_family(payload) != "xml" {
-        return None;
+/// The decoder stops after that envelope even when it has no `swVersion`.
+/// The writer uses this same fold to classify the bytes it emits.
+pub(crate) fn first_declared_sw_version<'a>(
+    payloads: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<String> {
+    for payload in payloads {
+        if container::payload_family(payload) != "xml" {
+            continue;
+        }
+        let Some(text) = container::xml_text(payload) else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        let root = document.root_element();
+        if root.tag_name().name() == "swSolidWorks" {
+            return root.attribute("swVersion").map(str::to_owned);
+        }
     }
-    let text = container::xml_text(payload)?;
-    let document = roxmltree::Document::parse(&text).ok()?;
-    let root = document.root_element();
-    if root.tag_name().name() != "swSolidWorks" {
-        return None;
-    }
-    root.attribute("swVersion").map(str::to_owned)
+    None
 }
 
 fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {

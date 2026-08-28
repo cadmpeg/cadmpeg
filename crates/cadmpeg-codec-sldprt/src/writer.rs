@@ -285,16 +285,13 @@ pub(crate) fn write_semantic_with_records(
     // source's own `swVersion` through unchanged; a generated one declares
     // none; a document with no active configuration and no retained envelope
     // carries no envelope at all. The last two classify onto the totality row,
-    // which is the whole synthesis catalog. Last declaration wins, matching
-    // `add_solidworks_xml_metadata`'s insert-per-section fold, so a document
-    // carrying two envelopes with different versions classifies the same here
-    // and on re-decode.
+    // which is the whole synthesis catalog. The decoder's first-envelope fold
+    // classifies the written bytes here and on re-decode.
     Ok(crate::dialect::SldprtDialect::from_declaration(
-        sections
-            .iter()
-            .filter_map(|(_, payload)| crate::decode::payload_sw_version(payload))
-            .next_back()
-            .as_deref(),
+        crate::decode::first_declared_sw_version(
+            sections.iter().map(|(_, payload)| payload.as_slice()),
+        )
+        .as_deref(),
     )
     .id())
 }

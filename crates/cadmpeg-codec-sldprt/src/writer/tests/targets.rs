@@ -10,6 +10,25 @@ use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
 use crate::{loss::SldprtLossCode, SldprtCodec};
 
+#[test]
+fn first_solidworks_envelope_selects_the_written_dialect() {
+    let sections = [
+        (
+            "Contents/Features",
+            br#"<?xml version="1.0"?><swSolidWorks swVersion="11000"/>"#.as_slice(),
+        ),
+        (
+            "Contents/SolidWorks",
+            br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"/>"#.as_slice(),
+        ),
+    ];
+    let declaration =
+        crate::decode::first_declared_sw_version(sections.iter().map(|(_, payload)| *payload));
+    let dialect = crate::dialect::SldprtDialect::from_declaration(declaration.as_deref());
+
+    assert_eq!(dialect, crate::dialect::SldprtDialect::SwVersionPre12000);
+}
+
 /// An explicit target this writer does not produce is refused by `plan` itself,
 /// with the catalog in the message.
 ///
