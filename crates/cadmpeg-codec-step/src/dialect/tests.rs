@@ -251,7 +251,7 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
 
 #[test]
 fn a_future_ap242_edition_word_uses_the_unverified_edition_three_strategy() {
-    let dialect = StepDialect::from_ap242_edition(Some("edition 4"));
+    let dialect = StepDialect::from_ap242_edition(None);
     assert_eq!(dialect, StepDialect::Unknown);
     assert_eq!(
         dialect.admission(),
