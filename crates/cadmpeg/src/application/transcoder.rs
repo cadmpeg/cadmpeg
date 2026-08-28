@@ -146,7 +146,8 @@ impl<'a> Transcoder<'a> {
         }
 
         let outcome =
-            loader::load_artifact(self.inputs, source.path, source.options, source.forced)?;
+            loader::load_artifact(self.inputs, source.path, source.options, source.forced)
+                .map_err(classify_decode_failure)?;
         let loaded = outcome.document;
         let notices = outcome.notices;
         let decode_report = loaded.decode_report().cloned();
@@ -323,7 +324,7 @@ fn plan_refusal(
     }
 }
 
-fn validate_ir(
+pub(crate) fn validate_ir(
     validators: &NativeValidatorCatalog,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
@@ -335,6 +336,20 @@ fn validate_ir(
     };
     report.findings.extend(validators.validate(ir));
     report
+}
+
+/// Classifies codec decode failures while preserving operational I/O errors.
+pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
+    let Some(codec_error) = error.downcast_ref::<cadmpeg_core::CodecError>() else {
+        return error;
+    };
+    if matches!(codec_error, cadmpeg_core::CodecError::Io(_)) {
+        return error;
+    }
+    ConversionRefusal::DecodeFailed {
+        message: format!("decode failed: {error:#}"),
+    }
+    .into()
 }
 
 fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {

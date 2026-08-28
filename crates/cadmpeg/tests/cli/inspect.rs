@@ -61,7 +61,7 @@ fn iges_dump_report_classifies_codec_refusal() {
             report.to_str().unwrap(),
         ])
         .assert()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("decode failed"));
 
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
@@ -74,6 +74,38 @@ fn iges_dump_report_classifies_codec_refusal() {
         .as_str()
         .unwrap()
         .contains("IGES"));
+}
+
+#[test]
+fn convert_decode_failure_writes_a_refusal_report() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("malformed.igs");
+    let report = dir.path().join("convert-report.json");
+    fs::write(&input, b"not an IGES file").unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "--input-format",
+            "iges",
+            "--to",
+            "cadir",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("decode failed"));
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["command"], "convert");
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["refusal"]["stage"], "decode");
+    assert_eq!(value["refusal"]["code"], "decode_failed");
+    assert!(value["decode_report"].is_null());
+    assert!(value["check_report"].is_null());
 }
 
 #[test]

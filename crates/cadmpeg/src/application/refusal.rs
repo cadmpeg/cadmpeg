@@ -247,12 +247,12 @@ impl ConversionRefusal {
 
     /// Process exit status for this refusal.
     ///
-    /// Semantic model refusals exit 1. Binary-stdout remains exit 2 so the
-    /// operational mix-up guard stays distinct from model refusals.
+    /// Semantic model refusals exit 1. Decode failure and binary-stdout remain
+    /// exit 2 because they are operational failures.
     #[must_use]
     pub const fn exit_code(&self) -> u8 {
         match self {
-            Self::BinaryStdoutRejected { .. } => 2,
+            Self::DecodeFailed { .. } | Self::BinaryStdoutRejected { .. } => 2,
             _ => 1,
         }
     }
@@ -308,7 +308,7 @@ mod tests {
         };
         assert_eq!(refusal.code(), RefusalCode::DecodeFailed);
         assert_eq!(refusal.stage(), RefusalStage::Decode);
-        assert_eq!(refusal.exit_code(), 1);
+        assert_eq!(refusal.exit_code(), 2);
         assert!(refusal.may_write_report());
         assert!(refusal.decode_report().is_none());
         assert!(refusal.check_report().is_none());
