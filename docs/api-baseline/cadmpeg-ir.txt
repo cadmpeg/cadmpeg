@@ -1,4 +1,4 @@
-# generated at 2d6a71464
+# generated at d4c61cbe8
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -704,7 +704,6 @@ pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescript
 pub fn cadmpeg_ir::codec::resolve_catalog_write(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::result::Result<(&'static cadmpeg_ir::codec::TargetDescriptor, core::option::Option<cadmpeg_core::dialect::DialectId>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::resolve_write_request<'a>(&'a cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::WriteRequest<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::source_dialect_displaced_message(&cadmpeg_core::dialect::DialectId, &cadmpeg_core::dialect::DialectId) -> alloc::string::String
-pub fn cadmpeg_ir::codec::unrecorded_source_dialect(&str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_ir::codec::unsupported_target(&str, &str, &str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
 pub mod cadmpeg_ir::compare
 pub const cadmpeg_ir::compare::FLOAT_TOLERANCE: f64

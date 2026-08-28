@@ -314,15 +314,31 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     assert_eq!(source.declared, primary.declared);
 }
 
-/// The gate is a `debug_assert`, which compiles out under `--release`. Without
-/// this attribute a release-profile test run would report a spurious failure:
-/// nothing panics, so `#[should_panic]` is unsatisfied.
-#[cfg(debug_assertions)]
 #[test]
-#[should_panic(expected = "must contain exactly one entry naming it")]
+#[should_panic(expected = "primary-layer invariant failed")]
 fn a_decode_result_refuses_dialects_with_no_primary_layer() {
     let report = DecodeReport {
         dialects: vec![dialect_layer("acis", "acis:save-format-217")],
+        format: "test".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+
+    DecodeResult::new(unit_cube(), report, SourceFidelity::default());
+}
+
+#[test]
+#[should_panic(expected = "primary-layer invariant failed")]
+fn a_decode_result_refuses_dialects_with_multiple_primary_layers() {
+    let report = DecodeReport {
+        dialects: vec![
+            dialect_layer("test", "test:first"),
+            dialect_layer("test", "test:second"),
+        ],
         format: "test".into(),
         container_only: false,
         geometry_transferred: true,

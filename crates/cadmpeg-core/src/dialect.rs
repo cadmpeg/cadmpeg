@@ -166,8 +166,7 @@ pub fn primary_layer<'a>(dialects: &'a [DialectMatch], format: &str) -> Option<&
 ///
 /// Vacuously true while `dialects` is empty, which is the staged state before a
 /// codec populates it. Once populated, exactly one entry must name `format`.
-#[must_use]
-pub fn holds_primary_layer_invariant(dialects: &[DialectMatch], format: &str) -> bool {
+fn holds_primary_layer_invariant(dialects: &[DialectMatch], format: &str) -> bool {
     dialects.is_empty() || primary_layer(dialects, format).is_some()
 }
 
