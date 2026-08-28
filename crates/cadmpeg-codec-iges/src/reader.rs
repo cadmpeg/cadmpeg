@@ -30,7 +30,7 @@ fn source_meta(global: &global::ResolvedGlobal, representation: Representation) 
         "record_delimiter".into(),
         char::from(global.record_delimiter).to_string(),
     );
-    attributes.insert("iges_version".into(), global.version().into());
+    attributes.insert("iges_version".into(), global.version_name().into());
     attributes.insert(
         "iges_version_flag".into(),
         global.declared_version_flag().to_string(),
