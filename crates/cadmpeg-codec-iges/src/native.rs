@@ -1651,7 +1651,7 @@ pub(crate) fn store(
             .filter(|groups| groups.fully_valid)
             .map_or(record.parameter_end(), |groups| groups.token_start)
             .min(
-                crate::parameter::entity_primary_end_for_dialect(
+                crate::parameter::entity_primary_end_for_global_table(
                     record,
                     &entries,
                     global.global_table(),

@@ -7,9 +7,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
-    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_for_dialect,
+    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_for_global_table,
     analyze_trailing_pointer_groups_with_records, entity_primary_end,
-    entity_primary_end_for_dialect, entity_primary_end_with_records, groups_for_candidate,
+    entity_primary_end_for_global_table, entity_primary_end_with_records, groups_for_candidate,
     structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
 use crate::card::{scan, Section};

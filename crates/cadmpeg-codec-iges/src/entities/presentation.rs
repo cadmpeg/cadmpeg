@@ -60,7 +60,7 @@ fn text_font_definition_pointer_valid(
         })
 }
 
-pub(super) fn general_note_font_valid_for_dialect(
+pub(super) fn general_note_font_valid_for_global_table(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
@@ -285,7 +285,7 @@ pub(super) fn project(
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| {
-            general_note_font_valid_for_dialect(font, &entries, global.global_table())
+            general_note_font_valid_for_global_table(font, &entries, global.global_table())
         });
         let directory_valid = text_template_directory_valid(entry, global.global_table());
         let fields_valid = parameter_end <= 11

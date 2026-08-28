@@ -18,15 +18,15 @@ use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use crate::entities::presentation::general_note_font_valid_for_dialect;
+use crate::entities::presentation::general_note_font_valid_for_global_table;
 use crate::global::GlobalTable;
 
 use super::{
-    dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
-    general_note_string_count_valid, general_note_text_valid_for_dialect,
-    general_symbol_note_valid, justification_valid, leader_valid_for_dialect, mirror_flag_valid,
-    new_general_note_charset_valid, new_general_note_font_valid, sectioned_area_curves_coplanar,
-    sectioned_area_valid, vertical_text_flag_valid,
+    dimension_enclosure_type_allowed, fill_pattern_valid_for_global_table, fixed_or_variable_valid,
+    general_note_string_count_valid, general_note_text_valid_for_global_table,
+    general_symbol_note_valid, justification_valid, leader_valid_for_global_table,
+    mirror_flag_valid, new_general_note_charset_valid, new_general_note_font_valid,
+    sectioned_area_curves_coplanar, sectioned_area_valid, vertical_text_flag_valid,
 };
 
 #[test]
@@ -95,43 +95,43 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
 
 #[test]
 fn general_note_kanji_text_uses_biased_jis_hex_pairs() {
-    assert!(general_note_text_valid_for_dialect(
+    assert!(general_note_text_valid_for_global_table(
         b"34413B7A",
         2001,
         GlobalTable::V5_0,
         false
     ));
-    assert!(general_note_text_valid_for_dialect(
+    assert!(general_note_text_valid_for_global_table(
         b"",
         2001,
         GlobalTable::V5_0,
         false
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"34413B7",
         2001,
         GlobalTable::V5_0,
         false
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"34413B7G",
         2001,
         GlobalTable::V5_0,
         false
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"20413B7A",
         2001,
         GlobalTable::V5_0,
         false
     ));
-    assert!(general_note_text_valid_for_dialect(
+    assert!(general_note_text_valid_for_global_table(
         b" ",
         2001,
         GlobalTable::V5_0,
         true
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"34413B7A",
         2001,
         GlobalTable::V4_0,
@@ -479,13 +479,13 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
+            general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid_for_dialect(value, &entries, GlobalTable::V5_3),
+            !general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
             "font code {value}"
         );
     }
@@ -537,7 +537,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         240, 244, 246, 252, 254, 256, 262, 264, 265, 266, 268,
     ] {
         assert!(
-            fill_pattern_valid_for_dialect(value, GlobalTable::V5_3),
+            fill_pattern_valid_for_global_table(value, GlobalTable::V5_3),
             "admitted fill pattern {value}"
         );
     }
@@ -545,7 +545,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         21, 23, 24, 25, 27, 30, 31, 33, 35, 37, 39, 43, 44, 45, 47, 48, 49, 51, 269,
     ] {
         assert!(
-            !fill_pattern_valid_for_dialect(value, GlobalTable::V5_3),
+            !fill_pattern_valid_for_global_table(value, GlobalTable::V5_3),
             "reserved fill pattern {value}"
         );
     }
@@ -553,11 +553,11 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
 
 #[test]
 fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
-    assert!(fill_pattern_valid_for_dialect(19, GlobalTable::V4_0));
-    assert!(!fill_pattern_valid_for_dialect(20, GlobalTable::V4_0));
-    assert!(fill_pattern_valid_for_dialect(20, GlobalTable::V5_0));
-    assert!(fill_pattern_valid_for_dialect(268, GlobalTable::V5_3));
-    assert!(!fill_pattern_valid_for_dialect(269, GlobalTable::V5_3));
+    assert!(fill_pattern_valid_for_global_table(19, GlobalTable::V4_0));
+    assert!(!fill_pattern_valid_for_global_table(20, GlobalTable::V4_0));
+    assert!(fill_pattern_valid_for_global_table(20, GlobalTable::V5_0));
+    assert!(fill_pattern_valid_for_global_table(268, GlobalTable::V5_3));
+    assert!(!fill_pattern_valid_for_global_table(269, GlobalTable::V5_3));
 }
 
 #[test]
@@ -856,8 +856,12 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(5);
 
-    assert!(leader_valid_for_dialect(&entry, &record, GlobalTable::V4_0));
-    assert!(!leader_valid_for_dialect(
+    assert!(leader_valid_for_global_table(
+        &entry,
+        &record,
+        GlobalTable::V4_0
+    ));
+    assert!(!leader_valid_for_global_table(
         &entry,
         &record,
         GlobalTable::V5_3
@@ -865,8 +869,12 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
 
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(4);
-    assert!(leader_valid_for_dialect(&entry, &record, GlobalTable::V4_0));
-    assert!(!leader_valid_for_dialect(
+    assert!(leader_valid_for_global_table(
+        &entry,
+        &record,
+        GlobalTable::V4_0
+    ));
+    assert!(!leader_valid_for_global_table(
         &entry,
         &record,
         GlobalTable::V5_3

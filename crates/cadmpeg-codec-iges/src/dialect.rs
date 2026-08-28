@@ -94,27 +94,32 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> Result<IgesVersion, C
 }
 
 /// The dialect-unverified loss required by a classified Global declaration.
-pub(crate) fn dialect_loss(global: &ResolvedGlobal, matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let Admission::AdmittedUnverified { .. } = &matched.admission else {
         return None;
     };
-    let recovery = global.dialect_recovery();
-    let declared = global.declared_version_flag();
-    let effective = global.effective_version_flag();
-    let version = global.version_name();
-    let declaration = match global.unreadable_version_declaration() {
+    let declared = matched
+        .declared
+        .get(DECLARED_VERSION_FLAG)
+        .map_or("absent", String::as_str);
+    let version = matched
+        .declared
+        .get(DECLARED_EFFECTIVE_VERSION)
+        .map_or("unknown", String::as_str);
+    let declaration = match matched.declared.get(DECLARED_VERSION_FLAG_DECLARATION) {
         Some(text) => format!(
             "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
         ),
         None => format!("IGES Global version flag {declared}"),
     };
-    let clamp = if recovery == DialectRecovery::Clamped {
-        format!(
-            " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
-        )
-    } else {
-        String::new()
-    };
+    let clamp = matched
+        .declared
+        .get(DECLARED_EFFECTIVE_VERSION_FLAG)
+        .map_or_else(String::new, |effective| {
+            format!(
+                " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
+            )
+        });
     Some(crate::loss::IgesLossCode::SourceDialectUnverified.note(format!(
         "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
         IgesVersion::ALL
@@ -137,6 +142,9 @@ const DECLARED_VERSION_FLAG: &str = "version_flag";
 ///
 /// The same value as the `iges_version` source attribute.
 const DECLARED_EFFECTIVE_VERSION: &str = "effective_version";
+/// Key of the numeric version flag after a postprocessor clamp, in
+/// [`DialectMatch::declared`]. Absent when no clamp occurred.
+const DECLARED_EFFECTIVE_VERSION_FLAG: &str = "effective_version_flag";
 /// Key describing a Global field 23 that does not read as an integer, in
 /// [`DialectMatch::declared`]. Absent when field 23 reads.
 ///
@@ -357,6 +365,12 @@ impl IgesDialect {
             DECLARED_EFFECTIVE_VERSION.into(),
             global.version_name().to_owned(),
         );
+        if global.dialect_recovery() == DialectRecovery::Clamped {
+            declared.insert(
+                DECLARED_EFFECTIVE_VERSION_FLAG.into(),
+                global.effective_version_flag().to_string(),
+            );
+        }
         if let Some(text) = global.unreadable_version_declaration() {
             declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());
         }
