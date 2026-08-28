@@ -37,7 +37,6 @@
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
 use crate::detect::StreamKind;
-use cadmpeg_asm::dialect::acis_admission;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
@@ -154,19 +153,7 @@ impl StreamEvidence<'_> {
 /// comparison, and both recover outside it; the ASM binary and ASM text
 /// branches compare no save format, so they are admitted at any band.
 fn admission(evidence: &StreamEvidence<'_>) -> Admission {
-    let major = match evidence {
-        StreamEvidence::AsmBinary(Some(_)) => return Admission::Admitted,
-        StreamEvidence::AcisBinary(Some(header)) => header.save_format_major(),
-        StreamEvidence::Text(Some(text)) => match text.branch {
-            sat::Terminator::Asm => return Admission::Admitted,
-            sat::Terminator::Acis => text.header.save_format_major(),
-        },
-        StreamEvidence::AsmBinary(None)
-        | StreamEvidence::AcisBinary(None)
-        | StreamEvidence::Text(None)
-        | StreamEvidence::Unknown => return Admission::Refused,
-    };
-    acis_admission(major)
+    kernel_layer(evidence).admission
 }
 
 /// The recovery loss a match charges, if it recovered.
