@@ -154,8 +154,8 @@ mod tests {
     /// The Rust half of the checker rule that keeps `--to VALUE` unambiguous:
     /// a bare value is read as a format first and as a dialect alias second,
     /// so an alias that is also a format name would be unreachable.
-    /// `scripts/check-dialect-support.py` proves the same thing across every
-    /// catalog in the tree, including the ones this build does not compile.
+    /// `support::tests::compiled_write_catalogs_match_registry_policy` applies
+    /// the same rule to every catalog compiled into the current build.
     #[test]
     fn no_target_alias_is_an_output_format_name() {
         for format in Format::ALL {

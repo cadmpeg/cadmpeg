@@ -20,14 +20,20 @@ if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(che
   python3 scripts/check-dialects.py
 fi
 
-# The capability registry cross-references the identity registry, the fixture
-# tree, the golden snapshots, and the encoders' write-target catalogs. Any of
-# those five can move it, so run it whenever one is staged.
+# The capability registry cross-references the identity registry, fixture tree,
+# and golden snapshots. Run its docs-only checks whenever an input is staged.
 if git diff --cached --name-only \
     | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^scripts/(check-dialect-support\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
   echo "pre-commit: scripts/check-dialect-support.py"
   python3 scripts/check-dialect-support.py --self-test
   python3 scripts/check-dialect-support.py
+fi
+
+# The compiled registry test owns write-catalog and alias policy. A support-only
+# edit does not enter the general Rust gate below, so run this focused test here.
+if git diff --cached --name-only | grep -qE '^docs/dialect-support\.toml$'; then
+  echo "pre-commit: compiled_write_catalogs_match_registry_policy"
+  cargo test -q -p cadmpeg-registry compiled_write_catalogs_match_registry_policy
 fi
 
 # Public API ledger rows and snapshots move together. Crate source changes also

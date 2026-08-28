@@ -552,8 +552,8 @@ impl OutputSelection {
     ///   catalog here; `plan` refuses it after the read, naming the catalog.
     ///
     /// The third case is unambiguous because no target alias is also an output
-    /// format name. `scripts/check-dialect-support.py` and
-    /// `cadmpeg_registry::encoders` both prove that.
+    /// format name. The registry test
+    /// `compiled_write_catalogs_match_registry_policy` proves that.
     fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
         let inferred = format_from_path(out);
         let Some(value) = to else {
