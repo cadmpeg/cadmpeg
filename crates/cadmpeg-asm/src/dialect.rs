@@ -25,6 +25,9 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 
 use crate::kernel_header::KernelHeader;
 
+/// Registry format id for the embedded ACIS/ASM kernel layer.
+pub const FORMAT: &str = "acis";
+
 /// Parsed kernel-header family used to select the canonical `acis:` row.
 #[derive(Debug, Clone, Copy)]
 pub enum KernelHeaderRef<'a> {
@@ -77,7 +80,7 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
         KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
     };
     DialectMatch {
-        format: "acis".to_owned(),
+        format: FORMAT.to_owned(),
         dialect: Some(dialect),
         declared,
         admission,
@@ -178,7 +181,7 @@ mod tests {
     use super::{
         acis_admission, acis_band_verified, acis_binary_row, classify, nearest_verified_acis,
         KernelHeaderRef, ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218,
-        ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM, ACIS_UNKNOWN,
+        ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM, ACIS_UNKNOWN, FORMAT,
     };
     use crate::kernel_header::KernelHeader;
     use cadmpeg_core::dialect::{Admission, DialectMatch};
@@ -237,7 +240,7 @@ mod tests {
     fn classification_uses_family_and_canonical_declarations() {
         let acis = header(4, Some(21_703));
         let matched = classify(KernelHeaderRef::Acis(&acis));
-        assert_eq!(matched.format, "acis");
+        assert_eq!(matched.format, FORMAT);
         assert_eq!(matched.dialect, Some(ACIS_SAVE_FORMAT_217));
         assert_eq!(matched.admission, Admission::Admitted);
         assert_eq!(
@@ -253,7 +256,7 @@ mod tests {
         assert_eq!(
             classify(KernelHeaderRef::Asm(&asm)),
             DialectMatch {
-                format: "acis".to_owned(),
+                format: FORMAT.to_owned(),
                 dialect: Some(ACIS_ASM_BINARYFILE_8),
                 declared: [
                     ("reference_width".to_owned(), "8".to_owned()),
@@ -303,6 +306,6 @@ mod tests {
                 .to_string()
         })
         .collect();
-        assert_eq!(ids, cadmpeg_test_support::registry_ids("acis"));
+        assert_eq!(ids, cadmpeg_test_support::registry_ids(FORMAT));
     }
 }

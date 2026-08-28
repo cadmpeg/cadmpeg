@@ -163,7 +163,7 @@ fn restate_outer_dialect(root: DecodeResult, scan: &ContainerScan<'_>) -> Decode
         report
             .dialects
             .drain(..)
-            .filter(|matched| matched.format == "acis"),
+            .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT),
     );
     report
         .losses
@@ -182,7 +182,7 @@ fn merge_component_kernel_layers(
 ) {
     for mut matched in component
         .into_iter()
-        .filter(|matched| matched.format == "acis")
+        .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
     {
         if let Some(carrier) = matched.declared.get_mut("carrier") {
             *carrier = format!("xref {label}: {carrier}");
