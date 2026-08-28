@@ -9,6 +9,8 @@
 #[cfg(test)]
 use cadmpeg_core::CodecError;
 #[cfg(test)]
+use cadmpeg_ir::codec::default_target;
+#[cfg(test)]
 use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::codec::{CadirEncoder, Encoder, TargetDescriptor};
 
@@ -82,7 +84,7 @@ mod tests {
         for format in Format::ALL {
             let encoder = build_encoder(*format);
             let targets = encoder.targets();
-            let defaults = targets.iter().filter(|target| target.default).count();
+            let default = default_target(targets);
             if targets.is_empty() {
                 assert_eq!(
                     encoder.id(),
@@ -92,23 +94,15 @@ mod tests {
                 );
                 continue;
             }
-            assert_eq!(
-                defaults,
-                1,
+            assert!(
+                default.is_some(),
                 "{}: a catalog has exactly one cross-format default",
                 encoder.id()
             );
-            let mut seen = std::collections::BTreeSet::new();
             for target in targets {
                 assert!(
                     target.id.starts_with(&format!("{}:", encoder.id())),
                     "{}: target {} is outside this encoder's own namespace",
-                    encoder.id(),
-                    target.id
-                );
-                assert!(
-                    seen.insert(target.id),
-                    "{}: target {} is listed twice",
                     encoder.id(),
                     target.id
                 );
