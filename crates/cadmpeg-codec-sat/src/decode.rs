@@ -9,7 +9,7 @@ use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -211,7 +211,6 @@ fn build_result(
         stats.unknown_surface_faces,
     );
     let dialects = vec![matched, kernel];
-    debug_assert_primary_layer(&dialects, FORMAT);
     let report = DecodeReport {
         dialects,
         format: FORMAT.to_string(),

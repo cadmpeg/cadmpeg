@@ -87,7 +87,19 @@ impl DecodeResult {
     /// producer contradiction panics in every build because it is a codec bug,
     /// not an input refusal.
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
-        project_primary_layer(&mut ir, &report);
+        let primary = require_primary_layer(&report.dialects, &report.format);
+        if let Some(source) = ir.source.as_mut() {
+            match primary {
+                Some(matched) => {
+                    source.dialect.clone_from(&matched.dialect);
+                    source.declared.clone_from(&matched.declared);
+                }
+                None => {
+                    source.dialect = None;
+                    source.declared.clear();
+                }
+            }
+        }
         ir.finalize();
         source_fidelity.finalize();
         Self {
@@ -112,13 +124,9 @@ impl DecodeResult {
         &self.report
     }
 
-    /// Edits the transfer report and re-projects source metadata when the
-    /// returned guard is dropped.
-    pub fn report_mut(&mut self) -> impl DerefMut<Target = DecodeReport> + '_ {
-        ReportEdit {
-            ir: &mut self.ir,
-            report: &mut self.report,
-        }
+    /// Record whether the caller requested a container-only decode.
+    fn stamp_container_only(&mut self, container_only: bool) {
+        self.report.container_only = container_only;
     }
 
     /// Borrow source fidelity.
@@ -137,58 +145,20 @@ impl DecodeResult {
     }
 }
 
-fn project_primary_layer(ir: &mut CadIr, report: &DecodeReport) {
-    let primary = if report.dialects.is_empty() {
+fn require_primary_layer<'a>(
+    dialects: &'a [cadmpeg_core::dialect::DialectMatch],
+    format: &str,
+) -> Option<&'a cadmpeg_core::dialect::DialectMatch> {
+    if dialects.is_empty() {
         None
     } else {
         Some(
-            cadmpeg_core::dialect::primary_layer(&report.dialects, &report.format).unwrap_or_else(
-                || {
-                    panic!(
-                        "primary-layer invariant failed: populated dialects for format {:?} must contain exactly one entry naming it",
-                        report.format
-                    )
-                },
-            ),
+            cadmpeg_core::dialect::primary_layer(dialects, format).unwrap_or_else(|| {
+                panic!(
+                    "primary-layer invariant failed: populated dialects for format {format:?} must contain exactly one entry naming it"
+                )
+            }),
         )
-    };
-    if let Some(source) = ir.source.as_mut() {
-        match primary {
-            Some(matched) => {
-                source.dialect.clone_from(&matched.dialect);
-                source.declared.clone_from(&matched.declared);
-            }
-            None => {
-                source.dialect = None;
-                source.declared.clear();
-            }
-        }
-    }
-}
-
-#[must_use = "the guard keeps the DecodeResult mutably borrowed until source metadata is re-projected"]
-struct ReportEdit<'a> {
-    ir: &'a mut CadIr,
-    report: &'a mut DecodeReport,
-}
-
-impl Deref for ReportEdit<'_> {
-    type Target = DecodeReport;
-
-    fn deref(&self) -> &Self::Target {
-        self.report
-    }
-}
-
-impl DerefMut for ReportEdit<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.report
-    }
-}
-
-impl Drop for ReportEdit<'_> {
-    fn drop(&mut self) {
-        project_primary_layer(self.ir, self.report);
     }
 }
 
@@ -335,15 +305,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
         if let Ok(summary) = &result {
-            if !summary.dialects.is_empty()
-                && cadmpeg_core::dialect::primary_layer(&summary.dialects, &summary.format)
-                    .is_none()
-            {
-                panic!(
-                    "primary-layer invariant failed: populated dialects for format {:?} must contain exactly one entry naming it",
-                    summary.format
-                );
-            }
+            require_primary_layer(&summary.dialects, &summary.format);
         }
         result
     }
@@ -359,7 +321,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let result = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
         let mut result = result?;
-        result.report_mut().container_only = options.container_only;
+        result.stamp_container_only(options.container_only);
         if options.policy.mode == DecodeMode::Strict && !options.container_only {
             if let Some(loss) = result
                 .report()

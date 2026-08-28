@@ -50,8 +50,7 @@ pub struct ContainerSummary {
     /// entry is the primary layer.
     ///
     /// Enforced by `cadmpeg_ir::codec::Codec::inspect`, the one wrapper every
-    /// backend's summary passes through on its way to a caller. See
-    /// [`crate::dialect::debug_assert_primary_layer`].
+    /// backend's summary passes through on its way to a caller.
     ///
     /// Always serialized. Summaries written before the field existed omit the
     /// key and read back empty.

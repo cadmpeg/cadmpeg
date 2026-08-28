@@ -1,4 +1,4 @@
-# generated at af653959a
+# generated at 5ab799ccb
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -609,7 +609,6 @@ pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadI
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::codec::DecodeResult::report_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::report::DecodeReport> + '_
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult
@@ -17514,7 +17513,6 @@ pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadI
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::codec::DecodeResult::report_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::report::DecodeReport> + '_
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult

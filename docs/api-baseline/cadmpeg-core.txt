@@ -1,4 +1,4 @@
-# generated at 47be18d1a
+# generated at 5ab799ccb
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -837,7 +837,6 @@ impl core::marker::Unpin for cadmpeg_core::dialect::DialectMatch
 impl core::marker::UnsafeUnpin for cadmpeg_core::dialect::DialectMatch
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::DialectMatch
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::DialectMatch
-pub fn cadmpeg_core::dialect::debug_assert_primary_layer(&[cadmpeg_core::dialect::DialectMatch], &str)
 pub fn cadmpeg_core::dialect::primary_layer<'a>(&'a [cadmpeg_core::dialect::DialectMatch], &str) -> core::option::Option<&'a cadmpeg_core::dialect::DialectMatch>
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError

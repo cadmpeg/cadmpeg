@@ -1277,6 +1277,69 @@ item = "cadmpeg_ir::codec::resolve_preserving_write"
 reason = "F3D and IGES have distinct preservation outcomes and fallback laws, so each writer resolves its own `WriteRequest` branches directly"
 
 [[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::dialect::debug_assert_primary_layer"
+reason = "the all-builds `DecodeResult::new` and `Codec::inspect` boundaries enforce the primary-layer invariant through one checker"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::DecodeResult::report_mut"
+reason = "decode reports are mutated as owned parts and reconstructed through `DecodeResult::new` instead of relying on a Drop guard to revalidate identity"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-codec-f3d"
+kind = "move"
+item = "impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_f3d::F3dCodec"
+reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-codec-freecad"
+kind = "move"
+item = "impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_freecad::FcstdCodec"
+reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-codec-iges"
+kind = "move"
+item = "impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_iges::IgesEncoder"
+reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-codec-rhino"
+kind = "move"
+item = "impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_rhino::RhinoEncoder"
+reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-codec-sldprt"
+kind = "move"
+item = "impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_sldprt::SldprtCodec"
+reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-codec-step"
+kind = "move"
+item = "impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_step::StepCodec"
+reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-registry"
+kind = "move"
+item = "cadmpeg_registry::{FormatDialects::catalog,build_encoder,write_targets}"
+reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
+
+[[change]]
 commit = "855cbb586aa1fe80c9c56d66af32ac0e992e3320"
 crate = "cadmpeg-ir"
 kind = "addition"

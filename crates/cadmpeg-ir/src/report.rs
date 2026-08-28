@@ -661,8 +661,8 @@ pub struct DecodeReport {
     /// Empty only when the decode identified no layer at all. Once populated,
     /// exactly one entry's `format` equals [`Self::format`]: that entry is the
     /// primary layer, and it is the one mirrored into
-    /// [`crate::document::SourceMeta::dialect`]. See
-    /// [`cadmpeg_core::dialect::debug_assert_primary_layer`].
+    /// [`crate::document::SourceMeta::dialect`]. [`crate::codec::DecodeResult::new`]
+    /// enforces the invariant at the decode boundary.
     ///
     /// Always serialized. Reports written before the field existed omit the key
     /// and read back empty.

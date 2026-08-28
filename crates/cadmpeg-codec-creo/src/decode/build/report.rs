@@ -19,7 +19,6 @@ use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
     push_structural_layer_notes,
 };
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_ir::report::DecodeReport;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
@@ -160,7 +159,6 @@ pub(in super::super) fn build_report(
     push_coverage_drop_losses(&mut losses, &coverage);
 
     let dialects = vec![primary];
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     DecodeReport {
         dialects,
         format: crate::dialect::FORMAT.to_string(),

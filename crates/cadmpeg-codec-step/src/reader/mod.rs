@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -98,7 +97,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         });
 
         let dialects = vec![primary];
-        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         let mut report = DecodeReport {
             dialects,
             format: crate::dialect::FORMAT.into(),

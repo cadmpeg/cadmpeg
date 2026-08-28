@@ -1,4 +1,4 @@
-# generated at dde088151
+# generated at 5ab799ccb
 pub mod cadmpeg_codec_freecad
 pub enum cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Document
@@ -30,10 +30,10 @@ pub fn cadmpeg_codec_freecad::FcstdCodec::decode_impl(&self, &cadmpeg_core::deco
 pub fn cadmpeg_codec_freecad::FcstdCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_freecad::FcstdCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_freecad::FcstdCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_freecad::FcstdCodec
+impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_freecad::FcstdCodec
 pub fn cadmpeg_codec_freecad::FcstdCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_freecad::FcstdCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_freecad::FcstdCodec::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+pub fn cadmpeg_codec_freecad::FcstdCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_freecad::FcstdCodec::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_codec_freecad::FcstdCodec
 pub fn cadmpeg_codec_freecad::FcstdCodec::clone(&self) -> cadmpeg_codec_freecad::FcstdCodec
 impl core::default::Default for cadmpeg_codec_freecad::FcstdCodec

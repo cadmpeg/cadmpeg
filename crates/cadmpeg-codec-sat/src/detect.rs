@@ -6,7 +6,7 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::{debug_assert_primary_layer, Admission};
+use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
@@ -188,7 +188,6 @@ pub(crate) fn inspect(
         }
     };
     let dialects = vec![matched, kernel];
-    debug_assert_primary_layer(&dialects, FORMAT);
     Ok(ContainerSummary {
         dialects,
         format: FORMAT.to_string(),
