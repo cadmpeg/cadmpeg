@@ -30,6 +30,54 @@ pub(crate) struct Graph {
     pub(crate) losses: Vec<LossNote>,
 }
 
+#[derive(Default)]
+struct AppearancePlan {
+    body_updates: Vec<BodyUpdate>,
+    appearances: Vec<Appearance>,
+    bindings: Vec<AppearanceBinding>,
+    remove_appearances: HashSet<AppearanceId>,
+    presentation_documents: Vec<PresentationDocument>,
+    view_presentations: Vec<ViewPresentation>,
+}
+
+struct BodyUpdate {
+    id: cadmpeg_ir::ids::BodyId,
+    visible: Assignment<Option<bool>>,
+    color: Assignment<Option<Color>>,
+}
+
+enum Assignment<T> {
+    Keep,
+    Set(T),
+}
+
+impl AppearancePlan {
+    fn apply(self, ir: &mut CadIr) {
+        for update in self.body_updates {
+            if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
+                if let Assignment::Set(visible) = update.visible {
+                    body.visible = visible;
+                }
+                if let Assignment::Set(color) = update.color {
+                    body.color = color;
+                }
+            }
+        }
+        ir.model
+            .appearance_bindings
+            .retain(|binding| !self.remove_appearances.contains(&binding.appearance));
+        ir.model
+            .appearances
+            .retain(|appearance| !self.remove_appearances.contains(&appearance.id));
+        ir.model.appearances.extend(self.appearances);
+        ir.model.appearance_bindings.extend(self.bindings);
+        ir.model
+            .presentation_documents
+            .extend(self.presentation_documents);
+        ir.model.view_presentations.extend(self.view_presentations);
+    }
+}
+
 struct CameraSettings {
     position: Option<[f64; 3]>,
     orientation: Option<[f64; 4]>,
@@ -62,25 +110,32 @@ pub(crate) fn transfer(
     element_maps: &[ElementMapRecord],
     requires_alpha_conversion: bool,
 ) -> Result<Graph, CodecError> {
-    let schema_version = declared_schema_version(bytes)?;
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
+    let xml = roxmltree::Document::parse(text)
+        .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
+    let schema_version = declared_schema_version(xml.root_element())?;
     if schema_version == Some(1) {
-        return transfer_schema_one(
+        let (graph, plan) = transfer_schema_one(
             ir,
-            bytes,
+            text,
+            &xml,
             entries,
             objects,
             properties,
             payloads,
             element_maps,
             requires_alpha_conversion,
-        );
+        )?;
+        plan.apply(ir);
+        return Ok(graph);
     }
 
     let declaration = schema_version.map_or_else(|| "missing".into(), |value| value.to_string());
-    let mut staged_ir = ir.clone();
     match transfer_schema_one(
-        &mut staged_ir,
-        bytes,
+        ir,
+        text,
+        &xml,
         entries,
         objects,
         properties,
@@ -88,8 +143,8 @@ pub(crate) fn transfer(
         element_maps,
         requires_alpha_conversion,
     ) {
-        Ok(mut graph) => {
-            *ir = staged_ir;
+        Ok((mut graph, plan)) => {
+            plan.apply(ir);
             graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
                 "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
             )));
@@ -105,12 +160,7 @@ pub(crate) fn transfer(
     }
 }
 
-fn declared_schema_version(bytes: &[u8]) -> Result<Option<u32>, CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
-    let root = xml.root_element();
+fn declared_schema_version(root: roxmltree::Node<'_, '_>) -> Result<Option<u32>, CodecError> {
     crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
         .map(|value| {
             value.parse::<u32>().map_err(|_| {
@@ -122,21 +172,19 @@ fn declared_schema_version(bytes: &[u8]) -> Result<Option<u32>, CodecError> {
 
 #[allow(clippy::too_many_arguments)]
 fn transfer_schema_one(
-    ir: &mut CadIr,
-    bytes: &[u8],
+    ir: &CadIr,
+    text: &str,
+    xml: &roxmltree::Document<'_>,
     entries: &BTreeMap<String, View<'_>>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
     requires_alpha_conversion: bool,
-) -> Result<Graph, CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
+) -> Result<(Graph, AppearancePlan), CodecError> {
     let root = xml.root_element();
-    let schema_version = declared_schema_version(bytes)?;
+    let schema_version = declared_schema_version(root)?;
+    let mut plan = AppearancePlan::default();
     let camera_count = root
         .children()
         .filter(|node| node.has_tag_name("Camera"))
@@ -306,10 +354,13 @@ fn transfer_schema_one(
             })
             .collect::<Vec<_>>();
         for body_id in &body_ids {
-            if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == *body_id) {
-                body.visible = visibility;
-                body.color = packed_color.map(|packed| decode_color(packed, transparency));
-            }
+            plan.body_updates.push(BodyUpdate {
+                id: body_id.clone(),
+                visible: Assignment::Set(visibility),
+                color: Assignment::Set(
+                    packed_color.map(|packed| decode_color(packed, transparency)),
+                ),
+            });
         }
         if let Some(file) = values
             .get("DiffuseColor")
@@ -317,6 +368,7 @@ fn transfer_schema_one(
         {
             transfer_topology_colors(
                 ir,
+                &mut plan,
                 name,
                 object_id,
                 file,
@@ -345,7 +397,15 @@ fn transfer_schema_one(
                 .get("LineWidth")
                 .and_then(|value| value.attribute("value"))
                 .and_then(|value| value.parse::<f64>().ok());
-            transfer_edge_appearance(ir, name, object_id, color, width, &payload_prefixes);
+            transfer_edge_appearance(
+                ir,
+                &mut plan,
+                name,
+                object_id,
+                color,
+                width,
+                &payload_prefixes,
+            );
         }
         if let Some(file) = values
             .get("LineColorArray")
@@ -353,6 +413,7 @@ fn transfer_schema_one(
         {
             transfer_topology_colors(
                 ir,
+                &mut plan,
                 name,
                 object_id,
                 file,
@@ -376,7 +437,15 @@ fn transfer_schema_one(
                 .get("PointSize")
                 .and_then(|value| value.attribute("value"))
                 .and_then(|value| value.parse::<f64>().ok());
-            transfer_vertex_appearance(ir, name, object_id, color, size, &payload_prefixes);
+            transfer_vertex_appearance(
+                ir,
+                &mut plan,
+                name,
+                object_id,
+                color,
+                size,
+                &payload_prefixes,
+            );
         }
         if let Some(file) = values
             .get("PointColorArray")
@@ -384,6 +453,7 @@ fn transfer_schema_one(
         {
             transfer_topology_colors(
                 ir,
+                &mut plan,
                 name,
                 object_id,
                 file,
@@ -415,7 +485,7 @@ fn transfer_schema_one(
                 }
             }
         }
-        ir.model.appearances.push(Appearance {
+        plan.appearances.push(Appearance {
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
@@ -429,7 +499,7 @@ fn transfer_schema_one(
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
-            ir.model.appearance_bindings.push(AppearanceBinding {
+            plan.bindings.push(AppearanceBinding {
                 id: format!("fcstd:appearance:binding#{name}:{index}"),
                 target: AppearanceTarget::Body(body),
                 appearance: appearance_id.clone(),
@@ -451,6 +521,7 @@ fn transfer_schema_one(
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ir,
+        &mut plan,
         &graph,
         &material_lists,
         properties,
@@ -459,8 +530,8 @@ fn transfer_schema_one(
         &mut material_losses,
     )?;
     graph.losses.extend(material_losses);
-    transfer_neutral_presentation(ir, &graph)?;
-    Ok(graph)
+    transfer_neutral_presentation(&mut plan, &graph)?;
+    Ok((graph, plan))
 }
 
 fn presentation_property_type(name: &str) -> Option<&'static str> {
@@ -477,7 +548,10 @@ fn presentation_property_type(name: &str) -> Option<&'static str> {
     }
 }
 
-fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), CodecError> {
+fn transfer_neutral_presentation(
+    plan: &mut AppearancePlan,
+    graph: &Graph,
+) -> Result<(), CodecError> {
     for document in &graph.documents {
         let mut camera_states = document
             .states
@@ -487,7 +561,7 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), Co
             .next()
             .filter(|_| camera_states.next().is_none());
         let camera = camera_state.map(camera_state_value).transpose()?;
-        ir.model.presentation_documents.push(PresentationDocument {
+        plan.presentation_documents.push(PresentationDocument {
             id: PresentationId("fcstd:presentation:document#0".into()),
             schema_version: document.schema_version,
             active_view: None,
@@ -542,7 +616,7 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), Co
                 provider.name
             )));
         }
-        ir.model.view_presentations.push(ViewPresentation {
+        plan.view_presentations.push(ViewPresentation {
             id: PresentationId(crate::native::model_id(
                 "presentation-view",
                 &provider.id,
@@ -694,7 +768,8 @@ fn camera_field<const N: usize>(
 }
 
 fn transfer_edge_appearance(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     provider_name: &str,
     object_id: &str,
     packed_color: u32,
@@ -716,7 +791,7 @@ fn transfer_edge_appearance(
         return;
     }
     let appearance_id = AppearanceId(format!("fcstd:appearance:edge#{provider_name}"));
-    ir.model.appearances.push(Appearance {
+    plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} line appearance")),
         asset_guid: None,
@@ -733,7 +808,7 @@ fn transfer_edge_appearance(
             .unwrap_or_default(),
     });
     for (index, edge) in edges.into_iter().enumerate() {
-        ir.model.appearance_bindings.push(AppearanceBinding {
+        plan.bindings.push(AppearanceBinding {
             id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}"),
             target: AppearanceTarget::Edge(edge),
             appearance: appearance_id.clone(),
@@ -746,7 +821,8 @@ fn transfer_edge_appearance(
 }
 
 fn transfer_vertex_appearance(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     provider_name: &str,
     object_id: &str,
     packed_color: u32,
@@ -768,7 +844,7 @@ fn transfer_vertex_appearance(
         return;
     }
     let appearance_id = AppearanceId(format!("fcstd:appearance:vertex#{provider_name}"));
-    ir.model.appearances.push(Appearance {
+    plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} point appearance")),
         asset_guid: None,
@@ -785,7 +861,7 @@ fn transfer_vertex_appearance(
             .unwrap_or_default(),
     });
     for (index, vertex) in vertices.into_iter().enumerate() {
-        ir.model.appearance_bindings.push(AppearanceBinding {
+        plan.bindings.push(AppearanceBinding {
             id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}"),
             target: AppearanceTarget::Vertex(vertex),
             appearance: appearance_id.clone(),
@@ -3364,8 +3440,10 @@ fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn transfer_shape_appearances(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     graph: &Graph,
     material_lists: &HashMap<String, Vec<GuiMaterial>>,
     properties: &[PropertyRecord],
@@ -3392,12 +3470,11 @@ fn transfer_shape_appearances(
         let mapped_count = group.map_or(0, |group| group.names.len().saturating_sub(1));
         if materials.len() == 1 {
             let legacy_id = AppearanceId(format!("fcstd:appearance:object#{}", provider.name));
-            ir.model
-                .appearance_bindings
+            plan.bindings
                 .retain(|binding| binding.appearance != legacy_id);
-            ir.model
-                .appearances
+            plan.appearances
                 .retain(|appearance| appearance.id != legacy_id);
+            plan.remove_appearances.insert(legacy_id);
         } else {
             let Some(_) = group else {
                 continue;
@@ -3430,7 +3507,7 @@ fn transfer_shape_appearances(
                 provider.name,
                 index + 1
             ));
-            ir.model.appearances.push(material_appearance(
+            plan.appearances.push(material_appearance(
                 appearance_id.clone(),
                 &provider.name,
                 index,
@@ -3438,11 +3515,15 @@ fn transfer_shape_appearances(
             ));
             if materials.len() == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
-                    if let Some(body) = ir.model.bodies.iter_mut().find(|item| item.id == *body) {
-                        body.color =
-                            Some(decode_color(material.diffuse, Some(material.transparency)));
-                    }
-                    ir.model.appearance_bindings.push(AppearanceBinding {
+                    plan.body_updates.push(BodyUpdate {
+                        id: body.clone(),
+                        visible: Assignment::Keep,
+                        color: Assignment::Set(Some(decode_color(
+                            material.diffuse,
+                            Some(material.transparency),
+                        ))),
+                    });
+                    plan.bindings.push(AppearanceBinding {
                         id: format!(
                             "fcstd:appearance:binding#shape-material:{}:{body_index}",
                             provider.name
@@ -3456,7 +3537,15 @@ fn transfer_shape_appearances(
                     });
                 }
             } else if let Some(group) = group {
-                bind_material_faces(ir, group, index, &appearance_id, &provider.name, object_id);
+                bind_material_faces(
+                    ir,
+                    plan,
+                    group,
+                    index,
+                    &appearance_id,
+                    &provider.name,
+                    object_id,
+                );
             }
         }
     }
@@ -3585,7 +3674,8 @@ fn material_appearance(
 }
 
 fn bind_material_faces(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     group: &ElementMapGroup,
     material_index: usize,
     appearance_id: &AppearanceId,
@@ -3607,8 +3697,8 @@ fn bind_material_faces(
         else {
             continue;
         };
-        let binding_index = ir.model.appearance_bindings.len();
-        ir.model.appearance_bindings.push(AppearanceBinding {
+        let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
+        plan.bindings.push(AppearanceBinding {
             id: format!("fcstd:appearance:binding#shape-material:{provider_name}:{binding_index}"),
             target: AppearanceTarget::Face(face),
             appearance: appearance_id.clone(),
@@ -3655,7 +3745,8 @@ impl TopologyColorKind {
 
 #[allow(clippy::too_many_arguments)]
 fn transfer_topology_colors(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     provider_name: &str,
     object_id: &str,
     entry_name: &str,
@@ -3725,7 +3816,7 @@ fn transfer_topology_colors(
             })
         {
             if !emitted_appearance {
-                ir.model.appearances.push(Appearance {
+                plan.appearances.push(Appearance {
                     id: appearance_id.clone(),
                     name: Some(format!(
                         "{provider_name} {}{} appearance",
@@ -3755,7 +3846,7 @@ fn transfer_topology_colors(
                     AppearanceTarget::Vertex(cadmpeg_ir::ids::VertexId(topology_id.clone()))
                 }
             };
-            ir.model.appearance_bindings.push(AppearanceBinding {
+            plan.bindings.push(AppearanceBinding {
                 id: format!(
                     "fcstd:appearance:binding#{lower}:{provider_name}:{}:{}",
                     index + 1,
