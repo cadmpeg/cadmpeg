@@ -86,17 +86,34 @@ pub struct DecodeResult {
 impl DecodeResult {
     /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
     ///
-    /// A result whose IR has source metadata requires a primary dialect layer
-    /// for the report format. Debug builds assert this invariant.
+    /// A populated dialect report must have exactly one primary layer. A
+    /// producer contradiction panics in every build because it is a codec bug,
+    /// not an input refusal.
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
-        cadmpeg_core::dialect::debug_assert_primary_layer(&report.dialects, &report.format);
-        if let Some(source) = ir.source.as_mut() {
-            let (dialect, declared) =
+        let primary = if report.dialects.is_empty() {
+            None
+        } else {
+            Some(
                 cadmpeg_core::dialect::primary_layer(&report.dialects, &report.format)
-                    .map(|matched| (matched.dialect.clone(), matched.declared.clone()))
-                    .unwrap_or_default();
-            source.dialect = dialect;
-            source.declared = declared;
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "primary-layer invariant failed: populated dialects for format {:?} must contain exactly one entry naming it",
+                            report.format
+                        )
+                    }),
+            )
+        };
+        if let Some(source) = ir.source.as_mut() {
+            match primary {
+                Some(matched) => {
+                    source.dialect.clone_from(&matched.dialect);
+                    source.declared.clone_from(&matched.declared);
+                }
+                None => {
+                    source.dialect = None;
+                    source.declared.clear();
+                }
+            }
         }
         ir.finalize();
         source_fidelity.finalize();
@@ -428,7 +445,7 @@ pub const UNRECORDED_SOURCE_DIALECT_REASON: &str =
 /// the source declares none, so the refusal names no id at all rather than
 /// putting a format id in a dialect-id field.
 #[must_use]
-pub fn unrecorded_source_dialect(format: &str, targets: &[TargetDescriptor]) -> CodecError {
+fn unrecorded_source_dialect(format: &str, targets: &[TargetDescriptor]) -> CodecError {
     refusal(format, None, UNRECORDED_SOURCE_DIALECT_REASON, targets)
 }
 

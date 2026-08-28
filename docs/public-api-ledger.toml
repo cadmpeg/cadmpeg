@@ -1202,3 +1202,17 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::report::ExportReport::{cadir,native}"
 reason = "construction distinguishes the neutral report with no dialect from native reports that require a concrete target, while serde still accepts target absence in older artifacts"
+
+[[change]]
+commit = "d4c61cbe83d30113ebb0cd3e9503aa84951610c8"
+crate = "cadmpeg-core"
+kind = "visibility"
+item = "cadmpeg_core::dialect::holds_primary_layer_invariant"
+reason = "the predicate is an implementation detail of debug_assert_primary_layer and had no external caller"
+
+[[change]]
+commit = "d4c61cbe83d30113ebb0cd3e9503aa84951610c8"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::codec::unrecorded_source_dialect"
+reason = "only resolve_write_request constructs this refusal; callers should use the complete write-resolution operation instead of its one branch helper"

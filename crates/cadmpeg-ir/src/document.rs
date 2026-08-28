@@ -482,9 +482,9 @@ pub struct SourceMeta {
     /// intermediate.
     ///
     /// `None` on a synthetic document that no decode produced, and on a decode
-    /// whose primary layer the registry does not name. A decode-produced
-    /// document mirrors its report's primary layer exactly; `DecodeResult::new`
-    /// projects it at construction.
+    /// whose primary layer the registry does not name. `DecodeResult::new`
+    /// guarantees the exact report mirror at construction. Later use of its
+    /// mutable report and IR accessors can change either side independently.
     ///
     /// Always serialized, as `null` when absent. Documents written before the
     /// field existed omit the key and read back `None`.
