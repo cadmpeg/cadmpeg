@@ -178,14 +178,14 @@ fn restate_outer_dialect(root: DecodeResult, scan: &ContainerScan<'_>) -> Decode
 fn merge_component_kernel_layers(
     target: &mut Vec<DialectMatch>,
     component: Vec<DialectMatch>,
-    label: &str,
+    occurrence: &str,
 ) {
     for mut matched in component
         .into_iter()
         .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
     {
         if let Some(carrier) = matched.declared.get_mut("carrier") {
-            *carrier = format!("xref {label}: {carrier}");
+            *carrier = format!("xref {occurrence}: {carrier}");
         }
         target.push(matched);
     }
@@ -379,7 +379,7 @@ fn merge_references(
         merge_component_kernel_layers(
             &mut parent.report_mut().dialects,
             component_report.dialects,
-            &label,
+            &occurrence,
         );
         for mut loss in component_report.losses {
             if loss.code == F3dLossCode::SourceDialectUnverified.kind() {

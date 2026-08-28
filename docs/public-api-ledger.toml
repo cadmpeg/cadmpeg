@@ -3,6 +3,9 @@
 # reduction, signature change, removed trait implementation, or field encapsulation,
 # and one per deliberately published new surface (kind = "addition"), so a new
 # public name is a decision on the record rather than a diff nobody chose.
+# `commit` is the commit whose diff contains the API change. A new row cannot
+# contain its own final SHA, so its provisional value names the parent and thus
+# the landing range; a provenance pass replaces it with the change commit.
 # At phase 9, compare rustdoc public items to the baseline snapshots under
 # docs/api-baseline/ and reconcile every difference with a row here.
 #
@@ -1155,91 +1158,91 @@ item = "cadmpeg_asm::dialect::{ACIS_TEXT_ASM,ACIS_TEXT_ACIS,ACIS_UNKNOWN}"
 reason = "the shared ACIS kernel namespace owns and pins the three text or unframed identity rows even though host codecs do not emit a separate kernel-layer match"
 
 [[change]]
-commit = "4c12cca4ea3caa1952672b8491f1a5ab888f91e3"
+commit = "d54af826a85557e4679a1e2cf479611d49725608"
 crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::dialect::{KernelHeaderRef,classify}"
 reason = "classify already-parsed ACIS and ASM headers through one canonical kernel-layer match constructor shared by host codecs"
 
 [[change]]
-commit = "b614cda6ee792944602f566cfc87a3dd53fd8740"
+commit = "1c8a5ad15ba6390c8ac8db60d0d068f04e6824a5"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::{WriteRequest::Catalog,resolve_catalog_write,source_dialect_displaced_message}"
 reason = "write resolution carries the displaced source DialectId instead of preformatted fidelity prose; codecs charge dialect displacement through pinned loss codes while FidelityResolution remains a sidecar-consumption outcome"
 
 [[change]]
-commit = "3f334cfae5759e557c00abecb9a386ec82121cdf"
+commit = "e9ca92660cdf197571fc9e246f54fa7d468393d9"
 crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::codec::{Inherited,resolve_inherit}"
 reason = "the enum and function had one production caller and exposed an intermediate state that resolve_write_request now handles directly"
 
 [[change]]
-commit = "400e8e0015bba19c6cc7a76273115bdef2407cfb"
+commit = "a25aa08c1e8b9b8dff5908b0543b7f8165d4943f"
 crate = "cadmpeg-asm"
 kind = "variant"
 item = "cadmpeg_asm::dialect::KernelHeaderRef::{TextAsm,TextAcis,Unknown}"
 reason = "the shared kernel classifier must represent the text terminator branches and unframed recovery so every pinned acis identity has a production host"
 
 [[change]]
-commit = "3f334cfae5759e557c00abecb9a386ec82121cdf"
+commit = "e9ca92660cdf197571fc9e246f54fa7d468393d9"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::{default_target,resolve_catalog_write}"
 reason = "default_target now carries the canonical descriptor directly, and resolve_catalog_write returns that descriptor without reparsing its id through a caller-supplied function"
 
 [[change]]
-commit = "9a3a86eefc57d4abc73826aeedcd8963ae8e7c6f"
+commit = "b8e6f7debd0b529ead7272d8feef3a70ccb61ae8"
 crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::report::LossTaxonomy::SourceDialectDisplaced"
 reason = "distinguish write-side source dialect identity displacement from an unverified decode-side declaration"
 
 [[change]]
-commit = "f6e212928df7f4d418aaffcd4dfd7c1328f3fae9"
+commit = "f77c951f4e859ed325ebb5171a027e9ea5784b6a"
 crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::{asm_header,acis_header}::{record_stream_start_with_header,solved_record_limit_with_header}"
 reason = "frame already-classified kernel carriers without reparsing their shared header"
 
 [[change]]
-commit = "2d6a7146435ab956f2e8683bfa8becf752fa3404"
+commit = "d4c61cbe83d30113ebb0cd3e9503aa84951610c8"
 crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::report::ExportReport::{cadir,native}"
 reason = "construction distinguishes the neutral report with no dialect from native reports that require a concrete target, while serde still accepts target absence in older artifacts"
 
 [[change]]
-commit = "d4c61cbe83d30113ebb0cd3e9503aa84951610c8"
+commit = "8190c44a223890faa7a2f6ffaa8f4b6ee6b0cab1"
 crate = "cadmpeg-core"
 kind = "visibility"
 item = "cadmpeg_core::dialect::holds_primary_layer_invariant"
 reason = "the predicate is an implementation detail of debug_assert_primary_layer and had no external caller"
 
 [[change]]
-commit = "d4c61cbe83d30113ebb0cd3e9503aa84951610c8"
+commit = "8190c44a223890faa7a2f6ffaa8f4b6ee6b0cab1"
 crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::codec::unrecorded_source_dialect"
 reason = "only resolve_write_request constructs this refusal; callers should use the complete write-resolution operation instead of its one branch helper"
 
 [[change]]
-commit = "e766e84ae787d73f8c99c3dba969e4421d9de032"
+commit = "fc3799ee0f800d3601485bf7445f89a3dd17b819"
 crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::codec::resolve_preserving_write"
 reason = "preserving encoders share one preserve-else-synthesize resolution law while keeping codec-specific preservation outcomes, synthesis, and refusal text"
 
 [[change]]
-commit = "fc3799ee0f800d3601485bf7445f89a3dd17b819"
+commit = "85142caf95257564be7fb94bea1e55aad3126d26"
 crate = "cadmpeg-core"
 kind = "addition"
 item = "cadmpeg_core::dialect::DialectMatch::layer"
 reason = "codec identity classifiers construct identified dialect layers through one shared literal shape"
 
 [[change]]
-commit = "fc3799ee0f800d3601485bf7445f89a3dd17b819"
+commit = "85142caf95257564be7fb94bea1e55aad3126d26"
 crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::dialect::acis_recovery_message"

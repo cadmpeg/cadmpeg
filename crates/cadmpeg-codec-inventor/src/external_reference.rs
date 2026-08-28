@@ -176,7 +176,7 @@ fn parse_stream<'a>(
         Ok(document) => Ok(document),
         Err(error) if !(11..=15).contains(&schema) => match error {
             CodecError::ResourceLimit(_) => Err(error),
-            _ => Err(CodecError::NotImplemented(format!(
+            _ => Err(CodecError::malformed(format_args!(
                 "UFRxDoc 11-15 grammar does not fit; foreign schema {schema} is the probable cause: {error}"
             ))),
         },
@@ -1028,7 +1028,7 @@ mod tests {
             panic!("broken foreign schema must recover as unsupported");
         };
         assert!(
-            matches!(&error, CodecError::NotImplemented(message)
+            matches!(&error, CodecError::Malformed(message)
                 if message.contains("foreign schema 16 is the probable cause")
                     && !message.contains("schema 16 is not implemented")),
             "expected an attempted-grammar recovery, found {error:?}"
