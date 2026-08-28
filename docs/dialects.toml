@@ -4,7 +4,7 @@
 # This file describes formats, not cadmpeg. It changes when a vendor ships,
 # never when cadmpeg gains a decoder. Capability lives in
 # `docs/dialect-support.toml`. See
-# `~/side2/cadmpeg-dialects-design.md` §3 and §5 for the model.
+# “Dialects: the version dimension in cadmpeg,” sections 3 and 5, defines the model.
 #
 # Schema
 #   [format.<id>]      complete = true when the discriminant space is
@@ -119,7 +119,7 @@ discriminants = { representation = "fixed-ascii", effective_version = "ASME-ANSI
 witness = "spec:IGES 5.3 section 2.2.4.3.23"
 
 [[dialect]]
-# `Dialect::V4_0` (global.rs:72). Its Global table stops at field 24
+# `IgesDialect::V4_0FixedAscii` (dialect.rs). Its Global table stops at field 24
 # (global.rs:81-87).
 id = "iges:4.0-fixed-ascii"
 title = "IGES 4.0, Fixed ASCII"

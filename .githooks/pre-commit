@@ -44,7 +44,7 @@ fi
 # must not reach a commit. Run it whenever a registry, the renderer, or a file
 # that owns a generated region is staged.
 if git diff --cached --name-only \
-    | grep -qE '^docs/dialects?(-support)?\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
+    | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
   echo "pre-commit: scripts/render-format-support.py --check"
   python3 scripts/render-format-support.py --self-test
   python3 scripts/render-format-support.py --check
