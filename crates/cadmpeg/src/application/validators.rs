@@ -5,9 +5,26 @@
 //! Unlike the codec registry, this is an application concern: it belongs to
 //! `cadmpeg check`, not to the four questions an embedder asks of a file.
 
-use cadmpeg_ir::{CadIr, Finding};
+use cadmpeg_ir::{
+    validate_neutral, validate_neutral_with_source_fidelity, CadIr, Finding, SourceFidelity,
+    ValidationReport,
+};
 
 type NativeValidator = fn(&CadIr) -> Vec<Finding>;
+
+pub(crate) fn validate_ir(
+    validators: &NativeValidatorCatalog,
+    ir: &CadIr,
+    source_fidelity: Option<&SourceFidelity>,
+    losses: Vec<cadmpeg_ir::LossNote>,
+) -> ValidationReport {
+    let mut report = match source_fidelity {
+        Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
+        None => validate_neutral(ir, losses),
+    };
+    report.findings.extend(validators.validate(ir));
+    report
+}
 
 /// Maps native namespace ids to codec-owned validator functions.
 pub struct NativeValidatorCatalog {
