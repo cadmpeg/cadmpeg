@@ -753,7 +753,7 @@ fn layer_metadata(
 
 /// The layer parent link rests on the stamp, so the loss follows the stamp.
 #[test]
-fn unstamped_layer_charges_the_parent_link_dialect_loss() {
+fn unstamped_layer_charges_the_parent_link_stamp_loss() {
     // A single zero closes the extension-item chain, so both arms read a whole
     // record and the difference between them is only the stamp.
     let (unstamped_metadata, unstamped) = layer_metadata(&[0], None);

@@ -29,6 +29,11 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 /// diagnostics are promoted.
 pub(crate) const WRITER_STAMP_UNVERIFIED_MARKER: &str = "the archive has no writer-version stamp";
 
+/// Construct the loss charged when a reading depends on an absent writer stamp.
+pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNote {
+    RhinoLossCode::SourceWriterStampUnverified.note(message)
+}
+
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The

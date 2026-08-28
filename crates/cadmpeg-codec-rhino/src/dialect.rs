@@ -33,7 +33,7 @@
 //! is read with the strategy selected by its chunk width: `rhino:archive-4`
 //! below word 50 and `rhino:archive-90` at or above word 50. Admission is
 //! [`Admission::AdmittedUnverified`] with that row as `nearest`, and
-//! [`dialect_loss`] charges
+//! [`admission_loss`] charges
 //! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] for it.
 //!
 //! Archive word 5 uses the same typecode, four-byte chunk-value, and CRC
@@ -186,7 +186,7 @@ impl ArchiveVersion {
     /// How a run admitted a document on this row.
     ///
     /// The one predicate behind both the report's [`Admission`] and
-    /// [`dialect_loss`]. A declared row that this codec reads carries a
+    /// [`admission_loss`]. A declared row that this codec reads carries a
     /// verified identity; the totality row carries no declared identity at all,
     /// so it names the row whose strategy was substituted for it.
     fn admission(self) -> Admission {
@@ -235,7 +235,7 @@ impl ArchiveVersion {
 /// reclassifying. The biconditional the decode policy requires is therefore
 /// structural: the note charged and the admission reported come from one value,
 /// not from two authors agreeing.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
     let Admission::AdmittedUnverified { nearest } = &matched.admission else {
         return None;
     };

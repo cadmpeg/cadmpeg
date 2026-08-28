@@ -2458,7 +2458,7 @@ impl<'a> DecodeContext<'a> {
             if integrity_diagnostic(warning) {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
             } else if dialect_unverified_diagnostic(warning) {
-                RhinoLossCode::SourceWriterStampUnverified.note(warning.clone())
+                crate::loss::writer_stamp_unverified(warning.clone())
             } else if warning.contains(" has invalid color source ") {
                 RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
             } else if brep_mesh_cache_diagnostic(warning) {
@@ -2478,7 +2478,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             if dialect_unverified_diagnostic(warning) {
-                losses.push(RhinoLossCode::SourceWriterStampUnverified.note(warning.clone()));
+                losses.push(crate::loss::writer_stamp_unverified(warning.clone()));
                 continue;
             }
             if brep_mesh_cache_diagnostic(warning) {
@@ -2544,7 +2544,10 @@ impl<'a> DecodeContext<'a> {
         let dialects = vec![crate::container::dialect_match(self.scan)];
         // Charged from the reported admission itself, so the document-level
         // `AdmittedUnverified` and its loss cannot be reported apart.
-        losses.extend(dialects.first().and_then(crate::dialect::dialect_loss));
+        losses.extend(
+            cadmpeg_core::dialect::primary_layer(&dialects, crate::dialect::FORMAT)
+                .and_then(crate::dialect::admission_loss),
+        );
         DecodeResult::new(
             self.ir,
             DecodeReport {
@@ -3381,7 +3384,7 @@ impl<'a> DecodeContext<'a> {
                             );
                         } else if dialect_unverified_diagnostic(&warning) {
                             self.typed_losses
-                                .push(RhinoLossCode::SourceWriterStampUnverified.note(&warning));
+                                .push(crate::loss::writer_stamp_unverified(&warning));
                         } else if let Some(cause) = warning.strip_prefix("Brep topology fallback: ")
                         {
                             self.typed_losses.push(
@@ -4616,9 +4619,8 @@ fn brep_body_kind(
             || {
                 format!(
                     "{BODY_KIND_GAUGE_PREFIX}stored solid flag {} was trusted over the \
-                     closed-shell gauge because {}",
-                    raw.is_solid.unwrap_or(-1),
-                    crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
+                     closed-shell gauge because the writer-version stamp is absent",
+                    raw.is_solid.unwrap_or(-1)
                 )
             },
         );
