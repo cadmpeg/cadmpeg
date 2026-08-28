@@ -514,7 +514,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 source_object: apll_point_names
                     .get(&id)
                     .map(|name| SourceObjectAssociation {
-                        format: "step".into(),
+                        format: crate::dialect::FORMAT.into(),
                         object_id: format!("#{id}"),
                         name: name.clone(),
                         color: None,
@@ -2047,7 +2047,7 @@ fn decode_tessellated_curve_sets(
                     chordal_deflection: 0.0,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "step".into(),
+                    format: crate::dialect::FORMAT.into(),
                     object_id: format!("#{id}"),
                     name: source_name.clone(),
                     color: None,
@@ -2137,7 +2137,7 @@ pub(super) fn associate_free_geometric_set_members(
                 })
                 .filter(|name| !name.is_empty());
             let association = || SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{member}"),
                 name: name.clone(),
                 color: None,
@@ -2211,7 +2211,7 @@ pub(super) fn associate_free_representation_members(
                 })
                 .filter(|name| !name.is_empty());
             let association = || SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{member}"),
                 name: source_name.clone(),
                 color: None,
@@ -2304,7 +2304,7 @@ fn associate_presentation_carrier(
         })
         .filter(|name| !name.is_empty());
     let association = || SourceObjectAssociation {
-        format: "step".into(),
+        format: crate::dialect::FORMAT.into(),
         object_id: format!("#{source_id}"),
         name: name.clone(),
         color: None,
@@ -2559,7 +2559,7 @@ pub(super) fn associate_topology_carriers(
         ir.model.curves[*index]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{edge_id}"),
                 name: None,
                 color: None,
@@ -2581,7 +2581,7 @@ pub(super) fn associate_topology_carriers(
         ir.model.surfaces[*index]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{face_id}"),
                 name: None,
                 color: None,
@@ -2603,7 +2603,7 @@ pub(super) fn associate_topology_carriers(
         ir.model.points[*index]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{vertex_id}"),
                 name: None,
                 color: None,
@@ -2633,7 +2633,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         ir.model.curves[parent_index]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{replica_id}"),
                 name: None,
                 color: None,
@@ -2654,7 +2654,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         ir.model.surfaces[parent_index]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{replica_id}"),
                 name: None,
                 color: None,
@@ -2713,7 +2713,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         ir.model.surfaces[surface_index]
             .source_object
             .get_or_insert_with(|| SourceObjectAssociation {
-                format: "step".into(),
+                format: crate::dialect::FORMAT.into(),
                 object_id: format!("#{pcurve_id}"),
                 name: None,
                 color: None,
@@ -2753,7 +2753,7 @@ pub(super) fn associate_surface_curve_supports(
             ir.model.curves[curve_index]
                 .source_object
                 .get_or_insert_with(|| SourceObjectAssociation {
-                    format: "step".into(),
+                    format: crate::dialect::FORMAT.into(),
                     object_id: format!("#{surface_curve_id}"),
                     name: None,
                     color: None,
@@ -2769,7 +2769,7 @@ pub(super) fn associate_surface_curve_supports(
             ir.model.surfaces[surface_index]
                 .source_object
                 .get_or_insert_with(|| SourceObjectAssociation {
-                    format: "step".into(),
+                    format: crate::dialect::FORMAT.into(),
                     object_id: format!("#{surface_curve_id}"),
                     name: None,
                     color: None,

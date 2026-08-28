@@ -52,6 +52,25 @@ mod tests {
     use super::*;
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::CadIr;
+    use cadmpeg_registry::InputCatalog;
+
+    #[test]
+    fn native_validator_and_input_catalog_registrations_agree() {
+        const VALIDATED_FORMATS: [&str; 4] = ["fcstd", "f3d", "inventor", "sldprt"];
+
+        let mut validators = NativeValidatorCatalog::with_builtins()
+            .namespaces()
+            .collect::<Vec<_>>();
+        validators.sort_unstable();
+        let mut inputs = InputCatalog::with_builtins()
+            .descriptors()
+            .map(cadmpeg_registry::InputDescriptor::format_id)
+            .filter(|id| VALIDATED_FORMATS.contains(id))
+            .collect::<Vec<_>>();
+        inputs.sort_unstable();
+
+        assert_eq!(validators, inputs);
+    }
 
     #[cfg(all(
         feature = "fcstd",

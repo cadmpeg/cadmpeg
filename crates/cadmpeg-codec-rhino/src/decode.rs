@@ -2,7 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
+use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -2542,7 +2542,7 @@ impl<'a> DecodeContext<'a> {
             .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");
         source_fidelity.retain_unknown_records("rhino", self.opaque_records);
-        let dialects = vec![dialect_match(self.scan)];
+        let dialects = vec![crate::container::dialect_match(self.scan)];
         debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         // Charged from the reported admission itself, so the document-level
         // `AdmittedUnverified` and its loss cannot be reported apart.
@@ -5605,15 +5605,6 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
         ir.tolerances.angular = source_units.angular_tolerance;
     }
     ir
-}
-
-/// Classifies a scanned archive.
-///
-/// The full decode's report and its source metadata both read this, so they
-/// carry the same match.
-fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
-    scan.archive
-        .classify(scan.metadata.properties.writer_version)
 }
 
 fn source_meta(scan: &Scan<'_>) -> SourceMeta {

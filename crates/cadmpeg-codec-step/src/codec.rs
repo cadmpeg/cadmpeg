@@ -256,7 +256,7 @@ impl CodecBackend for StepCodec {
         debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         Ok(ContainerSummary {
             dialects,
-            format: "step".into(),
+            format: crate::dialect::FORMAT.into(),
             container_kind: "iso-10303-21-clear-text".into(),
             entries,
             notes,
@@ -369,7 +369,7 @@ fn inspect_zip(
     debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(ContainerSummary {
         dialects,
-        format: "step".into(),
+        format: crate::dialect::FORMAT.into(),
         container_kind: "iso-10303-21-zip".into(),
         entries,
         notes,

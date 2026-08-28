@@ -270,12 +270,7 @@ impl StepDialect {
             if object_identifier.is_none() {
                 return Self::Ap242;
             }
-            return match StepSchema::ap242_edition(identifier) {
-                Some("edition 1") => Self::Ap242Edition1,
-                Some("edition 2") => Self::Ap242Edition2,
-                Some(_) => Self::Ap242Edition3,
-                None => Self::Unknown,
-            };
+            return Self::from_ap242_edition(StepSchema::ap242_edition(identifier));
         }
         if name.eq_ignore_ascii_case(NAME_AP203_E1) {
             Self::Ap203Edition1
@@ -285,6 +280,28 @@ impl StepDialect {
             Self::Ap214
         } else {
             Self::Unknown
+        }
+    }
+
+    /// Maps the edition recognizer's result without treating a future word as
+    /// a verified edition-3 declaration. The reader still uses edition 3 as
+    /// the nearest recovery strategy for [`Self::Unknown`].
+    fn from_ap242_edition(edition: Option<&str>) -> Self {
+        match edition {
+            Some("edition 1") => Self::Ap242Edition1,
+            Some("edition 2") => Self::Ap242Edition2,
+            Some("edition 3") => Self::Ap242Edition3,
+            Some(_) | None => Self::Unknown,
+        }
+    }
+
+    const fn admission(self) -> Admission {
+        if matches!(self, Self::Unknown) {
+            Admission::AdmittedUnverified {
+                nearest: NEAREST_STRATEGY.id(),
+            }
+        } else {
+            Admission::Admitted
         }
     }
 
@@ -357,14 +374,7 @@ impl StepDialect {
             declared.insert(DECLARED_IMPLEMENTATION_LEVEL.into(), level);
         }
 
-        let admission = if dialect == Self::Unknown {
-            Admission::AdmittedUnverified {
-                nearest: NEAREST_STRATEGY.id(),
-            }
-        } else {
-            Admission::Admitted
-        };
-        DialectMatch::layer(FORMAT, dialect.id(), declared, admission)
+        DialectMatch::layer(FORMAT, dialect.id(), declared, dialect.admission())
     }
 }
 

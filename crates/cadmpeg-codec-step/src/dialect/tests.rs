@@ -250,6 +250,18 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
 }
 
 #[test]
+fn a_future_ap242_edition_word_uses_the_unverified_edition_three_strategy() {
+    let dialect = StepDialect::from_ap242_edition(Some("edition 4"));
+    assert_eq!(dialect, StepDialect::Unknown);
+    assert_eq!(
+        dialect.admission(),
+        Admission::AdmittedUnverified {
+            nearest: StepDialect::Ap242Edition3.id(),
+        }
+    );
+}
+
+#[test]
 fn the_implementation_level_is_recorded_and_never_classified_on() {
     // The five levels the parser admits select different section grammars.
     // None of them moves the identity, and each is recorded verbatim.

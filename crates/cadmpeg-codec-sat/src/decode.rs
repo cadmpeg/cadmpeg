@@ -68,7 +68,6 @@ pub(crate) fn decode_asm_binary(
     );
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "asm", &mut attributes);
-    attributes.insert("encoding".to_string(), "binary".to_string());
     let evidence = StreamEvidence::AsmBinary(Some(&header));
     let matched = classify_dialect(&evidence);
     let kernel = kernel_layer(&evidence);
@@ -110,7 +109,6 @@ pub(crate) fn decode_acis_binary(
     );
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "acis", &mut attributes);
-    attributes.insert("encoding".to_string(), "binary".to_string());
     build_result(ctx, brep, attributes, &header, None, matched, kernel)
 }
 
@@ -126,9 +124,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
     let dialect = terminator_line(stream.terminator);
     let mut attributes = BTreeMap::new();
     header_attributes(&header, family, &mut attributes);
-    attributes.insert("encoding".to_string(), "text".to_string());
     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
-    attributes.insert("terminator".to_string(), dialect.to_string());
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
     // through `classify`. Neither branch gates the record decode on it.
@@ -157,12 +153,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
     )
 }
 
-/// Mirrors the primary-layer match into [`SourceMeta`], beside the attributes
-/// the codec already emits.
-///
-/// The `encoding`, `scale`, `terminator`, and save-format attribute keys stay.
-/// They duplicate the declared keys for now; retiring the ad-hoc attribute keys
-/// is a later phase.
+/// Builds source metadata from non-dialect stream attributes.
 fn source_meta(attributes: BTreeMap<String, String>) -> SourceMeta {
     SourceMeta {
         format: FORMAT.to_string(),

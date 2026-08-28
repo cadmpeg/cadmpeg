@@ -140,7 +140,6 @@
     "source": {
       "attributes": {
         "acis_save_format_version": "23200",
-        "encoding": "binary",
         "kernel_entity_count": "2",
         "kernel_family": "asm",
         "kernel_flags": "2",
