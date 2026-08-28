@@ -4,8 +4,7 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_preserving_write, resolve_write_request, unsupported_target, EncodeInput, ExportPlan,
-    TargetRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
@@ -40,31 +39,32 @@ pub(crate) fn plan<'a>(
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
-    resolve_preserving_write(
-        resolved,
-        |target| match preserve(input, target)? {
-            Preservation::Written { bytes, write_path } => Ok(Ok(preserved_plan(
-                input.ir,
-                target.clone(),
-                write_path,
-                bytes,
-            ))),
-            Preservation::Declined => Ok(Err(())),
-        },
-        |entry, displaced, ()| {
+    match resolved {
+        WriteRequest::Catalog { entry, displaced } => {
             let target = DialectId::pinned(entry.id);
-            synthesized_plan(input, &target, displaced)
-        },
-        |source, ()| {
-            Err(unsupported_target(
+            if displaced.is_none() {
+                match preserve(input, &target)? {
+                    Preservation::Written { bytes, write_path } => {
+                        return Ok(preserved_plan(input.ir, target, write_path, bytes));
+                    }
+                    Preservation::Declined => {}
+                }
+            }
+            synthesized_plan(input, &target, displaced.as_ref())
+        }
+        WriteRequest::OffCatalog { dialect: source } => match preserve(input, source)? {
+            Preservation::Written { bytes, write_path } => {
+                Ok(preserved_plan(input.ir, source.clone(), write_path, bytes))
+            }
+            Preservation::Declined => Err(unsupported_target(
                 dialect::FORMAT,
                 source.as_str(),
                 "its retained source image is unavailable for preservation and the generator \
                  cannot synthesize it",
                 dialect::TARGETS,
-            ))
+            )),
         },
-    )
+    }
 }
 
 enum Preservation {
