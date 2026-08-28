@@ -22,7 +22,7 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 use cadmpeg_registry::{
-    build_encoder, ForcedInput, Format, InputCatalog, LossPolicy, ResolvedSource,
+    build_encoder, dialect_table, ForcedInput, Format, InputCatalog, LossPolicy, ResolvedSource,
     DETECTION_PREFIX_LEN,
 };
 
@@ -626,6 +626,16 @@ impl OutputSelection {
                 format,
                 dialect: None,
             });
+        }
+
+        if dialect_table(None)?
+            .iter()
+            .any(|entry| entry.format == value)
+        {
+            bail!(
+                "--to {value}: {value} is not an output format of this build; available: {}",
+                Format::vocabulary()
+            );
         }
 
         let format = inferred.ok_or_else(|| {

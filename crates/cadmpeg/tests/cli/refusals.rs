@@ -179,6 +179,40 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
                 .and(predicate::str::contains("step")),
         );
 
+    let output = dir.path().join("out.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            path,
+            "--to",
+            "catia",
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "catia is not an output format of this build",
+        ));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            path,
+            "--to",
+            "5.1",
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("No such file or directory")
+                .and(predicate::str::contains("not an output format").not()),
+        );
+
     // A bare value that names neither a format nor an inferable one: there is
     // no output path to read a format from, so nothing can be resolved.
     Command::cargo_bin("cadmpeg")
