@@ -1134,6 +1134,13 @@ item = "cadmpeg_ir::codec::{Inherited,resolve_inherit}"
 reason = "the enum and function had one production caller and exposed an intermediate state that resolve_write_request now handles directly"
 
 [[change]]
+commit = "400e8e0015bba19c6cc7a76273115bdef2407cfb"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::dialect::KernelHeaderRef::{TextAsm,TextAcis,Unknown}"
+reason = "the shared kernel classifier must represent the text terminator branches and unframed recovery so every pinned acis identity has a production host"
+
+[[change]]
 commit = "3f334cfae5759e557c00abecb9a386ec82121cdf"
 crate = "cadmpeg-ir"
 kind = "signature"

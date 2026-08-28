@@ -253,6 +253,37 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
             )));
         }
     }
+    for name in crate::container::text_brep_names(scan) {
+        let parsed = scan
+            .entry_bytes(name)
+            .ok()
+            .and_then(|bytes| cadmpeg_asm::sat::parse(bytes).ok());
+        let mut matched = match parsed.as_ref() {
+            Some(stream) => {
+                let header = stream.header.as_kernel_header();
+                let reference = match stream.terminator {
+                    cadmpeg_asm::sat::Terminator::Asm => {
+                        cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
+                    }
+                    cadmpeg_asm::sat::Terminator::Acis => {
+                        cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
+                    }
+                };
+                cadmpeg_asm::dialect::classify(reference)
+            }
+            None => cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown),
+        };
+        matched
+            .declared
+            .insert("carrier".to_owned(), name.to_owned());
+        matches.push(matched);
+        if parsed.is_none() {
+            losses.push(F3dLossCode::KernelCarrierUnparseable.note(format!(
+                "kernel carrier {name} could not be framed for dialect inspection; its retained \
+                 source bytes remain available"
+            )));
+        }
+    }
     KernelLayers { matches, losses }
 }
 

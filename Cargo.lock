@@ -193,6 +193,7 @@ version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "schemars",
  "serde",
  "serde-value",

@@ -8,9 +8,8 @@
 //! under the `sat` namespace; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
 //! fails on drift in either direction.
 //!
-//! This module owns the **host** layer only. The `acis:` rows — the kernel
-//! save-format bands the streams carry — belong to `cadmpeg-asm` and are cited,
-//! not declared, here.
+//! This module owns the primary `sat:` host layer. Each classified stream also
+//! emits the non-primary `acis:` kernel layer owned by `cadmpeg-asm`.
 //!
 //! # Identity is the magic; admission is the save-format band
 //!
@@ -250,6 +249,27 @@ pub(crate) fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
         declared: declared(evidence),
         admission: admission(evidence),
     }
+}
+
+/// Classify the same evidence as the shared non-primary kernel layer.
+pub(crate) fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
+    let header = match evidence {
+        StreamEvidence::AsmBinary(Some(header)) => {
+            cadmpeg_asm::dialect::KernelHeaderRef::Asm(header)
+        }
+        StreamEvidence::AcisBinary(Some(header)) => {
+            cadmpeg_asm::dialect::KernelHeaderRef::Acis(header)
+        }
+        StreamEvidence::Text(Some(text)) => match text.branch {
+            sat::Terminator::Asm => cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(text.header),
+            sat::Terminator::Acis => cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(text.header),
+        },
+        StreamEvidence::AsmBinary(None)
+        | StreamEvidence::AcisBinary(None)
+        | StreamEvidence::Text(None)
+        | StreamEvidence::Unknown => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+    };
+    cadmpeg_asm::dialect::classify(header)
 }
 
 #[cfg(test)]
