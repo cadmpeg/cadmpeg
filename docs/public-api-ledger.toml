@@ -1244,3 +1244,10 @@ crate = "cadmpeg-asm"
 kind = "addition"
 item = "cadmpeg_asm::dialect::acis_recovery_message"
 reason = "kernel hosts report the shared unverified Spatial ACIS recovery consequence with one sentence template"
+
+[[change]]
+commit = "9d28e7674c2c8fcc8458ef0a045ce5a55cd3bab7"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::DecodeResult::report_mut"
+reason = "mutable report access returns a drop guard that revalidates the primary-layer invariant and re-projects source dialect metadata"
