@@ -17,15 +17,15 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
+use cadmpeg_ir::report::{DecodeReport, ExportReport};
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use cadmpeg_registry::{
     build_encoder, dialect_table, ForcedInput, Format, InputCatalog, LossPolicy, ResolvedSource,
     DETECTION_PREFIX_LEN,
 };
 
+use crate::application::transcoder::{classify_decode_failure, validate_ir};
 use crate::application::{
     export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, NativeValidatorCatalog,
     SidecarPersistOutcome, SourceRequest, Transcoder,
@@ -48,20 +48,6 @@ pub struct AppCatalogs {
     pub inputs: InputCatalog,
     /// Native namespace validators.
     pub validators: NativeValidatorCatalog,
-}
-
-fn validate_ir(
-    validators: &NativeValidatorCatalog,
-    ir: &CadIr,
-    source_fidelity: Option<&SourceFidelity>,
-    losses: Vec<cadmpeg_ir::LossNote>,
-) -> ValidationReport {
-    let mut report = match source_fidelity {
-        Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
-        None => validate_neutral(ir, losses),
-    };
-    report.findings.extend(validators.validate(ir));
-    report
 }
 
 fn print_load_notices(notices: &[LoadNotice]) {
@@ -221,10 +207,11 @@ pub fn dump(
     let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
         Ok(outcome) => outcome,
         Err(error) => {
+            let error = classify_decode_failure(error);
             let Some(report_path) = report_path else {
                 return Err(error);
             };
-            let Some(refusal) = decode_failure_refusal(&error) else {
+            let Some(refusal) = error.downcast_ref::<ConversionRefusal>() else {
                 return Err(error);
             };
             write_command_report(
@@ -236,10 +223,10 @@ pub fn dump(
                     decode_report: None,
                     check_report: None,
                     export: None,
-                    refusal: Some(&refusal),
+                    refusal: Some(refusal),
                 },
             )?;
-            return Err(refusal.into());
+            return Err(error);
         }
     };
     print_load_notices(&outcome.notices);
@@ -272,16 +259,6 @@ pub fn dump(
         },
     )?;
     Ok(())
-}
-
-fn decode_failure_refusal(error: &anyhow::Error) -> Option<ConversionRefusal> {
-    let codec_error = error.downcast_ref::<CodecError>()?;
-    if matches!(codec_error, CodecError::Io(_)) {
-        return None;
-    }
-    Some(ConversionRefusal::DecodeFailed {
-        message: format!("decode failed: {error:#}"),
-    })
 }
 
 /// Load and check CADIR, printing a human-readable or JSON report.
