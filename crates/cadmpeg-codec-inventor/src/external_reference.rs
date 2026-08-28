@@ -170,13 +170,27 @@ fn parse_stream<'a>(
     source: View<'a>,
     document_kind: &DocumentKind,
 ) -> Result<ParsedUfrx<'a>, CodecError> {
+    let mut declaration = Cursor::new(source);
+    let schema = declaration.u16("schema")?;
+    match parse_stream_grammar(ctx, source, document_kind) {
+        Ok(document) => Ok(document),
+        Err(error) if !(11..=15).contains(&schema) => match error {
+            CodecError::ResourceLimit(_) => Err(error),
+            _ => Err(CodecError::NotImplemented(format!(
+                "UFRxDoc 11-15 grammar does not fit; foreign schema {schema} is the probable cause: {error}"
+            ))),
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn parse_stream_grammar<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    document_kind: &DocumentKind,
+) -> Result<ParsedUfrx<'a>, CodecError> {
     let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
-    if !(11..=15).contains(&schema) {
-        return Err(CodecError::NotImplemented(format!(
-            "UFRxDoc schema {schema} is not implemented"
-        )));
-    }
     let section_count = cursor.count16("section-version count", 256)?;
     if section_count < 5 {
         return Err(CodecError::Malformed(
@@ -991,15 +1005,34 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_schema_is_rejected() {
+    fn a_foreign_schema_is_parsed_with_the_11_to_15_grammar() {
         let (bytes, _) = fixture(16);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        assert!(matches!(
-            parse_stream(&ctx, root, &DocumentKind::Assembly),
-            Err(CodecError::NotImplemented(_))
-        ));
+        let document = parse_stream(&ctx, root, &DocumentKind::Assembly)
+            .expect("foreign schema uses the residual grammar");
+        assert_eq!(document.schema, 16);
+        assert_eq!(document.original_file_name, "synthetic.ipt");
+        assert_eq!(document.references.len(), 1);
+    }
+
+    #[test]
+    fn a_broken_foreign_schema_names_the_schema_as_the_probable_cause() {
+        let (mut bytes, invariant_offset) = fixture(16);
+        bytes[invariant_offset..invariant_offset + 2].copy_from_slice(&2_u16.to_le_bytes());
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic UFRxDoc fits policy");
+        let Err(error) = parse_stream(&ctx, root, &DocumentKind::Assembly) else {
+            panic!("broken foreign schema must recover as unsupported");
+        };
+        assert!(
+            matches!(&error, CodecError::NotImplemented(message)
+                if message.contains("foreign schema 16 is the probable cause")
+                    && !message.contains("schema 16 is not implemented")),
+            "expected an attempted-grammar recovery, found {error:?}"
+        );
     }
 
     #[test]
