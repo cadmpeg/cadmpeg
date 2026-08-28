@@ -2062,9 +2062,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         }
         UfrxRecordState::ParsedPrefix => {
             record.directory_id.is_some()
-                && record
-                    .schema
-                    .is_some_and(|schema| (11..=15).contains(&schema))
+                && record.schema.is_some()
                 && record.section_versions.len() >= 5
                 && record.original_file_name.is_some()
                 && record.caption.is_some()
