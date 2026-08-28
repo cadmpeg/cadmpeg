@@ -11,7 +11,7 @@ use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
 
 use crate::dialect;
 use crate::loss::SldprtLossCode;
-use crate::{source_records, SldprtCodec, Written};
+use crate::{source_records, ReplaySkipped, SemanticFidelity, SldprtCodec, Written};
 
 /// Resolve the request against the source, then plan the export it names
 /// (design §8.2).
@@ -78,8 +78,7 @@ fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>
                     input.ir,
                     &value.annotations,
                     &records,
-                    FidelityResolution::NotConsumed,
-                    false,
+                    SemanticFidelity::Resolution(FidelityResolution::NotConsumed),
                     &mut bytes,
                 )?
             }
@@ -89,13 +88,10 @@ fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>
             &Annotations::default(),
             &[],
             if replay_eligible {
-                FidelityResolution::Degraded {
-                    reason: "preserved SLDPRT source image is unavailable".into(),
-                }
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
-                FidelityResolution::NotProvided
+                SemanticFidelity::Resolution(FidelityResolution::NotProvided)
             },
-            replay_eligible,
             &mut bytes,
         )?,
     };
@@ -131,11 +127,17 @@ fn finish<'a>(
 ) -> ExportPlan<'a> {
     let write_path = written.path();
     let fidelity = written.fidelity();
-    let mut losses: Vec<_> = written
-        .replay_failed()
+    let mut losses: Vec<_> = (written.replay_skipped() == Some(ReplaySkipped::ImageMissing))
         .then(|| {
-            SldprtLossCode::SourcePreservedImageUnavailable
-                .note("preserved SLDPRT source image is unavailable; regenerated from IR")
+            SldprtLossCode::SourcePreservedImageUnavailable.note(match write_path {
+                WritePath::Patched => {
+                    "preserved SLDPRT source image is unavailable; wrote from retained source records with semantic patches"
+                }
+                WritePath::Synthesized => {
+                    "preserved SLDPRT source image is unavailable; regenerated from IR"
+                }
+                WritePath::VerbatimReplay => unreachable!("a replay did not skip its source image"),
+            })
         })
         .into_iter()
         .collect();

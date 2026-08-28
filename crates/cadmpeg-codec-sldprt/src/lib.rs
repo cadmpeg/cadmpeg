@@ -209,10 +209,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
-                FidelityResolution::Degraded {
-                    reason: "preserved SLDPRT source digest baseline is unavailable".into(),
-                },
-                true,
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::BaselineMissing),
                 writer,
             );
         };
@@ -221,11 +218,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
-                FidelityResolution::Degraded {
-                    reason: "decoded model no longer matches the preserved SLDPRT source digest"
-                        .into(),
-                },
-                true,
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
                 writer,
             );
         }
@@ -234,10 +227,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
-                FidelityResolution::Degraded {
-                    reason: "preserved SLDPRT source image is unavailable".into(),
-                },
-                true,
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
                 writer,
             );
         };
@@ -246,10 +236,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
-                FidelityResolution::Degraded {
-                    reason: "preserved SLDPRT source image is unavailable".into(),
-                },
-                true,
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
                 writer,
             );
         };
@@ -270,8 +257,7 @@ impl SldprtCodec {
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
-        fidelity: FidelityResolution,
-        replay_failed: bool,
+        fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let dialect = writer::write_semantic_with_records(ir, annotations, records, writer)?;
@@ -283,8 +269,46 @@ impl SldprtCodec {
             },
             dialect,
             fidelity,
-            replay_failed,
         })
+    }
+}
+
+/// Why an eligible retained-image replay took the semantic path instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReplaySkipped {
+    BaselineMissing,
+    DigestMismatch,
+    ImageMissing,
+}
+
+impl ReplaySkipped {
+    fn fidelity(self) -> FidelityResolution {
+        FidelityResolution::Degraded {
+            reason: match self {
+                Self::BaselineMissing => "preserved SLDPRT source digest baseline is unavailable",
+                Self::DigestMismatch => {
+                    "decoded model no longer matches the preserved SLDPRT source digest"
+                }
+                Self::ImageMissing => "preserved SLDPRT source image is unavailable",
+            }
+            .into(),
+        }
+    }
+}
+
+/// Fidelity result for a semantic write. A replay skip carries the sole typed
+/// reason from which both fidelity and any applicable loss are derived.
+enum SemanticFidelity {
+    Resolution(FidelityResolution),
+    ReplaySkipped(ReplaySkipped),
+}
+
+impl SemanticFidelity {
+    fn resolution(&self) -> FidelityResolution {
+        match self {
+            Self::Resolution(resolution) => resolution.clone(),
+            Self::ReplaySkipped(reason) => reason.fidelity(),
+        }
     }
 }
 
@@ -298,8 +322,7 @@ enum Written {
     Semantic {
         path: WritePath,
         dialect: DialectId,
-        fidelity: FidelityResolution,
-        replay_failed: bool,
+        fidelity: SemanticFidelity,
     },
 }
 
@@ -316,18 +339,18 @@ impl Written {
     fn fidelity(&self) -> FidelityResolution {
         match self {
             Self::Replayed => FidelityResolution::Replayed,
-            Self::Semantic { fidelity, .. } => fidelity.clone(),
+            Self::Semantic { fidelity, .. } => fidelity.resolution(),
         }
     }
 
-    fn replay_failed(&self) -> bool {
-        matches!(
-            self,
+    fn replay_skipped(&self) -> Option<ReplaySkipped> {
+        match self {
             Self::Semantic {
-                replay_failed: true,
+                fidelity: SemanticFidelity::ReplaySkipped(reason),
                 ..
-            }
-        )
+            } => Some(*reason),
+            _ => None,
+        }
     }
 }
 

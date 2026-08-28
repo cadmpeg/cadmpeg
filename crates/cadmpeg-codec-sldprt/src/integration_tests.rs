@@ -415,6 +415,14 @@ fn the_patch_path_names_the_preserved_dialect() {
         panic!("digest mismatch must report degraded fidelity");
     };
     assert!(reason.contains("digest"), "{reason}");
+    assert!(plan.report().losses.iter().all(|loss| {
+        loss.code != crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
+    }));
+    assert!(plan
+        .report()
+        .notes
+        .iter()
+        .any(|note| note == "preserved source container replayed with semantic patches"));
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:sw-version-12000-plus");
 
@@ -447,6 +455,16 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
             reason: "preserved SLDPRT source image is unavailable".into(),
         }
     );
+    let unavailable = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
+        })
+        .expect("missing retained bytes charge image unavailability");
+    assert!(unavailable.message.contains("retained source records"));
+    assert!(!unavailable.message.contains("regenerated from IR"));
 }
 
 /// The §8.3 honesty invariant on the generation path: a part built with nothing

@@ -114,9 +114,11 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
             reason: "preserved SLDPRT source image is unavailable".into(),
         }
     );
-    assert!(plan
+    let unavailable = plan
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code.code == "source.preserved-image-unavailable"));
+        .find(|loss| loss.code.code == "source.preserved-image-unavailable")
+        .expect("missing sidecar charges image unavailability");
+    assert!(unavailable.message.contains("regenerated from IR"));
 }
