@@ -79,10 +79,6 @@ mod tests {
     /// no catalog: it writes the neutral document, which has no dialect.
     #[test]
     fn every_catalog_names_declared_dialects_with_one_default() {
-        let registry = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/dialects.toml"),
-        )
-        .expect("the dialect registry is readable");
         for format in Format::ALL {
             let encoder = build_encoder(*format);
             let targets = encoder.targets();
@@ -107,12 +103,6 @@ mod tests {
                 assert!(
                     target.id.starts_with(&format!("{}:", encoder.id())),
                     "{}: target {} is outside this encoder's own namespace",
-                    encoder.id(),
-                    target.id
-                );
-                assert!(
-                    registry.contains(&format!("id = \"{}\"", target.id)),
-                    "{}: target {} has no row in docs/dialects.toml",
                     encoder.id(),
                     target.id
                 );

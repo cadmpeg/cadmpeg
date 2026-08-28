@@ -22,7 +22,7 @@ pub fn print_formats(inputs: &InputCatalog) {
         println!(
             "{:<10} {:<6} {:<6} {}",
             row.id,
-            yes_no(row.read),
+            "yes",
             yes_no(row.write),
             row.extensions.join(", ")
         );
@@ -59,12 +59,11 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
             println!(
                 "  {:<34} {:<24} {:<24} {}",
                 row.id.as_str(),
-                row.read
-                    .map_or_else(|| "-".to_owned(), |value| value.to_string()),
-                match (row.write, row.target) {
-                    (Some(write), true) => format!("{write} (target)"),
-                    (Some(write), false) => write.to_string(),
-                    (None, _) => "-".to_owned(),
+                row.read,
+                if row.target {
+                    format!("{} (target)", row.write)
+                } else {
+                    row.write.to_string()
                 },
                 row.title
             );
