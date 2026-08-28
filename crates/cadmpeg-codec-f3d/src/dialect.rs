@@ -52,7 +52,7 @@ pub(crate) const FORMAT: &str = "f3d";
 /// The multi-document F3Z row is reachable only by replaying a retained
 /// archive, which is preservation, not synthesis.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: "f3d:manifest-3-2-0-0",
+    id: F3dDialect::Manifest3200.pinned(),
     label: "Fusion 360 archive with top-level manifest 3-2-0-0",
     aliases: &["3-2-0-0"],
     default: true,
@@ -123,11 +123,15 @@ impl F3dDialect {
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
+        DialectId::pinned(self.pinned())
+    }
+
+    const fn pinned(self) -> &'static str {
+        match self {
             Self::Manifest3200 => "f3d:manifest-3-2-0-0",
             Self::F3zMultiDocument => "f3d:f3z-multi-document",
             Self::Unknown => "f3d:unknown",
-        })
+        }
     }
 
     /// Classifies a document archive from the version its top-level manifest

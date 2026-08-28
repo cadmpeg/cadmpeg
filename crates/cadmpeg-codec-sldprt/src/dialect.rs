@@ -87,7 +87,7 @@ pub(crate) const FORMAT: &str = "sldprt";
 /// and classifies into the registry's totality row. Every versioned row is
 /// reachable only by preserving a retained part.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: "sldprt:unknown",
+    id: SldprtDialect::Unknown.pinned(),
     label: "SolidWorks part with no swVersion declaration",
     aliases: &[],
     default: true,
@@ -130,11 +130,15 @@ impl SldprtDialect {
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
+        DialectId::pinned(self.pinned())
+    }
+
+    const fn pinned(self) -> &'static str {
+        match self {
             Self::SwVersionPre12000 => "sldprt:sw-version-pre-12000",
             Self::SwVersion12000Plus => "sldprt:sw-version-12000-plus",
             Self::Unknown => "sldprt:unknown",
-        })
+        }
     }
 
     /// The row a `swVersion` declaration selects.
