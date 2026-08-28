@@ -65,7 +65,7 @@ const TARGET_FILE_VERSION: u32 = 1;
 ///
 /// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::TargetRequest::Inherit
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: "fcstd:schema-4",
+    id: FcstdDialect::Schema4.pinned(),
     label: "FreeCAD Document.xml schema version 4",
     aliases: &["4"],
     default: true,
@@ -74,7 +74,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 /// The write options represented by a canonical catalog entry.
 pub(crate) fn target_options(target: &TargetDescriptor) -> Result<FcstdWriteOptions, CodecError> {
     match target.id {
-        "fcstd:schema-4" => Ok(FcstdWriteOptions {
+        id if id == FcstdDialect::Schema4.pinned() => Ok(FcstdWriteOptions {
             schema_version: 4,
             file_version: TARGET_FILE_VERSION,
         }),
@@ -135,12 +135,16 @@ impl FcstdDialect {
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
+        DialectId::pinned(self.pinned())
+    }
+
+    const fn pinned(self) -> &'static str {
+        match self {
             Self::Schema2 => "fcstd:schema-2",
             Self::Schema3 => "fcstd:schema-3",
             Self::Schema4 => "fcstd:schema-4",
             Self::Unknown => "fcstd:unknown",
-        })
+        }
     }
 
     /// The row whose discriminant `declared` satisfies, or [`Self::Unknown`]
