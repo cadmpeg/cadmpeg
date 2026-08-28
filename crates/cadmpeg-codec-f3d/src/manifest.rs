@@ -197,8 +197,8 @@ impl<'a> Cursor<'a> {
 /// the `3-2-0-0` layout, and the anchors inside that layout are the backstop:
 /// `FusionDocType`, `.f3d`, and two hyphenated GUIDs must all match, so a
 /// generation that moved the layout fails within the first few fields. A
-/// failed attempt on a version this codec does not know is reported as the
-/// version refusal it is, not as corruption.
+/// failed attempt remains a structural error and names the declared version
+/// as the probable cause.
 pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecError> {
     if bytes.len() > MAX_TOP_LEVEL_MANIFEST_BYTES {
         return Err(malformed(
@@ -213,22 +213,18 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
     // An unreadable version field is corrupt bytes: nothing names a generation,
     // so there is no recognized document to refuse.
     let version = cursor.ascii("top-level manifest version")?;
-    match parse_top_level_body(bytes, cursor) {
-        Ok(asset_folder_bases) => Ok(TopLevelManifest {
-            version,
-            asset_folder_bases,
-        }),
-        Err(error) if version != TOP_LEVEL_MANIFEST_VERSION => {
-            // The known layout does not fit and the document names another
-            // writer generation. That is a recognized document this codec does
-            // not parse, not corrupt bytes.
-            Err(CodecError::NotImplemented(format!(
-                "F3D manifest version {version} is not supported \
-                 (expected {TOP_LEVEL_MANIFEST_VERSION}): {error}"
-            )))
-        }
-        Err(error) => Err(error),
-    }
+    let asset_folder_bases = parse_top_level_body(bytes, cursor).map_err(|error| {
+        malformed(
+            "top-level manifest",
+            format!(
+                "the {TOP_LEVEL_MANIFEST_VERSION} grammar does not fit; declared version {version} is the probable cause: {error}"
+            ),
+        )
+    })?;
+    Ok(TopLevelManifest {
+        version,
+        asset_folder_bases,
+    })
 }
 
 /// The `3-2-0-0` top-level manifest layout after the version field.
@@ -461,12 +457,11 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
                 cursor.finish("revision-10 Fusion asset manifest")?;
                 None
             }
-            11 | 12 | 13 | 14 | 15 | 19 | 20 => parse_current_design_asset(&mut cursor)?,
             _ => parse_current_design_asset(&mut cursor).map_err(|error| {
                 malformed(
                     "Fusion asset manifest",
                     format!(
-                        "current grammar does not fit; unknown revision {revision} is the probable cause: {error}"
+                        "current grammar does not fit; declared revision {revision} is the probable cause: {error}"
                     ),
                 )
             })?,
@@ -967,47 +962,26 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_version_whose_layout_does_not_fit_is_not_corruption() {
-        // Layout drift: the `FusionDocType` anchor fails, and the failure is
-        // reported as the version this codec does not parse, not as corruption.
+    fn a_broken_layout_is_malformed_for_every_declared_version() {
         let known = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
-        let mut bytes = with_version(&known, "3-3-0-0");
         let mut anchor = Vec::new();
         push_ascii(&mut anchor, "FusionDocType").unwrap();
-        let at = bytes
+        let at = known
             .windows(anchor.len())
             .position(|window| window == anchor)
             .expect("the kind anchor is present");
         let mut moved = Vec::new();
         push_ascii(&mut moved, "FusionDocTypX").unwrap();
-        bytes.splice(at..at + anchor.len(), moved);
-
-        let error = parse_top_level(&bytes).unwrap_err();
-        assert!(
-            matches!(&error, CodecError::NotImplemented(message) if message.contains("3-3-0-0")
-                && message.contains(TOP_LEVEL_MANIFEST_VERSION)),
-            "expected an unsupported-version refusal, found {error:?}"
-        );
-    }
-
-    #[test]
-    fn an_in_version_manifest_with_a_broken_layout_stays_malformed() {
-        let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
-        let mut anchor = Vec::new();
-        push_ascii(&mut anchor, "FusionDocType").unwrap();
-        let at = bytes
-            .windows(anchor.len())
-            .position(|window| window == anchor)
-            .expect("the kind anchor is present");
-        let mut moved = Vec::new();
-        push_ascii(&mut moved, "FusionDocTypX").unwrap();
-        bytes.splice(at..at + anchor.len(), moved);
-
-        let error = parse_top_level(&bytes).unwrap_err();
-        assert!(
-            matches!(error, CodecError::Malformed(_)),
-            "expected corruption of an in-version manifest, found {error:?}"
-        );
+        for version in [TOP_LEVEL_MANIFEST_VERSION, "3-3-0-0"] {
+            let mut bytes = with_version(&known, version);
+            bytes.splice(at..at + anchor.len(), moved.clone());
+            let error = parse_top_level(&bytes).unwrap_err();
+            assert!(
+                matches!(&error, CodecError::Malformed(message)
+                    if message.contains(version) && message.contains("probable cause")),
+                "expected a structural failure naming version {version}, found {error:?}"
+            );
+        }
     }
 
     #[test]
@@ -1180,7 +1154,7 @@ mod tests {
         let error = parse_asset_header(&bytes).unwrap_err();
         assert!(
             matches!(&error, CodecError::Malformed(message)
-                if message.contains("unknown revision 99 is the probable cause")),
+                if message.contains("declared revision 99 is the probable cause")),
             "expected a structural failure naming the revision, found {error:?}"
         );
     }
