@@ -15,6 +15,57 @@ use crate::CadIr;
 
 use super::*;
 
+const NO_ALIASES: &[&str] = &[];
+
+fn target(id: &'static str, aliases: &'static [&'static str], default: bool) -> TargetDescriptor {
+    TargetDescriptor {
+        id,
+        label: id,
+        aliases,
+        default,
+    }
+}
+
+#[test]
+#[should_panic(expected = "at most one entry may be the default")]
+fn a_target_catalog_rejects_multiple_defaults() {
+    let targets = [
+        target("test:first", NO_ALIASES, true),
+        target("test:second", NO_ALIASES, true),
+    ];
+    let _ = find_target(&targets, "test:first");
+}
+
+#[test]
+#[should_panic(expected = "duplicate id")]
+fn a_target_catalog_rejects_duplicate_ids() {
+    let targets = [
+        target("test:same", NO_ALIASES, false),
+        target("test:same", NO_ALIASES, false),
+    ];
+    let _ = find_target(&targets, "test:same");
+}
+
+#[test]
+#[should_panic(expected = "duplicate alias")]
+fn a_target_catalog_rejects_duplicate_aliases() {
+    let targets = [
+        target("test:first", &["same"], false),
+        target("test:second", &["same"], false),
+    ];
+    let _ = find_target(&targets, "same");
+}
+
+#[test]
+#[should_panic(expected = "is also an id")]
+fn a_target_catalog_rejects_an_alias_that_is_an_id() {
+    let targets = [
+        target("test:first", &["test:second"], false),
+        target("test:second", NO_ALIASES, false),
+    ];
+    let _ = find_target(&targets, "test:second");
+}
+
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube();

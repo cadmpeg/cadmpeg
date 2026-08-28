@@ -12,6 +12,7 @@
 //! `Codec`, so a codec cannot override an entry point and drop the
 //! enforcement.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::io::Write;
 use std::ops::{Deref, DerefMut};
@@ -351,9 +352,41 @@ pub struct TargetDescriptor {
     pub default: bool,
 }
 
+fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
+    let defaults = targets.iter().filter(|target| target.default).count();
+    assert!(
+        defaults <= 1,
+        "target catalog invariant failed: at most one entry may be the default"
+    );
+
+    let mut ids = BTreeSet::new();
+    for target in targets {
+        assert!(
+            ids.insert(target.id),
+            "target catalog invariant failed: duplicate id {:?}",
+            target.id
+        );
+    }
+
+    let mut aliases = BTreeSet::new();
+    for target in targets {
+        for alias in target.aliases {
+            assert!(
+                !ids.contains(alias),
+                "target catalog invariant failed: alias {alias:?} is also an id"
+            );
+            assert!(
+                aliases.insert(*alias),
+                "target catalog invariant failed: duplicate alias {alias:?}"
+            );
+        }
+    }
+}
+
 /// The catalog entry `id` names, by id or by alias.
 #[must_use]
 pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a TargetDescriptor> {
+    assert_valid_target_catalog(targets);
     targets
         .iter()
         .find(|target| target.id == id || target.aliases.contains(&id))
@@ -363,6 +396,7 @@ pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a 
 /// catalog.
 #[must_use]
 pub fn default_target(targets: &'static [TargetDescriptor]) -> Option<&'static TargetDescriptor> {
+    assert_valid_target_catalog(targets);
     targets.iter().find(|target| target.default)
 }
 
