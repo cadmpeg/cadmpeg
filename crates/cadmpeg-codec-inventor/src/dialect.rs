@@ -72,7 +72,7 @@ use crate::container::InventorContainer;
 use crate::database::RseSchema;
 use crate::kernel::KernelFamily;
 use crate::loss::InventorLossCode;
-use crate::rse::MetaStreamDeclaration;
+use crate::rse::{MetaStreamDeclaration, ParsedState};
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "inventor";
@@ -146,6 +146,8 @@ pub(crate) struct DialectRecovery {
     cfb_major_version: u16,
     /// Distinct `RSeDb` schema declarations, ascending.
     schemas: Vec<RseSchema>,
+    /// Declared schemas whose bodies did not frame under the schema-31 grammar.
+    unframed_schemas: Vec<RseSchema>,
     /// Distinct `RSe` Meta Stream declarations, ascending.
     meta_streams: Vec<MetaStreamDeclaration>,
 }
@@ -161,6 +163,15 @@ impl DialectRecovery {
             .collect::<Vec<_>>();
         schemas.sort_unstable_by_key(|schema| schema.value());
         schemas.dedup();
+        let mut unframed_schemas = container
+            .rse
+            .databases
+            .iter()
+            .filter(|descriptor| matches!(descriptor.state, ParsedState::Unavailable(_)))
+            .filter_map(|descriptor| descriptor.declared_schema)
+            .collect::<Vec<_>>();
+        unframed_schemas.sort_unstable_by_key(|schema| schema.value());
+        unframed_schemas.dedup();
         let mut meta_streams = container
             .rse
             .segments
@@ -172,13 +183,15 @@ impl DialectRecovery {
         Self {
             cfb_major_version: container.snapshot.major_version(),
             schemas,
+            unframed_schemas,
             meta_streams,
         }
     }
 
     /// Admission derived from every declaration this document carries.
     fn admission(&self) -> Admission {
-        if !self.schemas.is_empty()
+        if self.unframed_schemas.is_empty()
+            && !self.schemas.is_empty()
             && self
                 .schemas
                 .iter()
@@ -252,7 +265,16 @@ impl DialectRecovery {
             return None;
         };
         let mut reasons = Vec::new();
-        if self.schemas.is_empty() {
+        if !self.unframed_schemas.is_empty() {
+            reasons.push(format!(
+                "RSe database schema {} is declared but its body does not frame under the schema-31 grammar",
+                join(
+                    self.unframed_schemas
+                        .iter()
+                        .map(|schema| schema.value().to_string())
+                )
+            ));
+        } else if self.schemas.is_empty() {
             reasons.push("no RSe database stream declares a schema".to_owned());
         } else if self
             .schemas

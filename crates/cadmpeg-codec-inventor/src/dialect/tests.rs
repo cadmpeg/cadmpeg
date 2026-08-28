@@ -15,7 +15,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossNote;
 
 use super::*;
-use crate::test_support::{fixture, primary_envelope_fixture_with, EnvelopeDeclarations};
+use crate::test_support::{
+    fixture, primary_envelope_fixture_with, primary_envelope_fixture_with_broken_database,
+    EnvelopeDeclarations,
+};
 use crate::InventorCodec;
 
 #[test]
@@ -162,6 +165,24 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             case.label
         );
     }
+}
+
+#[test]
+fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
+    let (matched, losses) = decoded(&primary_envelope_fixture_with_broken_database());
+    assert_eq!(matched.declared[DECLARED_RSE_DB_SCHEMA], "31");
+    assert!(matches!(
+        matched.admission,
+        Admission::AdmittedUnverified { .. }
+    ));
+    let loss = losses
+        .iter()
+        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
+        .expect("unframed schema-31 recovery loss");
+    assert!(loss.message.contains("RSe database schema 31 is declared"));
+    assert!(!loss
+        .message
+        .contains("no RSe database stream declares a schema"));
 }
 
 #[test]

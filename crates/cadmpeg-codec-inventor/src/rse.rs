@@ -307,8 +307,8 @@ pub(crate) struct DatabaseDescriptor {
     pub(crate) band: StorageBand,
     pub(crate) stream: CompoundStreamId,
     /// The schema this `RSeDb` stream declared, or `None` when the stream did
-    /// not read that far. Present for an unimplemented schema, whose `state` is
-    /// [`ParsedState::Unavailable`].
+    /// not read that far. Present for every declared schema, including schema
+    /// 31, when its body leaves `state` as [`ParsedState::Unavailable`].
     pub(crate) declared_schema: Option<RseSchema>,
     pub(crate) state: ParsedState<RseDatabase>,
 }
@@ -370,7 +370,7 @@ impl<'a> RseInventory<'a> {
                     Ok(DatabaseHeader::Supported(database)) => {
                         (Some(database.schema), ParsedState::Parsed(database))
                     }
-                    Ok(DatabaseHeader::ForeignSchemaUnframed { schema, detail }) => (
+                    Ok(DatabaseHeader::Unframed { schema, detail }) => (
                         Some(schema),
                         ParsedState::Unavailable(DatabaseHeader::unframed_detail(schema, &detail)),
                     ),

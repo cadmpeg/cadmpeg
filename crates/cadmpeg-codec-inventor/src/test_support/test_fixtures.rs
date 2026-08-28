@@ -115,7 +115,15 @@ pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
 }
 
 pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) -> Vec<u8> {
-    primary_envelope_fixture_with_kernel(declarations, &asm_kernel_stream())
+    primary_envelope_fixture_with_kernel_and_database(declarations, &asm_kernel_stream(), false)
+}
+
+pub(crate) fn primary_envelope_fixture_with_broken_database() -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_database(
+        EnvelopeDeclarations::default(),
+        &asm_kernel_stream(),
+        true,
+    )
 }
 
 /// The primary envelope carrying one caller-supplied kernel stream, so a test
@@ -123,6 +131,14 @@ pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) 
 pub(crate) fn primary_envelope_fixture_with_kernel(
     declarations: EnvelopeDeclarations,
     kernel: &[u8],
+) -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_database(declarations, kernel, false)
+}
+
+fn primary_envelope_fixture_with_kernel_and_database(
+    declarations: EnvelopeDeclarations,
+    kernel: &[u8],
+    break_database_body: bool,
 ) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
@@ -142,7 +158,10 @@ pub(crate) fn primary_envelope_fixture_with_kernel(
     let carrier = kernel_carrier_fixture(kernel);
     let meta = meta_stream_fixture(carrier.len(), declarations);
     let bulk = bulk_stream_fixture(&carrier);
-    let database = database_fixture(declarations.schema);
+    let mut database = database_fixture(declarations.schema);
+    if break_database_body {
+        database.truncate(20);
+    }
     let registry = registry_fixture();
     let revisions = revision_fixture();
     let streams = [

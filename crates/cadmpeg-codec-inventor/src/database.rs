@@ -110,9 +110,8 @@ pub(crate) enum DatabaseHeader {
     /// grammar is read, and the declaration it carries is what makes the
     /// document dialect-unverified.
     Supported(RseDatabase),
-    /// A schema this codec has no grammar of its own for, whose body the
-    /// schema-31 grammar did not frame either.
-    ForeignSchemaUnframed {
+    /// A body the schema-31 grammar did not frame.
+    Unframed {
         /// The schema the stream declared.
         schema: RseSchema,
         /// Where the substituted grammar stopped.
@@ -121,7 +120,7 @@ pub(crate) enum DatabaseHeader {
 }
 
 impl DatabaseHeader {
-    /// The detail a foreign schema reports as a database issue.
+    /// The detail an unframed schema reports as a database issue.
     pub(crate) fn unframed_detail(schema: RseSchema, detail: &str) -> String {
         format!(
             "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
@@ -147,14 +146,8 @@ pub(crate) fn parse_database(
     // on what the stream said, not on what the parse managed.
     match schema_31_body(ctx, cursor, id, schema) {
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
-        // A stream declaring schema 31 failed under its own declared grammar,
-        // so its envelope broke: that is an error here, as it always was.
-        Err(error)
-            if schema == RseSchema::SCHEMA_31 || matches!(error, CodecError::ResourceLimit(_)) =>
-        {
-            Err(error)
-        }
-        Err(error) => Ok(DatabaseHeader::ForeignSchemaUnframed {
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => Ok(DatabaseHeader::Unframed {
             schema,
             detail: error.to_string(),
         }),
@@ -464,7 +457,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn schema_31_database_requires_exact_exhaustion() {
+    fn schema_31_database_reports_failed_exact_exhaustion_as_unframed() {
         let mut bytes = database_fixture();
         with_context(&bytes, |ctx| {
             let DatabaseHeader::Supported(database) =
@@ -478,7 +471,15 @@ mod tests {
             assert_eq!(database.note, "synthetic database");
         });
         bytes.push(0);
-        with_context(&bytes, |ctx| assert!(parse_database(ctx, &bytes).is_err()));
+        with_context(&bytes, |ctx| {
+            let DatabaseHeader::Unframed { schema, detail } =
+                parse_database(ctx, &bytes).expect("schema declaration survives trailing bytes")
+            else {
+                panic!("trailing bytes cannot frame");
+            };
+            assert_eq!(schema, RseSchema::SCHEMA_31);
+            assert!(detail.contains("trailing bytes"), "{detail}");
+        });
     }
 
     /// A foreign schema is read with the schema-31 grammar, and the declaration
@@ -509,13 +510,28 @@ mod tests {
         bytes.truncate(28);
         with_context(&bytes, |ctx| {
             let header = parse_database(ctx, &bytes).expect("a foreign schema is not an error");
-            let DatabaseHeader::ForeignSchemaUnframed { schema, detail } = header else {
+            let DatabaseHeader::Unframed { schema, detail } = header else {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema(12));
             let reported = DatabaseHeader::unframed_detail(schema, &detail);
             assert!(reported.contains("schema 12"), "{reported}");
             assert!(reported.contains("schema 31 grammar"), "{reported}");
+        });
+    }
+
+    #[test]
+    fn schema_31_that_does_not_frame_keeps_its_declaration() {
+        let mut bytes = database_fixture();
+        bytes.truncate(28);
+        with_context(&bytes, |ctx| {
+            let header = parse_database(ctx, &bytes).expect("schema 31 degrades after declaration");
+            let DatabaseHeader::Unframed { schema, detail } = header else {
+                panic!("a truncated body cannot frame");
+            };
+            assert_eq!(schema, RseSchema::SCHEMA_31);
+            let reported = DatabaseHeader::unframed_detail(schema, &detail);
+            assert!(reported.contains("schema 31"), "{reported}");
         });
     }
 
