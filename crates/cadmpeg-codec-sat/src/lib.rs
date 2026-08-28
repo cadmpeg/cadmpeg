@@ -10,10 +10,12 @@
 //! [`cadmpeg_asm::brep`] into the neutral model arenas, with the kernel-side
 //! native records under the `sat` namespace.
 //!
-//! Spatial ACIS 217 and 218 binary streams use the 32-bit SAB header and the
-//! same record decoder. Other ACIS binary header bands remain identified but
-//! unsupported. A text stream frames on either branch terminator, and its
-//! decode outcome decides whether the report carries geometry.
+//! Spatial ACIS 217 and 218 binary streams use the verified 32-bit SAB grammar.
+//! Other ACIS binary header bands recover through the nearest verified grammar,
+//! report admitted-unverified, and charge the recovery loss. Inspection and
+//! decode emit the primary `sat:` stream layer and the shared `acis:` kernel
+//! layer. A text stream frames on either branch terminator, and its decode
+//! outcome decides whether the report carries geometry.
 //!
 //! <!-- generated: capability -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#asmacis-bare-satsmtsmbsab-streams)).

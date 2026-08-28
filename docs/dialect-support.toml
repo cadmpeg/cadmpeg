@@ -3,7 +3,7 @@
 #
 # This file describes cadmpeg, not formats. It changes per commit. Identity --
 # which dialects exist -- lives in `docs/dialects.toml` and changes when a
-# vendor ships. See `~/side2/cadmpeg-dialects-design.md` sections 5 and 6.
+# vendor ships. See “Dialects: the version dimension in cadmpeg,” sections 5 and 6.
 #
 # Schema
 #   [[support]]  dialect   a `<format>:<name>` id declared in

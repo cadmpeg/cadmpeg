@@ -76,10 +76,9 @@ impl MetaStreamVersion {
 /// The marker and version an `RSe` metadata stream declares in its first two
 /// fields, as read.
 ///
-/// Both fields are gates: [`parse_meta_stream`] reads the rest of the stream
-/// only when the pair is [`Self::VERIFIED_MARKER`] and
-/// [`Self::VERIFIED_VERSION`] together. The declaration is kept whether or not
-/// it passes, because the dialect classifier reports what the file said.
+/// [`parse_meta_stream`] attempts the version-8 body grammar for every marker
+/// and version pair. The declaration is kept whether the body parses or not,
+/// because the dialect classifier reports what the file said.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct MetaStreamDeclaration {
     pub(crate) marker: String,

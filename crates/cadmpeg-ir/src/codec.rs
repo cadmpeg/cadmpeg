@@ -764,10 +764,12 @@ impl Encoder for CadirEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        // The whole of resolution for an encoder with no catalog and no
-        // dialect. With no synthesis catalog there is no row to fall back to
-        // and no row to preserve, so `Inherit` is the
-        // only writable request and every explicit id is outside the catalog.
+        // CADIR intentionally stands outside `resolve_write_request`: it is the
+        // identity writer and has no dialect axis, so `Inherit` has nothing to
+        // inherit or displace and is always satisfiable. The shared ladder
+        // correctly treats an empty native target catalog as unwritable, which
+        // is not the CADIR identity-write contract. Every explicit id remains
+        // outside this encoder's empty catalog.
         if let TargetRequest::Explicit(id) = request {
             return Err(unsupported_target(
                 self.id(),

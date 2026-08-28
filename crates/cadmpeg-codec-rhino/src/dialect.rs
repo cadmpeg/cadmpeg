@@ -57,10 +57,10 @@ pub(crate) const FORMAT: &str = "rhino";
 /// input, one row per [`RhinoArchiveVersion`] variant.
 ///
 /// The chunked band this codec *reads* is wider than the band it writes:
-/// archives 2, 3, 4 and 90 decode but have no writer, and archives 1, 5 and the
-/// totality row decode not at all. None of them is a target, and — unlike IGES
-/// — there is no preservation path that could write them anyway (see
-/// [`crate::OFF_CATALOG_SOURCE_REASON`]).
+/// archives 1, 2, 3, 4 and 90 decode but have no writer, archive 5 is refused,
+/// and the totality row decodes as admitted-unverified. None of them is a
+/// target, and — unlike IGES — there is no preservation path that could write
+/// them anyway (see [`crate::OFF_CATALOG_SOURCE_REASON`]).
 ///
 /// The alias of each row is its bare archive word and its bare Rhino major, so
 /// `--to 60` and `--to rhino:archive-60` name the same row.
