@@ -10,6 +10,20 @@ use std::fmt;
 use cadmpeg_ir::report::{DecodeReport, ValidationReport};
 use serde_json::{json, Value};
 
+/// Classifies codec decode failures while preserving operational I/O errors.
+pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
+    let Some(codec_error) = error.downcast_ref::<cadmpeg_core::CodecError>() else {
+        return error;
+    };
+    if matches!(codec_error, cadmpeg_core::CodecError::Io(_)) {
+        return error;
+    }
+    ConversionRefusal::DecodeFailed {
+        message: format!("decode failed: {error:#}"),
+    }
+    .into()
+}
+
 /// Stable refusal code written into v6 command reports and used by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefusalCode {

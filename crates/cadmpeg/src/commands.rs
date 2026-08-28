@@ -23,7 +23,9 @@ use cadmpeg_registry::{
     DETECTION_PREFIX_LEN,
 };
 
-use crate::application::transcoder::{classify_decode_failure, emit_export_plan, validate_ir};
+use crate::application::refusal::classify_decode_failure;
+use crate::application::transcoder::emit_export_plan;
+use crate::application::validators::validate_ir;
 use crate::application::{
     export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, NativeValidatorCatalog,
     SourceRequest, Transcoder,
