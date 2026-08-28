@@ -263,8 +263,16 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
         .iter()
         .filter(|matched| matched.format == "acis")
         .collect::<Vec<_>>();
-    assert_eq!(kernel_layers.len(), 1);
+    assert_eq!(kernel_layers.len(), 2);
     assert_eq!(kernel_layers[0].declared["carrier"], valid_path);
+    assert_eq!(
+        kernel_layers[1]
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("acis:unknown")
+    );
+    assert_eq!(kernel_layers[1].declared["carrier"], corrupt_path);
     let loss = decoded
         .report()
         .losses

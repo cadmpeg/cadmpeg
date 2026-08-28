@@ -246,6 +246,12 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
         if let Some(matched) = parsed {
             matches.push(matched);
         } else {
+            let mut matched =
+                cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
+            matched
+                .declared
+                .insert("carrier".to_owned(), brep.name.clone());
+            matches.push(matched);
             losses.push(F3dLossCode::KernelCarrierUnparseable.note(format!(
                 "kernel carrier {} could not be framed for dialect inspection; its retained \
                  source bytes remain available",
