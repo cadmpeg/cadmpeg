@@ -222,87 +222,35 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
 }
 
 #[test]
-fn the_refused_band_inspects_without_scanning_and_does_not_decode() {
-    let bytes = header("5");
+fn archive_word_5_uses_the_four_byte_chunk_scan() {
+    let archive = ArchiveVersion::LegacyV5;
+    let bytes = minimal_document(
+        "5",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
-        .expect("required invariant");
-    assert!(summary.entries.is_empty());
-    assert_eq!(summary.container_kind, "3dm-chunks");
-    let result = RhinoCodec.decode(
-        &mut Cursor::new(bytes),
-        &DecodeOptions {
-            container_only: true,
-            ..Default::default()
-        },
-    );
-    let Err(CodecError::UnsupportedDialect {
-        dialect_match,
-        message,
-        ..
-    }) = result
-    else {
-        panic!("archive word 5 must return a typed dialect refusal");
-    };
+        .expect("archive word 5 uses the chunked scan");
+    assert!(!summary.entries.is_empty());
     assert_eq!(
-        dialect_match
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("rhino:archive-5")
+        summary.dialects[0].admission,
+        cadmpeg_core::dialect::Admission::Admitted
     );
-    assert_eq!(dialect_match.declared["archive_version"], "5");
-    assert_eq!(
-        dialect_match.admission,
-        cadmpeg_core::dialect::Admission::Refused
-    );
-    assert_eq!(message, "Rhino archive version 5 decode is not implemented");
-}
 
-#[test]
-fn a_refused_row_inspects_as_refused_and_a_decoded_row_as_admitted() {
-    // The biconditional at the call sites: the archive words `decode` refuses
-    // are exactly the ones `inspect` reports as `Admission::Refused`, and the
-    // word whose flat legacy grammar this codec does implement is admitted on
-    // its own row even though inspection stops at the header.
-    for (version, id) in [("5", "rhino:archive-5"), ("1", "rhino:archive-1")] {
-        let bytes = header(version);
-        let summary = RhinoCodec
-            .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
-            .expect("header-only inspection");
-        let [matched] = summary.dialects.as_slice() else {
-            panic!("{version}: exactly one layer classifies a 3DM archive");
-        };
-        assert_eq!(matched.format, "rhino", "archive word {version}");
-        assert_eq!(
-            matched
-                .dialect
-                .as_ref()
-                .map(cadmpeg_core::dialect::DialectId::as_str),
-            Some(id),
-            "archive word {version}"
-        );
-        assert_eq!(
-            matched.declared["archive_version"], version,
-            "archive word {version}"
-        );
-
-        let refused = matches!(
-            RhinoCodec.decode(
-                &mut Cursor::new(bytes),
-                &DecodeOptions {
-                    container_only: true,
-                    ..Default::default()
-                },
-            ),
-            Err(CodecError::UnsupportedDialect { .. })
-        );
-        assert_eq!(
-            matched.admission == cadmpeg_core::dialect::Admission::Refused,
-            refused,
-            "archive word {version}: the reported admission and the decode refusal must agree"
-        );
-    }
+    let decoded = RhinoCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                container_only: true,
+                ..Default::default()
+            },
+        )
+        .expect("archive word 5 reaches chunked container decode");
+    assert!(decoded.report().container_only);
 }
 
 #[test]

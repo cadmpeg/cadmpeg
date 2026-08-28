@@ -74,27 +74,6 @@ fn the_totality_row_absorbs_every_word_the_registry_omits() {
 }
 
 #[test]
-fn admission_is_refused_exactly_where_decode_is_refused() {
-    // The biconditional the single predicate exists to guarantee: one function
-    // decides both the refusal `container::decode` returns and the admission
-    // the report carries, so a document can never be decoded while its report
-    // says the row was refused, or refused while the report says admitted.
-    let words = ENUMERATED
-        .iter()
-        .map(|(word, _)| *word)
-        .chain(OUTSIDE.iter().copied());
-    for word in words {
-        let archive = crate::chunks::ArchiveVersion::from_word(word);
-        let matched = archive.classify(None);
-        assert_eq!(
-            matched.admission == Admission::Refused,
-            archive.refuses_decode(),
-            "archive word {word}: admission and the decode refusal must agree"
-        );
-    }
-}
-
-#[test]
 fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
     // The residual row is admitted, not refused: words 2 through 90 are one
     // chunked grammar, so a word no row claims still selects a scan. It names
@@ -123,24 +102,11 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
 }
 
 #[test]
-fn a_verified_row_and_a_refused_row_charge_no_dialect_loss() {
+fn verified_rows_charge_no_dialect_loss() {
     for (word, _) in ENUMERATED {
         assert!(
             dialect_loss(&classify_word(*word)).is_none(),
             "archive word {word}: only the totality row is unverified"
-        );
-    }
-}
-
-#[test]
-fn only_archive_5_is_refused() {
-    for dialect in ArchiveVersion::ALL {
-        let refused = matches!(dialect, ArchiveVersion::LegacyV5);
-        assert_eq!(
-            dialect.refuses_decode(),
-            refused,
-            "{}: the codec's grammar coverage moved without the registry disposition",
-            dialect.id()
         );
     }
 }

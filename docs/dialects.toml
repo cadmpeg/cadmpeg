@@ -451,10 +451,8 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 #
 # `crates/cadmpeg-codec-rhino/src/dialect.rs` maps that partition onto the rows
 # below: `ArchiveVersion::id` selects the row, `ArchiveVersion::classify` is
-# the sole `DialectMatch` construction path, and
-# `ArchiveVersion::refuses_decode` is the sole disposition predicate -- it
-# decides both the reported `Admission` and the refusal `container::decode`
-# returns. `ArchiveVersion::is_chunked` selects the chunked grammar.
+# the sole `DialectMatch` construction path. `ArchiveVersion::is_chunked`
+# selects the chunked grammar.
 #
 # The design's open question -- whether archives 2-4 and 50-90 are one read
 # grammar or two -- is a grammar question, not an identity question, and is
@@ -514,20 +512,13 @@ discriminants = { archive_version = "4" }
 witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v4.3dm"
 
 [[dialect]]
-# `ArchiveVersion::LegacyV5`. Word 5 and word 50 are distinct. Word 5 is a
-# four-byte-value archive (`ArchiveVersion::uses_eight_byte_values` is
-# value >= 50) and is decode-refused: `ArchiveVersion::refuses_decode` holds, so
-# inspection reports the header with `Admission::Refused` and
-# `container::decode` returns `CodecError::UnsupportedDialect` carrying the
-# same match.
-#
-# No fixture carries word 5. The design's example witness
-# `corpus:rhino/legacy_v5_header.3dm` names a file that does not exist in this
-# repository; this row rests on code until one is added.
+# `ArchiveVersion::LegacyV5`. Word 5 and word 50 are distinct. Word 5 uses the
+# typecode, four-byte chunk-value, and CRC framing shared by words 2 through 4;
+# word 50 widens chunk values to eight bytes.
 id = "rhino:archive-5"
-title = "Rhino 3DM archive version 5 (pre-chunk legacy)"
+title = "Rhino 3DM archive version 5"
 discriminants = { archive_version = "5" }
-seam = "chunk value width and grammar differ from archive 50"
+seam = "four-byte chunk values; archive 50 widens chunk values to eight bytes"
 witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 
 [[dialect]]
