@@ -1,4 +1,4 @@
-# generated at 9518f7666
+# generated at 5ab799ccb
 pub mod cadmpeg_codec_iges
 pub enum cadmpeg_codec_iges::IgesVersion
 pub cadmpeg_codec_iges::IgesVersion::V4_0
@@ -47,10 +47,10 @@ impl core::marker::UnsafeUnpin for cadmpeg_codec_iges::IgesCodec
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_iges::IgesCodec
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_iges::IgesCodec
 pub struct cadmpeg_codec_iges::IgesEncoder
-impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_iges::IgesEncoder
+impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_iges::IgesEncoder
 pub fn cadmpeg_codec_iges::IgesEncoder::id(&self) -> &'static str
-pub fn cadmpeg_codec_iges::IgesEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_iges::IgesEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+pub fn cadmpeg_codec_iges::IgesEncoder::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_iges::IgesEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_codec_iges::IgesEncoder
 pub fn cadmpeg_codec_iges::IgesEncoder::clone(&self) -> cadmpeg_codec_iges::IgesEncoder
 impl core::default::Default for cadmpeg_codec_iges::IgesEncoder

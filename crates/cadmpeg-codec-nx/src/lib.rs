@@ -105,7 +105,6 @@ pub use evaluation::{saved_body_census_evidence, BodyCensusEvidence};
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 
@@ -294,7 +293,6 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     }
 
     let dialects = vec![dialect::NxDialect::classify(&scan.container)];
-    debug_assert_primary_layer(&dialects, dialect::FORMAT);
     ContainerSummary {
         dialects,
         format: dialect::FORMAT.to_string(),

@@ -1431,7 +1431,6 @@ impl CodecBackend for FcstdCodec {
             "admit FCStd entities",
         )?;
         let dialects = vec![primary];
-        cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, dialect::FORMAT);
         Ok(DecodeResult::new(
             ir,
             DecodeReport {

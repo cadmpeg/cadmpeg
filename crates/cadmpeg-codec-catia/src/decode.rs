@@ -3524,7 +3524,6 @@ fn decode_result(
     let matched = crate::dialect::classify(scan);
     report.losses.extend(crate::dialect::dialect_loss(&matched));
     report.dialects = vec![matched];
-    cadmpeg_core::dialect::debug_assert_primary_layer(&report.dialects, &report.format);
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
     Ok(DecodeResult::new(ir, report, source_fidelity))

@@ -12,7 +12,6 @@
 
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::CadIr;
@@ -489,7 +488,6 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     }
 
     let dialects = vec![NxDialect::classify(&scan.container)];
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     DecodeReport {
         dialects,
         format: crate::dialect::FORMAT.to_string(),

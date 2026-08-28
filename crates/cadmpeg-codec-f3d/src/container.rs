@@ -15,7 +15,7 @@ use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
@@ -549,7 +549,6 @@ pub fn summarize(
 
     let mut dialects = vec![scan.dialect.clone()];
     dialects.extend_from_slice(kernel_layers);
-    debug_assert_primary_layer(&dialects, FORMAT);
     ContainerSummary {
         dialects,
         format: FORMAT.to_string(),

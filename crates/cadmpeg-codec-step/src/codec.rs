@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
     resolve_catalog_write, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
@@ -248,7 +247,6 @@ impl CodecBackend for StepCodec {
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         let dialects = vec![StepDialect::classify(&exchange)];
-        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         Ok(ContainerSummary {
             dialects,
             format: crate::dialect::FORMAT.into(),
@@ -361,7 +359,6 @@ fn inspect_zip(
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
     // document, so the root's own match is this summary's match.
     let dialects = std::mem::take(&mut root_summary.dialects);
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(ContainerSummary {
         dialects,
         format: crate::dialect::FORMAT.into(),
@@ -405,12 +402,13 @@ fn decode_zip(
             root_data_offset.to_string(),
         );
     }
-    result.report_mut().notes.push(format!(
+    let (ir, mut report, fidelity) = result.into_parts();
+    report.notes.push(format!(
         "container root {}; archive entries={entry_count}",
         archive::ROOT_NAME
     ));
-    result.report_mut().notes.extend(resource_notes);
-    Ok(result)
+    report.notes.extend(resource_notes);
+    Ok(DecodeResult::new(ir, report, fidelity))
 }
 
 pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {

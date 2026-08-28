@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::DecodeReport;
@@ -1115,7 +1115,6 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             .map(|diagnostic| diagnostic.message.clone()),
     );
     let dialects = vec![dialect_match(scan)];
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     ContainerSummary {
         dialects,
         format: crate::dialect::FORMAT.to_string(),
@@ -1187,7 +1186,6 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
             })
     }));
     let dialects = vec![dialect_match(scan)];
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     losses.extend(dialects.first().and_then(crate::dialect::dialect_loss));
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
@@ -1219,7 +1217,6 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
         let dialects = vec![header.archive_version.classify(None)];
-        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         return Ok(ContainerSummary {
             dialects,
             format: crate::dialect::FORMAT.to_string(),

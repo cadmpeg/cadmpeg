@@ -180,26 +180,6 @@ pub fn primary_layer<'a>(dialects: &'a [DialectMatch], format: &str) -> Option<&
     found
 }
 
-/// Whether `dialects` satisfies the primary-layer invariant for `format`.
-///
-/// Vacuously true while `dialects` is empty, which is the staged state before a
-/// codec populates it. Once populated, exactly one entry must name `format`.
-fn holds_primary_layer_invariant(dialects: &[DialectMatch], format: &str) -> bool {
-    dialects.is_empty() || primary_layer(dialects, format).is_some()
-}
-
-/// Debug-asserts the primary-layer invariant at a construction path.
-///
-/// A no-op in release builds: a producer that violates the invariant has a bug
-/// in its own classification, and the checker is the release-side oracle.
-#[track_caller]
-pub fn debug_assert_primary_layer(dialects: &[DialectMatch], format: &str) {
-    debug_assert!(
-        holds_primary_layer_invariant(dialects, format),
-        "dialects for format {format:?} must contain exactly one entry naming it"
-    );
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -262,13 +242,11 @@ mod tests {
             primary_layer(&primary, "rhino").map(|entry| entry.format.as_str()),
             Some("rhino")
         );
-        assert!(holds_primary_layer_invariant(&primary, "rhino"));
-
-        assert!(holds_primary_layer_invariant(&[], "rhino"));
-        assert!(!holds_primary_layer_invariant(&[layer("acis")], "rhino"));
-        assert!(!holds_primary_layer_invariant(
-            &[layer("rhino"), layer("rhino")],
-            "rhino"
-        ));
+        assert_eq!(primary_layer(&[], "rhino"), None);
+        assert_eq!(primary_layer(&[layer("acis")], "rhino"), None);
+        assert_eq!(
+            primary_layer(&[layer("rhino"), layer("rhino")], "rhino"),
+            None
+        );
     }
 }

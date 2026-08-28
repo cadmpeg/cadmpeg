@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -2434,7 +2433,6 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records("rhino", opaque_records);
     let dialects = vec![primary];
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(DecodeResult::new(
         ir,
         DecodeReport {

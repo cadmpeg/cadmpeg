@@ -3,7 +3,6 @@
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerSummary};
 
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
@@ -131,7 +130,6 @@ impl<'a> InventorContainer<'a> {
             }
         }
         let dialects = vec![crate::dialect::DialectRecovery::of(self).dialect_match()];
-        debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
         ContainerSummary {
             dialects,
             format: crate::dialect::FORMAT.into(),

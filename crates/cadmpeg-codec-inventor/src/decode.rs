@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::DecodeResult;
@@ -1681,7 +1680,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let mut dialects = vec![primary];
     dialects.extend(kernel_match);
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     Ok(DecodeResult::new(
         ir,
         DecodeReport {

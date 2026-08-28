@@ -1,4 +1,4 @@
-# generated at 9d28e7674
+# generated at 5ab799ccb
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepError
 pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
@@ -55,10 +55,10 @@ pub fn cadmpeg_codec_step::StepCodec::decode_impl(&self, &cadmpeg_core::decode::
 pub fn cadmpeg_codec_step::StepCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_step::StepCodec
+impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_step::StepCodec
 pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_step::StepCodec::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_step::StepCodec::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_codec_step::StepCodec
 pub fn cadmpeg_codec_step::StepCodec::clone(&self) -> cadmpeg_codec_step::StepCodec
 impl core::default::Default for cadmpeg_codec_step::StepCodec

@@ -7,7 +7,6 @@ use std::path::{Component, Path};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::debug_assert_primary_layer;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 
 use crate::brep::ShapePayloadRecord;
@@ -122,15 +121,13 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
     if let Some(version) = &scan.document.program_version {
         notes.push(format!("ProgramVersion={version}"));
     }
-    let summary = ContainerSummary {
+    ContainerSummary {
         dialects: vec![FcstdDialect::classify(&scan.document, scan.schema)],
         format: crate::dialect::FORMAT.into(),
         container_kind: "zip".into(),
         entries: scan.entries.clone(),
         notes,
-    };
-    debug_assert_primary_layer(&summary.dialects, &summary.format);
-    summary
+    }
 }
 
 fn validate_name(name: &str) -> Result<(), CodecError> {

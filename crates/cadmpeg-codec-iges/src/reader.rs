@@ -6,7 +6,7 @@ use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, loss, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
-use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{
@@ -228,7 +228,6 @@ pub(crate) fn inspect(
     losses.extend(parse.record_losses());
     let mut summary = card::summarize(&parse.scan);
     summary.dialects.push(primary);
-    debug_assert_primary_layer(&summary.dialects, &summary.format);
     summary.notes.extend(parse.global.summary_notes());
     summary
         .notes
@@ -551,7 +550,6 @@ fn decode_with_occurrence_limits(
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
     let dialects = vec![primary];
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     let mut result = DecodeResult::new(
         ir,
         DecodeReport {

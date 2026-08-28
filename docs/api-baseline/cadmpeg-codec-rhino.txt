@@ -1,4 +1,4 @@
-# generated at 9518f7666
+# generated at 5ab799ccb
 pub mod cadmpeg_codec_rhino
 pub enum cadmpeg_codec_rhino::RhinoArchiveVersion
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V5
@@ -44,10 +44,10 @@ impl core::marker::UnsafeUnpin for cadmpeg_codec_rhino::RhinoCodec
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_rhino::RhinoCodec
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_rhino::RhinoCodec
 pub struct cadmpeg_codec_rhino::RhinoEncoder
-impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_rhino::RhinoEncoder
+impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_rhino::RhinoEncoder
 pub fn cadmpeg_codec_rhino::RhinoEncoder::id(&self) -> &'static str
-pub fn cadmpeg_codec_rhino::RhinoEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_rhino::RhinoEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+pub fn cadmpeg_codec_rhino::RhinoEncoder::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_rhino::RhinoEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
 impl core::clone::Clone for cadmpeg_codec_rhino::RhinoEncoder
 pub fn cadmpeg_codec_rhino::RhinoEncoder::clone(&self) -> cadmpeg_codec_rhino::RhinoEncoder
 impl core::cmp::Eq for cadmpeg_codec_rhino::RhinoEncoder

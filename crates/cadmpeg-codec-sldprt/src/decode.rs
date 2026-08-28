@@ -4619,7 +4619,6 @@ fn preserve_source_image(
 /// kernel-layer dialect match, so the primary layer is the whole list.
 fn report_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMatch> {
     let dialects = vec![crate::dialect::SldprtDialect::classify_scan(scan)];
-    cadmpeg_core::dialect::debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     dialects
 }
 

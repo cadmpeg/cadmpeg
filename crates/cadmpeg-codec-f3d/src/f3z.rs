@@ -12,7 +12,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_value::Value;
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::dialect::{debug_assert_primary_layer, DialectMatch};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
@@ -96,20 +96,20 @@ pub fn decode(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let mut root = crate::decode::decode(ctx, root_view)?;
+    let (ir, mut report, fidelity) = crate::decode::decode(ctx, root_view)?.into_parts();
     if let Some(drawing_root) = omitted_drawing_root {
-        root.report_mut()
+        report
             .losses
             .push(F3dLossCode::DrawingDocumentOmitted.note(format!(
-                "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
-            )));
+            "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
+        )));
     }
     let member_count = scan
         .entries
         .iter()
         .filter(|entry| is_f3d_member(&entry.name))
         .count();
-    root.report_mut().notes.push(format!(
+    report.notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     // The inner decode classified the root member, which is an `f3d:` document
@@ -117,35 +117,43 @@ pub fn decode(
     // the report states the outer archive's row. Restated before the
     // container-only return and before the digest stamp below, so both paths
     // carry it.
-    root = restate_outer_dialect(root, scan);
+    let root = restate_outer_dialect(DecodeResult::new(ir, report, fidelity), scan);
     if ctx.container_only() {
         return Ok(root);
     }
 
-    let table = xref_table_from_ir(root.ir())?;
+    let (mut ir, mut report, mut fidelity) = root.into_parts();
+    let table = xref_table_from_ir(&ir)?;
     let mut stack = vec![model_root];
-    let merged = merge_references(ctx, &mut root, scan, &table, &mut stack)?;
+    let merged = merge_references(
+        ctx,
+        &mut ir,
+        &mut report,
+        &mut fidelity,
+        scan,
+        &table,
+        &mut stack,
+    )?;
     if merged > 0 {
-        root.source_fidelity_mut()
+        fidelity
             .retained_records
             .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
-        root.report_mut().notes.push(format!(
+        report.notes.push(format!(
             "{merged} merged component(s) retain occurrence-scoped model entities and native \
              records; member source streams remain archive-local"
         ));
     }
-    root.report_mut().notes.push(format!(
+    report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
-    make_sibling_ordinals_unique(&mut root.ir_mut().model.occurrences);
-    let hash = crate::decode::document_local_sha256(root.ir());
-    if let Some(source) = &mut root.ir_mut().source {
+    make_sibling_ordinals_unique(&mut ir.model.occurrences);
+    let hash = crate::decode::document_local_sha256(&ir);
+    if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
     }
-    let (ir, report, fidelity) = root.into_parts();
     Ok(DecodeResult::new(ir, report, fidelity))
 }
 
@@ -168,7 +176,6 @@ fn restate_outer_dialect(root: DecodeResult, scan: &ContainerScan<'_>) -> Decode
     report
         .losses
         .retain(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind());
-    debug_assert_primary_layer(&dialects, crate::dialect::FORMAT);
     report.dialects = dialects;
     DecodeResult::new(ir, report, fidelity)
 }
@@ -291,7 +298,9 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
 /// skipped, leaving the rest of the archive to merge.
 fn merge_references(
     ctx: &DecodeContext<'_>,
-    parent: &mut DecodeResult,
+    parent_ir: &mut cadmpeg_ir::CadIr,
+    parent_report: &mut cadmpeg_ir::DecodeReport,
+    parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
     scan: &ContainerScan<'_>,
     table: &XrefTable,
     stack: &mut Vec<String>,
@@ -304,8 +313,7 @@ fn merge_references(
             |design| design.display_name.clone(),
         );
         if stack.contains(&reference.relative_path) {
-            parent
-                .report_mut()
+            parent_report
                 .losses
                 .push(F3dLossCode::XrefCycle.note(format!(
                     "xref {label}: reference cycle through {}; the occurrence was not resolved",
@@ -314,8 +322,7 @@ fn merge_references(
             continue;
         }
         let Some(member_view) = scan.entry_view(&reference.relative_path) else {
-            parent
-                .report_mut()
+            parent_report
                 .losses
                 .push(F3dLossCode::XrefMemberMissing.note(format!(
                     "xref {label}: member {} is not present in the archive; the occurrence was \
@@ -324,11 +331,10 @@ fn merge_references(
                 )));
             continue;
         };
-        let mut component = match crate::decode::decode(ctx, member_view) {
+        let component = match crate::decode::decode(ctx, member_view) {
             Ok(component) => component,
             Err(error) => {
-                parent
-                    .report_mut()
+                parent_report
                     .losses
                     .push(F3dLossCode::XrefMemberUndecoded.note(format!(
                         "xref {label}: member {} failed to decode ({error}); the occurrence was \
@@ -338,9 +344,8 @@ fn merge_references(
                 continue;
             }
         };
-        if component.ir().units != parent.ir().units {
-            parent
-                .report_mut()
+        if component.ir().units != parent_ir.units {
+            parent_report
                 .losses
                 .push(F3dLossCode::XrefUnitsMismatch.note(format!(
                     "xref {label}: component units differ from the containing document; the \
@@ -349,35 +354,39 @@ fn merge_references(
             continue;
         }
         let child_table = xref_table_from_ir(component.ir())?;
+        let (mut component_ir, mut component_report, mut component_fidelity) =
+            component.into_parts();
         stack.push(reference.relative_path.clone());
-        let descendants = merge_references(ctx, &mut component, scan, &child_table, stack)?;
+        let descendants = merge_references(
+            ctx,
+            &mut component_ir,
+            &mut component_report,
+            &mut component_fidelity,
+            scan,
+            &child_table,
+            stack,
+        )?;
         stack.pop();
-        let (mut component_ir, component_report, component_fidelity) = component.into_parts();
         if let Some(transform) = reference.transform {
             apply_occurrence_transform(&mut component_ir.model, transform);
         }
-        append_feature_history(&parent.ir().model, &mut component_ir.model)?;
+        append_feature_history(&parent_ir.model, &mut component_ir.model)?;
         let mut scope = OccurrenceScope {
             occurrence: &occurrence,
         };
-        parent
-            .ir_mut()
+        parent_ir
             .model
             .extend_rewritten(component_ir.model, &mut scope)?;
-        extend_native(
-            &mut parent.ir_mut().native,
-            component_ir.native,
-            &occurrence,
-        );
+        extend_native(&mut parent_ir.native, component_ir.native, &occurrence);
         merge_annotations(
-            &mut parent.source_fidelity_mut().annotations,
+            &mut parent_fidelity.annotations,
             component_fidelity.annotations,
             &occurrence,
         )?;
         merged += descendants + 1;
-        parent.report_mut().geometry_transferred |= component_report.geometry_transferred;
+        parent_report.geometry_transferred |= component_report.geometry_transferred;
         merge_component_kernel_layers(
-            &mut parent.report_mut().dialects,
+            &mut parent_report.dialects,
             component_report.dialects,
             &occurrence,
         );
@@ -386,14 +395,14 @@ fn merge_references(
                 continue;
             }
             loss.message = format!("xref {label}: {}", loss.message);
-            parent.report_mut().losses.push(loss);
+            parent_report.losses.push(loss);
         }
         let placement = if reference.transform.is_some() {
             "Design occurrence transform"
         } else {
             "identity placement"
         };
-        parent.report_mut().notes.push(format!(
+        parent_report.notes.push(format!(
             "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested \
              occurrence(s))",
             reference.relative_path

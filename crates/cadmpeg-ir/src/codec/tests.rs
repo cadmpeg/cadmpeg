@@ -200,16 +200,13 @@ impl CodecBackend for RejectFloorCodec {
         ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        let mut result = decode_result(unit_cube());
-        {
-            let mut report = result.report_mut();
-            // Deliberately lie in both directions; the wrapper owns this field.
-            report.container_only = !ctx.container_only();
-            report
-                .losses
-                .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
-        }
-        Ok(result)
+        let (ir, mut report, fidelity) = decode_result(unit_cube()).into_parts();
+        // Deliberately lie in both directions; the wrapper owns this field.
+        report.container_only = !ctx.container_only();
+        report
+            .losses
+            .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
+        Ok(DecodeResult::new(ir, report, fidelity))
     }
 }
 
@@ -415,40 +412,6 @@ fn inspect_accepts_a_summary_with_one_primary_layer() {
 #[should_panic(expected = "primary-layer invariant failed")]
 fn inspect_refuses_a_summary_with_no_primary_layer() {
     let _ = inspect_dialects(vec![dialect_layer("acis", "acis:save-format-217")]);
-}
-
-#[test]
-fn report_edits_reproject_source_mirrors() {
-    let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta {
-        format: "test".into(),
-        ..Default::default()
-    });
-    let mut result = DecodeResult::new(
-        ir,
-        DecodeReport {
-            dialects: vec![dialect_layer("test", "test:first")],
-            format: "test".into(),
-            container_only: false,
-            geometry_transferred: true,
-            coverage: BTreeMap::new(),
-            losses: Vec::new(),
-            notes: Vec::new(),
-            transfer_ledger: TransferLedger::default(),
-        },
-        SourceFidelity::default(),
-    );
-    result.report_mut().dialects = vec![dialect_layer("test", "test:second")];
-
-    assert_eq!(
-        result
-            .ir()
-            .source
-            .as_ref()
-            .and_then(|source| source.dialect.as_ref())
-            .map(DialectId::as_str),
-        Some("test:second")
-    );
 }
 
 fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
