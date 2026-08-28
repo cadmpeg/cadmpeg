@@ -616,13 +616,16 @@ fn main() -> ExitCode {
                 Err(misdirected_json("convert"))
             } else {
                 let plan = commands::ConversionPlan {
-                    force,
+                    policy: application::ConversionPolicy {
+                        force,
+                        binary_stdout,
+                        allow_errors,
+                        allow_empty,
+                        reject_decode_losses: reject_lossy.is_some_and(LossScope::covers_decode),
+                        reject_export_losses: reject_lossy.is_some_and(LossScope::covers_export),
+                        destination: output.clone(),
+                    },
                     report,
-                    binary_stdout,
-                    allow_errors,
-                    allow_empty,
-                    reject_decode_losses: reject_lossy.is_some_and(LossScope::covers_decode),
-                    reject_export_losses: reject_lossy.is_some_and(LossScope::covers_export),
                     forced_input: input_args.forced(),
                 };
                 commands::convert(
