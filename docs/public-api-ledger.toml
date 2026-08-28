@@ -1029,6 +1029,27 @@ item = "cadmpeg_protein::{STREAM_HEADER_LEN,PAGE_SIZE,RECORD_MARKER,CONTINUATION
 reason = "publish the generated instance-stream framing constants used by record_frames and its callers"
 
 [[change]]
+commit = "3d6a0c879a2dbb77232c49cc2f67088a57883f48"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::DialectEntry::disposition"
+reason = "changes from Option<Disposition> to Disposition because registry loading now rejects a non-total identity/support join"
+
+[[change]]
+commit = "3d6a0c879a2dbb77232c49cc2f67088a57883f48"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::FormatRow::read"
+reason = "every FormatRow originates from an InputCatalog descriptor and is readable by construction, so the constant true field represented no state"
+
+[[change]]
+commit = "3d6a0c879a2dbb77232c49cc2f67088a57883f48"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::DialectRow::{read,write}"
+reason = "both fields change from Option to their disposition types because registry loading now makes the identity/support join total"
+
+[[change]]
 commit = "74d66189d0208f1476789511ffe616d426bf007d"
 crate = "cadmpeg-core"
 kind = "addition"

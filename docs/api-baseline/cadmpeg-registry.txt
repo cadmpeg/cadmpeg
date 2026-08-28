@@ -1,4 +1,4 @@
-# generated at 33f4951fd
+# generated at 3d6a0c879
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -153,7 +153,7 @@ impl core::marker::UnsafeUnpin for cadmpeg_registry::WriteDisposition
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::WriteDisposition
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::WriteDisposition
 pub struct cadmpeg_registry::DialectEntry
-pub cadmpeg_registry::DialectEntry::disposition: core::option::Option<cadmpeg_registry::Disposition>
+pub cadmpeg_registry::DialectEntry::disposition: cadmpeg_registry::Disposition
 pub cadmpeg_registry::DialectEntry::id: cadmpeg_core::dialect::DialectId
 pub cadmpeg_registry::DialectEntry::title: alloc::string::String
 impl core::clone::Clone for cadmpeg_registry::DialectEntry
@@ -188,10 +188,10 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::DialectProven
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::DialectProvenance
 pub struct cadmpeg_registry::DialectRow
 pub cadmpeg_registry::DialectRow::id: &'static cadmpeg_core::dialect::DialectId
-pub cadmpeg_registry::DialectRow::read: core::option::Option<cadmpeg_registry::ReadDisposition>
+pub cadmpeg_registry::DialectRow::read: cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::DialectRow::target: bool
 pub cadmpeg_registry::DialectRow::title: &'static str
-pub cadmpeg_registry::DialectRow::write: core::option::Option<cadmpeg_registry::WriteDisposition>
+pub cadmpeg_registry::DialectRow::write: cadmpeg_registry::WriteDisposition
 impl core::clone::Clone for cadmpeg_registry::DialectRow
 pub fn cadmpeg_registry::DialectRow::clone(&self) -> cadmpeg_registry::DialectRow
 impl core::cmp::Eq for cadmpeg_registry::DialectRow
@@ -249,7 +249,6 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::FormatDialects
 pub struct cadmpeg_registry::FormatRow
 pub cadmpeg_registry::FormatRow::extensions: &'static [&'static str]
 pub cadmpeg_registry::FormatRow::id: &'static str
-pub cadmpeg_registry::FormatRow::read: bool
 pub cadmpeg_registry::FormatRow::write: bool
 impl core::clone::Clone for cadmpeg_registry::FormatRow
 pub fn cadmpeg_registry::FormatRow::clone(&self) -> cadmpeg_registry::FormatRow
