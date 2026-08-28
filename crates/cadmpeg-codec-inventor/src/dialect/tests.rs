@@ -15,7 +15,7 @@ use cadmpeg_ir::report::LossNote;
 use super::*;
 use crate::test_support::{
     fixture, primary_envelope_fixture_with, primary_envelope_fixture_with_broken_database,
-    EnvelopeDeclarations,
+    primary_envelope_fixture_with_broken_metadata, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
 
@@ -170,6 +170,34 @@ fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
     assert!(!loss
         .message
         .contains("no RSe database stream declares a schema"));
+}
+
+#[test]
+fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
+    let (matched, losses) = decoded(&primary_envelope_fixture_with_broken_metadata());
+    assert_eq!(
+        matched.declared[DECLARED_META_STREAM_MARKER],
+        MetaStreamDeclaration::VERIFIED_MARKER
+    );
+    assert_eq!(matched.declared[DECLARED_META_STREAM_VERSION], "8");
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("inventor:unknown")
+    );
+    assert!(matches!(
+        matched.admission,
+        Admission::AdmittedUnverified { .. }
+    ));
+    let loss = losses
+        .iter()
+        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
+        .expect("unframed version-8 metadata recovery loss");
+    assert!(loss.message.contains(
+        "RSe segment metadata marker \"RSe Meta Stream Version 8\" version 8 is declared"
+    ));
+    assert!(!loss
+        .message
+        .contains("no RSe segment metadata stream declares a marker and version"));
 }
 
 #[test]

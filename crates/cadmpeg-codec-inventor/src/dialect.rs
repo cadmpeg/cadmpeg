@@ -14,10 +14,10 @@
 //! IGES separates the two because it declares identity rows for versions whose
 //! grammar it never verified. Inventor declares two rows, and their
 //! discriminants *are* the codec's two version gates: the `RSeDb` schema and
-//! the `RSe` Meta Stream marker and version. So a document that satisfies
-//! `inventor:cfb3-rse31-meta8` is exactly a document read with the grammar that
-//! row declares, and everything else is `inventor:unknown` read with a grammar
-//! no row declares for it. One value — [`DialectRecovery::admission`] —
+//! the `RSe` Meta Stream marker and version. Admission also requires every
+//! declared stream to frame under those grammars. Everything else is
+//! `inventor:unknown` read with a grammar no row declares for it. One value —
+//! [`DialectRecovery::admission`] —
 //! therefore decides both, and [`DialectRecovery::dialect_loss`] is `None`
 //! exactly when that value is [`Admission::Admitted`]. The biconditional the
 //! decode policy requires is structural, not maintained by two authors agreeing.
@@ -150,6 +150,9 @@ pub(crate) struct DialectRecovery {
     unframed_schemas: Vec<RseSchema>,
     /// Distinct `RSe` Meta Stream declarations, ascending.
     meta_streams: Vec<MetaStreamDeclaration>,
+    /// Declared Meta Streams whose bodies did not frame under the version-8
+    /// grammar.
+    unframed_meta_streams: Vec<MetaStreamDeclaration>,
 }
 
 impl DialectRecovery {
@@ -180,17 +183,33 @@ impl DialectRecovery {
             .collect::<Vec<_>>();
         meta_streams.sort();
         meta_streams.dedup();
+        let mut unframed_meta_streams = container
+            .rse
+            .segments
+            .iter()
+            .filter_map(|segment| match &segment.meta {
+                crate::rse::SegmentMetaState::Malformed {
+                    declared: Some(declared),
+                    ..
+                } => Some(declared.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        unframed_meta_streams.sort();
+        unframed_meta_streams.dedup();
         Self {
             cfb_major_version: container.snapshot.major_version(),
             schemas,
             unframed_schemas,
             meta_streams,
+            unframed_meta_streams,
         }
     }
 
     /// Admission derived from every declaration this document carries.
     fn admission(&self) -> Admission {
         if self.unframed_schemas.is_empty()
+            && self.unframed_meta_streams.is_empty()
             && !self.schemas.is_empty()
             && self
                 .schemas
@@ -281,7 +300,21 @@ impl DialectRecovery {
                 join(self.schemas.iter().map(|schema| schema.value().to_string()))
             ));
         }
-        if self.meta_streams.is_empty() {
+        if !self.unframed_meta_streams.is_empty() {
+            reasons.push(format!(
+                "RSe segment metadata marker {} version {} is declared but its body does not frame under the version-8 grammar",
+                join(
+                    self.unframed_meta_streams
+                        .iter()
+                        .map(|declared| format!("{:?}", declared.marker))
+                ),
+                join(
+                    self.unframed_meta_streams
+                        .iter()
+                        .map(|declared| declared.version.to_string())
+                )
+            ));
+        } else if self.meta_streams.is_empty() {
             reasons.push("no RSe segment metadata stream declares a marker and version".to_owned());
         } else if self
             .meta_streams
