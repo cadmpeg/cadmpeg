@@ -88,7 +88,7 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
             },
             "archive word {word}"
         );
-        let note = dialect_loss(&matched).expect("an unverified admission charges its loss");
+        let note = admission_loss(&matched).expect("an unverified admission charges its loss");
         assert_eq!(
             note.code,
             crate::loss::RhinoLossCode::SourceDialectUnverified.kind(),
@@ -110,17 +110,17 @@ fn archive_word_5_names_archive_50_as_the_nearest_verified_grammar() {
             nearest: ArchiveVersion::V5.id()
         }
     );
-    assert!(dialect_loss(&matched).is_some());
+    assert!(admission_loss(&matched).is_some());
 }
 
 #[test]
-fn verified_rows_charge_no_dialect_loss() {
+fn verified_rows_charge_no_admission_loss() {
     for (word, _) in ENUMERATED {
         if *word == 5 {
             continue;
         }
         assert!(
-            dialect_loss(&classify_word(*word)).is_none(),
+            admission_loss(&classify_word(*word)).is_none(),
             "archive word {word}: verified rows do not charge a dialect loss"
         );
     }

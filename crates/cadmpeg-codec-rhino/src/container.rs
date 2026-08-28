@@ -1186,7 +1186,10 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
             })
     }));
     let dialects = vec![dialect_match(scan)];
-    losses.extend(dialects.first().and_then(crate::dialect::dialect_loss));
+    losses.extend(
+        cadmpeg_core::dialect::primary_layer(&dialects, crate::dialect::FORMAT)
+            .and_then(crate::dialect::admission_loss),
+    );
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {

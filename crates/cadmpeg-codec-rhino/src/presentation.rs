@@ -1931,7 +1931,7 @@ fn parse_material(
         if writer_version.is_some_and(|version| version < 200_912_010) {
             transparent = diffuse;
         } else if writer_version.is_none() && diffuse != transparent {
-            losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format!(
+            losses.push(crate::loss::writer_stamp_unverified(format!(
                 "legacy material at offset {source_offset} kept its stored transparent color \
                  instead of the pre-2009 diffuse substitution because {}",
                 crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
@@ -3720,7 +3720,7 @@ fn parse_text_style(
             description.clone()
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
-                losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format!(
+                losses.push(crate::loss::writer_stamp_unverified(format!(
                     "legacy text style at offset {source_offset} dropped the PostScript font \
                      name \"{description}\" because {}",
                     crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
@@ -5003,7 +5003,7 @@ mod tests {
     /// The PostScript name only comes from the description when the stamp says
     /// the writer is newer than 2018-02-23. An unstamped archive drops it.
     #[test]
-    fn unstamped_legacy_text_style_charges_the_font_name_dialect_loss() {
+    fn unstamped_legacy_text_style_charges_the_font_name_stamp_loss() {
         let bytes = legacy_text_style_bytes();
         let mut losses = Vec::new();
         let value = parse_text_style(
@@ -5532,7 +5532,7 @@ mod tests {
     /// archive does not vouch for - unless diffuse already equals the stored
     /// color, where both readings agree and nothing was substituted.
     #[test]
-    fn unstamped_legacy_material_charges_the_transparency_dialect_loss() {
+    fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
         let bytes = legacy_material_bytes([5, 6, 7, 8]);
         let mut losses = Vec::new();
         let material = parse_material(
