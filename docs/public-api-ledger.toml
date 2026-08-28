@@ -1258,3 +1258,10 @@ crate = "cadmpeg-codec-step"
 kind = "deletion"
 item = "cadmpeg_codec_step::{StepUnsupportedPolicy,StepWriteOptions::unsupported}"
 reason = "export-loss refusal is owned by conversion policy after planning; the direct STEP writer reports every reduction and no longer exposes an unreachable second refusal gate"
+
+[[change]]
+commit = "ca8ec222990721927bf522c463df916849560445"
+crate = "cadmpeg-asm"
+kind = "addition"
+item = "cadmpeg_asm::dialect::FORMAT"
+reason = "the shared ACIS dialect owner supplies one format id to kernel classification and every host-layer comparison"
