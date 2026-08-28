@@ -1,4 +1,4 @@
-# generated at dde088151
+# generated at 9d28e7674
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepError
 pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
@@ -48,27 +48,6 @@ impl core::marker::Unpin for cadmpeg_codec_step::StepSchema
 impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepSchema
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepSchema
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepSchema
-pub enum cadmpeg_codec_step::StepUnsupportedPolicy
-pub cadmpeg_codec_step::StepUnsupportedPolicy::Reject
-pub cadmpeg_codec_step::StepUnsupportedPolicy::Report
-impl core::clone::Clone for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::clone(&self) -> cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::cmp::Eq for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::cmp::PartialEq for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::eq(&self, &cadmpeg_codec_step::StepUnsupportedPolicy) -> bool
-impl core::default::Default for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::default() -> cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::fmt::Debug for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::StructuralPartialEq for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Freeze for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Send for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Sync for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Unpin for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepUnsupportedPolicy
 pub struct cadmpeg_codec_step::StepCodec
 pub cadmpeg_codec_step::StepCodec::options: cadmpeg_codec_step::StepWriteOptions
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_step::StepCodec
@@ -99,7 +78,6 @@ pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::originating_system: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::product_name: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::timestamp: alloc::string::String
-pub cadmpeg_codec_step::StepWriteOptions::unsupported: cadmpeg_codec_step::StepUnsupportedPolicy
 impl core::clone::Clone for cadmpeg_codec_step::StepWriteOptions
 pub fn cadmpeg_codec_step::StepWriteOptions::clone(&self) -> cadmpeg_codec_step::StepWriteOptions
 impl core::default::Default for cadmpeg_codec_step::StepWriteOptions

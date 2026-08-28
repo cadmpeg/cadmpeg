@@ -1251,3 +1251,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::DecodeResult::report_mut"
 reason = "mutable report access returns a drop guard that revalidates the primary-layer invariant and re-projects source dialect metadata"
+
+[[change]]
+commit = "b796eb05a12b495812939a330e43913b952f41a0"
+crate = "cadmpeg-codec-step"
+kind = "deletion"
+item = "cadmpeg_codec_step::{StepUnsupportedPolicy,StepWriteOptions::unsupported}"
+reason = "export-loss refusal is owned by conversion policy after planning; the direct STEP writer reports every reduction and no longer exposes an unreachable second refusal gate"

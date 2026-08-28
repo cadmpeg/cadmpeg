@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writer header metadata and unrepresentable-content policy.
+//! Writer header metadata.
 //!
 //! These configure *how* a target is written. Which target is written is the
 //! export request's answer, resolved against the source: `StepCodec::plan`
@@ -14,8 +14,6 @@
 /// timestamp.
 #[derive(Debug, Clone)]
 pub struct StepWriteOptions {
-    /// Handling of IR content the selected writer cannot represent exactly.
-    pub unsupported: StepUnsupportedPolicy,
     /// The `FILE_NAME` name field.
     ///
     /// The STEP `PRODUCT` id and name come from the first IR body name, or
@@ -37,7 +35,6 @@ pub struct StepWriteOptions {
 impl Default for StepWriteOptions {
     fn default() -> Self {
         StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Report,
             product_name: "cadmpeg_model".to_string(),
             author: String::new(),
             organization: String::new(),
@@ -45,16 +42,6 @@ impl Default for StepWriteOptions {
             originating_system: "cadmpeg".to_string(),
         }
     }
-}
-
-/// Policy for semantic content not representable by the selected STEP target.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum StepUnsupportedPolicy {
-    /// Emit the representable subset and return machine-readable loss notes.
-    #[default]
-    Report,
-    /// Reject the document before writing any output byte.
-    Reject,
 }
 
 /// STEP application-protocol targets supported by the Part 21 writer.

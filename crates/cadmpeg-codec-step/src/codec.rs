@@ -14,7 +14,7 @@ use cadmpeg_ir::FidelityResolution;
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
 use crate::export::write_step;
-use crate::options::{StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+use crate::options::{StepSchema, StepWriteOptions};
 use crate::parse;
 use crate::reader;
 
@@ -61,12 +61,8 @@ impl Encoder for StepCodec {
         )?;
         let schema = crate::dialect::target_schema(entry)?;
         let mut bytes = Vec::new();
-        let mut options = self.options.clone();
-        // Planning must return every representational loss. The application
-        // decides whether those typed rows refuse the conversion.
-        options.unsupported = StepUnsupportedPolicy::Report;
         let mut report =
-            write_step(input.ir, &mut bytes, schema, &options).map_err(CodecError::from)?;
+            write_step(input.ir, &mut bytes, schema, &self.options).map_err(CodecError::from)?;
         let target = report
             .target
             .as_ref()
