@@ -385,15 +385,16 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:100"
 
 [[dialect]]
 # `is_part28_xml` (codec.rs:416-437), namespaces at codec.rs:441-444.
-# Disposition: `CodecError::NotImplemented("STEP Part 28 XML encoding")` from
+# Disposition: `CodecError::UnsupportedDialect` with the message
+# `STEP Part 28 XML encoding` from
 # `StepDialect::alternate_encoding_refusal` (dialect.rs), returned by
 # `refuse_alternate_encoding` before the ISO-10303-21 magic test. `detect` returns Medium (codec.rs:54-59) so the
 # codec claims the file and refuses it rather than letting another codec
 # mis-decode it. Structurally identified, semantic decode refused. The refusal
-# returns before any exchange structure or report exists, so this row and the
-# two below produce no `DialectMatch` today and `Admission::Refused` is
-# unreachable in this codec; `StepDialect::alternate_encoding_refusal`
-# (dialect.rs) is where the three rows and their refusal messages are named.
+# returns before any exchange structure or report exists. The error carries
+# this row's `DialectMatch` with `Admission::Refused`;
+# `StepDialect::alternate_encoding_refusal` (dialect.rs) is where the three
+# rows and their refusal messages are named.
 id = "step:part28-xml"
 title = "ISO 10303-28 edition 2 XML encoding"
 discriminants = { xml_root_namespace = "urn:oid:1.0.10303.28.2.1.1 | urn:iso:std:iso:10303:-28:ed-2:tech:XMLschema:common | urn:iso.org:standard:10303:part(28):version(2):xmlschema:common" }
@@ -517,7 +518,8 @@ witness = "corpus:crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only
 # four-byte-value archive (`ArchiveVersion::uses_eight_byte_values` is
 # value >= 50) and is decode-refused: `ArchiveVersion::refuses_decode` holds, so
 # inspection reports the header with `Admission::Refused` and
-# `container::decode` returns `CodecError::NotImplemented`.
+# `container::decode` returns `CodecError::UnsupportedDialect` carrying the
+# same match.
 #
 # No fixture carries word 5. The design's example witness
 # `corpus:rhino/legacy_v5_header.3dm` names a file that does not exist in this

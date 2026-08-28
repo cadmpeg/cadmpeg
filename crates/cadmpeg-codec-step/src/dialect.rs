@@ -42,11 +42,9 @@
 //!
 //! Three rows — Part 28 XML, the AP242 BO-Model XML sidecar, and the Part 26
 //! HDF5 encoding — are structural refusals below decode.
-//! [`refuse_alternate_encoding`] returns `CodecError::NotImplemented` before any
-//! exchange structure is read, and that path carries no report, so those rows
-//! never produce a [`DialectMatch`]. They exist in the enum because the
-//! documents exist and the registry enumerates them; the enum names them so the
-//! registry and the code stay one set.
+//! [`refuse_alternate_encoding`] returns [`CodecError::UnsupportedDialect`]
+//! before any exchange structure is read. The error carries the refused row's
+//! [`DialectMatch`] even though no decode report exists.
 
 use crate::loss::StepLossCode;
 use crate::options::StepSchema;
@@ -282,8 +280,8 @@ impl StepDialect {
         }
     }
 
-    /// The `CodecError::NotImplemented` message this codec returns for an
-    /// alternate encoding, or `None` for a Part 21 row.
+    /// The refusal message this codec returns for an alternate encoding, or
+    /// `None` for a Part 21 row.
     ///
     /// The three alternate-encoding rows are exactly the rows with a message:
     /// they are identified structurally and refused before any exchange
@@ -301,6 +299,17 @@ impl StepDialect {
             | Self::Ap242Edition2
             | Self::Ap242Edition3
             | Self::Unknown => None,
+        }
+    }
+
+    /// Classifies one structurally identified alternate encoding at refusal.
+    fn classify_refused(self) -> DialectMatch {
+        debug_assert!(self.alternate_encoding_refusal().is_some());
+        DialectMatch {
+            format: FORMAT.into(),
+            dialect: Some(self.id()),
+            declared: BTreeMap::new(),
+            admission: Admission::Refused,
         }
     }
 
@@ -407,9 +416,8 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 /// decode.
 ///
 /// Structural refusal below decode: it runs before the ISO-10303-21 magic test
-/// and returns before any exchange structure exists, so no report and no
-/// [`DialectMatch`] is produced. The dialect the bytes are is named here so the
-/// identity and the refusal message stay in one place.
+/// and returns before any exchange structure exists, so no report is produced.
+/// The error carries the structurally identified row as a [`DialectMatch`].
 ///
 /// CE-03/CE-04: Part 28 marker detection is not UOS conformance or schema
 /// mapping. The caller owns the exact binding, governing EXPRESS schema,
@@ -434,7 +442,11 @@ pub(crate) fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> 
         return Ok(());
     };
     match dialect.alternate_encoding_refusal() {
-        Some(message) => Err(CodecError::NotImplemented(message.into())),
+        Some(message) => Err(CodecError::UnsupportedDialect {
+            format: FORMAT.into(),
+            dialect_match: Box::new(dialect.classify_refused()),
+            message: message.into(),
+        }),
         None => Ok(()),
     }
 }
