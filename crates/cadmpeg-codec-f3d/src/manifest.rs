@@ -462,12 +462,14 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
                 None
             }
             11 | 12 | 13 | 14 | 15 | 19 | 20 => parse_current_design_asset(&mut cursor)?,
-            _ => {
-                return Err(malformed(
-                    "Fusion asset manifest revision",
-                    format!("unsupported revision {revision}"),
-                ))
-            }
+            _ => parse_current_design_asset(&mut cursor).map_err(|error| {
+                malformed(
+                    "Fusion asset manifest",
+                    format!(
+                        "current grammar does not fit; unknown revision {revision} is the probable cause: {error}"
+                    ),
+                )
+            })?,
         }
     } else {
         None
@@ -1138,6 +1140,49 @@ mod tests {
             assert_eq!(header.base_name, "Intermediate Design");
             assert_eq!(header.fusion_subtype, None);
         }
+    }
+
+    #[test]
+    fn an_unknown_revision_uses_the_current_asset_header() {
+        let mut bytes = encode_asset_header(
+            "Future Design",
+            DESIGN_GUID,
+            SECONDARY_GUID,
+            DESIGN_ASSET_TYPE,
+        )
+        .unwrap();
+        push_u32(&mut bytes, 99);
+        push_u32(&mut bytes, 1);
+        push_ascii(&mut bytes, "Application").unwrap();
+        push_u32(&mut bytes, 139);
+        push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+        bytes.push(0);
+        push_ascii(&mut bytes, "").unwrap();
+
+        let header = parse_asset_header(&bytes).unwrap();
+        assert_eq!(header.base_name, "Future Design");
+        assert_eq!(header.fusion_subtype, None);
+    }
+
+    #[test]
+    fn a_broken_unknown_revision_names_the_revision_as_the_probable_cause() {
+        let mut bytes = encode_asset_header(
+            "Future Design",
+            DESIGN_GUID,
+            SECONDARY_GUID,
+            DESIGN_ASSET_TYPE,
+        )
+        .unwrap();
+        push_u32(&mut bytes, 99);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "MovedAssetType").unwrap();
+
+        let error = parse_asset_header(&bytes).unwrap_err();
+        assert!(
+            matches!(&error, CodecError::Malformed(message)
+                if message.contains("unknown revision 99 is the probable cause")),
+            "expected a structural failure naming the revision, found {error:?}"
+        );
     }
 
     fn encode_fusion_subtype_asset(
