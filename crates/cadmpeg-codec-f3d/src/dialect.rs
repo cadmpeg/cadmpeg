@@ -336,10 +336,14 @@ pub(crate) fn build_report(
     mut losses: Vec<LossNote>,
 ) -> DecodeReport {
     let kernel_layers = kernel_layers(scan);
-    let mut summary = crate::container::summarize(scan, &kernel_layers.matches);
+    let summary = crate::container::summarize(scan, &kernel_layers.matches);
+    let dialects = summary
+        .dialects()
+        .expect("F3D summary is classified")
+        .clone();
     losses.extend(kernel_layers.losses);
     DecodeReport::classified(
-        summary.take_dialects().expect("F3D summary is classified"),
+        dialects,
         container_only,
         geometry_transferred,
         std::collections::BTreeMap::new(),

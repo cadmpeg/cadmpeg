@@ -329,6 +329,10 @@ fn inspect_zip(
 ) -> Result<ContainerSummary, CodecError> {
     let (archive, root_view) = archive::open_root(ctx, root)?;
     let mut root_summary = StepCodec::default().inspect_impl(ctx, root_view)?;
+    let dialects = root_summary
+        .dialects()
+        .expect("the STEP root summary is classified")
+        .clone();
     let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
     let entry_count = archive.entries().len();
     let root_entry = archive
@@ -359,9 +363,6 @@ fn inspect_zip(
     // ZIP packaging is a container fact, not an identity axis: the
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
     // document, so the root's own match is this summary's match.
-    let dialects = root_summary
-        .take_dialects()
-        .expect("the STEP root summary is classified");
     Ok(ContainerSummary::classified(
         dialects,
         "iso-10303-21-zip",

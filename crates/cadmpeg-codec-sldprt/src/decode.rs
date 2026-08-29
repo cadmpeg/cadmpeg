@@ -4538,9 +4538,7 @@ fn preserve_source_image(
 /// namespace. This host records the schema token as an attribute instead of a
 /// kernel-layer dialect match, so the primary layer is the whole list.
 fn report_dialects(scan: &ContainerScan) -> cadmpeg_core::dialect::DialectLayers {
-    container::summarize(scan)
-        .take_dialects()
-        .expect("SLDPRT summary reports its primary dialect layer")
+    cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify_scan(scan))
 }
 
 /// Appends the dialect-unverified loss the primary layer's admission charges.
@@ -4594,7 +4592,10 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    let dialects = report_dialects(scan);
+    let dialects = summary
+        .dialects()
+        .expect("SLDPRT summary reports its primary dialect layer")
+        .clone();
     append_dialect_losses(&dialects, &mut losses);
 
     DecodeReport::classified(

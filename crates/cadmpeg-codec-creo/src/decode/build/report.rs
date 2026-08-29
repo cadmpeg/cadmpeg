@@ -67,7 +67,7 @@ pub(in super::super) fn build_report(
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> DecodeReport {
-    let mut summary = container::summarize(scan);
+    let summary = container::summarize(scan);
     let geom_sections = scan
         .framing
         .sections
@@ -99,8 +99,9 @@ pub(in super::super) fn build_report(
     // read, not what any one record cost. The loss reads the completed primary
     // match, so the report cannot claim a verified admission while charging it.
     let dialects = summary
-        .take_dialects()
-        .expect("every Creo summary classifies its dialect");
+        .dialects()
+        .expect("every Creo summary classifies its dialect")
+        .clone();
     let primary = dialects.primary();
     losses.extend(crate::dialect::dialect_loss(primary));
 
