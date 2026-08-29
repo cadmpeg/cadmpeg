@@ -3519,11 +3519,13 @@ fn decode_result(
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    let mut summary = crate::container::summarize(scan);
+    let summary = crate::container::summarize(scan);
+    let dialects = summary
+        .dialects()
+        .expect("every CATIA summary classifies its dialect")
+        .clone();
     let mut report = DecodeReport::classified(
-        summary
-            .take_dialects()
-            .expect("every CATIA summary classifies its dialect"),
+        dialects,
         report.container_only,
         report.geometry_transferred,
         report.coverage,

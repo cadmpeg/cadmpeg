@@ -123,7 +123,7 @@ mod tests {
     /// before the field existed still reads back.
     #[test]
     fn an_unclassified_summary_serializes_an_empty_dialects_key() {
-        let mut summary = ContainerSummary::unclassified("rhino", "flat", Vec::new(), Vec::new());
+        let summary = ContainerSummary::unclassified("rhino", "flat", Vec::new(), Vec::new());
 
         let bare = serde_json::to_string(&summary).expect("a summary serializes");
         assert!(bare.contains("\"dialects\":null"), "{bare}");
@@ -153,9 +153,12 @@ mod tests {
             instance: None,
             admission: Admission::Admitted,
         };
-        summary.set_dialects(
+        let summary = ContainerSummary::classified(
             DialectLayers::new(primary.clone(), vec![extra.clone()])
                 .expect("the extra uses another format"),
+            "flat",
+            Vec::new(),
+            Vec::new(),
         );
         let classified = serde_json::to_value(&summary).expect("a summary serializes");
         assert_eq!(
