@@ -2268,10 +2268,9 @@ fn build_geometry_ir(
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
-    let form_padding = crate::dialect::SldprtDialect::from_declaration(
-        container::declared_sw_version(scan).as_deref(),
-    )
-    .form_code_padding();
+    let dialects = report_dialects(scan);
+    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
+        .and_then(crate::dialect::SldprtDialect::form_code_padding);
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -3354,10 +3353,9 @@ fn build_metadata_ir(
 
     ir.source = Some(source_meta_with_dialect(attributes));
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let form_padding = crate::dialect::SldprtDialect::from_declaration(
-        container::declared_sw_version(scan).as_deref(),
-    )
-    .form_code_padding();
+    let dialects = report_dialects(scan);
+    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
+        .and_then(crate::dialect::SldprtDialect::form_code_padding);
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,

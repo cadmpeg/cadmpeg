@@ -164,6 +164,18 @@ impl SldprtDialect {
         }
     }
 
+    /// The typed row carried by an existing classification.
+    pub(crate) fn from_match(matched: &DialectMatch) -> Option<Self> {
+        let id = matched.dialect.as_ref()?;
+        [
+            Self::SwVersionPre12000,
+            Self::SwVersion12000Plus,
+            Self::Unknown,
+        ]
+        .into_iter()
+        .find(|dialect| dialect.id() == *id)
+    }
+
     /// How a document on this row was admitted.
     ///
     /// The one predicate behind both the report's [`Admission`] and
