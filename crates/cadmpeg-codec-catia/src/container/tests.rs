@@ -890,7 +890,7 @@ fn inspect_enumerates_streams_and_names_variant() {
     let summary = CatiaCodec
         .inspect(&mut cur, &cadmpeg_core::decode::InspectOptions::default())
         .unwrap();
-    assert_eq!(summary.format, "catia");
+    assert_eq!(summary.format(), "catia");
     assert_eq!(summary.container_kind, "v5-cfv2");
     assert!(summary.entries.iter().any(|e| e.name == "MainDataStream"));
     assert!(summary.entries.iter().any(|e| e.name == "SurfacicReps"));

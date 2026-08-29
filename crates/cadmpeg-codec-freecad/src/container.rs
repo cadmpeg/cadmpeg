@@ -124,15 +124,15 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
     if let Some(version) = &scan.document.program_version {
         notes.push(format!("ProgramVersion={version}"));
     }
-    ContainerSummary {
-        dialects: Some(cadmpeg_core::dialect::DialectLayers::of(
-            FcstdDialect::classify(&scan.document, scan.schema),
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(FcstdDialect::classify(
+            &scan.document,
+            scan.schema,
         )),
-        format: crate::dialect::FORMAT.into(),
-        container_kind: "zip".into(),
-        entries: scan.entries.clone(),
+        "zip",
+        scan.entries.clone(),
         notes,
-    }
+    )
 }
 
 fn validate_name(name: &str) -> Result<(), CodecError> {

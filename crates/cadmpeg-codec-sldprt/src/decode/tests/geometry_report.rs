@@ -15,7 +15,6 @@ use cadmpeg_ir::features::{
     DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, ParameterId,
     ParameterPmi, ParameterValue, PmiDimensionSubtype,
 };
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
@@ -49,16 +48,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
             native_kind: "ReferenceCurve".into(),
         },
     });
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -409,16 +399,7 @@ fn native_dimension_subtypes_are_reported() {
         }),
         native_ref: None,
     });
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 

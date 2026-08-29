@@ -601,13 +601,12 @@ pub(crate) fn summarize(
             attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
         });
     }
-    ContainerSummary {
-        dialects: Some(cadmpeg_core::dialect::DialectLayers::of(primary)),
-        format: "iges".into(),
-        container_kind: "fixed-ascii".into(),
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
+        "fixed-ascii",
         entries,
-        notes: vec![format!("source_bytes={}", scan.source.len())],
-    }
+        vec![format!("source_bytes={}", scan.source.len())],
+    )
 }
 
 impl CardScan<'_> {

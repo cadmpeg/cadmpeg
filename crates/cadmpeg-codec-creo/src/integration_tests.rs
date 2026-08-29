@@ -70,7 +70,7 @@ fn psb_pipeline_aligns_detection_inspection_layout_and_section_roles() {
     let summary = CreoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("Creo inspection");
-    assert_eq!(summary.format, "creo");
+    assert_eq!(summary.format(), "creo");
     assert_eq!(summary.container_kind, "psb");
     assert_eq!(summary.entries.len(), 3);
     assert!(summary.notes.iter().any(|note| note.contains("layout: ND")));

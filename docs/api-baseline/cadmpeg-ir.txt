@@ -1,4 +1,4 @@
-# generated at 88ab385a1
+# generated at becff3cbd
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -11441,8 +11441,6 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::CoverageKey
 pub struct cadmpeg_ir::report::DecodeReport
 pub cadmpeg_ir::report::DecodeReport::container_only: bool
 pub cadmpeg_ir::report::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub cadmpeg_ir::report::DecodeReport::dialects: core::option::Option<cadmpeg_core::dialect::DialectLayers>
-pub cadmpeg_ir::report::DecodeReport::format: alloc::string::String
 pub cadmpeg_ir::report::DecodeReport::geometry_transferred: bool
 pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
 pub cadmpeg_ir::report::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
@@ -11450,8 +11448,12 @@ pub cadmpeg_ir::report::DecodeReport::transfer_ledger: cadmpeg_ir::report::Trans
 impl cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 pub fn cadmpeg_ir::report::DecodeReport::coverage_count(&self, cadmpeg_ir::report::CoverageKey) -> usize
+pub fn cadmpeg_ir::report::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::report::DecodeReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::report::DecodeReport::format(&self) -> &str
 pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey, usize)
+pub fn cadmpeg_ir::report::DecodeReport::set_dialects(&mut self, cadmpeg_core::dialect::DialectLayers)
+pub fn cadmpeg_ir::report::DecodeReport::take_dialects(&mut self) -> core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::report::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 impl core::clone::Clone for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::clone(&self) -> cadmpeg_ir::report::DecodeReport
@@ -17490,8 +17492,6 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::DecodeOptions
 pub struct cadmpeg_ir::DecodeReport
 pub cadmpeg_ir::DecodeReport::container_only: bool
 pub cadmpeg_ir::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub cadmpeg_ir::DecodeReport::dialects: core::option::Option<cadmpeg_core::dialect::DialectLayers>
-pub cadmpeg_ir::DecodeReport::format: alloc::string::String
 pub cadmpeg_ir::DecodeReport::geometry_transferred: bool
 pub cadmpeg_ir::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
 pub cadmpeg_ir::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
@@ -17499,8 +17499,12 @@ pub cadmpeg_ir::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedge
 impl cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 pub fn cadmpeg_ir::report::DecodeReport::coverage_count(&self, cadmpeg_ir::report::CoverageKey) -> usize
+pub fn cadmpeg_ir::report::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::report::DecodeReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::report::DecodeReport::format(&self) -> &str
 pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey, usize)
+pub fn cadmpeg_ir::report::DecodeReport::set_dialects(&mut self, cadmpeg_core::dialect::DialectLayers)
+pub fn cadmpeg_ir::report::DecodeReport::take_dialects(&mut self) -> core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::report::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 impl core::clone::Clone for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::clone(&self) -> cadmpeg_ir::report::DecodeReport

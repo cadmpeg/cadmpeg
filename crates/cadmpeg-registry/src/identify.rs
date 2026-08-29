@@ -386,8 +386,7 @@ mod tests {
                     .unwrap_or_else(|| panic!("{}: inspection did not classify", case.format));
                 assert_eq!(
                     summary
-                        .dialects
-                        .as_ref()
+                        .dialects()
                         .map(cadmpeg_core::dialect::DialectLayers::primary)
                         .and_then(|entry| entry.dialect.as_ref())
                         .map(DialectId::as_str),

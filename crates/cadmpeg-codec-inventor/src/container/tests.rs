@@ -21,7 +21,7 @@ fn inspects_the_complete_synthetic_hierarchy() {
     let summary = InventorCodec
         .inspect(&mut input, &cadmpeg_core::decode::InspectOptions::default())
         .expect("synthetic Inventor container inspects");
-    assert_eq!(summary.format, "inventor");
+    assert_eq!(summary.format(), "inventor");
     assert!(summary
         .entries
         .iter()

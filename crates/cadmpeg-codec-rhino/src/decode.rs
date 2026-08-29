@@ -2545,19 +2545,17 @@ impl<'a> DecodeContext<'a> {
         // Charged from the reported admission itself, so the document-level
         // `AdmittedUnverified` and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
-        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
         DecodeResult::new(
             self.ir,
-            DecodeReport {
-                dialects,
-                format: crate::dialect::FORMAT.to_string(),
-                container_only: false,
-                geometry_transferred: self.geometry_transferred,
-                coverage: std::collections::BTreeMap::new(),
-                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            DecodeReport::classified(
+                cadmpeg_core::dialect::DialectLayers::of(primary),
+                false,
+                self.geometry_transferred,
+                std::collections::BTreeMap::new(),
                 losses,
                 notes,
-            },
+                cadmpeg_ir::report::TransferLedger::default(),
+            ),
             source_fidelity,
         )
     }

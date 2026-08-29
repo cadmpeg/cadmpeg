@@ -52,7 +52,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         let summary = RhinoCodec
             .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
             .expect("3DM inspection");
-        assert_eq!(summary.format, "rhino");
+        assert_eq!(summary.format(), "rhino");
         assert!(summary.notes.iter().any(|note| note.contains(version)));
         let result = decode(bytes.clone());
         assert_eq!(result.ir().model.points.len(), 1);

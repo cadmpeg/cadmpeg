@@ -158,15 +158,13 @@ pub(in super::super) fn build_report(
     push_structural_layer_notes(&mut losses, scan);
     push_coverage_drop_losses(&mut losses, &coverage);
 
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
-    DecodeReport {
-        dialects,
-        format: crate::dialect::FORMAT.to_string(),
+    DecodeReport::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
         container_only,
-        geometry_transferred: has_transferred_geometry(ir),
+        has_transferred_geometry(ir),
         coverage,
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
-        notes: summary.notes,
-    }
+        summary.notes,
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }

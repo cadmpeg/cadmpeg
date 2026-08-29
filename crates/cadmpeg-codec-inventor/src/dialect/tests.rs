@@ -125,9 +125,9 @@ fn decoded(bytes: &[u8]) -> (DialectMatch, Vec<LossNote>) {
     // fixtures carry an ASM carrier, which is admitted at every save format, so
     // the only dialect-unverified charge they can raise is the host's.
     let primary = report
-        .dialects
+        .dialects()
         .as_ref()
-        .unwrap_or_else(|| panic!("one primary layer, got {:#?}", report.dialects))
+        .unwrap_or_else(|| panic!("one primary layer, got {:#?}", report.dialects()))
         .primary();
     (primary.clone(), report.losses.clone())
 }
@@ -291,8 +291,7 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
             )
             .expect("the synthetic document inspects");
         let layers = summary
-            .dialects
-            .as_ref()
+            .dialects()
             .expect("Inventor inspection reports dialect layers");
         assert_eq!(layers.primary(), &matched, "{}", case.label);
 
@@ -300,8 +299,8 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
             .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
             .expect("the synthetic document decodes");
         assert_eq!(
-            summary.dialects,
-            decoded.report().dialects,
+            summary.dialects(),
+            decoded.report().dialects(),
             "{}: inspect and decode must report the full layer list",
             case.label
         );

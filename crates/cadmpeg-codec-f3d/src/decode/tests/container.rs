@@ -158,7 +158,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         .unwrap();
     let kernel = decoded
         .report()
-        .dialects
+        .dialects()
         .as_ref()
         .expect("the report is classified")
         .iter()
@@ -261,7 +261,7 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
 
     let kernel_layers = decoded
         .report()
-        .dialects
+        .dialects()
         .as_ref()
         .expect("the report is classified")
         .iter()

@@ -2432,18 +2432,16 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records("rhino", opaque_records);
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
     Ok(DecodeResult::new(
         ir,
-        DecodeReport {
-            dialects,
-            format: crate::dialect::FORMAT.to_string(),
-            container_only: false,
-            geometry_transferred: decoded > 0
+        DecodeReport::classified(
+            cadmpeg_core::dialect::DialectLayers::of(primary),
+            false,
+            decoded > 0
                 || decoded_curves > 0
                 || decoded_meshes > 0
                 || decoded_breps > 0,
-            coverage: BTreeMap::from([
+            BTreeMap::from([
                 ("legacy_v1_points".to_string(), decoded),
                 ("legacy_v1_curve_segments".to_string(), decoded_curves),
                 ("legacy_v1_meshes".to_string(), decoded_meshes),
@@ -2453,9 +2451,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 ("legacy_v1_nurbs_surfaces".to_string(), decoded_nurbs_surfaces),
                 ("legacy_v1_nurbs_breps".to_string(), decoded_nurbs_breps),
             ]),
-            transfer_ledger: TransferLedger::default(),
             losses,
-            notes: std::iter::once(format!(
+            std::iter::once(format!(
                 "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
             ))
             .chain((!direct_records.is_empty()).then(|| {
@@ -2470,7 +2467,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
             }))
             .chain(diagnostics)
             .collect(),
-        },
+            TransferLedger::default(),
+        ),
         source_fidelity,
     ))
 }

@@ -487,19 +487,15 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         );
     }
 
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
-        NxDialect::classify(&scan.container),
-    ));
-    DecodeReport {
-        dialects,
-        format: crate::dialect::FORMAT.to_string(),
+    DecodeReport::classified(
+        cadmpeg_core::dialect::DialectLayers::of(NxDialect::classify(&scan.container)),
         container_only,
-        geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        false,
+        std::collections::BTreeMap::new(),
         losses,
-        notes: summary_notes(scan),
-    }
+        summary_notes(scan),
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 /// Build container and embedded-stream notes for inspection and decode reports.

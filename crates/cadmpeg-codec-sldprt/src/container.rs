@@ -820,21 +820,18 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::SldprtDialect::classify_scan(scan),
-    ));
-    ContainerSummary {
-        dialects,
-        format: crate::dialect::FORMAT.to_string(),
-        container_kind: if scan.compound_streams.is_empty() {
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify_scan(
+            scan,
+        )),
+        if scan.compound_streams.is_empty() {
             "sldprt-blocks"
         } else {
             "compound-file-binary"
-        }
-        .to_string(),
+        },
         entries,
         notes,
-    }
+    )
 }
 
 pub(crate) fn active_parasolid_summary(

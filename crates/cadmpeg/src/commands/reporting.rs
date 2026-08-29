@@ -251,7 +251,9 @@ pub(super) fn print_decode_report(
     writeln!(
         writer,
         "decode report ({}): geometry_transferred={}, container_only={}",
-        report.format, report.geometry_transferred, report.container_only
+        report.format(),
+        report.geometry_transferred,
+        report.container_only
     )?;
     if !report.losses.is_empty() {
         writeln!(writer, "losses:")?;

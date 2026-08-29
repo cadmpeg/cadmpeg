@@ -295,15 +295,14 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .any(|loss| loss.code == recovery);
         let matched = result
             .report()
-            .dialects
-            .as_ref()
+            .dialects()
             .expect("SAT reports dialect layers")
             .primary();
 
         assert_eq!(matched.admission, Admission::Admitted, "{}", case.label);
         let kernel = result
             .report()
-            .dialects
+            .dialects()
             .as_ref()
             .expect("SAT reports dialect layers")
             .iter()
@@ -352,8 +351,7 @@ fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source
             .unwrap_or_else(|error| panic!("{}: {error}", case.label));
         let dialects = result
             .report()
-            .dialects
-            .as_ref()
+            .dialects()
             .expect("SAT reports dialect layers");
 
         assert_eq!(dialects.iter().count(), 2, "{}", case.label);
@@ -403,7 +401,7 @@ fn inspect_and_decode_agree_on_the_row_and_the_admission() {
 
         assert_eq!(
             summary
-                .dialects
+                .dialects()
                 .as_ref()
                 .expect("SAT inspection reports dialect layers")
                 .iter()
@@ -413,8 +411,8 @@ fn inspect_and_decode_agree_on_the_row_and_the_admission() {
             case.label
         );
         assert_eq!(
-            summary.dialects,
-            decoded.report().dialects,
+            summary.dialects(),
+            decoded.report().dialects(),
             "{}: inspect and decode read the same evidence",
             case.label
         );

@@ -31,7 +31,7 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
     let summary = F3dCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("F3D inspection");
-    assert_eq!(summary.format, "f3d");
+    assert_eq!(summary.format(), "f3d");
     assert_eq!(summary.container_kind, "zip");
     assert!(summary
         .entries
@@ -223,7 +223,7 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
 
     let matched = drifted
         .report()
-        .dialects
+        .dialects()
         .as_ref()
         .expect("the primary layer is classified")
         .primary();
@@ -426,8 +426,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     assert_eq!(
         redecoded
             .report()
-            .dialects
-            .as_ref()
+            .dialects()
             .map(cadmpeg_core::dialect::DialectLayers::primary)
             .and_then(|entry| entry.dialect.as_ref())
             .map(cadmpeg_core::dialect::DialectId::as_str),
@@ -478,8 +477,7 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
             .unwrap_or_else(|error| panic!("{label} output must decode, got {error}"));
         let classified = redecoded
             .report()
-            .dialects
-            .as_ref()
+            .dialects()
             .map(cadmpeg_core::dialect::DialectLayers::primary)
             .and_then(|entry| entry.dialect.clone())
             .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));

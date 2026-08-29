@@ -35,7 +35,7 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
     let summary = CatiaCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("standard CATPart inspection");
-    assert_eq!(summary.format, "catia");
+    assert_eq!(summary.format(), "catia");
     assert!(summary
         .entries
         .iter()

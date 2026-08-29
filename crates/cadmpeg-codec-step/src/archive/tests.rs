@@ -162,7 +162,7 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect minimal AP242");
-    assert_eq!(summary.format, "step");
+    assert_eq!(summary.format(), "step");
     assert_eq!(summary.container_kind, "iso-10303-21-clear-text");
     assert_eq!(summary.entries.len(), 2);
     assert_eq!(summary.entries[0].name, "HEADER");

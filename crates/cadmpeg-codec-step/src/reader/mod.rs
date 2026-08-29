@@ -96,21 +96,19 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             ..Default::default()
         });
 
-        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
-        let mut report = DecodeReport {
-            dialects,
-            format: crate::dialect::FORMAT.into(),
+        let mut report = DecodeReport::classified(
+            cadmpeg_core::dialect::DialectLayers::of(primary),
             container_only,
-            geometry_transferred: false,
-            coverage: BTreeMap::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-            losses: Vec::new(),
-            notes: exchange
+            false,
+            BTreeMap::new(),
+            Vec::new(),
+            exchange
                 .references
                 .iter()
                 .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
                 .collect(),
-        };
+            cadmpeg_ir::report::TransferLedger::default(),
+        );
         report.losses.extend(dialect_loss);
         report.losses.extend(diagnostics.iter().map(|diagnostic| {
             let (code, tag) = match diagnostic.kind {

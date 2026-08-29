@@ -273,16 +273,15 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty(Units::default()).to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report = DecodeReport {
-            dialects: None,
-            format: "test".into(),
-            container_only: false,
-            geometry_transferred: false,
-            coverage: Default::default(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-            losses: Vec::new(),
-            notes: Vec::new(),
-        };
+        let report = DecodeReport::unclassified(
+            "test",
+            false,
+            false,
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            cadmpeg_ir::report::TransferLedger::default(),
+        );
         let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
             ArtifactStore::sidecar_path(&path),

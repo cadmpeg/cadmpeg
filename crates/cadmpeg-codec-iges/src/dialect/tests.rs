@@ -308,7 +308,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
     let bytes = point_file_with_global(&global_with_version_flag("2"));
     let decoded = decode(bytes.clone());
 
-    let matched = only_match(decoded.report().dialects.as_ref());
+    let matched = only_match(decoded.report().dialects());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:ansi-y14.26m-1981-fixed-ascii")
@@ -332,7 +332,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(summary.dialects.as_ref()), matched);
+    assert_eq!(only_match(summary.dialects()), matched);
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     let bytes = point_file_with_global(&global_with_version_flag("99"));
     let decoded = decode(bytes.clone());
 
-    let matched = only_match(decoded.report().dialects.as_ref());
+    let matched = only_match(decoded.report().dialects());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:unknown")
@@ -365,7 +365,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(summary.dialects.as_ref()), matched);
+    assert_eq!(only_match(summary.dialects()), matched);
 }
 
 #[test]
@@ -376,7 +376,7 @@ fn a_verified_fixed_ascii_declaration_is_admitted_with_no_dialect_loss() {
     let bytes = point_file_with_global(&global_with_version_flag("6"));
     let decoded = decode(bytes);
 
-    let matched = only_match(decoded.report().dialects.as_ref());
+    let matched = only_match(decoded.report().dialects());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:4.0-fixed-ascii")

@@ -4,7 +4,6 @@
 
 use super::super::*;
 use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchConstraintId, SpatialSketchConstraint,
     SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
@@ -61,16 +60,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
             },
             native_ref: None,
         });
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -103,16 +93,7 @@ fn typed_native_operands_are_reported_as_design_losses() {
         },
         native_ref: None,
     });
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 

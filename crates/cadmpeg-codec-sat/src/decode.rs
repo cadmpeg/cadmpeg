@@ -230,20 +230,16 @@ fn build_result(
         "unknown_surface_faces".to_string(),
         stats.unknown_surface_faces,
     );
-    let dialects = Some(
+    let report = DecodeReport::classified(
         cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
             .expect("the ACIS kernel layer differs from the SAT primary"),
-    );
-    let report = DecodeReport {
-        dialects,
-        format: FORMAT.to_string(),
-        container_only: false,
+        false,
         geometry_transferred,
         coverage,
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
-        notes: Vec::new(),
-    };
+        Vec::new(),
+        cadmpeg_ir::report::TransferLedger::default(),
+    );
 
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity

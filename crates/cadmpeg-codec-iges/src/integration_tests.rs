@@ -351,7 +351,7 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("IGES inspection");
-    assert_eq!(summary.format, "iges");
+    assert_eq!(summary.format(), "iges");
     assert_eq!(summary.container_kind, "fixed-ascii");
     assert!(summary.notes.iter().any(|note| note.contains("5.3")));
     decode_matrix(vec![

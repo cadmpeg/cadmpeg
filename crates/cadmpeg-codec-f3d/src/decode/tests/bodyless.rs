@@ -17,20 +17,19 @@ use crate::loss::F3dLossCode;
 /// A report carrying the BREP-less geometry losses that `build_container_report`
 /// states before the design segment is classified.
 fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
-    cadmpeg_ir::report::DecodeReport {
-        dialects: None,
-        format: "f3d".to_owned(),
-        container_only: false,
-        geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: vec![
+    cadmpeg_ir::report::DecodeReport::unclassified(
+        "f3d",
+        false,
+        false,
+        std::collections::BTreeMap::new(),
+        vec![
             F3dLossCode::GeometryNotTransferred.note("stated before classification"),
             F3dLossCode::TopologyNotTransferred.note("stated before classification"),
             F3dLossCode::MissingGeometryStream.note("stated before classification"),
         ],
-        notes: Vec::new(),
-    }
+        Vec::new(),
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 /// A design whose content is sketch curves declares no body, so it has no

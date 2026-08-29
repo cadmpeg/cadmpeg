@@ -560,7 +560,7 @@ fn inspect_summary_has_layout_and_census_notes() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("inspect");
-    assert_eq!(summary.format, "creo");
+    assert_eq!(summary.format(), "creo");
     assert_eq!(summary.container_kind, "psb");
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));

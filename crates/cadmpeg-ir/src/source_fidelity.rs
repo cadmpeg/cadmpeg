@@ -457,16 +457,15 @@ mod tests {
 
     #[test]
     fn decode_sidecar_binds_exact_ir_bytes_and_validates_versions() {
-        let report = DecodeReport {
-            dialects: None,
-            format: "test".into(),
-            container_only: false,
-            geometry_transferred: true,
-            coverage: std::collections::BTreeMap::default(),
-            transfer_ledger: crate::report::TransferLedger::default(),
-            losses: Vec::new(),
-            notes: Vec::new(),
-        };
+        let report = DecodeReport::unclassified(
+            "test",
+            false,
+            true,
+            std::collections::BTreeMap::default(),
+            Vec::new(),
+            Vec::new(),
+            crate::report::TransferLedger::default(),
+        );
         let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
@@ -525,7 +524,7 @@ mod tests {
 
         let from_v2 = DecodeSidecar::from_json(&v2).expect("migrate v2 sidecar");
         assert_eq!(from_v2.version(), DECODE_SIDECAR_VERSION);
-        assert!(from_v2.report.dialects.is_none());
+        assert!(from_v2.report.dialects().is_none());
         assert_eq!(from_v2, migrated);
     }
 

@@ -79,8 +79,7 @@ fn classify(format: &str, bytes: &[u8]) -> String {
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .unwrap_or_else(|error| panic!("inspecting a {format} fixture: {error}"));
     summary
-        .dialects
-        .as_ref()
+        .dialects()
         .unwrap_or_else(|| panic!("{format} inspect reported no primary layer"))
         .primary()
         .dialect

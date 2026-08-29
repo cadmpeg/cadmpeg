@@ -2878,16 +2878,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::classify(scan),
-    ));
-    ContainerSummary {
-        dialects,
-        format: crate::dialect::FORMAT.to_string(),
-        container_kind: "psb".to_string(),
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::classify(scan)),
+        "psb",
         entries,
         notes,
-    }
+    )
 }
 
 #[cfg(test)]

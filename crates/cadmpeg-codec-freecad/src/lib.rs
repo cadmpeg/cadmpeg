@@ -1434,19 +1434,17 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
         Ok(DecodeResult::new(
             ir,
-            DecodeReport {
-                dialects,
-                format: dialect::FORMAT.into(),
-                container_only: options.container_only,
+            DecodeReport::classified(
+                cadmpeg_core::dialect::DialectLayers::of(primary),
+                options.container_only,
                 geometry_transferred,
-                coverage: std::collections::BTreeMap::new(),
-                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+                std::collections::BTreeMap::new(),
                 losses,
-                notes: container::summarize(&scan).notes,
-            },
+                container::summarize(&scan).notes,
+                cadmpeg_ir::report::TransferLedger::default(),
+            ),
             source_fidelity,
         ))
     }

@@ -36,7 +36,7 @@ pub struct ContainerEntry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ContainerSummary {
     /// Source format id.
-    pub format: String,
+    format: String,
     /// Container kind, for example, `"zip"`.
     pub container_kind: String,
     /// Enumerated entries.
@@ -48,7 +48,66 @@ pub struct ContainerSummary {
     /// Always serialized. Summaries written before the field existed omit the
     /// key and read back as unclassified.
     #[serde(default)]
-    pub dialects: Option<DialectLayers>,
+    dialects: Option<DialectLayers>,
+}
+
+impl ContainerSummary {
+    /// Constructs a classified summary whose format is its primary layer's format.
+    #[must_use]
+    pub fn classified(
+        dialects: DialectLayers,
+        container_kind: impl Into<String>,
+        entries: Vec<ContainerEntry>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            format: dialects.primary().format.clone(),
+            container_kind: container_kind.into(),
+            entries,
+            notes,
+            dialects: Some(dialects),
+        }
+    }
+
+    /// Constructs an unclassified summary for a known source format.
+    #[must_use]
+    pub fn unclassified(
+        format: impl Into<String>,
+        container_kind: impl Into<String>,
+        entries: Vec<ContainerEntry>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            format: format.into(),
+            container_kind: container_kind.into(),
+            entries,
+            notes,
+            dialects: None,
+        }
+    }
+
+    /// Returns the source format id.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        &self.format
+    }
+
+    /// Returns the classified dialect layers, if inspection classified them.
+    #[must_use]
+    pub fn dialects(&self) -> Option<&DialectLayers> {
+        self.dialects.as_ref()
+    }
+
+    /// Removes and returns the classified dialect layers.
+    pub fn take_dialects(&mut self) -> Option<DialectLayers> {
+        self.dialects.take()
+    }
+
+    /// Replaces the classification and derives the summary format from it.
+    pub fn set_dialects(&mut self, dialects: DialectLayers) {
+        self.format.clone_from(&dialects.primary().format);
+        self.dialects = Some(dialects);
+    }
 }
 
 #[cfg(test)]
@@ -64,13 +123,7 @@ mod tests {
     /// before the field existed still reads back.
     #[test]
     fn an_unclassified_summary_serializes_an_empty_dialects_key() {
-        let mut summary = ContainerSummary {
-            format: "rhino".into(),
-            container_kind: "flat".into(),
-            entries: Vec::new(),
-            notes: Vec::new(),
-            dialects: None,
-        };
+        let mut summary = ContainerSummary::unclassified("rhino", "flat", Vec::new(), Vec::new());
 
         let bare = serde_json::to_string(&summary).expect("a summary serializes");
         assert!(bare.contains("\"dialects\":null"), "{bare}");
@@ -100,7 +153,7 @@ mod tests {
             instance: None,
             admission: Admission::Admitted,
         };
-        summary.dialects = Some(
+        summary.set_dialects(
             DialectLayers::new(primary.clone(), vec![extra.clone()])
                 .expect("the extra uses another format"),
         );
@@ -114,8 +167,7 @@ mod tests {
             serde_json::from_value(classified).expect("classified summary reads");
         assert_eq!(
             restored
-                .dialects
-                .as_ref()
+                .dialects()
                 .expect("the summary remains classified")
                 .primary()
                 .format,

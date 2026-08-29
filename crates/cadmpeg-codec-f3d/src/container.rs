@@ -22,7 +22,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{acis_header, asm_header};
 
-use crate::dialect::{F3dDialect, FORMAT};
+use crate::dialect::F3dDialect;
 use crate::manifest;
 
 /// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
@@ -547,17 +547,13 @@ pub fn summarize(
             .to_string(),
     );
 
-    let dialects = Some(
+    ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::new(scan.dialect.clone(), kernel_layers.to_vec())
             .expect("kernel layers use formats other than the F3D primary"),
-    );
-    ContainerSummary {
-        dialects,
-        format: FORMAT.to_string(),
-        container_kind: "zip".to_string(),
-        entries: scan.entries.clone(),
+        "zip",
+        scan.entries.clone(),
         notes,
-    }
+    )
 }
 
 /// Root-level `*.f3d` member names, sorted by archive path.

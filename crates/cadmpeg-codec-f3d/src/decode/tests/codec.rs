@@ -447,7 +447,7 @@ fn inspect_enumerates_and_reads_headers() {
     let mut cur = Cursor::new(f3d);
     let summary = codec.inspect(&mut cur, &InspectOptions::default()).unwrap();
 
-    assert_eq!(summary.format, "f3d");
+    assert_eq!(summary.format(), "f3d");
     assert_eq!(summary.container_kind, "zip");
 
     let smbh = summary

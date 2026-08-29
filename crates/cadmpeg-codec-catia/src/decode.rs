@@ -3529,8 +3529,7 @@ fn decode_result(
         report.transfer_ledger,
     );
     let matched = report
-        .dialects
-        .as_ref()
+        .dialects()
         .expect("every CATIA decode route classifies its report")
         .primary();
     report.losses.extend(crate::dialect::dialect_loss(matched));
