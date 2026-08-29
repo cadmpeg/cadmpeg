@@ -1,4 +1,4 @@
-# generated at c7dba3472
+# generated at e3cc6504d
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -813,9 +813,11 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::DialectI
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::DialectId
 pub struct cadmpeg_core::dialect::DialectLayers
 impl cadmpeg_core::dialect::DialectLayers
+pub fn cadmpeg_core::dialect::DialectLayers::from_rows(&str, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>) -> core::result::Result<core::option::Option<Self>, cadmpeg_core::dialect::DialectLayersError>
 pub fn cadmpeg_core::dialect::DialectLayers::into_parts(self) -> (cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>)
 pub fn cadmpeg_core::dialect::DialectLayers::iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_core::dialect::DialectMatch>
 pub fn cadmpeg_core::dialect::DialectLayers::new(cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>) -> core::result::Result<Self, cadmpeg_core::dialect::DialectLayersError>
+pub fn cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch) -> Self
 pub fn cadmpeg_core::dialect::DialectLayers::primary(&self) -> &cadmpeg_core::dialect::DialectMatch
 impl core::clone::Clone for cadmpeg_core::dialect::DialectLayers
 pub fn cadmpeg_core::dialect::DialectLayers::clone(&self) -> cadmpeg_core::dialect::DialectLayers

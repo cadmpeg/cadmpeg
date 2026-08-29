@@ -156,6 +156,15 @@ pub struct DialectLayers {
 }
 
 impl DialectLayers {
+    /// Constructs dialect layers with one primary and no extra layers.
+    #[must_use]
+    pub fn of(primary: DialectMatch) -> Self {
+        Self {
+            primary,
+            extra: Vec::new(),
+        }
+    }
+
     /// Constructs dialect layers with one unique primary format.
     pub fn new(
         primary: DialectMatch,
@@ -164,9 +173,41 @@ impl DialectLayers {
         if extra.iter().any(|layer| layer.format == primary.format) {
             return Err(DialectLayersError {
                 format: primary.format,
+                reason: DialectLayersErrorReason::RepeatedPrimary,
             });
         }
         Ok(Self { primary, extra })
+    }
+
+    /// Reconstructs dialect layers from their flat wire rows.
+    ///
+    /// The unique row whose format equals `parent_format` is the primary.
+    /// An empty row list represents an unclassified parent.
+    pub fn from_rows(
+        parent_format: &str,
+        mut rows: Vec<DialectMatch>,
+    ) -> Result<Option<Self>, DialectLayersError> {
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        let mut primary_indices = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, layer)| (layer.format == parent_format).then_some(index));
+        let Some(primary_index) = primary_indices.next() else {
+            return Err(DialectLayersError {
+                format: parent_format.to_owned(),
+                reason: DialectLayersErrorReason::MissingPrimary,
+            });
+        };
+        if primary_indices.next().is_some() {
+            return Err(DialectLayersError {
+                format: parent_format.to_owned(),
+                reason: DialectLayersErrorReason::MultiplePrimaries,
+            });
+        }
+        let primary = rows.remove(primary_index);
+        Self::new(primary, rows).map(Some)
     }
 
     /// Returns the report's primary format layer.
@@ -208,15 +249,35 @@ impl JsonSchema for DialectLayers {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectLayersError {
     format: String,
+    reason: DialectLayersErrorReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DialectLayersErrorReason {
+    RepeatedPrimary,
+    MissingPrimary,
+    MultiplePrimaries,
 }
 
 impl fmt::Display for DialectLayersError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "extra dialect layer repeats primary format {:?}",
-            self.format
-        )
+        match self.reason {
+            DialectLayersErrorReason::RepeatedPrimary => write!(
+                f,
+                "extra dialect layer repeats primary format {:?}",
+                self.format
+            ),
+            DialectLayersErrorReason::MissingPrimary => write!(
+                f,
+                "populated dialects for format {:?} contain no primary layer",
+                self.format
+            ),
+            DialectLayersErrorReason::MultiplePrimaries => write!(
+                f,
+                "populated dialects for format {:?} contain multiple primary layers",
+                self.format
+            ),
+        }
     }
 }
 
