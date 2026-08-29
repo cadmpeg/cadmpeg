@@ -47,7 +47,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
     let recovery = DialectRecovery::of(&container);
-    let primary = recovery.dialect_match();
+    let classification = recovery.classify();
     let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
@@ -1413,7 +1413,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
-    losses.extend(recovery.dialect_loss(&primary));
+    losses.extend(classification.loss);
     losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
     if ctx.container_only() {
         losses.push(
@@ -1675,8 +1675,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let dialects = Some(
-        cadmpeg_core::dialect::DialectLayers::new(primary, kernel_match.into_iter().collect())
-            .expect("the ACIS kernel layer differs from the Inventor primary"),
+        cadmpeg_core::dialect::DialectLayers::new(
+            classification.matched,
+            kernel_match.into_iter().collect(),
+        )
+        .expect("the ACIS kernel layer differs from the Inventor primary"),
     );
     Ok(DecodeResult::new(
         ir,

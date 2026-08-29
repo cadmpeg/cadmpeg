@@ -152,6 +152,12 @@ pub(crate) struct DialectRecovery {
     unframed_meta_streams: Vec<MetaStreamDeclaration>,
 }
 
+/// The three projections produced by one evaluation of parsed dialect facts.
+pub(crate) struct DialectClassification {
+    pub(crate) matched: DialectMatch,
+    pub(crate) loss: Option<LossNote>,
+}
+
 impl DialectRecovery {
     /// Collects every version declaration the decode read from `container`.
     pub(crate) fn of(container: &InventorContainer<'_>) -> Self {
@@ -203,11 +209,9 @@ impl DialectRecovery {
         }
     }
 
-    /// Admission derived from every declaration this document carries.
-    fn admission(&self) -> Admission {
-        if self.unframed_schemas.is_empty()
-            && self.unframed_meta_streams.is_empty()
-            && !self.schemas.is_empty()
+    /// Evaluate identity, admission, and loss once from the parsed facts.
+    pub(crate) fn classify(&self) -> DialectClassification {
+        let identity_verified = !self.schemas.is_empty()
             && self
                 .schemas
                 .iter()
@@ -216,39 +220,21 @@ impl DialectRecovery {
             && self
                 .meta_streams
                 .iter()
-                .all(MetaStreamDeclaration::is_verified)
-        {
+                .all(MetaStreamDeclaration::is_verified);
+        let framing_verified =
+            self.unframed_schemas.is_empty() && self.unframed_meta_streams.is_empty();
+        let dialect = if identity_verified {
+            InventorDialect::Cfb3Rse31Meta8
+        } else {
+            InventorDialect::Unknown
+        };
+        let admission = if identity_verified && framing_verified {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
                 nearest: InventorDialect::Cfb3Rse31Meta8.id(),
             }
-        }
-    }
-
-    /// Registry identity selected only by declared discriminants.
-    fn dialect(&self) -> InventorDialect {
-        if !self.schemas.is_empty()
-            && self
-                .schemas
-                .iter()
-                .all(|schema| *schema == RseSchema::SCHEMA_31)
-            && !self.meta_streams.is_empty()
-            && self
-                .meta_streams
-                .iter()
-                .all(MetaStreamDeclaration::is_verified)
-        {
-            InventorDialect::Cfb3Rse31Meta8
-        } else {
-            InventorDialect::Unknown
-        }
-    }
-
-    /// This document's [`DialectMatch`], identity and admission together.
-    pub(crate) fn dialect_match(&self) -> DialectMatch {
-        let admission = self.admission();
-        let dialect = self.dialect();
+        };
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_CFB_MAJOR_VERSION.into(),
@@ -278,7 +264,11 @@ impl DialectRecovery {
                 ),
             );
         }
-        DialectMatch::layer(FORMAT, dialect.id(), declared, admission)
+        let loss = (!matches!(admission, Admission::Admitted)).then(|| self.unverified_loss());
+        DialectClassification {
+            matched: DialectMatch::layer(FORMAT, dialect.id(), declared, admission),
+            loss,
+        }
     }
 
     /// The loss charged when the document's declarations do not select the
@@ -286,10 +276,7 @@ impl DialectRecovery {
     ///
     /// `None` exactly when `matched.admission` is [`Admission::Admitted`].
     /// [`Self::dialect_match`] reports the same admission value.
-    pub(crate) fn dialect_loss(&self, matched: &DialectMatch) -> Option<LossNote> {
-        let Admission::AdmittedUnverified { .. } = &matched.admission else {
-            return None;
-        };
+    fn unverified_loss(&self) -> LossNote {
         let mut reasons = Vec::new();
         if !self.unframed_schemas.is_empty() {
             reasons.push(format!(
@@ -347,7 +334,7 @@ impl DialectRecovery {
                 )
             ));
         }
-        Some(InventorLossCode::SourceDialectUnverified.note(format!(
+        InventorLossCode::SourceDialectUnverified.note(format!(
             "{}; this decode applied the only Inventor grammars this codec implements — RSe \
              database schema {} and RSe segment metadata marker {:?} version {} — to those \
              streams, and what they did not frame is reported as an unavailable stream with its \
@@ -356,7 +343,7 @@ impl DialectRecovery {
             RseSchema::SCHEMA_31.value(),
             MetaStreamDeclaration::VERIFIED_MARKER,
             MetaStreamDeclaration::VERIFIED_VERSION
-        )))
+        ))
     }
 }
 

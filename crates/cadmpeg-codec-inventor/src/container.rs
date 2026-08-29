@@ -124,7 +124,7 @@ impl<'a> InventorContainer<'a> {
         };
         let dialects = Some(
             cadmpeg_core::dialect::DialectLayers::new(
-                crate::dialect::DialectRecovery::of(self).dialect_match(),
+                crate::dialect::DialectRecovery::of(self).classify().matched,
                 kernel.into_iter().collect(),
             )
             .expect("the kernel layer has a distinct format"),
