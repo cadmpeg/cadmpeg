@@ -1,4 +1,4 @@
-# generated at 0cb4ec82a
+# generated at 9468af2c3
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -53,6 +53,9 @@ pub cadmpeg_registry::ResolvedSource::Native::codec: &'a dyn cadmpeg_ir::codec::
 pub cadmpeg_registry::ResolvedSource::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
 pub cadmpeg_registry::ResolvedSource::Native::format_id: &'static str
 pub cadmpeg_registry::ResolvedSource::Unrecognized
+pub enum cadmpeg_registry::UnknownDialectKind
+pub cadmpeg_registry::UnknownDialectKind::DetectUnreachable
+pub cadmpeg_registry::UnknownDialectKind::RecoveredResidual
 pub enum cadmpeg_registry::WriteDisposition
 pub cadmpeg_registry::WriteDisposition::Emitted
 pub cadmpeg_registry::WriteDisposition::None
@@ -67,6 +70,7 @@ pub struct cadmpeg_registry::DialectEntry
 pub cadmpeg_registry::DialectEntry::disposition: cadmpeg_registry::Disposition
 pub cadmpeg_registry::DialectEntry::id: cadmpeg_core::dialect::DialectId
 pub cadmpeg_registry::DialectEntry::title: alloc::string::String
+pub cadmpeg_registry::DialectEntry::unknown_kind: core::option::Option<cadmpeg_registry::UnknownDialectKind>
 pub struct cadmpeg_registry::DialectProvenance
 pub cadmpeg_registry::DialectProvenance::id: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_registry::DialectProvenance::read: core::option::Option<cadmpeg_registry::ReadDisposition>

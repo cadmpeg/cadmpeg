@@ -113,7 +113,7 @@ class TestFileLevel(RegistryCase):
     def test_incomplete_format_accepts_its_unknown_row(self):
         unknown = GOOD_ROW.replace('"demo:one"', '"demo:unknown"').replace(
             '"Demo one"', '"Demo unknown"'
-        )
+        ) + 'unknown_kind = "recovered-residual"\n'
         self.assertClean(
             _registry(GOOD_ROW + unknown, formats="[format.demo]\ncomplete = false\n")
         )
@@ -193,6 +193,25 @@ class TestRowShape(RegistryCase):
 
     def test_pinned_false_is_valid(self):
         self.assertClean(_registry(GOOD_ROW + "pinned = false\n"))
+
+    def test_unknown_row_requires_kind(self):
+        self.assertFires(
+            _registry(GOOD_ROW.replace('"demo:one"', '"demo:unknown"')),
+            "unknown row must state unknown_kind",
+        )
+
+    def test_unknown_kind_has_closed_vocabulary(self):
+        row = GOOD_ROW.replace('"demo:one"', '"demo:unknown"')
+        self.assertFires(
+            _registry(row + 'unknown_kind = "ambiguous"\n'),
+            "unknown_kind must be detect-unreachable or recovered-residual",
+        )
+
+    def test_unknown_kind_is_unknown_only(self):
+        self.assertFires(
+            _registry(GOOD_ROW + 'unknown_kind = "recovered-residual"\n'),
+            "unknown_kind is allowed only on an :unknown row",
+        )
 
     def test_discriminants_must_be_a_table(self):
         self.assertFires(

@@ -40,5 +40,5 @@ pub use identify::{identify, identify_with, Identification, Inspection, DETECTIO
 pub use support::{
     dialect_provenance, dialect_table, dialects, format_rows, support, DialectEntry,
     DialectProvenance, DialectRow, Disposition, FormatDialects, FormatRow, ReadDisposition,
-    UnknownDisposition, UnknownFormat, WriteDisposition,
+    UnknownDialectKind, UnknownDisposition, UnknownFormat, WriteDisposition,
 };

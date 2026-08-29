@@ -22,6 +22,11 @@
 #                                    saying.
 #                      pinned        false when a descriptive identity row has
 #                                    no owning producer. Omitted means true.
+#                      unknown_kind  required on every `<format>:unknown` row:
+#                                    `detect-unreachable` means classification
+#                                    cannot produce a report for the residual;
+#                                    `recovered-residual` means evidence was
+#                                    read and matched no declared row.
 #                      supersedes    predecessor identity rows. Admitted only
 #                                    where the checker consumes the relation;
 #                                    IGES is the only consumer today. The
@@ -254,6 +259,7 @@ witness = "spec:IGES 5.3 Appendix H.1"
 # The witness is `code:` and stays `code:`: totality is a property of the
 # classifier. It records the residual arm that the classifier implements.
 id = "iges:unknown"
+unknown_kind = "recovered-residual"
 title = "IGES, unclassified representation and version pair"
 discriminants = { residual = "any Confidence >= Low IGES document matching no row above" }
 seam = "no declared row states this representation at this version; decode uses the nearest verified Global table and charges iges/source.dialect-unverified"
@@ -432,6 +438,7 @@ witness = "code:crates/cadmpeg-codec-step/src/codec.rs:399"
 #     is `step:ap242`.
 # Disposition: admitted-unverified.
 id = "step:unknown"
+unknown_kind = "recovered-residual"
 title = "ISO 10303-21 exchange with an unrecognized FILE_SCHEMA identifier"
 discriminants = { magic = "ISO-10303-21;", file_schema_identifier = "any other" }
 witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p21"
@@ -573,6 +580,7 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # to be total. The enumerated archive words remain the complete discriminant
 # set, and this row records every other positive archive word.
 id = "rhino:unknown"
+unknown_kind = "recovered-residual"
 title = "Rhino 3DM archive version outside the enumerated words"
 discriminants = { archive_version = "any positive integer other than 1, 2, 3, 4, 5, 50, 60, 70, 80, 90" }
 witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
@@ -658,6 +666,7 @@ witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
 # `fcstd/source.dialect-unverified` (dialect.rs:169-220). Schema 4 is the newer
 # row with that vocabulary and the writer's default.
 id = "fcstd:unknown"
+unknown_kind = "recovered-residual"
 title = "FreeCAD FCStd document schema outside 2, 3, 4"
 discriminants = { schema_version = "any other" }
 witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
@@ -731,6 +740,7 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:
 
 [[dialect]]
 id = "sldprt:unknown"
+unknown_kind = "recovered-residual"
 title = "SolidWorks part with no usable swVersion declaration"
 discriminants = { sw_version = "absent, not a u32 above zero" }
 witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:32"
@@ -839,6 +849,7 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_dire
 
 [[dialect]]
 id = "catia:unknown"
+unknown_kind = "recovered-residual"
 title = "CATIA V5 unrecognized storage layout"
 discriminants = { variant = "no admitted family" }
 witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directory_only.catpart"
@@ -909,6 +920,7 @@ witness = "code:crates/cadmpeg-codec-nx/src/container.rs:918"
 # `CodecError::WrongFormat` (container.rs:953, :1036, :1047). Unlike CATIA and
 # Creo, NX refuses at the container boundary rather than admitting unverified.
 id = "nx:unknown"
+unknown_kind = "detect-unreachable"
 title = "Part file matching neither NX container"
 discriminants = { magic = "neither SPLMSSTR nor CFB with UG_PART/UG_PART" }
 witness = "code:crates/cadmpeg-codec-nx/src/container.rs:953"
@@ -995,6 +1007,7 @@ witness = "code:crates/cadmpeg-codec-creo/src/container.rs:946"
 # `layout` source attribute (decode/build/meta.rs:26-29) and an inspect note
 # (container.rs:2817-2820).
 id = "creo:unknown"
+unknown_kind = "recovered-residual"
 title = "Creo PSB part with no layout discriminator"
 discriminants = { section = "no DEPDB_DATA root record, no ND: decoration, no P_OBJECT frame" }
 witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt"
@@ -1065,6 +1078,7 @@ witness = "code:crates/cadmpeg-codec-f3d/src/container.rs"
 # version. A manifest that fits decodes. If the layout fails under an
 # unrecognized version, the error names that version as the probable cause.
 id = "f3d:unknown"
+unknown_kind = "recovered-residual"
 title = "Fusion .f3d archive with an unrecognized top-level manifest version"
 discriminants = { top_level_manifest_version = "any other" }
 witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs"
@@ -1110,6 +1124,7 @@ witness = "code:crates/cadmpeg-codec-inventor/src/dialect.rs:230"
 # in `identity_issues` (rse.rs:389-398). A registry that treated these as
 # admission gates would overstate the codec's strictness.
 id = "inventor:unknown"
+unknown_kind = "recovered-residual"
 title = "Inventor CFB document with another RSe schema or Meta Stream version"
 discriminants = { cfb_storage = "RSeStorage", rse_db_schema = "any other", meta_stream_version = "any other" }
 witness = "code:crates/cadmpeg-codec-inventor/src/dialect.rs:230"
@@ -1170,6 +1185,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 # classification total. Its disposition is refusal: `classify` never pairs it
 # with an admitted admission.
 id = "sat:unknown"
+unknown_kind = "detect-unreachable"
 title = "Stream matching no ASM, ACIS, or text magic"
 discriminants = { magic = "none" }
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
@@ -1266,6 +1282,7 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 [[dialect]]
 # Mandatory `unknown` row (B4). No magic and no valid four-field header line.
 id = "acis:unknown"
+unknown_kind = "recovered-residual"
 title = "Kernel stream matching no ACIS or ASM framing"
 discriminants = { magic = "none", header_line_1 = "not four integer fields" }
 witness = "code:crates/cadmpeg-asm/src/dialect.rs"
@@ -1343,6 +1360,7 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/parasolid.rs:339"
 # schema and description (decode.rs:2091-2096) -- a consistency test, not an
 # allowlist. `SCH_SW_33104_12000` is an in-tree example.
 id = "parasolid:unknown"
+unknown_kind = "recovered-residual"
 pinned = false
 title = "Parasolid stream with an unrecognized schema token"
 discriminants = { schema = "any other SCH_ token" }
