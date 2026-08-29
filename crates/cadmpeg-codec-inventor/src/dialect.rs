@@ -3,7 +3,7 @@
 //! admitted.
 //!
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
-//! are the boundary, [`DialectRecovery::dialect_match`] is the one
+//! are the boundary, [`DialectRecovery::classify`] is the one
 //! construction path, and the vocabulary is closed. Every variant here has a row in
 //! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row` fails on
 //! drift in either direction. Two variants is still a closed vocabulary, and
@@ -16,7 +16,7 @@
 //! every declared stream to frame under the selected grammars. A stream that
 //! declares schema 31 and metadata version 8 therefore keeps
 //! `inventor:cfb3-rse31-meta8` when its body is malformed, with
-//! [`Admission::AdmittedUnverified`]. [`DialectRecovery::dialect_loss`] is
+//! [`Admission::AdmittedUnverified`]. [`DialectClassification::loss`] is
 //! `None` exactly when admission is [`Admission::Admitted`].
 //!
 //! # The row absorbs what the codec does not gate
@@ -275,7 +275,7 @@ impl DialectRecovery {
     /// grammar this codec read it with.
     ///
     /// `None` exactly when `matched.admission` is [`Admission::Admitted`].
-    /// [`Self::dialect_match`] reports the same admission value.
+    /// [`Self::classify`] reports the same admission value.
     fn unverified_loss(&self) -> LossNote {
         let mut reasons = Vec::new();
         if !self.unframed_schemas.is_empty() {
