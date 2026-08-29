@@ -1359,3 +1359,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::report::ExportReport::cadir"
 reason = "the neutral report constructor now fixes `format` to `cadir`, so callers cannot construct a target-less report for a native format"
+
+[[change]]
+commit = "7bf2aa40ef69c1d8d3661ac78c023f6a5b2368f7"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::dialect::{DialectLayers,DialectLayersError}"
+reason = "report dialect collections require one primary layer and reject an extra layer for the same format at construction"

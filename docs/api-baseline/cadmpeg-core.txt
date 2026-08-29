@@ -1,4 +1,4 @@
-# generated at 5ab799ccb
+# generated at 7bf2aa40e
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -811,6 +811,48 @@ impl core::marker::Unpin for cadmpeg_core::dialect::DialectId
 impl core::marker::UnsafeUnpin for cadmpeg_core::dialect::DialectId
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::DialectId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::DialectId
+pub struct cadmpeg_core::dialect::DialectLayers
+impl cadmpeg_core::dialect::DialectLayers
+pub fn cadmpeg_core::dialect::DialectLayers::into_parts(self) -> (cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>)
+pub fn cadmpeg_core::dialect::DialectLayers::iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_core::dialect::DialectMatch>
+pub fn cadmpeg_core::dialect::DialectLayers::new(cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>) -> core::result::Result<Self, cadmpeg_core::dialect::DialectLayersError>
+pub fn cadmpeg_core::dialect::DialectLayers::primary(&self) -> &cadmpeg_core::dialect::DialectMatch
+impl core::clone::Clone for cadmpeg_core::dialect::DialectLayers
+pub fn cadmpeg_core::dialect::DialectLayers::clone(&self) -> cadmpeg_core::dialect::DialectLayers
+impl core::cmp::Eq for cadmpeg_core::dialect::DialectLayers
+impl core::cmp::PartialEq for cadmpeg_core::dialect::DialectLayers
+pub fn cadmpeg_core::dialect::DialectLayers::eq(&self, &cadmpeg_core::dialect::DialectLayers) -> bool
+impl core::fmt::Debug for cadmpeg_core::dialect::DialectLayers
+pub fn cadmpeg_core::dialect::DialectLayers::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::dialect::DialectLayers
+impl serde_core::ser::Serialize for cadmpeg_core::dialect::DialectLayers
+pub fn cadmpeg_core::dialect::DialectLayers::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::marker::Freeze for cadmpeg_core::dialect::DialectLayers
+impl core::marker::Send for cadmpeg_core::dialect::DialectLayers
+impl core::marker::Sync for cadmpeg_core::dialect::DialectLayers
+impl core::marker::Unpin for cadmpeg_core::dialect::DialectLayers
+impl core::marker::UnsafeUnpin for cadmpeg_core::dialect::DialectLayers
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::DialectLayers
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::DialectLayers
+pub struct cadmpeg_core::dialect::DialectLayersError
+impl core::clone::Clone for cadmpeg_core::dialect::DialectLayersError
+pub fn cadmpeg_core::dialect::DialectLayersError::clone(&self) -> cadmpeg_core::dialect::DialectLayersError
+impl core::cmp::Eq for cadmpeg_core::dialect::DialectLayersError
+impl core::cmp::PartialEq for cadmpeg_core::dialect::DialectLayersError
+pub fn cadmpeg_core::dialect::DialectLayersError::eq(&self, &cadmpeg_core::dialect::DialectLayersError) -> bool
+impl core::error::Error for cadmpeg_core::dialect::DialectLayersError
+impl core::fmt::Debug for cadmpeg_core::dialect::DialectLayersError
+pub fn cadmpeg_core::dialect::DialectLayersError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_core::dialect::DialectLayersError
+pub fn cadmpeg_core::dialect::DialectLayersError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::dialect::DialectLayersError
+impl core::marker::Freeze for cadmpeg_core::dialect::DialectLayersError
+impl core::marker::Send for cadmpeg_core::dialect::DialectLayersError
+impl core::marker::Sync for cadmpeg_core::dialect::DialectLayersError
+impl core::marker::Unpin for cadmpeg_core::dialect::DialectLayersError
+impl core::marker::UnsafeUnpin for cadmpeg_core::dialect::DialectLayersError
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::dialect::DialectLayersError
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::dialect::DialectLayersError
 pub struct cadmpeg_core::dialect::DialectMatch
 pub cadmpeg_core::dialect::DialectMatch::admission: cadmpeg_core::dialect::Admission
 pub cadmpeg_core::dialect::DialectMatch::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>

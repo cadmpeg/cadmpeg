@@ -28,6 +28,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fmt;
 
 #[cfg(feature = "schema")]
@@ -142,6 +143,84 @@ pub struct DialectMatch {
     pub admission: Admission,
 }
 
+/// A report's primary format layer and any nested or carried format layers.
+///
+/// Construction rejects an extra layer whose format equals the primary
+/// layer's format. This makes the primary unique without adding a marker to
+/// the serialized rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectLayers {
+    primary: DialectMatch,
+    extra: Vec<DialectMatch>,
+}
+
+impl DialectLayers {
+    /// Constructs dialect layers with one unique primary format.
+    pub fn new(
+        primary: DialectMatch,
+        extra: Vec<DialectMatch>,
+    ) -> Result<Self, DialectLayersError> {
+        if extra.iter().any(|layer| layer.format == primary.format) {
+            return Err(DialectLayersError {
+                format: primary.format,
+            });
+        }
+        Ok(Self { primary, extra })
+    }
+
+    /// Returns the report's primary format layer.
+    #[must_use]
+    pub fn primary(&self) -> &DialectMatch {
+        &self.primary
+    }
+
+    /// Iterates over the primary layer followed by every extra layer.
+    pub fn iter(&self) -> impl Iterator<Item = &DialectMatch> {
+        std::iter::once(&self.primary).chain(&self.extra)
+    }
+
+    /// Consumes the collection into its primary and extra layers.
+    #[must_use]
+    pub fn into_parts(self) -> (DialectMatch, Vec<DialectMatch>) {
+        (self.primary, self.extra)
+    }
+}
+
+impl Serialize for DialectLayers {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.iter())
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for DialectLayers {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("DialectLayers")
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Vec::<DialectMatch>::json_schema(generator)
+    }
+}
+
+/// A dialect collection included a second layer for its primary format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectLayersError {
+    format: String,
+}
+
+impl fmt::Display for DialectLayersError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "extra dialect layer repeats primary format {:?}",
+            self.format
+        )
+    }
+}
+
+impl Error for DialectLayersError {}
+
 impl DialectMatch {
     /// Construct one identified dialect layer.
     #[must_use]
@@ -247,6 +326,35 @@ mod tests {
         assert_eq!(
             primary_layer(&[layer("rhino"), layer("rhino")], "rhino"),
             None
+        );
+    }
+
+    #[test]
+    fn dialect_layers_reject_a_same_format_extra() {
+        let error = DialectLayers::new(layer("rhino"), vec![layer("acis"), layer("rhino")])
+            .expect_err("a second rhino layer must be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "extra dialect layer repeats primary format \"rhino\""
+        );
+    }
+
+    #[test]
+    fn dialect_layers_serialize_as_the_existing_flat_array() {
+        let layers = DialectLayers::new(layer("rhino"), vec![layer("acis")]).unwrap();
+        let serialized = serde_json::to_value(&layers).unwrap();
+
+        assert_eq!(
+            serialized,
+            serde_json::json!([layer("rhino"), layer("acis")])
+        );
+        assert_eq!(
+            layers
+                .iter()
+                .map(|layer| layer.format.as_str())
+                .collect::<Vec<_>>(),
+            ["rhino", "acis"]
         );
     }
 }
