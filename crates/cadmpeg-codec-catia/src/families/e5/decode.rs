@@ -268,7 +268,7 @@ pub(crate) fn try_decode_e5(
             true,
             std::collections::BTreeMap::new(),
             losses,
-            container::summarize(scan).notes,
+            Vec::new(),
             cadmpeg_ir::report::TransferLedger::default(),
         ),
         annotations,

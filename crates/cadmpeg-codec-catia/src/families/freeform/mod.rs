@@ -783,7 +783,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             true,
             coverage,
             losses,
-            container::summarize(scan).notes,
+            Vec::new(),
             cadmpeg_ir::report::TransferLedger::default(),
         ),
         annotations,

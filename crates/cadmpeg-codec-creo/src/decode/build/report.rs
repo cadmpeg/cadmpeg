@@ -67,7 +67,7 @@ pub(in super::super) fn build_report(
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> DecodeReport {
-    let summary = container::summarize(scan);
+    let mut summary = container::summarize(scan);
     let geom_sections = scan
         .framing
         .sections
@@ -98,8 +98,11 @@ pub(in super::super) fn build_report(
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. The loss reads the completed primary
     // match, so the report cannot claim a verified admission while charging it.
-    let primary = crate::dialect::classify(scan);
-    losses.extend(crate::dialect::dialect_loss(&primary));
+    let dialects = summary
+        .take_dialects()
+        .expect("every Creo summary classifies its dialect");
+    let primary = dialects.primary();
+    losses.extend(crate::dialect::dialect_loss(primary));
 
     if container_only {
         losses.push(
@@ -159,7 +162,7 @@ pub(in super::super) fn build_report(
     push_coverage_drop_losses(&mut losses, &coverage);
 
     DecodeReport::classified(
-        cadmpeg_core::dialect::DialectLayers::of(primary),
+        dialects,
         container_only,
         has_transferred_geometry(ir),
         coverage,

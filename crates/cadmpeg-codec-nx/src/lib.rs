@@ -292,11 +292,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
+    let (dialects, notes) = decode::summarize(scan);
     ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(dialect::NxDialect::classify(&scan.container)),
+        dialects,
         dialect::NxDialect::of_container(&scan.container).container_kind(),
         entries,
-        decode::summary_notes(scan),
+        notes,
     )
 }
 

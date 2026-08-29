@@ -934,7 +934,7 @@ pub(crate) fn try_decode_zero_entity(
             true,
             coverage,
             vec![topology_loss.note(topology_message)],
-            container::summarize(scan).notes,
+            Vec::new(),
             cadmpeg_ir::report::TransferLedger::default(),
         ),
         annotations: annotations.build(),

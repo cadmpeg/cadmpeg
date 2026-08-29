@@ -28,7 +28,7 @@ use super::geometry_work::{
 };
 use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
 use super::support_uv::pcurve_requires_completion;
-use super::{summary_notes, Counts, Scan};
+use super::{summarize, Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
 use cadmpeg_ir::document::CadIr;
@@ -275,15 +275,14 @@ pub(crate) fn build_geometry_report(
         ));
     }
 
+    let (dialects, notes) = summarize(scan);
     DecodeReport::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::NxDialect::classify(
-            &scan.container,
-        )),
+        dialects,
         false,
         true,
         std::collections::BTreeMap::new(),
         losses,
-        summary_notes(scan),
+        notes,
         cadmpeg_ir::report::TransferLedger::default(),
     )
 }

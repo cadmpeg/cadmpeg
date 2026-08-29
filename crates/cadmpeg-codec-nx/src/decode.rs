@@ -487,19 +487,20 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         );
     }
 
+    let (dialects, notes) = summarize(scan);
     DecodeReport::classified(
-        cadmpeg_core::dialect::DialectLayers::of(NxDialect::classify(&scan.container)),
+        dialects,
         container_only,
         false,
         std::collections::BTreeMap::new(),
         losses,
-        summary_notes(scan),
+        notes,
         cadmpeg_ir::report::TransferLedger::default(),
     )
 }
 
-/// Build container and embedded-stream notes for inspection and decode reports.
-pub fn summary_notes(scan: &Scan) -> Vec<String> {
+/// Classify a scan and build its inspection and decode notes.
+pub fn summarize(scan: &Scan) -> (cadmpeg_core::dialect::DialectLayers, Vec<String>) {
     let c = &scan.container;
     let (control_count, classified_control_count) = offset_store_control_counts(c);
     let mut notes = if c.is_legacy_cfb() {
@@ -603,7 +604,10 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
                 .to_string(),
         );
     }
-    notes
+    (
+        cadmpeg_core::dialect::DialectLayers::of(NxDialect::classify(&scan.container)),
+        notes,
+    )
 }
 
 #[cfg(test)]

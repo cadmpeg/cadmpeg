@@ -3508,10 +3508,10 @@ fn modeling_graph_scope(
 
 /// The single site that finishes a decode and charges dialect admission loss.
 ///
-/// Every route supplies an unclassified report. This function classifies it
-/// once and charges the dialect-unverified loss from that same layer, so a
-/// report can carry `AdmittedUnverified` without its loss only if this function
-/// is bypassed.
+/// Every route supplies an unclassified report. This function summarizes and
+/// classifies it once. It charges the dialect-unverified loss from that same
+/// layer, so a report can carry `AdmittedUnverified` without its loss only if
+/// this function is bypassed.
 fn decode_result(
     scan: &ContainerScan,
     mut ir: CadIr,
@@ -3519,13 +3519,16 @@ fn decode_result(
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
+    let mut summary = crate::container::summarize(scan);
     let mut report = DecodeReport::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::classify(scan)),
+        summary
+            .take_dialects()
+            .expect("every CATIA summary classifies its dialect"),
         report.container_only,
         report.geometry_transferred,
         report.coverage,
         report.losses,
-        report.notes,
+        summary.notes,
         report.transfer_ledger,
     );
     let matched = report
