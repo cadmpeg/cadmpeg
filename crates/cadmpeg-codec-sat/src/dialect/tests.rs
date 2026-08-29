@@ -39,10 +39,7 @@ fn header(save_format_version: Option<u32>) -> KernelHeader {
 }
 
 #[test]
-fn only_the_acis_branches_are_banded() {
-    // The ASM binary and ASM text paths compare no save format, so every band
-    // is admitted on them. Both ACIS branches take the one 217/218 comparison,
-    // and outside it they recover rather than refuse.
+fn only_the_acis_kernel_branches_are_banded() {
     for version in [Some(10_000), Some(21_700), Some(21_800), Some(23_200), None] {
         let kernel = header(version);
         // Stated as the raw declared word, not as a second call to the code
@@ -61,7 +58,9 @@ fn only_the_acis_branches_are_banded() {
                 header: &kernel,
             })),
         ] {
-            assert_eq!(classify(&asm).admission, Admission::Admitted, "{version:?}");
+            let (host, kernel) = layers(&asm);
+            assert_eq!(host.admission, Admission::Admitted, "{version:?}");
+            assert_eq!(kernel.admission, Admission::Admitted, "{version:?}");
         }
 
         for acis in [
@@ -71,7 +70,8 @@ fn only_the_acis_branches_are_banded() {
                 header: &kernel,
             })),
         ] {
-            let matched = classify(&acis);
+            let (host, matched) = layers(&acis);
+            assert_eq!(host.admission, Admission::Admitted, "{version:?}");
             if verified {
                 assert_eq!(matched.admission, Admission::Admitted, "{version:?}");
                 assert!(dialect_loss(&matched).is_none(), "{version:?}");
@@ -101,7 +101,7 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
         (StreamEvidence::Text(None), "sat:text"),
         (StreamEvidence::Unknown, "sat:unknown"),
     ] {
-        let matched = classify(&evidence);
+        let (matched, _) = layers(&evidence);
         assert_eq!(matched.dialect.as_ref().map(DialectId::as_str), Some(id));
         assert_eq!(matched.admission, Admission::Refused, "{id}");
     }
@@ -147,7 +147,7 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
         StreamEvidence::Text(None),
         StreamEvidence::Unknown,
     ] {
-        let matched = classify(&evidence);
+        let (_, matched) = layers(&evidence);
         assert_eq!(
             matches!(matched.admission, Admission::AdmittedUnverified { .. }),
             dialect_loss(&matched).is_some(),
@@ -213,7 +213,7 @@ struct Case {
     bytes: Vec<u8>,
     id: &'static str,
     kernel_id: &'static str,
-    admission: Admission,
+    kernel_admission: Admission,
 }
 
 fn cases() -> Vec<Case> {
@@ -223,28 +223,28 @@ fn cases() -> Vec<Case> {
             bytes: text_sphere_stream(1.0),
             id: "sat:text",
             kernel_id: "acis:text-asm",
-            admission: Admission::Admitted,
+            kernel_admission: Admission::Admitted,
         },
         Case {
             label: "asm binary sphere",
             bytes: binary_sphere_stream(BinaryFixtureKind::Asm),
             id: "sat:asm-binary",
             kernel_id: "acis:asm-binaryfile-8",
-            admission: Admission::Admitted,
+            kernel_admission: Admission::Admitted,
         },
         Case {
             label: "acis binary sphere at 218",
             bytes: binary_sphere_stream(BinaryFixtureKind::Acis),
             id: "sat:acis-binary",
             kernel_id: "acis:save-format-218",
-            admission: Admission::Admitted,
+            kernel_admission: Admission::Admitted,
         },
         Case {
             label: "acis text at 700",
             bytes: acis_text(700),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            admission: Admission::AdmittedUnverified {
+            kernel_admission: Admission::AdmittedUnverified {
                 nearest: DialectId::pinned("acis:save-format-217"),
             },
         },
@@ -253,7 +253,7 @@ fn cases() -> Vec<Case> {
             bytes: acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            admission: Admission::AdmittedUnverified {
+            kernel_admission: Admission::AdmittedUnverified {
                 nearest: DialectId::pinned("acis:save-format-218"),
             },
         },
@@ -262,7 +262,7 @@ fn cases() -> Vec<Case> {
             bytes: binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand),
             id: "sat:acis-binary",
             kernel_id: "acis:save-format-binary-other",
-            admission: Admission::AdmittedUnverified {
+            kernel_admission: Admission::AdmittedUnverified {
                 nearest: DialectId::pinned("acis:save-format-218"),
             },
         },
@@ -271,7 +271,7 @@ fn cases() -> Vec<Case> {
             bytes: acis_text(21_800),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            admission: Admission::Admitted,
+            kernel_admission: Admission::Admitted,
         },
     ]
 }
@@ -300,9 +300,18 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .expect("SAT reports dialect layers")
             .primary();
 
-        assert_eq!(matched.admission, case.admission, "{}", case.label);
+        assert_eq!(matched.admission, Admission::Admitted, "{}", case.label);
+        let kernel = result
+            .report()
+            .dialects
+            .as_ref()
+            .expect("SAT reports dialect layers")
+            .iter()
+            .nth(1)
+            .expect("SAT reports its ACIS layer");
+        assert_eq!(kernel.admission, case.kernel_admission, "{}", case.label);
         assert_eq!(
-            matches!(matched.admission, Admission::AdmittedUnverified { .. }),
+            matches!(kernel.admission, Admission::AdmittedUnverified { .. }),
             charged,
             "{}: admission and the recovery mark must agree",
             case.label
