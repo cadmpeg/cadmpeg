@@ -602,10 +602,7 @@ pub(crate) fn summarize(
         });
     }
     ContainerSummary {
-        dialects: Some(
-            cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
-                .expect("a primary layer without extras is valid"),
-        ),
+        dialects: Some(cadmpeg_core::dialect::DialectLayers::of(primary)),
         format: "iges".into(),
         container_kind: "fixed-ascii".into(),
         entries,

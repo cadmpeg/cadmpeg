@@ -2878,10 +2878,9 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
-    let dialects = Some(
-        cadmpeg_core::dialect::DialectLayers::new(crate::dialect::classify(scan), Vec::new())
-            .expect("a primary layer without extras is valid"),
-    );
+    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
+        crate::dialect::classify(scan),
+    ));
     ContainerSummary {
         dialects,
         format: crate::dialect::FORMAT.to_string(),

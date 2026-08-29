@@ -252,10 +252,7 @@ impl CodecBackend for StepCodec {
             .expect("STEP classification always names a dialect row");
         let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
-        let dialects = Some(
-            cadmpeg_core::dialect::DialectLayers::new(matched, Vec::new())
-                .expect("a primary layer without extras is valid"),
-        );
+        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(matched));
         Ok(ContainerSummary {
             dialects,
             format: crate::dialect::FORMAT.into(),

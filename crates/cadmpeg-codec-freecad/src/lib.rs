@@ -1430,10 +1430,7 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        let dialects = Some(
-            cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
-                .expect("a primary layer without extras is valid"),
-        );
+        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
         Ok(DecodeResult::new(
             ir,
             DecodeReport {

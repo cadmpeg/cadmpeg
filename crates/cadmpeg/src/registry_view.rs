@@ -122,16 +122,12 @@ mod tests {
     fn the_provenance_line_joins_the_match_the_registry_and_the_catalog() {
         use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 
-        let dialects = DialectLayers::new(
-            DialectMatch {
-                format: "rhino".to_owned(),
-                dialect: Some(DialectId::pinned("rhino:archive-50")),
-                declared: std::collections::BTreeMap::new(),
-                admission: Admission::Admitted,
-            },
-            Vec::new(),
-        )
-        .expect("a primary layer without extras is valid");
+        let dialects = DialectLayers::of(DialectMatch {
+            format: "rhino".to_owned(),
+            dialect: Some(DialectId::pinned("rhino:archive-50")),
+            declared: std::collections::BTreeMap::new(),
+            admission: Admission::Admitted,
+        });
         let line = dialect_line(Some(&dialects)).expect("a primary layer exists");
         assert!(line.starts_with("dialect: rhino:archive-50 — "), "{line}");
         assert!(line.contains("read "), "{line}");

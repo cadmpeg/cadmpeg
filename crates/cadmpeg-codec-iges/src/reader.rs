@@ -548,10 +548,7 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let dialects = Some(
-        cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
-            .expect("a primary layer without extras is valid"),
-    );
+    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
     let mut result = DecodeResult::new(
         ir,
         DecodeReport {
