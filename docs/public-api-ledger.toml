@@ -17,6 +17,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
 [[change]]
+commit = "d219d8e3660f4c63d5fd8977e19c8a45b8169ffc"
+crate = "cadmpeg-codec-step"
+kind = "visibility"
+item = "cadmpeg_codec_step::write_step"
+reason = "the direct writer bypassed `Encoder::plan` target resolution and admission; crate tests retain internal access while public callers use the encoder path"
+
+[[change]]
 commit = "e642fd2f3c2796f89b33f33784292b5af02b8708"
 crate = "cadmpeg-ir"
 kind = "addition"

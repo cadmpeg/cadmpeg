@@ -1,9 +1,8 @@
 # cadmpeg-codec-step
 
 `cadmpeg-codec-step` reads and writes ISO 10303-21 Part 21 exchange structures for
-AP203 editions 1–2, AP214, and AP242 editions 1–3. The target [`StepSchema`]
-is an argument to [`write_step`], resolved from the encoder's catalog by
-[`StepCodec::plan`]. [`StepCodec`] implements both
+AP203 editions 1–2, AP214, and AP242 editions 1–3. [`StepCodec::plan`] resolves
+the requested [`StepSchema`] from the encoder catalog. [`StepCodec`] implements both
 [`Codec`] decode and [`Encoder`] write. The cadmpeg CLI uses the same model.
 
 <!-- generated: capability -->
@@ -44,37 +43,10 @@ opaque application records retain identity and byte spans when retained.
 
 ## Write a document
 
-Pass any [`std::io::Write`] sink to [`write_step`]:
+Use [`StepCodec`] through [`Encoder::plan`]. The plan resolves and validates a
+catalog target before producing bytes and an export report.
 
-```rust
-use std::fs::File;
-use std::io::BufWriter;
-
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_codec_step::{write_step, StepSchema, StepWriteOptions};
-
-let ir = unit_cube();
-let file = File::create("cube.step")?;
-let mut output = BufWriter::new(file);
-let options = StepWriteOptions {
-    product_name: "cube".into(),
-    author: "Example Author".into(),
-    organization: "Example Organization".into(),
-    timestamp: "2026-07-11T09:00:00Z".into(),
-    originating_system: "example-exporter".into(),
-};
-
-let report = write_step(&ir, &mut output, StepSchema::Ap242Edition3, &options)?;
-if !report.losses.is_empty() {
-    for loss in &report.losses {
-        eprintln!("{:?}: {}", loss.severity, loss.message);
-    }
-}
-
-# Ok::<(), Box<dyn std::error::Error>>(())
-```
-
-`write_step` emits the Part 21 envelope for the named schema, product and
+The encoder emits the Part 21 envelope for the named schema, product and
 representation context, and reachable shape. Coverage includes solid, sheet,
 and wire bodies plus standalone geometry; coedge pcurves; rigid body placement;
 products and occurrences; AP242 tessellation; visibility; layers; named colors;
@@ -91,8 +63,8 @@ declares millimetres. Supply geometry in millimetres before export. The context
 uses the IR linear tolerance as its uncertainty value; plane and solid angles
 use radians and steradians.
 
-[`StepWriteOptions`] controls `FILE_NAME` metadata; the target [`StepSchema`] is `write_step`'s own argument, never encoder
-state. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
+[`StepWriteOptions`] controls `FILE_NAME` metadata; the target [`StepSchema`] is
+selected by `Encoder::plan`, not stored in the options. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
 default output deterministic. The first body name, when present, supplies the
 STEP product name. `product_name` supplies the `FILE_NAME` name instead.
 
@@ -142,7 +114,6 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21
 [`CadIr`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html
 [`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html
-[`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html
 [`Encoder`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Encoder.html
 [`EntityCensus::total`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.EntityCensus.html#method.total
 [`ExportReport::census`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.census
@@ -154,4 +125,3 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [`StepSchema`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepSchema.html
 [`StepWriteOptions`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/struct.StepWriteOptions.html
 [`std::io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
-[`write_step`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/fn.write_step.html
