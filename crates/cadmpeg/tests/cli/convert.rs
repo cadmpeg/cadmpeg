@@ -28,9 +28,9 @@ fn convert_stdout_contains_only_json_artifact() {
 
 /// `--to` names the schema, in both spellings the grammar admits.
 ///
-/// `step:ap242-e3` is the registry id; `ap242e3` is the catalog alias, usable
-/// bare because the output extension already names the format. Both must reach
-/// the same `FILE_SCHEMA`, or one of the two spellings is decoration.
+/// `step:ap242-e3` is the registry id; `ap242e3` is the catalog alias. The
+/// alias is usable bare when the output extension names the format and after a
+/// format prefix. Every spelling must reach the same `FILE_SCHEMA`.
 #[test]
 fn step_artifact_starts_with_step_header() {
     let dir = tempdir().unwrap();
@@ -67,6 +67,22 @@ fn step_artifact_starts_with_step_header() {
         .assert()
         .success();
     assert!(String::from_utf8_lossy(&fs::read(&aliased).unwrap())
+        .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
+
+    let colon_aliased = dir.path().join("cube-colon-alias.step");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            colon_aliased.to_str().unwrap(),
+            "--to",
+            "step:ap242e3",
+        ])
+        .assert()
+        .success();
+    assert!(String::from_utf8_lossy(&fs::read(&colon_aliased).unwrap())
         .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
 }
 
@@ -133,11 +149,11 @@ fn source_less_ir_exports_to_decodable_rhino() {
     );
 }
 
-/// The Rhino archive version is a dialect of `--to`, in all three spellings.
+/// The Rhino archive version is a dialect of `--to`, in every spelling.
 ///
 /// `rhino:archive-60` is the registry id, `3dm:archive-60` reaches the same row
-/// through the format alias, and `60` is the native short vocabulary, usable
-/// bare because the output path already names the format.
+/// through the format alias. `60` is the catalog alias, usable bare because
+/// the output path names the format or after either format spelling.
 #[test]
 fn rhino_output_version_is_selected_explicitly() {
     let dir = tempdir().unwrap();
@@ -148,9 +164,15 @@ fn rhino_output_version_is_selected_explicitly() {
         source_object: None,
     });
     let input = fixture(dir.path(), "point.cadir.json", &ir);
-    for (index, spelling) in ["rhino:archive-60", "3dm:archive-60", "60"]
-        .into_iter()
-        .enumerate()
+    for (index, spelling) in [
+        "rhino:archive-60",
+        "3dm:archive-60",
+        "rhino:60",
+        "3dm:60",
+        "60",
+    ]
+    .into_iter()
+    .enumerate()
     {
         let output = dir.path().join(format!("point-{index}.3dm"));
         Command::cargo_bin("cadmpeg")

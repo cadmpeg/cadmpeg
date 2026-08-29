@@ -267,7 +267,7 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
     use cadmpeg_core::dialect::DialectId;
 
     let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    for spelling in ["rhino:archive-60", "60"] {
+    for spelling in ["archive-60", "60"] {
         let target = export_target(Format::Rhino, Some(spelling));
         assert_eq!(
             target.selection.request(),

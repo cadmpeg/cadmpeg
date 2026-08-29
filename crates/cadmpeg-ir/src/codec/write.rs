@@ -70,12 +70,21 @@ pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
     }
 }
 
-/// The catalog entry `id` names, by id or by alias.
+/// The catalog entry `id` names, by full id, format-local id, or alias.
+///
+/// A format-local id is the part after the first colon. The caller has already
+/// selected an encoder, so `archive-60` is unambiguous within the Rhino
+/// catalog and lets `--to rhino:archive-60` pass its right half unchanged.
 #[must_use]
 pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a TargetDescriptor> {
-    targets
-        .iter()
-        .find(|target| target.id == id || target.aliases.contains(&id))
+    targets.iter().find(|target| {
+        target.id == id
+            || target
+                .id
+                .split_once(':')
+                .is_some_and(|(_, local)| local == id)
+            || target.aliases.contains(&id)
+    })
 }
 
 /// The catalog's default target, or `None` for an encoder with no synthesis

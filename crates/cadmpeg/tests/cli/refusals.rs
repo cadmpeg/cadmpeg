@@ -302,7 +302,8 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
     assert!(value["decode_report"].is_object());
     assert!(value["check_report"].is_object());
 
-    // A format-qualified id outside the catalog is the same refusal.
+    // A format-qualified token outside the catalog is the same refusal. The
+    // encoder receives the token after the colon unchanged.
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -315,7 +316,8 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .assert()
         .code(1)
         .stderr(
-            predicate::str::contains("step:ap999").and(predicate::str::contains("step:ap242-e3")),
+            predicate::str::contains("step cannot write ap999")
+                .and(predicate::str::contains("step:ap242-e3")),
         );
 }
 

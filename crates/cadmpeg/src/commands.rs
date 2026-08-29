@@ -541,9 +541,8 @@ impl OutputSelection {
     /// The grammar, in the order it is tried:
     ///
     /// * `FORMAT:DIALECT` — the left half names the output format and the
-    ///   whole value names the dialect, respelled under the format's canonical
-    ///   id so an alias spelling of the format (`3dm:archive-80`) still
-    ///   produces a registry id.
+    ///   right half is the unresolved catalog token. The encoder matches it
+    ///   as the format-local part of an id or as an alias.
     /// * `FORMAT` — the format, with no dialect stated. `--to step` is the
     ///   same statement `-f step` has always made: it says what kind of file
     ///   to write, not which dialect of it, so a same-format conversion still
@@ -583,7 +582,7 @@ impl OutputSelection {
             warn_on_extension_disagreement(format, inferred);
             return Ok(Self {
                 format,
-                dialect: Some(format!("{}:{right}", format.name())),
+                dialect: Some(right.to_owned()),
             });
         }
 
