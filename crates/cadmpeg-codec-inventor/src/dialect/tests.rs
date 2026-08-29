@@ -165,10 +165,7 @@ fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
         matched.admission,
         Admission::AdmittedUnverified { .. }
     ));
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("inventor:cfb3-rse31-meta8")
-    );
+    assert_eq!(matched.dialect.as_str(), "inventor:cfb3-rse31-meta8");
     let loss = losses
         .iter()
         .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
@@ -187,10 +184,7 @@ fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
         MetaStreamDeclaration::VERIFIED_MARKER
     );
     assert_eq!(matched.declared[DECLARED_META_STREAM_VERSION], "8");
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("inventor:cfb3-rse31-meta8")
-    );
+    assert_eq!(matched.dialect.as_str(), "inventor:cfb3-rse31-meta8");
     assert!(matches!(
         matched.admission,
         Admission::AdmittedUnverified { .. }
@@ -211,12 +205,7 @@ fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
 fn each_document_classifies_into_the_row_its_declarations_match() {
     for case in CASES {
         let (matched, _) = decoded(&case.bytes());
-        assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(case.id),
-            "{}",
-            case.label
-        );
+        assert_eq!(matched.dialect.as_str(), case.id, "{}", case.label);
 
         let expected_admission = if case.admitted {
             Admission::Admitted
@@ -270,9 +259,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
     // it, so the pair (unknown, Admitted) must be unreachable.
     for case in CASES {
         let (matched, _) = decoded(&case.bytes());
-        if matched.dialect.as_ref().map(DialectId::as_str)
-            == Some(InventorDialect::Unknown.id().as_str())
-        {
+        if matched.dialect.as_str() == InventorDialect::Unknown.id().as_str() {
             assert_ne!(matched.admission, Admission::Admitted, "{}", case.label);
         }
     }

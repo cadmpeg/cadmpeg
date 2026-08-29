@@ -368,12 +368,8 @@ pub struct DialectProvenance {
 pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectProvenance> {
     let entry = dialects?.primary();
     Some(DialectProvenance {
-        id: entry.dialect.clone(),
-        read: entry
-            .dialect
-            .as_ref()
-            .and_then(support)
-            .map(|disposition| disposition.read),
+        id: Some(entry.dialect.clone()),
+        read: support(&entry.dialect).map(|disposition| disposition.read),
         write_targets: catalog_of(&entry.format)
             .unwrap_or(&[])
             .iter()
@@ -781,7 +777,7 @@ mod tests {
 
         let dialects = DialectLayers::of(DialectMatch {
             format: "rhino".to_owned(),
-            dialect: Some(DialectId::pinned("rhino:archive-50")),
+            dialect: DialectId::pinned("rhino:archive-50"),
             declared: BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,

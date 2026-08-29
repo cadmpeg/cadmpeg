@@ -90,11 +90,7 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
         let context = format!("SchemaVersion {:?}", case.declaration);
 
         assert_eq!(matched.format, FORMAT, "{context}");
-        assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(case.id),
-            "{context}"
-        );
+        assert_eq!(matched.dialect.as_str(), case.id, "{context}");
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
@@ -141,9 +137,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
             &document(case.declaration),
             FcstdDialect::from_schema_version(case.declaration),
         );
-        if matched.dialect.as_ref().map(DialectId::as_str)
-            == Some(FcstdDialect::Unknown.id().as_str())
-        {
+        if matched.dialect.as_str() == FcstdDialect::Unknown.id().as_str() {
             assert_ne!(
                 matched.admission,
                 Admission::Admitted,

@@ -388,7 +388,7 @@ mod tests {
                     summary
                         .dialects()
                         .map(cadmpeg_core::dialect::DialectLayers::primary)
-                        .and_then(|entry| entry.dialect.as_ref())
+                        .map(|entry| &entry.dialect)
                         .map(DialectId::as_str),
                     Some(case.dialect),
                     "{}: dialect",

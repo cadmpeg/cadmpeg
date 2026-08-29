@@ -154,13 +154,7 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
         .dialects()
         .expect("inspection classifies the host and kernel layers");
     let inspected = layers.primary();
-    assert_eq!(
-        inspected
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("sat:acis-binary")
-    );
+    assert_eq!(inspected.dialect.as_str(), "sat:acis-binary");
     assert_eq!(
         inspected.admission,
         cadmpeg_core::dialect::Admission::Refused
@@ -175,13 +169,7 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
         .iter()
         .nth(1)
         .expect("inspect retains the kernel layer");
-    assert_eq!(
-        kernel
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("acis:save-format-binary-other")
-    );
+    assert_eq!(kernel.dialect.as_str(), "acis:save-format-binary-other");
     assert_eq!(
         kernel.declared["save_format_major"],
         (UNVERIFIED_SAVE_FORMAT / 100).to_string()
@@ -212,13 +200,7 @@ fn unframed_discriminant_has_the_same_refused_match_at_inspect_and_decode() {
         .dialects()
         .expect("inspection classifies the host and kernel layers");
     let inspected = layers.primary();
-    assert_eq!(
-        inspected
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("sat:text")
-    );
+    assert_eq!(inspected.dialect.as_str(), "sat:text");
     assert_eq!(
         inspected.admission,
         cadmpeg_core::dialect::Admission::Refused

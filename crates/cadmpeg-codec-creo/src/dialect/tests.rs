@@ -140,12 +140,7 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
 
         let matched = classify(&scan);
         assert_eq!(matched.format, FORMAT, "{}", case.label);
-        assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(case.id),
-            "{}",
-            case.label
-        );
+        assert_eq!(matched.dialect.as_str(), case.id, "{}", case.label);
         assert_eq!(
             matched.declared[DECLARED_VERSION_LINE], scan.framing.version_line,
             "{}: the header line is recorded as the source wrote it",
@@ -243,7 +238,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
-        if matched.dialect.as_ref().map(DialectId::as_str) == Some(Layout::Unknown.id().as_str()) {
+        if matched.dialect.as_str() == Layout::Unknown.id().as_str() {
             assert_ne!(matched.admission, Admission::Admitted, "{}", case.label);
         }
     }

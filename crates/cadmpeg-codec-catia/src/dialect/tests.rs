@@ -84,8 +84,8 @@ fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
 
         assert_eq!(matched.format, FORMAT, "{}", witness.fixture);
         assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(witness.id),
+            matched.dialect.as_str(),
+            witness.id,
             "{} must witness its own row",
             witness.fixture
         );
@@ -159,10 +159,7 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     assert_eq!(matched.declared[DECLARED_HOT_FIX], "0");
     assert_eq!(matched.declared[DECLARED_BUILD_DATE], "03-10-2017.22.00");
 
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("catia:unknown")
-    );
+    assert_eq!(matched.dialect.as_str(), "catia:unknown");
     assert_eq!(
         matched.admission,
         Admission::AdmittedUnverified {
@@ -185,6 +182,6 @@ fn an_absent_declaration_leaves_the_identity_intact() {
             "{}: declared keys track the tuple's presence",
             witness.fixture
         );
-        assert!(matched.dialect.is_some(), "{}", witness.fixture);
+        assert!(!matched.dialect.as_str().is_empty(), "{}", witness.fixture);
     }
 }

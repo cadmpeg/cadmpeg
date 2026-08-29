@@ -9,5 +9,5 @@ pub mod error;
 pub mod io;
 
 pub use container::{ContainerEntry, ContainerSummary};
-pub use error::CodecError;
+pub use error::{CodecError, TargetToken};
 pub use io::ReadSeek;

@@ -371,7 +371,10 @@ fn f3z_archive_merges_identity_occurrences() {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(requested.as_deref(), Some("f3d:f3z-multi-document"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("f3d:f3z-multi-document")
+    );
     assert!(available.contains("f3d:manifest-3-2-0-0"), "{available}");
 
     // Naming the row is the escape, and it still regenerates the merged model
@@ -520,7 +523,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .dialects()
         .expect("re-decoded F3Z archive has a primary layer")
         .primary();
-    assert_eq!(primary.dialect.as_ref(), Some(&reported));
+    assert_eq!(&primary.dialect, &reported);
 }
 
 #[test]
@@ -660,13 +663,7 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .clone();
     let inspected_dialects = summary.dialects();
     assert_eq!(inspected.format, "f3d");
-    assert_eq!(
-        inspected
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("f3d:f3z-multi-document")
-    );
+    assert_eq!(inspected.dialect.as_str(), "f3d:f3z-multi-document");
     assert_eq!(
         inspected.declared["root_document_members"], "comp.f3d,root.f3d",
         "each root-level member is recorded as the archive spells it, sorted by path"
@@ -752,11 +749,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
         .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
         .any(|matched| {
             matched.format == crate::dialect::FORMAT
-                && matched
-                    .dialect
-                    .as_ref()
-                    .map(cadmpeg_core::dialect::DialectId::as_str)
-                    == Some("f3d:f3z-multi-document")
+                && matched.dialect.as_str() == "f3d:f3z-multi-document"
         }));
     assert!(
         decoded
@@ -765,12 +758,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
             .into_iter()
             .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
             .any(|matched| {
-                matched.format == "acis"
-                    && matched
-                        .dialect
-                        .as_ref()
-                        .map(cadmpeg_core::dialect::DialectId::as_str)
-                        == Some("acis:text-acis")
+                matched.format == "acis" && matched.dialect.as_str() == "acis:text-acis"
             }),
         "{:?}",
         decoded.report().dialects()
@@ -868,13 +856,7 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
         .clone();
     let inspected_dialects = summary.dialects();
     assert_eq!(inspected.format, "f3d");
-    assert_eq!(
-        inspected
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("f3d:manifest-3-2-0-0")
-    );
+    assert_eq!(inspected.dialect.as_str(), "f3d:manifest-3-2-0-0");
     assert_eq!(inspected.declared["top_level_manifest_version"], "3-2-0-0");
     assert_eq!(
         inspected.admission,

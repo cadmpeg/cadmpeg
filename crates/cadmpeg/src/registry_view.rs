@@ -124,7 +124,7 @@ mod tests {
 
         let dialects = DialectLayers::of(DialectMatch {
             format: "rhino".to_owned(),
-            dialect: Some(DialectId::pinned("rhino:archive-50")),
+            dialect: DialectId::pinned("rhino:archive-50"),
             declared: std::collections::BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,

@@ -277,9 +277,10 @@ fn classify(bytes: Vec<u8>) -> String {
     redecoded
         .report()
         .dialects()
-        .map(cadmpeg_core::dialect::DialectLayers::primary)
-        .and_then(|entry| entry.dialect.clone())
         .expect("the written part classifies a host dialect")
+        .primary()
+        .dialect
+        .clone()
         .to_string()
 }
 
@@ -295,7 +296,7 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
             .source
             .as_ref()
             .and_then(|meta| meta.dialect.as_ref())
-            .and_then(|matched| matched.dialect.as_ref())
+            .map(|matched| &matched.dialect)
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("sldprt:sw-version-12000-plus")
     );
@@ -331,7 +332,10 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "sldprt");
-    assert_eq!(requested.as_deref(), Some("sldprt:sw-version-12000-plus"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("sldprt:sw-version-12000-plus")
+    );
     assert!(available.contains("sldprt:unknown"), "{available}");
     let cadmpeg_core::CodecError::UnsupportedTarget { reason, .. } = &error else {
         unreachable!()
@@ -363,7 +367,10 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(requested.as_deref(), Some("sldprt:unknown"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("sldprt:unknown")
+    );
     assert!(
         reason.contains("sldprt:sw-version-12000-plus"),
         "the refusal must name what the write would have been: {reason}"
@@ -390,7 +397,10 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(requested.as_deref(), Some("step:ap242-e3"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("step:ap242-e3")
+    );
     assert!(available.contains("sldprt:unknown"), "{available}");
 }
 

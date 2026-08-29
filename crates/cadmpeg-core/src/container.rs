@@ -141,14 +141,14 @@ mod tests {
 
         let primary = DialectMatch {
             format: "rhino".into(),
-            dialect: Some(DialectId::pinned("rhino:archive-80")),
+            dialect: DialectId::pinned("rhino:archive-80"),
             declared: BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,
         };
         let extra = DialectMatch {
             format: "acis".into(),
-            dialect: Some(DialectId::pinned("acis:save-format-217")),
+            dialect: DialectId::pinned("acis:save-format-217"),
             declared: BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,

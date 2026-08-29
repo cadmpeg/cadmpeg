@@ -229,11 +229,7 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
             let matched = IgesDialect::classify(representation, &global);
             let context = format!("field 23 {:?} as {representation:?}", case.declaration);
 
-            assert_eq!(
-                matched.dialect.as_ref().map(DialectId::as_str),
-                Some(expected_id),
-                "{context}"
-            );
+            assert_eq!(matched.dialect.as_str(), expected_id, "{context}");
             assert_eq!(
                 matched.declared[DECLARED_VERSION_FLAG], case.declared_flag,
                 "{context}: the declaration is recorded as the source made it"
@@ -310,8 +306,8 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("iges:ansi-y14.26m-1981-fixed-ascii")
+        matched.dialect.as_str(),
+        "iges:ansi-y14.26m-1981-fixed-ascii"
     );
     assert_eq!(
         matched.admission,
@@ -345,10 +341,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     let decoded = decode(bytes.clone());
 
     let matched = only_match(decoded.report().dialects());
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("iges:unknown")
-    );
+    assert_eq!(matched.dialect.as_str(), "iges:unknown");
     assert_eq!(
         matched.admission,
         Admission::AdmittedUnverified {
@@ -377,10 +370,7 @@ fn a_verified_fixed_ascii_declaration_is_admitted_with_no_dialect_loss() {
     let decoded = decode(bytes);
 
     let matched = only_match(decoded.report().dialects());
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("iges:4.0-fixed-ascii")
-    );
+    assert_eq!(matched.dialect.as_str(), "iges:4.0-fixed-ascii");
     assert_eq!(matched.admission, Admission::Admitted);
     assert!(!charges_dialect_unverified(&decoded));
 }
@@ -398,9 +388,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
             Representation::Binary,
         ] {
             let matched = IgesDialect::classify(representation, &global);
-            if matched.dialect.as_ref().map(DialectId::as_str)
-                == Some(IgesDialect::Unknown.id().as_str())
-            {
+            if matched.dialect.as_str() == IgesDialect::Unknown.id().as_str() {
                 assert_ne!(
                     matched.admission,
                     Admission::Admitted,

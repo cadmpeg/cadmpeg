@@ -102,7 +102,7 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
         (StreamEvidence::Unknown, "sat:unknown"),
     ] {
         let (matched, _) = layers(&evidence);
-        assert_eq!(matched.dialect.as_ref().map(DialectId::as_str), Some(id));
+        assert_eq!(matched.dialect.as_str(), id);
         assert_eq!(matched.admission, Admission::Refused, "{id}");
     }
 }
@@ -113,10 +113,7 @@ fn the_totality_row_never_carries_an_admitted_admission() {
     // confidence for it and both entry points return a malformed error before
     // classification, so the pair (unknown, Admitted) must be unreachable.
     let matched = classify(&StreamEvidence::Unknown);
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("sat:unknown")
-    );
+    assert_eq!(matched.dialect.as_str(), "sat:unknown");
     assert_ne!(matched.admission, Admission::Admitted);
     assert!(matched.declared.is_empty());
 }
@@ -357,20 +354,10 @@ fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source
         assert_eq!(dialects.iter().count(), 2, "{}", case.label);
         let matched = dialects.primary();
         assert_eq!(matched.format, FORMAT, "{}", case.label);
-        assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(case.id),
-            "{}",
-            case.label
-        );
+        assert_eq!(matched.dialect.as_str(), case.id, "{}", case.label);
         let kernel = dialects.iter().nth(1).expect("SAT reports its ACIS layer");
         assert_eq!(kernel.format, "acis", "{}", case.label);
-        assert_eq!(
-            kernel.dialect.as_ref().map(DialectId::as_str),
-            Some(case.kernel_id),
-            "{}",
-            case.label
-        );
+        assert_eq!(kernel.dialect.as_str(), case.kernel_id, "{}", case.label);
 
         // Identity survives refusal: the empty-IR result carries the same row.
         let source = result.ir().source.as_ref().expect("source metadata");
