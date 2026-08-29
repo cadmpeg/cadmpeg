@@ -347,6 +347,7 @@ pub(crate) fn build_report(
         .expect("F3D summary is classified")
         .clone();
     losses.extend(kernel_layers.losses);
+    losses.extend(report_dialect_losses(&dialects));
     DecodeReport::classified(
         dialects,
         container_only,

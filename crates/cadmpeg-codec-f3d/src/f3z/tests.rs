@@ -694,7 +694,7 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .expect("the report is classified")
         .iter()
         .skip(1)
-        .all(|matched| matched.format() == "acis"));
+        .any(|matched| matched.format() == "f3d" && matched.instance() == Some("root.f3d")));
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect.as_ref(), Some(&inspected));
     let primary = decoded.report().dialects().unwrap().primary();
@@ -772,7 +772,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
 }
 
 #[test]
-fn f3z_decode_recomputes_losses_from_the_restated_layers() {
+fn f3z_decode_retains_member_identity_and_unverified_loss() {
     let root = f3d_with_smbh_and_manifest_version(&synthetic_smbh(), "9-9-9-9");
     let member = F3dCodec
         .decode(&mut Cursor::new(root.clone()), &DecodeOptions::default())
@@ -791,16 +791,38 @@ fn f3z_decode_recomputes_losses_from_the_restated_layers() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind()));
+        .any(|loss| loss.code == F3dLossCode::SourceDialectUnverified.kind()));
+    let member = decoded
+        .report()
+        .dialects()
+        .expect("the F3Z report is classified")
+        .iter()
+        .find(|matched| matched.format() == crate::dialect::FORMAT && matched.instance().is_some())
+        .expect("the member F3D identity is an extra layer");
+    assert_eq!(member.instance(), Some("root.f3d"));
+    assert_eq!(member.dialect().as_str(), "f3d:unknown");
 }
 
 #[test]
-fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
+fn f3z_xref_kernel_row_uses_member_path_and_preserves_bare_loss() {
     let stream = unverified_acis_text_member();
     let component = f3d_with_text_brep_stream(
         &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
         &stream,
     );
+    let bare = F3dCodec
+        .decode(
+            &mut Cursor::new(component.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let bare_loss = bare
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind())
+        .expect("the bare member charges its kernel loss")
+        .clone();
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
@@ -821,8 +843,7 @@ fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
         .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         .collect::<Vec<_>>();
     assert_eq!(kernel_layers.len(), 1);
-    let occurrence = format!("{XREF_ROLE}/occurrence-0");
-    assert_eq!(kernel_layers[0].instance(), Some(occurrence.as_str()));
+    assert_eq!(kernel_layers[0].instance(), Some("comp.f3d"));
     assert_eq!(
         kernel_layers[0].declared()["carrier"],
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat"
@@ -833,7 +854,7 @@ fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind())
         .expect("component kernel loss travels with its row");
-    assert!(loss.message.starts_with(&format!("xref {occurrence}: ")));
+    assert_eq!(loss, &bare_loss);
 }
 
 /// A single-document archive names its own row, not the F3Z one.
