@@ -44,18 +44,18 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 ## Encode
 
 ```rust,no_run
-use cadmpeg_codec_rhino::{RhinoArchiveVersion, RhinoEncoder};
-use cadmpeg_ir::codec::{EncodeInput, Encoder};
+use cadmpeg_codec_rhino::RhinoEncoder;
+use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::CadIr;
 use std::fs::File;
 
 fn write_3dm(ir: &CadIr, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut output = File::create(path)?;
-    RhinoEncoder::new(RhinoArchiveVersion::V7)
-        .plan(EncodeInput {
-            ir,
-            fidelity: None,
-        })?
+    RhinoEncoder::default()
+        .plan(
+            EncodeInput::new(ir, None),
+            TargetRequest::Explicit("rhino:archive-70"),
+        )?
         .write_to(&mut output)?;
     Ok(())
 }

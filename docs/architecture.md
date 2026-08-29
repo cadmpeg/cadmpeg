@@ -55,6 +55,8 @@ Export-side refusal is not owned by the `Encoder` trait. The conversion layer ow
 
 These hold across every codec, every dialect, and every release. A change that breaks one is a change to the architecture, not to a codec.
 
+**Every classified report has one primary layer.** `ContainerSummary` and `DecodeReport` store classified dialects as `DialectLayers`, whose constructor requires one primary layer and rejects an extra layer with the same format. `None` means the report is unclassified. The invariant is enforced at construction; report consumers read the primary through `DialectLayers::primary` and do not search a flat list or panic to repair an invalid shape.
+
 **Per-entity persistent identity.** Every entity carries a globally unique id under the entity-ID grammar, and that id is what `diff`, `query graph`, `query join`, and golden stability are built on. A dialect never appears in an id: classification refines, and an id that moved when the classifier improved would churn every diff and every golden against no collision that has ever been constructed.
 
 **The neutral IR is dialect-free.** `CadIr` holds no dialect, no version discriminant, and no branch on either. A dialect is a fact about a source document or about an output target, and it travels in `SourceMeta.dialect`, `ContainerSummary.dialects`, `DecodeReport.dialects`, and `ExportReport.target` — beside the IR, never inside it. `cadmpeg-core` carries the `DialectId` type and zero version branches.

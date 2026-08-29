@@ -46,6 +46,7 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 
 ```rust,no_run
 use cadmpeg_codec_f3d::F3dCodec;
+use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
 use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 use std::fs::File;
 
@@ -57,7 +58,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.f3d")?;
     F3dCodec
-        .plan(EncodeInput::new(&result.ir(), Some(&result.source_fidelity())))?
+        .plan(
+            EncodeInput::new(&result.ir(), Some(&result.source_fidelity())),
+            TargetRequest::Inherit,
+        )?
         .write_to(&mut output)?;
     Ok(())
 }

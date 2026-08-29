@@ -163,7 +163,7 @@ index 1111111..2222222 100644
 +[[change]]
 +commit = "0123456789abcdef0123456789abcdef01234567"
 +crate = "cadmpeg-core"
-+kind = "addition"
++kind = "deletion"
 +item = "cadmpeg_core::Widget"
 +reason = "test fixture"
 """
@@ -191,6 +191,14 @@ class StagedCouplingChecks(unittest.TestCase):
     def test_crate_outside_added_change_block_is_ignored(self) -> None:
         diff = REALISTIC_LEDGER_DIFF + "\n+[[metadata]]\n+crate = \"not-a-change\"\n"
         self.assertEqual(ledger.added_change_crates(diff), {"cadmpeg-core"})
+
+    def test_addition_row_does_not_require_ledger_snapshot_coupling(self) -> None:
+        addition = REALISTIC_LEDGER_DIFF.replace('kind = "deletion"', 'kind = "addition"')
+        self.assertEqual(ledger.added_change_crates(addition), set())
+        self.assertEqual(
+            ledger.check_staged_coupling(addition, {"docs/public-api-ledger.toml"}),
+            [],
+        )
 
 
 if __name__ == "__main__":
