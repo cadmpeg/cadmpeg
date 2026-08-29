@@ -7,34 +7,16 @@
 //! Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
 //! <!-- /generated: capability -->
 //!
-//! [`write_step`] emits the application protocol named in the call as a
-//! [`StepSchema`]. It writes product and representation context,
+//! [`StepCodec`] emits the application protocol selected through
+//! [`cadmpeg_ir::codec::Encoder::plan`]. It writes product and representation context,
 //! connected exact shape, product occurrences, tessellation, presentation,
 //! and PMI when the target schema carries those domains.
 //!
 //! # Export workflow
 //!
-//! Construct or decode a [`cadmpeg_ir::CadIr`], name the target [`StepSchema`],
-//! choose the header metadata in [`StepWriteOptions`], then write to any
-//! [`std::io::Write`] sink:
-//!
-//! ```
-//! use cadmpeg_ir::examples::unit_cube;
-//! use cadmpeg_codec_step::{write_step, StepSchema, StepWriteOptions};
-//!
-//! let ir = unit_cube();
-//! let mut bytes = Vec::new();
-//! let report = write_step(
-//!     &ir,
-//!     &mut bytes,
-//!     StepSchema::Ap242Edition3,
-//!     &StepWriteOptions::default(),
-//! )?;
-//!
-//! assert!(bytes.starts_with(b"ISO-10303-21;"));
-//! assert!(report.census.total() > 0);
-//! # Ok::<(), cadmpeg_codec_step::StepError>(())
-//! ```
+//! Construct or decode a [`cadmpeg_ir::CadIr`], configure [`StepCodec`], and
+//! select a target from the codec's encoder catalog. Planning validates the
+//! request and returns the bytes with the export report.
 //!
 //! Review [`cadmpeg_ir::ExportReport::losses`] before retaining output. Opaque
 //! records, source attributes, unsupported
@@ -75,7 +57,7 @@ pub mod fuzz;
 
 pub use codec::StepCodec;
 pub use error::StepError;
-pub use export::write_step;
+pub(crate) use export::write_step;
 pub use options::{StepSchema, StepWriteOptions};
 
 #[cfg(test)]

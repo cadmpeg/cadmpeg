@@ -1,4 +1,4 @@
-# generated at 0cb4ec82a
+# generated at d219d8e36
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepError
 pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
@@ -33,4 +33,3 @@ pub cadmpeg_codec_step::StepWriteOptions::product_name: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::timestamp: alloc::string::String
 impl core::default::Default for cadmpeg_codec_step::StepWriteOptions
 pub fn cadmpeg_codec_step::StepWriteOptions::default() -> Self
-pub fn cadmpeg_codec_step::write_step(&cadmpeg_ir::document::CadIr, &mut impl core::io::write::Write + ?core::marker::Sized, cadmpeg_codec_step::StepSchema, &cadmpeg_codec_step::StepWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_codec_step::StepError>

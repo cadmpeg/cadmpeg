@@ -74,7 +74,6 @@ names = [
     "StepCodec",
     "StepWriteOptions",
     "StepSchema",
-    "write_step",
     "StepError",
 ]
 fuzz = "required"
