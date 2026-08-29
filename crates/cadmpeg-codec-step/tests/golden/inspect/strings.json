@@ -38,6 +38,6 @@
   ],
   "format": "step",
   "notes": [
-    "schema AP214; edition unspecified"
+    "schema AP214; dialect step:unknown"
   ]
 }

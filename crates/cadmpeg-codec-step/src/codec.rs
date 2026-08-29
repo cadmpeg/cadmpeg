@@ -13,7 +13,7 @@ use cadmpeg_ir::FidelityResolution;
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
 use crate::export::write_step;
-use crate::options::{StepSchema, StepWriteOptions};
+use crate::options::StepWriteOptions;
 use crate::parse;
 use crate::reader;
 
@@ -240,21 +240,15 @@ impl CodecBackend for StepCodec {
         } else {
             identifiers.join(",")
         };
-        let edition = identifiers
-            .first()
-            .and_then(|identifier| StepSchema::ap242_edition(identifier))
-            .map_or("edition unspecified", |schema| match schema {
-                StepSchema::Ap242Edition1 => "edition 1",
-                StepSchema::Ap242Edition2 => "edition 2",
-                StepSchema::Ap242Edition3 => "edition 3",
-                StepSchema::Ap203Edition1 | StepSchema::Ap203Edition2 | StepSchema::Ap214 => {
-                    unreachable!("AP242 edition recognition returns an AP242 schema")
-                }
-            });
-        let mut notes = vec![format!("schema {schema}; {edition}")];
+        let matched = StepDialect::classify(&exchange);
+        let dialect = matched
+            .dialect
+            .as_ref()
+            .expect("STEP classification always names a dialect row");
+        let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         let dialects = Some(
-            cadmpeg_core::dialect::DialectLayers::new(StepDialect::classify(&exchange), Vec::new())
+            cadmpeg_core::dialect::DialectLayers::new(matched, Vec::new())
                 .expect("a primary layer without extras is valid"),
         );
         Ok(ContainerSummary {

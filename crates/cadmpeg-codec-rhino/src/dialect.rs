@@ -96,7 +96,7 @@ impl RhinoArchiveVersion {
 
 /// The archive version represented by a canonical catalog entry.
 pub(crate) fn target_version(target: &TargetDescriptor) -> Result<RhinoArchiveVersion, CodecError> {
-    [
+    Ok([
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
         RhinoArchiveVersion::V7,
@@ -104,9 +104,7 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> Result<RhinoArchiveVe
     ]
     .into_iter()
     .find(|version| version.target() == target.id)
-    .ok_or_else(|| {
-        CodecError::Malformed("Rhino target catalog does not map to an archive version".into())
-    })
+    .expect("Rhino TARGETS entries map to RhinoArchiveVersion"))
 }
 
 /// Key of the archive-version word in [`DialectMatch::declared`].

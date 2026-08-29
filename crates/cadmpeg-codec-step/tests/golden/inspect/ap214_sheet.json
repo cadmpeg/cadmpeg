@@ -34,6 +34,6 @@
   ],
   "format": "step",
   "notes": [
-    "schema AUTOMOTIVE_DESIGN; edition unspecified"
+    "schema AUTOMOTIVE_DESIGN; dialect step:ap214"
   ]
 }

@@ -85,12 +85,10 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[
 
 /// The write version represented by a canonical catalog entry.
 pub(crate) fn target_version(target: &TargetDescriptor) -> Result<IgesVersion, CodecError> {
-    IgesVersion::ALL
+    Ok(IgesVersion::ALL
         .into_iter()
         .find(|version| IgesDialect::fixed_ascii(*version).pinned() == target.id)
-        .ok_or_else(|| {
-            CodecError::Malformed("IGES target catalog does not map to a write version".into())
-        })
+        .expect("IGES TARGETS entries map to IgesVersion::ALL"))
 }
 
 /// The dialect-unverified loss required by a classified Global declaration.

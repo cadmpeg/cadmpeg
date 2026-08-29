@@ -1394,3 +1394,10 @@ crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::dialect::primary_layer"
 reason = "invariant-bearing report layers expose their primary directly, so the obsolete flat-vector lookup has no production caller"
+
+[[change]]
+commit = "0bb885f9f35d7d40af0eab7b03e11b392ac84969"
+crate = "cadmpeg-codec-step"
+kind = "deletion"
+item = "cadmpeg_codec_step::StepError::Unsupported"
+reason = "the STEP writer has no unsupported-content rejection path; it returns representable output and records reductions in `ExportReport::losses`"

@@ -109,17 +109,16 @@ In particular:
 - coedge pcurves emit their geometry; native-only pcurve metadata is not
   represented in STEP;
 - textures, shaders, source attributes, and retained opaque records report
-  losses or take the refusal path under Reject;
+  losses;
 - unsupported procedural definitions emit their solved carrier with a
-  machine-readable loss, or fail under Reject;
+  machine-readable loss;
 - signed sphere radii and nonstandard torus minor radii are normalized where
   required by the emitted STEP entity.
 
 An empty or fully unrepresentable model still produces a syntactically complete
-file with an empty geometric representation and a warning under Report policy.
-[`StepError`] covers [`StepError::Unsupported`] under Reject and
-[`StepError::Io`] from the output sink. Because output is streamed after the
-Reject gate, an I/O failure can leave a partial file.
+file with an empty geometric representation and a warning. [`StepError`] covers
+[`StepError::Io`] from the output sink. Because output is streamed, an I/O
+failure can leave a partial file.
 
 [`ExportReport::census`] groups DATA instances by entity keyword, and
 [`EntityCensus::total`] gives the complete DATA instance count.
@@ -152,7 +151,6 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [`StepCodec`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/struct.StepCodec.html
 [`StepError`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html
 [`StepError::Io`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html#variant.Io
-[`StepError::Unsupported`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html#variant.Unsupported
 [`StepSchema`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepSchema.html
 [`StepWriteOptions`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/struct.StepWriteOptions.html
 [`std::io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html

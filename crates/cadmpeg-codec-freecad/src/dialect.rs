@@ -77,9 +77,7 @@ pub(crate) fn target_options(target: &TargetDescriptor) -> Result<FcstdWriteOpti
             schema_version: 4,
             file_version: TARGET_FILE_VERSION,
         }),
-        _ => Err(CodecError::Malformed(
-            "FCStd target catalog does not map to write options".into(),
-        )),
+        _ => unreachable!("FreeCAD TARGETS entries map to FcstdWriteOptions"),
     }
 }
 

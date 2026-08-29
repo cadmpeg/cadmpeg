@@ -38,7 +38,7 @@
   ],
   "format": "step",
   "notes": [
-    "schema AUTOMOTIVE_DESIGN_CC2; edition unspecified",
+    "schema AUTOMOTIVE_DESIGN_CC2; dialect step:unknown",
     "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)"
   ]
 }
