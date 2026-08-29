@@ -1,11 +1,10 @@
-# generated at 0cb4ec82a
+# generated at 6f34c6453
 pub mod cadmpeg_codec_freecad
 pub enum cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Document
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Object(&'a str)
 pub struct cadmpeg_codec_freecad::FcstdCodec
 impl cadmpeg_codec_freecad::FcstdCodec
-pub fn cadmpeg_codec_freecad::FcstdCodec::encode_with_options(&self, &cadmpeg_ir::document::CadIr, &mut dyn core::io::write::Write, cadmpeg_codec_freecad::FcstdWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::replace_side_entry(&self, &mut cadmpeg_ir::document::CadIr, &str, alloc::vec::Vec<u8>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::set_property_value_attribute(&self, &mut cadmpeg_ir::document::CadIr, cadmpeg_codec_freecad::FcstdPropertyOwner<'_>, &str, usize, &str, impl core::convert::Into<alloc::string::String>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::set_property_value_text(&self, &mut cadmpeg_ir::document::CadIr, cadmpeg_codec_freecad::FcstdPropertyOwner<'_>, &str, usize, core::option::Option<alloc::string::String>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
@@ -33,9 +32,4 @@ pub fn cadmpeg_codec_freecad::FcstdPropertyValue::empty(impl core::convert::Into
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::text(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::with_attribute(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::with_child(self, Self) -> Self
-pub struct cadmpeg_codec_freecad::FcstdWriteOptions
-pub cadmpeg_codec_freecad::FcstdWriteOptions::file_version: u32
-pub cadmpeg_codec_freecad::FcstdWriteOptions::schema_version: u32
-impl core::default::Default for cadmpeg_codec_freecad::FcstdWriteOptions
-pub fn cadmpeg_codec_freecad::FcstdWriteOptions::default() -> Self
 pub fn cadmpeg_codec_freecad::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::Finding>

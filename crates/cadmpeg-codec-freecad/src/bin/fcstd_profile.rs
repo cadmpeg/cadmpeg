@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 use cadmpeg_codec_freecad::{
     validate_native, FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
-    FcstdWriteOptions,
 };
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 
@@ -757,13 +756,9 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         })
         .collect();
     let unsupported_target_rejected = FcstdCodec
-        .encode_with_options(
-            &ir,
-            &mut Vec::new(),
-            FcstdWriteOptions {
-                schema_version: 3,
-                file_version: 1,
-            },
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("fcstd:schema-3"),
         )
         .is_err();
     Ok(SourceLessWriteProfile {

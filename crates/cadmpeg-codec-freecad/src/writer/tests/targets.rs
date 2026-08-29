@@ -20,15 +20,12 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         )
         .expect("decode source");
     let unsupported = FcstdCodec
-        .encode_with_options(
-            decoded.ir(),
-            &mut Vec::new(),
-            crate::FcstdWriteOptions {
-                schema_version: 3,
-                file_version: 1,
-            },
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit("fcstd:schema-3"),
         )
-        .expect_err("unsupported target must fail");
+        .err()
+        .expect("unsupported target must fail");
     let CodecError::UnsupportedTarget {
         format, requested, ..
     } = &unsupported
@@ -39,27 +36,6 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     assert_eq!(
         requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
         Some("fcstd:schema-3")
-    );
-
-    // `FileVersion` is not part of a dialect id, so the catalog cannot
-    // refuse this one. The resolution's second half does, at the same
-    // layer and with the same typed refusal.
-    let wrong_file_version = FcstdCodec
-        .encode_with_options(
-            decoded.ir(),
-            &mut Vec::new(),
-            crate::FcstdWriteOptions {
-                schema_version: 4,
-                file_version: 2,
-            },
-        )
-        .expect_err("a FileVersion the retained graph does not carry must fail");
-    let CodecError::UnsupportedTarget { requested, .. } = &wrong_file_version else {
-        panic!("expected a target refusal, got {wrong_file_version}");
-    };
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("fcstd:schema-4")
     );
 
     // A document with no retained graph has nothing this writer can patch,
@@ -160,9 +136,7 @@ fn entry_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>>
 /// `Inherit` on a schema-4 source states schema 4 and writes every retained
 /// entry back byte for byte, `Document.xml` included.
 ///
-/// This is the catalog dialect, so the resolution and the old hardcoded
-/// `FcstdWriteOptions::default()` agree on what to write. What is new is
-/// that the report states it.
+/// This is the catalog dialect, and the report states it.
 #[test]
 fn inherit_preserves_a_schema_four_source_entry_for_entry() {
     let decoded = FcstdCodec
@@ -192,8 +166,8 @@ fn inherit_preserves_a_schema_four_source_entry_for_entry() {
 /// `fcstd:schema-2` is not in `targets()` and never will be — this writer
 /// regenerates no `Document.xml`. Preservation is the other capability, and
 /// it reaches every dialect the codec reads. Before the resolution existed,
-/// `plan` hardcoded `FcstdWriteOptions::default()` and this source was
-/// either rewritten as schema 4 or refused.
+/// `plan` once hardcoded schema 4, and this source was either rewritten as
+/// schema 4 or refused.
 #[test]
 fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
     let source = schema_two_archive();

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Target resolution: what an `FCStd` write is allowed to be.
 //!
-//! The one gate on this codec's write law. Every door into the writer —
-//! [`Encoder::plan`] and [`crate::FcstdCodec::encode_with_options`] — resolves
-//! here first, and [`super::write_seekable`] then carries out what a
+//! The one gate on this codec's write law. [`Encoder::plan`] resolves here, and
+//! [`super::write_seekable`] then carries out what a
 //! [`Resolution`] settled without re-deciding any of it.
 //!
 //! [`Encoder::plan`]: cadmpeg_ir::codec::Encoder::plan
@@ -17,7 +16,6 @@ use cadmpeg_ir::report::{ExportReport, FidelityResolution};
 use super::write;
 use crate::dialect;
 use crate::native::DocumentFacts;
-use crate::FcstdWriteOptions;
 
 /// What resolving a [`TargetRequest`] against the source decided.
 ///
@@ -63,35 +61,6 @@ pub(crate) fn plan<'a>(
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     let resolution = resolve(input.ir, request)?;
-    finish(input, &resolution)
-}
-
-/// Plan the write that [`crate::FcstdCodec::encode_with_options`] names.
-///
-/// The options name a persistence band, so they name a dialect, and that dialect
-/// goes through the one resolution gate like every other request. Two halves are
-/// checked, because a dialect id carries only one of them: [`resolve`] answers
-/// for the `SchemaVersion`, and the comparison below answers for the
-/// `FileVersion`, which no id can state. A caller that asks for a band the
-/// retained graph does not carry is refused by name, with the catalog, before
-/// any byte is written.
-pub(crate) fn plan_options(
-    input: EncodeInput<'_>,
-    options: FcstdWriteOptions,
-) -> Result<ExportPlan<'_>, CodecError> {
-    let target = dialect::written_dialect(options);
-    let resolution = resolve(input.ir, TargetRequest::Explicit(target.as_str()))?;
-    if resolution.schema_version != options.schema_version.to_string()
-        || resolution.file_version != options.file_version.to_string()
-    {
-        return Err(unsupported_target(
-            dialect::FORMAT,
-            target.as_str(),
-            "the retained FCStd document graph declares another FileVersion, and this writer \
-             regenerates no Document.xml, so it cannot be written",
-            dialect::TARGETS,
-        ));
-    }
     finish(input, &resolution)
 }
 
