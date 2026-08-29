@@ -3369,6 +3369,7 @@ impl<'a> DecodeContext<'a> {
             Ok(staged) => {
                 let links = staged.links.clone();
                 let warnings = staged.warnings.clone();
+                let typed_losses = staged.typed_losses.clone();
                 let full_topology = matches!(staged.kind, BrepTransferKind::FullTopology);
                 let emitted_geometry = !staged.draft.model().curves.is_empty()
                     || !staged.draft.model().surfaces.is_empty();
@@ -3387,13 +3388,9 @@ impl<'a> DecodeContext<'a> {
                     );
                 } else {
                     self.append_links(source_order, &links);
+                    self.typed_losses.extend(typed_losses);
                     for warning in warnings {
-                        if warning.starts_with(BODY_KIND_GAUGE_PREFIX) {
-                            self.typed_losses.push(
-                                RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(&warning),
-                            );
-                        } else if let Some(cause) = warning.strip_prefix("Brep topology fallback: ")
-                        {
+                        if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
                             self.typed_losses.push(
                                 RhinoLossCode::TopologyBrepFallback
                                     .note(format!("Brep topology fallback: {cause}")),
@@ -3788,6 +3785,7 @@ struct BrepDraft {
     draft: ModelDraft,
     links: Vec<String>,
     warnings: Vec<String>,
+    typed_losses: Vec<LossNote>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -4384,8 +4382,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         .map(|region| region.id.clone())
         .collect();
     let (body_kind, body_kind_substituted) = brep_body_kind(raw, writer_version);
-    if let Some(warning) = body_kind_substituted {
-        staged.warnings.push(warning);
+    if let Some(loss) = body_kind_substituted {
+        staged.typed_losses.push(loss);
     }
     staged.draft.model_mut().bodies.push(Body {
         id: body_id.clone(),
@@ -4606,7 +4604,7 @@ fn coedge_sense(reversed_3d: bool, edge_proxy_reversed: bool) -> Sense {
 fn brep_body_kind(
     raw: &crate::brep::RawBrep,
     writer_version: Option<i64>,
-) -> (BodyKind, Option<String>) {
+) -> (BodyKind, Option<LossNote>) {
     let closed = !raw.faces.is_empty()
         && raw.edges.iter().enumerate().all(|(edge, _)| {
             raw.trims
@@ -4619,18 +4617,15 @@ fn brep_body_kind(
     let substituted =
         body_kind_rests_on_missing_stamp(raw.minor, raw.is_solid, writer_version, closed).then(
             || {
-                format!(
-                    "{BODY_KIND_GAUGE_PREFIX}stored solid flag {} was trusted over the \
+                RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(format!(
+                    "Brep body kind gauge substituted: stored solid flag {} was trusted over the \
                      closed-shell gauge because the writer-version stamp is absent",
                     raw.is_solid.unwrap_or(-1)
-                )
+                ))
             },
         );
     (kind, substituted)
 }
-
-/// Prefix that promotes a staged Brep warning to the body-kind gauge loss.
-const BODY_KIND_GAUGE_PREFIX: &str = "Brep body kind gauge substituted: ";
 
 /// First openNURBS writer version whose `ON_Brep` stores a meaningful solid flag.
 const SOLID_FLAG_WRITER_VERSION: i64 = 200_210_020;

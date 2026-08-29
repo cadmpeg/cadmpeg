@@ -761,7 +761,7 @@ fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
     assert!(!body_kind_rests_on_missing_stamp(2, None, None, false));
     assert!(!body_kind_rests_on_missing_stamp(1, Some(1), None, false));
 
-    // The whole-record path reports the substitution as a promotable warning.
+    // The whole-record path reports the substitution as a typed loss.
     let mut raw = region_raw(Vec::new(), Vec::new());
     raw.minor = 2;
     raw.is_solid = Some(1);
@@ -778,11 +778,9 @@ fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
     }];
     let (kind, substituted) = brep_body_kind(&raw, None);
     assert_eq!(kind, BodyKind::Solid);
-    assert!(
-        substituted
-            .as_deref()
-            .is_some_and(|warning| warning.starts_with(BODY_KIND_GAUGE_PREFIX)),
-        "{substituted:?}"
+    assert_eq!(
+        substituted.as_ref().map(|loss| &loss.code),
+        Some(&RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
     );
     assert_eq!(brep_body_kind(&raw, Some(200_210_020)).1, None);
 }
