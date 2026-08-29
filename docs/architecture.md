@@ -91,12 +91,12 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-codec-f3d`      | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |
 | `cadmpeg-codec-inventor` | Inventor `.ipt`/`.iam` compound, RSe, part geometry, external occurrences, properties, appearances, and design-record decode.          |
 | `cadmpeg-codec-sldprt`   | SolidWorks `.sldprt` container, Parasolid B-rep, features, retained replay, and semantic writing.                                      |
-| `cadmpeg-codec-rhino`    | Rhino `.3dm` read and write for archive 50/60/70/80.                                                                                   |
+| `cadmpeg-codec-rhino`    | Rhino `.3dm` read for archives 1/2/3/4/5/50/60/70/80/90 and semantic write for archives 50/60/70/80.                                    |
 | `cadmpeg-codec-catia`    | CATIA V5 `.CATPart` layout inspection and carrier decode; conditional topology on the standard-nested band.                            |
 | `cadmpeg-codec-nx`       | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and conditional topology.                                                         |
 | `cadmpeg-codec-creo`     | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
 | `cadmpeg-codec-sat`      | Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` stream inspection and B-rep transfer outside any container.                                  |
-| `cadmpeg-codec-iges`     | IGES 4.0/5.0/5.1/5.2/5.3 Fixed ASCII read and bounded semantic write for the mechanical/document envelope.                             |
+| `cadmpeg-codec-iges`     | IGES Fixed ASCII read for versions 1.0 through 5.3, Compressed ASCII and Binary read for versions 4.0 through 5.3, and bounded Fixed ASCII semantic write. |
 | `cadmpeg-codec-step`     | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
 | `cadmpeg-fuzz`           | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
