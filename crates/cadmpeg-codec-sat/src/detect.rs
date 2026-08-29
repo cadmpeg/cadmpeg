@@ -187,7 +187,10 @@ pub(crate) fn inspect(
             ))
         }
     };
-    let dialects = vec![matched, kernel];
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
+            .expect("the ACIS kernel layer differs from the SAT primary"),
+    );
     Ok(ContainerSummary {
         dialects,
         format: FORMAT.to_string(),

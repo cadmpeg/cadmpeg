@@ -527,7 +527,10 @@ fn charge_line(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
     ctx.map_or(Ok(()), |ctx| ctx.charge_collection_items(1, "iges_cards"))
 }
 
-pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
+pub(crate) fn summarize(
+    scan: &CardScan<'_>,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> ContainerSummary {
     let sections = [
         Section::Start,
         Section::Global,
@@ -599,7 +602,10 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
         });
     }
     ContainerSummary {
-        dialects: Vec::new(),
+        dialects: Some(
+            cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
+                .expect("a primary layer without extras is valid"),
+        ),
         format: "iges".into(),
         container_kind: "fixed-ascii".into(),
         entries,

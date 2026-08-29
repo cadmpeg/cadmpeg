@@ -1114,7 +1114,10 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             .iter()
             .map(|diagnostic| diagnostic.message.clone()),
     );
-    let dialects = vec![dialect_match(scan)];
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(dialect_match(scan), Vec::new())
+            .expect("a primary layer without extras is valid"),
+    );
     ContainerSummary {
         dialects,
         format: crate::dialect::FORMAT.to_string(),
@@ -1185,10 +1188,11 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
                 tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
             })
     }));
-    let dialects = vec![dialect_match(scan)];
-    losses.extend(
-        cadmpeg_core::dialect::primary_layer(&dialects, crate::dialect::FORMAT)
-            .and_then(crate::dialect::admission_loss),
+    let primary = dialect_match(scan);
+    losses.extend(crate::dialect::admission_loss(&primary));
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
+            .expect("a primary layer without extras is valid"),
     );
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
@@ -1219,7 +1223,13 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     if header_only(header.archive_version) {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
-        let dialects = vec![header.archive_version.classify(None)];
+        let dialects = Some(
+            cadmpeg_core::dialect::DialectLayers::new(
+                header.archive_version.classify(None),
+                Vec::new(),
+            )
+            .expect("a primary layer without extras is valid"),
+        );
         return Ok(ContainerSummary {
             dialects,
             format: crate::dialect::FORMAT.to_string(),

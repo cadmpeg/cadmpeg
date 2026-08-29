@@ -23,9 +23,12 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
     );
     assert_valid(&result);
 
-    let [matched] = result.report().dialects.as_slice() else {
-        panic!("exactly one layer classifies a 3DM archive");
-    };
+    let matched = result
+        .report()
+        .dialects
+        .as_ref()
+        .expect("Rhino decode reports dialect layers")
+        .primary();
     assert_eq!(
         matched
             .dialect

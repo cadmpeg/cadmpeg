@@ -4,12 +4,12 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use cadmpeg_core::dialect::{DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::provenance::SourceProvenance;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Severity of a loss note or validation finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -636,7 +636,7 @@ impl LossNote {
 }
 
 /// Transfer status and loss details from a successful decode.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeReport {
     /// Source format id.
@@ -658,16 +658,87 @@ pub struct DecodeReport {
     pub transfer_ledger: TransferLedger,
     /// Dialect identification, one entry per format layer the decode read.
     ///
-    /// Empty only when the decode identified no layer at all. Once populated,
-    /// exactly one entry's `format` equals [`Self::format`]: that entry is the
-    /// primary layer, and it is the one mirrored into
+    /// When classified, the primary layer is mirrored into
     /// [`crate::document::SourceMeta::dialect`]. [`crate::codec::DecodeResult::new`]
-    /// enforces the invariant at the decode boundary.
+    /// performs that projection.
     ///
     /// Always serialized. Reports written before the field existed omit the key
-    /// and read back empty.
+    /// and read back as unclassified.
+    #[serde(default, serialize_with = "serialize_dialect_layers")]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<DialectMatch>"))]
+    pub dialects: Option<DialectLayers>,
+}
+
+// Serde's `serialize_with` callback receives a reference to the field.
+#[allow(clippy::ref_option)]
+fn serialize_dialect_layers<S: Serializer>(
+    layers: &Option<DialectLayers>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match layers {
+        Some(layers) => layers.serialize(serializer),
+        None => serializer.collect_seq(std::iter::empty::<&DialectMatch>()),
+    }
+}
+
+#[derive(Deserialize)]
+struct DecodeReportWire {
+    format: String,
+    container_only: bool,
+    geometry_transferred: bool,
     #[serde(default)]
-    pub dialects: Vec<DialectMatch>,
+    coverage: BTreeMap<String, usize>,
+    losses: Vec<LossNote>,
+    notes: Vec<String>,
+    #[serde(default)]
+    transfer_ledger: TransferLedger,
+    #[serde(default, rename = "dialects")]
+    flat_dialects: Vec<DialectMatch>,
+}
+
+impl<'de> Deserialize<'de> for DecodeReport {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut wire = DecodeReportWire::deserialize(deserializer)?;
+        let dialects = split_dialect_layers(&wire.format, &mut wire.flat_dialects)
+            .map_err(D::Error::custom)?;
+        Ok(Self {
+            format: wire.format,
+            container_only: wire.container_only,
+            geometry_transferred: wire.geometry_transferred,
+            coverage: wire.coverage,
+            losses: wire.losses,
+            notes: wire.notes,
+            transfer_ledger: wire.transfer_ledger,
+            dialects,
+        })
+    }
+}
+
+fn split_dialect_layers(
+    format: &str,
+    layers: &mut Vec<DialectMatch>,
+) -> Result<Option<DialectLayers>, String> {
+    if layers.is_empty() {
+        return Ok(None);
+    }
+    let mut primary = layers
+        .iter()
+        .enumerate()
+        .filter(|(_, layer)| layer.format == format);
+    let Some((primary_index, _)) = primary.next() else {
+        return Err(format!(
+            "populated dialects for format {format:?} contain no primary layer"
+        ));
+    };
+    if primary.next().is_some() {
+        return Err(format!(
+            "populated dialects for format {format:?} contain multiple primary layers"
+        ));
+    }
+    let primary = layers.remove(primary_index);
+    DialectLayers::new(primary, std::mem::take(layers))
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 /// Final disposition of one source record or semantic object.

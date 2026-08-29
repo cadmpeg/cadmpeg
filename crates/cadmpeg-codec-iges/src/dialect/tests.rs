@@ -265,10 +265,13 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
 
 /// The one dialect match of a report. The primary-layer invariant makes it the
 /// primary layer, so no consumer here indexes by position for any other reason.
-fn only_match(dialects: &[DialectMatch]) -> &DialectMatch {
-    assert_eq!(dialects.len(), 1, "{dialects:#?}");
-    assert_eq!(dialects[0].format, "iges");
-    &dialects[0]
+fn only_match(
+    dialects: Option<&cadmpeg_core::dialect::DialectLayers>,
+) -> &cadmpeg_core::dialect::DialectMatch {
+    let layers = dialects.expect("IGES reports dialect layers");
+    assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
+    assert_eq!(layers.primary().format, "iges");
+    layers.primary()
 }
 
 /// A 26-field Global record carrying `version_flag` in field 23.
@@ -305,7 +308,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
     let bytes = point_file_with_global(&global_with_version_flag("2"));
     let decoded = decode(bytes.clone());
 
-    let matched = only_match(&decoded.report().dialects);
+    let matched = only_match(decoded.report().dialects.as_ref());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:ansi-y14.26m-1981-fixed-ascii")
@@ -330,7 +333,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(&summary.dialects), matched);
+    assert_eq!(only_match(summary.dialects.as_ref()), matched);
 }
 
 #[test]
@@ -342,7 +345,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     let bytes = point_file_with_global(&global_with_version_flag("99"));
     let decoded = decode(bytes.clone());
 
-    let matched = only_match(&decoded.report().dialects);
+    let matched = only_match(decoded.report().dialects.as_ref());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:unknown")
@@ -363,7 +366,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(&summary.dialects), matched);
+    assert_eq!(only_match(summary.dialects.as_ref()), matched);
 }
 
 #[test]
@@ -374,7 +377,7 @@ fn a_verified_fixed_ascii_declaration_is_admitted_with_no_dialect_loss() {
     let bytes = point_file_with_global(&global_with_version_flag("6"));
     let decoded = decode(bytes);
 
-    let matched = only_match(&decoded.report().dialects);
+    let matched = only_match(decoded.report().dialects.as_ref());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:4.0-fixed-ascii")

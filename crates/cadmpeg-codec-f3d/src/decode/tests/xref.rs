@@ -7,7 +7,7 @@ use crate::loss::F3dLossCode;
 #[test]
 fn superseded_xref_placements_have_a_distinct_loss_note() {
     let mut report = cadmpeg_ir::report::DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "f3d".into(),
         container_only: false,
         geometry_transferred: true,

@@ -6,7 +6,7 @@ use super::super::feature_definition_is_incomplete;
 #[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::report::DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "f3d".into(),
         container_only: false,
         geometry_transferred: true,

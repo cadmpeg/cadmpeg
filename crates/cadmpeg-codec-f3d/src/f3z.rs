@@ -12,7 +12,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_value::Value;
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
@@ -97,8 +97,15 @@ pub fn decode(
         ))
     })?;
     let (ir, mut report, mut fidelity) = crate::decode::decode(ctx, root_view)?.into_parts();
-    remove_primary_layer(&mut report.dialects, &report.format);
-    report.dialects.insert(0, scan.dialect.clone());
+    let (_, extra) = report
+        .dialects
+        .take()
+        .expect("an F3D member decode reports its primary layer")
+        .into_parts();
+    report.dialects = Some(
+        DialectLayers::new(scan.dialect.clone(), extra)
+            .expect("F3D member extras use formats other than the F3Z primary"),
+    );
     report
         .losses
         .retain(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind());
@@ -154,16 +161,6 @@ pub fn decode(
     Ok(finalize_result(ir, report, fidelity))
 }
 
-fn remove_primary_layer(dialects: &mut Vec<DialectMatch>, format: &str) {
-    let primary = cadmpeg_core::dialect::primary_layer(dialects, format)
-        .expect("an F3D member decode must report its primary layer");
-    let index = dialects
-        .iter()
-        .position(|matched| std::ptr::eq(matched, primary))
-        .expect("the primary layer is borrowed from the report");
-    dialects.remove(index);
-}
-
 fn finalize_result(
     ir: cadmpeg_ir::CadIr,
     report: cadmpeg_ir::DecodeReport,
@@ -183,18 +180,27 @@ fn finalize_result(
 /// Attach a merged component's non-primary layers to the same occurrence
 /// prefix as its losses. The component's primary row is document-local.
 fn merge_component_layers(
-    target: &mut Vec<DialectMatch>,
-    mut component: Vec<DialectMatch>,
-    component_format: &str,
+    target: &mut Option<DialectLayers>,
+    component: Option<DialectLayers>,
     occurrence: &str,
 ) {
-    remove_primary_layer(&mut component, component_format);
-    for mut matched in component {
+    let (primary, mut extra) = target
+        .take()
+        .expect("the parent F3Z report is classified")
+        .into_parts();
+    let (_, component_extra) = component
+        .expect("an F3D component report is classified")
+        .into_parts();
+    for mut matched in component_extra {
         if let Some(carrier) = matched.declared.get_mut("carrier") {
             *carrier = format!("xref {occurrence}: {carrier}");
         }
-        target.push(matched);
+        extra.push(matched);
     }
+    *target = Some(
+        DialectLayers::new(primary, extra)
+            .expect("merged F3D component extras cannot repeat the F3Z primary"),
+    );
 }
 
 fn model_root_member(
@@ -387,7 +393,6 @@ fn merge_references(
         merge_component_layers(
             &mut parent_report.dialects,
             component_report.dialects,
-            &component_report.format,
             &occurrence,
         );
         for mut loss in component_report.losses {

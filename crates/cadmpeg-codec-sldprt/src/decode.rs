@@ -3347,7 +3347,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let dialects = report_dialects(scan);
     append_dialect_losses(&dialects, &mut losses);
     DecodeReport {
-        dialects,
+        dialects: Some(dialects),
         format: crate::dialect::FORMAT.to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -4618,9 +4618,12 @@ fn preserve_source_image(
 /// `.sldprt` embeds Parasolid, but no crate owns or emits the `parasolid:`
 /// namespace. This host records the schema token as an attribute instead of a
 /// kernel-layer dialect match, so the primary layer is the whole list.
-fn report_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMatch> {
-    let dialects = vec![crate::dialect::SldprtDialect::classify_scan(scan)];
-    dialects
+fn report_dialects(scan: &ContainerScan) -> cadmpeg_core::dialect::DialectLayers {
+    cadmpeg_core::dialect::DialectLayers::new(
+        crate::dialect::SldprtDialect::classify_scan(scan),
+        Vec::new(),
+    )
+    .expect("a primary layer without extras is valid")
 }
 
 /// Appends the dialect-unverified loss the primary layer's admission charges.
@@ -4628,11 +4631,10 @@ fn report_dialects(scan: &ContainerScan) -> Vec<cadmpeg_core::dialect::DialectMa
 /// Takes the same `dialects` the report carries, so the note and the reported
 /// admission cannot describe different classifications.
 fn append_dialect_losses(
-    dialects: &[cadmpeg_core::dialect::DialectMatch],
+    dialects: &cadmpeg_core::dialect::DialectLayers,
     losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) {
-    let primary = cadmpeg_core::dialect::primary_layer(dialects, crate::dialect::FORMAT);
-    losses.extend(primary.and_then(crate::dialect::dialect_loss));
+    losses.extend(crate::dialect::dialect_loss(dialects.primary()));
 }
 
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
@@ -4679,7 +4681,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     append_dialect_losses(&dialects, &mut losses);
 
     DecodeReport {
-        dialects,
+        dialects: Some(dialects),
         format: crate::dialect::FORMAT.to_string(),
         container_only,
         geometry_transferred: false,

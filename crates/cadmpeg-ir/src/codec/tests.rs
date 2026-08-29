@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
@@ -100,7 +100,7 @@ fn decode_result(ir: CadIr) -> DecodeResult {
     DecodeResult::new(
         ir,
         DecodeReport {
-            dialects: Vec::new(),
+            dialects: None,
             format: "test".into(),
             container_only: false,
             geometry_transferred: true,
@@ -251,18 +251,18 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
     );
 }
 
-/// The primary layer needs no marker field: exactly one entry names the
-/// report's own format, and `DecodeResult::new` is the construction path that
-/// says so.
 #[test]
 fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     let mut ir = unit_cube();
     ir.source = None;
     let mut report = DecodeReport {
-        dialects: vec![
-            dialect_layer("test", "test:only"),
-            dialect_layer("acis", "acis:save-format-217"),
-        ],
+        dialects: Some(
+            DialectLayers::new(
+                dialect_layer("test", "test:only"),
+                vec![dialect_layer("acis", "acis:save-format-217")],
+            )
+            .unwrap(),
+        ),
         format: "test".into(),
         container_only: false,
         geometry_transferred: true,
@@ -273,12 +273,11 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     };
     let result = DecodeResult::new(ir.clone(), report.clone(), SourceFidelity::default());
 
-    assert_eq!(result.report().dialects.len(), 2);
+    assert_eq!(result.report().dialects.as_ref().unwrap().iter().count(), 2);
 
-    // An empty list is the staged state and stays admissible.
-    report.dialects.clear();
-    let staged = DecodeResult::new(ir, report, SourceFidelity::default());
-    assert!(staged.report().dialects.is_empty());
+    report.dialects = None;
+    let unclassified = DecodeResult::new(ir, report, SourceFidelity::default());
+    assert!(unclassified.report().dialects.is_none());
 }
 
 #[test]
@@ -293,7 +292,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     let mut primary = dialect_layer("test", "test:only");
     primary.declared = BTreeMap::from([("version".into(), "only".into())]);
     let report = DecodeReport {
-        dialects: vec![primary.clone()],
+        dialects: Some(DialectLayers::new(primary.clone(), Vec::new()).unwrap()),
         format: "test".into(),
         container_only: false,
         geometry_transferred: true,
@@ -311,107 +310,6 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         .expect("source metadata remains");
     assert_eq!(source.dialect, primary.dialect);
     assert_eq!(source.declared, primary.declared);
-}
-
-#[test]
-#[should_panic(expected = "primary-layer invariant failed")]
-fn a_decode_result_refuses_dialects_with_no_primary_layer() {
-    let report = DecodeReport {
-        dialects: vec![dialect_layer("acis", "acis:save-format-217")],
-        format: "test".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-        transfer_ledger: TransferLedger::default(),
-    };
-
-    DecodeResult::new(unit_cube(), report, SourceFidelity::default());
-}
-
-#[test]
-#[should_panic(expected = "primary-layer invariant failed")]
-fn a_decode_result_refuses_dialects_with_multiple_primary_layers() {
-    let report = DecodeReport {
-        dialects: vec![
-            dialect_layer("test", "test:first"),
-            dialect_layer("test", "test:second"),
-        ],
-        format: "test".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-        transfer_ledger: TransferLedger::default(),
-    };
-
-    DecodeResult::new(unit_cube(), report, SourceFidelity::default());
-}
-
-/// A backend whose `inspect_impl` returns whatever dialect list the test hands
-/// it, so the wrapper's gate is what the assertion is about.
-struct InspectDialectsCodec(Vec<DialectMatch>);
-
-impl CodecBackend for InspectDialectsCodec {
-    fn id(&self) -> &'static str {
-        "inspect-dialects"
-    }
-
-    fn detect(&self, _prefix: &[u8]) -> Confidence {
-        Confidence::No
-    }
-
-    fn inspect_impl(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _root: View<'_>,
-    ) -> Result<ContainerSummary, CodecError> {
-        Ok(ContainerSummary {
-            format: "test".into(),
-            container_kind: "flat".into(),
-            entries: Vec::new(),
-            notes: Vec::new(),
-            dialects: self.0.clone(),
-        })
-    }
-
-    fn decode_impl(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
-        panic!("the inspect gate tests do not decode")
-    }
-}
-
-fn inspect_dialects(dialects: Vec<DialectMatch>) -> Result<ContainerSummary, CodecError> {
-    InspectDialectsCodec(dialects).inspect(
-        &mut Cursor::new(vec![1u8, 2, 3, 4]),
-        &cadmpeg_core::decode::InspectOptions::default(),
-    )
-}
-
-/// `Codec::inspect` is the one wrapper every backend's summary passes through,
-/// so it is where the primary-layer invariant is checked.
-#[test]
-fn inspect_accepts_a_summary_with_one_primary_layer() {
-    let staged = inspect_dialects(Vec::new()).unwrap();
-    assert!(staged.dialects.is_empty());
-
-    let classified = inspect_dialects(vec![
-        dialect_layer("test", "test:only"),
-        dialect_layer("acis", "acis:save-format-217"),
-    ])
-    .unwrap();
-    assert_eq!(classified.dialects.len(), 2);
-}
-
-#[test]
-#[should_panic(expected = "primary-layer invariant failed")]
-fn inspect_refuses_a_summary_with_no_primary_layer() {
-    let _ = inspect_dialects(vec![dialect_layer("acis", "acis:save-format-217")]);
 }
 
 fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {

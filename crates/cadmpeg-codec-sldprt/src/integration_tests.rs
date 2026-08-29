@@ -274,7 +274,11 @@ fn named_target(plan: &cadmpeg_ir::codec::ExportPlan<'_>) -> String {
 
 fn classify(bytes: Vec<u8>) -> String {
     let redecoded = decode(bytes);
-    cadmpeg_core::dialect::primary_layer(&redecoded.report().dialects, &redecoded.report().format)
+    redecoded
+        .report()
+        .dialects
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectLayers::primary)
         .and_then(|entry| entry.dialect.clone())
         .expect("the written part classifies a host dialect")
         .to_string()

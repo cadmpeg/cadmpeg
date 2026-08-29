@@ -10,7 +10,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::{primary_layer, Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{decode, legacy_cfb_with_ug_part};
@@ -18,9 +18,14 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 /// The one match naming the reporting format, and the assertion that it is one.
-fn primary(dialects: &[DialectMatch]) -> &DialectMatch {
-    assert_eq!(dialects.len(), 1, "NX reports exactly the primary layer");
-    primary_layer(dialects, "nx").expect("exactly one entry names the reporting format")
+fn primary(dialects: Option<&DialectLayers>) -> &DialectMatch {
+    let layers = dialects.expect("NX reports dialect layers");
+    assert_eq!(
+        layers.iter().count(),
+        1,
+        "NX reports exactly the primary layer"
+    );
+    layers.primary()
 }
 
 fn inspect(bytes: Vec<u8>) -> cadmpeg_core::ContainerSummary {
@@ -32,7 +37,7 @@ fn inspect(bytes: Vec<u8>) -> cadmpeg_core::ContainerSummary {
 #[test]
 fn the_modern_container_reports_the_splmsstr_row_at_inspect_and_decode() {
     let summary = inspect(prt_with_indexed_om_section());
-    let matched = primary(&summary.dialects);
+    let matched = primary(summary.dialects.as_ref());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("nx:splmsstr")
@@ -45,13 +50,13 @@ fn the_modern_container_reports_the_splmsstr_row_at_inspect_and_decode() {
     assert_eq!(summary.container_kind, "splmsstr");
 
     let result = decode(prt_with_indexed_om_section());
-    assert_eq!(primary(&result.report().dialects), matched);
+    assert_eq!(primary(result.report().dialects.as_ref()), matched);
 }
 
 #[test]
 fn the_legacy_container_reports_the_cfb_row_at_inspect_and_decode() {
     let summary = inspect(legacy_cfb_with_ug_part());
-    let matched = primary(&summary.dialects);
+    let matched = primary(summary.dialects.as_ref());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("nx:legacy-cfb")
@@ -62,7 +67,7 @@ fn the_legacy_container_reports_the_cfb_row_at_inspect_and_decode() {
     assert_eq!(summary.container_kind, "cfb");
 
     let result = decode(legacy_cfb_with_ug_part());
-    assert_eq!(primary(&result.report().dialects), matched);
+    assert_eq!(primary(result.report().dialects.as_ref()), matched);
 }
 
 #[test]
@@ -78,7 +83,7 @@ fn source_meta_mirrors_the_primary_layer_on_every_decode_path() {
             let result = NxCodec
                 .decode(&mut Cursor::new(bytes.clone()), &options)
                 .expect("synthesized NX part should decode");
-            let matched = primary(&result.report().dialects).clone();
+            let matched = primary(result.report().dialects.as_ref()).clone();
             let source = result
                 .ir()
                 .source

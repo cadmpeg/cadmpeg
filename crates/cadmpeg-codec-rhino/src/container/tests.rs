@@ -237,7 +237,12 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
         .expect("archive word 5 uses the chunked scan");
     assert!(!summary.entries.is_empty());
     assert_eq!(
-        summary.dialects[0].admission,
+        summary
+            .dialects
+            .as_ref()
+            .expect("Rhino inspection reports dialect layers")
+            .primary()
+            .admission,
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50")
         }
@@ -254,7 +259,13 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
         .expect("archive word 5 reaches chunked container decode");
     assert!(decoded.report().container_only);
     assert_eq!(
-        decoded.report().dialects[0].admission,
+        decoded
+            .report()
+            .dialects
+            .as_ref()
+            .expect("Rhino decode reports dialect layers")
+            .primary()
+            .admission,
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50")
         }
@@ -291,9 +302,11 @@ fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
         !summary.entries.is_empty(),
         "the scan reached the table sequence"
     );
-    let [matched] = summary.dialects.as_slice() else {
-        panic!("exactly one layer classifies a 3DM archive");
-    };
+    let matched = summary
+        .dialects
+        .as_ref()
+        .expect("Rhino inspection reports dialect layers")
+        .primary();
     assert_eq!(
         matched.admission,
         cadmpeg_core::dialect::Admission::AdmittedUnverified {

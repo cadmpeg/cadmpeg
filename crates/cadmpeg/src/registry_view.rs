@@ -78,15 +78,12 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
 /// disposition, and the write targets this build can synthesize. `None` when
 /// the codec reported no dialects at all, which is the honest output for a
 /// codec that does not classify.
-pub fn dialect_line(
-    dialects: &[cadmpeg_core::dialect::DialectMatch],
-    format: &str,
-) -> Option<String> {
+pub fn dialect_line(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) -> Option<String> {
     let DialectProvenance {
         id,
         read,
         write_targets,
-    } = dialect_provenance(dialects, format)?;
+    } = dialect_provenance(dialects)?;
     let id = id.map_or_else(|| "<unmatched>".to_owned(), |id| id.as_str().to_owned());
 
     let mut clauses = Vec::new();
@@ -123,15 +120,19 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn the_provenance_line_joins_the_match_the_registry_and_the_catalog() {
-        use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+        use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 
-        let dialects = vec![DialectMatch {
-            format: "rhino".to_owned(),
-            dialect: Some(DialectId::pinned("rhino:archive-50")),
-            declared: std::collections::BTreeMap::new(),
-            admission: Admission::Admitted,
-        }];
-        let line = dialect_line(&dialects, "rhino").expect("a primary layer exists");
+        let dialects = DialectLayers::new(
+            DialectMatch {
+                format: "rhino".to_owned(),
+                dialect: Some(DialectId::pinned("rhino:archive-50")),
+                declared: std::collections::BTreeMap::new(),
+                admission: Admission::Admitted,
+            },
+            Vec::new(),
+        )
+        .expect("a primary layer without extras is valid");
+        let line = dialect_line(Some(&dialects)).expect("a primary layer exists");
         assert!(line.starts_with("dialect: rhino:archive-50 — "), "{line}");
         assert!(line.contains("read "), "{line}");
         assert!(line.contains("write targets archive-50"), "{line}");
@@ -141,6 +142,6 @@ mod tests {
     /// A codec that classified nothing prints no dialect line.
     #[test]
     fn no_dialects_is_no_line() {
-        assert!(dialect_line(&[], "rhino").is_none());
+        assert!(dialect_line(None).is_none());
     }
 }

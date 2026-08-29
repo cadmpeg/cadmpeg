@@ -122,7 +122,13 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
         notes.push(format!("ProgramVersion={version}"));
     }
     ContainerSummary {
-        dialects: vec![FcstdDialect::classify(&scan.document, scan.schema)],
+        dialects: Some(
+            cadmpeg_core::dialect::DialectLayers::new(
+                FcstdDialect::classify(&scan.document, scan.schema),
+                Vec::new(),
+            )
+            .expect("a primary layer without extras is valid"),
+        ),
         format: crate::dialect::FORMAT.into(),
         container_kind: "zip".into(),
         entries: scan.entries.clone(),

@@ -62,7 +62,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
             native_ref: None,
         });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -104,7 +104,7 @@ fn typed_native_operands_are_reported_as_design_losses() {
         native_ref: None,
     });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,

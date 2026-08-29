@@ -6,7 +6,6 @@ use std::io::SeekFrom;
 use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_core::container::ContainerSummary;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::primary_layer;
 use cadmpeg_core::ReadSeek;
 use cadmpeg_ir::codec::Confidence;
 
@@ -143,7 +142,10 @@ pub fn identify_with(
             Inspection::Skipped
         };
         let disposition = match &inspection {
-            Inspection::Classified(summary) => primary_layer(&summary.dialects, &summary.format)
+            Inspection::Classified(summary) => summary
+                .dialects
+                .as_ref()
+                .map(cadmpeg_core::dialect::DialectLayers::primary)
                 .and_then(|entry| entry.dialect.as_ref())
                 .and_then(support),
             Inspection::Failed(_) | Inspection::Skipped => None,
@@ -425,7 +427,10 @@ mod tests {
                 let summary = summary(winner)
                     .unwrap_or_else(|| panic!("{}: inspection did not classify", case.format));
                 assert_eq!(
-                    primary_layer(&summary.dialects, &summary.format)
+                    summary
+                        .dialects
+                        .as_ref()
+                        .map(cadmpeg_core::dialect::DialectLayers::primary)
                         .and_then(|entry| entry.dialect.as_ref())
                         .map(DialectId::as_str),
                     Some(case.dialect),

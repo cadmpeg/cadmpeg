@@ -1,4 +1,4 @@
-# generated at 5ab799ccb
+# generated at c7dba3472
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -362,7 +362,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::UnknownFormat
 pub const cadmpeg_registry::DETECTION_PREFIX_LEN: usize
 pub const cadmpeg_registry::INSPECTION_FLOOR: cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::write::Encoder>
-pub fn cadmpeg_registry::dialect_provenance(&[cadmpeg_core::dialect::DialectMatch], &str) -> core::option::Option<cadmpeg_registry::DialectProvenance>
+pub fn cadmpeg_registry::dialect_provenance(core::option::Option<&cadmpeg_core::dialect::DialectLayers>) -> core::option::Option<cadmpeg_registry::DialectProvenance>
 pub fn cadmpeg_registry::dialect_table(core::option::Option<&str>) -> core::result::Result<alloc::vec::Vec<cadmpeg_registry::FormatDialects>, cadmpeg_registry::UnknownFormat>
 pub fn cadmpeg_registry::dialects(&str) -> alloc::vec::Vec<&'static cadmpeg_registry::DialectEntry>
 pub fn cadmpeg_registry::format_rows(&cadmpeg_registry::InputCatalog) -> alloc::vec::Vec<cadmpeg_registry::FormatRow>

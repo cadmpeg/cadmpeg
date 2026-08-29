@@ -159,6 +159,8 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     let kernel = decoded
         .report()
         .dialects
+        .as_ref()
+        .expect("the report is classified")
         .iter()
         .find(|matched| matched.format == "acis")
         .expect("text carrier has a shared kernel identity");
@@ -260,6 +262,8 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
     let kernel_layers = decoded
         .report()
         .dialects
+        .as_ref()
+        .expect("the report is classified")
         .iter()
         .filter(|matched| matched.format == "acis")
         .collect::<Vec<_>>();

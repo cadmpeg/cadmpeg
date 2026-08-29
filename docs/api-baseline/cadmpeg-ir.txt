@@ -1,4 +1,4 @@
-# generated at 0aadf3435
+# generated at c7dba3472
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -11431,7 +11431,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::CoverageKey
 pub struct cadmpeg_ir::report::DecodeReport
 pub cadmpeg_ir::report::DecodeReport::container_only: bool
 pub cadmpeg_ir::report::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub cadmpeg_ir::report::DecodeReport::dialects: alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
+pub cadmpeg_ir::report::DecodeReport::dialects: core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub cadmpeg_ir::report::DecodeReport::format: alloc::string::String
 pub cadmpeg_ir::report::DecodeReport::geometry_transferred: bool
 pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
@@ -11451,7 +11451,7 @@ impl core::marker::StructuralPartialEq for cadmpeg_ir::report::DecodeReport
 impl serde_core::ser::Serialize for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+pub fn cadmpeg_ir::report::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 impl core::marker::Freeze for cadmpeg_ir::report::DecodeReport
 impl core::marker::Send for cadmpeg_ir::report::DecodeReport
 impl core::marker::Sync for cadmpeg_ir::report::DecodeReport
@@ -17478,7 +17478,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::DecodeOptions
 pub struct cadmpeg_ir::DecodeReport
 pub cadmpeg_ir::DecodeReport::container_only: bool
 pub cadmpeg_ir::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub cadmpeg_ir::DecodeReport::dialects: alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
+pub cadmpeg_ir::DecodeReport::dialects: core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub cadmpeg_ir::DecodeReport::format: alloc::string::String
 pub cadmpeg_ir::DecodeReport::geometry_transferred: bool
 pub cadmpeg_ir::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
@@ -17498,7 +17498,7 @@ impl core::marker::StructuralPartialEq for cadmpeg_ir::report::DecodeReport
 impl serde_core::ser::Serialize for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+pub fn cadmpeg_ir::report::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 impl core::marker::Freeze for cadmpeg_ir::report::DecodeReport
 impl core::marker::Send for cadmpeg_ir::report::DecodeReport
 impl core::marker::Sync for cadmpeg_ir::report::DecodeReport

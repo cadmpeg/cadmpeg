@@ -59,7 +59,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         .expect("active face operand"),
     );
     let mut report = cadmpeg_ir::report::DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "f3d".into(),
         container_only: false,
         geometry_transferred: true,

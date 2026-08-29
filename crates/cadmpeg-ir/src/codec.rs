@@ -82,14 +82,13 @@ pub struct DecodeResult {
 
 impl DecodeResult {
     /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
-    ///
-    /// A populated dialect report must have exactly one primary layer. A
-    /// producer contradiction panics in every build because it is a codec bug,
-    /// not an input refusal.
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
-        let primary = require_primary_layer(&report.dialects, &report.format);
         if let Some(source) = ir.source.as_mut() {
-            match primary {
+            match report
+                .dialects
+                .as_ref()
+                .map(cadmpeg_core::dialect::DialectLayers::primary)
+            {
                 Some(matched) => {
                     source.dialect.clone_from(&matched.dialect);
                     source.declared.clone_from(&matched.declared);
@@ -142,23 +141,6 @@ impl DecodeResult {
     /// Consume into IR, report, and source fidelity.
     pub fn into_parts(self) -> (CadIr, DecodeReport, SourceFidelity) {
         (self.ir, self.report, self.source_fidelity)
-    }
-}
-
-fn require_primary_layer<'a>(
-    dialects: &'a [cadmpeg_core::dialect::DialectMatch],
-    format: &str,
-) -> Option<&'a cadmpeg_core::dialect::DialectMatch> {
-    if dialects.is_empty() {
-        None
-    } else {
-        Some(
-            cadmpeg_core::dialect::primary_layer(dialects, format).unwrap_or_else(|| {
-                panic!(
-                    "primary-layer invariant failed: populated dialects for format {format:?} must contain exactly one entry naming it"
-                )
-            }),
-        )
     }
 }
 
@@ -262,10 +244,6 @@ mod sealed {
 pub trait Codec: CodecBackend + sealed::Sealed {
     /// Inspects the source under its input and resource limits.
     ///
-    /// This is the only path from a backend's `ContainerSummary` to a caller,
-    /// so it is where the primary-layer invariant is checked: a populated
-    /// [`ContainerSummary::dialects`] names the summary's own `format` exactly
-    /// once.
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -304,9 +282,6 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
-        if let Ok(summary) = &result {
-            require_primary_layer(&summary.dialects, &summary.format);
-        }
         result
     }
 

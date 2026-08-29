@@ -155,7 +155,7 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         losses: Vec::new(),
         notes: Vec::new(),
         transfer_ledger: TransferLedger::default(),
-        dialects: Vec::new(),
+        dialects: None,
     };
     let rendered = serde_json::to_string(&decode).unwrap();
     assert!(rendered.contains("\"dialects\":[]"), "{rendered}");

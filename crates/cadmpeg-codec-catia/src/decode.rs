@@ -54,7 +54,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return decode_result(&scan, ir, report, annotations, unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     for route in families::ROUTES {
@@ -3484,7 +3484,7 @@ fn finish_decode(
         &mut admitted_entities,
         "admit CATIA entities",
     )?;
-    decode_result(scan, ir, report, annotations, unknowns)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn modeling_graph_scope(
@@ -3506,24 +3506,24 @@ fn modeling_graph_scope(
     }
 }
 
-/// The single site that finishes a decode, and so the single site that states
-/// the document's dialect.
+/// The single site that finishes a decode and charges dialect admission loss.
 ///
-/// Every route builds its report with an empty `dialects`; this function fills
-/// it with the one primary-layer match and charges the dialect-unverified loss
-/// beside it. Both come from `crate::dialect`, so a report can carry
-/// `AdmittedUnverified` without its loss, or the loss without the admission,
-/// only if this function is bypassed.
+/// Every route constructs its primary dialect layer with the report. This
+/// function charges the dialect-unverified loss from that same layer, so a
+/// report can carry `AdmittedUnverified` without its loss only if this function
+/// is bypassed.
 fn decode_result(
-    scan: &ContainerScan<'_>,
     mut ir: CadIr,
     mut report: DecodeReport,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    let matched = crate::dialect::classify(scan);
-    report.losses.extend(crate::dialect::dialect_loss(&matched));
-    report.dialects = vec![matched];
+    let matched = report
+        .dialects
+        .as_ref()
+        .expect("every CATIA decode route classifies its report")
+        .primary();
+    report.losses.extend(crate::dialect::dialect_loss(matched));
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
     Ok(DecodeResult::new(ir, report, source_fidelity))

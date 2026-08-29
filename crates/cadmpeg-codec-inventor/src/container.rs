@@ -129,7 +129,13 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        let dialects = vec![crate::dialect::DialectRecovery::of(self).dialect_match()];
+        let dialects = Some(
+            cadmpeg_core::dialect::DialectLayers::new(
+                crate::dialect::DialectRecovery::of(self).dialect_match(),
+                Vec::new(),
+            )
+            .expect("a primary layer without extras is valid"),
+        );
         ContainerSummary {
             dialects,
             format: crate::dialect::FORMAT.into(),

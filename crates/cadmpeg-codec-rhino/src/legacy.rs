@@ -2432,7 +2432,10 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records("rhino", opaque_records);
-    let dialects = vec![primary];
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
+            .expect("a primary layer without extras is valid"),
+    );
     Ok(DecodeResult::new(
         ir,
         DecodeReport {

@@ -515,11 +515,12 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     let redecode = F3dCodec
         .decode(&mut Cursor::new(replayed), &DecodeOptions::default())
         .unwrap();
-    let primary = cadmpeg_core::dialect::primary_layer(
-        &redecode.report().dialects,
-        &redecode.report().format,
-    )
-    .expect("re-decoded F3Z archive has a primary layer");
+    let primary = redecode
+        .report()
+        .dialects
+        .as_ref()
+        .expect("re-decoded F3Z archive has a primary layer")
+        .primary();
     assert_eq!(primary.dialect.as_ref(), Some(&reported));
 }
 
@@ -653,8 +654,11 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    let inspected = cadmpeg_core::dialect::primary_layer(&summary.dialects, "f3d")
+    let inspected = summary
+        .dialects
+        .as_ref()
         .expect("inspect must report exactly one primary F3D layer")
+        .primary()
         .clone();
     let inspected_dialects = summary.dialects;
     assert_eq!(inspected.format, "f3d");
@@ -677,19 +681,30 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.report().dialects[0], inspected_dialects[0]);
+    assert_eq!(
+        decoded
+            .report()
+            .dialects
+            .as_ref()
+            .expect("decode reports F3D layers")
+            .primary(),
+        inspected_dialects
+            .as_ref()
+            .expect("inspection reports F3D layers")
+            .primary()
+    );
     assert!(decoded
         .report()
         .dialects
+        .as_ref()
+        .expect("the report is classified")
         .iter()
         .skip(1)
         .all(|matched| matched.format == "acis"));
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect, inspected.dialect);
     assert_eq!(source.declared, inspected.declared);
-    let primary =
-        cadmpeg_core::dialect::primary_layer(&decoded.report().dialects, &decoded.report().format)
-            .unwrap();
+    let primary = decoded.report().dialects.as_ref().unwrap().primary();
     assert_eq!(source.dialect, primary.dialect);
 }
 
@@ -714,23 +729,35 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.report().dialects.iter().any(|matched| {
-        matched.format == crate::dialect::FORMAT
-            && matched
-                .dialect
-                .as_ref()
-                .map(cadmpeg_core::dialect::DialectId::as_str)
-                == Some("f3d:f3z-multi-document")
-    }));
-    assert!(
-        decoded.report().dialects.iter().any(|matched| {
-            matched.format == "acis"
+    assert!(decoded
+        .report()
+        .dialects
+        .as_ref()
+        .into_iter()
+        .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
+        .any(|matched| {
+            matched.format == crate::dialect::FORMAT
                 && matched
                     .dialect
                     .as_ref()
                     .map(cadmpeg_core::dialect::DialectId::as_str)
-                    == Some("acis:text-acis")
-        }),
+                    == Some("f3d:f3z-multi-document")
+        }));
+    assert!(
+        decoded
+            .report()
+            .dialects
+            .as_ref()
+            .into_iter()
+            .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
+            .any(|matched| {
+                matched.format == "acis"
+                    && matched
+                        .dialect
+                        .as_ref()
+                        .map(cadmpeg_core::dialect::DialectId::as_str)
+                        == Some("acis:text-acis")
+            }),
         "{:?}",
         decoded.report().dialects
     );
@@ -786,6 +813,8 @@ fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
     let carriers = decoded
         .report()
         .dialects
+        .as_ref()
+        .expect("the report is classified")
         .iter()
         .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
         .map(|matched| matched.declared["carrier"].as_str())
@@ -812,8 +841,11 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    let inspected = cadmpeg_core::dialect::primary_layer(&summary.dialects, "f3d")
+    let inspected = summary
+        .dialects
+        .as_ref()
         .expect("inspect must report exactly one primary F3D layer")
+        .primary()
         .clone();
     let inspected_dialects = summary.dialects;
     assert_eq!(inspected.format, "f3d");

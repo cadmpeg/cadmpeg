@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn decode_sidecar_binds_exact_ir_bytes_and_validates_versions() {
         let report = DecodeReport {
-            dialects: Vec::new(),
+            dialects: None,
             format: "test".into(),
             container_only: false,
             geometry_transferred: true,
@@ -525,7 +525,7 @@ mod tests {
 
         let from_v2 = DecodeSidecar::from_json(&v2).expect("migrate v2 sidecar");
         assert_eq!(from_v2.version(), DECODE_SIDECAR_VERSION);
-        assert!(from_v2.report.dialects.is_empty());
+        assert!(from_v2.report.dialects.is_none());
         assert_eq!(from_v2, migrated);
     }
 

@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::OnceLock;
 
-use cadmpeg_core::dialect::{primary_layer, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectLayers};
 use cadmpeg_ir::codec::{find_target, TargetDescriptor};
 use serde::Deserialize;
 
@@ -360,13 +360,13 @@ pub struct DialectProvenance {
     pub write_targets: Vec<&'static str>,
 }
 
-/// The provenance of the dialect the codec matched for `format`.
+/// The provenance of the primary dialect the codec matched.
 ///
 /// Returns `None` when the codec reported no dialects at all, which is the
 /// honest answer for a codec that does not classify.
 #[must_use]
-pub fn dialect_provenance(dialects: &[DialectMatch], format: &str) -> Option<DialectProvenance> {
-    let entry = primary_layer(dialects, format)?;
+pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectProvenance> {
+    let entry = dialects?.primary();
     Some(DialectProvenance {
         id: entry.dialect.clone(),
         read: entry
@@ -374,7 +374,7 @@ pub fn dialect_provenance(dialects: &[DialectMatch], format: &str) -> Option<Dia
             .as_ref()
             .and_then(support)
             .map(|disposition| disposition.read),
-        write_targets: catalog_of(format)
+        write_targets: catalog_of(&entry.format)
             .unwrap_or(&[])
             .iter()
             .map(|target| target.id)
@@ -671,15 +671,19 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn the_provenance_joins_the_match_the_registry_and_the_catalog() {
-        use cadmpeg_core::dialect::Admission;
+        use cadmpeg_core::dialect::{Admission, DialectMatch};
 
-        let dialects = vec![DialectMatch {
-            format: "rhino".to_owned(),
-            dialect: Some(DialectId::pinned("rhino:archive-50")),
-            declared: BTreeMap::new(),
-            admission: Admission::Admitted,
-        }];
-        let provenance = dialect_provenance(&dialects, "rhino").expect("a primary layer exists");
+        let dialects = DialectLayers::new(
+            DialectMatch {
+                format: "rhino".to_owned(),
+                dialect: Some(DialectId::pinned("rhino:archive-50")),
+                declared: BTreeMap::new(),
+                admission: Admission::Admitted,
+            },
+            Vec::new(),
+        )
+        .expect("a primary layer without extras is valid");
+        let provenance = dialect_provenance(Some(&dialects)).expect("a primary layer exists");
         assert_eq!(
             provenance.id.as_ref().map(DialectId::as_str),
             Some("rhino:archive-50")
@@ -692,7 +696,7 @@ mod tests {
     /// A codec that classified nothing has no provenance to report.
     #[test]
     fn no_dialects_is_no_provenance() {
-        assert!(dialect_provenance(&[], "rhino").is_none());
+        assert!(dialect_provenance(None).is_none());
     }
 
     /// Every format row is readable and states its write capability.
