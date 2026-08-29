@@ -1200,7 +1200,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
 id = "sat:acis-binary"
 title = "Bare Spatial ACIS binary stream"
 discriminants = { magic = "ACIS BinaryFile" }
-seam = "the framed host stream is Admitted at every save format. The separate kernel layer is acis:save-format-217 or acis:save-format-218 with Admitted admission, or acis:save-format-binary-other with AdmittedUnverified admission and the nearer verified ACIS row as nearest. The kernel-layer recovery charges source.dialect-unverified"
+seam = "the framed host stream is Admitted at every save format. The separate kernel layer is acis:save-format-217 or acis:save-format-218 with Admitted admission, or acis:save-format-binary-other with AdmittedUnverified admission and the nearer verified ACIS row as nearest. The kernel-layer recovery charges source.kernel-dialect-unverified"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 
 [[dialect]]
@@ -1211,7 +1211,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere, with the nearer verified ACIS row as nearest and a source.dialect-unverified charge"
+seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere, with the nearer verified ACIS row as nearest and a source.kernel-dialect-unverified charge"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 
 [[dialect]]
@@ -1291,7 +1291,7 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs:29"
 # (`cadmpeg_asm::dialect::nearest_verified_acis`,
 # crates/cadmpeg-asm/src/dialect.rs:50), the match carries
 # `Admission::AdmittedUnverified` naming that band, and the host charges its
-# `source.dialect-unverified` loss: `cadmpeg-codec-sat` on the `sat:` row
+# `source.kernel-dialect-unverified` loss: `cadmpeg-codec-sat` for the kernel row
 # (crates/cadmpeg-codec-sat/src/dialect.rs:203) and `cadmpeg-codec-inventor`
 # on this kernel layer (crates/cadmpeg-codec-inventor/src/decode.rs:1881).
 # Mirrored as an inspect note at detect.rs:130-136.

@@ -116,9 +116,13 @@ pub(crate) enum StreamEvidence<'a> {
     /// and `asm_header::parse` still declined, which its own contract makes
     /// unreachable; the arm keeps this function total.
     AsmBinary(Option<&'a KernelHeader>),
+    /// Parsed ASM header from a stream with no record-stream frame.
+    UnframedAsmBinary(&'a KernelHeader),
     /// `ACIS BinaryFile`, under the same header-parse note as
     /// [`Self::AsmBinary`].
     AcisBinary(Option<&'a KernelHeader>),
+    /// Parsed ACIS header from a stream with no record-stream frame.
+    UnframedAcisBinary(&'a KernelHeader),
     /// Text header lines; `None` when the stream did not parse past them.
     Text(Option<TextEvidence<'a>>),
     /// No discriminant matched.
@@ -136,7 +140,9 @@ impl StreamEvidence<'_> {
     const fn kind(&self) -> StreamKind {
         match self {
             Self::AsmBinary(_) => StreamKind::AsmBinary,
+            Self::UnframedAsmBinary(_) => StreamKind::AsmBinary,
             Self::AcisBinary(_) => StreamKind::AcisBinary,
+            Self::UnframedAcisBinary(_) => StreamKind::AcisBinary,
             Self::Text(_) => StreamKind::Text,
             Self::Unknown => StreamKind::Unknown,
         }
@@ -146,7 +152,7 @@ impl StreamEvidence<'_> {
 /// How this stream was admitted.
 ///
 /// The one construction path for the admission, and so for the
-/// `source.dialect-unverified` recovery mark [`dialect_loss`] charges from it.
+/// `source.kernel-dialect-unverified` recovery mark [`dialect_loss`] charges from it.
 /// [`Admission::Refused`] here is structural and nothing else: the discriminant
 /// matched but the stream did not frame. Both ACIS branches take the same band
 /// comparison, and both recover outside it; the ASM binary and ASM text
@@ -157,7 +163,9 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
         | StreamEvidence::AcisBinary(Some(_))
         | StreamEvidence::Text(Some(_)) => Admission::Admitted,
         StreamEvidence::AsmBinary(None)
+        | StreamEvidence::UnframedAsmBinary(_)
         | StreamEvidence::AcisBinary(None)
+        | StreamEvidence::UnframedAcisBinary(_)
         | StreamEvidence::Text(None)
         | StreamEvidence::Unknown => Admission::Refused,
     }
@@ -200,6 +208,10 @@ fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
         StreamEvidence::AsmBinary(header) | StreamEvidence::AcisBinary(header) => {
             declared.insert(DECLARED_ENCODING.into(), "binary".into());
             *header
+        }
+        StreamEvidence::UnframedAsmBinary(header) | StreamEvidence::UnframedAcisBinary(header) => {
+            declared.insert(DECLARED_ENCODING.into(), "binary".into());
+            Some(*header)
         }
         StreamEvidence::Text(text) => {
             declared.insert(DECLARED_ENCODING.into(), "text".into());
@@ -253,7 +265,13 @@ fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
         StreamEvidence::AsmBinary(Some(header)) => {
             cadmpeg_asm::dialect::KernelHeaderRef::Asm(header)
         }
+        StreamEvidence::UnframedAsmBinary(header) => {
+            cadmpeg_asm::dialect::KernelHeaderRef::Asm(header)
+        }
         StreamEvidence::AcisBinary(Some(header)) => {
+            cadmpeg_asm::dialect::KernelHeaderRef::Acis(header)
+        }
+        StreamEvidence::UnframedAcisBinary(header) => {
             cadmpeg_asm::dialect::KernelHeaderRef::Acis(header)
         }
         StreamEvidence::Text(Some(text)) => match text.branch {

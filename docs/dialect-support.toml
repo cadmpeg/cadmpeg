@@ -897,7 +897,7 @@ write = "none"
 reason = """
 the framed `sat:acis-binary` host row is Admitted at every save format. Its
 separate `acis:` kernel row is admitted unverified outside majors 217 and 218
-and charges source.dialect-unverified. The golden that pins the host row is
+and charges source.kernel-dialect-unverified. The golden that pins the host row is
 code-built"""
 
 [[support]]
@@ -907,7 +907,7 @@ write = "none"
 reason = """
 the framed `sat:text` host row is Admitted under either terminator at every
 save format. An `acis:text-acis` kernel layer outside majors 217 and 218 is
-admitted unverified and charges source.dialect-unverified. The golden that
+admitted unverified and charges source.kernel-dialect-unverified. The golden that
 pins the host row is code-built"""
 
 [[support]]
@@ -964,7 +964,8 @@ reason = """
 the unverified save-format band: framed and decoded with the nearer
 verified band's record grammar, in `cadmpeg-codec-sat` and again in
 `cadmpeg-codec-inventor`, which emits this id as the kernel layer of such
-a carrier. Both charge source.dialect-unverified on an
+a carrier. SAT charges source.kernel-dialect-unverified and Inventor charges
+source.kernel-dialect-unverified on an
 `Admission::AdmittedUnverified` match; unit tests witness the recovery —
 no golden carries the id, so the row lists no fixture"""
 
