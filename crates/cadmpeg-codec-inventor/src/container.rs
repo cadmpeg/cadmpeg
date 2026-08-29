@@ -129,10 +129,23 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
+        let kernel = match &self.rse.active_carrier {
+            crate::kernel::ActiveCarrierState::Selected(carrier) => {
+                Some(crate::kernel::parse_kernel_header(carrier).map_or_else(
+                    |_| crate::dialect::unknown_kernel_layer(),
+                    |header| crate::dialect::kernel_layer(carrier.family, &header),
+                ))
+            }
+            crate::kernel::ActiveCarrierState::NotExpanded
+            | crate::kernel::ActiveCarrierState::Unavailable(_) => {
+                Some(crate::dialect::unknown_kernel_layer())
+            }
+            crate::kernel::ActiveCarrierState::NotApplicable => None,
+        };
         let dialects = Some(
             cadmpeg_core::dialect::DialectLayers::new(
                 crate::dialect::DialectRecovery::of(self).dialect_match(),
-                Vec::new(),
+                kernel.into_iter().collect(),
             )
             .expect("a primary layer without extras is valid"),
         );

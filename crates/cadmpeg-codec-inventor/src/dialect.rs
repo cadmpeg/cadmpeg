@@ -9,18 +9,15 @@
 //! drift in either direction. Two variants is still a closed vocabulary, and
 //! the drift test is what keeps it one.
 //!
-//! # Identity and admission coincide here, and that is a statement
+//! # Declarations select identity; framing selects admission
 //!
-//! IGES separates the two because it declares identity rows for versions whose
-//! grammar it never verified. Inventor declares two rows, and their
-//! discriminants *are* the codec's two version gates: the `RSeDb` schema and
-//! the `RSe` Meta Stream marker and version. Admission also requires every
-//! declared stream to frame under those grammars. Everything else is
-//! `inventor:unknown` read with a grammar no row declares for it. One value —
-//! [`DialectRecovery::admission`] —
-//! therefore decides both, and [`DialectRecovery::dialect_loss`] is `None`
-//! exactly when that value is [`Admission::Admitted`]. The biconditional the
-//! decode policy requires is structural, not maintained by two authors agreeing.
+//! The `RSeDb` schema and `RSe` Meta Stream marker and version select the row.
+//! Framing does not participate in identity. Admission separately requires
+//! every declared stream to frame under the selected grammars. A stream that
+//! declares schema 31 and metadata version 8 therefore keeps
+//! `inventor:cfb3-rse31-meta8` when its body is malformed, with
+//! [`Admission::AdmittedUnverified`]. [`DialectRecovery::dialect_loss`] is
+//! `None` exactly when admission is [`Admission::Admitted`].
 //!
 //! # The row absorbs what the codec does not gate
 //!
@@ -229,14 +226,29 @@ impl DialectRecovery {
         }
     }
 
-    /// This document's [`DialectMatch`], identity and admission together.
-    pub(crate) fn dialect_match(&self) -> DialectMatch {
-        let admission = self.admission();
-        let dialect = if admission == Admission::Admitted {
+    /// Registry identity selected only by declared discriminants.
+    fn dialect(&self) -> InventorDialect {
+        if !self.schemas.is_empty()
+            && self
+                .schemas
+                .iter()
+                .all(|schema| *schema == RseSchema::SCHEMA_31)
+            && !self.meta_streams.is_empty()
+            && self
+                .meta_streams
+                .iter()
+                .all(MetaStreamDeclaration::is_verified)
+        {
             InventorDialect::Cfb3Rse31Meta8
         } else {
             InventorDialect::Unknown
-        };
+        }
+    }
+
+    /// This document's [`DialectMatch`], identity and admission together.
+    pub(crate) fn dialect_match(&self) -> DialectMatch {
+        let admission = self.admission();
+        let dialect = self.dialect();
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_CFB_MAJOR_VERSION.into(),
@@ -358,6 +370,11 @@ pub(crate) fn kernel_layer(
         KernelFamily::Acis => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
     };
     cadmpeg_asm::dialect::classify(header)
+}
+
+/// The total kernel-layer row when the active carrier header does not parse.
+pub(crate) fn unknown_kernel_layer() -> DialectMatch {
+    cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown)
 }
 
 /// The recovery loss the kernel layer charges, if it recovered.

@@ -11,6 +11,11 @@
       },
       "dialect": "inventor:cfb3-rse31-meta8",
       "format": "inventor"
+    },
+    {
+      "admission": "refused",
+      "dialect": "acis:unknown",
+      "format": "acis"
     }
   ],
   "entries": [

@@ -1516,18 +1516,6 @@ fn validate_databases(data: &NativeData, findings: &mut Vec<Finding>) {
             None,
         ));
     }
-    for database in &data.databases {
-        if database.schema != 31 {
-            findings.push(finding(
-                Check::Version,
-                format!(
-                    "Inventor database {} has schema {}",
-                    database.id, database.schema
-                ),
-                Some(database.id.clone()),
-            ));
-        }
-    }
     for issue in &data.database_issues {
         findings.push(finding(
             Check::NativeLinks,
