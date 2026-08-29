@@ -148,6 +148,18 @@ pub enum WriteRequest<'a> {
     },
 }
 
+/// The source dialect when the document belongs to `format` and records one.
+#[must_use]
+pub fn same_format_source_dialect<'a>(
+    ir: &'a CadIr,
+    format: &str,
+) -> Option<&'a cadmpeg_core::dialect::DialectMatch> {
+    ir.source
+        .as_ref()
+        .filter(|source| source.format == format)
+        .and_then(|source| source.dialect.as_ref())
+}
+
 /// Result of attempting to preserve a resolved target.
 pub enum PreserveAttempt<T, D> {
     /// Preservation produced the completed codec-specific result.
@@ -218,10 +230,8 @@ pub fn resolve_write_request<'a>(
                         targets,
                     )
                 })?,
-                Some(source) => {
-                    let dialect = source
-                        .dialect
-                        .as_ref()
+                Some(_) => {
+                    let dialect = same_format_source_dialect(ir, format)
                         .map(|matched| &matched.dialect)
                         .ok_or_else(|| unrecorded_source_dialect(format, targets))?;
                     let Some(entry) = find_target(targets, dialect.as_str()) else {
@@ -232,11 +242,7 @@ pub fn resolve_write_request<'a>(
             }
         }
     };
-    let displaced = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == format)
-        .and_then(|source| source.dialect.as_ref())
+    let displaced = same_format_source_dialect(ir, format)
         .map(|matched| &matched.dialect)
         .filter(|dialect| dialect.as_str() != entry.id)
         .cloned();

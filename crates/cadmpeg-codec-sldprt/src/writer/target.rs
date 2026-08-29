@@ -4,7 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
+    resolve_write_request, same_format_source_dialect, unsupported_target, EncodeInput, ExportPlan,
+    TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
@@ -55,13 +56,8 @@ fn resolve(
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
 fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>), CodecError> {
-    let source_dialect = input
-        .ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == dialect::FORMAT)
-        .and_then(|source| source.dialect.as_ref())
-        .map(|matched| &matched.dialect);
+    let source_dialect =
+        same_format_source_dialect(input.ir, dialect::FORMAT).map(|matched| &matched.dialect);
     let replay_eligible = source_dialect == Some(target);
     let mut bytes = Vec::new();
     let written = match input.fidelity {

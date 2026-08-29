@@ -4,8 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    plan_preserve_or_synthesize, resolve_write_request, unsupported_target, EncodeInput,
-    ExportPlan, PreserveAttempt, TargetRequest,
+    plan_preserve_or_synthesize, resolve_write_request, same_format_source_dialect,
+    unsupported_target, EncodeInput, ExportPlan, PreserveAttempt, TargetRequest,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
@@ -66,15 +66,10 @@ enum Preservation {
 }
 
 fn preserve(input: EncodeInput<'_>, target: &DialectId) -> Result<Preservation, CodecError> {
-    let Some(source) = input
-        .ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == dialect::FORMAT)
-    else {
+    let Some(source_dialect) = same_format_source_dialect(input.ir, dialect::FORMAT) else {
         return Ok(Preservation::Declined);
     };
-    if source.dialect.as_ref().map(|matched| &matched.dialect) != Some(target) {
+    if &source_dialect.dialect != target {
         return Ok(Preservation::Declined);
     }
     let Some(record) = input

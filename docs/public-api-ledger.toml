@@ -17,6 +17,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
 [[change]]
+commit = "cc5d1d37049dbd14e459cdd993cf79675fcef878"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::codec::same_format_source_dialect"
+reason = "same-format writers share one projection from `SourceMeta` to its matching `DialectMatch`; codec-local target and dialect projection remains with each writer"
+
+[[change]]
 commit = "81779b0ff3367382461a9a2832c5f3558bcea741"
 crate = "cadmpeg-ir"
 kind = "addition"
