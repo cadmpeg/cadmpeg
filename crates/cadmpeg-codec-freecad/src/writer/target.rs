@@ -125,9 +125,11 @@ pub(in crate::writer) fn resolve(
     request: TargetRequest<'_>,
 ) -> Result<Resolution, CodecError> {
     // This writer has no synthesize fallback, so it flattens the request locally.
-    let target =
-        cadmpeg_ir::codec::resolve_write_request(ir, request, dialect::FORMAT, dialect::TARGETS)?
-            .dialect_id();
+    let resolved =
+        cadmpeg_ir::codec::resolve_write_request(ir, request, dialect::FORMAT, dialect::TARGETS)?;
+    let Some(target) = resolved.dialect_id() else {
+        unreachable!("FCStd has a non-empty target catalog")
+    };
     // Deliverability, not preference. This writer patches the retained
     // `Document.xml` and regenerates none, so the resolved target is reachable
     // exactly when the retained graph already declares it — §8.1's "a

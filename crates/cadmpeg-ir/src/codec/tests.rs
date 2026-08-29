@@ -70,13 +70,14 @@ fn a_target_catalog_rejects_an_alias_that_is_an_id() {
 fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube();
     let mut encoded = Vec::new();
-    CadirEncoder
+    let plan = CadirEncoder
         .plan(
             crate::codec::EncodeInput::new(&ir, None),
             TargetRequest::Inherit,
         )
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+        .expect("empty-catalog inheritance resolves to CADIR identity");
+    assert_eq!(plan.report().target(), None);
+    plan.write_to(&mut encoded).unwrap();
     let mut canonical = ir.to_canonical_json().unwrap();
     canonical.push('\n');
     assert_eq!(encoded, canonical.as_bytes());

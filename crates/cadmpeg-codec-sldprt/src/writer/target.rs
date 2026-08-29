@@ -47,8 +47,11 @@ fn resolve(
 ) -> Result<(DialectId, Option<DialectId>, bool), CodecError> {
     // This writer has no synthesize fallback, so it flattens the request locally.
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
-    let target = resolved.dialect_id();
+    let Some(target) = resolved.dialect_id() else {
+        unreachable!("SLDPRT has a non-empty target catalog")
+    };
     let (displaced, preserve) = match resolved {
+        WriteRequest::Identity => (None, false),
         WriteRequest::Catalog {
             displaced,
             preserve,
