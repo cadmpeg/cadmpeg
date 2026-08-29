@@ -819,8 +819,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "file_version": "1",
@@ -830,7 +831,7 @@
         "dialect": "fcstd:schema-4",
         "format": "fcstd"
       }
-    ],
+    },
     "format": "fcstd",
     "geometry_transferred": true,
     "losses": [],

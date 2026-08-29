@@ -350,8 +350,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
@@ -360,7 +361,7 @@
         "dialect": "step:ap203-e1",
         "format": "step"
       }
-    ],
+    },
     "format": "step",
     "geometry_transferred": true,
     "losses": [

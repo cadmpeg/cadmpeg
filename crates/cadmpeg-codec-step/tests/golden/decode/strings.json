@@ -87,8 +87,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": {
           "admitted_unverified": {
             "nearest": "step:ap242-e3"
@@ -101,7 +102,7 @@
         "dialect": "step:unknown",
         "format": "step"
       }
-    ],
+    },
     "format": "step",
     "geometry_transferred": false,
     "losses": [

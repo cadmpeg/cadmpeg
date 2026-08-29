@@ -143,7 +143,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
 }
 
 /// The dialect fields are part of the wire format: a report that named nothing
-/// says so with an empty list and a `null`, rather than by omitting the key.
+/// says so with `null`, rather than by omitting the key.
 /// Reports written before the fields existed still read back.
 #[test]
 fn unclassified_reports_serialize_empty_dialect_keys() {
@@ -158,14 +158,14 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         dialects: None,
     };
     let rendered = serde_json::to_string(&decode).unwrap();
-    assert!(rendered.contains("\"dialects\":[]"), "{rendered}");
+    assert!(rendered.contains("\"dialects\":null"), "{rendered}");
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
         decode
     );
 
     // A report persisted before the field existed omits the key entirely.
-    let legacy = rendered.replace(",\"dialects\":[]", "");
+    let legacy = rendered.replace(",\"dialects\":null", "");
     assert!(!legacy.contains("dialects"), "{legacy}");
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&legacy).unwrap(),

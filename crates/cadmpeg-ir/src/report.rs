@@ -4,12 +4,12 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectLayers};
 
 use crate::provenance::SourceProvenance;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 /// Severity of a loss note or validation finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -636,7 +636,7 @@ impl LossNote {
 }
 
 /// Transfer status and loss details from a successful decode.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeReport {
     /// Source format id.
@@ -664,54 +664,8 @@ pub struct DecodeReport {
     ///
     /// Always serialized. Reports written before the field existed omit the key
     /// and read back as unclassified.
-    #[serde(default, serialize_with = "serialize_dialect_layers")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<DialectMatch>"))]
+    #[serde(default)]
     pub dialects: Option<DialectLayers>,
-}
-
-// Serde's `serialize_with` callback receives a reference to the field.
-#[allow(clippy::ref_option)]
-fn serialize_dialect_layers<S: Serializer>(
-    layers: &Option<DialectLayers>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    match layers {
-        Some(layers) => layers.serialize(serializer),
-        None => serializer.collect_seq(std::iter::empty::<&DialectMatch>()),
-    }
-}
-
-#[derive(Deserialize)]
-struct DecodeReportWire {
-    format: String,
-    container_only: bool,
-    geometry_transferred: bool,
-    #[serde(default)]
-    coverage: BTreeMap<String, usize>,
-    losses: Vec<LossNote>,
-    notes: Vec<String>,
-    #[serde(default)]
-    transfer_ledger: TransferLedger,
-    #[serde(default, rename = "dialects")]
-    wire_layers: Vec<DialectMatch>,
-}
-
-impl<'de> Deserialize<'de> for DecodeReport {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DecodeReportWire::deserialize(deserializer)?;
-        let dialects =
-            DialectLayers::from_rows(&wire.format, wire.wire_layers).map_err(D::Error::custom)?;
-        Ok(Self {
-            format: wire.format,
-            container_only: wire.container_only,
-            geometry_transferred: wire.geometry_transferred,
-            coverage: wire.coverage,
-            losses: wire.losses,
-            notes: wire.notes,
-            transfer_ledger: wire.transfer_ledger,
-            dialects,
-        })
-    }
 }
 
 /// Final disposition of one source record or semantic object.

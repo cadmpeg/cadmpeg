@@ -175,8 +175,19 @@
       "unknown_records": 0,
       "unknown_surface_faces": 0
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "save_format_major": "232",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:text-asm",
+          "format": "acis"
+        }
+      ],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "encoding": "text",
@@ -186,17 +197,8 @@
         },
         "dialect": "sat:text",
         "format": "sat"
-      },
-      {
-        "admission": "admitted",
-        "declared": {
-          "save_format_major": "232",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:text-asm",
-        "format": "acis"
       }
-    ],
+    },
     "format": "sat",
     "geometry_transferred": true,
     "losses": [],

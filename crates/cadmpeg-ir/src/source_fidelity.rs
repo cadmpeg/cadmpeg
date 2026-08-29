@@ -507,7 +507,7 @@ mod tests {
     }
 
     /// A v2 sidecar omits `report.dialects`, which v3 always writes. It must
-    /// still load, and load as an empty list — that is what a v2 decode meant
+    /// still load, and load as unclassified — that is what a v2 decode meant
     /// by omitting the key. The v1 fixture reaches v3 through the same path,
     /// one step further back.
     #[test]
@@ -516,11 +516,11 @@ mod tests {
         let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
 
         let v3 = migrated.to_canonical_json().expect("serialize sidecar");
-        assert!(v3.contains("\"dialects\":[]"), "{v3}");
+        assert!(v3.contains("\"dialects\":null"), "{v3}");
 
         let v2 = v3
             .replacen("\"version\":\"3\"", "\"version\":\"2\"", 1)
-            .replace(",\"dialects\":[]", "");
+            .replace(",\"dialects\":null", "");
         assert!(!v2.contains("dialects"), "{v2}");
 
         let from_v2 = DecodeSidecar::from_json(&v2).expect("migrate v2 sidecar");

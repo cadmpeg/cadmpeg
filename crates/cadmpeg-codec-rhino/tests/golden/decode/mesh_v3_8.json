@@ -225,8 +225,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "archive_version": "60"
@@ -234,7 +235,7 @@
         "dialect": "rhino:archive-60",
         "format": "rhino"
       }
-    ],
+    },
     "format": "rhino",
     "geometry_transferred": false,
     "losses": [

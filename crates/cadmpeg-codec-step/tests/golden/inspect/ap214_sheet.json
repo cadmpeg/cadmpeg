@@ -1,7 +1,8 @@
 {
   "container_kind": "iso-10303-21-clear-text",
-  "dialects": [
-    {
+  "dialects": {
+    "extra": [],
+    "primary": {
       "admission": "admitted",
       "declared": {
         "file_schema_identifier": "AUTOMOTIVE_DESIGN",
@@ -10,7 +11,7 @@
       "dialect": "step:ap214",
       "format": "step"
     }
-  ],
+  },
   "entries": [
     {
       "attributes": {},

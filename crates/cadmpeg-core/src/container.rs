@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-use crate::dialect::{DialectLayers, DialectMatch};
+use crate::dialect::DialectLayers;
 
 /// One stream or segment in a container summary.
 ///
@@ -32,7 +32,7 @@ pub struct ContainerEntry {
 }
 
 /// The result of inspecting a container without decoding its geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ContainerSummary {
     /// Source format id.
@@ -47,46 +47,8 @@ pub struct ContainerSummary {
     ///
     /// Always serialized. Summaries written before the field existed omit the
     /// key and read back as unclassified.
-    #[serde(default, serialize_with = "serialize_dialect_layers")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<DialectMatch>"))]
+    #[serde(default)]
     pub dialects: Option<DialectLayers>,
-}
-
-// Serde's `serialize_with` callback receives a reference to the field.
-#[allow(clippy::ref_option)]
-fn serialize_dialect_layers<S: Serializer>(
-    layers: &Option<DialectLayers>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    match layers {
-        Some(layers) => layers.serialize(serializer),
-        None => serializer.collect_seq(std::iter::empty::<&DialectMatch>()),
-    }
-}
-
-#[derive(Deserialize)]
-struct ContainerSummaryWire {
-    format: String,
-    container_kind: String,
-    entries: Vec<ContainerEntry>,
-    notes: Vec<String>,
-    #[serde(default, rename = "dialects")]
-    wire_layers: Vec<DialectMatch>,
-}
-
-impl<'de> Deserialize<'de> for ContainerSummary {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = ContainerSummaryWire::deserialize(deserializer)?;
-        let dialects =
-            DialectLayers::from_rows(&wire.format, wire.wire_layers).map_err(D::Error::custom)?;
-        Ok(Self {
-            format: wire.format,
-            container_kind: wire.container_kind,
-            entries: wire.entries,
-            notes: wire.notes,
-            dialects,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -98,7 +60,7 @@ mod tests {
     use crate::dialect::{DialectLayers, DialectMatch};
 
     /// The field is part of the wire format: a summary that named no layer says
-    /// so with an empty list rather than by omitting the key. A summary written
+    /// so with null rather than by omitting the key. A summary written
     /// before the field existed still reads back.
     #[test]
     fn an_unclassified_summary_serializes_an_empty_dialects_key() {
@@ -111,7 +73,7 @@ mod tests {
         };
 
         let bare = serde_json::to_string(&summary).expect("a summary serializes");
-        assert!(bare.contains("\"dialects\":[]"), "{bare}");
+        assert!(bare.contains("\"dialects\":null"), "{bare}");
         assert_eq!(
             serde_json::from_str::<ContainerSummary>(&bare).expect("a summary round-trips"),
             summary
@@ -143,15 +105,13 @@ mod tests {
                 .expect("the extra uses another format"),
         );
         let classified = serde_json::to_value(&summary).expect("a summary serializes");
-        assert_eq!(classified["dialects"], serde_json::json!([primary, extra]));
+        assert_eq!(
+            classified["dialects"],
+            serde_json::json!({"primary": primary, "extra": [extra]})
+        );
 
-        let mut legacy_reordered = classified;
-        legacy_reordered["dialects"]
-            .as_array_mut()
-            .expect("dialects serialize as an array")
-            .swap(0, 1);
         let restored: ContainerSummary =
-            serde_json::from_value(legacy_reordered).expect("legacy row order reads");
+            serde_json::from_value(classified).expect("classified summary reads");
         assert_eq!(
             restored
                 .dialects
