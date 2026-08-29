@@ -25,20 +25,9 @@
 //! conditional in the crate. It is recorded in
 //! [`DialectMatch::declared`] as evidence and branched on nowhere.
 //!
-//! # `nearest` on the totality row
-//!
-//! [`Variant::Unknown`] is admitted, not refused: no route in
-//! [`crate::families::ROUTES`] matches it, so decode falls through to
-//! `build_metadata_ir` + `build_container_report`, retains the file as an
-//! `UnknownRecord`, and charges the geometry and topology losses. The strategy
-//! actually applied is that metadata-IR fallback, which is *not* any other
-//! CATIA dialect's declared strategy — see [`Admission::AdmittedUnverified`]'s
-//! `nearest`, which is typed as a [`DialectId`] and can therefore only name a
-//! dialect. The registry row `catia:unknown` is the only id whose declared
-//! disposition *is* that fallback, so `nearest` names it, and the reference is
-//! self-referential by construction. This is a template conflict, recorded
-//! rather than papered over: naming any of the six decoding families would
-//! claim their grammar was substituted, which is false.
+//! [`Variant::Unknown`] uses the metadata-IR fallback. Its
+//! [`Admission::AdmittedUnverified`] value names `catia:unknown`, the registry
+//! row for that fallback; no recognized family grammar is applied.
 
 use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
