@@ -1,4 +1,4 @@
-# generated at c7dba3472
+# generated at 7e83d7b0f
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -287,7 +287,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::FormatRow
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::FormatRow
 pub struct cadmpeg_registry::Identification
 pub cadmpeg_registry::Identification::confidence: cadmpeg_ir::codec::Confidence
-pub cadmpeg_registry::Identification::disposition: core::option::Option<cadmpeg_registry::Disposition>
 pub cadmpeg_registry::Identification::format: &'static str
 pub cadmpeg_registry::Identification::inspection: cadmpeg_registry::Inspection
 impl core::clone::Clone for cadmpeg_registry::Identification
@@ -360,7 +359,6 @@ impl core::marker::UnsafeUnpin for cadmpeg_registry::UnknownFormat
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_registry::UnknownFormat
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_registry::UnknownFormat
 pub const cadmpeg_registry::DETECTION_PREFIX_LEN: usize
-pub const cadmpeg_registry::INSPECTION_FLOOR: cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::write::Encoder>
 pub fn cadmpeg_registry::dialect_provenance(core::option::Option<&cadmpeg_core::dialect::DialectLayers>) -> core::option::Option<cadmpeg_registry::DialectProvenance>
 pub fn cadmpeg_registry::dialect_table(core::option::Option<&str>) -> core::result::Result<alloc::vec::Vec<cadmpeg_registry::FormatDialects>, cadmpeg_registry::UnknownFormat>

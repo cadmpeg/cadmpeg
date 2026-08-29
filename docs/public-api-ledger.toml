@@ -1401,3 +1401,17 @@ crate = "cadmpeg-codec-step"
 kind = "deletion"
 item = "cadmpeg_codec_step::StepError::Unsupported"
 reason = "the STEP writer has no unsupported-content rejection path; it returns representable output and records reductions in `ExportReport::losses`"
+
+[[change]]
+commit = "7e83d7b0f616e204b4c62e132fb96ccdfa7044c5"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::Identification::disposition"
+reason = "identification now reports the selected codec's inspection result; static support lookup remains available through `support` and had no production reader on each identification"
+
+[[change]]
+commit = "7e83d7b0f616e204b4c62e132fb96ccdfa7044c5"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::INSPECTION_FLOOR"
+reason = "identification uses the same confidence winner as source resolution and inspects a unique winner at every accepted confidence"
