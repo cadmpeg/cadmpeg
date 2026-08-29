@@ -552,31 +552,31 @@ fn parser_enforces_data_section_parameter_shape_and_multiplicity() {
 }
 
 #[test]
-fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
+fn codec_uses_the_first_schema_identifier_for_dialect_selection() {
     let cases = [
         (
             "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }','AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'",
-            "edition 1",
+            "dialect step:ap242-e1",
         ),
         (
             "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 14 1 4 }'",
-            "edition unspecified",
+            "dialect step:unknown",
         ),
         (
             "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { iso standard 10303 part(442) version(3) }'",
-            "edition unspecified",
+            "dialect step:unknown",
         ),
         (
             "'OTHER_SCHEMA { 1 0 10303 442 4 1 4 }'",
-            "edition unspecified",
+            "dialect step:unknown",
         ),
         (
             "'ap242_managed_model_based_3d_engineering_mim_lf { 1 0 10303 442 4 1 4 }'",
-            "edition 3",
+            "dialect step:ap242-e3",
         ),
     ];
 
-    for (identifiers, expected_edition) in cases {
+    for (identifiers, expected_dialect) in cases {
         let first_identifier = identifiers.split(',').next().expect("first schema");
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({identifiers}));ENDSEC;DATA('section',({first_identifier}));#1=ITEM();ENDSEC;END-ISO-10303-21;"
@@ -591,8 +591,8 @@ fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
             summary
                 .notes
                 .iter()
-                .any(|note| note.ends_with(expected_edition)),
-            "expected {expected_edition} in {:?}",
+                .any(|note| note.ends_with(expected_dialect)),
+            "expected {expected_dialect} in {:?}",
             summary.notes
         );
     }

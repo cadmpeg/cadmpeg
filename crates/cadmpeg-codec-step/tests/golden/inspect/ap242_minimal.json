@@ -35,6 +35,6 @@
   ],
   "format": "step",
   "notes": [
-    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }; edition 2"
+    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }; dialect step:ap242-e2"
   ]
 }

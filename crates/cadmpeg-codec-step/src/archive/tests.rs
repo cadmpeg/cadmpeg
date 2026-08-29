@@ -175,7 +175,7 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     assert!(summary
         .notes
         .iter()
-        .any(|note| note.contains("AP242") && note.contains("edition 2")));
+        .any(|note| note.contains("AP242") && note.contains("dialect step:ap242-e2")));
 }
 
 #[test]

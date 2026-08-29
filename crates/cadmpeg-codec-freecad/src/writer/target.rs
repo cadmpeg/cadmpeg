@@ -142,7 +142,7 @@ pub(in crate::writer) fn resolve(
         dialect::TARGETS,
     )? {
         cadmpeg_ir::codec::WriteRequest::Catalog { entry, displaced } => (
-            dialect::written_dialect(dialect::target_options(entry)?),
+            dialect::written_dialect(dialect::target_options(entry)),
             displaced,
         ),
         cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect } => (dialect.clone(), None),

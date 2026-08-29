@@ -78,6 +78,6 @@
   ],
   "format": "step",
   "notes": [
-    "schema AP242; edition unspecified"
+    "schema AP242; dialect step:unknown"
   ]
 }

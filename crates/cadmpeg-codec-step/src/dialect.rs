@@ -114,10 +114,10 @@ impl StepSchema {
 
 /// The schema represented by a canonical catalog entry.
 pub(crate) fn target_schema(target: &TargetDescriptor) -> Result<StepSchema, CodecError> {
-    StepSchema::ALL
+    Ok(StepSchema::ALL
         .into_iter()
         .find(|schema| schema.target() == target.id)
-        .ok_or_else(|| CodecError::Malformed("STEP target catalog does not map to a schema".into()))
+        .expect("STEP TARGETS entries map to StepSchema::ALL"))
 }
 
 /// Key of the `FILE_SCHEMA` identifier the row keys on, in
@@ -349,8 +349,8 @@ impl StepDialect {
     ///
     /// A `FILE_SCHEMA` list declaring several identifiers is legal Part 21 and
     /// has no representation in [`DialectMatch`], which holds one dialect per
-    /// format layer. The first identifier is the identity, matching the edition
-    /// note the codec already reports, and the whole list is recorded under
+    /// format layer. The first identifier is the identity, matching the dialect
+    /// note the codec reports, and the whole list is recorded under
     /// [`DECLARED_FILE_SCHEMA_IDENTIFIERS`].
     pub(crate) fn classify(exchange: &Exchange) -> DialectMatch {
         let identifiers = crate::reader::schema_identifiers(exchange);

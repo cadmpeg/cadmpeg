@@ -1,8 +1,7 @@
-# generated at 5ab799ccb
+# generated at 0bb885f9f
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepError
 pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
-pub cadmpeg_codec_step::StepError::Unsupported(alloc::string::String)
 impl core::convert::From<cadmpeg_codec_step::StepError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_codec_step::StepError) -> Self
 impl core::convert::From<core::io::error::Error> for cadmpeg_codec_step::StepError

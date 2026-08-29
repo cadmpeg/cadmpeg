@@ -9,9 +9,6 @@ use cadmpeg_core::CodecError;
 /// successful write.
 #[derive(Debug, thiserror::Error)]
 pub enum StepError {
-    /// Strict writing found semantics that would be reduced or omitted.
-    #[error("STEP target cannot represent the document without loss: {0}")]
-    Unsupported(String),
     /// The output sink rejected a write.
     #[error("failed to write STEP output: {0}")]
     Io(#[from] std::io::Error),
@@ -20,7 +17,6 @@ pub enum StepError {
 impl From<StepError> for CodecError {
     fn from(error: StepError) -> Self {
         match error {
-            StepError::Unsupported(message) => Self::NotImplemented(message),
             StepError::Io(error) => Self::Io(error),
         }
     }
