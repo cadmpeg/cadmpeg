@@ -242,7 +242,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
             .as_ref()
             .expect("Rhino inspection reports dialect layers")
             .primary()
-            .admission,
+            .admission(),
         cadmpeg_core::dialect::Admission::Admitted
     );
 
@@ -263,7 +263,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
             .as_ref()
             .expect("Rhino decode reports dialect layers")
             .primary()
-            .admission,
+            .admission(),
         cadmpeg_core::dialect::Admission::Admitted
     );
     assert!(!decoded
@@ -304,12 +304,12 @@ fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
         .expect("Rhino inspection reports dialect layers")
         .primary();
     assert_eq!(
-        matched.admission,
+        matched.admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-90"),
         }
     );
-    assert_eq!(matched.declared["archive_version"], "100");
+    assert_eq!(matched.declared()["archive_version"], "100");
 }
 
 #[test]

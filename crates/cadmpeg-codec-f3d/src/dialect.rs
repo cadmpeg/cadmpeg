@@ -193,11 +193,11 @@ impl F3dDialect {
 /// decode policy requires is therefore structural: the note charged and the
 /// admission reported come from one value, not from two authors agreeing.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    match &matched.admission {
+    match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
         Admission::AdmittedUnverified { nearest } => {
             let version = matched
-                .declared
+                .declared()
                 .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
                 .map_or("(none)", String::as_str);
             Some(F3dLossCode::SourceDialectUnverified.note(format!(
@@ -230,21 +230,13 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
                     .map(cadmpeg_asm::dialect::KernelHeaderRef::Acis)
             })
             .map(cadmpeg_asm::dialect::classify)
-            .map(|mut matched| {
-                matched
-                    .declared
-                    .insert("carrier".to_owned(), brep.name.clone());
-                matched
-            });
+            .map(|matched| with_carrier(matched, &brep.name));
         if let Some(matched) = parsed {
             matches.push(matched);
         } else {
-            let mut matched =
+            let matched =
                 cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
-            matched
-                .declared
-                .insert("carrier".to_owned(), brep.name.clone());
-            matches.push(matched);
+            matches.push(with_carrier(matched, &brep.name));
             losses.push(F3dLossCode::KernelCarrierUnparseable.note(format!(
                 "kernel carrier {} could not be framed for dialect inspection; its retained \
                  source bytes remain available",
@@ -257,7 +249,7 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
             .entry_bytes(name)
             .ok()
             .and_then(|bytes| cadmpeg_asm::sat::parse(bytes).ok());
-        let mut matched = match parsed.as_ref() {
+        let matched = match parsed.as_ref() {
             Some(stream) => {
                 let header = stream.header.as_kernel_header();
                 let reference = match stream.terminator {
@@ -272,10 +264,7 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
             }
             None => cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown),
         };
-        matched
-            .declared
-            .insert("carrier".to_owned(), name.to_owned());
-        matches.push(matched);
+        matches.push(with_carrier(matched, name));
         if parsed.is_none() {
             losses.push(F3dLossCode::KernelCarrierUnparseable.note(format!(
                 "kernel carrier {name} could not be framed for dialect inspection; its retained \
@@ -286,26 +275,32 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
     KernelLayers { matches, losses }
 }
 
+fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
+    let mut declared = matched.declared().clone();
+    declared.insert("carrier".to_owned(), carrier.to_owned());
+    matched.with_declared(declared)
+}
+
 /// The recovery loss a kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
         return None;
     };
     let carrier = matched
-        .declared
+        .declared()
         .get("carrier")
         .map_or("an unnamed carrier", String::as_str);
-    let declared = matched.declared.get("save_format_major").map_or_else(
+    let declared = matched.declared().get("save_format_major").map_or_else(
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
     let message = cadmpeg_asm::dialect::acis_recovery_message(
         &format!("the kernel carrier {carrier}"),
         &declared,
-        nearest,
+        &nearest,
     );
     Some(
-        F3dLossCode::KernelDialectUnverified.note(matched.instance.as_ref().map_or_else(
+        F3dLossCode::KernelDialectUnverified.note(matched.instance().map_or_else(
             || message.clone(),
             |instance| format!("xref {instance}: {message}"),
         )),
@@ -322,7 +317,7 @@ pub(crate) fn report_dialect_losses(
     losses.extend(
         layers
             .iter()
-            .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
+            .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
             .filter_map(kernel_dialect_loss),
     );
     losses

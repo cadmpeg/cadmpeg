@@ -1115,7 +1115,7 @@ fn decode_general_symbol_standard_forms_preserves_form_in_iges_4_0_and_5_0() {
                 .find(|annotation| annotation.fields()["kind"] == "general_symbol")
                 .unwrap();
             assert_eq!(
-                result.report().dialects().unwrap().primary().declared["effective_version"],
+                result.report().dialects().unwrap().primary().declared()["effective_version"],
                 version
             );
             assert_eq!(symbol.fields()["form"], form);
@@ -1187,7 +1187,7 @@ fn decode_type230_form1_is_admitted_in_iges_5_0() {
         )
         .unwrap();
     assert_eq!(
-        result.report().dialects().unwrap().primary().declared["effective_version"],
+        result.report().dialects().unwrap().primary().declared()["effective_version"],
         "5.0"
     );
     let section = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];

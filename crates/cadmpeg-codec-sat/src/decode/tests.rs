@@ -108,7 +108,7 @@ fn an_unverified_acis_text_band_is_decoded_and_marked() {
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(
-        source.dialect.as_ref().unwrap().declared["encoding"],
+        source.dialect.as_ref().unwrap().declared()["encoding"],
         "text"
     );
     assert!(!source.attributes.contains_key("encoding"));
@@ -154,24 +154,24 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
         .dialects()
         .expect("inspection classifies the host and kernel layers");
     let inspected = layers.primary();
-    assert_eq!(inspected.dialect.as_str(), "sat:acis-binary");
+    assert_eq!(inspected.dialect().as_str(), "sat:acis-binary");
     assert_eq!(
-        inspected.admission,
+        inspected.admission(),
         cadmpeg_core::dialect::Admission::Refused
     );
     assert_eq!(layers.iter().count(), 2, "inspect retains both layers");
-    assert_eq!(inspected.declared["encoding"], "binary");
+    assert_eq!(inspected.declared()["encoding"], "binary");
     assert_eq!(
-        inspected.declared["save_format_major"],
+        inspected.declared()["save_format_major"],
         (UNVERIFIED_SAVE_FORMAT / 100).to_string()
     );
     let kernel = layers
         .iter()
         .nth(1)
         .expect("inspect retains the kernel layer");
-    assert_eq!(kernel.dialect.as_str(), "acis:save-format-binary-other");
+    assert_eq!(kernel.dialect().as_str(), "acis:save-format-binary-other");
     assert_eq!(
-        kernel.declared["save_format_major"],
+        kernel.declared()["save_format_major"],
         (UNVERIFIED_SAVE_FORMAT / 100).to_string()
     );
 
@@ -200,9 +200,9 @@ fn unframed_discriminant_has_the_same_refused_match_at_inspect_and_decode() {
         .dialects()
         .expect("inspection classifies the host and kernel layers");
     let inspected = layers.primary();
-    assert_eq!(inspected.dialect.as_str(), "sat:text");
+    assert_eq!(inspected.dialect().as_str(), "sat:text");
     assert_eq!(
-        inspected.admission,
+        inspected.admission(),
         cadmpeg_core::dialect::Admission::Refused
     );
     assert_eq!(

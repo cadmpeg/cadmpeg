@@ -206,7 +206,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .source
             .as_ref()
             .and_then(|source| source.dialect.as_ref())
-            .map(|matched| &matched.dialect)
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );
@@ -233,7 +233,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .source
             .as_ref()
             .and_then(|source| source.dialect.as_ref())
-            .map(|matched| &matched.dialect)
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );
@@ -401,7 +401,7 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
             .dialects()
             .unwrap_or_else(|| panic!("{label} output must classify a host dialect"))
             .primary()
-            .dialect
+            .dialect()
             .clone();
         assert_eq!(
             classified, claimed,

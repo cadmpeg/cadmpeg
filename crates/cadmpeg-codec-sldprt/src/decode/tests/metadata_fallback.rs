@@ -84,7 +84,7 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     assert_eq!(attributes["bmp_thumbnail_0_height"], "-200");
     assert_eq!(attributes["bmp_thumbnail_0_compression"], "1");
     assert_eq!(
-        decoded.report().dialects().unwrap().primary().declared["sw_version"],
+        decoded.report().dialects().unwrap().primary().declared()["sw_version"],
         "34000"
     );
     assert_eq!(attributes["sw_creation_time_unix"], "1700000000");

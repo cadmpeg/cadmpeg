@@ -59,8 +59,8 @@ fn resolve(
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
 fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>), CodecError> {
-    let source_dialect =
-        same_format_source_dialect(input.ir, dialect::FORMAT).map(|matched| &matched.dialect);
+    let source_dialect = same_format_source_dialect(input.ir, dialect::FORMAT)
+        .map(cadmpeg_core::dialect::DialectMatch::dialect);
     let replay_eligible = source_dialect == Some(target);
     let mut bytes = Vec::new();
     let written = match input.fidelity {

@@ -373,10 +373,10 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         .as_ref()
         .expect("FCStd inspection reports dialect layers")
         .primary();
-    assert_eq!(matched.format, "fcstd");
-    assert_eq!(matched.dialect.as_str(), "fcstd:schema-4");
+    assert_eq!(matched.format(), "fcstd");
+    assert_eq!(matched.dialect().as_str(), "fcstd:schema-4");
     assert_eq!(
-        matched.admission,
+        matched.admission(),
         cadmpeg_core::dialect::Admission::Admitted
     );
 
@@ -390,15 +390,15 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.dialect.as_ref(), Some(matched));
     assert_eq!(
-        source.dialect.as_ref().unwrap().declared["schema_version"],
+        source.dialect.as_ref().unwrap().declared()["schema_version"],
         "4"
     );
     assert_eq!(
-        source.dialect.as_ref().unwrap().declared["file_version"],
+        source.dialect.as_ref().unwrap().declared()["file_version"],
         "1"
     );
     assert_eq!(
-        source.dialect.as_ref().unwrap().declared["program_version"],
+        source.dialect.as_ref().unwrap().declared()["program_version"],
         "1.0"
     );
     // The pre-existing attribute keys keep their duties beside the mirror.
@@ -422,7 +422,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             .as_ref()
             .expect("FCStd inspection reports dialect layers")
             .primary()
-            .dialect
+            .dialect()
             .as_str(),
         "fcstd:unknown"
     );
@@ -432,7 +432,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             .as_ref()
             .expect("FCStd inspection reports dialect layers")
             .primary()
-            .admission,
+            .admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
         }
@@ -459,14 +459,14 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
     );
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(
-        source.dialect.as_ref().unwrap().declared["schema_version"],
+        source.dialect.as_ref().unwrap().declared()["schema_version"],
         "5"
     );
     assert!(!source
         .dialect
         .as_ref()
         .unwrap()
-        .declared
+        .declared()
         .contains_key("program_version"));
 
     // A full decode attempts the nearest declared strategy rather than
@@ -484,7 +484,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
     );
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(
-        source.dialect.as_ref().unwrap().declared["schema_version"],
+        source.dialect.as_ref().unwrap().declared()["schema_version"],
         "5"
     );
 }
@@ -513,7 +513,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
             .as_ref()
             .expect("FCStd decode reports dialect layers")
             .primary()
-            .admission,
+            .admission(),
         cadmpeg_core::dialect::Admission::Admitted
     );
     assert_eq!(
@@ -523,7 +523,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
             .as_ref()
             .expect("FCStd decode reports dialect layers")
             .primary()
-            .admission,
+            .admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
         }
@@ -557,7 +557,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
                 .as_ref()
                 .expect("FCStd decode reports dialect layers")
                 .primary()
-                .admission,
+                .admission(),
             cadmpeg_core::dialect::Admission::Admitted
         );
     }

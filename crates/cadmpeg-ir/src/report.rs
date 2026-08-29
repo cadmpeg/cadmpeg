@@ -687,8 +687,8 @@ impl<'de> Deserialize<'de> for DecodeReport {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = DecodeReportWire::deserialize(deserializer)?;
         if let Some(dialects) = &wire.dialects {
-            let primary_format = &dialects.primary().format;
-            if wire.format != *primary_format {
+            let primary_format = dialects.primary().format();
+            if wire.format != primary_format {
                 return Err(serde::de::Error::custom(format_args!(
                     "decode report format {:?} differs from primary dialect format {:?}",
                     wire.format, primary_format
@@ -821,7 +821,7 @@ impl DecodeReport {
         transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
-            format: dialects.primary().format.clone(),
+            format: dialects.primary().format().to_owned(),
             container_only,
             geometry_transferred,
             coverage,

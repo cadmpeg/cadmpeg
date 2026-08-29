@@ -128,7 +128,7 @@ pub(crate) fn admission(variant: Variant) -> Admission {
 /// transferred out of an identified layout. This one states that the layout was
 /// never identified.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    match &matched.admission {
+    match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
         Admission::AdmittedUnverified { nearest } => {
             Some(CatiaLossCode::SourceDialectUnverified.note(format!(

@@ -139,16 +139,17 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
         assert_eq!(scan.framing.layout, case.layout, "{}", case.label);
 
         let matched = classify(&scan);
-        assert_eq!(matched.format, FORMAT, "{}", case.label);
-        assert_eq!(matched.dialect.as_str(), case.id, "{}", case.label);
+        assert_eq!(matched.format(), FORMAT, "{}", case.label);
+        assert_eq!(matched.dialect().as_str(), case.id, "{}", case.label);
         assert_eq!(
-            matched.declared[DECLARED_VERSION_LINE], scan.framing.version_line,
+            matched.declared()[DECLARED_VERSION_LINE],
+            scan.framing.version_line,
             "{}: the header line is recorded as the source wrote it",
             case.label
         );
         assert_eq!(
             matched
-                .declared
+                .declared()
                 .get(DECLARED_LEGACY_ASCII_SCHEMA)
                 .map(String::as_str),
             case.legacy_schema,
@@ -157,7 +158,7 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
         );
         assert_eq!(
             matched
-                .declared
+                .declared()
                 .get(DECLARED_LEGACY_ASCII_PRODUCT_RELEASE)
                 .map(String::as_str),
             case.legacy_release,
@@ -172,7 +173,7 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
                 nearest: DialectId::pinned("creo:unknown"),
             }
         };
-        assert_eq!(matched.admission, expected_admission, "{}", case.label);
+        assert_eq!(matched.admission(), expected_admission, "{}", case.label);
     }
 }
 
@@ -194,7 +195,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         };
         let matched = classify(&scan_bytes(bytes.as_slice()));
         let charged = dialect_loss(&matched).is_some();
-        assert_eq!(matched.admission == Admission::Admitted, !charged);
+        assert_eq!(matched.admission() == Admission::Admitted, !charged);
     }
 
     for case in CASES {
@@ -203,7 +204,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let matched = classify(&scan);
         let charged = dialect_loss(&matched).is_some();
         assert_eq!(
-            matched.admission == Admission::Admitted,
+            matched.admission() == Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             case.label
@@ -238,8 +239,8 @@ fn the_totality_row_never_carries_a_verified_admission() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
-        if matched.dialect.as_str() == Layout::Unknown.id().as_str() {
-            assert_ne!(matched.admission, Admission::Admitted, "{}", case.label);
+        if matched.dialect().as_str() == Layout::Unknown.id().as_str() {
+            assert_ne!(matched.admission(), Admission::Admitted, "{}", case.label);
         }
     }
 }

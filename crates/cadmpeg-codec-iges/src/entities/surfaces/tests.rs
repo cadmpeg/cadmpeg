@@ -604,7 +604,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.report().dialects().unwrap().primary().declared["effective_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
 
@@ -869,7 +869,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.report().dialects().unwrap().primary().declared["effective_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
         let surface = result
@@ -964,7 +964,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.report().dialects().unwrap().primary().declared["effective_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
         let surface = result
@@ -1054,7 +1054,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.report().dialects().unwrap().primary().declared["effective_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
         let surface = result

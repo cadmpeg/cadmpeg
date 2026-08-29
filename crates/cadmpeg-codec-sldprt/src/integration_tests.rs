@@ -279,7 +279,7 @@ fn classify(bytes: Vec<u8>) -> String {
         .dialects()
         .expect("the written part classifies a host dialect")
         .primary()
-        .dialect
+        .dialect()
         .clone()
         .to_string()
 }
@@ -296,7 +296,7 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
             .source
             .as_ref()
             .and_then(|meta| meta.dialect.as_ref())
-            .map(|matched| &matched.dialect)
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("sldprt:sw-version-12000-plus")
     );

@@ -92,25 +92,25 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> IgesVersion {
 
 /// The dialect-unverified loss required by a classified Global declaration.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { .. } = &matched.admission else {
+    let Admission::AdmittedUnverified { .. } = matched.admission() else {
         return None;
     };
     let declared = matched
-        .declared
+        .declared()
         .get(DECLARED_VERSION_FLAG)
         .map_or("absent", String::as_str);
     let version = matched
-        .declared
+        .declared()
         .get(DECLARED_EFFECTIVE_VERSION)
         .map_or("unknown", String::as_str);
-    let declaration = match matched.declared.get(DECLARED_VERSION_FLAG_DECLARATION) {
+    let declaration = match matched.declared().get(DECLARED_VERSION_FLAG_DECLARATION) {
         Some(text) => format!(
             "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
         ),
         None => format!("IGES Global version flag {declared}"),
     };
     let clamp = matched
-        .declared
+        .declared()
         .get(DECLARED_EFFECTIVE_VERSION_FLAG)
         .map_or_else(String::new, |effective| {
             format!(

@@ -258,7 +258,7 @@ pub(super) fn print_decode_report(
     if let Some(dialects) = report.dialects() {
         writeln!(writer, "dialects:")?;
         for dialect in dialects.iter() {
-            writeln!(writer, "  {}: {}", dialect.format, dialect.dialect)?;
+            writeln!(writer, "  {}: {}", dialect.format(), dialect.dialect())?;
         }
     }
     if !report.losses.is_empty() {

@@ -149,7 +149,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             case.label
         );
         assert_eq!(
-            matched.admission == Admission::Admitted,
+            matched.admission() == Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             case.label
@@ -160,12 +160,12 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 #[test]
 fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
     let (matched, losses) = decoded(&primary_envelope_fixture_with_broken_database());
-    assert_eq!(matched.declared[DECLARED_RSE_DB_SCHEMA], "31");
+    assert_eq!(matched.declared()[DECLARED_RSE_DB_SCHEMA], "31");
     assert!(matches!(
-        matched.admission,
+        matched.admission(),
         Admission::AdmittedUnverified { .. }
     ));
-    assert_eq!(matched.dialect.as_str(), "inventor:cfb3-rse31-meta8");
+    assert_eq!(matched.dialect().as_str(), "inventor:cfb3-rse31-meta8");
     let loss = losses
         .iter()
         .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
@@ -180,13 +180,13 @@ fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
 fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
     let (matched, losses) = decoded(&primary_envelope_fixture_with_broken_metadata());
     assert_eq!(
-        matched.declared[DECLARED_META_STREAM_MARKER],
+        matched.declared()[DECLARED_META_STREAM_MARKER],
         MetaStreamDeclaration::VERIFIED_MARKER
     );
-    assert_eq!(matched.declared[DECLARED_META_STREAM_VERSION], "8");
-    assert_eq!(matched.dialect.as_str(), "inventor:cfb3-rse31-meta8");
+    assert_eq!(matched.declared()[DECLARED_META_STREAM_VERSION], "8");
+    assert_eq!(matched.dialect().as_str(), "inventor:cfb3-rse31-meta8");
     assert!(matches!(
-        matched.admission,
+        matched.admission(),
         Admission::AdmittedUnverified { .. }
     ));
     let loss = losses
@@ -205,7 +205,7 @@ fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
 fn each_document_classifies_into_the_row_its_declarations_match() {
     for case in CASES {
         let (matched, _) = decoded(&case.bytes());
-        assert_eq!(matched.dialect.as_str(), case.id, "{}", case.label);
+        assert_eq!(matched.dialect().as_str(), case.id, "{}", case.label);
 
         let expected_admission = if case.admitted {
             Admission::Admitted
@@ -214,16 +214,17 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
                 nearest: InventorDialect::Cfb3Rse31Meta8.id(),
             }
         };
-        assert_eq!(matched.admission, expected_admission, "{}", case.label);
+        assert_eq!(matched.admission(), expected_admission, "{}", case.label);
 
         assert_eq!(
-            matched.declared[DECLARED_CFB_MAJOR_VERSION], "3",
+            matched.declared()[DECLARED_CFB_MAJOR_VERSION],
+            "3",
             "{}: the CFB major version is recorded, never gated on",
             case.label
         );
         assert_eq!(
             matched
-                .declared
+                .declared()
                 .get(DECLARED_RSE_DB_SCHEMA)
                 .map(String::as_str),
             case.schema,
@@ -232,7 +233,7 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
         );
         assert_eq!(
             matched
-                .declared
+                .declared()
                 .get(DECLARED_META_STREAM_VERSION)
                 .map(String::as_str),
             case.meta_version,
@@ -241,7 +242,7 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
         );
         assert_eq!(
             matched
-                .declared
+                .declared()
                 .get(DECLARED_META_STREAM_MARKER)
                 .map(String::as_str),
             case.declarations
@@ -259,8 +260,8 @@ fn the_totality_row_never_carries_a_verified_admission() {
     // it, so the pair (unknown, Admitted) must be unreachable.
     for case in CASES {
         let (matched, _) = decoded(&case.bytes());
-        if matched.dialect.as_str() == InventorDialect::Unknown.id().as_str() {
-            assert_ne!(matched.admission, Admission::Admitted, "{}", case.label);
+        if matched.dialect().as_str() == InventorDialect::Unknown.id().as_str() {
+            assert_ne!(matched.admission(), Admission::Admitted, "{}", case.label);
         }
     }
 }

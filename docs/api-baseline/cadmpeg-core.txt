@@ -1,4 +1,4 @@
-# generated at a60190517
+# generated at 919f6edf8
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -315,18 +315,23 @@ pub fn cadmpeg_core::dialect::DialectLayers::iter(&self) -> impl core::iter::tra
 pub fn cadmpeg_core::dialect::DialectLayers::new(cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>) -> core::result::Result<Self, cadmpeg_core::dialect::DialectLayersError>
 pub fn cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch) -> Self
 pub fn cadmpeg_core::dialect::DialectLayers::primary(&self) -> &cadmpeg_core::dialect::DialectMatch
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectLayers
+pub fn cadmpeg_core::dialect::DialectLayers::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_core::dialect::DialectLayersError
 impl core::error::Error for cadmpeg_core::dialect::DialectLayersError
 impl core::fmt::Display for cadmpeg_core::dialect::DialectLayersError
 pub fn cadmpeg_core::dialect::DialectLayersError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_core::dialect::DialectMatch
-pub cadmpeg_core::dialect::DialectMatch::admission: cadmpeg_core::dialect::Admission
-pub cadmpeg_core::dialect::DialectMatch::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_core::dialect::DialectMatch::dialect: cadmpeg_core::dialect::DialectId
-pub cadmpeg_core::dialect::DialectMatch::format: alloc::string::String
-pub cadmpeg_core::dialect::DialectMatch::instance: core::option::Option<alloc::string::String>
 impl cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::admission(&self) -> cadmpeg_core::dialect::Admission
+pub fn cadmpeg_core::dialect::DialectMatch::declared(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub fn cadmpeg_core::dialect::DialectMatch::dialect(&self) -> &cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_core::dialect::DialectMatch::format(&self) -> &str
+pub fn cadmpeg_core::dialect::DialectMatch::instance(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::dialect::DialectMatch::layer(impl core::convert::Into<alloc::string::String>, cadmpeg_core::dialect::DialectId, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>, cadmpeg_core::dialect::Admission) -> Self
+pub fn cadmpeg_core::dialect::DialectMatch::new(impl core::convert::Into<alloc::string::String>, cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::Admission) -> Self
+pub fn cadmpeg_core::dialect::DialectMatch::with_declared(self, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
+pub fn cadmpeg_core::dialect::DialectMatch::with_instance(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
 pub cadmpeg_core::error::CodecError::InvalidInput(alloc::string::String)

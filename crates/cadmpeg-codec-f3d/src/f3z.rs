@@ -220,12 +220,12 @@ fn finalize_result(
 fn merge_component_layers(target: &mut DialectLayers, component: &DialectLayers, occurrence: &str) {
     let primary = target.primary().clone();
     let mut extra = target.iter().skip(1).cloned().collect::<Vec<_>>();
-    for mut matched in component.iter().skip(1).cloned() {
-        matched.instance = Some(matched.instance.as_ref().map_or_else(
+    for matched in component.iter().skip(1).cloned() {
+        let instance = matched.instance().map_or_else(
             || occurrence.to_owned(),
             |nested| format!("{occurrence}/{nested}"),
-        ));
-        extra.push(matched);
+        );
+        extra.push(matched.with_instance(instance));
     }
     let merged = DialectLayers::new(primary, extra)
         .expect("merged F3D component extras cannot repeat the F3Z primary");

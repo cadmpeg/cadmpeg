@@ -44,7 +44,7 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .expect("version displacement is charged");
     assert!(displacement
         .message
-        .contains(source_dialect.dialect.as_str()));
+        .contains(source_dialect.dialect().as_str()));
     assert!(displacement.message.contains("iges:5.2-fixed-ascii"));
 }
 
@@ -95,7 +95,7 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
             .unwrap()
             .dialect
             .as_ref()
-            .map(|matched| &matched.dialect)
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
     );
 }
 

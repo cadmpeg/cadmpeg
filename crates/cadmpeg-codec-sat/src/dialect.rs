@@ -178,12 +178,12 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
 /// substituted for the band the stream declared. The message states the
 /// declaration and the substitution; it is not the contract, the code is.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
         return None;
     };
     let declared = match (
-        matched.declared.get(DECLARED_SAVE_FORMAT_MAJOR),
-        matched.declared.get(DECLARED_SAVE_FORMAT_MINOR),
+        matched.declared().get(DECLARED_SAVE_FORMAT_MAJOR),
+        matched.declared().get(DECLARED_SAVE_FORMAT_MINOR),
     ) {
         (Some(major), Some(minor)) => format!("save format {major}.{minor}"),
         (Some(major), None) => format!("save format major {major}"),
@@ -193,7 +193,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         SatLossCode::SourceDialectUnverified.note(cadmpeg_asm::dialect::acis_recovery_message(
             "the stream",
             &declared,
-            nearest,
+            &nearest,
         )),
     )
 }

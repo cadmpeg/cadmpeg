@@ -165,7 +165,7 @@ impl SldprtDialect {
 
     /// The typed row carried by an existing classification.
     pub(crate) fn from_match(matched: &DialectMatch) -> Option<Self> {
-        let id = &matched.dialect;
+        let id = matched.dialect();
         [
             Self::SwVersionPre12000,
             Self::SwVersion12000Plus,
@@ -219,10 +219,10 @@ impl SldprtDialect {
 /// decode policy requires is therefore structural: the note charged and the
 /// admission reported come from one value, not from two authors agreeing.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    match &matched.admission {
+    match matched.admission() {
         Admission::Admitted => None,
         Admission::AdmittedUnverified { nearest } => {
-            let declaration = match matched.declared.get(DECLARED_SW_VERSION) {
+            let declaration = match matched.declared().get(DECLARED_SW_VERSION) {
                 Some(value) => format!(
                     "the swSolidWorks swVersion declaration {value:?} does not read as a version \
                      above zero"

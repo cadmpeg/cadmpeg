@@ -371,9 +371,9 @@ pub struct DialectProvenance {
 pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectProvenance> {
     let entry = dialects?.primary();
     Some(DialectProvenance {
-        id: Some(entry.dialect.clone()),
-        read: support(&entry.dialect).map(|disposition| disposition.read),
-        write_targets: catalog_of(&entry.format)
+        id: Some(entry.dialect().clone()),
+        read: support(entry.dialect()).map(|disposition| disposition.read),
+        write_targets: catalog_of(entry.format())
             .unwrap_or(&[])
             .iter()
             .map(|target| target.id)
@@ -778,13 +778,11 @@ mod tests {
     fn the_provenance_joins_the_match_the_registry_and_the_catalog() {
         use cadmpeg_core::dialect::{Admission, DialectMatch};
 
-        let dialects = DialectLayers::of(DialectMatch {
-            format: "rhino".to_owned(),
-            dialect: DialectId::pinned("rhino:archive-50"),
-            declared: BTreeMap::new(),
-            instance: None,
-            admission: Admission::Admitted,
-        });
+        let dialects = DialectLayers::of(DialectMatch::new(
+            "rhino",
+            DialectId::pinned("rhino:archive-50"),
+            Admission::Admitted,
+        ));
         let provenance = dialect_provenance(Some(&dialects)).expect("a primary layer exists");
         assert_eq!(
             provenance.id.as_ref().map(DialectId::as_str),

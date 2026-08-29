@@ -523,7 +523,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .dialects()
         .expect("re-decoded F3Z archive has a primary layer")
         .primary();
-    assert_eq!(&primary.dialect, &reported);
+    assert_eq!(primary.dialect(), &reported);
 }
 
 #[test]
@@ -662,14 +662,15 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .primary()
         .clone();
     let inspected_dialects = summary.dialects();
-    assert_eq!(inspected.format, "f3d");
-    assert_eq!(inspected.dialect.as_str(), "f3d:f3z-multi-document");
+    assert_eq!(inspected.format(), "f3d");
+    assert_eq!(inspected.dialect().as_str(), "f3d:f3z-multi-document");
     assert_eq!(
-        inspected.declared["root_document_members"], "comp.f3d,root.f3d",
+        inspected.declared()["root_document_members"],
+        "comp.f3d,root.f3d",
         "each root-level member is recorded as the archive spells it, sorted by path"
     );
     assert_eq!(
-        inspected.admission,
+        inspected.admission(),
         cadmpeg_core::dialect::Admission::Admitted
     );
 
@@ -693,7 +694,7 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .expect("the report is classified")
         .iter()
         .skip(1)
-        .all(|matched| matched.format == "acis"));
+        .all(|matched| matched.format() == "acis"));
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect.as_ref(), Some(&inspected));
     let primary = decoded.report().dialects().unwrap().primary();
@@ -748,8 +749,8 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
         .into_iter()
         .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
         .any(|matched| {
-            matched.format == crate::dialect::FORMAT
-                && matched.dialect.as_str() == "f3d:f3z-multi-document"
+            matched.format() == crate::dialect::FORMAT
+                && matched.dialect().as_str() == "f3d:f3z-multi-document"
         }));
     assert!(
         decoded
@@ -758,7 +759,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
             .into_iter()
             .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
             .any(|matched| {
-                matched.format == "acis" && matched.dialect.as_str() == "acis:text-acis"
+                matched.format() == "acis" && matched.dialect().as_str() == "acis:text-acis"
             }),
         "{:?}",
         decoded.report().dialects()
@@ -817,16 +818,13 @@ fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
         .dialects()
         .expect("the report is classified")
         .iter()
-        .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
+        .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         .collect::<Vec<_>>();
     assert_eq!(kernel_layers.len(), 1);
     let occurrence = format!("{XREF_ROLE}/occurrence-0");
+    assert_eq!(kernel_layers[0].instance(), Some(occurrence.as_str()));
     assert_eq!(
-        kernel_layers[0].instance.as_deref(),
-        Some(occurrence.as_str())
-    );
-    assert_eq!(
-        kernel_layers[0].declared["carrier"],
+        kernel_layers[0].declared()["carrier"],
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat"
     );
     let loss = decoded
@@ -855,11 +853,14 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
         .primary()
         .clone();
     let inspected_dialects = summary.dialects();
-    assert_eq!(inspected.format, "f3d");
-    assert_eq!(inspected.dialect.as_str(), "f3d:manifest-3-2-0-0");
-    assert_eq!(inspected.declared["top_level_manifest_version"], "3-2-0-0");
+    assert_eq!(inspected.format(), "f3d");
+    assert_eq!(inspected.dialect().as_str(), "f3d:manifest-3-2-0-0");
     assert_eq!(
-        inspected.admission,
+        inspected.declared()["top_level_manifest_version"],
+        "3-2-0-0"
+    );
+    assert_eq!(
+        inspected.admission(),
         cadmpeg_core::dialect::Admission::Admitted
     );
 

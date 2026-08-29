@@ -499,7 +499,7 @@ fn type322_attribute_list_value_follows_the_declared_dialect() {
             )
             .unwrap();
         assert_eq!(
-            result.report().dialects().unwrap().primary().declared["effective_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             expected_version
         );
         let definition =

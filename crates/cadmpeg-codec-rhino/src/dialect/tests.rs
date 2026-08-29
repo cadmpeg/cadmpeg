@@ -42,10 +42,10 @@ fn classify_word(word: u64) -> cadmpeg_core::dialect::DialectMatch {
 fn each_enumerated_word_classifies_into_the_row_its_discriminant_matches() {
     for (word, id) in ENUMERATED {
         let matched = classify_word(*word);
-        assert_eq!(matched.format, FORMAT, "archive word {word}");
-        assert_eq!(matched.dialect.as_str(), *id, "archive word {word}");
+        assert_eq!(matched.format(), FORMAT, "archive word {word}");
+        assert_eq!(matched.dialect().as_str(), *id, "archive word {word}");
         assert_eq!(
-            matched.declared[DECLARED_ARCHIVE_VERSION],
+            matched.declared()[DECLARED_ARCHIVE_VERSION],
             word.to_string(),
             "archive word {word}: the declaration is recorded as the header made it"
         );
@@ -57,12 +57,12 @@ fn the_totality_row_absorbs_every_word_the_registry_omits() {
     for word in OUTSIDE {
         let matched = classify_word(*word);
         assert_eq!(
-            matched.dialect.as_str(),
+            matched.dialect().as_str(),
             "rhino:unknown",
             "archive word {word} has no declared row"
         );
         assert_eq!(
-            matched.declared[DECLARED_ARCHIVE_VERSION],
+            matched.declared()[DECLARED_ARCHIVE_VERSION],
             word.to_string(),
             "archive word {word}: an unclassified word still records its declaration"
         );
@@ -78,7 +78,7 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
     for (word, nearest) in [(49, ArchiveVersion::V4), (51, ArchiveVersion::V9)] {
         let matched = classify_word(word);
         assert_eq!(
-            matched.admission,
+            matched.admission(),
             Admission::AdmittedUnverified {
                 nearest: nearest.id()
             },
@@ -100,7 +100,7 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
 #[test]
 fn archive_word_5_is_admitted_on_its_declared_narrow_chunk_grammar() {
     let matched = classify_word(5);
-    assert_eq!(matched.admission, Admission::Admitted);
+    assert_eq!(matched.admission(), Admission::Admitted);
     assert!(admission_loss(&matched).is_none());
 }
 
@@ -120,16 +120,16 @@ fn the_writer_stamp_is_declared_when_the_run_read_it_and_omitted_when_it_did_not
 
     let stamped = archive.classify(Some(2_348_836_140));
     assert_eq!(
-        stamped.declared[DECLARED_OPENNURBS_WRITER_VERSION],
+        stamped.declared()[DECLARED_OPENNURBS_WRITER_VERSION],
         "2348836140"
     );
 
     let unstamped = archive.classify(None);
     assert!(!unstamped
-        .declared
+        .declared()
         .contains_key(DECLARED_OPENNURBS_WRITER_VERSION));
 
     // The stamp is evidence, never an admission discriminant.
-    assert_eq!(stamped.admission, unstamped.admission);
-    assert_eq!(stamped.dialect, unstamped.dialect);
+    assert_eq!(stamped.admission(), unstamped.admission());
+    assert_eq!(stamped.dialect(), unstamped.dialect());
 }

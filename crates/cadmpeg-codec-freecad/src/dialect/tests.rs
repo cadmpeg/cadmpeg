@@ -89,8 +89,8 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
         );
         let context = format!("SchemaVersion {:?}", case.declaration);
 
-        assert_eq!(matched.format, FORMAT, "{context}");
-        assert_eq!(matched.dialect.as_str(), case.id, "{context}");
+        assert_eq!(matched.format(), FORMAT, "{context}");
+        assert_eq!(matched.dialect().as_str(), case.id, "{context}");
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
@@ -98,7 +98,7 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
                 nearest: DialectId::pinned("fcstd:schema-4"),
             }
         };
-        assert_eq!(matched.admission, expected_admission, "{context}");
+        assert_eq!(matched.admission(), expected_admission, "{context}");
     }
 }
 
@@ -119,7 +119,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             case.declaration
         );
         assert_eq!(
-            matched.admission == Admission::Admitted,
+            matched.admission() == Admission::Admitted,
             !charged,
             "SchemaVersion {:?}: admission and the dialect-unverified loss must agree",
             case.declaration
@@ -137,9 +137,9 @@ fn the_totality_row_never_carries_a_verified_admission() {
             &document(case.declaration),
             FcstdDialect::from_schema_version(case.declaration),
         );
-        if matched.dialect.as_str() == FcstdDialect::Unknown.id().as_str() {
+        if matched.dialect().as_str() == FcstdDialect::Unknown.id().as_str() {
             assert_ne!(
-                matched.admission,
+                matched.admission(),
                 Admission::Admitted,
                 "SchemaVersion {:?}",
                 case.declaration
@@ -152,13 +152,13 @@ fn the_totality_row_never_carries_a_verified_admission() {
 fn the_declared_keys_are_pinned_and_verbatim() {
     let matched = FcstdDialect::classify(&document("4"), FcstdDialect::Schema4);
     assert_eq!(
-        matched.declared.keys().collect::<Vec<_>>(),
+        matched.declared().keys().collect::<Vec<_>>(),
         ["file_version", "program_version", "schema_version"]
     );
-    assert_eq!(matched.declared[DECLARED_SCHEMA_VERSION], "4");
-    assert_eq!(matched.declared[DECLARED_FILE_VERSION], "1");
+    assert_eq!(matched.declared()[DECLARED_SCHEMA_VERSION], "4");
+    assert_eq!(matched.declared()[DECLARED_FILE_VERSION], "1");
     assert_eq!(
-        matched.declared[DECLARED_PROGRAM_VERSION],
+        matched.declared()[DECLARED_PROGRAM_VERSION],
         "1.1R20260414 (Git shallow)"
     );
 
@@ -168,7 +168,7 @@ fn the_declared_keys_are_pinned_and_verbatim() {
     facts.program_version = None;
     let matched = FcstdDialect::classify(&facts, FcstdDialect::Schema4);
     assert_eq!(
-        matched.declared.keys().collect::<Vec<_>>(),
+        matched.declared().keys().collect::<Vec<_>>(),
         ["file_version", "schema_version"]
     );
 }

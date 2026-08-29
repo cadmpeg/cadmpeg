@@ -366,10 +366,10 @@ pub(crate) fn unknown_kernel_layer() -> DialectMatch {
 
 /// The recovery loss the kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
         return None;
     };
-    let declared = matched.declared.get("save_format_major").map_or_else(
+    let declared = matched.declared().get("save_format_major").map_or_else(
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
@@ -377,7 +377,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         cadmpeg_asm::dialect::acis_recovery_message(
             "the active kernel carrier",
             &declared,
-            nearest,
+            &nearest,
         ),
     ))
 }
