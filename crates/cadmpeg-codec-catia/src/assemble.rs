@@ -22,7 +22,7 @@ use cadmpeg_ir::Exactness;
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashSet};
 
-use crate::container::{self, ContainerScan};
+use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
 
 pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
@@ -550,7 +550,7 @@ pub(crate) fn build_geometry_report(
         true,
         std::collections::BTreeMap::new(),
         losses,
-        container::summarize(scan).notes,
+        Vec::new(),
         cadmpeg_ir::report::TransferLedger::default(),
     )
 }
@@ -644,7 +644,6 @@ pub(crate) fn link_payload_carriers(
 }
 
 pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
-    let summary = container::summarize(scan);
     let mut losses = vec![CatiaLossCode::GeometryBrepNotTransferred.note(format!(
         "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
          applicable decoded record families transfer geometry in this codec.",
@@ -670,7 +669,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
         false,
         std::collections::BTreeMap::new(),
         losses,
-        summary.notes,
+        Vec::new(),
         cadmpeg_ir::report::TransferLedger::default(),
     )
 }
