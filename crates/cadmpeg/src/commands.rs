@@ -24,7 +24,7 @@ use cadmpeg_registry::{
 };
 
 use crate::application::refusal::classify_decode_failure;
-use crate::application::transcoder::emit_export_plan;
+use crate::application::transcoder::{emit_export_plan, TargetSelection};
 use crate::application::validators::validate_ir;
 use crate::application::{
     export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, NativeValidatorCatalog,
@@ -65,8 +65,8 @@ fn print_load_notices(notices: &[LoadNotice]) {
     }
 }
 
-/// CLI-facing conversion arguments assembled before [`Transcoder::prepare`].
-pub struct ConversionPlan {
+/// CLI-facing conversion arguments assembled from argv.
+pub struct ConversionArgs {
     /// Application conversion policy.
     pub policy: ConversionPolicy,
     /// Optional path for the versioned JSON command report.
@@ -336,10 +336,10 @@ pub fn convert(
     path: &Path,
     to: Option<&str>,
     out: Option<&Path>,
-    plan: &ConversionPlan,
+    conversion: &ConversionArgs,
     args: &DecodeArgs,
 ) -> Result<()> {
-    execute_conversion(catalogs, path, to, out, plan, args)
+    execute_conversion(catalogs, path, to, out, conversion, args)
 }
 
 fn execute_conversion(
@@ -347,17 +347,16 @@ fn execute_conversion(
     path: &Path,
     to: Option<&str>,
     out: Option<&Path>,
-    plan: &ConversionPlan,
+    conversion: &ConversionArgs,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let selection = OutputSelection::resolve(to, out)?;
-    let format = selection.format;
-    let target = export_target(format, selection.dialect.as_deref());
+    let selection = TargetSelection::resolve(to, out)?;
+    let target = export_target(selection);
 
     let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
     let source = SourceRequest {
         path,
-        forced: plan.forced_input,
+        forced: conversion.forced_input,
         options: args.options(),
     };
     // A refusal from either stage renders the same way: it carries whatever
@@ -378,8 +377,8 @@ fn execute_conversion(
         if refusal.may_write_report() {
             write_command_report(
                 path,
-                plan.report.as_deref(),
-                plan.policy.force,
+                conversion.report.as_deref(),
+                conversion.policy.force,
                 "convert",
                 CommandReportBody {
                     decode_report: refusal.decode_report(),
@@ -392,7 +391,7 @@ fn execute_conversion(
         Ok(())
     };
 
-    let prepared = match transcoder.prepare(&source, target, plan.policy.clone()) {
+    let prepared = match transcoder.prepare(&source, target, conversion.policy.clone()) {
         Ok(prepared) => prepared,
         Err(error) => {
             render_refusal(&error)?;
@@ -425,8 +424,8 @@ fn execute_conversion(
     let report = planned.write()?;
     write_command_report(
         path,
-        plan.report.as_deref(),
-        plan.policy.force,
+        conversion.report.as_deref(),
+        conversion.policy.force,
         "convert",
         CommandReportBody {
             decode_report: decode_report.as_ref(),
@@ -525,17 +524,7 @@ pub fn diff(
 }
 
 /// What `--to` and the output path together say the conversion writes.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct OutputSelection {
-    /// The output format, resolved before the input is opened.
-    pub(crate) format: Format,
-    /// The dialect half of `--to`, unresolved: a registry id or a catalog
-    /// alias. `None` when `--to` named no dialect, which is the identity
-    /// default.
-    pub(crate) dialect: Option<String>,
-}
-
-impl OutputSelection {
+impl TargetSelection {
     /// Reads `--to VALUE` against the output path.
     ///
     /// The grammar, in the order it is tried:
@@ -561,10 +550,7 @@ impl OutputSelection {
             let format = inferred.ok_or_else(|| {
                 anyhow!("cannot infer format from the output path; pass --to FORMAT")
             })?;
-            return Ok(Self {
-                format,
-                dialect: None,
-            });
+            return Ok(Self::new(format, None));
         };
 
         if let Some((left, right)) = value.split_once(':') {
@@ -580,18 +566,12 @@ impl OutputSelection {
                 );
             }
             warn_on_extension_disagreement(format, inferred);
-            return Ok(Self {
-                format,
-                dialect: Some(right.to_owned()),
-            });
+            return Ok(Self::new(format, Some(right.to_owned())));
         }
 
         if let Some(format) = Format::from_name(value) {
             warn_on_extension_disagreement(format, inferred);
-            return Ok(Self {
-                format,
-                dialect: None,
-            });
+            return Ok(Self::new(format, None));
         }
 
         if dialect_table(None)?
@@ -611,10 +591,7 @@ impl OutputSelection {
                 Format::vocabulary()
             )
         })?;
-        Ok(Self {
-            format,
-            dialect: Some(value.to_owned()),
-        })
+        Ok(Self::new(format, Some(value.to_owned())))
     }
 }
 

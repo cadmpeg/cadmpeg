@@ -614,7 +614,7 @@ fn main() -> ExitCode {
             if json {
                 Err(misdirected_json("convert"))
             } else {
-                let plan = commands::ConversionPlan {
+                let conversion_args = commands::ConversionArgs {
                     policy: application::ConversionPolicy {
                         force,
                         binary_stdout,
@@ -632,7 +632,7 @@ fn main() -> ExitCode {
                     &resolve_input(input, input_flag),
                     format.as_deref(),
                     output.as_deref(),
-                    &plan,
+                    &conversion_args,
                     &decode,
                 )
             }
