@@ -928,18 +928,15 @@ pub(crate) fn try_decode_zero_entity(
     };
     Some(FamilyOutput {
         ir,
-        report: DecodeReport {
-            dialects: Some(cadmpeg_core::dialect::DialectLayers::of(
-                crate::dialect::classify(scan),
-            )),
-            format: "catia".to_string(),
-            container_only: false,
-            geometry_transferred: true,
+        report: DecodeReport::unclassified(
+            "catia",
+            false,
+            true,
             coverage,
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-            losses: vec![topology_loss.note(topology_message)],
-            notes: container::summarize(scan).notes,
-        },
+            vec![topology_loss.note(topology_message)],
+            container::summarize(scan).notes,
+            cadmpeg_ir::report::TransferLedger::default(),
+        ),
         annotations: annotations.build(),
         unknowns,
         standard_face_population: false,

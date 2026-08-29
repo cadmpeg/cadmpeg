@@ -554,18 +554,15 @@ pub(crate) fn build_geometry_report(
         ),
     );
 
-    DecodeReport {
-        dialects: Some(cadmpeg_core::dialect::DialectLayers::of(
-            crate::dialect::classify(scan),
-        )),
-        format: "catia".to_string(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    DecodeReport::unclassified(
+        "catia",
+        false,
+        true,
+        std::collections::BTreeMap::new(),
         losses,
-        notes: container::summarize(scan).notes,
-    }
+        container::summarize(scan).notes,
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 pub(crate) fn build_metadata_ir(
@@ -677,18 +674,15 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
                   for this file.",
     ));
 
-    DecodeReport {
-        dialects: Some(cadmpeg_core::dialect::DialectLayers::of(
-            crate::dialect::classify(scan),
-        )),
-        format: "catia".to_string(),
+    DecodeReport::unclassified(
+        "catia",
         container_only,
-        geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        false,
+        std::collections::BTreeMap::new(),
         losses,
-        notes: summary.notes,
-    }
+        summary.notes,
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
