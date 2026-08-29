@@ -47,10 +47,13 @@ fn resolve(
     request: TargetRequest<'_>,
 ) -> Result<(DialectId, Option<DialectId>), CodecError> {
     // This writer has no synthesize fallback, so it flattens the request locally.
-    match resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)? {
-        WriteRequest::Catalog { entry, displaced } => Ok((DialectId::pinned(entry.id), displaced)),
-        WriteRequest::OffCatalog { dialect } => Ok((dialect.clone(), None)),
-    }
+    let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
+    let target = resolved.dialect_id();
+    let displaced = match resolved {
+        WriteRequest::Catalog { displaced, .. } => displaced,
+        WriteRequest::OffCatalog { .. } => None,
+    };
+    Ok((target, displaced))
 }
 
 /// Run replay when the target equals the source row; otherwise run the
