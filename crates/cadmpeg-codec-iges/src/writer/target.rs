@@ -4,8 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    plan_preserve_or_synthesize, resolve_write_request, unsupported_target, EncodeInput,
-    ExportPlan, PreserveAttempt, TargetRequest,
+    plan_preserve_or_synthesize, resolve_write_request, same_format_source_dialect,
+    unsupported_target, EncodeInput, ExportPlan, PreserveAttempt, TargetRequest,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -82,7 +82,9 @@ fn replay_bytes(
             "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
         )));
     };
-    let source_dialect = match source.dialect.as_ref().map(|matched| &matched.dialect) {
+    let source_dialect = match same_format_source_dialect(ir, crate::dialect::FORMAT)
+        .map(|matched| &matched.dialect)
+    {
         None => {
             return Ok(Replay::declined_because(format!(
                 "preserved IGES source records no dialect, target is {target}; byte replay skipped"
