@@ -151,11 +151,24 @@ pub struct DialectMatch {
 /// Construction rejects an extra layer whose format equals the primary
 /// layer's format. The wire names the primary explicitly, so the collection
 /// carries its complete identity without an enclosing report's format.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DialectLayers {
     primary: DialectMatch,
     extra: Vec<DialectMatch>,
+}
+
+#[derive(Deserialize)]
+struct DialectLayersWire {
+    primary: DialectMatch,
+    extra: Vec<DialectMatch>,
+}
+
+impl<'de> Deserialize<'de> for DialectLayers {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = DialectLayersWire::deserialize(deserializer)?;
+        Self::new(wire.primary, wire.extra).map_err(serde::de::Error::custom)
+    }
 }
 
 impl DialectLayers {
@@ -310,6 +323,23 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "extra dialect layer repeats primary format \"rhino\""
+        );
+    }
+
+    #[test]
+    fn dialect_layers_deserialization_rejects_a_same_format_extra() {
+        let serialized = serde_json::json!({
+            "primary": layer("rhino"),
+            "extra": [layer("acis"), layer("rhino")],
+        });
+
+        let error = serde_json::from_value::<DialectLayers>(serialized)
+            .expect_err("wire input must use the checked constructor");
+        assert!(
+            error
+                .to_string()
+                .contains("extra dialect layer repeats primary format \"rhino\""),
+            "{error}"
         );
     }
 
