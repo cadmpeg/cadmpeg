@@ -71,13 +71,16 @@
 
 use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "sldprt";
+const PARASOLID_FORMAT: &str = "parasolid";
+const PARASOLID_SCHEMA: &str = "schema";
+const PARASOLID_CARRIER: &str = "carrier";
 
 /// The one dialect this writer synthesizes.
 ///
@@ -111,6 +114,75 @@ pub(crate) enum SldprtDialect {
     SwVersionPre12000,
     SwVersion12000Plus,
     Unknown,
+}
+
+/// Classify the host document and every framed Parasolid stream it carries.
+pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> DialectLayers {
+    let mut kernels = scan
+        .blocks
+        .iter()
+        .flat_map(|block| {
+            block
+                .ps_streams
+                .iter()
+                .zip(&block.ps_stream_offsets)
+                .filter_map(move |(payload, offset)| {
+                    let header = crate::parasolid::stream_header(payload)?;
+                    let section = block.section.as_deref().unwrap_or("unnamed");
+                    Some((
+                        header.schema,
+                        format!("block@{}:{section}+{offset}", block.offset),
+                    ))
+                })
+        })
+        .chain(scan.compound_streams.iter().flat_map(|stream| {
+            stream
+                .ps_streams
+                .iter()
+                .zip(&stream.ps_stream_offsets)
+                .filter_map(move |(payload, offset)| {
+                    let header = crate::parasolid::stream_header(payload)?;
+                    Some((
+                        header.schema,
+                        format!("compound@{}:{}+{offset}", stream.directory_id, stream.path),
+                    ))
+                })
+        }))
+        .collect::<Vec<_>>();
+    let several = kernels.len() > 1;
+    let extra = kernels
+        .drain(..)
+        .map(|(schema, carrier)| parasolid_layer(&schema, &carrier, several))
+        .collect();
+    DialectLayers::new(SldprtDialect::classify_scan(scan), extra)
+        .expect("Parasolid stream carriers have unique instances")
+}
+
+fn parasolid_layer(schema: &str, carrier: &str, instance_tagged: bool) -> DialectMatch {
+    let id = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
+        "parasolid:sch-sw-33103"
+    } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
+        "parasolid:sch-sw-32001"
+    } else if schema.to_ascii_uppercase().ends_with("_13006") {
+        "parasolid:format-13006"
+    } else {
+        "parasolid:unknown"
+    };
+    let declared = BTreeMap::from([
+        (PARASOLID_SCHEMA.to_owned(), schema.to_owned()),
+        (PARASOLID_CARRIER.to_owned(), carrier.to_owned()),
+    ]);
+    let matched = DialectMatch::layer(
+        PARASOLID_FORMAT,
+        DialectId::pinned(id),
+        declared,
+        Admission::Admitted,
+    );
+    if instance_tagged {
+        matched.with_instance(carrier)
+    } else {
+        matched
+    }
 }
 
 impl SldprtDialect {

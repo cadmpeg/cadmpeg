@@ -821,9 +821,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     );
 
     ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify_scan(
-            scan,
-        )),
+        crate::dialect::classify_layers(scan),
         if scan.compound_streams.is_empty() {
             "sldprt-blocks"
         } else {

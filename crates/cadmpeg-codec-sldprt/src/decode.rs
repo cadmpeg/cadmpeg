@@ -4531,14 +4531,8 @@ fn preserve_source_image(
     });
 }
 
-/// The primary-layer match for a report, as the one-entry list the reports
-/// carry.
-///
-/// `.sldprt` embeds Parasolid, but no crate owns or emits the `parasolid:`
-/// namespace. This host records the schema token as an attribute instead of a
-/// kernel-layer dialect match, so the primary layer is the whole list.
 fn report_dialects(scan: &ContainerScan) -> cadmpeg_core::dialect::DialectLayers {
-    cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify_scan(scan))
+    crate::dialect::classify_layers(scan)
 }
 
 /// Appends the dialect-unverified loss the primary layer's admission charges.

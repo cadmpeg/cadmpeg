@@ -870,15 +870,9 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 # (`product_record_count != 1` rejects a candidate, om.rs:9336-9341); content
 # is not.
 #
-# Embedded layers. NX carries TWO kernels, not one: Parasolid streams
-# (`PS\0\0` prologue after inflation, parasolid.rs:1421-1424; schema token by
-# `read_schema`, parasolid.rs:1436-1445) and JT documents under
-# `/Root/UG_PART/DisplayJT` (`Version ` header, native/display_jt.rs:1303).
-# The JT major version IS a real dialect branch -- common node data encodes
-# its version as u16 below major 10 and u8 at 10 and above, and the
-# partition/group node grammar is gated the same way. This registry has no
-# `jt:` namespace and needs one before `DecodeReport.dialects` can state the
-# JT layer honestly.
+# Embedded Parasolid streams are classified from the inflated `PS\0\0`
+# prologue and the schema token returned by `read_schema` in
+# `crates/cadmpeg-codec-nx/src/parasolid.rs`.
 [format.nx]
 complete = false
 
@@ -1279,10 +1273,9 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 # --------------------------------------------------------------------------
 # Parasolid kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
-# The namespace is declared but has no producer. No owning crate exists:
-# SLDPRT and NX each carry a host-local reader, and neither emits a
-# `parasolid:` identity. These rows describe stream identity but do not pin
-# producer vocabulary. The hosts record the schema token as an attribute.
+# SLDPRT and NX emit these layers from their host-local Parasolid readers. Each
+# layer records the complete schema token and its source carrier. A host with
+# several Parasolid streams uses the carrier as the layer instance.
 #
 # The discriminant is the schema token in the transmit-stream header, of the
 # form `SCH_<modeller>_<schema>_<format>`. `stream_header`

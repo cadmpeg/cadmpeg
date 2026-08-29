@@ -1,7 +1,17 @@
 {
   "container_kind": "sldprt-blocks",
   "dialects": {
-    "extra": [],
+    "extra": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "carrier": "block@54:Contents/Config-0-Partition+0",
+          "schema": "SCH_SW_33103_11000"
+        },
+        "dialect": "parasolid:sch-sw-33103",
+        "format": "parasolid"
+      }
+    ],
     "primary": {
       "admission": {
         "admitted_unverified": {

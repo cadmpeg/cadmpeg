@@ -5,7 +5,8 @@
 //! container. These pin that the real dispatch reaches the reports: that
 //! `Codec::inspect` and `Codec::decode` carry exactly one match naming `nx`,
 //! that the id agrees with the container parser that actually ran, and that
-//! `SourceMeta` mirrors the same primary layer.
+//! `SourceMeta` mirrors the same primary layer. Embedded kernel matches can
+//! accompany it.
 
 use std::io::Cursor;
 
@@ -17,13 +18,16 @@ use super::{decode, legacy_cfb_with_ug_part};
 use crate::test_support::*;
 use crate::NxCodec;
 
-/// The one match naming the reporting format, and the assertion that it is one.
+/// The one match naming the reporting format.
 fn primary(dialects: Option<&DialectLayers>) -> &DialectMatch {
     let layers = dialects.expect("NX reports dialect layers");
     assert_eq!(
-        layers.iter().count(),
+        layers
+            .iter()
+            .filter(|matched| matched.format() == "nx")
+            .count(),
         1,
-        "NX reports exactly the primary layer"
+        "NX reports exactly one host layer"
     );
     layers.primary()
 }
