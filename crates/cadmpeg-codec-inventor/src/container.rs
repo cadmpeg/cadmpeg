@@ -147,7 +147,7 @@ impl<'a> InventorContainer<'a> {
                 crate::dialect::DialectRecovery::of(self).dialect_match(),
                 kernel.into_iter().collect(),
             )
-            .expect("a primary layer without extras is valid"),
+            .expect("the kernel layer has a distinct format"),
         );
         ContainerSummary {
             dialects,

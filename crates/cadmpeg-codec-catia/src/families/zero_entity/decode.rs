@@ -929,13 +929,9 @@ pub(crate) fn try_decode_zero_entity(
     Some(FamilyOutput {
         ir,
         report: DecodeReport {
-            dialects: Some(
-                cadmpeg_core::dialect::DialectLayers::new(
-                    crate::dialect::classify(scan),
-                    Vec::new(),
-                )
-                .expect("a primary layer without extras is valid"),
-            ),
+            dialects: Some(cadmpeg_core::dialect::DialectLayers::of(
+                crate::dialect::classify(scan),
+            )),
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,

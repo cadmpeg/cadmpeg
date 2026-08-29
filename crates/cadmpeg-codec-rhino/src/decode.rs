@@ -2545,10 +2545,7 @@ impl<'a> DecodeContext<'a> {
         // Charged from the reported admission itself, so the document-level
         // `AdmittedUnverified` and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
-        let dialects = Some(
-            cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
-                .expect("a primary layer without extras is valid"),
-        );
+        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
         DecodeResult::new(
             self.ir,
             DecodeReport {

@@ -292,13 +292,9 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
-    let dialects = Some(
-        cadmpeg_core::dialect::DialectLayers::new(
-            dialect::NxDialect::classify(&scan.container),
-            Vec::new(),
-        )
-        .expect("a primary layer without extras is valid"),
-    );
+    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
+        dialect::NxDialect::classify(&scan.container),
+    ));
     ContainerSummary {
         dialects,
         format: dialect::FORMAT.to_string(),

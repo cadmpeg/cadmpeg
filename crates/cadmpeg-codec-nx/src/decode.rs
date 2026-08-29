@@ -487,10 +487,9 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         );
     }
 
-    let dialects = Some(
-        cadmpeg_core::dialect::DialectLayers::new(NxDialect::classify(&scan.container), Vec::new())
-            .expect("a primary layer without extras is valid"),
-    );
+    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
+        NxDialect::classify(&scan.container),
+    ));
     DecodeReport {
         dialects,
         format: crate::dialect::FORMAT.to_string(),
