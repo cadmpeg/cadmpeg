@@ -1290,6 +1290,20 @@ item = "cadmpeg_ir::codec::DecodeResult::report_mut"
 reason = "mutable report access returns a drop guard that revalidates the primary-layer invariant and re-projects source dialect metadata"
 
 [[change]]
+commit = "8a37cbdae4f7bf7a66da516302d6a7b736e0218f"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::{PreserveAttempt,plan_preserve_or_synthesize,resolve_catalog_write}"
+reason = "resolve_write_request now returns the complete preserve or displacement decision, so codecs match that one outcome and retain only codec-specific delivery work"
+
+[[change]]
+commit = "8a37cbdae4f7bf7a66da516302d6a7b736e0218f"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::WriteRequest::Catalog::preserve"
+reason = "the sole resolver states whether a catalog target preserves the same-format source identity so codecs do not repeat that comparison"
+
+[[change]]
 commit = "b796eb05a12b495812939a330e43913b952f41a0"
 crate = "cadmpeg-codec-step"
 kind = "deletion"

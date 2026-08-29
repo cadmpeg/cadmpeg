@@ -391,33 +391,36 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     ir
 }
 
-fn resolve_test_catalog<'a>(
-    ir: &'a CadIr,
-    request: TargetRequest<'a>,
-) -> Result<(&'static str, Option<DialectId>), CodecError> {
-    resolve_catalog_write(
-        ir,
-        request,
+#[test]
+fn write_request_resolves_an_explicit_on_catalog_target() {
+    let ir = catalog_write_ir(None);
+    let resolved = resolve_write_request(
+        &ir,
+        TargetRequest::Explicit("old"),
         "test",
         CATALOG_WRITE_TARGETS,
-        "the test writer cannot synthesize the source row",
     )
-    .map(|(entry, displaced)| (entry.id, displaced))
+    .unwrap();
+    assert!(matches!(
+        resolved,
+        WriteRequest::Catalog {
+            entry,
+            displaced: None,
+            preserve: false,
+        } if entry.id == "test:old"
+    ));
 }
 
 #[test]
-fn catalog_write_resolves_an_explicit_on_catalog_target() {
+fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
     let ir = catalog_write_ir(None);
-    assert_eq!(
-        resolve_test_catalog(&ir, TargetRequest::Explicit("old")).unwrap(),
-        ("test:old", None)
-    );
-}
-
-#[test]
-fn catalog_write_refuses_an_explicit_off_catalog_target_with_the_catalog() {
-    let ir = catalog_write_ir(None);
-    let error = resolve_test_catalog(&ir, TargetRequest::Explicit("test:missing")).unwrap_err();
+    let error = resolve_write_request(
+        &ir,
+        TargetRequest::Explicit("test:missing"),
+        "test",
+        CATALOG_WRITE_TARGETS,
+    )
+    .unwrap_err();
     let CodecError::UnsupportedTarget { available, .. } = error else {
         panic!("expected an unsupported target");
     };
@@ -425,55 +428,71 @@ fn catalog_write_refuses_an_explicit_off_catalog_target_with_the_catalog() {
 }
 
 #[test]
-fn catalog_write_inherit_without_a_source_uses_the_default() {
-    let ir = catalog_write_ir(None);
-    assert_eq!(
-        resolve_test_catalog(&ir, TargetRequest::Inherit).unwrap(),
-        ("test:new", None)
-    );
+fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
+    let ir = catalog_write_ir(Some(("other", Some("other:only"))));
+    let resolved =
+        resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
+    assert!(matches!(
+        resolved,
+        WriteRequest::Catalog {
+            entry,
+            displaced: None,
+            preserve: false,
+        } if entry.id == "test:new"
+    ));
 }
 
 #[test]
-fn catalog_write_inherit_uses_a_same_format_catalog_source() {
+fn write_request_inherit_preserves_a_same_format_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
-    assert_eq!(
-        resolve_test_catalog(&ir, TargetRequest::Inherit).unwrap(),
-        ("test:old", None)
-    );
+    let resolved =
+        resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
+    assert!(matches!(
+        resolved,
+        WriteRequest::Catalog {
+            entry,
+            displaced: None,
+            preserve: true,
+        } if entry.id == "test:old"
+    ));
 }
 
 #[test]
-fn catalog_write_inherit_refuses_a_same_format_off_catalog_source() {
+fn write_request_inherit_preserves_a_same_format_off_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
-    let error = resolve_test_catalog(&ir, TargetRequest::Inherit).unwrap_err();
-    let CodecError::UnsupportedTarget {
-        requested,
-        reason,
-        available,
-        ..
-    } = error
-    else {
-        panic!("expected an unsupported target");
-    };
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("test:future")
-    );
-    assert_eq!(reason, "the test writer cannot synthesize the source row");
-    assert_eq!(available, "test:old, test:new");
+    let resolved =
+        resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
+    assert!(matches!(
+        resolved,
+        WriteRequest::OffCatalog { dialect } if dialect.as_str() == "test:future"
+    ));
 }
 
 #[test]
 fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
-    let (target, displaced) =
-        resolve_test_catalog(&ir, TargetRequest::Explicit("test:new")).unwrap();
-    assert_eq!(target, "test:new");
+    let resolved = resolve_write_request(
+        &ir,
+        TargetRequest::Explicit("test:new"),
+        "test",
+        CATALOG_WRITE_TARGETS,
+    )
+    .unwrap();
+    let WriteRequest::Catalog {
+        entry,
+        displaced,
+        preserve,
+    } = resolved
+    else {
+        panic!("expected a catalog target");
+    };
+    assert_eq!(entry.id, "test:new");
+    assert!(!preserve);
     assert_eq!(displaced.as_ref(), Some(&DialectId::pinned("test:old")));
     assert_eq!(
         source_dialect_displaced_message(
             displaced.as_ref().expect("the source dialect differs"),
-            &DialectId::pinned(target),
+            &DialectId::pinned(entry.id),
         ),
         "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved"
     );

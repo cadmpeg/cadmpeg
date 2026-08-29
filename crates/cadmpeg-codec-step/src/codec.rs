@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    resolve_catalog_write, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
-    Encoder, ExportPlan, TargetDescriptor, TargetRequest,
+    resolve_write_request, unsupported_target, CodecBackend, Confidence, DecodeOptions,
+    DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor, TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 
@@ -43,21 +43,32 @@ impl Encoder for StepCodec {
         crate::dialect::TARGETS
     }
 
-    /// Synthesis-only encoder; resolution is owned by
-    /// [`resolve_catalog_write`]. An off-catalog STEP source cannot be
-    /// reproduced because every emitted schema stamps object-identifier arcs.
+    /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
+    /// because every emitted schema stamps object-identifier arcs.
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let (entry, displaced) = resolve_catalog_write(
+        let resolved = resolve_write_request(
             input.ir,
             request,
             crate::dialect::FORMAT,
             crate::dialect::TARGETS,
-            OFF_CATALOG_SOURCE_REASON,
         )?;
+        let (entry, displaced) = match resolved {
+            WriteRequest::Catalog {
+                entry, displaced, ..
+            } => (entry, displaced),
+            WriteRequest::OffCatalog { dialect } => {
+                return Err(unsupported_target(
+                    crate::dialect::FORMAT,
+                    dialect.as_str(),
+                    OFF_CATALOG_SOURCE_REASON,
+                    crate::dialect::TARGETS,
+                ));
+            }
+        };
         let schema = crate::dialect::target_schema(entry);
         let mut bytes = Vec::new();
         let outcome = write_step_outcome(input.ir, &mut bytes, schema, &self.options)

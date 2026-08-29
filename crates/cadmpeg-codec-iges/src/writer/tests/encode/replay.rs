@@ -49,7 +49,7 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
 }
 
 #[test]
-fn encode_declines_replay_when_the_source_records_no_dialect() {
+fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
@@ -63,12 +63,7 @@ fn encode_declines_replay_when_the_source_records_no_dialect() {
         .unwrap();
 
     assert_eq!(plan.write_path(), WritePath::Synthesized);
-    let reason = degraded_reason(&plan, "an unclassified source must degrade");
-    assert!(reason.contains("records no dialect"), "{reason}");
-    assert!(
-        reason.contains("target is iges:5.3-fixed-ascii"),
-        "{reason}"
-    );
+    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotConsumed);
 }
 
 #[test]

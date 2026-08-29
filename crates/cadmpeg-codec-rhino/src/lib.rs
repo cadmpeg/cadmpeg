@@ -156,21 +156,32 @@ impl Encoder for RhinoEncoder {
         dialect::TARGETS
     }
 
-    /// Synthesis-only encoder; resolution is owned by
-    /// [`cadmpeg_ir::codec::resolve_catalog_write`]. An off-catalog Rhino source
-    /// cannot be reproduced because 3DM has no retained-image path.
+    /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
+    /// because 3DM has no retained-image path.
     fn plan<'a>(
         &self,
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        let (entry, displaced) = cadmpeg_ir::codec::resolve_catalog_write(
+        let resolved = cadmpeg_ir::codec::resolve_write_request(
             input.ir,
             request,
             dialect::FORMAT,
             dialect::TARGETS,
-            OFF_CATALOG_SOURCE_REASON,
         )?;
+        let (entry, displaced) = match resolved {
+            cadmpeg_ir::codec::WriteRequest::Catalog {
+                entry, displaced, ..
+            } => (entry, displaced),
+            cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect: source } => {
+                return Err(cadmpeg_ir::codec::unsupported_target(
+                    dialect::FORMAT,
+                    source.as_str(),
+                    OFF_CATALOG_SOURCE_REASON,
+                    dialect::TARGETS,
+                ));
+            }
+        };
         let version = dialect::target_version(entry);
         let mut bytes = Vec::new();
         writer::write(input.ir, version.value(), &mut bytes)?;
