@@ -58,7 +58,7 @@ impl Encoder for StepCodec {
             crate::dialect::TARGETS,
             OFF_CATALOG_SOURCE_REASON,
         )?;
-        let schema = crate::dialect::target_schema(entry)?;
+        let schema = crate::dialect::target_schema(entry);
         let mut bytes = Vec::new();
         let mut report =
             write_step(input.ir, &mut bytes, schema, &self.options).map_err(CodecError::from)?;

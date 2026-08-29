@@ -113,11 +113,11 @@ impl StepSchema {
 }
 
 /// The schema represented by a canonical catalog entry.
-pub(crate) fn target_schema(target: &TargetDescriptor) -> Result<StepSchema, CodecError> {
-    Ok(StepSchema::ALL
+pub(crate) fn target_schema(target: &TargetDescriptor) -> StepSchema {
+    StepSchema::ALL
         .into_iter()
         .find(|schema| schema.target() == target.id)
-        .expect("STEP TARGETS entries map to StepSchema::ALL"))
+        .expect("STEP TARGETS entries map to StepSchema::ALL")
 }
 
 /// Key of the `FILE_SCHEMA` identifier the row keys on, in

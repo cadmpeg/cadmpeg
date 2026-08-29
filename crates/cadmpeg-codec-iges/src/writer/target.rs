@@ -21,7 +21,7 @@ pub(crate) fn plan<'a>(
     )?;
     match resolved {
         WriteRequest::Catalog { entry, displaced } => {
-            let version = crate::dialect::target_version(entry)?;
+            let version = crate::dialect::target_version(entry);
             let replay_declined = if displaced.is_none() {
                 let target = DialectId::pinned(entry.id);
                 match replay_bytes(input.ir, input.fidelity, &target)? {
