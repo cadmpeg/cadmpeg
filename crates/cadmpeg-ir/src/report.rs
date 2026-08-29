@@ -640,7 +640,7 @@ impl LossNote {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeReport {
     /// Source format id.
-    pub format: String,
+    format: String,
     /// Whether the decode stopped at the container layer (no entity decode).
     /// The shared codec wrapper stamps this from the decode request.
     pub container_only: bool,
@@ -665,7 +665,7 @@ pub struct DecodeReport {
     /// Always serialized. Reports written before the field existed omit the key
     /// and read back as unclassified.
     #[serde(default)]
-    pub dialects: Option<DialectLayers>,
+    dialects: Option<DialectLayers>,
 }
 
 /// Final disposition of one source record or semantic object.
@@ -813,6 +813,29 @@ impl DecodeReport {
             transfer_ledger,
             dialects: None,
         }
+    }
+
+    /// Returns the source format id.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        &self.format
+    }
+
+    /// Returns the classified dialect layers, if decoding classified them.
+    #[must_use]
+    pub fn dialects(&self) -> Option<&DialectLayers> {
+        self.dialects.as_ref()
+    }
+
+    /// Removes and returns the classified dialect layers.
+    pub fn take_dialects(&mut self) -> Option<DialectLayers> {
+        self.dialects.take()
+    }
+
+    /// Replaces the classification and derives the report format from it.
+    pub fn set_dialects(&mut self, dialects: DialectLayers) {
+        self.format.clone_from(&dialects.primary().format);
+        self.dialects = Some(dialects);
     }
 
     /// Records a coverage measure count for a statically declared key.

@@ -548,19 +548,17 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
     let mut result = DecodeResult::new(
         ir,
-        DecodeReport {
-            dialects,
-            format: crate::dialect::FORMAT.into(),
-            container_only: options.container_only,
+        DecodeReport::classified(
+            cadmpeg_core::dialect::DialectLayers::of(primary),
+            options.container_only,
             geometry_transferred,
-            coverage: std::collections::BTreeMap::new(),
-            transfer_ledger,
+            std::collections::BTreeMap::new(),
             losses,
             notes,
-        },
+            transfer_ledger,
+        ),
         source_fidelity,
     );
     let document_digest = match ctx {

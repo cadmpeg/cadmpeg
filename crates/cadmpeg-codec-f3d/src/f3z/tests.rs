@@ -517,8 +517,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .unwrap();
     let primary = redecode
         .report()
-        .dialects
-        .as_ref()
+        .dialects()
         .expect("re-decoded F3Z archive has a primary layer")
         .primary();
     assert_eq!(primary.dialect.as_ref(), Some(&reported));
@@ -655,12 +654,11 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         )
         .unwrap();
     let inspected = summary
-        .dialects
-        .as_ref()
+        .dialects()
         .expect("inspect must report exactly one primary F3D layer")
         .primary()
         .clone();
-    let inspected_dialects = summary.dialects;
+    let inspected_dialects = summary.dialects();
     assert_eq!(inspected.format, "f3d");
     assert_eq!(
         inspected
@@ -684,8 +682,7 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     assert_eq!(
         decoded
             .report()
-            .dialects
-            .as_ref()
+            .dialects()
             .expect("decode reports F3D layers")
             .primary(),
         inspected_dialects
@@ -695,15 +692,14 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     );
     assert!(decoded
         .report()
-        .dialects
-        .as_ref()
+        .dialects()
         .expect("the report is classified")
         .iter()
         .skip(1)
         .all(|matched| matched.format == "acis"));
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect.as_ref(), Some(&inspected));
-    let primary = decoded.report().dialects.as_ref().unwrap().primary();
+    let primary = decoded.report().dialects().unwrap().primary();
     assert_eq!(source.dialect.as_ref(), Some(primary));
 }
 
@@ -736,16 +732,14 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
     let inspected_extras = inspected
-        .dialects
-        .as_ref()
+        .dialects()
         .unwrap()
         .iter()
         .skip(1)
         .collect::<Vec<_>>();
     let decoded_extras = decoded
         .report()
-        .dialects
-        .as_ref()
+        .dialects()
         .unwrap()
         .iter()
         .skip(1)
@@ -753,8 +747,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
     assert_eq!(decoded_extras, inspected_extras);
     assert!(decoded
         .report()
-        .dialects
-        .as_ref()
+        .dialects()
         .into_iter()
         .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
         .any(|matched| {
@@ -768,8 +761,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
     assert!(
         decoded
             .report()
-            .dialects
-            .as_ref()
+            .dialects()
             .into_iter()
             .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
             .any(|matched| {
@@ -781,7 +773,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
                         == Some("acis:text-acis")
             }),
         "{:?}",
-        decoded.report().dialects
+        decoded.report().dialects()
     );
     assert!(decoded
         .report()
@@ -834,8 +826,7 @@ fn f3z_xref_kernel_row_and_loss_travel_with_the_occurrence() {
         .unwrap();
     let kernel_layers = decoded
         .report()
-        .dialects
-        .as_ref()
+        .dialects()
         .expect("the report is classified")
         .iter()
         .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
@@ -871,12 +862,11 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
         )
         .unwrap();
     let inspected = summary
-        .dialects
-        .as_ref()
+        .dialects()
         .expect("inspect must report exactly one primary F3D layer")
         .primary()
         .clone();
-    let inspected_dialects = summary.dialects;
+    let inspected_dialects = summary.dialects();
     assert_eq!(inspected.format, "f3d");
     assert_eq!(
         inspected
@@ -894,7 +884,7 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(document), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.report().dialects, inspected_dialects);
+    assert_eq!(decoded.report().dialects(), inspected_dialects);
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect.as_ref(), Some(&inspected));
 }

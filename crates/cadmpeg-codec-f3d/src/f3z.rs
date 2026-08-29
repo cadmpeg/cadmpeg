@@ -99,7 +99,7 @@ pub(crate) fn inspect(
     let member_scan = crate::container::scan(ctx, root_view)?;
     let kernel_layers = crate::dialect::kernel_layers(&member_scan);
     let mut summary = crate::container::summarize(scan, &[]);
-    summary.dialects = Some(
+    summary.set_dialects(
         DialectLayers::new(scan.dialect.clone(), kernel_layers.matches)
             .expect("F3D member extras use formats other than the F3Z primary"),
     );
@@ -123,11 +123,10 @@ pub fn decode(
     })?;
     let (ir, mut report, mut fidelity) = crate::decode::decode_member(ctx, root_view)?.into_parts();
     let member_layers = report
-        .dialects
-        .take()
+        .take_dialects()
         .expect("an F3D member decode reports its primary layer");
     let (_, extra) = member_layers.into_parts();
-    report.dialects = Some(
+    report.set_dialects(
         DialectLayers::new(scan.dialect.clone(), extra)
             .expect("F3D member extras use formats other than the F3Z primary"),
     );
@@ -202,14 +201,11 @@ fn finalize_result(
 /// Attach a merged component's non-primary layers to its occurrence prefix.
 /// The component's primary row is document-local.
 fn merge_component_layers(
-    target: &mut Option<DialectLayers>,
+    target: DialectLayers,
     component: DialectLayers,
     occurrence: &str,
-) {
-    let (primary, mut extra) = target
-        .take()
-        .expect("the parent F3Z report is classified")
-        .into_parts();
+) -> DialectLayers {
+    let (primary, mut extra) = target.into_parts();
     let (_, component_extra) = component.into_parts();
     for mut matched in component_extra {
         matched.instance = Some(matched.instance.as_ref().map_or_else(
@@ -218,10 +214,8 @@ fn merge_component_layers(
         ));
         extra.push(matched);
     }
-    *target = Some(
-        DialectLayers::new(primary, extra)
-            .expect("merged F3D component extras cannot repeat the F3Z primary"),
-    );
+    DialectLayers::new(primary, extra)
+        .expect("merged F3D component extras cannot repeat the F3Z primary")
 }
 
 fn model_root_member(
@@ -412,10 +406,16 @@ fn merge_references(
         merged += descendants + 1;
         parent_report.geometry_transferred |= component_report.geometry_transferred;
         let component_layers = component_report
-            .dialects
-            .take()
+            .take_dialects()
             .expect("an F3D component report is classified");
-        merge_component_layers(&mut parent_report.dialects, component_layers, &occurrence);
+        let parent_layers = parent_report
+            .take_dialects()
+            .expect("the parent F3Z report is classified");
+        parent_report.set_dialects(merge_component_layers(
+            parent_layers,
+            component_layers,
+            &occurrence,
+        ));
         for mut loss in component_report.losses {
             loss.message = format!("xref {label}: {}", loss.message);
             parent_report.losses.push(loss);

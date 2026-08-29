@@ -140,7 +140,7 @@ pub fn inspect(
     }
     println!(
         "format: {}{}\ncontainer: {}\nentries: {}",
-        summary.format,
+        summary.format(),
         confidence.map_or_else(
             || " (forced)".to_string(),
             |value| format!(" (detected {value})")
@@ -148,7 +148,7 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
-    if let Some(line) = crate::registry_view::dialect_line(summary.dialects.as_ref()) {
+    if let Some(line) = crate::registry_view::dialect_line(summary.dialects()) {
         println!("{line}");
     }
     println!();

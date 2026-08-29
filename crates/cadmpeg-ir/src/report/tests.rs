@@ -147,16 +147,15 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
 /// Reports written before the fields existed still read back.
 #[test]
 fn unclassified_reports_serialize_empty_dialect_keys() {
-    let decode = DecodeReport {
-        format: "rhino".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-        transfer_ledger: TransferLedger::default(),
-        dialects: None,
-    };
+    let decode = DecodeReport::unclassified(
+        "rhino",
+        false,
+        true,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
     let rendered = serde_json::to_string(&decode).unwrap();
     assert!(rendered.contains("\"dialects\":null"), "{rendered}");
     assert_eq!(

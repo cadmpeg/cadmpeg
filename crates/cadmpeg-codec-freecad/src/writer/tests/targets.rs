@@ -380,8 +380,7 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
             .unwrap_or_else(|error| panic!("{label} output must decode, got {error}"));
         let classified = round_trip
             .report()
-            .dialects
-            .as_ref()
+            .dialects()
             .map(cadmpeg_core::dialect::DialectLayers::primary)
             .and_then(|entry| entry.dialect.clone())
             .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));

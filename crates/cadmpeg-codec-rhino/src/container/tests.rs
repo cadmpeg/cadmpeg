@@ -142,7 +142,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
         assert!(result.report().container_only);
-        assert_eq!(result.report().format, "rhino");
+        assert_eq!(result.report().format(), "rhino");
     }
 }
 
@@ -238,7 +238,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
     assert!(!summary.entries.is_empty());
     assert_eq!(
         summary
-            .dialects
+            .dialects()
             .as_ref()
             .expect("Rhino inspection reports dialect layers")
             .primary()
@@ -259,7 +259,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
     assert_eq!(
         decoded
             .report()
-            .dialects
+            .dialects()
             .as_ref()
             .expect("Rhino decode reports dialect layers")
             .primary()
@@ -299,7 +299,7 @@ fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
         "the scan reached the table sequence"
     );
     let matched = summary
-        .dialects
+        .dialects()
         .as_ref()
         .expect("Rhino inspection reports dialect layers")
         .primary();

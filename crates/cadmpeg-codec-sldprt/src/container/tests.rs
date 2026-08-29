@@ -283,7 +283,7 @@ fn inspect_enumerates_every_structure() {
     let summary = SldprtCodec
         .inspect(&mut cur, &InspectOptions::default())
         .unwrap();
-    assert_eq!(summary.format, "sldprt");
+    assert_eq!(summary.format(), "sldprt");
     assert_eq!(summary.container_kind, "sldprt-blocks");
     assert_eq!(
         summary

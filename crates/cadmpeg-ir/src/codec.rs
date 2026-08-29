@@ -85,8 +85,7 @@ impl DecodeResult {
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
         if let Some(source) = ir.source.as_mut() {
             match report
-                .dialects
-                .as_ref()
+                .dialects()
                 .map(cadmpeg_core::dialect::DialectLayers::primary)
             {
                 Some(matched) => {

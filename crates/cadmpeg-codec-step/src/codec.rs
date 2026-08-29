@@ -252,14 +252,12 @@ impl CodecBackend for StepCodec {
             .expect("STEP classification always names a dialect row");
         let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
-        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(matched));
-        Ok(ContainerSummary {
-            dialects,
-            format: crate::dialect::FORMAT.into(),
-            container_kind: "iso-10303-21-clear-text".into(),
+        Ok(ContainerSummary::classified(
+            cadmpeg_core::dialect::DialectLayers::of(matched),
+            "iso-10303-21-clear-text",
             entries,
             notes,
-        })
+        ))
     }
 
     fn decode_impl(
@@ -364,14 +362,15 @@ fn inspect_zip(
     // ZIP packaging is a container fact, not an identity axis: the
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
     // document, so the root's own match is this summary's match.
-    let dialects = std::mem::take(&mut root_summary.dialects);
-    Ok(ContainerSummary {
+    let dialects = root_summary
+        .take_dialects()
+        .expect("the STEP root summary is classified");
+    Ok(ContainerSummary::classified(
         dialects,
-        format: crate::dialect::FORMAT.into(),
-        container_kind: "iso-10303-21-zip".into(),
+        "iso-10303-21-zip",
         entries,
         notes,
-    })
+    ))
 }
 
 fn decode_zip(

@@ -1114,16 +1114,12 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             .iter()
             .map(|diagnostic| diagnostic.message.clone()),
     );
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(dialect_match(
-        scan,
-    )));
-    ContainerSummary {
-        dialects,
-        format: crate::dialect::FORMAT.to_string(),
-        container_kind: "3dm-chunks".to_string(),
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(dialect_match(scan)),
+        "3dm-chunks",
         entries,
         notes,
-    }
+    )
 }
 
 /// Classifies a scanned archive.
@@ -1189,19 +1185,17 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     }));
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(primary));
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
-        DecodeReport {
-            dialects,
-            format: crate::dialect::FORMAT.to_string(),
-            container_only: true,
-            geometry_transferred: false,
-            coverage: std::collections::BTreeMap::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        DecodeReport::classified(
+            cadmpeg_core::dialect::DialectLayers::of(primary),
+            true,
+            false,
+            std::collections::BTreeMap::new(),
             losses,
             notes,
-        },
+            cadmpeg_ir::report::TransferLedger::default(),
+        ),
         cadmpeg_ir::SourceFidelity::default(),
     )
 }
@@ -1219,19 +1213,15 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     if header_only(header.archive_version) {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
-        let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
-            header.archive_version.classify(None),
-        ));
-        return Ok(ContainerSummary {
-            dialects,
-            format: crate::dialect::FORMAT.to_string(),
-            container_kind: "3dm-chunks".to_string(),
-            entries: Vec::new(),
-            notes: vec![format!(
+        return Ok(ContainerSummary::classified(
+            cadmpeg_core::dialect::DialectLayers::of(header.archive_version.classify(None)),
+            "3dm-chunks",
+            Vec::new(),
+            vec![format!(
                 "archive version {}",
                 header.archive_version.value()
             )],
-        });
+        ));
     }
     Ok(summarize(&scan(data)?))
 }

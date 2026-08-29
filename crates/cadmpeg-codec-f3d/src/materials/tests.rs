@@ -1900,19 +1900,18 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// `build_container_report` and `build_geometry_report` state before appearance
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
-    cadmpeg_ir::report::DecodeReport {
-        dialects: None,
-        format: "f3d".to_owned(),
-        container_only: false,
-        geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: vec![F3dLossCode::MaterialNotTransferred.note(
+    cadmpeg_ir::report::DecodeReport::unclassified(
+        "f3d",
+        false,
+        false,
+        std::collections::BTreeMap::new(),
+        vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \
              transferred.",
         )],
-        notes: Vec::new(),
-    }
+        Vec::new(),
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {

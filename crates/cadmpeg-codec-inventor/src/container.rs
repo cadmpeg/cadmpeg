@@ -122,25 +122,21 @@ impl<'a> InventorContainer<'a> {
             }
             crate::kernel::ActiveCarrierState::NotApplicable => None,
         };
-        let dialects = Some(
+        ContainerSummary::classified(
             cadmpeg_core::dialect::DialectLayers::new(
                 crate::dialect::DialectRecovery::of(self).classify().matched,
                 kernel.into_iter().collect(),
             )
             .expect("the kernel layer has a distinct format"),
-        );
-        ContainerSummary {
-            dialects,
-            format: crate::dialect::FORMAT.into(),
-            container_kind: "cfb".into(),
+            "cfb",
             entries,
-            notes: vec![format!(
+            vec![format!(
                 "CFB v{} with {} RSe segment pair(s) and {} versioned database(s)",
                 self.snapshot.major_version(),
                 self.rse.segments.len(),
                 self.rse.databases.len()
             )],
-        }
+        )
     }
 }
 

@@ -2953,7 +2953,7 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 /// Decode an F3D or F3Z reader and append dialect losses from its final layers.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
     let (ir, mut report, fidelity) = decode_member(ctx, root)?.into_parts();
-    if let Some(layers) = &report.dialects {
+    if let Some(layers) = report.dialects() {
         report
             .losses
             .extend(crate::dialect::report_dialect_losses(layers));
@@ -4787,7 +4787,7 @@ fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> Str
 
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let kernel_layers = crate::dialect::kernel_layers(scan);
-    let summary = container::summarize(scan, &kernel_layers.matches);
+    let mut summary = container::summarize(scan, &kernel_layers.matches);
     let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
@@ -4871,20 +4871,19 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     ));
     losses.extend(kernel_layers.losses);
 
-    DecodeReport {
-        dialects: summary.dialects,
-        format: crate::dialect::FORMAT.to_string(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    DecodeReport::classified(
+        summary.take_dialects().expect("F3D summary is classified"),
+        false,
+        true,
+        std::collections::BTreeMap::new(),
         losses,
-        notes: summary
+        summary
             .notes
             .into_iter()
             .filter(|note| !note.starts_with("container-level inspection only"))
             .collect(),
-    }
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
@@ -4947,7 +4946,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 /// decode-failure note. Each remaining state gets its own loss description.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let kernel_layers = crate::dialect::kernel_layers(scan);
-    let summary = container::summarize(scan, &kernel_layers.matches);
+    let mut summary = container::summarize(scan, &kernel_layers.matches);
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);
@@ -5032,22 +5031,21 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     losses.extend(kernel_layers.losses);
 
-    DecodeReport {
-        dialects: summary.dialects,
-        format: crate::dialect::FORMAT.to_string(),
+    DecodeReport::classified(
+        summary.take_dialects().expect("F3D summary is classified"),
         container_only,
-        geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        false,
+        std::collections::BTreeMap::new(),
         losses,
         // `summarize` contains advice for container inspection. Full decode has
         // already run the design and body-binding passes, so drop that advice.
-        notes: summary
+        summary
             .notes
             .into_iter()
             .filter(|note| container_only || !note.starts_with("container-level inspection only"))
             .collect(),
-    }
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 /// Resolve the appearance loss note against the appearances in the IR.

@@ -11,7 +11,6 @@ use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
 
 use crate::dialect::{terminator_line, StreamEvidence, TextEvidence};
-use crate::FORMAT;
 
 /// The stream encoding a byte prefix selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,15 +183,11 @@ pub(crate) fn inspect(
             ))
         }
     };
-    let dialects = Some(
+    Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
             .expect("the ACIS kernel layer differs from the SAT primary"),
-    );
-    Ok(ContainerSummary {
-        dialects,
-        format: FORMAT.to_string(),
-        container_kind: "stream".to_string(),
-        entries: vec![ContainerEntry {
+        "stream",
+        vec![ContainerEntry {
             name: "stream".to_string(),
             role: match kind {
                 StreamKind::AsmBinary => "brep",
@@ -207,7 +202,7 @@ pub(crate) fn inspect(
             attributes,
         }],
         notes,
-    })
+    ))
 }
 
 #[cfg(test)]

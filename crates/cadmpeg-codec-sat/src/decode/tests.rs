@@ -151,7 +151,7 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
         )
         .expect("the recognized stream kind inspects at refusal depth");
     let layers = summary
-        .dialects
+        .dialects()
         .expect("inspection classifies the host and kernel layers");
     let inspected = layers.primary();
     assert_eq!(
@@ -209,7 +209,7 @@ fn unframed_discriminant_has_the_same_refused_match_at_inspect_and_decode() {
         )
         .expect("the recognized stream kind inspects at refusal depth");
     let layers = summary
-        .dialects
+        .dialects()
         .expect("inspection classifies the host and kernel layers");
     let inspected = layers.primary();
     assert_eq!(

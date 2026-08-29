@@ -128,7 +128,7 @@ fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() 
     let summary = NxCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("NX inspection");
-    assert_eq!(summary.format, "nx");
+    assert_eq!(summary.format(), "nx");
     assert_eq!(summary.container_kind, "splmsstr");
     assert!(summary
         .entries

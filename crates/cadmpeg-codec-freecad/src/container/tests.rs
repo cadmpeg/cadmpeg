@@ -69,7 +69,7 @@ fn inspects_and_closes_physical_ledger() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("inspect");
-    assert_eq!(summary.format, "fcstd");
+    assert_eq!(summary.format(), "fcstd");
     assert!(summary.notes.iter().any(|note| note == "SchemaVersion=4"));
     let result = FcstdCodec
         .decode(

@@ -58,16 +58,15 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         }))
         .expect("active face operand"),
     );
-    let mut report = cadmpeg_ir::report::DecodeReport {
-        dialects: None,
-        format: "f3d".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-        transfer_ledger: Default::default(),
-    };
+    let mut report = cadmpeg_ir::report::DecodeReport::unclassified(
+        "f3d",
+        false,
+        true,
+        std::collections::BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        Default::default(),
+    );
 
     report_design_projection_gaps(&mut report, &ir, &native);
 

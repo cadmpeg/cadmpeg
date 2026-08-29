@@ -1,4 +1,4 @@
-# generated at 4af7b9427
+# generated at becff3cbd
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -47,10 +47,15 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::container::Contai
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::container::ContainerEntry
 pub struct cadmpeg_core::container::ContainerSummary
 pub cadmpeg_core::container::ContainerSummary::container_kind: alloc::string::String
-pub cadmpeg_core::container::ContainerSummary::dialects: core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub cadmpeg_core::container::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
-pub cadmpeg_core::container::ContainerSummary::format: alloc::string::String
 pub cadmpeg_core::container::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
+impl cadmpeg_core::container::ContainerSummary
+pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
+pub fn cadmpeg_core::container::ContainerSummary::set_dialects(&mut self, cadmpeg_core::dialect::DialectLayers)
+pub fn cadmpeg_core::container::ContainerSummary::take_dialects(&mut self) -> core::option::Option<cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
 impl core::clone::Clone for cadmpeg_core::container::ContainerSummary
 pub fn cadmpeg_core::container::ContainerSummary::clone(&self) -> cadmpeg_core::container::ContainerSummary
 impl core::cmp::Eq for cadmpeg_core::container::ContainerSummary
@@ -1000,10 +1005,15 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::container::Contai
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::container::ContainerEntry
 pub struct cadmpeg_core::ContainerSummary
 pub cadmpeg_core::ContainerSummary::container_kind: alloc::string::String
-pub cadmpeg_core::ContainerSummary::dialects: core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub cadmpeg_core::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
-pub cadmpeg_core::ContainerSummary::format: alloc::string::String
 pub cadmpeg_core::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
+impl cadmpeg_core::container::ContainerSummary
+pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
+pub fn cadmpeg_core::container::ContainerSummary::set_dialects(&mut self, cadmpeg_core::dialect::DialectLayers)
+pub fn cadmpeg_core::container::ContainerSummary::take_dialects(&mut self) -> core::option::Option<cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
 impl core::clone::Clone for cadmpeg_core::container::ContainerSummary
 pub fn cadmpeg_core::container::ContainerSummary::clone(&self) -> cadmpeg_core::container::ContainerSummary
 impl core::cmp::Eq for cadmpeg_core::container::ContainerSummary

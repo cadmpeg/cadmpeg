@@ -93,7 +93,7 @@ fn inspect_reports_sections_and_physical_line_endings() {
         )
         .unwrap();
 
-    assert_eq!(summary.format, "iges");
+    assert_eq!(summary.format(), "iges");
     assert_eq!(summary.container_kind, "fixed-ascii");
     assert_eq!(summary.entries.len(), 3);
     assert_eq!(summary.entries[0].name, "start");

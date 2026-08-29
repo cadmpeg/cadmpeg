@@ -34,7 +34,7 @@ fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_meta
     let summary = SldprtCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("SLDPRT inspection");
-    assert_eq!(summary.format, "sldprt");
+    assert_eq!(summary.format(), "sldprt");
     assert_eq!(
         summary
             .entries
@@ -276,8 +276,7 @@ fn classify(bytes: Vec<u8>) -> String {
     let redecoded = decode(bytes);
     redecoded
         .report()
-        .dialects
-        .as_ref()
+        .dialects()
         .map(cadmpeg_core::dialect::DialectLayers::primary)
         .and_then(|entry| entry.dialect.clone())
         .expect("the written part classifies a host dialect")

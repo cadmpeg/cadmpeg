@@ -350,7 +350,7 @@ fn compressed_ascii_classifies_into_its_own_representation_row() {
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
 
-    let matched = only_match(decoded.report().dialects.as_ref());
+    let matched = only_match(decoded.report().dialects());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:5.3-compressed-ascii")
@@ -367,7 +367,7 @@ fn compressed_ascii_classifies_into_its_own_representation_row() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(summary.dialects.as_ref()), matched);
+    assert_eq!(only_match(summary.dialects()), matched);
 }
 
 #[test]
@@ -380,7 +380,7 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
 
-    let matched = only_match(decoded.report().dialects.as_ref());
+    let matched = only_match(decoded.report().dialects());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:unknown")
@@ -406,5 +406,5 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(summary.dialects.as_ref()), matched);
+    assert_eq!(only_match(summary.dialects()), matched);
 }

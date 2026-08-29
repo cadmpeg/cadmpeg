@@ -33,7 +33,7 @@ fn inspect_reports_the_stream_kind_and_header_facts() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(summary.format, "sat");
+    assert_eq!(summary.format(), "sat");
     assert_eq!(summary.entries.len(), 1);
     assert_eq!(summary.entries[0].role, "brep-text");
     assert_eq!(

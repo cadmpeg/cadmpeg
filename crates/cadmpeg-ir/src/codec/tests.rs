@@ -99,16 +99,15 @@ fn cadir_encoder_census_matches_validation_counts() {
 fn decode_result(ir: CadIr) -> DecodeResult {
     DecodeResult::new(
         ir,
-        DecodeReport {
-            dialects: None,
-            format: "test".into(),
-            container_only: false,
-            geometry_transferred: true,
-            coverage: BTreeMap::new(),
-            losses: Vec::new(),
-            notes: Vec::new(),
-            transfer_ledger: TransferLedger::default(),
-        },
+        DecodeReport::unclassified(
+            "test",
+            false,
+            true,
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            TransferLedger::default(),
+        ),
         SourceFidelity::default(),
     )
 }
@@ -255,29 +254,26 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
 fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     let mut ir = unit_cube();
     ir.source = None;
-    let mut report = DecodeReport {
-        dialects: Some(
-            DialectLayers::new(
-                dialect_layer("test", "test:only"),
-                vec![dialect_layer("acis", "acis:save-format-217")],
-            )
-            .unwrap(),
-        ),
-        format: "test".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-        transfer_ledger: TransferLedger::default(),
-    };
+    let mut report = DecodeReport::classified(
+        DialectLayers::new(
+            dialect_layer("test", "test:only"),
+            vec![dialect_layer("acis", "acis:save-format-217")],
+        )
+        .unwrap(),
+        false,
+        true,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
     let result = DecodeResult::new(ir.clone(), report.clone(), SourceFidelity::default());
 
-    assert_eq!(result.report().dialects.as_ref().unwrap().iter().count(), 2);
+    assert_eq!(result.report().dialects().unwrap().iter().count(), 2);
 
-    report.dialects = None;
+    report.take_dialects();
     let unclassified = DecodeResult::new(ir, report, SourceFidelity::default());
-    assert!(unclassified.report().dialects.is_none());
+    assert!(unclassified.report().dialects().is_none());
 }
 
 #[test]
@@ -296,16 +292,15 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     });
     let mut primary = dialect_layer("test", "test:only");
     primary.declared = BTreeMap::from([("version".into(), "only".into())]);
-    let report = DecodeReport {
-        dialects: Some(DialectLayers::new(primary.clone(), Vec::new()).unwrap()),
-        format: "test".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-        transfer_ledger: TransferLedger::default(),
-    };
+    let report = DecodeReport::classified(
+        DialectLayers::new(primary.clone(), Vec::new()).unwrap(),
+        false,
+        true,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
 
     let result = DecodeResult::new(ir, report, SourceFidelity::default());
     let source = result

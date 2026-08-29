@@ -25,7 +25,7 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
 
     let matched = result
         .report()
-        .dialects
+        .dialects()
         .as_ref()
         .expect("Rhino decode reports dialect layers")
         .primary();

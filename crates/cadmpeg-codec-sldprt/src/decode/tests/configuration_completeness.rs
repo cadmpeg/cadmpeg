@@ -11,7 +11,6 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
@@ -49,16 +48,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         },
         native_ref: None,
     });
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -83,16 +73,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         native: "native".into(),
     };
     *parting_tool = None;
-    let mut neutral_plane_report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut neutral_plane_report = super::empty_report(true);
 
     append_design_losses(&ir, &mut neutral_plane_report);
 
@@ -181,16 +162,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -228,16 +200,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         },
         native_ref: None,
     });
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -479,16 +442,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    let mut report = DecodeReport {
-        dialects: None,
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 

@@ -1674,21 +1674,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
-    let dialects = Some(
-        cadmpeg_core::dialect::DialectLayers::new(
-            classification.matched,
-            kernel_match.into_iter().collect(),
-        )
-        .expect("the ACIS kernel layer differs from the Inventor primary"),
-    );
+    let dialects = cadmpeg_core::dialect::DialectLayers::new(
+        classification.matched,
+        kernel_match.into_iter().collect(),
+    )
+    .expect("the ACIS kernel layer differs from the Inventor primary");
     Ok(DecodeResult::new(
         ir,
-        DecodeReport {
+        DecodeReport::classified(
             dialects,
-            format: crate::dialect::FORMAT.into(),
-            container_only: ctx.container_only(),
+            ctx.container_only(),
             geometry_transferred,
-            coverage: BTreeMap::from([
+            BTreeMap::from([
                 ("rse_storage_bands".into(), storage_bands.len()),
                 ("rse_databases".into(), databases.len()),
                 ("rse_registry_entries".into(), segment_registry.len()),
@@ -1820,9 +1817,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
             ]),
             losses,
-            notes: Vec::new(),
-            transfer_ledger: TransferLedger::default(),
-        },
+            Vec::new(),
+            TransferLedger::default(),
+        ),
         source_fidelity,
     ))
 }

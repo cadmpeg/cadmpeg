@@ -82,7 +82,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             &DecodeOptions::default(),
         )
         .expect("synthetic Inventor container decodes structurally");
-    assert_eq!(decoded.report().format, "inventor");
+    assert_eq!(decoded.report().format(), "inventor");
     assert!(!decoded.report().container_only);
     assert!(decoded
         .report()
@@ -154,7 +154,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("synthetic primary Inventor envelope decodes");
-    assert_eq!(decoded.report().format, "inventor");
+    assert_eq!(decoded.report().format(), "inventor");
     assert_eq!(decoded.report().coverage["rse_storage_bands"], 1);
     assert_eq!(decoded.report().coverage["rse_databases"], 1);
     assert_eq!(decoded.report().coverage["rse_registry_entries"], 1);
@@ -194,12 +194,12 @@ fn kernel_layer_of(bytes: &[u8]) -> (cadmpeg_core::dialect::DialectMatch, Vec<St
         .expect("the save-format band degrades rather than refuses");
     let report = decoded.report();
     let layer = report
-        .dialects
+        .dialects()
         .as_ref()
         .expect("the report is classified")
         .iter()
         .find(|matched| matched.format == "acis")
-        .unwrap_or_else(|| panic!("a kernel layer, got {:#?}", report.dialects))
+        .unwrap_or_else(|| panic!("a kernel layer, got {:#?}", report.dialects()))
         .clone();
     let codes = report
         .losses

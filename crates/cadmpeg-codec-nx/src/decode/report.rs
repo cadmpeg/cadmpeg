@@ -275,19 +275,17 @@ pub(crate) fn build_geometry_report(
         ));
     }
 
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
-        crate::dialect::NxDialect::classify(&scan.container),
-    ));
-    DecodeReport {
-        dialects,
-        format: crate::dialect::FORMAT.to_string(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    DecodeReport::classified(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::NxDialect::classify(
+            &scan.container,
+        )),
+        false,
+        true,
+        std::collections::BTreeMap::new(),
         losses,
-        notes: summary_notes(scan),
-    }
+        summary_notes(scan),
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {

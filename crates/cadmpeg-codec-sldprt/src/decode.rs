@@ -3262,16 +3262,15 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     append_swift_pmi_losses(scan, &mut losses);
     let dialects = report_dialects(scan);
     append_dialect_losses(&dialects, &mut losses);
-    DecodeReport {
-        dialects: Some(dialects),
-        format: crate::dialect::FORMAT.to_string(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    DecodeReport::classified(
+        dialects,
+        false,
+        true,
+        std::collections::BTreeMap::new(),
         losses,
-        notes: container::summarize(scan).notes,
-    }
+        container::summarize(scan).notes,
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 fn build_metadata_ir(
@@ -4543,7 +4542,7 @@ fn preserve_source_image(
 /// kernel-layer dialect match, so the primary layer is the whole list.
 fn report_dialects(scan: &ContainerScan) -> cadmpeg_core::dialect::DialectLayers {
     container::summarize(scan)
-        .dialects
+        .take_dialects()
         .expect("SLDPRT summary reports its primary dialect layer")
 }
 
@@ -4601,16 +4600,15 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     let dialects = report_dialects(scan);
     append_dialect_losses(&dialects, &mut losses);
 
-    DecodeReport {
-        dialects: Some(dialects),
-        format: crate::dialect::FORMAT.to_string(),
+    DecodeReport::classified(
+        dialects,
         container_only,
-        geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        false,
+        std::collections::BTreeMap::new(),
         losses,
-        notes: summary.notes,
-    }
+        summary.notes,
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 fn append_swift_pmi_losses(scan: &ContainerScan<'_>, losses: &mut Vec<cadmpeg_ir::LossNote>) {

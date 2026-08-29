@@ -292,18 +292,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
-    let dialects = Some(cadmpeg_core::dialect::DialectLayers::of(
-        dialect::NxDialect::classify(&scan.container),
-    ));
-    ContainerSummary {
-        dialects,
-        format: dialect::FORMAT.to_string(),
-        container_kind: dialect::NxDialect::of_container(&scan.container)
-            .container_kind()
-            .to_string(),
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(dialect::NxDialect::classify(&scan.container)),
+        dialect::NxDialect::of_container(&scan.container).container_kind(),
         entries,
-        notes: decode::summary_notes(scan),
-    }
+        decode::summary_notes(scan),
+    )
 }
 
 #[cfg(test)]

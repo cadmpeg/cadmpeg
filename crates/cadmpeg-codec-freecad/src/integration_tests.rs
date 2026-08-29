@@ -79,7 +79,7 @@ fn container_pipeline_handles_stored_deflated_streaming_and_zip64_layouts() {
                 &cadmpeg_core::decode::InspectOptions::default(),
             )
             .expect("FCStd inspection");
-        assert_eq!(summary.format, "fcstd");
+        assert_eq!(summary.format(), "fcstd");
         assert!(summary.notes.iter().any(|note| note == "SchemaVersion=4"));
         let result = decode(bytes);
         assert_valid(&result);
@@ -369,7 +369,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         )
         .expect("FCStd inspection");
     let matched = summary
-        .dialects
+        .dialects()
         .as_ref()
         .expect("FCStd inspection reports dialect layers")
         .primary();
@@ -387,7 +387,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
     );
 
     let result = decode(bytes);
-    assert_eq!(result.report().dialects, summary.dialects);
+    assert_eq!(result.report().dialects(), summary.dialects());
     assert!(result
         .report()
         .losses
@@ -424,7 +424,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         .expect("FCStd inspection of an undeclared schema");
     assert_eq!(
         summary
-            .dialects
+            .dialects()
             .as_ref()
             .expect("FCStd inspection reports dialect layers")
             .primary()
@@ -435,7 +435,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
     );
     assert_eq!(
         summary
-            .dialects
+            .dialects()
             .as_ref()
             .expect("FCStd inspection reports dialect layers")
             .primary()
@@ -454,7 +454,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             },
         )
         .expect("container-only decode of an undeclared schema");
-    assert_eq!(result.report().dialects, summary.dialects);
+    assert_eq!(result.report().dialects(), summary.dialects());
     assert_eq!(
         result
             .report()
@@ -479,7 +479,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
     // A full decode attempts the nearest declared strategy rather than
     // refusing on the discriminant, and reports the same match and loss.
     let result = decode(bytes);
-    assert_eq!(result.report().dialects, summary.dialects);
+    assert_eq!(result.report().dialects(), summary.dialects());
     assert_eq!(
         result
             .report()
@@ -516,7 +516,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
     assert_eq!(
         baseline
             .report()
-            .dialects
+            .dialects()
             .as_ref()
             .expect("FCStd decode reports dialect layers")
             .primary()
@@ -526,7 +526,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
     assert_eq!(
         drifted
             .report()
-            .dialects
+            .dialects()
             .as_ref()
             .expect("FCStd decode reports dialect layers")
             .primary()
@@ -560,7 +560,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
         assert_eq!(
             declared
                 .report()
-                .dialects
+                .dialects()
                 .as_ref()
                 .expect("FCStd decode reports dialect layers")
                 .primary()

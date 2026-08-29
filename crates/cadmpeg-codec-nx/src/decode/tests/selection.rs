@@ -864,7 +864,7 @@ fn inspect_enumerates_streams_and_names_schema() {
     let summary = NxCodec
         .inspect(&mut cur, &InspectOptions::default())
         .unwrap();
-    assert_eq!(summary.format, "nx");
+    assert_eq!(summary.format(), "nx");
     assert_eq!(summary.container_kind, "splmsstr");
     assert!(summary.entries.iter().any(|e| e.role == "parasolid-stream"));
     assert!(summary.notes.iter().any(|n| n.contains("partition")));

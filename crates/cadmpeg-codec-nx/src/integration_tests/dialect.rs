@@ -37,7 +37,7 @@ fn inspect(bytes: Vec<u8>) -> cadmpeg_core::ContainerSummary {
 #[test]
 fn the_modern_container_reports_the_splmsstr_row_at_inspect_and_decode() {
     let summary = inspect(prt_with_indexed_om_section());
-    let matched = primary(summary.dialects.as_ref());
+    let matched = primary(summary.dialects());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("nx:splmsstr")
@@ -50,13 +50,13 @@ fn the_modern_container_reports_the_splmsstr_row_at_inspect_and_decode() {
     assert_eq!(summary.container_kind, "splmsstr");
 
     let result = decode(prt_with_indexed_om_section());
-    assert_eq!(primary(result.report().dialects.as_ref()), matched);
+    assert_eq!(primary(result.report().dialects()), matched);
 }
 
 #[test]
 fn the_legacy_container_reports_the_cfb_row_at_inspect_and_decode() {
     let summary = inspect(legacy_cfb_with_ug_part());
-    let matched = primary(summary.dialects.as_ref());
+    let matched = primary(summary.dialects());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("nx:legacy-cfb")
@@ -67,7 +67,7 @@ fn the_legacy_container_reports_the_cfb_row_at_inspect_and_decode() {
     assert_eq!(summary.container_kind, "cfb");
 
     let result = decode(legacy_cfb_with_ug_part());
-    assert_eq!(primary(result.report().dialects.as_ref()), matched);
+    assert_eq!(primary(result.report().dialects()), matched);
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn source_meta_mirrors_the_primary_layer_on_every_decode_path() {
             let result = NxCodec
                 .decode(&mut Cursor::new(bytes.clone()), &options)
                 .expect("synthesized NX part should decode");
-            let matched = primary(result.report().dialects.as_ref()).clone();
+            let matched = primary(result.report().dialects()).clone();
             let source = result
                 .ir()
                 .source
