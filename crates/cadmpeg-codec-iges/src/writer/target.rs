@@ -8,7 +8,10 @@ use cadmpeg_ir::codec::{
     unsupported_target, EncodeInput, ExportPlan, PreserveAttempt, TargetRequest,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::{CadIr, SourceFidelity};
+use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
+
+use crate::dialect::IgesDialect;
+use crate::loss::IgesLossCode;
 
 pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
@@ -23,13 +26,13 @@ pub(crate) fn plan<'a>(
     plan_preserve_or_synthesize(
         resolved,
         |target| match replay_bytes(input.ir, input.fidelity, target)? {
-            Replay::Replayed { bytes, dialect } => Ok(PreserveAttempt::Preserved(
-                super::replayed_plan(input.ir, dialect, bytes),
-            )),
+            Replay::Replayed { bytes, dialect } => Ok(PreserveAttempt::Preserved(replayed_plan(
+                input.ir, dialect, bytes,
+            ))),
             Replay::Declined { reason } => Ok(PreserveAttempt::Declined(reason)),
         },
         |entry, displaced, replay_declined| {
-            super::synthesized_plan(
+            synthesized_plan(
                 input,
                 crate::dialect::target_version(entry),
                 displaced,
@@ -46,6 +49,82 @@ pub(crate) fn plan<'a>(
             ))
         },
     )
+}
+
+fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'_> {
+    ExportPlan::buffered(
+        super::report(
+            dialect,
+            FidelityResolution::Replayed,
+            WritePath::VerbatimReplay,
+            Vec::new(),
+            "preserved source container replayed verbatim",
+            super::counts_for_ir(ir),
+        ),
+        bytes,
+    )
+}
+
+fn synthesized_plan<'a>(
+    input: EncodeInput<'a>,
+    version: crate::IgesVersion,
+    displaced: Option<&DialectId>,
+    replay_failure: Option<String>,
+) -> Result<ExportPlan<'a>, CodecError> {
+    let target = IgesDialect::fixed_ascii(version).id();
+    let preservation_eligible = displaced.is_none()
+        && input
+            .ir
+            .source
+            .as_ref()
+            .is_some_and(|source| source.format == crate::dialect::FORMAT);
+    let source_available = input
+        .fidelity
+        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
+        .is_some();
+    let mut losses = Vec::new();
+    if preservation_eligible && !source_available {
+        losses.push(
+            IgesLossCode::PreservedSourceUnavailable.note(
+                "preserved IGES source image is unavailable; semantic regeneration is required",
+            ),
+        );
+    }
+    if let Some(source) = displaced.as_ref() {
+        losses.push(IgesLossCode::SourceDialectDisplaced.note(
+            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
+        ));
+    }
+    let synthesis = super::synthesize(input.ir, version)?;
+    losses.extend(synthesis.losses.clone());
+    let fidelity = if preservation_eligible && !source_available {
+        FidelityResolution::Degraded {
+            reason: "preserved IGES source image is unavailable".into(),
+        }
+    } else if displaced.is_some() {
+        if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        }
+    } else if let Some(reason) = replay_failure {
+        FidelityResolution::Degraded { reason }
+    } else if input.fidelity.is_some() {
+        FidelityResolution::NotConsumed
+    } else {
+        FidelityResolution::NotProvided
+    };
+    Ok(ExportPlan::buffered(
+        super::report(
+            target,
+            fidelity,
+            WritePath::Synthesized,
+            losses,
+            "IGES Fixed ASCII container regenerated from supported neutral geometry",
+            synthesis.counts,
+        ),
+        synthesis.bytes,
+    ))
 }
 
 enum Replay {

@@ -5,13 +5,11 @@
 //! source image byte for byte. Otherwise the semantic writer emits the current
 //! supported neutral profile and refuses unsupported models or native records.
 
-use crate::dialect::IgesDialect;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
@@ -84,84 +82,6 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 ];
 
 pub(crate) mod target;
-
-fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'_> {
-    ExportPlan::buffered(
-        report(
-            dialect,
-            FidelityResolution::Replayed,
-            WritePath::VerbatimReplay,
-            Vec::new(),
-            "preserved source container replayed verbatim",
-            counts_for_ir(ir),
-        ),
-        bytes,
-    )
-}
-
-/// Plan a semantic write at `version`, charging the loss for a preserved source
-/// image this export could not use.
-fn synthesized_plan<'a>(
-    input: EncodeInput<'a>,
-    version: crate::IgesVersion,
-    displaced: Option<&DialectId>,
-    replay_failure: Option<String>,
-) -> Result<ExportPlan<'a>, CodecError> {
-    let target = IgesDialect::fixed_ascii(version).id();
-    let preservation_eligible = displaced.is_none()
-        && input
-            .ir
-            .source
-            .as_ref()
-            .is_some_and(|source| source.format == crate::dialect::FORMAT);
-    let source_available = input
-        .fidelity
-        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
-        .is_some();
-    let mut losses = Vec::new();
-    if preservation_eligible && !source_available {
-        losses.push(
-            IgesLossCode::PreservedSourceUnavailable.note(
-                "preserved IGES source image is unavailable; semantic regeneration is required",
-            ),
-        );
-    }
-    if let Some(source) = displaced.as_ref() {
-        losses.push(IgesLossCode::SourceDialectDisplaced.note(
-            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
-        ));
-    }
-    let synthesis = synthesize(input.ir, version)?;
-    losses.extend(synthesis.losses.clone());
-    let fidelity = if preservation_eligible && !source_available {
-        FidelityResolution::Degraded {
-            reason: "preserved IGES source image is unavailable".into(),
-        }
-    } else if displaced.is_some() {
-        if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        }
-    } else if let Some(reason) = replay_failure {
-        FidelityResolution::Degraded { reason }
-    } else if input.fidelity.is_some() {
-        FidelityResolution::NotConsumed
-    } else {
-        FidelityResolution::NotProvided
-    };
-    Ok(ExportPlan::buffered(
-        report(
-            target,
-            fidelity,
-            WritePath::Synthesized,
-            losses,
-            "IGES Fixed ASCII container regenerated from supported neutral geometry",
-            synthesis.counts,
-        ),
-        synthesis.bytes,
-    ))
-}
 
 fn report(
     target: DialectId,
