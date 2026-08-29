@@ -321,7 +321,10 @@ fn registries() -> &'static Registries {
 /// tables and reads no file.
 #[must_use]
 pub fn dialects(format: &str) -> Vec<&'static DialectEntry> {
-    registries().rows_of(format).collect()
+    match Format::from_name(format) {
+        Some(format) => registries().rows_of(format.name()).collect(),
+        None => registries().rows_of(format).collect(),
+    }
 }
 
 /// The declared disposition for one dialect id, or `None` when the registry
@@ -816,5 +819,22 @@ mod tests {
         let one = dialect_table(Some(&all[0].format)).expect("a declared format");
         assert_eq!(one.len(), 1);
         assert_eq!(one[0].rows.len(), all[0].rows.len());
+    }
+
+    #[test]
+    fn format_aliases_reach_the_same_dialect_rows() {
+        let canonical = dialects("rhino")
+            .into_iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>();
+        let alias = dialects("3dm")
+            .into_iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(alias, canonical);
+        assert_eq!(
+            dialect_table(Some("3dm")).expect("Rhino alias"),
+            dialect_table(Some("rhino")).expect("Rhino format")
+        );
     }
 }
