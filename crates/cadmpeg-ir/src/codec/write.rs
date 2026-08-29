@@ -25,7 +25,12 @@ pub enum TargetRequest<'a> {
     Explicit(&'a str),
 }
 
-/// One dialect an encoder can synthesize for any input.
+/// One dialect that a caller can request from an encoder.
+///
+/// The catalog states names, aliases, and the cross-format default. It does not
+/// guarantee that every input can reach every row. [`Encoder::plan`] applies
+/// the resolved request to the input and refuses a row that the writer cannot
+/// deliver, such as a patch-only target without a matching retained source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TargetDescriptor {
     /// Registry dialect id, e.g. `step:ap242-e3`.
