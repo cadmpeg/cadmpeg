@@ -148,6 +148,17 @@ pub enum WriteRequest<'a> {
     },
 }
 
+impl WriteRequest<'_> {
+    /// Returns the canonical dialect id named by this resolved request.
+    #[must_use]
+    pub fn dialect_id(&self) -> cadmpeg_core::dialect::DialectId {
+        match self {
+            Self::Catalog { entry, .. } => cadmpeg_core::dialect::DialectId::pinned(entry.id),
+            Self::OffCatalog { dialect } => (*dialect).clone(),
+        }
+    }
+}
+
 /// The source dialect when the document belongs to `format` and records one.
 #[must_use]
 pub fn same_format_source_dialect<'a>(

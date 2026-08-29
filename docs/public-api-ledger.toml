@@ -17,6 +17,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
 [[change]]
+commit = "e642fd2f3c2796f89b33f33784292b5af02b8708"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::codec::WriteRequest::dialect_id"
+reason = "writers share the representation-only projection from a resolved catalog or off-catalog request to its dialect id while retaining codec-specific write law"
+
+[[change]]
 commit = "784c24977ad12f8a78b2eba4f2a8f8dd3229de69"
 crate = "cadmpeg-registry"
 kind = "deletion"

@@ -45,13 +45,6 @@ use std::collections::BTreeMap;
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "fcstd";
 
-/// The `FileVersion` every synthesis target declares.
-///
-/// `FileVersion` is not part of a dialect id ("`FileVersion` is provenance, not
-/// evidence", below), so a catalog id cannot carry one and the writer's gate
-/// still compares it. This is the value the catalog means.
-const TARGET_FILE_VERSION: u32 = 1;
-
 /// The synthesis catalog: the dialects this encoder produces for an input whose
 /// retained document graph already declares them.
 ///
@@ -68,17 +61,6 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     aliases: &["4"],
     default: true,
 }];
-
-/// The write options represented by a canonical catalog entry.
-pub(crate) fn target_options(target: &TargetDescriptor) -> FcstdWriteOptions {
-    match target.id {
-        id if id == FcstdDialect::Schema4.pinned() => FcstdWriteOptions {
-            schema_version: 4,
-            file_version: TARGET_FILE_VERSION,
-        },
-        _ => unreachable!("FreeCAD TARGETS entries map to FcstdWriteOptions"),
-    }
-}
 
 /// The dialect a write at `options` produces.
 ///

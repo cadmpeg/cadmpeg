@@ -1,4 +1,4 @@
-# generated at cc5d1d370
+# generated at e642fd2f3
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -553,6 +553,8 @@ pub cadmpeg_ir::codec::WriteRequest::Catalog::displaced: core::option::Option<ca
 pub cadmpeg_ir::codec::WriteRequest::Catalog::entry: &'static cadmpeg_ir::codec::TargetDescriptor
 pub cadmpeg_ir::codec::WriteRequest::OffCatalog
 pub cadmpeg_ir::codec::WriteRequest::OffCatalog::dialect: &'a cadmpeg_core::dialect::DialectId
+impl cadmpeg_ir::codec::WriteRequest<'_>
+pub fn cadmpeg_ir::codec::WriteRequest<'_>::dialect_id(&self) -> cadmpeg_core::dialect::DialectId
 impl<'a> core::clone::Clone for cadmpeg_ir::codec::WriteRequest<'a>
 pub fn cadmpeg_ir::codec::WriteRequest<'a>::clone(&self) -> cadmpeg_ir::codec::WriteRequest<'a>
 impl<'a> core::cmp::Eq for cadmpeg_ir::codec::WriteRequest<'a>
