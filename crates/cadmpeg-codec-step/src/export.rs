@@ -44,7 +44,8 @@ const EPS_IDENTITY: f64 = 1.0e-12;
 ///
 /// On success, the report contains DATA entity counts and loss notes for
 /// reductions that the selected schema cannot carry.
-pub fn write_step(
+#[cfg(test)]
+pub(crate) fn write_step(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
