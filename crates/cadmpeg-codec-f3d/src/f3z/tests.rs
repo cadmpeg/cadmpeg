@@ -658,7 +658,7 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .unwrap();
     let inspected = summary
         .dialects()
-        .expect("inspect must report exactly one primary F3D layer")
+        .expect("inspect must report a primary F3D layer")
         .primary()
         .clone();
     let inspected_dialects = summary.dialects();
@@ -688,6 +688,28 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
             .expect("inspection reports F3D layers")
             .primary()
     );
+    let extra_keys = |layers: &cadmpeg_core::dialect::DialectLayers| {
+        layers
+            .iter()
+            .skip(1)
+            .map(|matched| {
+                (
+                    matched.format().to_owned(),
+                    matched.instance().map(str::to_owned),
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let inspected_extra_keys = extra_keys(inspected_dialects.as_ref().unwrap());
+    let decoded_extra_keys = extra_keys(
+        decoded
+            .report()
+            .dialects()
+            .expect("decode reports F3D layers"),
+    );
+    assert_eq!(decoded_extra_keys, inspected_extra_keys);
+    assert!(decoded_extra_keys.contains(&("f3d".to_owned(), Some("root.f3d".to_owned()))));
+    assert!(decoded_extra_keys.contains(&("f3d".to_owned(), Some("comp.f3d".to_owned()))));
     assert!(decoded
         .report()
         .dialects()
