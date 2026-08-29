@@ -3,8 +3,7 @@
 //!
 //! These configure *how* a target is written. Which target is written is the
 //! export request's answer, resolved against the source: `StepCodec::plan`
-//! takes it from `TargetRequest`, and a direct [`crate::write_step`] caller
-//! names it in the call.
+//! takes it from `TargetRequest`.
 
 /// Metadata written to the STEP `FILE_NAME` header record.
 ///

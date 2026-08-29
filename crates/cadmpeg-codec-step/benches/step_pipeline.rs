@@ -5,8 +5,8 @@ use std::hint::black_box;
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
-use cadmpeg_codec_step::{write_step, StepCodec, StepWriteOptions};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_codec_step::{StepCodec, StepSchema};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
@@ -102,13 +102,13 @@ fn main() {
     measure("encode points", || {
         let mut output = Vec::new();
         black_box(
-            write_step(
-                black_box(&ir),
-                &mut output,
-                cadmpeg_codec_step::StepSchema::default(),
-                &StepWriteOptions::default(),
-            )
-            .expect("required invariant"),
+            codec
+                .plan(
+                    EncodeInput::new(black_box(&ir), None),
+                    TargetRequest::Explicit(StepSchema::default().target()),
+                )
+                .and_then(|plan| plan.write_to(&mut output))
+                .expect("required invariant"),
         );
         black_box(output);
     });
