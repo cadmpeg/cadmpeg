@@ -900,11 +900,11 @@ fn assert_type120_round_trip(version: IgesVersion) {
         .expect("Type 120 output decodes");
     assert_eq!(
         round_trip
-            .ir()
-            .source
-            .as_ref()
-            .expect("Type 120 output has source metadata")
-            .attributes["iges_version"],
+            .report()
+            .dialects()
+            .expect("Type 120 output has a dialect declaration")
+            .primary()
+            .declared["effective_version"],
         version.name()
     );
     let source_surface = original

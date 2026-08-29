@@ -210,7 +210,7 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
             )
             .unwrap();
         assert_eq!(
-            decoded.ir().source.as_ref().unwrap().attributes["iges_version"],
+            decoded.report().dialects().unwrap().primary().declared["effective_version"],
             name
         );
         assert_eq!(decoded.ir().model.points.len(), 1);
@@ -243,7 +243,7 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
             )
             .unwrap();
         assert_eq!(
-            decoded.ir().source.as_ref().unwrap().attributes["iges_version"],
+            decoded.report().dialects().unwrap().primary().declared["effective_version"],
             name
         );
         assert_eq!(decoded.ir().model.points.len(), 1);
@@ -357,7 +357,7 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().source.as_ref().unwrap().attributes["iges_version"],
+        round_trip.report().dialects().unwrap().primary().declared["effective_version"],
         "5.2"
     );
     assert_eq!(round_trip.ir().model.points.len(), 1);

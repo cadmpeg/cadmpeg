@@ -495,17 +495,17 @@ fn document_pipeline_retains_configurations_attributes_external_links_and_opaque
 }
 
 #[test]
-fn splmsstr_container_and_product_version_reach_source_attributes() {
+fn container_identity_reaches_only_the_dialect_declaration() {
     let modern = decode(prt_with_indexed_om_section());
-    let attributes = &modern.ir().source.as_ref().unwrap().attributes;
-    assert_eq!(attributes["splmsstr_version"], "6");
-    assert_eq!(attributes["product_version"], "NX 2027.3102");
-    assert!(!attributes.contains_key("ugii_version"));
+    let declared = &modern.report().dialects().unwrap().primary().declared;
+    assert_eq!(declared["splmsstr_version"], "6");
+    assert_eq!(declared["product_version"], "NX 2027.3102");
+    assert!(!declared.contains_key("ugii_version"));
 
     let legacy = decode(legacy_cfb_with_ug_part());
-    let attributes = &legacy.ir().source.as_ref().unwrap().attributes;
-    assert!(attributes.contains_key("ugii_version"));
-    assert!(!attributes.contains_key("splmsstr_version"));
+    let declared = &legacy.report().dialects().unwrap().primary().declared;
+    assert!(declared.contains_key("ugii_version"));
+    assert!(!declared.contains_key("splmsstr_version"));
 }
 
 #[test]

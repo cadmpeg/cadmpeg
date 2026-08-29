@@ -49,7 +49,6 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let container = Container {
         data: payload.as_slice().into(),
         version: 0,
-        declared_version: Some(0),
         file_tag: 0,
         footer_offset: 0,
         header_entry_count: 2,
@@ -87,7 +86,6 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let container = Container {
         data: payload.as_slice().into(),
         version: 0,
-        declared_version: Some(0),
         file_tag: 0,
         footer_offset: 0,
         header_entry_count: 1,
@@ -136,7 +134,6 @@ fn container_caches_owned_section_layouts() {
     let container = Container {
         data: file.into(),
         version: 0,
-        declared_version: Some(0),
         file_tag: 0,
         footer_offset: 0,
         header_entry_count: 1,

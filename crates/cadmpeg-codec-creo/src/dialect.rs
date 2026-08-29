@@ -19,11 +19,8 @@
 //! registry id per layout family, and the match is exhaustive so a new layout
 //! cannot be added without pinning an id for it.
 //!
-//! [`Layout::token`] is a separate vocabulary and stays that way. It is the
-//! value of the long-standing `layout` source attribute and of the inspect
-//! note, and those strings are a contract of their own; the registry ids are a
-//! contract of the identity registry. Merging them would couple two
-//! independently pinned vocabularies for no gain.
+//! [`Layout::token`] is a separate vocabulary used by the inspect note. The
+//! registry id remains the report identity.
 //!
 //! # `creo:unknown` is admitted, never refused
 //!

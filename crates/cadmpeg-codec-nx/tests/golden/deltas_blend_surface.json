@@ -283,8 +283,7 @@
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
-          "plain_streams": "0",
-          "splmsstr_version": "6"
+          "plain_streams": "0"
         },
         "dialect": {
           "admission": "admitted",

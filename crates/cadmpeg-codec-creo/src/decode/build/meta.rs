@@ -22,10 +22,6 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
     if let Some(name) = &scan.framing.model_name {
         attributes.insert("model_name".to_string(), name.clone());
     }
-    attributes.insert(
-        "layout".to_string(),
-        scan.framing.layout.token().to_string(),
-    );
     if let Some(legacy) = &scan.framing.legacy_ascii {
         attributes.insert("legacy_ascii_schema".to_string(), legacy.schema.clone());
         if let Some(release) = &legacy.product_release {
