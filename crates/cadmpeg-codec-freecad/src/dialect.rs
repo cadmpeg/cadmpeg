@@ -165,6 +165,14 @@ impl FcstdDialect {
             .find(|dialect| dialect.id() == *id)
     }
 
+    /// Element vocabulary selected by this persistence identity strategy.
+    pub(crate) const fn persistence_tags(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Schema2 => ("Features", "FeatureData", "Feature"),
+            _ => ("Objects", "ObjectData", "Object"),
+        }
+    }
+
     /// The row whose element vocabulary reads a document this codec declares no
     /// strategy for.
     ///

@@ -229,7 +229,7 @@ pub(crate) fn parse_document(
     let parsed_file_version = file_version
         .parse::<usize>()
         .map_err(|_| CodecError::Malformed("Document.xml FileVersion is invalid".into()))?;
-    let (declaration_tag, data_tag, record_tag) = crate::persistence::persistence_tags(schema);
+    let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
     let _ = unique_section(root, data_tag)?;
     let declarations = unique_section(root, declaration_tag)?
         .into_iter()
