@@ -4,7 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
+    plan_preserve_or_synthesize, resolve_write_request, unsupported_target, EncodeInput,
+    ExportPlan, PreserveAttempt, TargetRequest,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -19,30 +20,23 @@ pub(crate) fn plan<'a>(
         crate::dialect::FORMAT,
         crate::dialect::TARGETS,
     )?;
-    match resolved {
-        WriteRequest::Catalog { entry, displaced } => {
-            let version = crate::dialect::target_version(entry);
-            let replay_declined = if displaced.is_none() {
-                let target = DialectId::pinned(entry.id);
-                match replay_bytes(input.ir, input.fidelity, &target)? {
-                    Replay::Replayed { bytes, dialect } => {
-                        return Ok(super::replayed_plan(input.ir, dialect, bytes));
-                    }
-                    Replay::Declined { reason } => reason,
-                }
-            } else {
-                None
-            };
-            super::synthesized_plan(input, version, displaced.as_ref(), replay_declined)
-        }
-        WriteRequest::OffCatalog { dialect } => {
-            match replay_bytes(input.ir, input.fidelity, dialect)? {
-                Replay::Replayed {
-                    bytes,
-                    dialect: replayed,
-                } => return Ok(super::replayed_plan(input.ir, replayed, bytes)),
-                Replay::Declined { .. } => {}
-            }
+    plan_preserve_or_synthesize(
+        resolved,
+        |target| match replay_bytes(input.ir, input.fidelity, target)? {
+            Replay::Replayed { bytes, dialect } => Ok(PreserveAttempt::Preserved(
+                super::replayed_plan(input.ir, dialect, bytes),
+            )),
+            Replay::Declined { reason } => Ok(PreserveAttempt::Declined(reason)),
+        },
+        |entry, displaced, replay_declined| {
+            super::synthesized_plan(
+                input,
+                crate::dialect::target_version(entry),
+                displaced,
+                replay_declined.flatten(),
+            )
+        },
+        |dialect, _| {
             Err(unsupported_target(
                 crate::dialect::FORMAT,
                 dialect.as_str(),
@@ -50,8 +44,8 @@ pub(crate) fn plan<'a>(
                      writer cannot synthesize it",
                 crate::dialect::TARGETS,
             ))
-        }
-    }
+        },
+    )
 }
 
 enum Replay {
