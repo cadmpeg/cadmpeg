@@ -170,6 +170,7 @@ fn rhino_output_version_is_selected_explicitly() {
         "rhino:60",
         "3dm:60",
         "60",
+        "50",
     ]
     .into_iter()
     .enumerate()
@@ -190,7 +191,11 @@ fn rhino_output_version_is_selected_explicitly() {
             .success();
         assert_eq!(
             &fs::read(output).unwrap()[24..32],
-            b"      60",
+            if spelling == "50" {
+                b"      50"
+            } else {
+                b"      60"
+            },
             "{spelling}"
         );
     }
