@@ -90,12 +90,10 @@ impl DecodeResult {
                 .map(cadmpeg_core::dialect::DialectLayers::primary)
             {
                 Some(matched) => {
-                    source.dialect.clone_from(&matched.dialect);
-                    source.declared.clone_from(&matched.declared);
+                    source.dialect = Some(matched.clone());
                 }
                 None => {
                     source.dialect = None;
-                    source.declared.clear();
                 }
             }
         }

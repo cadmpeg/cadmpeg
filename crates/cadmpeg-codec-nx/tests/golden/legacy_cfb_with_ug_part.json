@@ -65,10 +65,14 @@
           "plain_streams": "0",
           "ugii_version": "50"
         },
-        "declared": {
-          "ugii_version": "50"
+        "dialect": {
+          "admission": "admitted",
+          "declared": {
+            "ugii_version": "50"
+          },
+          "dialect": "nx:legacy-cfb",
+          "format": "nx"
         },
-        "dialect": "nx:legacy-cfb",
         "format": "nx"
       },
       "tolerances": {

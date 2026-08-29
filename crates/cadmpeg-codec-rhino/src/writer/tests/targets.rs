@@ -48,7 +48,12 @@ fn source_in(dialect: &'static str) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(cadmpeg_ir::document::SourceMeta {
         format: "rhino".into(),
-        dialect: Some(cadmpeg_core::dialect::DialectId::pinned(dialect)),
+        dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
+            "rhino",
+            cadmpeg_core::dialect::DialectId::pinned(dialect),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )),
         ..cadmpeg_ir::document::SourceMeta::default()
     });
     ir

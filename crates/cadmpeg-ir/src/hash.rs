@@ -268,8 +268,6 @@ fn encode_hex(digest: &[u8]) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use std::collections::BTreeMap;
-
     use super::{
         canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge,
         sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
@@ -481,7 +479,6 @@ mod tests {
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
         ir.source = Some(crate::document::SourceMeta {
-            declared: BTreeMap::new(),
             dialect: None,
             format: "pin".into(),
             attributes: [
@@ -509,21 +506,20 @@ mod tests {
     ///     "attributes": {
     ///       "file_size": "4096"
     ///     },
-    ///     "dialect": null,
-    ///     "declared": {}
+    ///     "dialect": null
     ///   },
     /// ```
     ///
-    /// `dialect` and `declared` are the two members the wire-format flip made
-    /// unconditional. This is the only pin the flip moves: the other pinned
-    /// documents carry no source metadata, so their normalized form still
-    /// elides the whole `source` member.
+    /// `dialect` is the member the wire format makes unconditional. This is the
+    /// only pin this shape change moves: the other pinned documents carry no
+    /// source metadata, so their normalized form still elides the whole
+    /// `source` member.
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "4e3230b5e568283a822d086ac724435bc2d9817b127bd7d391b4168a4675e2a7"
+            "6855f908b5178d4710fdd48f0e6b48d142be731d0fa28097eaf145053e897ede"
         );
     }
 
@@ -567,7 +563,6 @@ mod tests {
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
         ir.source = Some(crate::SourceMeta {
-            declared: BTreeMap::new(),
             dialect: None,
             format: "synthetic".into(),
             attributes: [

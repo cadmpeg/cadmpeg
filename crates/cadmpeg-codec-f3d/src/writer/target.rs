@@ -80,7 +80,12 @@ fn preserve(input: EncodeInput<'_>, target: &DialectId) -> Result<Preservation, 
     else {
         return Ok(Preservation::Declined);
     };
-    if source.dialect.as_ref() != Some(target) {
+    if source
+        .dialect
+        .as_ref()
+        .and_then(|matched| matched.dialect.as_ref())
+        != Some(target)
+    {
         return Ok(Preservation::Declined);
     }
     let Some(record) = input

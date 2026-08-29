@@ -132,6 +132,7 @@ fn inherit_synthesizes_the_source_schema_not_the_catalog_default() {
             .unwrap()
             .dialect
             .as_ref()
+            .and_then(|matched| matched.dialect.as_ref())
             .map(ToString::to_string),
         Some("step:ap203-e1".to_owned())
     );
@@ -187,6 +188,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
             .unwrap()
             .dialect
             .as_ref()
+            .and_then(|matched| matched.dialect.as_ref())
             .map(ToString::to_string),
         Some("step:ap242".to_owned())
     );
@@ -216,6 +218,7 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
             .unwrap()
             .dialect
             .as_ref()
+            .and_then(|matched| matched.dialect.as_ref())
             .map(ToString::to_string),
         Some("step:unknown".to_owned())
     );
@@ -306,7 +309,12 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
     let mut ir = unit_cube();
     ir.source = Some(SourceMeta {
         format: "rhino".to_owned(),
-        dialect: Some(cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50")),
+        dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
+            "rhino",
+            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )),
         ..SourceMeta::default()
     });
     let plan = encoder
@@ -342,8 +350,11 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
     let mut foreign = unit_cube();
     foreign.source = Some(SourceMeta {
         format: "iges".to_owned(),
-        dialect: Some(cadmpeg_core::dialect::DialectId::pinned(
-            "iges:5.3-fixed-ascii",
+        dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
+            "iges",
+            cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
         )),
         ..SourceMeta::default()
     });

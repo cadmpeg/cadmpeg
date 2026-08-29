@@ -147,12 +147,16 @@
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic"
       },
-      "declared": {
-        "encoding": "binary",
-        "save_format_major": "232",
-        "save_format_minor": "0"
+      "dialect": {
+        "admission": "admitted",
+        "declared": {
+          "encoding": "binary",
+          "save_format_major": "232",
+          "save_format_minor": "0"
+        },
+        "dialect": "sat:asm-binary",
+        "format": "sat"
       },
-      "dialect": "sat:asm-binary",
       "format": "sat"
     },
     "tolerances": {

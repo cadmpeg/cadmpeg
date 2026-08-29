@@ -106,7 +106,6 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        declared: BTreeMap::new(),
         dialect: None,
         format: String::new(),
     });
@@ -149,7 +148,6 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        declared: BTreeMap::new(),
         dialect: None,
         format: String::new(),
     });
@@ -278,7 +276,6 @@ fn incomplete_configuration_names_are_reported() {
 fn active_configuration_partition_disagreement_is_reported() {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        declared: BTreeMap::new(),
         dialect: None,
         format: "sldprt".into(),
         attributes: BTreeMap::from([(

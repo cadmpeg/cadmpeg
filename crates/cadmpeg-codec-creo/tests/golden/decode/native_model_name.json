@@ -136,10 +136,18 @@
         "section_count": "0",
         "version_line": "#UGC:2 PART test \\"
       },
-      "declared": {
-        "version_line": "#UGC:2 PART test \\"
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "creo:unknown"
+          }
+        },
+        "declared": {
+          "version_line": "#UGC:2 PART test \\"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
       },
-      "dialect": "creo:unknown",
       "format": "creo"
     },
     "tolerances": {

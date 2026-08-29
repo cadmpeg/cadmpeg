@@ -359,8 +359,7 @@ fn compressed_ascii_classifies_into_its_own_representation_row() {
     assert_eq!(matched.declared["representation"], "compressed-ascii");
 
     let source_meta = decoded.ir().source.as_ref().unwrap();
-    assert_eq!(source_meta.dialect, matched.dialect);
-    assert_eq!(source_meta.declared, matched.declared);
+    assert_eq!(source_meta.dialect.as_ref(), Some(matched));
 
     let summary = IgesCodec
         .inspect(

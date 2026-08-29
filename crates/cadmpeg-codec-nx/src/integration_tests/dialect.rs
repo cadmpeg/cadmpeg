@@ -91,10 +91,9 @@ fn source_meta_mirrors_the_primary_layer_on_every_decode_path() {
                 .expect("NX emits source metadata");
 
             assert_eq!(source.format, "nx");
-            assert_eq!(source.dialect, matched.dialect);
-            assert_eq!(source.declared, matched.declared);
+            assert_eq!(source.dialect.as_ref(), Some(&matched));
             // The pre-existing attributes stay where they were.
-            for (key, value) in &source.declared {
+            for (key, value) in &source.dialect.as_ref().unwrap().declared {
                 assert_eq!(&source.attributes[key], value);
             }
         }

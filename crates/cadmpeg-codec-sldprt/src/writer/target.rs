@@ -60,7 +60,8 @@ fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>
         .source
         .as_ref()
         .filter(|source| source.format == dialect::FORMAT)
-        .and_then(|source| source.dialect.as_ref());
+        .and_then(|source| source.dialect.as_ref())
+        .and_then(|matched| matched.dialect.as_ref());
     let replay_eligible = source_dialect == Some(target);
     let mut bytes = Vec::new();
     let written = match input.fidelity {

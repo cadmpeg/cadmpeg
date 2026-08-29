@@ -14,9 +14,13 @@
         "solved_record_len": "566",
         "zip_entry_count": "3"
       },
-      "dialect": "f3d:manifest-3-2-0-0",
-      "declared": {
-        "top_level_manifest_version": "3-2-0-0"
+      "dialect": {
+        "format": "f3d",
+        "dialect": "f3d:manifest-3-2-0-0",
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "admission": "admitted"
       }
     },
     "units": {

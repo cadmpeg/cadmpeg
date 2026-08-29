@@ -77,11 +77,19 @@
         "entity_instances": "2",
         "schema": "AP242"
       },
-      "declared": {
-        "file_schema_identifier": "AP242",
-        "implementation_level": "4;2"
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "step:ap242-e3"
+          }
+        },
+        "declared": {
+          "file_schema_identifier": "AP242",
+          "implementation_level": "4;2"
+        },
+        "dialect": "step:unknown",
+        "format": "step"
       },
-      "dialect": "step:unknown",
       "format": "step"
     },
     "tolerances": {

@@ -1015,12 +1015,20 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "declared": {
-        "effective_version": "2.0",
-        "representation": "fixed-ascii",
-        "version_flag": "3"
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "iges:5.3-fixed-ascii"
+          }
+        },
+        "declared": {
+          "effective_version": "2.0",
+          "representation": "fixed-ascii",
+          "version_flag": "3"
+        },
+        "dialect": "iges:2.0-fixed-ascii",
+        "format": "iges"
       },
-      "dialect": "iges:2.0-fixed-ascii",
       "format": "iges"
     },
     "tolerances": {

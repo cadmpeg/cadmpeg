@@ -282,14 +282,31 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let absent = SourceMeta::default();
     let left = left.source.as_ref().unwrap_or(&absent);
     let right = right.source.as_ref().unwrap_or(&absent);
-    let left_dialect = left.dialect.as_ref().map(|id| id.as_str().to_owned());
-    let right_dialect = right.dialect.as_ref().map(|id| id.as_str().to_owned());
+    let empty_declared = BTreeMap::new();
+    let left_dialect = left
+        .dialect
+        .as_ref()
+        .and_then(|matched| matched.dialect.as_ref())
+        .map(|id| id.as_str().to_owned());
+    let right_dialect = right
+        .dialect
+        .as_ref()
+        .and_then(|matched| matched.dialect.as_ref())
+        .map(|id| id.as_str().to_owned());
     let mut result = SourceDiff {
         format_change: (left.format != right.format)
             .then(|| (left.format.clone(), right.format.clone())),
         dialect_change: (left_dialect != right_dialect)
             .then(|| (left_dialect.clone(), right_dialect.clone())),
-        declared: attribute_changes(&left.declared, &right.declared),
+        declared: attribute_changes(
+            left.dialect
+                .as_ref()
+                .map_or(&empty_declared, |matched| &matched.declared),
+            right
+                .dialect
+                .as_ref()
+                .map_or(&empty_declared, |matched| &matched.declared),
+        ),
         ..SourceDiff::default()
     };
     for change in attribute_changes(&left.attributes, &right.attributes) {
@@ -517,7 +534,6 @@ mod tests {
     fn with_source(attributes: &[(&str, &str)]) -> crate::CadIr {
         let mut ir = unit_cube();
         ir.source = Some(crate::document::SourceMeta {
-            declared: BTreeMap::new(),
             dialect: None,
             format: "synthetic".into(),
             attributes: attributes
@@ -637,10 +653,18 @@ mod tests {
     fn a_dialect_or_declared_divergence_is_a_difference() {
         let mut left = with_source(&[]);
         let mut right = left.clone();
-        left.source.as_mut().unwrap().dialect =
-            Some(cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"));
-        right.source.as_mut().unwrap().dialect =
-            Some(cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"));
+        left.source.as_mut().unwrap().dialect = Some(cadmpeg_core::dialect::DialectMatch::layer(
+            "rhino",
+            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+            BTreeMap::new(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        ));
+        right.source.as_mut().unwrap().dialect = Some(cadmpeg_core::dialect::DialectMatch::layer(
+            "rhino",
+            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
+            BTreeMap::new(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        ));
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
@@ -658,12 +682,30 @@ mod tests {
             .source
             .as_mut()
             .unwrap()
+            .dialect
+            .get_or_insert_with(|| {
+                cadmpeg_core::dialect::DialectMatch::layer(
+                    "rhino",
+                    cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                    BTreeMap::new(),
+                    cadmpeg_core::dialect::Admission::Admitted,
+                )
+            })
             .declared
             .insert("archive_version".into(), "70".into());
         declared_right
             .source
             .as_mut()
             .unwrap()
+            .dialect
+            .get_or_insert_with(|| {
+                cadmpeg_core::dialect::DialectMatch::layer(
+                    "rhino",
+                    cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                    BTreeMap::new(),
+                    cadmpeg_core::dialect::Admission::Admitted,
+                )
+            })
             .declared
             .insert("archive_version".into(), "80".into());
 

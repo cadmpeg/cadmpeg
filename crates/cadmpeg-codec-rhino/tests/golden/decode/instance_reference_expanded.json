@@ -168,10 +168,14 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
-      "declared": {
-        "archive_version": "60"
+      "dialect": {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "60"
+        },
+        "dialect": "rhino:archive-60",
+        "format": "rhino"
       },
-      "dialect": "rhino:archive-60",
       "format": "rhino"
     },
     "tolerances": {

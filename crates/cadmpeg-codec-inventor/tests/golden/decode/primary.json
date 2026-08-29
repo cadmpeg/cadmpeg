@@ -405,13 +405,17 @@
         "kernel_save_format_version": "700",
         "rse_segment_pairs": "1"
       },
-      "declared": {
-        "cfb_major_version": "3",
-        "meta_stream_marker": "RSe Meta Stream Version 8",
-        "meta_stream_version": "8",
-        "rse_db_schema": "31"
+      "dialect": {
+        "admission": "admitted",
+        "declared": {
+          "cfb_major_version": "3",
+          "meta_stream_marker": "RSe Meta Stream Version 8",
+          "meta_stream_version": "8",
+          "rse_db_schema": "31"
+        },
+        "dialect": "inventor:cfb3-rse31-meta8",
+        "format": "inventor"
       },
-      "dialect": "inventor:cfb3-rse31-meta8",
       "format": "inventor"
     },
     "tolerances": {

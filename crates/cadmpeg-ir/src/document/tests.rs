@@ -210,8 +210,8 @@ fn current_document_excludes_source_byte_accounting() {
     assert!(json.get("byte_ledger").is_none());
 }
 
-/// A `SourceMeta` written before the dialect fields existed still reads, with
-/// both fields absent. Writing it back now states their absence explicitly,
+/// A `SourceMeta` written before the dialect match existed still reads with it
+/// absent. Writing it back now states that absence explicitly,
 /// which is what moves every document digest over a document that has source
 /// metadata.
 #[test]
@@ -221,13 +221,12 @@ fn pre_migration_source_metadata_reads_back_and_gains_the_dialect_keys() {
 
     assert_eq!(source.format, "rhino");
     assert_eq!(source.dialect, None);
-    assert!(source.declared.is_empty());
 
     let rewritten = serde_json::to_string(&source).unwrap();
     assert_eq!(
         rewritten,
         "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\
-         \"dialect\":null,\"declared\":{}}"
+         \"dialect\":null}"
     );
     assert_eq!(
         serde_json::from_str::<SourceMeta>(&rewritten).unwrap(),

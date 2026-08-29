@@ -100,8 +100,15 @@
         "preview_count": "0",
         "variant": "unknown"
       },
-      "declared": {},
-      "dialect": "catia:unknown",
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "catia:unknown"
+          }
+        },
+        "dialect": "catia:unknown",
+        "format": "catia"
+      },
       "format": "catia"
     },
     "tolerances": {

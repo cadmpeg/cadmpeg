@@ -369,11 +369,15 @@
           "product_version": "NX 2027.3102",
           "splmsstr_version": "6"
         },
-        "declared": {
-          "product_version": "NX 2027.3102",
-          "splmsstr_version": "6"
+        "dialect": {
+          "admission": "admitted",
+          "declared": {
+            "product_version": "NX 2027.3102",
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
         },
-        "dialect": "nx:splmsstr",
         "format": "nx"
       },
       "tolerances": {

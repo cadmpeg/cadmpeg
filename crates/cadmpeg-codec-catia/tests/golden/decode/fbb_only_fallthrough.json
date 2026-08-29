@@ -195,8 +195,11 @@
         "variant": "fbb_only",
         "vertex_records": "3"
       },
-      "declared": {},
-      "dialect": "catia:fbb-only",
+      "dialect": {
+        "admission": "admitted",
+        "dialect": "catia:fbb-only",
+        "format": "catia"
+      },
       "format": "catia"
     },
     "tolerances": {

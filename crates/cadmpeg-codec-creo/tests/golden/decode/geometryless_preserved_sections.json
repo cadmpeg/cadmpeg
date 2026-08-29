@@ -82,10 +82,18 @@
         "srf_array_count": "5",
         "version_line": "#UGC:2 P c"
       },
-      "declared": {
-        "version_line": "#UGC:2 P c"
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "creo:unknown"
+          }
+        },
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
       },
-      "dialect": "creo:unknown",
       "format": "creo"
     },
     "tolerances": {
