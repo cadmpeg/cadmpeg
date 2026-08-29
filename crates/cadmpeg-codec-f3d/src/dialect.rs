@@ -58,12 +58,6 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     default: true,
 }];
 
-/// The semantic generator's only target, structurally tied to the one-row catalog.
-pub(crate) const SYNTHESIS_TARGET_ID: &str = match TARGETS {
-    [target] => target.id,
-    _ => panic!("the F3D synthesis catalog must contain exactly one row"),
-};
-
 /// Key of the top-level `Manifest.dat` version field in
 /// [`DialectMatch::declared`], recorded as the manifest cursor read it.
 ///

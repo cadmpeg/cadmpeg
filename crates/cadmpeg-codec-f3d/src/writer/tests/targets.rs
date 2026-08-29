@@ -94,17 +94,17 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
 fn cross_format_write_has_no_dialect_displacement() {
     let mut ir = sourced_ir("step:ap242-edition-3");
     ir.source.as_mut().unwrap().format = "step".into();
+    let fidelity = SourceFidelity::default();
     let plan = Encoder::plan(
         &F3dCodec,
-        EncodeInput::new(&ir, None),
+        EncodeInput::new(&ir, Some(&fidelity)),
         TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
     )
     .expect("cross-format synthesis plans");
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != F3dLossCode::SourceDialectDisplaced.kind()));
+    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotConsumed);
+    assert!(plan.report().losses.iter().all(|loss| loss.code
+        != F3dLossCode::SourceDialectDisplaced.kind()
+        && loss.code != F3dLossCode::SourcePreservedImageUnavailable.kind()));
 }
 
 #[test]
