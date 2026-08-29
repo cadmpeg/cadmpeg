@@ -815,6 +815,52 @@ impl TransferLedger {
 pub struct CoverageKey(pub &'static str);
 
 impl DecodeReport {
+    /// Constructs a classified report whose format is its primary layer's format.
+    #[must_use]
+    pub fn classified(
+        dialects: DialectLayers,
+        container_only: bool,
+        geometry_transferred: bool,
+        coverage: BTreeMap<String, usize>,
+        losses: Vec<LossNote>,
+        notes: Vec<String>,
+        transfer_ledger: TransferLedger,
+    ) -> Self {
+        Self {
+            format: dialects.primary().format.clone(),
+            container_only,
+            geometry_transferred,
+            coverage,
+            losses,
+            notes,
+            transfer_ledger,
+            dialects: Some(dialects),
+        }
+    }
+
+    /// Constructs an unclassified report for a known source format.
+    #[must_use]
+    pub fn unclassified(
+        format: impl Into<String>,
+        container_only: bool,
+        geometry_transferred: bool,
+        coverage: BTreeMap<String, usize>,
+        losses: Vec<LossNote>,
+        notes: Vec<String>,
+        transfer_ledger: TransferLedger,
+    ) -> Self {
+        Self {
+            format: format.into(),
+            container_only,
+            geometry_transferred,
+            coverage,
+            losses,
+            notes,
+            transfer_ledger,
+            dialects: None,
+        }
+    }
+
     /// Records a coverage measure count for a statically declared key.
     ///
     /// Producers pass the observed count (not an implied +1). Repeated calls
