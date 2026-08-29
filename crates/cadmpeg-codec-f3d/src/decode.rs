@@ -2186,7 +2186,7 @@ impl<'a> F3dDecodeSession<'a> {
         undecoded_candidates: usize,
         mut admitted_entities: u64,
     ) -> Result<Self, CodecError> {
-        let mut report = build_geometry_report(scan, &brep);
+        let mut report = crate::dialect::build_report(scan, false, true, geometry_losses(&brep));
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2257,7 +2257,7 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_materials: None,
             native: F3dNative::default(),
             ir,
-            report: build_container_report(scan, false),
+            report: crate::dialect::build_report(scan, false, false, container_losses(scan)),
             unknowns,
             deferred_xref: None,
             deferred_non_root_act: None,
@@ -2983,7 +2983,7 @@ pub(crate) fn decode_member<'a>(
         annotate_docstruct(&mut ir, &scan);
         let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(&scan);
-        let mut report = build_container_report(&scan, true);
+        let mut report = crate::dialect::build_report(&scan, true, false, container_losses(&scan));
         if let Ok(Some(table)) = crate::xref::decode(&scan) {
             apply_assembly_classification(&mut report, &scan, &table);
         }
@@ -4785,9 +4785,7 @@ fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> Str
         .join(", ")
 }
 
-fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
-    let kernel_layers = crate::dialect::kernel_layers(scan);
-    let mut summary = container::summarize(scan, &kernel_layers.matches);
+fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
     let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
@@ -4869,21 +4867,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         "Materials/appearances (.protein assets, ACT/design assignments) were not \
          transferred.",
     ));
-    losses.extend(kernel_layers.losses);
-
-    DecodeReport::classified(
-        summary.take_dialects().expect("F3D summary is classified"),
-        false,
-        true,
-        std::collections::BTreeMap::new(),
-        losses,
-        summary
-            .notes
-            .into_iter()
-            .filter(|note| !note.starts_with("container-level inspection only"))
-            .collect(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+    losses
 }
 
 fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
@@ -4944,9 +4928,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 ///
 /// The report names the BREP carrier state. A failed binary decode gets a
 /// decode-failure note. Each remaining state gets its own loss description.
-fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
-    let kernel_layers = crate::dialect::kernel_layers(scan);
-    let mut summary = container::summarize(scan, &kernel_layers.matches);
+fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::LossNote> {
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);
@@ -5029,23 +5011,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         ));
     }
 
-    losses.extend(kernel_layers.losses);
-
-    DecodeReport::classified(
-        summary.take_dialects().expect("F3D summary is classified"),
-        container_only,
-        false,
-        std::collections::BTreeMap::new(),
-        losses,
-        // `summarize` contains advice for container inspection. Full decode has
-        // already run the design and body-binding passes, so drop that advice.
-        summary
-            .notes
-            .into_iter()
-            .filter(|note| container_only || !note.starts_with("container-level inspection only"))
-            .collect(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+    losses
 }
 
 /// Resolve the appearance loss note against the appearances in the IR.

@@ -36,7 +36,7 @@
 //!
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::BTreeMap;
 
 use crate::loss::F3dLossCode;
@@ -326,6 +326,31 @@ pub(crate) fn report_dialect_losses(
             .filter_map(kernel_dialect_loss),
     );
     losses
+}
+
+/// Build a decode report from the dialect summary and route-owned losses.
+pub(crate) fn build_report(
+    scan: &crate::container::ContainerScan,
+    container_only: bool,
+    geometry_transferred: bool,
+    mut losses: Vec<LossNote>,
+) -> DecodeReport {
+    let kernel_layers = kernel_layers(scan);
+    let mut summary = crate::container::summarize(scan, &kernel_layers.matches);
+    losses.extend(kernel_layers.losses);
+    DecodeReport::classified(
+        summary.take_dialects().expect("F3D summary is classified"),
+        container_only,
+        geometry_transferred,
+        std::collections::BTreeMap::new(),
+        losses,
+        summary
+            .notes
+            .into_iter()
+            .filter(|note| container_only || !note.starts_with("container-level inspection only"))
+            .collect(),
+        cadmpeg_ir::report::TransferLedger::default(),
+    )
 }
 
 #[cfg(test)]
