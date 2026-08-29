@@ -107,7 +107,9 @@ pub(crate) fn inspect(
     // report the same `sat:` row and the same admission for the same bytes.
     let (matched, kernel) = match kind {
         StreamKind::AsmBinary => {
-            let header = asm_header::parse(bytes);
+            let header = asm_header::parse(bytes).filter(|header| {
+                asm_header::record_stream_start_with_header(bytes, header).is_some()
+            });
             if let Some(header) = &header {
                 header_attributes(header, "asm", &mut attributes);
                 if header.has_history_partition() {
@@ -122,7 +124,9 @@ pub(crate) fn inspect(
             crate::dialect::layers(&evidence)
         }
         StreamKind::AcisBinary => {
-            let header = acis_header::parse(bytes);
+            let header = acis_header::parse(bytes).filter(|header| {
+                acis_header::record_stream_start_with_header(bytes, header).is_some()
+            });
             let evidence = StreamEvidence::AcisBinary(header.as_ref());
             if let Some(header) = &header {
                 header_attributes(header, "acis", &mut attributes);

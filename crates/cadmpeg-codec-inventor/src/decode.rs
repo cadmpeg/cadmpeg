@@ -17,7 +17,7 @@ use cadmpeg_ir::report::{DecodeReport, TransferLedger};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
-use crate::container::{ContainerPurpose, InventorContainer};
+use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
 use crate::dialect::{kernel_dialect_loss, kernel_layer, unknown_kernel_layer, DialectRecovery};
 use crate::external_reference::UfrxState;
@@ -42,12 +42,7 @@ use crate::protein::ProteinState;
 use crate::rse::{DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let purpose = if ctx.container_only() {
-        ContainerPurpose::Inspect
-    } else {
-        ContainerPurpose::Decode
-    };
-    let container = InventorContainer::open(ctx, root, purpose)?;
+    let container = InventorContainer::open(ctx, root)?;
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
@@ -841,8 +836,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 form: bulk.form.value(),
                 compressed_len: bulk.compressed.window().len() as u64,
                 compressed_sha256: sha256_hex(bulk.compressed.window()),
-                expanded_len: bulk.expanded.map(|view| view.window().len() as u64),
-                expanded_sha256: bulk.expanded.map(|view| sha256_hex(view.window())),
+                expanded_len: Some(bulk.expanded.window().len() as u64),
+                expanded_sha256: Some(sha256_hex(bulk.expanded.window())),
                 record_state: record_state.into(),
                 record_count,
                 stream_trailer_len,

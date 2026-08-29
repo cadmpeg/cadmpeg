@@ -93,8 +93,8 @@ fn only_the_acis_kernel_branches_are_banded() {
 
 #[test]
 fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
-    // Reachable at inspect only: decode returns a malformed error on the same
-    // bytes. The row is still named, because the discriminant did match.
+    // The three identified rows are shared by inspect and decode refusal. The
+    // unknown totality row remains unreachable through normal detection.
     for (evidence, id) in [
         (StreamEvidence::AsmBinary(None), "sat:asm-binary"),
         (StreamEvidence::AcisBinary(None), "sat:acis-binary"),

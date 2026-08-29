@@ -13,8 +13,13 @@
       "format": "inventor"
     },
     {
-      "admission": "refused",
-      "dialect": "acis:unknown",
+      "admission": "admitted",
+      "declared": {
+        "reference_width": "4",
+        "save_format_major": "7",
+        "save_format_minor": "0"
+      },
+      "dialect": "acis:asm-binaryfile-4",
       "format": "acis"
     }
   ],
@@ -56,6 +61,7 @@
         "allocation": "mini",
         "bulk_form": "0x0104",
         "directory_id": "6",
+        "expanded_size": "138",
         "inner_framing": "zlib",
         "start_sector": "7"
       },
