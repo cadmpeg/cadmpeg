@@ -202,9 +202,10 @@ fn a_cross_format_convert_writes_the_catalog_default() {
 #[test]
 fn cadir_takes_inherit() {
     let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    assert!(CadirEncoder
+    let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .is_ok());
+        .expect("CADIR identity resolves through the empty catalog");
+    assert_eq!(plan.report().target(), None);
 }
 
 /// `convert old.3dm -o new.3dm` with no target flag writes the archive

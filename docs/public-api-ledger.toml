@@ -1304,6 +1304,20 @@ item = "cadmpeg_ir::codec::WriteRequest::Catalog::preserve"
 reason = "the sole resolver states whether a catalog target preserves the same-format source identity so codecs do not repeat that comparison"
 
 [[change]]
+commit = "338dc6acec6c39313d348d4d71fe9d068808031f"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::codec::WriteRequest::Identity"
+reason = "an empty target catalog resolves Inherit to format identity without inventing a dialect, which lets CADIR use the same write ladder as native encoders"
+
+[[change]]
+commit = "338dc6acec6c39313d348d4d71fe9d068808031f"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::WriteRequest::dialect_id"
+reason = "identity resolution has no dialect id, so the projection returns Option and native encoders prove their non-empty catalogs before delivery"
+
+[[change]]
 commit = "b796eb05a12b495812939a330e43913b952f41a0"
 crate = "cadmpeg-codec-step"
 kind = "deletion"

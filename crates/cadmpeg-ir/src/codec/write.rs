@@ -134,6 +134,8 @@ fn unrecorded_source_dialect(format: &str, targets: &[TargetDescriptor]) -> Code
 /// A write request resolved against the encoder catalog and source identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WriteRequest<'a> {
+    /// `Inherit` on a dialect-free encoder resolves to format identity.
+    Identity,
     /// The request names a catalog row.
     Catalog {
         /// The canonical catalog entry.
@@ -151,12 +153,13 @@ pub enum WriteRequest<'a> {
 }
 
 impl WriteRequest<'_> {
-    /// Returns the canonical dialect id named by this resolved request.
+    /// Returns the canonical dialect id, or `None` for format identity.
     #[must_use]
-    pub fn dialect_id(&self) -> cadmpeg_core::dialect::DialectId {
+    pub fn dialect_id(&self) -> Option<cadmpeg_core::dialect::DialectId> {
         match self {
-            Self::Catalog { entry, .. } => cadmpeg_core::dialect::DialectId::pinned(entry.id),
-            Self::OffCatalog { dialect } => (*dialect).clone(),
+            Self::Identity => None,
+            Self::Catalog { entry, .. } => Some(cadmpeg_core::dialect::DialectId::pinned(entry.id)),
+            Self::OffCatalog { dialect } => Some((*dialect).clone()),
         }
     }
 }
@@ -180,6 +183,9 @@ pub fn resolve_write_request<'a>(
     format: &str,
     targets: &'static [TargetDescriptor],
 ) -> Result<WriteRequest<'a>, CodecError> {
+    if targets.is_empty() && request == TargetRequest::Inherit {
+        return Ok(WriteRequest::Identity);
+    }
     let entry = match request {
         TargetRequest::Explicit(id) => find_target(targets, id).ok_or_else(|| {
             unsupported_target(
@@ -381,19 +387,11 @@ impl Encoder for CadirEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        // CADIR intentionally stands outside `resolve_write_request`: it is the
-        // identity writer and has no dialect axis, so `Inherit` has nothing to
-        // inherit or displace and is always satisfiable. The shared ladder
-        // correctly treats an empty native target catalog as unwritable, which
-        // is not the CADIR identity-write contract. Every explicit id remains
-        // outside this encoder's empty catalog.
-        if let TargetRequest::Explicit(id) = request {
-            return Err(unsupported_target(
-                self.id(),
-                id,
-                "not a target this encoder can synthesize",
-                self.targets(),
-            ));
+        match resolve_write_request(input.ir, request, self.id(), self.targets())? {
+            WriteRequest::Identity => {}
+            WriteRequest::Catalog { .. } | WriteRequest::OffCatalog { .. } => {
+                unreachable!("an empty target catalog resolves only to identity")
+            }
         }
         let report = ExportReport::cadir(
             EntityCensus {

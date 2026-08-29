@@ -23,6 +23,7 @@ pub(crate) fn plan<'a>(
         crate::dialect::TARGETS,
     )?;
     match resolved {
+        WriteRequest::Identity => unreachable!("IGES has a non-empty target catalog"),
         WriteRequest::Catalog {
             entry,
             displaced,

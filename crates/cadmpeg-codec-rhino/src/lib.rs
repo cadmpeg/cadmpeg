@@ -170,6 +170,9 @@ impl Encoder for RhinoEncoder {
             dialect::TARGETS,
         )?;
         let (entry, displaced) = match resolved {
+            cadmpeg_ir::codec::WriteRequest::Identity => {
+                unreachable!("Rhino has a non-empty target catalog")
+            }
             cadmpeg_ir::codec::WriteRequest::Catalog {
                 entry, displaced, ..
             } => (entry, displaced),
