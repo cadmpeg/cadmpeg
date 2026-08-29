@@ -27,7 +27,6 @@ fuzz_reason = "focused targets call cadmpeg_asm"
 id = "freecad"
 names = [
     "FcstdCodec",
-    "FcstdWriteOptions",
     "validate_native",
     "FcstdDocumentBuilder",
     "FcstdPropertyValue",

@@ -36,7 +36,6 @@
 
 use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
-use crate::FcstdWriteOptions;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
@@ -61,14 +60,6 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     aliases: &["4"],
     default: true,
 }];
-
-/// The dialect a write at `options` produces.
-///
-/// The one place that maps write options onto a registry row, so the writer's
-/// target gate and the dialect the report states can never disagree.
-pub(crate) fn written_dialect(options: FcstdWriteOptions) -> DialectId {
-    FcstdDialect::from_schema_version(&options.schema_version.to_string()).id()
-}
 
 /// Key of `Document/@SchemaVersion` in [`DialectMatch::declared`].
 ///

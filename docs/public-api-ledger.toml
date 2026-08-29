@@ -1318,6 +1318,13 @@ item = "cadmpeg_ir::codec::WriteRequest::dialect_id"
 reason = "identity resolution has no dialect id, so the projection returns Option and native encoders prove their non-empty catalogs before delivery"
 
 [[change]]
+commit = "6f34c645326c4bf5323eaaa551532c60907cd93a"
+crate = "cadmpeg-codec-freecad"
+kind = "deletion"
+item = "cadmpeg_codec_freecad::{FcstdCodec::encode_with_options,FcstdWriteOptions}"
+reason = "the method was a second write entry beside Encoder::plan, and its options type has no remaining caller once every FCStd write resolves a TargetRequest through the encoder"
+
+[[change]]
 commit = "b796eb05a12b495812939a330e43913b952f41a0"
 crate = "cadmpeg-codec-step"
 kind = "deletion"

@@ -48,7 +48,6 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -63,42 +62,7 @@ pub struct FcstdCodec;
 pub use builder::{FcstdDocumentBuilder, FcstdPropertyValue};
 pub use mutation::FcstdPropertyOwner;
 
-/// Selects the persistence band emitted by [`FcstdCodec::encode_with_options`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FcstdWriteOptions {
-    /// `Document.xml` schema version.
-    pub schema_version: u32,
-    /// `Document.xml` file version.
-    pub file_version: u32,
-}
-
-impl Default for FcstdWriteOptions {
-    fn default() -> Self {
-        Self {
-            schema_version: 4,
-            file_version: 1,
-        }
-    }
-}
-
 impl FcstdCodec {
-    /// Write a document for an explicitly selected persistence band.
-    ///
-    /// The band names a dialect, so this is [`Encoder::plan`] with an explicit
-    /// target and no fidelity sidecar. There is one resolution gate for every
-    /// write this codec performs, and this door goes through it: a band the
-    /// retained document graph does not deliver is refused as
-    /// [`CodecError::UnsupportedTarget`], with the catalog, before any byte is
-    /// written.
-    pub fn encode_with_options(
-        &self,
-        ir: &CadIr,
-        writer: &mut dyn std::io::Write,
-        options: FcstdWriteOptions,
-    ) -> Result<ExportReport, CodecError> {
-        writer::target::plan_options(EncodeInput::new(ir, None), options)?.write_to(writer)
-    }
-
     /// Change one attribute on an ordered native property value.
     pub fn set_property_value_attribute(
         &self,
