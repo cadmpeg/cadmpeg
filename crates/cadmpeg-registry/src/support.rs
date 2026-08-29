@@ -173,6 +173,16 @@ pub struct Disposition {
     pub write: WriteDisposition,
 }
 
+/// Why an identity registry row uses the reserved `unknown` name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UnknownDialectKind {
+    /// Detection cannot obtain enough format evidence to produce a report.
+    DetectUnreachable,
+    /// Classification read the evidence and no declared dialect row matched it.
+    RecoveredResidual,
+}
+
 /// One dialect, as the two registries jointly describe it.
 #[derive(Debug, Clone)]
 pub struct DialectEntry {
@@ -182,6 +192,8 @@ pub struct DialectEntry {
     pub title: String,
     /// The capability row for this id.
     pub disposition: Disposition,
+    /// The meaning of an `unknown` row; `None` for every named dialect row.
+    pub unknown_kind: Option<UnknownDialectKind>,
 }
 
 /// One `[[dialect]]` row of the identity registry.
@@ -193,6 +205,8 @@ pub struct DialectEntry {
 struct IdentityRow {
     id: DialectId,
     title: String,
+    #[serde(default)]
+    unknown_kind: Option<UnknownDialectKind>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -286,6 +300,7 @@ impl Registries {
                         disposition,
                         id: row.id,
                         title: row.title,
+                        unknown_kind: row.unknown_kind,
                     })
                 })
                 .collect::<Result<_, RegistryLoadError>>()?,
@@ -621,6 +636,29 @@ mod tests {
         let registries = Registries::load().expect("the embedded registries parse");
         assert!(!registries.formats.is_empty());
         assert!(!registries.entries.is_empty());
+    }
+
+    #[test]
+    fn unknown_rows_report_whether_detection_or_recovery_owns_the_residual() {
+        let registries = Registries::load().expect("the embedded registries parse");
+        let kinds = registries
+            .rows_all()
+            .filter_map(|row| row.unknown_kind.map(|kind| (row.id.as_str(), kind)))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(
+            kinds.get("nx:unknown"),
+            Some(&UnknownDialectKind::DetectUnreachable)
+        );
+        assert_eq!(
+            kinds.get("rhino:unknown"),
+            Some(&UnknownDialectKind::RecoveredResidual)
+        );
+        assert_eq!(
+            kinds.len(),
+            13,
+            "every unknown registry row states its kind"
+        );
     }
 
     #[test]

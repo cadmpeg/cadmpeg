@@ -43,6 +43,7 @@ ROW_KEYS = frozenset(
         "seam",
         "supersedes",
         "pinned",
+        "unknown_kind",
     }
 )
 REQUIRED_ROW_KEYS = ("id", "title", "discriminants", "witness")
@@ -52,6 +53,7 @@ REQUIRED_ROW_KEYS = ("id", "title", "discriminants", "witness")
 SUPERSEDES_FORMATS = frozenset({"iges"})
 
 WITNESS_PREFIXES = ("spec:", "corpus:", "code:")
+UNKNOWN_KINDS = frozenset({"detect-unreachable", "recovered-residual"})
 
 FORMAT_ID = re.compile(r"[a-z0-9]+")
 # Dots are legal in a dialect name: `iges:5.3-fixed-ascii`.
@@ -189,6 +191,17 @@ def check_row(row: object, index: int, formats: dict, root: Path, failures: list
 
     if "pinned" in row and not isinstance(row["pinned"], bool):
         failures.append(f"{label}: pinned must be a boolean")
+
+    is_unknown = isinstance(raw_id, str) and raw_id.endswith(":unknown")
+    unknown_kind = row.get("unknown_kind")
+    if is_unknown and unknown_kind is None:
+        failures.append(f"{label}: unknown row must state unknown_kind")
+    elif not is_unknown and unknown_kind is not None:
+        failures.append(f"{label}: unknown_kind is allowed only on an :unknown row")
+    elif unknown_kind is not None and unknown_kind not in UNKNOWN_KINDS:
+        failures.append(
+            f"{label}: unknown_kind must be detect-unreachable or recovered-residual"
+        )
 
     discriminants = row.get("discriminants")
     if "discriminants" in row:
