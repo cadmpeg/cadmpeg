@@ -180,6 +180,7 @@ mod tests {
                 format: "acis".into(),
                 dialect: Some(DialectId::pinned("acis:save-format-binary-other")),
                 declared: BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
+                instance: None,
                 admission: Admission::Refused,
             }),
             message: "save format 700 has no read grammar".into(),

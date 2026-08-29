@@ -783,6 +783,7 @@ mod tests {
             format: "rhino".to_owned(),
             dialect: Some(DialectId::pinned("rhino:archive-50")),
             declared: BTreeMap::new(),
+            instance: None,
             admission: Admission::Admitted,
         });
         let provenance = dialect_provenance(Some(&dialects)).expect("a primary layer exists");

@@ -83,6 +83,7 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
         format: FORMAT.to_owned(),
         dialect: Some(dialect),
         declared,
+        instance: None,
         admission,
     }
 }
@@ -265,6 +266,7 @@ mod tests {
                 ]
                 .into_iter()
                 .collect(),
+                instance: None,
                 admission: Admission::Admitted,
             }
         );

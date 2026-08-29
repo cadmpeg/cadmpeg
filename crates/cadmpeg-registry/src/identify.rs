@@ -20,6 +20,10 @@ pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
 
 /// Result of opening an identification candidate at inspection depth.
 #[derive(Debug, Clone, PartialEq, Eq)]
+// The public result exposes a successful summary directly; boxing only to keep
+// enum stack size below a lint threshold would break that API without reducing
+// the summary data an identification owns.
+#[allow(clippy::large_enum_variant)]
 pub enum Inspection {
     /// The codec classified the container and returned its complete summary.
     Classified(ContainerSummary),

@@ -289,6 +289,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
             format: "test".into(),
             dialect: Some(DialectId::pinned("test:wrong")),
             declared: BTreeMap::from([("wrong".into(), "value".into())]),
+            instance: None,
             admission: Admission::Admitted,
         }),
         ..Default::default()
@@ -320,6 +321,7 @@ fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
         format: format.into(),
         dialect: Some(DialectId::pinned(id)),
         declared: BTreeMap::new(),
+        instance: None,
         admission: Admission::Admitted,
     }
 }

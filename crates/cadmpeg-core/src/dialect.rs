@@ -139,6 +139,13 @@ pub struct DialectMatch {
     /// the bytes obey, not what they declare.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub declared: BTreeMap<String, String>,
+    /// Instance of this format layer inside the containing document.
+    ///
+    /// `None` when the layer occurs once or has no report-local identity. This
+    /// is not source-declared evidence and therefore does not belong in
+    /// [`Self::declared`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
     /// How this layer was admitted.
     pub admission: Admission,
 }
@@ -296,6 +303,7 @@ impl DialectMatch {
             format: format.into(),
             dialect: Some(dialect),
             declared,
+            instance: None,
             admission,
         }
     }
@@ -312,6 +320,7 @@ mod tests {
             format: format.to_owned(),
             dialect: Some(DialectId::pinned("rhino:archive-80")),
             declared: BTreeMap::new(),
+            instance: None,
             admission: Admission::Admitted,
         }
     }
@@ -335,6 +344,7 @@ mod tests {
             format: "rhino".into(),
             dialect: None,
             declared: BTreeMap::new(),
+            instance: None,
             admission: Admission::Admitted,
         };
 
