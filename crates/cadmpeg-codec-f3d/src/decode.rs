@@ -2950,8 +2950,22 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
     entry.rsplit('/').next()?.strip_prefix("BREP.")
 }
 
-/// Decode a `.f3d` reader into a document and its loss report.
+/// Decode an F3D or F3Z reader and append dialect losses from its final layers.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+    let (ir, mut report, fidelity) = decode_member(ctx, root)?.into_parts();
+    if let Some(layers) = &report.dialects {
+        report
+            .losses
+            .extend(crate::dialect::report_dialect_losses(layers));
+    }
+    Ok(DecodeResult::new(ir, report, fidelity))
+}
+
+/// Decode one archive member without dialect-derived losses.
+pub(crate) fn decode_member<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
@@ -4753,28 +4767,6 @@ fn source_and_tolerances(
     (source_meta(attributes), tolerances)
 }
 
-/// The recovery charge for the archive's primary layer, if the layer was read
-/// with a strategy its own declaration does not name.
-///
-/// Every `DecodeReport` this codec builds appends this, so the charge and
-/// `DecodeReport::dialects` come from the same match and cannot disagree.
-fn dialect_losses(
-    scan: &ContainerScan,
-    kernel_layers: &crate::dialect::KernelLayers,
-) -> Vec<cadmpeg_ir::report::LossNote> {
-    let mut losses = crate::dialect::dialect_loss(&scan.dialect)
-        .into_iter()
-        .collect::<Vec<_>>();
-    losses.extend(
-        kernel_layers
-            .matches
-            .iter()
-            .filter_map(crate::dialect::kernel_dialect_loss),
-    );
-    losses.extend(kernel_layers.losses.iter().cloned());
-    losses
-}
-
 /// Source metadata carrying non-dialect attributes.
 fn source_meta(attributes: std::collections::BTreeMap<String, String>) -> SourceMeta {
     SourceMeta {
@@ -4877,7 +4869,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         "Materials/appearances (.protein assets, ACT/design assignments) were not \
          transferred.",
     ));
-    losses.extend(dialect_losses(scan, &kernel_layers));
+    losses.extend(kernel_layers.losses);
 
     DecodeReport {
         dialects: summary.dialects,
@@ -5038,7 +5030,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         ));
     }
 
-    losses.extend(dialect_losses(scan, &kernel_layers));
+    losses.extend(kernel_layers.losses);
 
     DecodeReport {
         dialects: summary.dialects,

@@ -220,6 +220,9 @@ impl CodecBackend for F3dCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
+        if f3z::is_f3z(&scan) {
+            return f3z::inspect(ctx, &scan);
+        }
         let kernel_layers = dialect::kernel_layers(&scan);
         Ok(container::summarize(&scan, &kernel_layers.matches))
     }

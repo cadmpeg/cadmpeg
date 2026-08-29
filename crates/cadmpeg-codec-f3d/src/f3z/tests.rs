@@ -725,9 +725,32 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
     );
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
 
+    let inspected = F3dCodec
+        .inspect(
+            &mut Cursor::new(archive.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
+    let inspected_extras = inspected
+        .dialects
+        .as_ref()
+        .unwrap()
+        .iter()
+        .skip(1)
+        .collect::<Vec<_>>();
+    let decoded_extras = decoded
+        .report()
+        .dialects
+        .as_ref()
+        .unwrap()
+        .iter()
+        .skip(1)
+        .collect::<Vec<_>>();
+    assert_eq!(decoded_extras, inspected_extras);
     assert!(decoded
         .report()
         .dialects
