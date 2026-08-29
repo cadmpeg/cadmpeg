@@ -16,7 +16,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use zip::write::SimpleFileOptions;
 
-use crate::dialect;
 use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord};
 use target::Resolution;
 
@@ -26,7 +25,7 @@ impl<T: Write + Seek> WriteSeek for T {}
 pub(crate) fn write(
     ir: &CadIr,
     output: &mut dyn Write,
-    resolution: Resolution,
+    resolution: &Resolution,
 ) -> Result<WriteOutcome, CodecError> {
     let mut staged = tempfile::tempfile()?;
     let report = write_seekable(ir, &mut staged, resolution)?;
@@ -44,10 +43,9 @@ pub(crate) fn write(
 pub(crate) fn write_seekable(
     ir: &CadIr,
     output: &mut dyn WriteSeek,
-    resolution: Resolution,
+    resolution: &Resolution,
 ) -> Result<WriteOutcome, CodecError> {
-    let options = resolution.options();
-    let target = dialect::written_dialect(options);
+    let target = resolution.target.clone();
     let namespace = ir
         .native
         .namespace("fcstd")
@@ -83,11 +81,8 @@ pub(crate) fn write_seekable(
     validate_entry(&source_document)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
     drop(source_document);
-    let written_graph = crate::persistence::parse_with_context(
-        &document_xml,
-        crate::dialect::FcstdDialect::from_schema_version(&options.schema_version.to_string()),
-        None,
-    )?;
+    let written_graph =
+        crate::persistence::parse_with_context(&document_xml, resolution.schema, None)?;
     validate_declarations(
         &objects,
         &extensions,
@@ -141,7 +136,7 @@ pub(crate) fn write_seekable(
         notes: vec![
             format!(
                 "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-                options.schema_version, options.file_version
+                resolution.schema_version, resolution.file_version
             ),
             "unsupported retained entries and unedited XML records were preserved".into(),
         ],

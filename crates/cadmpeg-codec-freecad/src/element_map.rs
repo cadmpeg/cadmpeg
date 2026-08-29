@@ -37,6 +37,7 @@ enum ElementMapCarrier<'a, 'input> {
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse(
     document: &[u8],
+    file_version: usize,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<(Vec<StringTableRecord>, Vec<ElementMapRecord>), CodecError> {
@@ -44,12 +45,6 @@ pub(crate) fn parse(
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
-    let file_version = xml
-        .root_element()
-        .attribute("FileVersion")
-        .map(|value| parse_usize(value, "FileVersion"))
-        .transpose()?
-        .unwrap_or(0);
     let string_hasher_nodes = xml
         .descendants()
         .filter(|node| node.has_tag_name("StringHasher"))
@@ -1260,6 +1255,7 @@ mod tests {
     fn accepts_legacy_document_string_hasher_carrier() {
         let (tables, maps) = parse(
             br#"<Document><StringHasher count="1">a.c legacy</StringHasher></Document>"#,
+            0,
             &[],
             &[],
         )
@@ -1349,7 +1345,7 @@ mod tests {
 <Element key="VertexStable" value="Vertex1"/>
 </ElementMap></Property>"#,
         );
-        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, &[property], &[])
+        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
             .expect("legacy direct element map");
         assert_eq!(maps.len(), 1);
         assert_eq!(maps[0].declared_count, 3);
@@ -1374,7 +1370,7 @@ Face1 FaceStable 0
 Edge1 EdgeStable 1 7
 </ElementMap></Property>"#,
         );
-        let (_, maps) = parse(br#"<Document FileVersion="2"/>"#, &[property], &[])
+        let (_, maps) = parse(br#"<Document FileVersion="2"/>"#, 2, &[property], &[])
             .expect("legacy inline element map");
         assert_eq!(maps[0].declared_count, 2);
         let edge = &maps[0].maps[0].groups[0].names[1][0];
@@ -1391,6 +1387,7 @@ Edge1 EdgeStable 1 7
         );
         let (_, maps) = parse(
             br#"<Document FileVersion="1"/>"#,
+            1,
             &[property],
             &[legacy_entry("Shape.Map.txt", data)],
         )
@@ -1418,6 +1415,7 @@ EndMap\n";
         );
         let (_, maps) = parse(
             br#"<Document FileVersion="1"/>"#,
+            1,
             &[property],
             &[legacy_entry("Shape.Map.txt", data)],
         )
@@ -1432,7 +1430,7 @@ EndMap\n";
             "Part::PropertyPartShape",
             r#"<Property><Part ElementMap="1.0"/><ElementMap/></Property>"#,
         );
-        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, &[property], &[])
+        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
             .expect("legacy empty element map");
         assert!(maps.is_empty());
     }
@@ -1444,7 +1442,7 @@ EndMap\n";
             r#"<Property><Part/><ElementMap count="2"><Element key="Face" value="Face1"/></ElementMap></Property>"#,
         );
         assert!(matches!(
-            parse(br#"<Document FileVersion="1"/>"#, &[direct], &[]),
+            parse(br#"<Document FileVersion="1"/>"#, 1, &[direct], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
 
@@ -1453,7 +1451,7 @@ EndMap\n";
             r#"<Property><Part/><ElementMap file="Missing.Map.txt"/></Property>"#,
         );
         assert!(matches!(
-            parse(br#"<Document FileVersion="1"/>"#, &[missing], &[]),
+            parse(br#"<Document FileVersion="1"/>"#, 1, &[missing], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
 
@@ -1462,7 +1460,7 @@ EndMap\n";
             r#"<Property><Part/><ElementMap count="1">Face1 FaceStable 0 trailing</ElementMap></Property>"#,
         );
         assert!(matches!(
-            parse(br#"<Document FileVersion="2"/>"#, &[trailing], &[]),
+            parse(br#"<Document FileVersion="2"/>"#, 2, &[trailing], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1688,7 +1686,7 @@ Co 1001000 +2 0 *
     #[test]
     fn rejects_interleaved_new_string_hasher_payload_when_parsed_directly() {
         let document = br#"<Document><StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/></Document>"#;
-        let error = parse(document, &[], &[]).expect_err("interleaved string table must fail");
+        let error = parse(document, 0, &[], &[]).expect_err("interleaved string table must fail");
 
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
@@ -1700,7 +1698,7 @@ Co 1001000 +2 0 *
             "<Property><Part/><Part/></Property>",
         );
         assert!(matches!(
-            parse(b"<Document/>", &[duplicate_part], &[]),
+            parse(b"<Document/>", 0, &[duplicate_part], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
 
@@ -1709,7 +1707,7 @@ Co 1001000 +2 0 *
             "<Property><Part/><ElementMap2/><ElementMap2/></Property>",
         );
         assert!(matches!(
-            parse(b"<Document/>", &[duplicate_map], &[]),
+            parse(b"<Document/>", 0, &[duplicate_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1721,7 +1719,7 @@ Co 1001000 +2 0 *
             r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper><ElementMap2/></Wrapper></Property>"#,
         );
         assert!(matches!(
-            parse(b"<Document/>", &[nested_map], &[]),
+            parse(b"<Document/>", 0, &[nested_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1733,7 +1731,7 @@ Co 1001000 +2 0 *
             r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper/><ElementMap2/></Property>"#,
         );
         assert!(matches!(
-            parse(b"<Document/>", &[non_adjacent_map], &[]),
+            parse(b"<Document/>", 0, &[non_adjacent_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1745,7 +1743,7 @@ Co 1001000 +2 0 *
             r#"<Property><Part ElementMap="1.0"/><ElementMap2/></Property>"#,
         );
         assert!(matches!(
-            parse(b"<Document/>", &[unmarked_map], &[]),
+            parse(b"<Document/>", 0, &[unmarked_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1756,7 +1754,7 @@ Co 1001000 +2 0 *
             "Custom::PropertyPartShape",
             "<Property><Part/><ElementMap2/></Property>",
         );
-        let (tables, maps) = parse(b"<Document/>", &[custom], &[]).expect("unknown type");
+        let (tables, maps) = parse(b"<Document/>", 0, &[custom], &[]).expect("unknown type");
 
         assert!(tables.is_empty());
         assert!(maps.is_empty());

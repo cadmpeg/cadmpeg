@@ -158,6 +158,13 @@ impl FcstdDialect {
         }
     }
 
+    /// The typed row named by an already-classified dialect id.
+    pub(crate) fn from_id(id: &DialectId) -> Option<Self> {
+        [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown]
+            .into_iter()
+            .find(|dialect| dialect.id() == *id)
+    }
+
     /// The row whose element vocabulary reads a document this codec declares no
     /// strategy for.
     ///
