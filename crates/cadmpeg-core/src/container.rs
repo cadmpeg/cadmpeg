@@ -71,14 +71,14 @@ struct ContainerSummaryWire {
     entries: Vec<ContainerEntry>,
     notes: Vec<String>,
     #[serde(default, rename = "dialects")]
-    flat_dialects: Vec<DialectMatch>,
+    wire_layers: Vec<DialectMatch>,
 }
 
 impl<'de> Deserialize<'de> for ContainerSummary {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut wire = ContainerSummaryWire::deserialize(deserializer)?;
-        let dialects = split_dialect_layers(&wire.format, &mut wire.flat_dialects)
-            .map_err(D::Error::custom)?;
+        let dialects =
+            split_dialect_layers(&wire.format, &mut wire.wire_layers).map_err(D::Error::custom)?;
         Ok(Self {
             format: wire.format,
             container_kind: wire.container_kind,

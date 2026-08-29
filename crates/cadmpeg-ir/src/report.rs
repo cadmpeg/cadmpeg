@@ -693,14 +693,14 @@ struct DecodeReportWire {
     #[serde(default)]
     transfer_ledger: TransferLedger,
     #[serde(default, rename = "dialects")]
-    flat_dialects: Vec<DialectMatch>,
+    wire_layers: Vec<DialectMatch>,
 }
 
 impl<'de> Deserialize<'de> for DecodeReport {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut wire = DecodeReportWire::deserialize(deserializer)?;
-        let dialects = split_dialect_layers(&wire.format, &mut wire.flat_dialects)
-            .map_err(D::Error::custom)?;
+        let dialects =
+            split_dialect_layers(&wire.format, &mut wire.wire_layers).map_err(D::Error::custom)?;
         Ok(Self {
             format: wire.format,
             container_only: wire.container_only,
