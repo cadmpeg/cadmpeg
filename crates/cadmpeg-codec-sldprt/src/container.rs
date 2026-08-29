@@ -1201,5 +1201,85 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     }
 }
 
+/// Metadata from the first parsed `swSolidWorks` envelope.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SolidWorksEnvelope {
+    pub(crate) sw_version: Option<String>,
+    pub(crate) creation_time: Option<String>,
+    pub(crate) path: Option<String>,
+    pub(crate) model_name: Option<String>,
+    pub(crate) configuration_name: Option<String>,
+    pub(crate) configuration_attributes: BTreeMap<String, String>,
+}
+
+/// Parses the first `swSolidWorks` envelope and stops even if an attribute is absent.
+pub(crate) fn first_solidworks_envelope<'a>(
+    payloads: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<SolidWorksEnvelope> {
+    for payload in payloads {
+        if payload_family(payload) != "xml" {
+            continue;
+        }
+        let Some(text) = xml_text(payload) else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        let root = document.root_element();
+        if root.tag_name().name() != "swSolidWorks" {
+            continue;
+        }
+        let model = root.descendants().find(|node| node.has_tag_name("swModel"));
+        let mut configuration_attributes = BTreeMap::new();
+        for configuration in root
+            .descendants()
+            .filter(|node| node.has_tag_name("swConfiguration"))
+        {
+            let Some(slot) = configuration.attribute("swID") else {
+                continue;
+            };
+            if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
+                continue;
+            }
+            for (source, target) in [
+                ("swConfigurationNeedsUpdate", "needs_update"),
+                ("swMostRecentConfiguration", "most_recent"),
+                ("swConfigurationFlags", "flags"),
+                ("swConfigurationAlternateName", "alternate_name"),
+            ] {
+                if let Some(value) = configuration.attribute(source) {
+                    configuration_attributes.insert(
+                        format!("sw_configuration_{slot}_{target}"),
+                        value.to_owned(),
+                    );
+                }
+            }
+        }
+        return Some(SolidWorksEnvelope {
+            sw_version: root.attribute("swVersion").map(str::to_owned),
+            creation_time: root.attribute("swCreationTime").map(str::to_owned),
+            path: root.attribute("swPath").map(str::to_owned),
+            model_name: model
+                .and_then(|node| node.attribute("swName"))
+                .map(str::to_owned),
+            configuration_name: model
+                .and_then(|node| node.attribute("swConfigurationName"))
+                .map(str::to_owned),
+            configuration_attributes,
+        });
+    }
+    None
+}
+
+pub(crate) fn solidworks_envelope(scan: &ContainerScan<'_>) -> Option<SolidWorksEnvelope> {
+    first_solidworks_envelope(scan.sections().map(Section::payload))
+}
+
+/// Returns the first envelope's `swVersion` declaration verbatim.
+pub(crate) fn declared_sw_version(scan: &ContainerScan<'_>) -> Option<String> {
+    solidworks_envelope(scan).and_then(|envelope| envelope.sw_version)
+}
+
 #[cfg(test)]
 mod tests;

@@ -2268,11 +2268,10 @@ fn build_geometry_ir(
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
-    let form_padding = ir.source.as_ref().and_then(|source| {
-        crate::resolved_features::operations::form_code_padding(
-            source.attributes.get("sw_version").map(String::as_str),
-        )
-    });
+    let form_padding = crate::dialect::SldprtDialect::from_declaration(
+        container::declared_sw_version(scan).as_deref(),
+    )
+    .form_code_padding();
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -3168,107 +3167,25 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
     attributes.insert("bmp_thumbnail_count".into(), bmp_index.to_string());
 }
 
-/// The `swSolidWorks` `swVersion` declaration of a scanned document, verbatim.
-///
-/// One predicate, not two: it runs [`add_solidworks_xml_metadata`] and takes
-/// the key that function writes, so the declaration this returns is by
-/// construction the string that reaches
-/// `SourceMeta::attributes["sw_version"]`. Callers that already hold those
-/// attributes read the key directly instead of calling this.
-pub(crate) fn declared_sw_version(scan: &ContainerScan) -> Option<String> {
-    first_declared_sw_version(scan.sections().map(container::Section::payload))
-}
-
-/// The declaration on the first `swSolidWorks` envelope, if it has one.
-///
-/// The decoder stops after that envelope even when it has no `swVersion`.
-/// The writer uses this same fold to classify the bytes it emits.
-pub(crate) fn first_declared_sw_version<'a>(
-    payloads: impl IntoIterator<Item = &'a [u8]>,
-) -> Option<String> {
-    for payload in payloads {
-        if container::payload_family(payload) != "xml" {
-            continue;
-        }
-        let Some(text) = container::xml_text(payload) else {
-            continue;
-        };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
-        };
-        let root = document.root_element();
-        if root.tag_name().name() == "swSolidWorks" {
-            return root.attribute("swVersion").map(str::to_owned);
-        }
-    }
-    None
-}
-
 fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
     let active_configuration_name = container::active_configuration_name(scan);
-    for section in scan.sections() {
-        let payload = section.payload();
-        if container::payload_family(payload) != "xml" {
-            continue;
-        }
-        let Some(text) = container::xml_text(payload) else {
-            continue;
-        };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
-        };
-        let root = document.root_element();
-        if root.tag_name().name() != "swSolidWorks" {
-            continue;
-        }
-        for (source, target) in [
-            ("swVersion", "sw_version"),
-            ("swCreationTime", "sw_creation_time_unix"),
-            ("swPath", "sw_path"),
+    if let Some(envelope) = container::solidworks_envelope(scan) {
+        for (key, value) in [
+            ("sw_version", envelope.sw_version),
+            ("sw_creation_time_unix", envelope.creation_time),
+            ("sw_path", envelope.path),
+            ("sw_name", envelope.model_name),
         ] {
-            if let Some(value) = root.attribute(source) {
-                attributes.insert(target.into(), value.into());
-            }
-        }
-        if let Some(model) = root.descendants().find(|node| node.has_tag_name("swModel")) {
-            if let Some(value) = model.attribute("swName") {
-                attributes.insert("sw_name".into(), value.into());
+            if let Some(value) = value {
+                attributes.insert(key.into(), value);
             }
         }
         if let Some(value) = active_configuration_name.as_deref() {
             attributes.insert("sw_configuration_name".into(), value.into());
-        } else if let Some(value) = root
-            .descendants()
-            .find(|node| node.has_tag_name("swModel"))
-            .and_then(|model| model.attribute("swConfigurationName"))
-        {
-            attributes.insert("sw_configuration_name".into(), value.into());
+        } else if let Some(value) = envelope.configuration_name {
+            attributes.insert("sw_configuration_name".into(), value);
         }
-        for configuration in root
-            .descendants()
-            .filter(|node| node.has_tag_name("swConfiguration"))
-        {
-            let Some(slot) = configuration.attribute("swID") else {
-                continue;
-            };
-            if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
-                continue;
-            }
-            for (source, target) in [
-                ("swConfigurationNeedsUpdate", "needs_update"),
-                ("swMostRecentConfiguration", "most_recent"),
-                ("swConfigurationFlags", "flags"),
-                ("swConfigurationAlternateName", "alternate_name"),
-            ] {
-                if let Some(value) = configuration.attribute(source) {
-                    attributes.insert(
-                        format!("sw_configuration_{slot}_{target}"),
-                        value.to_string(),
-                    );
-                }
-            }
-        }
-        break;
+        attributes.extend(envelope.configuration_attributes);
     }
 }
 
@@ -3437,11 +3354,10 @@ fn build_metadata_ir(
 
     ir.source = Some(source_meta_with_dialect(attributes));
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let form_padding = ir.source.as_ref().and_then(|source| {
-        crate::resolved_features::operations::form_code_padding(
-            source.attributes.get("sw_version").map(String::as_str),
-        )
-    });
+    let form_padding = crate::dialect::SldprtDialect::from_declaration(
+        container::declared_sw_version(scan).as_deref(),
+    )
+    .form_code_padding();
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
@@ -4619,11 +4535,9 @@ fn preserve_source_image(
 /// namespace. This host records the schema token as an attribute instead of a
 /// kernel-layer dialect match, so the primary layer is the whole list.
 fn report_dialects(scan: &ContainerScan) -> cadmpeg_core::dialect::DialectLayers {
-    cadmpeg_core::dialect::DialectLayers::new(
-        crate::dialect::SldprtDialect::classify_scan(scan),
-        Vec::new(),
-    )
-    .expect("a primary layer without extras is valid")
+    container::summarize(scan)
+        .dialects
+        .expect("SLDPRT summary reports its primary dialect layer")
 }
 
 /// Appends the dialect-unverified loss the primary layer's admission charges.

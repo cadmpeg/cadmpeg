@@ -13,30 +13,6 @@ pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
 pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
 pub(crate) const SPLIT_LINE_TOOL_PROPERTY: &str = "SplitLineTool";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FormCodePadding {
-    Four,
-    Eight,
-}
-
-impl FormCodePadding {
-    fn bytes(self) -> usize {
-        match self {
-            Self::Four => 4,
-            Self::Eight => 8,
-        }
-    }
-}
-
-pub(crate) fn form_code_padding(sw_version: Option<&str>) -> Option<FormCodePadding> {
-    let version = sw_version?.parse::<u32>().ok()?;
-    (version > 0).then_some(if version >= 12_000 {
-        FormCodePadding::Eight
-    } else {
-        FormCodePadding::Four
-    })
-}
-
 pub(super) fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
     let start = name_offset.checked_sub(2)?;
     View::u16_le_at(payload, start)
@@ -46,7 +22,7 @@ pub(super) fn feature_operation_code(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
     class: Option<&str>,
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) -> Option<u32> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let direct_class = lane
@@ -64,7 +40,7 @@ pub(super) fn feature_operation_code(
         }
         let candidates = [8usize, 4]
             .into_iter()
-            .filter(|padding| form_padding.is_none_or(|expected| expected.bytes() == *padding))
+            .filter(|padding| form_padding.is_none_or(|expected| expected == *padding))
             .filter_map(|padding| {
                 let code_offset = class_offset.checked_sub(4 + padding)?;
                 if !lane
@@ -108,8 +84,7 @@ pub(super) fn feature_operation_code(
                 &[8, 4]
             };
             paddings.iter().copied().find_map(|padding| {
-                if padding != 0 && form_padding.is_some_and(|expected| expected.bytes() != padding)
-                {
+                if padding != 0 && form_padding.is_some_and(|expected| expected != padding) {
                     return None;
                 }
                 let code_offset = name_offset.checked_sub(6 + padding)?;
@@ -150,7 +125,7 @@ pub(crate) fn bind_feature_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     bind_extrusion_operations(features, histories, lanes, form_padding);
     bind_revolution_operations(features, histories, lanes, form_padding);
@@ -162,7 +137,7 @@ pub(crate) fn bind_revolution_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_features = histories
         .iter()
@@ -204,7 +179,7 @@ pub(crate) fn bind_sweep_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_features = histories
         .iter()
@@ -331,7 +306,7 @@ pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_features = histories
         .iter()
@@ -387,7 +362,7 @@ pub(crate) fn inherit_configuration_operations(
     base_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_by_id = histories
         .iter()
@@ -452,7 +427,7 @@ fn operation_carrier_present(
     kind: OperationKind,
     feature: &Feature,
     lane: &FeatureInputLane,
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) -> bool {
     let source_matches = feature
         .source_id
