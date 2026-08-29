@@ -57,6 +57,7 @@ pub mod fuzz;
 
 pub use codec::StepCodec;
 pub use error::StepError;
+#[cfg(test)]
 pub(crate) use export::write_step;
 pub use options::{StepSchema, StepWriteOptions};
 
