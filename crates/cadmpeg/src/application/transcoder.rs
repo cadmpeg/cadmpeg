@@ -30,30 +30,32 @@ pub struct SourceRequest<'a> {
 
 /// Output format with an encoder already constructed at the CLI boundary.
 pub struct ExportTarget {
-    /// Selected output format.
-    pub format: Format,
     /// Encoder for that format.
     pub encoder: Box<dyn Encoder>,
     /// What the command line asked that encoder to write.
     pub selection: TargetSelection,
 }
 
-/// The target the command line named, before the source is known.
+/// The output format and unresolved target token selected by the command line.
 ///
 /// `--to` names a dialect outright. A `--to` that names only a format, or no
-/// `--to` at all, is not a target: it means "the same kind of file", and which
-/// file that is depends on the source, which the encoder reads. This type is
-/// an owned-string adapter for the explicit case and nothing more; it decides
-/// no default.
+/// `--to` at all, leaves `request` unstated so the encoder inherits from the
+/// source. The token remains unresolved until the encoder plans the export.
 #[derive(Debug, Clone)]
-pub enum TargetSelection {
-    /// `--to` named this dialect, as a registry id or a catalog alias.
-    Explicit(String),
-    /// `--to` named no dialect.
-    Unstated,
+pub struct TargetSelection {
+    /// Selected output format.
+    pub format: Format,
+    /// Dialect token from `--to`, as a local id or catalog alias.
+    pub(crate) request: Option<String>,
 }
 
 impl TargetSelection {
+    /// Creates an owned output selection at the command-line boundary.
+    #[must_use]
+    pub fn new(format: Format, request: Option<String>) -> Self {
+        Self { format, request }
+    }
+
     /// Builds the encoder request.
     ///
     /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
@@ -63,9 +65,9 @@ impl TargetSelection {
     /// source or a source of another format. Deciding the cross-format default here as well would be the
     /// same rule written twice, in two places that can drift.
     fn request(&self) -> TargetRequest<'_> {
-        match self {
-            Self::Explicit(id) => TargetRequest::Explicit(id),
-            Self::Unstated => TargetRequest::Inherit,
+        match self.request.as_deref() {
+            Some(id) => TargetRequest::Explicit(id),
+            None => TargetRequest::Inherit,
         }
     }
 }
@@ -98,7 +100,6 @@ pub struct PreparedConversion {
     pub notices: Vec<LoadNotice>,
     /// Validation report.
     pub validation: Option<ValidationReport>,
-    format: Format,
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
     destination: Option<PathBuf>,
@@ -132,7 +133,7 @@ impl<'a> Transcoder<'a> {
         target: ExportTarget,
         policy: ConversionPolicy,
     ) -> Result<PreparedConversion> {
-        let format = target.format;
+        let format = target.selection.format;
         if format.is_binary_container() && policy.destination.is_none() && !policy.binary_stdout {
             return Err(ConversionRefusal::BinaryStdoutRejected {
                 message: format!(
@@ -203,7 +204,6 @@ impl<'a> Transcoder<'a> {
             document: loaded,
             notices,
             validation,
-            format,
             encoder: target.encoder,
             selection: target.selection,
             destination: policy.destination,
@@ -248,7 +248,7 @@ impl PreparedConversion {
                         .map(|loss| loss.message.as_str())
                         .collect::<Vec<_>>()
                         .join("; "),
-                    self.format.name()
+                    self.selection.format.name()
                 ),
                 decode_report: self.document.decode_report().cloned(),
                 validation: self.validation.clone(),
@@ -274,7 +274,7 @@ impl PlannedConversion<'_> {
         let prepared = self.prepared;
         emit_export_plan(
             self.plan,
-            prepared.format,
+            prepared.selection.format,
             prepared.destination.as_deref(),
             prepared.document.decode_report(),
             prepared.document.fidelity(),
@@ -388,30 +388,23 @@ pub(crate) fn emit_export_plan(
     Ok(report)
 }
 
-/// Builds an [`ExportTarget`] for one output format and its named dialect.
+/// Builds an [`ExportTarget`] from the command-line selection.
 ///
-/// `dialect` is the dialect half of `--to`, unresolved: a registry id or a
-/// catalog alias, whichever the caller typed. It is not checked here. Whether
-/// the encoder can produce it is the encoder's question and is answered after
-/// the read, by `plan`, because an inherit request cannot be resolved without
-/// the source's dialect and because a single refusal path is what keeps the
-/// catalog out of the CLI. The format half is already resolved by the time
-/// this runs, so a `--to` naming a format this build cannot write has failed
-/// before the input is opened.
+/// The request token is unresolved. It is not checked here. Whether the
+/// encoder can produce it is answered after the read by `plan`, because an
+/// inherit request cannot be resolved without the source dialect. The format
+/// is already resolved, so an unavailable output format has failed before the
+/// input is opened.
 ///
 /// `losses` is a policy, never a target: reading it as one would turn
 /// `convert a.step -o b.step --reject-lossy=export` into an explicit AP214
 /// request, silently rewriting the schema of a file the caller only asked to
 /// check for losses.
 #[must_use]
-pub fn export_target(format: Format, dialect: Option<&str>) -> ExportTarget {
+pub fn export_target(selection: TargetSelection) -> ExportTarget {
     ExportTarget {
-        format,
-        encoder: cadmpeg_registry::build_encoder(format),
-        selection: match dialect {
-            Some(dialect) => TargetSelection::Explicit(dialect.to_owned()),
-            None => TargetSelection::Unstated,
-        },
+        encoder: cadmpeg_registry::build_encoder(selection.format),
+        selection,
     }
 }
 
