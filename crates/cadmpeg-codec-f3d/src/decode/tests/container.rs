@@ -164,13 +164,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         .iter()
         .find(|matched| matched.format == "acis")
         .expect("text carrier has a shared kernel identity");
-    assert_eq!(
-        kernel
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("acis:text-asm")
-    );
+    assert_eq!(kernel.dialect.as_str(), "acis:text-asm");
     assert_eq!(
         kernel.declared["carrier"],
         "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"
@@ -269,13 +263,7 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
         .collect::<Vec<_>>();
     assert_eq!(kernel_layers.len(), 2);
     assert_eq!(kernel_layers[0].declared["carrier"], valid_path);
-    assert_eq!(
-        kernel_layers[1]
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("acis:unknown")
-    );
+    assert_eq!(kernel_layers[1].dialect.as_str(), "acis:unknown");
     assert_eq!(kernel_layers[1].declared["carrier"], corrupt_path);
     let loss = decoded
         .report()

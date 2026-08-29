@@ -102,7 +102,12 @@ pub fn unsupported_target(
     reason: &str,
     targets: &[TargetDescriptor],
 ) -> CodecError {
-    refusal(format, Some(requested.to_owned()), reason, targets)
+    refusal(
+        format,
+        Some(cadmpeg_core::TargetToken::new(requested)),
+        reason,
+        targets,
+    )
 }
 
 /// Why every encoder refuses `Inherit` over a same-format source that records
@@ -217,7 +222,7 @@ pub fn resolve_write_request<'a>(
                     let dialect = source
                         .dialect
                         .as_ref()
-                        .and_then(|matched| matched.dialect.as_ref())
+                        .map(|matched| &matched.dialect)
                         .ok_or_else(|| unrecorded_source_dialect(format, targets))?;
                     let Some(entry) = find_target(targets, dialect.as_str()) else {
                         return Ok(WriteRequest::OffCatalog { dialect });
@@ -232,7 +237,7 @@ pub fn resolve_write_request<'a>(
         .as_ref()
         .filter(|source| source.format == format)
         .and_then(|source| source.dialect.as_ref())
-        .and_then(|matched| matched.dialect.as_ref())
+        .map(|matched| &matched.dialect)
         .filter(|dialect| dialect.as_str() != entry.id)
         .cloned();
     Ok(WriteRequest::Catalog { entry, displaced })
@@ -300,7 +305,7 @@ pub fn resolve_catalog_write(
 
 fn refusal(
     format: &str,
-    requested: Option<String>,
+    requested: Option<cadmpeg_core::TargetToken>,
     reason: &str,
     targets: &[TargetDescriptor],
 ) -> CodecError {

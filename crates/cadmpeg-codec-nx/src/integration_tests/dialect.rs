@@ -10,7 +10,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{decode, legacy_cfb_with_ug_part};
@@ -38,10 +38,7 @@ fn inspect(bytes: Vec<u8>) -> cadmpeg_core::ContainerSummary {
 fn the_modern_container_reports_the_splmsstr_row_at_inspect_and_decode() {
     let summary = inspect(prt_with_indexed_om_section());
     let matched = primary(summary.dialects());
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("nx:splmsstr")
-    );
+    assert_eq!(matched.dialect.as_str(), "nx:splmsstr");
     assert_eq!(matched.admission, Admission::Admitted);
     assert_eq!(matched.declared["splmsstr_version"], "6");
     assert_eq!(matched.declared["product_version"], "NX 2027.3102");
@@ -57,10 +54,7 @@ fn the_modern_container_reports_the_splmsstr_row_at_inspect_and_decode() {
 fn the_legacy_container_reports_the_cfb_row_at_inspect_and_decode() {
     let summary = inspect(legacy_cfb_with_ug_part());
     let matched = primary(summary.dialects());
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("nx:legacy-cfb")
-    );
+    assert_eq!(matched.dialect.as_str(), "nx:legacy-cfb");
     assert_eq!(matched.admission, Admission::Admitted);
     assert!(matched.declared.contains_key("ugii_version"));
     assert!(!matched.declared.contains_key("splmsstr_version"));

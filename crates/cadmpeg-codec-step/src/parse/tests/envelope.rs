@@ -25,13 +25,7 @@ fn assert_unsupported_dialect(
     else {
         panic!("expected a typed STEP dialect refusal, found {error:?}");
     };
-    assert_eq!(
-        dialect_match
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some(expected_id)
-    );
+    assert_eq!(dialect_match.dialect.as_str(), expected_id);
     assert_eq!(
         dialect_match.admission,
         cadmpeg_core::dialect::Admission::Refused

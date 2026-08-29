@@ -82,11 +82,7 @@ fn replay_bytes(
             "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
         )));
     };
-    let source_dialect = match source
-        .dialect
-        .as_ref()
-        .and_then(|matched| matched.dialect.as_ref())
-    {
+    let source_dialect = match source.dialect.as_ref().map(|matched| &matched.dialect) {
         None => {
             return Ok(Replay::declined_because(format!(
                 "preserved IGES source records no dialect, target is {target}; byte replay skipped"

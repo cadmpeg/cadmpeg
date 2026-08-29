@@ -286,12 +286,12 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let left_dialect = left
         .dialect
         .as_ref()
-        .and_then(|matched| matched.dialect.as_ref())
+        .map(|matched| &matched.dialect)
         .map(|id| id.as_str().to_owned());
     let right_dialect = right
         .dialect
         .as_ref()
-        .and_then(|matched| matched.dialect.as_ref())
+        .map(|matched| &matched.dialect)
         .map(|id| id.as_str().to_owned());
     let mut result = SourceDiff {
         format_change: (left.format != right.format)

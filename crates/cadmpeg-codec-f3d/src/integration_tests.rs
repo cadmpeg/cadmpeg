@@ -227,13 +227,7 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
         .as_ref()
         .expect("the primary layer is classified")
         .primary();
-    assert_eq!(
-        matched
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("f3d:unknown")
-    );
+    assert_eq!(matched.dialect.as_str(), "f3d:unknown");
     assert_eq!(
         matched.admission,
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
@@ -327,7 +321,10 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "f3d");
-    assert_eq!(requested.as_deref(), Some("f3d:unknown"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("f3d:unknown")
+    );
     assert!(available.contains("f3d:manifest-3-2-0-0"), "{available}");
 }
 
@@ -389,7 +386,10 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(requested.as_deref(), Some("step:ap242-e3"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("step:ap242-e3")
+    );
     assert!(available.contains("f3d:manifest-3-2-0-0"), "{available}");
 }
 
@@ -428,7 +428,7 @@ fn the_patch_path_names_the_preserved_dialect() {
             .report()
             .dialects()
             .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .and_then(|entry| entry.dialect.as_ref())
+            .map(|entry| &entry.dialect)
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("f3d:unknown")
     );
@@ -478,9 +478,10 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         let classified = redecoded
             .report()
             .dialects()
-            .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .and_then(|entry| entry.dialect.clone())
-            .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));
+            .unwrap_or_else(|| panic!("{label} output must classify a host dialect"))
+            .primary()
+            .dialect
+            .clone();
         assert_eq!(
             classified.as_str(),
             claimed,

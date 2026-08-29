@@ -69,7 +69,7 @@ fn manifest_path() -> PathBuf {
 ///
 /// `None` means the codec identified no registry row for the primary layer —
 /// a real classification outcome, pinned as `"none"` so the manifest states it
-/// rather than omitting the field.
+/// as the classified primary row.
 fn classify(format: &str, bytes: &[u8]) -> String {
     let catalog = cadmpeg_registry::InputCatalog::with_builtins();
     let codec = catalog
@@ -83,8 +83,8 @@ fn classify(format: &str, bytes: &[u8]) -> String {
         .unwrap_or_else(|| panic!("{format} inspect reported no primary layer"))
         .primary()
         .dialect
-        .as_ref()
-        .map_or_else(|| "none".to_owned(), |id| id.as_str().to_owned())
+        .as_str()
+        .to_owned()
 }
 
 /// Rewrites the `dialect` pin inside each `[[file]]` block, preserving comments.

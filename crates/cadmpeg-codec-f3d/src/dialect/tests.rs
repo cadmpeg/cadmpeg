@@ -16,10 +16,7 @@ fn a_document_match_names_its_row_and_records_the_version_the_parse_read() {
     let matched = F3dDialect::classify_document("3-2-0-0");
 
     assert_eq!(matched.format, FORMAT);
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("f3d:manifest-3-2-0-0")
-    );
+    assert_eq!(matched.dialect.as_str(), "f3d:manifest-3-2-0-0");
     assert_eq!(
         matched.declared[DECLARED_TOP_LEVEL_MANIFEST_VERSION],
         "3-2-0-0"
@@ -38,10 +35,7 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
         matched.declared[DECLARED_TOP_LEVEL_MANIFEST_VERSION],
         "3-3-0-0"
     );
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("f3d:unknown")
-    );
+    assert_eq!(matched.dialect.as_str(), "f3d:unknown");
     assert_eq!(
         matched.admission,
         Admission::AdmittedUnverified {
@@ -60,10 +54,7 @@ fn an_f3z_match_names_its_row_and_records_the_root_members() {
     let matched = F3dDialect::classify_f3z(&["Assembly.f3d", "Part.f3d"]);
 
     assert_eq!(matched.format, FORMAT);
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("f3d:f3z-multi-document")
-    );
+    assert_eq!(matched.dialect.as_str(), "f3d:f3z-multi-document");
     assert_eq!(
         matched.declared[DECLARED_ROOT_DOCUMENT_MEMBERS],
         "Assembly.f3d,Part.f3d"
@@ -97,16 +88,10 @@ fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
         F3dDialect::classify_document("3-2-0-0"),
         F3dDialect::classify_f3z(&["Part.f3d"]),
     ] {
-        assert_ne!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(F3dDialect::Unknown.id().as_str())
-        );
+        assert_ne!(matched.dialect.as_str(), F3dDialect::Unknown.id().as_str());
     }
     assert_eq!(
-        F3dDialect::classify_document("4-0-0-0")
-            .dialect
-            .as_ref()
-            .map(DialectId::as_str),
-        Some(F3dDialect::Unknown.id().as_str())
+        F3dDialect::classify_document("4-0-0-0").dialect.as_str(),
+        F3dDialect::Unknown.id().as_str()
     );
 }

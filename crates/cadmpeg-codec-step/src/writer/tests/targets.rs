@@ -108,7 +108,11 @@ fn refusal(error: &CodecError) -> (&str, Option<&str>, &str) {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    (format, requested.as_deref(), available)
+    (
+        format,
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        available,
+    )
 }
 
 /// The flagship case: `convert in.step -o out.step` on a file that is not the
@@ -132,7 +136,7 @@ fn inherit_synthesizes_the_source_schema_not_the_catalog_default() {
             .unwrap()
             .dialect
             .as_ref()
-            .and_then(|matched| matched.dialect.as_ref())
+            .map(|matched| &matched.dialect)
             .map(ToString::to_string),
         Some("step:ap203-e1".to_owned())
     );
@@ -188,7 +192,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
             .unwrap()
             .dialect
             .as_ref()
-            .and_then(|matched| matched.dialect.as_ref())
+            .map(|matched| &matched.dialect)
             .map(ToString::to_string),
         Some("step:ap242".to_owned())
     );
@@ -218,7 +222,7 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
             .unwrap()
             .dialect
             .as_ref()
-            .and_then(|matched| matched.dialect.as_ref())
+            .map(|matched| &matched.dialect)
             .map(ToString::to_string),
         Some("step:unknown".to_owned())
     );
@@ -505,9 +509,10 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         let classified = decoded
             .report()
             .dialects()
-            .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .and_then(|entry| entry.dialect.clone())
-            .unwrap_or_else(|| panic!("{schema:?} output must classify a host dialect"));
+            .unwrap_or_else(|| panic!("{schema:?} output must classify a host dialect"))
+            .primary()
+            .dialect
+            .clone();
         assert_eq!(
             classified, claimed,
             "{schema:?}: the report claims {claimed} but the bytes are {classified}"

@@ -104,11 +104,7 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
         let matched = SldprtDialect::classify(case.declaration);
         let context = format!("swVersion {:?}", case.declaration);
 
-        assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(case.id),
-            "{context}"
-        );
+        assert_eq!(matched.dialect.as_str(), case.id, "{context}");
         assert_eq!(matched.format, FORMAT, "{context}");
     }
 }
@@ -151,10 +147,7 @@ fn the_identity_row_never_reads_the_declaration_a_second_time() {
     let matched = SldprtDialect::classify(Some("SW2019"));
 
     assert_eq!(matched.declared[DECLARED_SW_VERSION], "SW2019");
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("sldprt:unknown")
-    );
+    assert_eq!(matched.dialect.as_str(), "sldprt:unknown");
 }
 
 #[test]
@@ -195,8 +188,7 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
     for case in CASES {
         let matched = SldprtDialect::classify(case.declaration);
         let context = format!("swVersion {:?}", case.declaration);
-        let residual = matched.dialect.as_ref().map(DialectId::as_str)
-            == Some(SldprtDialect::Unknown.id().as_str());
+        let residual = matched.dialect.as_str() == SldprtDialect::Unknown.id().as_str();
 
         let expected = if residual {
             Admission::AdmittedUnverified {
@@ -284,10 +276,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     let matched = SldprtDialect::classify_scan(&scan);
 
     assert_eq!(crate::container::declared_sw_version(&scan), None);
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("sldprt:unknown")
-    );
+    assert_eq!(matched.dialect.as_str(), "sldprt:unknown");
     assert!(matched.declared.is_empty());
     assert_eq!(
         matched.admission,
@@ -309,7 +298,7 @@ fn exactly_one_entry_names_the_reporting_format() {
         dialects
             .iter()
             .find(|entry| entry.format == FORMAT)
-            .and_then(|entry| entry.dialect.as_ref()),
+            .map(|entry| &entry.dialect),
         Some(&SldprtDialect::SwVersion12000Plus.id())
     );
 }

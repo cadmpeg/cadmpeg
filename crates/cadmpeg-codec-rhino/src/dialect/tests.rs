@@ -43,11 +43,7 @@ fn each_enumerated_word_classifies_into_the_row_its_discriminant_matches() {
     for (word, id) in ENUMERATED {
         let matched = classify_word(*word);
         assert_eq!(matched.format, FORMAT, "archive word {word}");
-        assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(*id),
-            "archive word {word}"
-        );
+        assert_eq!(matched.dialect.as_str(), *id, "archive word {word}");
         assert_eq!(
             matched.declared[DECLARED_ARCHIVE_VERSION],
             word.to_string(),
@@ -61,8 +57,8 @@ fn the_totality_row_absorbs_every_word_the_registry_omits() {
     for word in OUTSIDE {
         let matched = classify_word(*word);
         assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some("rhino:unknown"),
+            matched.dialect.as_str(),
+            "rhino:unknown",
             "archive word {word} has no declared row"
         );
         assert_eq!(

@@ -81,7 +81,7 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
     };
     DialectMatch {
         format: FORMAT.to_owned(),
-        dialect: Some(dialect),
+        dialect,
         declared,
         instance: None,
         admission,
@@ -242,7 +242,7 @@ mod tests {
         let acis = header(4, Some(21_703));
         let matched = classify(KernelHeaderRef::Acis(&acis));
         assert_eq!(matched.format, FORMAT);
-        assert_eq!(matched.dialect, Some(ACIS_SAVE_FORMAT_217));
+        assert_eq!(matched.dialect, ACIS_SAVE_FORMAT_217);
         assert_eq!(matched.admission, Admission::Admitted);
         assert_eq!(
             matched.declared.into_iter().collect::<Vec<_>>(),
@@ -258,7 +258,7 @@ mod tests {
             classify(KernelHeaderRef::Asm(&asm)),
             DialectMatch {
                 format: FORMAT.to_owned(),
-                dialect: Some(ACIS_ASM_BINARYFILE_8),
+                dialect: ACIS_ASM_BINARYFILE_8,
                 declared: [
                     ("reference_width".to_owned(), "8".to_owned()),
                     ("save_format_major".to_owned(), "700".to_owned()),
@@ -273,14 +273,14 @@ mod tests {
 
         assert_eq!(
             classify(KernelHeaderRef::TextAsm(&asm)).dialect,
-            Some(ACIS_TEXT_ASM)
+            ACIS_TEXT_ASM
         );
         assert_eq!(
             classify(KernelHeaderRef::TextAcis(&acis)).dialect,
-            Some(ACIS_TEXT_ACIS)
+            ACIS_TEXT_ACIS
         );
         let unknown = classify(KernelHeaderRef::Unknown);
-        assert_eq!(unknown.dialect, Some(ACIS_UNKNOWN));
+        assert_eq!(unknown.dialect, ACIS_UNKNOWN);
         assert_eq!(unknown.admission, Admission::Refused);
         assert!(unknown.declared.is_empty());
     }
@@ -301,12 +301,7 @@ mod tests {
             classify(KernelHeaderRef::Unknown),
         ]
         .into_iter()
-        .map(|matched| {
-            matched
-                .dialect
-                .expect("classifier always names a row")
-                .to_string()
-        })
+        .map(|matched| matched.dialect.to_string())
         .collect();
         assert_eq!(ids, cadmpeg_test_support::registry_ids(FORMAT));
     }

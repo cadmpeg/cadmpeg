@@ -96,7 +96,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
             .unwrap()
             .dialect
             .as_ref()
-            .and_then(|matched| matched.dialect.as_ref())
+            .map(|matched| &matched.dialect)
             .map(ToString::to_string),
         Some("iges:1.0-fixed-ascii".to_owned())
     );
@@ -114,7 +114,10 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "iges");
-    assert_eq!(requested.as_deref(), Some("iges:1.0-fixed-ascii"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("iges:1.0-fixed-ascii")
+    );
     assert!(available.contains("iges:5.3-fixed-ascii"), "{available}");
 }
 
@@ -170,7 +173,10 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(requested.as_deref(), Some("step:ap242-e3"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("step:ap242-e3")
+    );
     for version in IgesVersion::ALL {
         assert!(available.contains(version.target()), "{available}");
     }
@@ -235,9 +241,10 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         let classified = decoded
             .report()
             .dialects()
-            .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .and_then(|entry| entry.dialect.clone())
-            .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"));
+            .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"))
+            .primary()
+            .dialect
+            .clone();
         assert_eq!(
             classified, claimed,
             "{version:?}: the report claims {claimed} but the bytes are {classified}"

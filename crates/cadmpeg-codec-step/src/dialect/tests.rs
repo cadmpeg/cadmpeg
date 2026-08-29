@@ -163,11 +163,7 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
         let matched = StepDialect::classify(&exchange(case.identifiers, "2;1"));
         let context = format!("FILE_SCHEMA {:?}", case.identifiers);
 
-        assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some(case.id),
-            "{context}"
-        );
+        assert_eq!(matched.dialect.as_str(), case.id, "{context}");
         assert_eq!(
             matched.declared[DECLARED_FILE_SCHEMA_IDENTIFIER], case.identifiers[0],
             "{context}: the declaration is recorded as the source made it"
@@ -240,10 +236,7 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
         "2;1",
     ));
 
-    assert_eq!(
-        matched.dialect.as_ref().map(DialectId::as_str),
-        Some("step:ap242")
-    );
+    assert_eq!(matched.dialect.as_str(), "step:ap242");
     assert_eq!(matched.admission, Admission::Admitted);
     assert!(dialect_loss(&matched).is_none());
     assert!(!matched.declared.contains_key(DECLARED_LONG_FORM_ARCS));
@@ -269,8 +262,8 @@ fn the_implementation_level_is_recorded_and_never_classified_on() {
         let matched = StepDialect::classify(&exchange(&["AUTOMOTIVE_DESIGN"], level));
 
         assert_eq!(
-            matched.dialect.as_ref().map(DialectId::as_str),
-            Some("step:ap214"),
+            matched.dialect.as_str(),
+            "step:ap214",
             "implementation level {level:?} must not move the identity"
         );
         assert_eq!(matched.declared[DECLARED_IMPLEMENTATION_LEVEL], level);

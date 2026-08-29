@@ -217,13 +217,7 @@ fn a_verified_acis_carrier_reports_its_band_admitted() {
     );
     let (layer, codes) = kernel_layer_of(&bytes);
 
-    assert_eq!(
-        layer
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("acis:save-format-218")
-    );
+    assert_eq!(layer.dialect.as_str(), "acis:save-format-218");
     assert_eq!(layer.admission, cadmpeg_core::dialect::Admission::Admitted);
     assert!(
         !codes.iter().any(|code| code.contains("dialect-unverified")),
@@ -241,13 +235,7 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     );
     let (layer, codes) = kernel_layer_of(&bytes);
 
-    assert_eq!(
-        layer
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("acis:save-format-binary-other")
-    );
+    assert_eq!(layer.dialect.as_str(), "acis:save-format-binary-other");
     assert_eq!(
         layer.admission,
         cadmpeg_core::dialect::Admission::AdmittedUnverified {

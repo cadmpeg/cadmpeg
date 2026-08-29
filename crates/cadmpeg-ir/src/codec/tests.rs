@@ -283,7 +283,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         format: "test".into(),
         dialect: Some(DialectMatch {
             format: "test".into(),
-            dialect: Some(DialectId::pinned("test:wrong")),
+            dialect: DialectId::pinned("test:wrong"),
             declared: BTreeMap::from([("wrong".into(), "value".into())]),
             instance: None,
             admission: Admission::Admitted,
@@ -314,7 +314,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
 fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
     DialectMatch {
         format: format.into(),
-        dialect: Some(DialectId::pinned(id)),
+        dialect: DialectId::pinned(id),
         declared: BTreeMap::new(),
         instance: None,
         admission: Admission::Admitted,
@@ -349,7 +349,10 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "cadir");
-    assert_eq!(requested.as_deref(), Some("cadir:nonesuch"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("cadir:nonesuch")
+    );
     assert_eq!(available, "none");
     assert!(Encoder::targets(&CadirEncoder).is_empty());
 }
@@ -450,7 +453,10 @@ fn catalog_write_inherit_refuses_a_same_format_off_catalog_source() {
     else {
         panic!("expected an unsupported target");
     };
-    assert_eq!(requested.as_deref(), Some("test:future"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("test:future")
+    );
     assert_eq!(reason, "the test writer cannot synthesize the source row");
     assert_eq!(available, "test:old, test:new");
 }

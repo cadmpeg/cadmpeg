@@ -36,7 +36,10 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         panic!("expected a target refusal, got {unsupported}");
     };
     assert_eq!(format, "fcstd");
-    assert_eq!(requested.as_deref(), Some("fcstd:schema-3"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("fcstd:schema-3")
+    );
 
     // `FileVersion` is not part of a dialect id, so the catalog cannot
     // refuse this one. The resolution's second half does, at the same
@@ -54,7 +57,10 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     let CodecError::UnsupportedTarget { requested, .. } = &wrong_file_version else {
         panic!("expected a target refusal, got {wrong_file_version}");
     };
-    assert_eq!(requested.as_deref(), Some("fcstd:schema-4"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("fcstd:schema-4")
+    );
 
     // A document with no retained graph has nothing this writer can patch,
     // so `plan` refuses by name with the catalog rather than failing deep
@@ -73,7 +79,10 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert_eq!(format, "fcstd");
-    assert_eq!(requested.as_deref(), Some("fcstd:schema-4"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("fcstd:schema-4")
+    );
 }
 
 /// An explicit target this writer does not produce is refused by `plan`
@@ -104,7 +113,10 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "fcstd");
-    assert_eq!(requested.as_deref(), Some("fcstd:nonesuch"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("fcstd:nonesuch")
+    );
     for target in Encoder::targets(&FcstdCodec) {
         assert!(available.contains(target.id), "{available}");
     }
@@ -194,7 +206,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .source
             .as_ref()
             .and_then(|source| source.dialect.as_ref())
-            .and_then(|matched| matched.dialect.as_ref())
+            .map(|matched| &matched.dialect)
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );
@@ -221,7 +233,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .source
             .as_ref()
             .and_then(|source| source.dialect.as_ref())
-            .and_then(|matched| matched.dialect.as_ref())
+            .map(|matched| &matched.dialect)
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );
@@ -261,7 +273,10 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "fcstd");
-    assert_eq!(requested.as_deref(), Some("fcstd:schema-2"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("fcstd:schema-2")
+    );
     assert!(available.contains("fcstd:schema-4"), "{available}");
 }
 
@@ -306,7 +321,10 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "fcstd");
-    assert_eq!(requested.as_deref(), Some("fcstd:schema-4"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("fcstd:schema-4")
+    );
     assert!(available.contains("fcstd:schema-4"), "{available}");
 }
 
@@ -381,9 +399,10 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
         let classified = round_trip
             .report()
             .dialects()
-            .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .and_then(|entry| entry.dialect.clone())
-            .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));
+            .unwrap_or_else(|| panic!("{label} output must classify a host dialect"))
+            .primary()
+            .dialect
+            .clone();
         assert_eq!(
             classified, claimed,
             "{label}: the report claims {claimed} but the bytes are {classified}"

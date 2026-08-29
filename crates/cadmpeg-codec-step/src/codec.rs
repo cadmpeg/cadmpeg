@@ -246,10 +246,7 @@ impl CodecBackend for StepCodec {
             identifiers.join(",")
         };
         let matched = StepDialect::classify(&exchange);
-        let dialect = matched
-            .dialect
-            .as_ref()
-            .expect("STEP classification always names a dialect row");
+        let dialect = &matched.dialect;
         let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         Ok(ContainerSummary::classified(

@@ -374,13 +374,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         .expect("FCStd inspection reports dialect layers")
         .primary();
     assert_eq!(matched.format, "fcstd");
-    assert_eq!(
-        matched
-            .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("fcstd:schema-4")
-    );
+    assert_eq!(matched.dialect.as_str(), "fcstd:schema-4");
     assert_eq!(
         matched.admission,
         cadmpeg_core::dialect::Admission::Admitted
@@ -429,9 +423,8 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             .expect("FCStd inspection reports dialect layers")
             .primary()
             .dialect
-            .as_ref()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
-        Some("fcstd:unknown")
+            .as_str(),
+        "fcstd:unknown"
     );
     assert_eq!(
         summary

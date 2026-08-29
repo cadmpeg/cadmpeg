@@ -98,10 +98,9 @@ pub enum Admission {
     /// Parsed with the strategy declared for the identified dialect.
     Admitted,
     /// Parsed with a strategy not declared for the identified dialect, or
-    /// no dialect was identified at all. Identity and admission are
-    /// orthogonal: [`DialectMatch::dialect`] may still be `Some` — a legacy
-    /// document can carry a registry row of its own while its bytes are
-    /// read with a newer grammar.
+    /// the identified dialect. Identity and admission are orthogonal: a
+    /// legacy document can carry a registry row of its own while its bytes
+    /// are read with a newer grammar.
     ///
     /// A format's residual `unknown` row is never [`Admission::Admitted`]:
     /// admission verifies a declared identity, and the residual row is the
@@ -128,10 +127,7 @@ pub struct DialectMatch {
     /// Format layer this classifies: `"rhino"`, `"acis"`, `"parasolid"`.
     pub format: String,
     /// Registry dialect id, for example `"rhino:archive-80"`.
-    ///
-    /// `None`: the discriminants matched no declared dialect.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dialect: Option<DialectId>,
+    pub dialect: DialectId,
     /// Version fields the source declared, verbatim, under keys pinned per
     /// codec in the registry.
     ///
@@ -241,7 +237,7 @@ impl DialectMatch {
     ) -> Self {
         Self {
             format: format.into(),
-            dialect: Some(dialect),
+            dialect,
             declared,
             instance: None,
             admission,
@@ -258,7 +254,7 @@ mod tests {
     fn layer(format: &str) -> DialectMatch {
         DialectMatch {
             format: format.to_owned(),
-            dialect: Some(DialectId::pinned("rhino:archive-80")),
+            dialect: DialectId::pinned("rhino:archive-80"),
             declared: BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,
@@ -279,10 +275,10 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_dialect_list_serializes_to_nothing_extra() {
+    fn an_admitted_match_serializes_its_identity() {
         let admitted = DialectMatch {
             format: "rhino".into(),
-            dialect: None,
+            dialect: DialectId::pinned("rhino:archive-80"),
             declared: BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,
@@ -290,7 +286,7 @@ mod tests {
 
         assert_eq!(
             serde_json::to_string(&admitted).unwrap(),
-            "{\"format\":\"rhino\",\"admission\":\"admitted\"}"
+            "{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}"
         );
     }
 

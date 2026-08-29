@@ -12,6 +12,33 @@ use crate::dialect::DialectMatch;
 /// so in words rather than putting a bare format id in a dialect-id slot.
 pub const UNRECORDED_SOURCE_DIALECT: &str = "an unrecorded source dialect";
 
+/// A caller-supplied dialect token requested from an encoder.
+///
+/// Unlike [`crate::dialect::DialectId`], this token need not name a registered
+/// dialect: refusals preserve an unknown explicit request verbatim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetToken(String);
+
+impl TargetToken {
+    /// Retains one requested target token verbatim.
+    #[must_use]
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the requested token.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for TargetToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Errors a codec can raise.
 ///
 /// Marked `#[non_exhaustive]`: external exhaustive matches must carry a
@@ -81,7 +108,7 @@ pub enum CodecError {
     /// would otherwise grow to its width.
     #[error(
         "unsupported {format} dialect {}: {message}",
-        .dialect_match.dialect.as_ref().map_or("unclassified", crate::dialect::DialectId::as_str)
+        .dialect_match.dialect
     )]
     UnsupportedDialect {
         /// Format layer that refused.
@@ -100,7 +127,7 @@ pub enum CodecError {
     /// request whose source dialect can be neither preserved nor synthesized,
     /// and an inherit request over a same-format source that records no
     /// dialect at all.
-    #[error("{format} cannot write {}: {reason}; available targets: {available}", .requested.as_deref().unwrap_or(UNRECORDED_SOURCE_DIALECT))]
+    #[error("{format} cannot write {}: {reason}; available targets: {available}", .requested.as_ref().map_or(UNRECORDED_SOURCE_DIALECT, TargetToken::as_str))]
     UnsupportedTarget {
         /// Format layer that refused.
         format: String,
@@ -113,7 +140,7 @@ pub enum CodecError {
         /// carries a dialect id or nothing; it never carries a bare format id
         /// standing in for one. [`UNRECORDED_SOURCE_DIALECT`] is what the
         /// message renders in its place.
-        requested: Option<String>,
+        requested: Option<TargetToken>,
         /// Why that dialect is unavailable.
         reason: String,
         /// The synthesis catalog, comma separated, in catalog order.
@@ -179,7 +206,7 @@ mod tests {
             format: "acis".into(),
             dialect_match: Box::new(DialectMatch {
                 format: "acis".into(),
-                dialect: Some(DialectId::pinned("acis:save-format-binary-other")),
+                dialect: DialectId::pinned("acis:save-format-binary-other"),
                 declared: BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
                 instance: None,
                 admission: Admission::Refused,
@@ -195,8 +222,8 @@ mod tests {
             panic!("the variant just built is the one matched");
         };
         assert_eq!(
-            dialect_match.dialect.as_ref().map(DialectId::as_str),
-            Some("acis:save-format-binary-other")
+            dialect_match.dialect.as_str(),
+            "acis:save-format-binary-other"
         );
         assert_eq!(dialect_match.declared["save_format"], "700");
     }

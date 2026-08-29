@@ -37,7 +37,10 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "rhino");
-    assert_eq!(requested.as_deref(), Some("rhino:nonesuch"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("rhino:nonesuch")
+    );
     for target in Encoder::targets(&encoder) {
         assert!(available.contains(target.id), "{available}");
     }
@@ -239,7 +242,10 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "rhino");
-    assert_eq!(requested.as_deref(), Some("rhino:archive-3"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("rhino:archive-3")
+    );
     for target in Encoder::targets(&encoder) {
         assert!(available.contains(target.id), "{available}");
     }
@@ -293,9 +299,10 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         let classified = decoded
             .report()
             .dialects()
-            .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .and_then(|entry| entry.dialect.clone())
-            .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"));
+            .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"))
+            .primary()
+            .dialect
+            .clone();
         assert_eq!(
             classified, claimed,
             "{version:?}: the report claims {claimed} but the bytes are {classified}"

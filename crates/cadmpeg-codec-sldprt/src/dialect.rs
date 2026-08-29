@@ -165,7 +165,7 @@ impl SldprtDialect {
 
     /// The typed row carried by an existing classification.
     pub(crate) fn from_match(matched: &DialectMatch) -> Option<Self> {
-        let id = matched.dialect.as_ref()?;
+        let id = &matched.dialect;
         [
             Self::SwVersionPre12000,
             Self::SwVersion12000Plus,

@@ -58,7 +58,10 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(format, "sldprt");
-    assert_eq!(requested.as_deref(), Some("sldprt:nonesuch"));
+    assert_eq!(
+        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+        Some("sldprt:nonesuch")
+    );
     for target in Encoder::targets(&SldprtCodec) {
         assert!(available.contains(target.id), "{available}");
     }

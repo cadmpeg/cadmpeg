@@ -137,7 +137,10 @@ mod tests {
             else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
-            assert_eq!(requested.as_deref(), Some("nonesuch:dialect"));
+            assert_eq!(
+                requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
+                Some("nonesuch:dialect")
+            );
             for target in encoder.targets() {
                 assert!(
                     available.contains(target.id),
