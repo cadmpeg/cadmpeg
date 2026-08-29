@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
+#[cfg(test)]
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 use cadmpeg_ir::geometry::{
@@ -16,11 +17,14 @@ use cadmpeg_ir::pmi::{
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
-use cadmpeg_ir::report::{ExportReport, LossNote};
+#[cfg(test)]
+use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
+#[cfg(test)]
 use cadmpeg_ir::{FidelityResolution, WritePath};
 
 use crate::error::StepError;
