@@ -25,7 +25,7 @@
 //! ACIS record decoders are verified against majors 217 and 218; the ASM record
 //! decoders compare no save format at all. A stream outside the verified band
 //! is not refused: its records are read with the verified band's grammar, which
-//! is [`Admission::AdmittedUnverified`] on that layer, and `nearest` names the
+//! is [`Admission::AdmittedUnverified`] on that layer, and `using` names the
 //! verified `acis:` row whose grammar was substituted. The recovery is charged
 //! as [`SatLossCode::SourceDialectUnverified`] by [`dialect_loss`], on a result
 //! that carries whatever those records decoded.
@@ -178,7 +178,7 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
 /// substituted for the band the stream declared. The message states the
 /// declaration and the substitution; it is not the contract, the code is.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
+    let Admission::AdmittedUnverified { using } = matched.admission() else {
         return None;
     };
     let declared = match (
@@ -193,7 +193,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         SatLossCode::SourceDialectUnverified.note(cadmpeg_asm::dialect::acis_recovery_message(
             "the stream",
             &declared,
-            &nearest,
+            &using,
         )),
     )
 }

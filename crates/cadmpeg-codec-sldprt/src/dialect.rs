@@ -46,7 +46,7 @@
 //! Admission verifies a *declared* identity, and `sldprt:unknown` is the
 //! absence of one. So the two versioned rows are [`Admission::Admitted`] and
 //! `sldprt:unknown` is [`Admission::AdmittedUnverified`], naming *itself* as
-//! `nearest`: the strategy substituted for the missing declaration is the
+//! `using`: the strategy substituted for the missing declaration is the
 //! row's own declared fallback, and no other row lent its grammar.
 //!
 //! That fallback is well-defined — the padding filter is not applied and the
@@ -258,7 +258,7 @@ impl SldprtDialect {
         match self {
             Self::SwVersionPre12000 | Self::SwVersion12000Plus => Admission::Admitted,
             Self::Unknown => Admission::AdmittedUnverified {
-                nearest: Self::Unknown.id(),
+                using: Self::Unknown.id(),
             },
         }
     }
@@ -293,7 +293,7 @@ impl SldprtDialect {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted => None,
-        Admission::AdmittedUnverified { nearest } => {
+        Admission::AdmittedUnverified { using } => {
             let declaration = match matched.declared().get(DECLARED_SW_VERSION) {
                 Some(value) => format!(
                     "the swSolidWorks swVersion declaration {value:?} does not read as a version \
@@ -303,7 +303,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             };
             Some(SldprtLossCode::SourceDialectUnverified.note(format!(
                 "{declaration}, so no declared identity was verified. The document is read on \
-                 {nearest}: the feature-operation form-code padding filter is not applied, and an \
+{using}: the feature-operation form-code padding filter is not applied, and an \
                  operation code binds only where the four- and eight-byte candidates agree. \
                  Agreement is consistency, not a declaration."
             )))

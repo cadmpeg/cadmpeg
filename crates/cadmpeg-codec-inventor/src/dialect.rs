@@ -24,7 +24,7 @@
 //! Neither gate refuses. A schema other than 31 leaves the `RSeDb` stream and
 //! the segment registry unavailable, and a Meta Stream other than version 8
 //! leaves that segment's metadata unread; decode continues in both cases and
-//! degrades. That is [`Admission::AdmittedUnverified`] exactly, and `nearest`
+//! degrades. That is [`Admission::AdmittedUnverified`] exactly, and `using`
 //! names `inventor:cfb3-rse31-meta8` because the schema-31 registry grammar and
 //! the version-8 metadata grammar are the only ones this codec implements —
 //! they are the strategy it applied, in the parts it could apply.
@@ -232,7 +232,7 @@ impl DialectRecovery {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
-                nearest: InventorDialect::Cfb3Rse31Meta8.id(),
+                using: InventorDialect::Cfb3Rse31Meta8.id(),
             }
         };
         let mut declared = BTreeMap::new();
@@ -366,7 +366,7 @@ pub(crate) fn unknown_kernel_layer() -> DialectMatch {
 
 /// The recovery loss the kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
+    let Admission::AdmittedUnverified { using } = matched.admission() else {
         return None;
     };
     let declared = matched.declared().get("save_format_major").map_or_else(
@@ -374,11 +374,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         |major| format!("save format major {major}"),
     );
     Some(InventorLossCode::KernelDialectUnverified.note(
-        cadmpeg_asm::dialect::acis_recovery_message(
-            "the active kernel carrier",
-            &declared,
-            &nearest,
-        ),
+        cadmpeg_asm::dialect::acis_recovery_message("the active kernel carrier", &declared, &using),
     ))
 }
 

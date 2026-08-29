@@ -32,7 +32,7 @@
 //! still selects a scan. The totality row is therefore read, not refused. It
 //! is read with the strategy selected by its chunk width: `rhino:archive-4`
 //! below word 50 and `rhino:archive-90` at or above word 50. Admission is
-//! [`Admission::AdmittedUnverified`] with that row as `nearest`, and
+//! [`Admission::AdmittedUnverified`] with that row as `using`, and
 //! [`admission_loss`] charges
 //! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] for it.
 //!
@@ -190,7 +190,7 @@ impl ArchiveVersion {
     fn admission(self) -> Admission {
         if matches!(self, Self::Other(_)) {
             Admission::AdmittedUnverified {
-                nearest: if self.uses_eight_byte_values() {
+                using: if self.uses_eight_byte_values() {
                     Self::V9.id()
                 } else {
                     Self::V4.id()
@@ -230,7 +230,7 @@ impl ArchiveVersion {
 /// structural: the note charged and the admission reported come from one value,
 /// not from two authors agreeing.
 pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
+    let Admission::AdmittedUnverified { using } = matched.admission() else {
         return None;
     };
     let word = matched
@@ -240,7 +240,7 @@ pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
     Some(
         crate::loss::RhinoLossCode::SourceDialectUnverified.note(format!(
         "archive version word {word} has no declared row, so no declared identity was verified. \
-         The document is read on {nearest}, which uses the chunk value width selected by the \
+The document is read using {using}, which uses the chunk value width selected by the \
          archive word."
     )),
     )

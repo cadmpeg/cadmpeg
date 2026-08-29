@@ -28,7 +28,7 @@
 //! The two identity rows are [`Admission::Admitted`]: each is parsed with the
 //! strategy its own row declares. [`F3dDialect::Unknown`] is the mandatory
 //! totality row and it is
-//! [`Admission::AdmittedUnverified`], naming `f3d:manifest-3-2-0-0` as the
+//! [`Admission::AdmittedUnverified`], using `f3d:manifest-3-2-0-0` as the
 //! strategy applied to it, with [`dialect_loss`] charging
 //! `source.dialect-unverified` on exactly that admission. Refusal stays
 //! structural: a manifest whose bytes do not fit the anchors is refused by
@@ -159,7 +159,7 @@ impl F3dDialect {
         match self {
             Self::Manifest3200 | Self::F3zMultiDocument => Admission::Admitted,
             Self::Unknown => Admission::AdmittedUnverified {
-                nearest: Self::Manifest3200.id(),
+                using: Self::Manifest3200.id(),
             },
         }
     }
@@ -195,7 +195,7 @@ impl F3dDialect {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified { nearest } => {
+        Admission::AdmittedUnverified { using } => {
             let version = matched
                 .declared()
                 .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
@@ -203,7 +203,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             Some(F3dLossCode::SourceDialectUnverified.note(format!(
                 "the top-level manifest declares version {version:?}, which no dialect row of \
                  this codec names, so no declared identity was verified. The document is read on \
-                 {nearest}: every field after the version was parsed with that layout. The layout \
+{using}: every field after the version was parsed with that layout. The layout \
                  fitting is consistency, not a declaration."
             )))
         }
@@ -293,7 +293,7 @@ fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
 
 /// The recovery loss a kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
+    let Admission::AdmittedUnverified { using } = matched.admission() else {
         return None;
     };
     let carrier = matched
@@ -307,7 +307,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let message = cadmpeg_asm::dialect::acis_recovery_message(
         &format!("the kernel carrier {carrier}"),
         &declared,
-        &nearest,
+        &using,
     );
     Some(
         F3dLossCode::KernelDialectUnverified.note(matched.instance().map_or_else(

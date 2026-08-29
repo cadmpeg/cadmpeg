@@ -105,12 +105,12 @@ pub enum Admission {
     /// A format's residual `unknown` row is never [`Admission::Admitted`]:
     /// admission verifies a declared identity, and the residual row is the
     /// absence of one. When the substituted strategy is the residual row's
-    /// own declared fallback, `nearest` names the row itself.
+    /// own declared fallback, `using` names the row itself.
     ///
     /// The codec must charge its dialect-unverified loss.
     AdmittedUnverified {
         /// Dialect whose declared strategy was substituted for the parse.
-        nearest: DialectId,
+        using: DialectId,
     },
     /// Structurally identified; semantic decode refused.
     Refused,
@@ -373,14 +373,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unverified_admission_names_the_nearest_dialect() {
+    fn an_unverified_admission_names_the_dialect_in_use() {
         let unverified = Admission::AdmittedUnverified {
-            nearest: DialectId::pinned("acis:save-format-217"),
+            using: DialectId::pinned("acis:save-format-217"),
         };
 
         assert_eq!(
             serde_json::to_string(&unverified).unwrap(),
-            "{\"admitted_unverified\":{\"nearest\":\"acis:save-format-217\"}}"
+            "{\"admitted_unverified\":{\"using\":\"acis:save-format-217\"}}"
         );
     }
 

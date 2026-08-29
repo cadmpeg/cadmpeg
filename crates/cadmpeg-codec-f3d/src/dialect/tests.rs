@@ -39,7 +39,7 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
     assert_eq!(
         matched.admission(),
         Admission::AdmittedUnverified {
-            nearest: DialectId::pinned("f3d:manifest-3-2-0-0"),
+            using: DialectId::pinned("f3d:manifest-3-2-0-0"),
         }
     );
 

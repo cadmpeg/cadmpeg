@@ -193,7 +193,7 @@ its Global record stops there, so fields 24, 25, and 26 -- the drafting
 standard, the model creation date, and the application protocol, which
 `global.rs` gives to the 4.0, 5.0, and 5.1 tables respectively -- are
 absent as a 2.0 record requires. The golden pins the row, the
-AdmittedUnverified admission naming `iges:5.3-fixed-ascii` as nearest, and
+AdmittedUnverified admission using `iges:5.3-fixed-ascii`, and
 the `source.dialect-unverified` loss. The read cell stays
 `unclassified-recovered` because that cell is the mirror of the admission,
 not a fixture-gated placeholder: the fixture confirms the recovery rather
@@ -434,7 +434,7 @@ a version flag outside the declared table (12, 99, or an unreadable field
 `unknown_version_flag_99.igs` declares field 23 = 99. No row's
 `version_flag` discriminant holds 99, so the document lands on the
 totality row, and the golden pins that id, the AdmittedUnverified
-admission naming `iges:5.3-fixed-ascii` as nearest, and a
+admission using `iges:5.3-fixed-ascii`, and a
 `source.dialect-unverified` loss whose message names the clamp to 11 that
 IGES 5.3 section 2.2.4.3.23 requires of a postprocessor. The read cell
 stays `unclassified-recovered` because that cell mirrors the admission:
@@ -760,7 +760,7 @@ read = "unclassified-recovered"
 write = "none"
 reason = """
 a storage family outside the declared set; decoded to metadata IR with a
-self-referential nearest"""
+self-referential `using` value"""
 
 # --------------------------------------------------------------------------
 # nx
@@ -823,7 +823,7 @@ dialect = "creo:unknown"
 read = "unclassified-recovered"
 write = "none"
 reason = """
-no ND or DEPDB layout marker; read with a self-referential nearest, which
+no ND or DEPDB layout marker; read with a self-referential `using` value, which
 is the row most golden fixtures carry"""
 
 # --------------------------------------------------------------------------
@@ -942,7 +942,7 @@ read = "detected"
 write = "none"
 reason = """
 a verified band: `Admission::Admitted` on the Inventor kernel layer, and
-the `nearest` grammar `cadmpeg-codec-sat` names when it recovers a band
+the `using` grammar `cadmpeg-codec-sat` names when it recovers a band
 below 218. Unit tests in `cadmpeg-codec-sat` and `cadmpeg-codec-inventor`
 witness it; no golden carries the id"""
 
@@ -952,7 +952,7 @@ read = "detected"
 write = "none"
 reason = """
 a verified band, under the same note as `acis:save-format-217`: named as
-the `nearest` grammar for an unverified band at or above major 218"""
+the `using` grammar for an unverified band at or above major 218"""
 
 [[support]]
 dialect = "acis:save-format-binary-other"

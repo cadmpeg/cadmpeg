@@ -110,7 +110,7 @@ pub(crate) fn admission(variant: Variant) -> Admission {
         | Variant::E5Stream
         | Variant::InnerNoDirectory => Admission::Admitted,
         Variant::Unknown => Admission::AdmittedUnverified {
-            nearest: Variant::Unknown.id(),
+            using: Variant::Unknown.id(),
         },
     }
 }
@@ -130,10 +130,10 @@ pub(crate) fn admission(variant: Variant) -> Admission {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified { nearest } => {
+        Admission::AdmittedUnverified { using } => {
             Some(CatiaLossCode::SourceDialectUnverified.note(format!(
                 "This container matched no CATIA V5 storage family's structural invariants, so it \
-                 is `{nearest}`. No decode route declares a grammar for that row; the file was \
+is `{using}`. No decode route declares a grammar for that row; the file was \
                  admitted under the metadata-IR fallback, which enumerates the container and \
                  retains the source bytes without applying any family's record grammar."
             )))

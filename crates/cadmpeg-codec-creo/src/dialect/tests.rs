@@ -170,7 +170,7 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
-                nearest: DialectId::pinned("creo:unknown"),
+                using: DialectId::pinned("creo:unknown"),
             }
         };
         assert_eq!(matched.admission(), expected_admission, "{}", case.label);
