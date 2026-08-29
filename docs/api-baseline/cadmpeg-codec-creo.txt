@@ -1,4 +1,4 @@
-# generated at 32c0d5bb8
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_creo
 pub struct cadmpeg_codec_creo::CreoCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_creo::CreoCodec
@@ -6,17 +6,3 @@ pub fn cadmpeg_codec_creo::CreoCodec::decode_impl(&self, &cadmpeg_core::decode::
 pub fn cadmpeg_codec_creo::CreoCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_creo::CreoCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_creo::CreoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl core::clone::Clone for cadmpeg_codec_creo::CreoCodec
-pub fn cadmpeg_codec_creo::CreoCodec::clone(&self) -> cadmpeg_codec_creo::CreoCodec
-impl core::default::Default for cadmpeg_codec_creo::CreoCodec
-pub fn cadmpeg_codec_creo::CreoCodec::default() -> cadmpeg_codec_creo::CreoCodec
-impl core::fmt::Debug for cadmpeg_codec_creo::CreoCodec
-pub fn cadmpeg_codec_creo::CreoCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_creo::CreoCodec
-impl core::marker::Freeze for cadmpeg_codec_creo::CreoCodec
-impl core::marker::Send for cadmpeg_codec_creo::CreoCodec
-impl core::marker::Sync for cadmpeg_codec_creo::CreoCodec
-impl core::marker::Unpin for cadmpeg_codec_creo::CreoCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::CreoCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::CreoCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::CreoCodec

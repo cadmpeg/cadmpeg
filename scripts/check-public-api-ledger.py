@@ -209,7 +209,7 @@ def regen_command(crate: str) -> str:
     """Return the documented one-line command for one snapshot."""
     return (
         "SHORT=$(git rev-parse --short HEAD); "
-        f"cargo +nightly public-api -p {crate} --color never -s "
+        f"cargo +nightly public-api -p {crate} --color never -sss "
         f'| {{ echo "# generated at $SHORT"; cat; }} '
         f"> docs/api-baseline/{crate}.txt"
     )
@@ -366,7 +366,7 @@ def check_api_diff(
                         crate,
                         "--color",
                         "never",
-                        "-s",
+                        "-sss",
                     ],
                     cwd=root,
                     stdout=output,

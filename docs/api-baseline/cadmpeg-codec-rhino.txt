@@ -1,4 +1,4 @@
-# generated at 5ab799ccb
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_rhino
 pub enum cadmpeg_codec_rhino::RhinoArchiveVersion
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V5
@@ -7,62 +7,14 @@ pub cadmpeg_codec_rhino::RhinoArchiveVersion::V7
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V8
 impl cadmpeg_codec_rhino::RhinoArchiveVersion
 pub const fn cadmpeg_codec_rhino::RhinoArchiveVersion::target(self) -> &'static str
-impl core::clone::Clone for cadmpeg_codec_rhino::RhinoArchiveVersion
-pub fn cadmpeg_codec_rhino::RhinoArchiveVersion::clone(&self) -> cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::cmp::Eq for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::cmp::PartialEq for cadmpeg_codec_rhino::RhinoArchiveVersion
-pub fn cadmpeg_codec_rhino::RhinoArchiveVersion::eq(&self, &cadmpeg_codec_rhino::RhinoArchiveVersion) -> bool
-impl core::fmt::Debug for cadmpeg_codec_rhino::RhinoArchiveVersion
-pub fn cadmpeg_codec_rhino::RhinoArchiveVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::marker::StructuralPartialEq for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::marker::Freeze for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::marker::Send for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::marker::Sync for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::marker::Unpin for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::marker::UnsafeUnpin for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_rhino::RhinoArchiveVersion
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_rhino::RhinoArchiveVersion
 pub struct cadmpeg_codec_rhino::RhinoCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_rhino::RhinoCodec
 pub fn cadmpeg_codec_rhino::RhinoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_rhino::RhinoCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_rhino::RhinoCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_rhino::RhinoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl core::clone::Clone for cadmpeg_codec_rhino::RhinoCodec
-pub fn cadmpeg_codec_rhino::RhinoCodec::clone(&self) -> cadmpeg_codec_rhino::RhinoCodec
-impl core::default::Default for cadmpeg_codec_rhino::RhinoCodec
-pub fn cadmpeg_codec_rhino::RhinoCodec::default() -> cadmpeg_codec_rhino::RhinoCodec
-impl core::fmt::Debug for cadmpeg_codec_rhino::RhinoCodec
-pub fn cadmpeg_codec_rhino::RhinoCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_rhino::RhinoCodec
-impl core::marker::Freeze for cadmpeg_codec_rhino::RhinoCodec
-impl core::marker::Send for cadmpeg_codec_rhino::RhinoCodec
-impl core::marker::Sync for cadmpeg_codec_rhino::RhinoCodec
-impl core::marker::Unpin for cadmpeg_codec_rhino::RhinoCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_rhino::RhinoCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_rhino::RhinoCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_rhino::RhinoCodec
 pub struct cadmpeg_codec_rhino::RhinoEncoder
 impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_rhino::RhinoEncoder
 pub fn cadmpeg_codec_rhino::RhinoEncoder::id(&self) -> &'static str
 pub fn cadmpeg_codec_rhino::RhinoEncoder::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_rhino::RhinoEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
-impl core::clone::Clone for cadmpeg_codec_rhino::RhinoEncoder
-pub fn cadmpeg_codec_rhino::RhinoEncoder::clone(&self) -> cadmpeg_codec_rhino::RhinoEncoder
-impl core::cmp::Eq for cadmpeg_codec_rhino::RhinoEncoder
-impl core::cmp::PartialEq for cadmpeg_codec_rhino::RhinoEncoder
-pub fn cadmpeg_codec_rhino::RhinoEncoder::eq(&self, &cadmpeg_codec_rhino::RhinoEncoder) -> bool
-impl core::default::Default for cadmpeg_codec_rhino::RhinoEncoder
-pub fn cadmpeg_codec_rhino::RhinoEncoder::default() -> cadmpeg_codec_rhino::RhinoEncoder
-impl core::fmt::Debug for cadmpeg_codec_rhino::RhinoEncoder
-pub fn cadmpeg_codec_rhino::RhinoEncoder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_rhino::RhinoEncoder
-impl core::marker::StructuralPartialEq for cadmpeg_codec_rhino::RhinoEncoder
-impl core::marker::Freeze for cadmpeg_codec_rhino::RhinoEncoder
-impl core::marker::Send for cadmpeg_codec_rhino::RhinoEncoder
-impl core::marker::Sync for cadmpeg_codec_rhino::RhinoEncoder
-impl core::marker::Unpin for cadmpeg_codec_rhino::RhinoEncoder
-impl core::marker::UnsafeUnpin for cadmpeg_codec_rhino::RhinoEncoder
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_rhino::RhinoEncoder
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_rhino::RhinoEncoder

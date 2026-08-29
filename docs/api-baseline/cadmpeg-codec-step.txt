@@ -1,24 +1,9 @@
-# generated at 0bb885f9f
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepError
 pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
 impl core::convert::From<cadmpeg_codec_step::StepError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_codec_step::StepError) -> Self
-impl core::convert::From<core::io::error::Error> for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::from(core::io::error::Error) -> Self
-impl core::error::Error for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
-impl core::fmt::Debug for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_codec_step::StepError
-impl core::marker::Send for cadmpeg_codec_step::StepError
-impl core::marker::Sync for cadmpeg_codec_step::StepError
-impl core::marker::Unpin for cadmpeg_codec_step::StepError
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepError
-impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepError
-impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepError
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
 pub cadmpeg_codec_step::StepSchema::Ap203Edition2
@@ -29,24 +14,6 @@ pub cadmpeg_codec_step::StepSchema::Ap242Edition3
 impl cadmpeg_codec_step::StepSchema
 pub const fn cadmpeg_codec_step::StepSchema::file_schema(self) -> &'static str
 pub const fn cadmpeg_codec_step::StepSchema::target(self) -> &'static str
-impl core::clone::Clone for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::clone(&self) -> cadmpeg_codec_step::StepSchema
-impl core::cmp::Eq for cadmpeg_codec_step::StepSchema
-impl core::cmp::PartialEq for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::eq(&self, &cadmpeg_codec_step::StepSchema) -> bool
-impl core::default::Default for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::default() -> cadmpeg_codec_step::StepSchema
-impl core::fmt::Debug for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_step::StepSchema
-impl core::marker::StructuralPartialEq for cadmpeg_codec_step::StepSchema
-impl core::marker::Freeze for cadmpeg_codec_step::StepSchema
-impl core::marker::Send for cadmpeg_codec_step::StepSchema
-impl core::marker::Sync for cadmpeg_codec_step::StepSchema
-impl core::marker::Unpin for cadmpeg_codec_step::StepSchema
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepSchema
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepSchema
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepSchema
 pub struct cadmpeg_codec_step::StepCodec
 pub cadmpeg_codec_step::StepCodec::options: cadmpeg_codec_step::StepWriteOptions
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_step::StepCodec
@@ -58,36 +25,12 @@ impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_step::StepCodec
 pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_step::StepCodec::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
-impl core::clone::Clone for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::clone(&self) -> cadmpeg_codec_step::StepCodec
-impl core::default::Default for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::default() -> cadmpeg_codec_step::StepCodec
-impl core::fmt::Debug for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_codec_step::StepCodec
-impl core::marker::Send for cadmpeg_codec_step::StepCodec
-impl core::marker::Sync for cadmpeg_codec_step::StepCodec
-impl core::marker::Unpin for cadmpeg_codec_step::StepCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepCodec
 pub struct cadmpeg_codec_step::StepWriteOptions
 pub cadmpeg_codec_step::StepWriteOptions::author: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::originating_system: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::product_name: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::timestamp: alloc::string::String
-impl core::clone::Clone for cadmpeg_codec_step::StepWriteOptions
-pub fn cadmpeg_codec_step::StepWriteOptions::clone(&self) -> cadmpeg_codec_step::StepWriteOptions
 impl core::default::Default for cadmpeg_codec_step::StepWriteOptions
 pub fn cadmpeg_codec_step::StepWriteOptions::default() -> Self
-impl core::fmt::Debug for cadmpeg_codec_step::StepWriteOptions
-pub fn cadmpeg_codec_step::StepWriteOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::Send for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::Sync for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::Unpin for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepWriteOptions
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepWriteOptions
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepWriteOptions
 pub fn cadmpeg_codec_step::write_step(&cadmpeg_ir::document::CadIr, &mut impl core::io::write::Write + ?core::marker::Sized, cadmpeg_codec_step::StepSchema, &cadmpeg_codec_step::StepWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_codec_step::StepError>

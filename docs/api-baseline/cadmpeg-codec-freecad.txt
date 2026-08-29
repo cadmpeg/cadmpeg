@@ -1,24 +1,8 @@
-# generated at 5ab799ccb
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_freecad
 pub enum cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Document
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Object(&'a str)
-impl<'a> core::clone::Clone for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-pub fn cadmpeg_codec_freecad::FcstdPropertyOwner<'a>::clone(&self) -> cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::cmp::Eq for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::cmp::PartialEq for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-pub fn cadmpeg_codec_freecad::FcstdPropertyOwner<'a>::eq(&self, &cadmpeg_codec_freecad::FcstdPropertyOwner<'a>) -> bool
-impl<'a> core::fmt::Debug for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-pub fn cadmpeg_codec_freecad::FcstdPropertyOwner<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::marker::StructuralPartialEq for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::marker::Freeze for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::marker::Send for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::marker::Sync for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::marker::Unpin for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub struct cadmpeg_codec_freecad::FcstdCodec
 impl cadmpeg_codec_freecad::FcstdCodec
 pub fn cadmpeg_codec_freecad::FcstdCodec::encode_with_options(&self, &cadmpeg_ir::document::CadIr, &mut dyn core::io::write::Write, cadmpeg_codec_freecad::FcstdWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_core::error::CodecError>
@@ -34,20 +18,6 @@ impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_freecad::FcstdCodec
 pub fn cadmpeg_codec_freecad::FcstdCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_freecad::FcstdCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
-impl core::clone::Clone for cadmpeg_codec_freecad::FcstdCodec
-pub fn cadmpeg_codec_freecad::FcstdCodec::clone(&self) -> cadmpeg_codec_freecad::FcstdCodec
-impl core::default::Default for cadmpeg_codec_freecad::FcstdCodec
-pub fn cadmpeg_codec_freecad::FcstdCodec::default() -> cadmpeg_codec_freecad::FcstdCodec
-impl core::fmt::Debug for cadmpeg_codec_freecad::FcstdCodec
-pub fn cadmpeg_codec_freecad::FcstdCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_freecad::FcstdCodec
-impl core::marker::Freeze for cadmpeg_codec_freecad::FcstdCodec
-impl core::marker::Send for cadmpeg_codec_freecad::FcstdCodec
-impl core::marker::Sync for cadmpeg_codec_freecad::FcstdCodec
-impl core::marker::Unpin for cadmpeg_codec_freecad::FcstdCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_freecad::FcstdCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_freecad::FcstdCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_freecad::FcstdCodec
 pub struct cadmpeg_codec_freecad::FcstdDocumentBuilder
 impl cadmpeg_codec_freecad::FcstdDocumentBuilder
 pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::add_dependency(&mut self, &str, &str) -> core::result::Result<&mut Self, cadmpeg_core::error::CodecError>
@@ -56,17 +26,6 @@ pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::add_property(&mut self, &str
 pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::add_side_entry(&mut self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::vec::Vec<u8>>) -> core::result::Result<&mut Self, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::build(self) -> core::result::Result<cadmpeg_ir::document::CadIr, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::new(impl core::convert::Into<alloc::string::String>) -> Self
-impl core::clone::Clone for cadmpeg_codec_freecad::FcstdDocumentBuilder
-pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::clone(&self) -> cadmpeg_codec_freecad::FcstdDocumentBuilder
-impl core::fmt::Debug for cadmpeg_codec_freecad::FcstdDocumentBuilder
-pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_codec_freecad::FcstdDocumentBuilder
-impl core::marker::Send for cadmpeg_codec_freecad::FcstdDocumentBuilder
-impl core::marker::Sync for cadmpeg_codec_freecad::FcstdDocumentBuilder
-impl core::marker::Unpin for cadmpeg_codec_freecad::FcstdDocumentBuilder
-impl core::marker::UnsafeUnpin for cadmpeg_codec_freecad::FcstdDocumentBuilder
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_freecad::FcstdDocumentBuilder
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_freecad::FcstdDocumentBuilder
 pub struct cadmpeg_codec_freecad::FcstdPropertyValue
 impl cadmpeg_codec_freecad::FcstdPropertyValue
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::attribute(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
@@ -74,40 +33,9 @@ pub fn cadmpeg_codec_freecad::FcstdPropertyValue::empty(impl core::convert::Into
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::text(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::with_attribute(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::with_child(self, Self) -> Self
-impl core::clone::Clone for cadmpeg_codec_freecad::FcstdPropertyValue
-pub fn cadmpeg_codec_freecad::FcstdPropertyValue::clone(&self) -> cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::cmp::Eq for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::cmp::PartialEq for cadmpeg_codec_freecad::FcstdPropertyValue
-pub fn cadmpeg_codec_freecad::FcstdPropertyValue::eq(&self, &cadmpeg_codec_freecad::FcstdPropertyValue) -> bool
-impl core::fmt::Debug for cadmpeg_codec_freecad::FcstdPropertyValue
-pub fn cadmpeg_codec_freecad::FcstdPropertyValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::marker::Freeze for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::marker::Send for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::marker::Sync for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::marker::Unpin for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::marker::UnsafeUnpin for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_freecad::FcstdPropertyValue
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_freecad::FcstdPropertyValue
 pub struct cadmpeg_codec_freecad::FcstdWriteOptions
 pub cadmpeg_codec_freecad::FcstdWriteOptions::file_version: u32
 pub cadmpeg_codec_freecad::FcstdWriteOptions::schema_version: u32
-impl core::clone::Clone for cadmpeg_codec_freecad::FcstdWriteOptions
-pub fn cadmpeg_codec_freecad::FcstdWriteOptions::clone(&self) -> cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::cmp::Eq for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::cmp::PartialEq for cadmpeg_codec_freecad::FcstdWriteOptions
-pub fn cadmpeg_codec_freecad::FcstdWriteOptions::eq(&self, &cadmpeg_codec_freecad::FcstdWriteOptions) -> bool
 impl core::default::Default for cadmpeg_codec_freecad::FcstdWriteOptions
 pub fn cadmpeg_codec_freecad::FcstdWriteOptions::default() -> Self
-impl core::fmt::Debug for cadmpeg_codec_freecad::FcstdWriteOptions
-pub fn cadmpeg_codec_freecad::FcstdWriteOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::marker::StructuralPartialEq for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::marker::Freeze for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::marker::Send for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::marker::Sync for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::marker::Unpin for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::marker::UnsafeUnpin for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_freecad::FcstdWriteOptions
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_freecad::FcstdWriteOptions
 pub fn cadmpeg_codec_freecad::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::Finding>

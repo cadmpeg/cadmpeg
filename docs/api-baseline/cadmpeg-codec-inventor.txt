@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_inventor
 pub struct cadmpeg_codec_inventor::InventorCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_inventor::InventorCodec
@@ -6,18 +6,4 @@ pub fn cadmpeg_codec_inventor::InventorCodec::decode_impl(&self, &cadmpeg_core::
 pub fn cadmpeg_codec_inventor::InventorCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_inventor::InventorCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_inventor::InventorCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl core::clone::Clone for cadmpeg_codec_inventor::InventorCodec
-pub fn cadmpeg_codec_inventor::InventorCodec::clone(&self) -> cadmpeg_codec_inventor::InventorCodec
-impl core::default::Default for cadmpeg_codec_inventor::InventorCodec
-pub fn cadmpeg_codec_inventor::InventorCodec::default() -> cadmpeg_codec_inventor::InventorCodec
-impl core::fmt::Debug for cadmpeg_codec_inventor::InventorCodec
-pub fn cadmpeg_codec_inventor::InventorCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_inventor::InventorCodec
-impl core::marker::Freeze for cadmpeg_codec_inventor::InventorCodec
-impl core::marker::Send for cadmpeg_codec_inventor::InventorCodec
-impl core::marker::Sync for cadmpeg_codec_inventor::InventorCodec
-impl core::marker::Unpin for cadmpeg_codec_inventor::InventorCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_inventor::InventorCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_inventor::InventorCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_inventor::InventorCodec
 pub fn cadmpeg_codec_inventor::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::Finding>
