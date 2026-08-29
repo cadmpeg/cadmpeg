@@ -210,7 +210,10 @@ fn build_result(
         "unknown_surface_faces".to_string(),
         stats.unknown_surface_faces,
     );
-    let dialects = vec![matched, kernel];
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
+            .expect("the ACIS kernel layer differs from the SAT primary"),
+    );
     let report = DecodeReport {
         dialects,
         format: FORMAT.to_string(),

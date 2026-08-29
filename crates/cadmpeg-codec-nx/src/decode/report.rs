@@ -275,7 +275,13 @@ pub(crate) fn build_geometry_report(
         ));
     }
 
-    let dialects = vec![crate::dialect::NxDialect::classify(&scan.container)];
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(
+            crate::dialect::NxDialect::classify(&scan.container),
+            Vec::new(),
+        )
+        .expect("a primary layer without extras is valid"),
+    );
     DecodeReport {
         dialects,
         format: crate::dialect::FORMAT.to_string(),

@@ -18,7 +18,7 @@ use crate::loss::F3dLossCode;
 /// states before the design segment is classified.
 fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
     cadmpeg_ir::report::DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "f3d".to_owned(),
         container_only: false,
         geometry_transferred: false,

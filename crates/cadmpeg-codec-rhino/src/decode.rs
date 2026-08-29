@@ -2541,12 +2541,13 @@ impl<'a> DecodeContext<'a> {
             .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");
         source_fidelity.retain_unknown_records("rhino", self.opaque_records);
-        let dialects = vec![crate::container::dialect_match(self.scan)];
+        let primary = crate::container::dialect_match(self.scan);
         // Charged from the reported admission itself, so the document-level
         // `AdmittedUnverified` and its loss cannot be reported apart.
-        losses.extend(
-            cadmpeg_core::dialect::primary_layer(&dialects, crate::dialect::FORMAT)
-                .and_then(crate::dialect::admission_loss),
+        losses.extend(crate::dialect::admission_loss(&primary));
+        let dialects = Some(
+            cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
+                .expect("a primary layer without extras is valid"),
         );
         DecodeResult::new(
             self.ir,

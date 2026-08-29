@@ -122,7 +122,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     assert_eq!(configuration.bodies, vec![body]);
 
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -178,7 +178,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     assert!(configuration.active.is_active());
 
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: false,
@@ -215,7 +215,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
         });
     }
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -256,7 +256,7 @@ fn incomplete_configuration_names_are_reported() {
         });
     }
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -302,7 +302,7 @@ fn active_configuration_partition_disagreement_is_reported() {
         native_ref: Some("native:configuration".into()),
     });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -353,7 +353,7 @@ fn incoherent_configuration_bodies_are_reported() {
         configuration("unresolved", 2, cadmpeg_ir::ConfigurationBodies::Unresolved),
     ];
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -403,7 +403,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         native_ref: Some("native:configuration".into()),
     });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -470,7 +470,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         native_ref: Some("native:configuration".into()),
     });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,

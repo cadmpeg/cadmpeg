@@ -274,7 +274,7 @@ mod tests {
         let text = CadIr::empty(Units::default()).to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
         let report = DecodeReport {
-            dialects: Vec::new(),
+            dialects: None,
             format: "test".into(),
             container_only: false,
             geometry_transferred: false,

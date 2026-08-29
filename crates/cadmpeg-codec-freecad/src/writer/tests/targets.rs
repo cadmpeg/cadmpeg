@@ -376,12 +376,13 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
         let round_trip = FcstdCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{label} output must decode, got {error}"));
-        let classified = cadmpeg_core::dialect::primary_layer(
-            &round_trip.report().dialects,
-            &round_trip.report().format,
-        )
-        .and_then(|entry| entry.dialect.clone())
-        .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));
+        let classified = round_trip
+            .report()
+            .dialects
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectLayers::primary)
+            .and_then(|entry| entry.dialect.clone())
+            .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));
         assert_eq!(
             classified, claimed,
             "{label}: the report claims {claimed} but the bytes are {classified}"

@@ -6,7 +6,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::{point_file, point_file_with_global};
 use crate::IgesVersion;
 use crate::{IgesCodec, IgesEncoder};
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::report::{FidelityResolution, WritePath};
@@ -334,10 +334,11 @@ fn compressed_global_with_version_flag(version_flag: &str) -> Vec<u8> {
 }
 
 /// The one dialect match of a report or summary.
-fn only_match(dialects: &[DialectMatch]) -> &DialectMatch {
-    assert_eq!(dialects.len(), 1, "{dialects:#?}");
-    assert_eq!(dialects[0].format, "iges");
-    &dialects[0]
+fn only_match(dialects: Option<&DialectLayers>) -> &DialectMatch {
+    let layers = dialects.expect("IGES reports dialect layers");
+    assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
+    assert_eq!(layers.primary().format, "iges");
+    layers.primary()
 }
 
 #[test]
@@ -349,7 +350,7 @@ fn compressed_ascii_classifies_into_its_own_representation_row() {
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
 
-    let matched = only_match(&decoded.report().dialects);
+    let matched = only_match(decoded.report().dialects.as_ref());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:5.3-compressed-ascii")
@@ -367,7 +368,7 @@ fn compressed_ascii_classifies_into_its_own_representation_row() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(&summary.dialects), matched);
+    assert_eq!(only_match(summary.dialects.as_ref()), matched);
 }
 
 #[test]
@@ -380,7 +381,7 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
 
-    let matched = only_match(&decoded.report().dialects);
+    let matched = only_match(decoded.report().dialects.as_ref());
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("iges:unknown")
@@ -406,5 +407,5 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert_eq!(only_match(&summary.dialects), matched);
+    assert_eq!(only_match(summary.dialects.as_ref()), matched);
 }

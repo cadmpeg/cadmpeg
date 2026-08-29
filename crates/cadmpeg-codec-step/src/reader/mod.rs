@@ -96,7 +96,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             ..Default::default()
         });
 
-        let dialects = vec![primary];
+        let dialects = Some(
+            cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
+                .expect("a primary layer without extras is valid"),
+        );
         let mut report = DecodeReport {
             dialects,
             format: crate::dialect::FORMAT.into(),

@@ -368,17 +368,21 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("FCStd inspection");
-    assert_eq!(summary.dialects.len(), 1);
-    assert_eq!(summary.dialects[0].format, "fcstd");
+    let matched = summary
+        .dialects
+        .as_ref()
+        .expect("FCStd inspection reports dialect layers")
+        .primary();
+    assert_eq!(matched.format, "fcstd");
     assert_eq!(
-        summary.dialects[0]
+        matched
             .dialect
             .as_ref()
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("fcstd:schema-4")
     );
     assert_eq!(
-        summary.dialects[0].admission,
+        matched.admission,
         cadmpeg_core::dialect::Admission::Admitted
     );
 
@@ -390,8 +394,8 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         .iter()
         .all(|loss| loss.code != unverified));
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.dialect, summary.dialects[0].dialect);
-    assert_eq!(source.declared, summary.dialects[0].declared);
+    assert_eq!(source.dialect, matched.dialect);
+    assert_eq!(source.declared, matched.declared);
     assert_eq!(source.declared["schema_version"], "4");
     assert_eq!(source.declared["file_version"], "1");
     assert_eq!(source.declared["program_version"], "1.0");
@@ -411,14 +415,23 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         )
         .expect("FCStd inspection of an undeclared schema");
     assert_eq!(
-        summary.dialects[0]
+        summary
+            .dialects
+            .as_ref()
+            .expect("FCStd inspection reports dialect layers")
+            .primary()
             .dialect
             .as_ref()
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("fcstd:unknown")
     );
     assert_eq!(
-        summary.dialects[0].admission,
+        summary
+            .dialects
+            .as_ref()
+            .expect("FCStd inspection reports dialect layers")
+            .primary()
+            .admission,
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
         }
@@ -482,11 +495,23 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
     assert!(!drifted.ir().model.bodies.is_empty());
 
     assert_eq!(
-        baseline.report().dialects[0].admission,
+        baseline
+            .report()
+            .dialects
+            .as_ref()
+            .expect("FCStd decode reports dialect layers")
+            .primary()
+            .admission,
         cadmpeg_core::dialect::Admission::Admitted
     );
     assert_eq!(
-        drifted.report().dialects[0].admission,
+        drifted
+            .report()
+            .dialects
+            .as_ref()
+            .expect("FCStd decode reports dialect layers")
+            .primary()
+            .admission,
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
         }
@@ -514,7 +539,13 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
         let declared = decode(rewrite_schema_version(CORE_OPERATIONS, version));
         assert_eq!(charged(&declared), 0, "schema {version} charged a loss");
         assert_eq!(
-            declared.report().dialects[0].admission,
+            declared
+                .report()
+                .dialects
+                .as_ref()
+                .expect("FCStd decode reports dialect layers")
+                .primary()
+                .admission,
             cadmpeg_core::dialect::Admission::Admitted
         );
     }

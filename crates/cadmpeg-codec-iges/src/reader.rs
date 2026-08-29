@@ -226,8 +226,7 @@ pub(crate) fn inspect(
     let primary = IgesDialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses(&primary);
     losses.extend(parse.record_losses());
-    let mut summary = card::summarize(&parse.scan);
-    summary.dialects.push(primary);
+    let mut summary = card::summarize(&parse.scan, primary);
     summary.notes.extend(parse.global.summary_notes());
     summary
         .notes
@@ -549,7 +548,10 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let dialects = vec![primary];
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
+            .expect("a primary layer without extras is valid"),
+    );
     let mut result = DecodeResult::new(
         ir,
         DecodeReport {

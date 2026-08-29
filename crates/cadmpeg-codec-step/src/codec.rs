@@ -253,7 +253,10 @@ impl CodecBackend for StepCodec {
             });
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
-        let dialects = vec![StepDialect::classify(&exchange)];
+        let dialects = Some(
+            cadmpeg_core::dialect::DialectLayers::new(StepDialect::classify(&exchange), Vec::new())
+                .expect("a primary layer without extras is valid"),
+        );
         Ok(ContainerSummary {
             dialects,
             format: crate::dialect::FORMAT.into(),

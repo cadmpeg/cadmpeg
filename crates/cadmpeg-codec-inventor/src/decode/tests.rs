@@ -195,6 +195,8 @@ fn kernel_layer_of(bytes: &[u8]) -> (cadmpeg_core::dialect::DialectMatch, Vec<St
     let report = decoded.report();
     let layer = report
         .dialects
+        .as_ref()
+        .expect("the report is classified")
         .iter()
         .find(|matched| matched.format == "acis")
         .unwrap_or_else(|| panic!("a kernel layer, got {:#?}", report.dialects))

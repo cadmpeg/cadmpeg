@@ -293,7 +293,12 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .losses
             .iter()
             .any(|loss| loss.code == recovery);
-        let matched = &result.report().dialects[0];
+        let matched = result
+            .report()
+            .dialects
+            .as_ref()
+            .expect("SAT reports dialect layers")
+            .primary();
 
         assert_eq!(matched.admission, case.admission, "{}", case.label);
         assert_eq!(
@@ -336,10 +341,14 @@ fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{}: {error}", case.label));
-        let dialects = &result.report().dialects;
+        let dialects = result
+            .report()
+            .dialects
+            .as_ref()
+            .expect("SAT reports dialect layers");
 
-        assert_eq!(dialects.len(), 2, "{}", case.label);
-        let matched = &dialects[0];
+        assert_eq!(dialects.iter().count(), 2, "{}", case.label);
+        let matched = dialects.primary();
         assert_eq!(matched.format, FORMAT, "{}", case.label);
         assert_eq!(
             matched.dialect.as_ref().map(DialectId::as_str),
@@ -347,9 +356,10 @@ fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source
             "{}",
             case.label
         );
-        assert_eq!(dialects[1].format, "acis", "{}", case.label);
+        let kernel = dialects.iter().nth(1).expect("SAT reports its ACIS layer");
+        assert_eq!(kernel.format, "acis", "{}", case.label);
         assert_eq!(
-            dialects[1].dialect.as_ref().map(DialectId::as_str),
+            kernel.dialect.as_ref().map(DialectId::as_str),
             Some(case.kernel_id),
             "{}",
             case.label
@@ -383,7 +393,17 @@ fn inspect_and_decode_agree_on_the_row_and_the_admission() {
             )
             .unwrap_or_else(|error| panic!("{}: {error}", case.label));
 
-        assert_eq!(summary.dialects.len(), 2, "{}", case.label);
+        assert_eq!(
+            summary
+                .dialects
+                .as_ref()
+                .expect("SAT inspection reports dialect layers")
+                .iter()
+                .count(),
+            2,
+            "{}",
+            case.label
+        );
         assert_eq!(
             summary.dialects,
             decoded.report().dialects,

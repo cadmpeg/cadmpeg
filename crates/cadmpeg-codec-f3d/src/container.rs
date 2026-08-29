@@ -547,8 +547,10 @@ pub fn summarize(
             .to_string(),
     );
 
-    let mut dialects = vec![scan.dialect.clone()];
-    dialects.extend_from_slice(kernel_layers);
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(scan.dialect.clone(), kernel_layers.to_vec())
+            .expect("kernel layers use formats other than the F3D primary"),
+    );
     ContainerSummary {
         dialects,
         format: FORMAT.to_string(),

@@ -555,7 +555,10 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeReport {
-        dialects: Vec::new(),
+        dialects: Some(
+            cadmpeg_core::dialect::DialectLayers::new(crate::dialect::classify(scan), Vec::new())
+                .expect("a primary layer without extras is valid"),
+        ),
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -676,7 +679,10 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     ));
 
     DecodeReport {
-        dialects: Vec::new(),
+        dialects: Some(
+            cadmpeg_core::dialect::DialectLayers::new(crate::dialect::classify(scan), Vec::new())
+                .expect("a primary layer without extras is valid"),
+        ),
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,

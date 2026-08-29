@@ -14,7 +14,6 @@
 use super::*;
 use crate::container::scan_bytes;
 use crate::test_support::{make_block, outer_header};
-use cadmpeg_core::dialect::primary_layer;
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
@@ -305,11 +304,14 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
 fn exactly_one_entry_names_the_reporting_format() {
     let bytes = container_declaring("13100");
     let scan = scan_bytes(&bytes);
-    let dialects = vec![SldprtDialect::classify_scan(&scan)];
+    let dialects = [SldprtDialect::classify_scan(&scan)];
 
     assert_eq!(dialects.len(), 1);
     assert_eq!(
-        primary_layer(&dialects, FORMAT).and_then(|entry| entry.dialect.as_ref()),
+        dialects
+            .iter()
+            .find(|entry| entry.format == FORMAT)
+            .and_then(|entry| entry.dialect.as_ref()),
         Some(&SldprtDialect::SwVersion12000Plus.id())
     );
 }

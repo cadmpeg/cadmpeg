@@ -158,7 +158,10 @@ pub(in super::super) fn build_report(
     push_structural_layer_notes(&mut losses, scan);
     push_coverage_drop_losses(&mut losses, &coverage);
 
-    let dialects = vec![primary];
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(primary, Vec::new())
+            .expect("a primary layer without extras is valid"),
+    );
     DecodeReport {
         dialects,
         format: crate::dialect::FORMAT.to_string(),

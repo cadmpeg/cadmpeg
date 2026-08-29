@@ -1678,8 +1678,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
-    let mut dialects = vec![primary];
-    dialects.extend(kernel_match);
+    let dialects = Some(
+        cadmpeg_core::dialect::DialectLayers::new(primary, kernel_match.into_iter().collect())
+            .expect("the ACIS kernel layer differs from the Inventor primary"),
+    );
     Ok(DecodeResult::new(
         ir,
         DecodeReport {

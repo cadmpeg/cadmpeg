@@ -50,7 +50,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         native_ref: None,
     });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -84,7 +84,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     };
     *parting_tool = None;
     let mut neutral_plane_report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -182,7 +182,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         });
     }
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -229,7 +229,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         native_ref: None,
     });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -480,7 +480,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         native_ref: None,
     });
     let mut report = DecodeReport {
-        dialects: Vec::new(),
+        dialects: None,
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,

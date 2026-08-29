@@ -285,12 +285,13 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{version:?} output must decode, got {error}"));
-        let classified = cadmpeg_core::dialect::primary_layer(
-            &decoded.report().dialects,
-            &decoded.report().format,
-        )
-        .and_then(|entry| entry.dialect.clone())
-        .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"));
+        let classified = decoded
+            .report()
+            .dialects
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectLayers::primary)
+            .and_then(|entry| entry.dialect.clone())
+            .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"));
         assert_eq!(
             classified, claimed,
             "{version:?}: the report claims {claimed} but the bytes are {classified}"

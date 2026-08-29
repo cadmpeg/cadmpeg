@@ -26,7 +26,6 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::primary_layer;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -79,8 +78,11 @@ fn classify(format: &str, bytes: &[u8]) -> String {
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .unwrap_or_else(|error| panic!("inspecting a {format} fixture: {error}"));
-    primary_layer(&summary.dialects, format)
+    summary
+        .dialects
+        .as_ref()
         .unwrap_or_else(|| panic!("{format} inspect reported no primary layer"))
+        .primary()
         .dialect
         .as_ref()
         .map_or_else(|| "none".to_owned(), |id| id.as_str().to_owned())

@@ -148,7 +148,7 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
-    if let Some(line) = crate::registry_view::dialect_line(&summary.dialects, &summary.format) {
+    if let Some(line) = crate::registry_view::dialect_line(summary.dialects.as_ref()) {
         println!("{line}");
     }
     println!();

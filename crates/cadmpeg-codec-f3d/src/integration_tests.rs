@@ -224,8 +224,9 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
     let matched = drifted
         .report()
         .dialects
-        .first()
-        .expect("the primary layer is classified");
+        .as_ref()
+        .expect("the primary layer is classified")
+        .primary();
     assert_eq!(
         matched
             .dialect
@@ -423,12 +424,13 @@ fn the_patch_path_names_the_preserved_dialect() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .expect("the patched archive decodes");
     assert_eq!(
-        cadmpeg_core::dialect::primary_layer(
-            &redecoded.report().dialects,
-            &redecoded.report().format,
-        )
-        .and_then(|entry| entry.dialect.as_ref())
-        .map(cadmpeg_core::dialect::DialectId::as_str),
+        redecoded
+            .report()
+            .dialects
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectLayers::primary)
+            .and_then(|entry| entry.dialect.as_ref())
+            .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("f3d:unknown")
     );
 }
@@ -474,12 +476,13 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         let redecoded = F3dCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{label} output must decode, got {error}"));
-        let classified = cadmpeg_core::dialect::primary_layer(
-            &redecoded.report().dialects,
-            &redecoded.report().format,
-        )
-        .and_then(|entry| entry.dialect.clone())
-        .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));
+        let classified = redecoded
+            .report()
+            .dialects
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectLayers::primary)
+            .and_then(|entry| entry.dialect.clone())
+            .unwrap_or_else(|| panic!("{label} output must classify a host dialect"));
         assert_eq!(
             classified.as_str(),
             claimed,

@@ -147,7 +147,8 @@ pub struct DialectMatch {
 ///
 /// Construction rejects an extra layer whose format equals the primary
 /// layer's format. This makes the primary unique without adding a marker to
-/// the serialized rows.
+/// the serialized rows. Enclosing reports deserialize the flat wire array
+/// because their `format` field identifies which row is primary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectLayers {
     primary: DialectMatch,
@@ -239,26 +240,6 @@ impl DialectMatch {
     }
 }
 
-/// Returns the primary-layer match in `dialects`, the one whose `format` equals
-/// the reporting layer's own `format`.
-///
-/// The primary layer needs no marker field and no ordering convention: exactly
-/// one entry's `format` equals the report's own, and that entry is the primary.
-/// Consumers never index by position.
-#[must_use]
-pub fn primary_layer<'a>(dialects: &'a [DialectMatch], format: &str) -> Option<&'a DialectMatch> {
-    let mut found = None;
-    for entry in dialects {
-        if entry.format == format {
-            if found.is_some() {
-                return None;
-            }
-            found = Some(entry);
-        }
-    }
-    found
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -311,21 +292,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&unverified).unwrap(),
             "{\"admitted_unverified\":{\"nearest\":\"acis:save-format-217\"}}"
-        );
-    }
-
-    #[test]
-    fn exactly_one_entry_may_name_the_reporting_format() {
-        let primary = [layer("rhino"), layer("acis")];
-        assert_eq!(
-            primary_layer(&primary, "rhino").map(|entry| entry.format.as_str()),
-            Some("rhino")
-        );
-        assert_eq!(primary_layer(&[], "rhino"), None);
-        assert_eq!(primary_layer(&[layer("acis")], "rhino"), None);
-        assert_eq!(
-            primary_layer(&[layer("rhino"), layer("rhino")], "rhino"),
-            None
         );
     }
 
