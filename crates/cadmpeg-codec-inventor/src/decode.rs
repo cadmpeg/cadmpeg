@@ -19,7 +19,7 @@ use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, Unknown
 
 use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
-use crate::dialect::{kernel_dialect_loss, kernel_layer, DialectRecovery};
+use crate::dialect::{kernel_dialect_loss, kernel_layer, unknown_kernel_layer, DialectRecovery};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
@@ -1335,6 +1335,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     }
                 }
                 Err(error) => {
+                    kernel_match = Some(unknown_kernel_layer());
                     geometry_failure = Some(error.to_string());
                     None
                 }

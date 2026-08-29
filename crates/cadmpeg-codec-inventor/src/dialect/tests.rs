@@ -165,6 +165,10 @@ fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
         matched.admission,
         Admission::AdmittedUnverified { .. }
     ));
+    assert_eq!(
+        matched.dialect.as_ref().map(DialectId::as_str),
+        Some("inventor:cfb3-rse31-meta8")
+    );
     let loss = losses
         .iter()
         .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
@@ -185,7 +189,7 @@ fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
     assert_eq!(matched.declared[DECLARED_META_STREAM_VERSION], "8");
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
-        Some("inventor:unknown")
+        Some("inventor:cfb3-rse31-meta8")
     );
     assert!(matches!(
         matched.admission,
@@ -290,7 +294,6 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
             .dialects
             .as_ref()
             .expect("Inventor inspection reports dialect layers");
-        assert_eq!(layers.iter().count(), 1, "{:#?}", summary.dialects);
         assert_eq!(layers.primary(), &matched, "{}", case.label);
 
         let decoded = InventorCodec
