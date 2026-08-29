@@ -3689,7 +3689,16 @@ fn project_design_history(
         );
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
-    crate::history::project_configuration_design_states(ir, histories, lanes, pmi_dimensions);
+    let dialects = report_dialects(scan);
+    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
+        .and_then(crate::dialect::SldprtDialect::form_code_padding);
+    crate::history::project_configuration_design_states(
+        ir,
+        histories,
+        lanes,
+        pmi_dimensions,
+        form_padding,
+    );
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_local_sha256".into(),

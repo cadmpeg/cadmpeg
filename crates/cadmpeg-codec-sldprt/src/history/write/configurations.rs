@@ -110,6 +110,12 @@ pub(crate) fn sync_configuration_design_state(
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
 ) -> Result<(), CodecError> {
+    let form_padding = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.dialect.as_ref())
+        .and_then(crate::dialect::SldprtDialect::from_match)
+        .and_then(crate::dialect::SldprtDialect::form_code_padding);
     let feature_names = ir
         .model
         .features
@@ -144,6 +150,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
+        form_padding,
     );
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
@@ -215,6 +222,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
+        form_padding,
     );
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();

@@ -527,7 +527,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="Sweep" Type="Localized" id="137"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default"/><Feature Name="Sweep" Type="Localized" id="137"/></Keywords>"#,
     ));
     let mut resolved = 15u32.to_le_bytes().to_vec();
     resolved.extend_from_slice(&[0; 8]);
@@ -547,6 +547,16 @@ fn decode_projects_compact_solid_sweep_join_operation() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].definition,
+        FeatureDefinition::Sweep {
+            mode: SweepMode::Solid {
+                op: BooleanOp::Join
+            },
+            ..
+        }
+    ));
+    let feature_id = &decoded.ir().model.features[0].id;
+    assert!(matches!(
+        decoded.ir().model.configurations[0].feature_states[feature_id].definition,
         FeatureDefinition::Sweep {
             mode: SweepMode::Solid {
                 op: BooleanOp::Join
