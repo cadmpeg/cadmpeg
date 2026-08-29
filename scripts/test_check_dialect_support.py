@@ -199,7 +199,7 @@ class TestVocabulary(SupportCase):
                 )
                 self.assertClean(
                     support.replace(
-                        'read = "L2"', f'read = "{word}"\nreason = "a stated reason"'
+                        'read = "L2"', f'read = "{word}"\nreason = "`demo:one` has a stated reason"'
                     )
                 )
 
@@ -286,6 +286,31 @@ class TestReasons(SupportCase):
             ),
             "read refused requires a reason",
         )
+
+    def test_refusal_reason_requires_registry_id_or_named_evidence_gap(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
+            'reason = "no demo two file exists"', 'reason = "parser unavailable"'
+        )
+        self.assertFires(support, "must reference a registry id or a named evidence gap")
+
+    def test_refusal_reason_rejects_unknown_registry_id(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
+            'reason = "no demo two file exists"', 'reason = "`demo:missing` has no parser"'
+        )
+        self.assertFires(support, "references unknown registry id demo:missing")
+
+    def test_refusal_reason_accepts_its_registry_id(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
+            'reason = "no demo two file exists"', 'reason = "`demo:two` has no parser"'
+        ).replace('scored = ["demo:one", "demo:two"]', 'scored = ["demo:one"]')
+        self.assertClean(support)
+
+    def test_refusal_reason_accepts_a_named_evidence_gap(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
+            'reason = "no demo two file exists"',
+            'reason = "evidence gap `missing-container-marker` prevents classification"',
+        ).replace('scored = ["demo:one", "demo:two"]', 'scored = ["demo:one"]')
+        self.assertClean(support)
 
 
 class TestFormatBlocks(SupportCase):

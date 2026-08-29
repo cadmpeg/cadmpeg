@@ -16,7 +16,8 @@ The rules, all cross-referencing:
 * **fixture gating** -- a row may not claim a read score (``L0``..``L9``)
   with no golden snapshot domain. ``detected`` is the honest cell for an unwitnessed
   dialect, and the resulting unevenness is the output, not a defect;
-* a row that is ``read = "refused"`` carries a ``reason``;
+* a row that is ``read = "refused"`` carries a ``reason`` that references a
+  declared registry id or a named evidence gap;
 * compiled write-catalog policy is checked in ``cadmpeg-registry`` tests,
   against the embedded identity and support registries.
 
@@ -65,6 +66,8 @@ READ_OTHER = frozenset({"detected", "refused", "unclassified-recovered"})
 READ_VALUES = READ_SCORES | READ_OTHER
 
 WRITE_VALUES = frozenset({"verified", "emitted", "preserved", "none"})
+EVIDENCE_GAP = re.compile(r"evidence gap `([a-z0-9]+(?:-[a-z0-9]+)*)`")
+REGISTRY_ID = re.compile(r"`([a-z0-9]+:[a-z0-9.-]+)`")
 
 
 def _is_table(value: object) -> bool:
@@ -144,6 +147,14 @@ def check_row(
 
     if read == "refused" and not (isinstance(reason, str) and reason.strip()):
         failures.append(f"{label}: read refused requires a reason")
+    elif read == "refused" and isinstance(reason, str):
+        referenced_ids = set(REGISTRY_ID.findall(reason))
+        for unknown_id in sorted(referenced_ids - known):
+            failures.append(f"{label}: refusal reason references unknown registry id {unknown_id}")
+        if not referenced_ids and EVIDENCE_GAP.search(reason) is None:
+            failures.append(
+                f"{label}: refusal reason must reference a registry id or a named evidence gap"
+            )
     return dialect_id, read, write
 
 
