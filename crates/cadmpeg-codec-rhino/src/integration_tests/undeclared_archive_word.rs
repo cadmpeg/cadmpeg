@@ -33,7 +33,7 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
     assert_eq!(
         matched.admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-90"),
+            using: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-90"),
         }
     );
     assert_eq!(matched.declared()["archive_version"], "100");

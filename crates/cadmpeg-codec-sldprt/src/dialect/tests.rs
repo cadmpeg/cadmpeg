@@ -230,7 +230,7 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
 
         let expected = if residual {
             Admission::AdmittedUnverified {
-                nearest: SldprtDialect::Unknown.id(),
+                using: SldprtDialect::Unknown.id(),
             }
         } else {
             Admission::Admitted
@@ -319,7 +319,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     assert_eq!(
         matched.admission(),
         Admission::AdmittedUnverified {
-            nearest: SldprtDialect::Unknown.id()
+            using: SldprtDialect::Unknown.id()
         }
     );
     assert!(dialect_loss(&matched).is_some());

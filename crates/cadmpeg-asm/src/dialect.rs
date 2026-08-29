@@ -16,7 +16,7 @@
 //! whatever it reads is reported as it read. What the band decides is how the
 //! host labels the result — [`acis_admission`] returns either
 //! `Admission::Admitted` or `Admission::AdmittedUnverified` with
-//! [`nearest_verified_acis`] as `nearest`, and the host charges its kernel-layer
+//! [`nearest_verified_acis`] as `using`, and the host charges its kernel-layer
 //! recovery loss.
 
 use std::collections::BTreeMap;
@@ -124,16 +124,16 @@ pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
         Admission::Admitted
     } else {
         Admission::AdmittedUnverified {
-            nearest: nearest_verified_acis(save_format_major),
+            using: nearest_verified_acis(save_format_major),
         }
     }
 }
 
 /// Describe recovery through the nearest verified Spatial ACIS grammar.
 #[must_use]
-pub fn acis_recovery_message(subject: &str, declared: &str, nearest: &DialectId) -> String {
+pub fn acis_recovery_message(subject: &str, declared: &str, using: &DialectId) -> String {
     format!(
-        "{subject} declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{nearest}` declares, and what they decoded is reported as it decoded"
+        "{subject} declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"
     )
 }
 
@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(
             acis_admission(Some(700)),
             Admission::AdmittedUnverified {
-                nearest: ACIS_SAVE_FORMAT_218
+                using: ACIS_SAVE_FORMAT_218
             }
         );
     }

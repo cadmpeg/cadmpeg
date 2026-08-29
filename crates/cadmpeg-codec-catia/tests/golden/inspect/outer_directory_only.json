@@ -5,7 +5,7 @@
     "primary": {
       "admission": {
         "admitted_unverified": {
-          "nearest": "catia:unknown"
+          "using": "catia:unknown"
         }
       },
       "dialect": "catia:unknown",

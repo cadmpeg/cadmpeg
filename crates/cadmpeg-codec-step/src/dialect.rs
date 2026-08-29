@@ -284,7 +284,7 @@ impl StepDialect {
     const fn admission(self) -> Admission {
         if matches!(self, Self::Unknown) {
             Admission::AdmittedUnverified {
-                nearest: NEAREST_STRATEGY.id(),
+                using: NEAREST_STRATEGY.id(),
             }
         } else {
             Admission::Admitted
@@ -390,7 +390,7 @@ fn implementation_level(exchange: &Exchange) -> Option<String> {
 /// the string and reading the exchange with the AP242 entity vocabulary
 /// anyway, which is a recovery, not a verified read.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
+    let Admission::AdmittedUnverified { using } = matched.admission() else {
         return None;
     };
     let declaration = matched
@@ -402,7 +402,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         );
     Some(StepLossCode::SourceDialectUnverified.note(format!(
         "{declaration}; it satisfies no declared STEP dialect, so this decode read the exchange \
-         with the entity vocabulary verified for {nearest}"
+with the entity vocabulary verified for {using}"
     )))
 }
 

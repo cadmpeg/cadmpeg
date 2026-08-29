@@ -17,6 +17,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
 [[change]]
+commit = "442491a677de4875b8adb38c9189215f1ff1e20e"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::dialect::Admission::AdmittedUnverified::{nearest -> using}"
+reason = "the field names the dialect strategy applied by the parser; no distance metric exists"
+
+[[change]]
 commit = "d219d8e3660f4c63d5fd8977e19c8a45b8169ffc"
 crate = "cadmpeg-codec-step"
 kind = "visibility"

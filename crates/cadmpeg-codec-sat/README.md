@@ -78,7 +78,7 @@ Save-format majors 217 and 218 are the verified Spatial ACIS bands. An
 ACIS-branch stream, binary or text, outside those majors takes the same header
 reading, SAB or text framing, and record decode: the save format bands the
 admission, not the decode. Such a stream reports
-`Admission::AdmittedUnverified`, whose `nearest` names the verified band whose
+`Admission::AdmittedUnverified`, whose `using` names the verified band whose
 grammar was substituted, and charges `source.kernel-dialect-unverified`. What its
 records decoded is reported as it decoded, down to `unknown_records` coverage
 and a blocking geometry loss when nothing carried.

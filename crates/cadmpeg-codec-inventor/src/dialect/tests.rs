@@ -211,7 +211,7 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
-                nearest: InventorDialect::Cfb3Rse31Meta8.id(),
+                using: InventorDialect::Cfb3Rse31Meta8.id(),
             }
         };
         assert_eq!(matched.admission(), expected_admission, "{}", case.label);

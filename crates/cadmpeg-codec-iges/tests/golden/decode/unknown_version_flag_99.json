@@ -1016,7 +1016,7 @@
       "dialect": {
         "admission": {
           "admitted_unverified": {
-            "nearest": "iges:5.3-fixed-ascii"
+            "using": "iges:5.3-fixed-ascii"
           }
         },
         "declared": {
@@ -1045,7 +1045,7 @@
       "primary": {
         "admission": {
           "admitted_unverified": {
-            "nearest": "iges:5.3-fixed-ascii"
+            "using": "iges:5.3-fixed-ascii"
           }
         },
         "declared": {

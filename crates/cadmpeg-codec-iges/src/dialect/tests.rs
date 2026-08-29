@@ -252,7 +252,7 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
                 Admission::Admitted
             } else {
                 Admission::AdmittedUnverified {
-                    nearest: DialectId::pinned(nearest_id),
+                    using: DialectId::pinned(nearest_id),
                 }
             };
             assert_eq!(matched.admission(), expected_admission, "{context}");
@@ -313,7 +313,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
     assert_eq!(
         matched.admission(),
         Admission::AdmittedUnverified {
-            nearest: DialectId::pinned("iges:5.3-fixed-ascii"),
+            using: DialectId::pinned("iges:5.3-fixed-ascii"),
         }
     );
     assert_eq!(matched.declared()["version_flag"], "2");
@@ -346,7 +346,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     assert_eq!(
         matched.admission(),
         Admission::AdmittedUnverified {
-            nearest: DialectId::pinned("iges:5.3-fixed-ascii"),
+            using: DialectId::pinned("iges:5.3-fixed-ascii"),
         }
     );
     assert_eq!(matched.declared()["version_flag"], "99");

@@ -346,7 +346,7 @@ impl IgesDialect {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
-                nearest: Self::nearest_verified(representation).id(),
+                using: Self::nearest_verified(representation).id(),
             }
         };
         let mut declared = BTreeMap::new();

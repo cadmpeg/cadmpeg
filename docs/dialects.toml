@@ -75,7 +75,7 @@ complete = true
 
 # Version-flag values 1, 2, 3, 4, 5, and 7 have distinct Fixed ASCII identity
 # rows. Their Global tables recover through the 5.1 through 5.3 field layout,
-# so admission is `AdmittedUnverified`, `nearest` is the representation's 5.3
+# so admission is `AdmittedUnverified`, `using` is the representation's 5.3
 # row, and decode charges `iges/source.dialect-unverified`. Flags 6 and 8
 # through 11 use the verified 4.0 and 5.0 through 5.3 tables. Flags 12 and 99
 # classify as `iges:unknown`; their effective grammar version is 5.3.
@@ -662,7 +662,7 @@ witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
 # container decode test only `schema_version == "2"` and use that vocabulary
 # for the `else` branch (persistence.rs:52-60, container.rs:224-237).
 # `FcstdDialect::classify` returns `Admission::AdmittedUnverified`, names
-# `fcstd:schema-4` as the nearest row, and both decode branches charge
+# `fcstd:schema-4` as the row in use, and both decode branches charge
 # `fcstd/source.dialect-unverified` (dialect.rs:169-220). Schema 4 is the newer
 # row with that vocabulary and the writer's default.
 id = "fcstd:unknown"
@@ -1163,7 +1163,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
 id = "sat:acis-binary"
 title = "Bare Spatial ACIS binary stream"
 discriminants = { magic = "ACIS BinaryFile" }
-seam = "the framed host stream is Admitted at every save format. The separate kernel layer is acis:save-format-217 or acis:save-format-218 with Admitted admission, or acis:save-format-binary-other with AdmittedUnverified admission and the nearer verified ACIS row as nearest. The kernel-layer recovery charges source.kernel-dialect-unverified"
+seam = "the framed host stream is Admitted at every save format. The separate kernel layer is acis:save-format-217 or acis:save-format-218 with Admitted admission, or acis:save-format-binary-other with AdmittedUnverified admission using the nearer verified ACIS row. The kernel-layer recovery charges source.kernel-dialect-unverified"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 
 [[dialect]]
@@ -1174,7 +1174,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere, with the nearer verified ACIS row as nearest and a source.kernel-dialect-unverified charge"
+seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere, using the nearer verified ACIS row and charging source.kernel-dialect-unverified"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 
 [[dialect]]
@@ -1236,7 +1236,7 @@ witness = "corpus:crates/cadmpeg-codec-f3d/tests/golden/fixtures/topology_base.f
 # magic. This is a verified band: `cadmpeg_asm::dialect::acis_band_verified`
 # (crates/cadmpeg-asm/src/dialect.rs:40) holds for it, so its hosts report
 # Admitted, and it is one of the two rows an unverified band names as
-# `nearest`.
+# `using`.
 id = "acis:save-format-217"
 title = "Spatial ACIS binary stream, save format 217"
 discriminants = { magic = "ACIS BinaryFile", save_format_major = "217" }

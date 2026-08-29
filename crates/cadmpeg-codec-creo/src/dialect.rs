@@ -107,9 +107,9 @@ impl Layout {
 /// [`DialectMatch`] in this codec, so a classification bug and the report
 /// can never disagree.
 ///
-/// # `nearest` on the unclassified path
+/// # `using` on the unclassified path
 ///
-/// [`Admission::AdmittedUnverified`] documents `nearest` as the dialect
+/// [`Admission::AdmittedUnverified`] documents `using` as the dialect
 /// whose declared strategy was substituted for the parse. Creo's
 /// unclassified path substitutes nothing — it skips every layout gate — so
 /// the only row that describes the strategy actually applied is
@@ -120,7 +120,7 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
     let layout = scan.framing.layout;
     let admission = if layout == Layout::Unknown {
         Admission::AdmittedUnverified {
-            nearest: Layout::Unknown.id(),
+            using: Layout::Unknown.id(),
         }
     } else {
         Admission::Admitted

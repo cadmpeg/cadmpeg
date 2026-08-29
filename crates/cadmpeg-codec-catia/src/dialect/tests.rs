@@ -125,10 +125,10 @@ fn the_totality_row_is_admitted_unverified_and_names_itself() {
     assert_eq!(
         admission(Variant::Unknown),
         Admission::AdmittedUnverified {
-            nearest: DialectId::pinned("catia:unknown"),
+            using: DialectId::pinned("catia:unknown"),
         },
         "no CATIA family's grammar is substituted for an unrecognized layout, so the only \
-         honest referent for `nearest` is the row whose declared disposition is the \
+         honest `using` value is the row whose declared disposition is the \
          metadata-IR fallback itself"
     );
     for variant in Variant::ALL {
@@ -163,7 +163,7 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     assert_eq!(
         matched.admission(),
         Admission::AdmittedUnverified {
-            nearest: DialectId::pinned("catia:unknown"),
+            using: DialectId::pinned("catia:unknown"),
         }
     );
 }
