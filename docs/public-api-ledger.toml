@@ -1435,3 +1435,10 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::document::SourceMeta::declared"
 reason = "primary-layer declarations remain owned by `DialectMatch` and are no longer duplicated beside the source dialect"
+
+[[change]]
+commit = "4af7b9427fc9d7a84facf7e0b1451ef8901472f4"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::dialect::DialectLayers::from_rows"
+reason = "`DialectLayers` now serializes an explicit primary and no parent report needs to reconstruct identity from a flat row list"
