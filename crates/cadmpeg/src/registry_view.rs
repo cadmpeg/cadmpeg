@@ -126,6 +126,7 @@ mod tests {
             format: "rhino".to_owned(),
             dialect: Some(DialectId::pinned("rhino:archive-50")),
             declared: std::collections::BTreeMap::new(),
+            instance: None,
             admission: Admission::Admitted,
         });
         let line = dialect_line(Some(&dialects)).expect("a primary layer exists");

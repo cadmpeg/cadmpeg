@@ -97,18 +97,26 @@ pub fn decode(
         ))
     })?;
     let (ir, mut report, mut fidelity) = crate::decode::decode(ctx, root_view)?.into_parts();
-    let (_, extra) = report
+    let member_layers = report
         .dialects
         .take()
-        .expect("an F3D member decode reports its primary layer")
-        .into_parts();
+        .expect("an F3D member decode reports its primary layer");
+    let old_dialect_losses = dialect_losses(&member_layers);
+    let (_, extra) = member_layers.into_parts();
     report.dialects = Some(
         DialectLayers::new(scan.dialect.clone(), extra)
             .expect("F3D member extras use formats other than the F3Z primary"),
     );
-    report
-        .losses
-        .retain(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind());
+    replace_dialect_losses(
+        &mut report.losses,
+        old_dialect_losses,
+        dialect_losses(
+            report
+                .dialects
+                .as_ref()
+                .expect("the restated F3Z report is classified"),
+        ),
+    );
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -181,26 +189,60 @@ fn finalize_result(
 /// prefix as its losses. The component's primary row is document-local.
 fn merge_component_layers(
     target: &mut Option<DialectLayers>,
-    component: Option<DialectLayers>,
+    component: DialectLayers,
     occurrence: &str,
-) {
+) -> Vec<cadmpeg_ir::report::LossNote> {
     let (primary, mut extra) = target
         .take()
         .expect("the parent F3Z report is classified")
         .into_parts();
-    let (_, component_extra) = component
-        .expect("an F3D component report is classified")
-        .into_parts();
+    let (_, component_extra) = component.into_parts();
+    let mut losses = Vec::new();
     for mut matched in component_extra {
-        if let Some(carrier) = matched.declared.get_mut("carrier") {
-            *carrier = format!("xref {occurrence}: {carrier}");
-        }
+        matched.instance = Some(matched.instance.as_ref().map_or_else(
+            || occurrence.to_owned(),
+            |nested| format!("{occurrence}/{nested}"),
+        ));
+        losses.extend(crate::dialect::kernel_dialect_loss(&matched));
         extra.push(matched);
     }
     *target = Some(
         DialectLayers::new(primary, extra)
             .expect("merged F3D component extras cannot repeat the F3Z primary"),
     );
+    losses
+}
+
+/// Dialect-derived losses implied by the classified layers in one member.
+fn dialect_losses(layers: &DialectLayers) -> Vec<cadmpeg_ir::report::LossNote> {
+    let mut losses = crate::dialect::dialect_loss(layers.primary())
+        .into_iter()
+        .collect::<Vec<_>>();
+    losses.extend(
+        layers
+            .iter()
+            .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
+            .filter_map(crate::dialect::kernel_dialect_loss),
+    );
+    losses
+}
+
+/// Replace the losses derived from old layers with those derived from the
+/// final restated layers. Each old note is removed once so an unrelated equal
+/// note cannot remove more report state than the old classification supplied.
+fn replace_dialect_losses(
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    old: Vec<cadmpeg_ir::report::LossNote>,
+    new: Vec<cadmpeg_ir::report::LossNote>,
+) {
+    for old_loss in old {
+        let position = losses
+            .iter()
+            .position(|loss| *loss == old_loss)
+            .expect("a member report contains every loss implied by its dialect layers");
+        losses.remove(position);
+    }
+    losses.extend(new);
 }
 
 fn model_root_member(
@@ -390,15 +432,16 @@ fn merge_references(
         )?;
         merged += descendants + 1;
         parent_report.geometry_transferred |= component_report.geometry_transferred;
-        merge_component_layers(
-            &mut parent_report.dialects,
-            component_report.dialects,
-            &occurrence,
-        );
+        let component_layers = component_report
+            .dialects
+            .take()
+            .expect("an F3D component report is classified");
+        let old_dialect_losses = dialect_losses(&component_layers);
+        replace_dialect_losses(&mut component_report.losses, old_dialect_losses, Vec::new());
+        let component_dialect_losses =
+            merge_component_layers(&mut parent_report.dialects, component_layers, &occurrence);
+        parent_report.losses.extend(component_dialect_losses);
         for mut loss in component_report.losses {
-            if loss.code == F3dLossCode::SourceDialectUnverified.kind() {
-                continue;
-            }
             loss.message = format!("xref {label}: {}", loss.message);
             parent_report.losses.push(loss);
         }

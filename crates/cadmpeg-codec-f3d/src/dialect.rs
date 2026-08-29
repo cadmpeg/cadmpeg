@@ -299,11 +299,15 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
+    let message = cadmpeg_asm::dialect::acis_recovery_message(
+        &format!("the kernel carrier {carrier}"),
+        &declared,
+        nearest,
+    );
     Some(
-        F3dLossCode::KernelDialectUnverified.note(cadmpeg_asm::dialect::acis_recovery_message(
-            &format!("the kernel carrier {carrier}"),
-            &declared,
-            nearest,
+        F3dLossCode::KernelDialectUnverified.note(matched.instance.as_ref().map_or_else(
+            || message.clone(),
+            |instance| format!("xref {instance}: {message}"),
         )),
     )
 }

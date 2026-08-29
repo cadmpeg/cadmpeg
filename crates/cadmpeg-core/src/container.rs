@@ -128,12 +128,14 @@ mod tests {
             format: "rhino".into(),
             dialect: Some(DialectId::pinned("rhino:archive-80")),
             declared: BTreeMap::new(),
+            instance: None,
             admission: Admission::Admitted,
         };
         let extra = DialectMatch {
             format: "acis".into(),
             dialect: Some(DialectId::pinned("acis:save-format-217")),
             declared: BTreeMap::new(),
+            instance: None,
             admission: Admission::Admitted,
         };
         summary.dialects = Some(
