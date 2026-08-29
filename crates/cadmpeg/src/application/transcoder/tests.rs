@@ -149,6 +149,29 @@ fn flag_absence_is_always_an_inherit_request() {
     );
 }
 
+#[cfg(feature = "iges")]
+#[test]
+fn target_selection_owns_format_and_dialect_grammar() {
+    let format_only = TargetSelection::resolve(Some("iges"), None).expect("format resolves");
+    assert_eq!(format_only.format, Format::Iges);
+    assert_eq!(format_only.request(), TargetRequest::Inherit);
+
+    let qualified = TargetSelection::resolve(Some("iges:5.1"), None).expect("alias resolves");
+    assert_eq!(qualified.format, Format::Iges);
+    assert_eq!(qualified.request(), TargetRequest::Explicit("5.1"));
+
+    let inferred = TargetSelection::resolve(Some("5.1"), Some(Path::new("part.iges")))
+        .expect("output extension supplies the format");
+    assert_eq!(inferred.format, Format::Iges);
+    assert_eq!(inferred.request(), TargetRequest::Explicit("5.1"));
+}
+
+#[test]
+fn target_selection_rejects_an_empty_qualified_dialect() {
+    let error = TargetSelection::resolve(Some("cadir:"), None).unwrap_err();
+    assert!(error.to_string().contains("nothing after the colon"));
+}
+
 /// The cross-format default still lands on the catalog default.
 ///
 /// A source of another format has nothing to inherit, so write resolution

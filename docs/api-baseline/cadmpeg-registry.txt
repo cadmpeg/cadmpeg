@@ -1,4 +1,4 @@
-# generated at 7e83d7b0f
+# generated at 784c24977
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -367,4 +367,3 @@ pub fn cadmpeg_registry::format_rows(&cadmpeg_registry::InputCatalog) -> alloc::
 pub fn cadmpeg_registry::identify(&mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::io::error::Result<alloc::vec::Vec<cadmpeg_registry::Identification>>
 pub fn cadmpeg_registry::identify_with(&cadmpeg_registry::InputCatalog, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::io::error::Result<alloc::vec::Vec<cadmpeg_registry::Identification>>
 pub fn cadmpeg_registry::support(&cadmpeg_core::dialect::DialectId) -> core::option::Option<cadmpeg_registry::Disposition>
-pub fn cadmpeg_registry::write_targets(cadmpeg_registry::Format) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]

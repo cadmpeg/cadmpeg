@@ -4,12 +4,14 @@
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
-use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
+use anyhow::{anyhow, bail, Result};
+use cadmpeg_ir::codec::{
+    find_target, unsupported_target, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest,
+};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 
-use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
+use cadmpeg_registry::{build_encoder, dialect_table, ForcedInput, Format, InputCatalog};
 
 use crate::application::refusal::classify_decode_failure;
 use crate::application::validators::validate_ir;
@@ -36,11 +38,12 @@ pub struct ExportTarget {
     pub selection: TargetSelection,
 }
 
-/// The output format and unresolved target token selected by the command line.
+/// The output format and target token selected by the command line.
 ///
 /// `--to` names a dialect outright. A `--to` that names only a format, or no
 /// `--to` at all, leaves `request` unstated so the encoder inherits from the
-/// source. The token remains unresolved until the encoder plans the export.
+/// source. Explicit tokens are admitted by the encoder catalog here. The
+/// encoder resolves aliases and source-dependent preservation during planning.
 #[derive(Debug, Clone)]
 pub struct TargetSelection {
     /// Selected output format.
@@ -56,6 +59,78 @@ impl TargetSelection {
         Self { format, request }
     }
 
+    /// Resolves the `--to` grammar against the output path and validates an
+    /// explicit dialect against the selected encoder catalog.
+    pub fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
+        let inferred = format_from_path(out);
+        let selection = match to {
+            None => Self::new(
+                inferred.ok_or_else(|| {
+                    anyhow!("cannot infer format from the output path; pass --to FORMAT")
+                })?,
+                None,
+            ),
+            Some(value) => Self::resolve_value(value, inferred)?,
+        };
+        selection.validate_explicit()?;
+        Ok(selection)
+    }
+
+    fn resolve_value(value: &str, inferred: Option<Format>) -> Result<Self> {
+        if let Some((left, right)) = value.split_once(':') {
+            let format = Format::from_name(left).ok_or_else(|| {
+                anyhow!(
+                    "--to {value}: {left} is not an output format of this build; available: {}",
+                    Format::vocabulary()
+                )
+            })?;
+            if right.is_empty() {
+                bail!(
+                    "--to {value}: nothing after the colon; write --to {left} for the format alone"
+                );
+            }
+            warn_on_extension_disagreement(format, inferred);
+            return Ok(Self::new(format, Some(right.to_owned())));
+        }
+        if let Some(format) = Format::from_name(value) {
+            warn_on_extension_disagreement(format, inferred);
+            return Ok(Self::new(format, None));
+        }
+        if dialect_table(None)?
+            .iter()
+            .any(|entry| entry.format == value)
+        {
+            bail!(
+                "--to {value}: {value} is not an output format of this build; available: {}",
+                Format::vocabulary()
+            );
+        }
+        let format = inferred.ok_or_else(|| {
+            anyhow!(
+                "--to {value}: not an output format of this build ({}), and no output path to read a format from; write --to FORMAT:{value}",
+                Format::vocabulary()
+            )
+        })?;
+        Ok(Self::new(format, Some(value.to_owned())))
+    }
+
+    fn validate_explicit(&self) -> Result<()> {
+        let Some(requested) = self.request.as_deref() else {
+            return Ok(());
+        };
+        let encoder = build_encoder(self.format);
+        if find_target(encoder.targets(), requested).is_some() {
+            return Ok(());
+        }
+        let error = unsupported_target(
+            encoder.id(),
+            requested,
+            "not a target this encoder can synthesize",
+            encoder.targets(),
+        );
+        Err(plan_refusal(error, None, None))
+    }
+
     /// Builds the encoder request.
     ///
     /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
@@ -69,6 +144,23 @@ impl TargetSelection {
             Some(id) => TargetRequest::Explicit(id),
             None => TargetRequest::Inherit,
         }
+    }
+}
+
+fn format_from_path(path: Option<&Path>) -> Option<Format> {
+    path.and_then(Path::extension)
+        .and_then(|extension| extension.to_str())
+        .and_then(Format::from_extension)
+}
+
+fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
+    if let Some(inferred) = inferred.filter(|inferred| *inferred != named) {
+        eprintln!(
+            "warning: explicit format {} disagrees with output extension format {}; using {}",
+            named.name(),
+            inferred.name(),
+            named.name()
+        );
     }
 }
 
@@ -390,11 +482,9 @@ pub(crate) fn emit_export_plan(
 
 /// Builds an [`ExportTarget`] from the command-line selection.
 ///
-/// The request token is unresolved. It is not checked here. Whether the
-/// encoder can produce it is answered after the read by `plan`, because an
-/// inherit request cannot be resolved without the source dialect. The format
-/// is already resolved, so an unavailable output format has failed before the
-/// input is opened.
+/// Explicit request tokens were checked by [`TargetSelection::resolve`] before
+/// input decode. An inherit request remains source-dependent and is resolved by
+/// `plan`.
 ///
 /// `losses` is a policy, never a target: reading it as one would turn
 /// `convert a.step -o b.step --reject-lossy=export` into an explicit AP214

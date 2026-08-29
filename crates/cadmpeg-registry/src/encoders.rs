@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::default_target;
 #[cfg(test)]
 use cadmpeg_ir::codec::TargetRequest;
-use cadmpeg_ir::codec::{CadirEncoder, Encoder, TargetDescriptor};
+use cadmpeg_ir::codec::{CadirEncoder, Encoder};
 
 use crate::Format;
 
@@ -40,31 +40,6 @@ pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
         Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder),
         #[cfg(feature = "iges")]
         Format::Iges => Box::new(cadmpeg_codec_iges::IgesEncoder),
-    }
-}
-
-/// The synthesis catalog of an export format's encoder in this build.
-///
-/// The catalog is static per format and independent of every constructor
-/// knob: per-codec options configure how a target is written, never which
-/// ones exist. The unit and default values below exist only to reach the
-/// instance method required by [`Encoder`].
-#[must_use]
-pub fn write_targets(format: Format) -> &'static [TargetDescriptor] {
-    match format {
-        Format::Cadir => Encoder::targets(&CadirEncoder),
-        #[cfg(feature = "step")]
-        Format::Step => Encoder::targets(&cadmpeg_codec_step::StepCodec::default()),
-        #[cfg(feature = "fcstd")]
-        Format::Fcstd => Encoder::targets(&cadmpeg_codec_freecad::FcstdCodec),
-        #[cfg(feature = "f3d")]
-        Format::F3d => Encoder::targets(&cadmpeg_codec_f3d::F3dCodec),
-        #[cfg(feature = "sldprt")]
-        Format::Sldprt => Encoder::targets(&cadmpeg_codec_sldprt::SldprtCodec),
-        #[cfg(feature = "rhino")]
-        Format::Rhino => Encoder::targets(&cadmpeg_codec_rhino::RhinoEncoder),
-        #[cfg(feature = "iges")]
-        Format::Iges => Encoder::targets(&cadmpeg_codec_iges::IgesEncoder),
     }
 }
 
