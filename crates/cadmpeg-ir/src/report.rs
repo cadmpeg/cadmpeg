@@ -636,7 +636,7 @@ impl LossNote {
 }
 
 /// Transfer status and loss details from a successful decode.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeReport {
     /// Source format id.
@@ -666,6 +666,46 @@ pub struct DecodeReport {
     /// and read back as unclassified.
     #[serde(default)]
     dialects: Option<DialectLayers>,
+}
+
+#[derive(Deserialize)]
+struct DecodeReportWire {
+    format: String,
+    container_only: bool,
+    geometry_transferred: bool,
+    #[serde(default)]
+    coverage: BTreeMap<String, usize>,
+    losses: Vec<LossNote>,
+    notes: Vec<String>,
+    #[serde(default)]
+    transfer_ledger: TransferLedger,
+    #[serde(default)]
+    dialects: Option<DialectLayers>,
+}
+
+impl<'de> Deserialize<'de> for DecodeReport {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = DecodeReportWire::deserialize(deserializer)?;
+        if let Some(dialects) = &wire.dialects {
+            let primary_format = &dialects.primary().format;
+            if wire.format != *primary_format {
+                return Err(serde::de::Error::custom(format_args!(
+                    "decode report format {:?} differs from primary dialect format {:?}",
+                    wire.format, primary_format
+                )));
+            }
+        }
+        Ok(Self {
+            format: wire.format,
+            container_only: wire.container_only,
+            geometry_transferred: wire.geometry_transferred,
+            coverage: wire.coverage,
+            losses: wire.losses,
+            notes: wire.notes,
+            transfer_ledger: wire.transfer_ledger,
+            dialects: wire.dialects,
+        })
+    }
 }
 
 /// Final disposition of one source record or semantic object.

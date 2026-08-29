@@ -196,3 +196,40 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         export
     );
 }
+
+#[test]
+fn classified_report_wire_requires_its_primary_format() {
+    let report = DecodeReport::classified(
+        DialectLayers::of(cadmpeg_core::dialect::DialectMatch::layer(
+            "rhino",
+            DialectId::pinned("rhino:archive-80"),
+            BTreeMap::new(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )),
+        false,
+        true,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+    let golden = serde_json::to_string(&report).unwrap();
+    assert_eq!(
+        golden,
+        r#"{"format":"rhino","container_only":false,"geometry_transferred":true,"losses":[],"notes":[],"dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&golden).unwrap(),
+        report
+    );
+
+    let mismatched = golden.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
+    let error = serde_json::from_str::<DecodeReport>(&mismatched)
+        .expect_err("the report and its primary layer must name the same format");
+    assert!(
+        error.to_string().contains(
+            "decode report format \"step\" differs from primary dialect format \"rhino\""
+        ),
+        "{error}"
+    );
+}
