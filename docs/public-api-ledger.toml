@@ -16,6 +16,13 @@ audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
 api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
+[[change]]
+commit = "81779b0ff3367382461a9a2832c5f3558bcea741"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::codec::{PreserveAttempt,plan_preserve_or_synthesize}"
+reason = "F3D and IGES share one preserve-or-synthesize control-flow ladder while codec callbacks retain preservation, synthesis, reporting, and refusal law"
+
 # Row shape:
 # [[change]]
 # commit = "<sha>"

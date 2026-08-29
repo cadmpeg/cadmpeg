@@ -143,6 +143,50 @@ pub enum WriteRequest<'a> {
     },
 }
 
+/// Result of attempting to preserve a resolved target.
+pub enum PreserveAttempt<T, D> {
+    /// Preservation produced the completed codec-specific result.
+    Preserved(T),
+    /// Preservation was unavailable, with codec-specific decline context.
+    Declined(D),
+}
+
+/// Apply the preserve-or-synthesize ladder after request resolution.
+///
+/// This helper owns only the shared control-flow shape. Callbacks retain every
+/// codec-specific preservation check, synthesis rule, report, and refusal.
+pub fn plan_preserve_or_synthesize<T, D>(
+    resolved: WriteRequest<'_>,
+    mut preserve: impl FnMut(
+        &cadmpeg_core::dialect::DialectId,
+    ) -> Result<PreserveAttempt<T, D>, CodecError>,
+    mut synthesize: impl FnMut(
+        &'static TargetDescriptor,
+        Option<&cadmpeg_core::dialect::DialectId>,
+        Option<D>,
+    ) -> Result<T, CodecError>,
+    mut refuse: impl FnMut(&cadmpeg_core::dialect::DialectId, D) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    match resolved {
+        WriteRequest::Catalog { entry, displaced } => {
+            if displaced.is_none() {
+                let target = cadmpeg_core::dialect::DialectId::pinned(entry.id);
+                match preserve(&target)? {
+                    PreserveAttempt::Preserved(result) => return Ok(result),
+                    PreserveAttempt::Declined(context) => {
+                        return synthesize(entry, None, Some(context));
+                    }
+                }
+            }
+            synthesize(entry, displaced.as_ref(), None)
+        }
+        WriteRequest::OffCatalog { dialect } => match preserve(dialect)? {
+            PreserveAttempt::Preserved(result) => Ok(result),
+            PreserveAttempt::Declined(context) => refuse(dialect, context),
+        },
+    }
+}
+
 /// Resolve target syntax and inheritance once, before codec-specific delivery.
 pub fn resolve_write_request<'a>(
     ir: &'a CadIr,
