@@ -4,8 +4,7 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, same_format_source_dialect, unsupported_target, EncodeInput, ExportPlan,
-    TargetRequest, WriteRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
@@ -35,8 +34,8 @@ pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    let (target, displaced) = resolve(input, request)?;
-    let (written, bytes) = write(input, &target)?;
+    let (target, displaced, preserve) = resolve(input, request)?;
+    let (written, bytes) = write(input, preserve)?;
     check_honesty(&target, &written)?;
     Ok(finish(input, target, displaced.as_ref(), &written, bytes))
 }
@@ -45,23 +44,24 @@ pub(crate) fn plan<'a>(
 fn resolve(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<(DialectId, Option<DialectId>), CodecError> {
+) -> Result<(DialectId, Option<DialectId>, bool), CodecError> {
     // This writer has no synthesize fallback, so it flattens the request locally.
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let target = resolved.dialect_id();
-    let displaced = match resolved {
-        WriteRequest::Catalog { displaced, .. } => displaced,
-        WriteRequest::OffCatalog { .. } => None,
+    let (displaced, preserve) = match resolved {
+        WriteRequest::Catalog {
+            displaced,
+            preserve,
+            ..
+        } => (displaced, preserve),
+        WriteRequest::OffCatalog { .. } => (None, true),
     };
-    Ok((target, displaced))
+    Ok((target, displaced, preserve))
 }
 
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
-fn write(input: EncodeInput<'_>, target: &DialectId) -> Result<(Written, Vec<u8>), CodecError> {
-    let source_dialect = same_format_source_dialect(input.ir, dialect::FORMAT)
-        .map(cadmpeg_core::dialect::DialectMatch::dialect);
-    let replay_eligible = source_dialect == Some(target);
+fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<u8>), CodecError> {
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) => {

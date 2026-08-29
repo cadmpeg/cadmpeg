@@ -187,9 +187,10 @@ fn a_cross_format_convert_writes_the_catalog_default() {
         ..Default::default()
     });
     let encoder = cadmpeg_codec_iges::IgesEncoder;
-    let WriteRequest::Catalog { entry, displaced } =
-        resolve_write_request(&ir, TargetRequest::Inherit, encoder.id(), encoder.targets())
-            .expect("the fallback resolves")
+    let WriteRequest::Catalog {
+        entry, displaced, ..
+    } = resolve_write_request(&ir, TargetRequest::Inherit, encoder.id(), encoder.targets())
+        .expect("the fallback resolves")
     else {
         panic!("a cross-format request resolves to the catalog")
     };

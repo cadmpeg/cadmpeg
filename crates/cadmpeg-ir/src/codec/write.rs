@@ -140,6 +140,8 @@ pub enum WriteRequest<'a> {
         entry: &'static TargetDescriptor,
         /// The same-format source dialect displaced by this target, if any.
         displaced: Option<cadmpeg_core::dialect::DialectId>,
+        /// Whether the resolved target preserves the same-format source dialect.
+        preserve: bool,
     },
     /// `Inherit` names a same-format source dialect outside the catalog.
     OffCatalog {
@@ -169,50 +171,6 @@ pub fn same_format_source_dialect<'a>(
         .as_ref()
         .filter(|source| source.format == format)
         .and_then(|source| source.dialect.as_ref())
-}
-
-/// Result of attempting to preserve a resolved target.
-pub enum PreserveAttempt<T, D> {
-    /// Preservation produced the completed codec-specific result.
-    Preserved(T),
-    /// Preservation was unavailable, with codec-specific decline context.
-    Declined(D),
-}
-
-/// Apply the preserve-or-synthesize ladder after request resolution.
-///
-/// This helper owns only the shared control-flow shape. Callbacks retain every
-/// codec-specific preservation check, synthesis rule, report, and refusal.
-pub fn plan_preserve_or_synthesize<T, D>(
-    resolved: WriteRequest<'_>,
-    mut preserve: impl FnMut(
-        &cadmpeg_core::dialect::DialectId,
-    ) -> Result<PreserveAttempt<T, D>, CodecError>,
-    mut synthesize: impl FnMut(
-        &'static TargetDescriptor,
-        Option<&cadmpeg_core::dialect::DialectId>,
-        Option<D>,
-    ) -> Result<T, CodecError>,
-    mut refuse: impl FnMut(&cadmpeg_core::dialect::DialectId, D) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    match resolved {
-        WriteRequest::Catalog { entry, displaced } => {
-            if displaced.is_none() {
-                let target = cadmpeg_core::dialect::DialectId::pinned(entry.id);
-                match preserve(&target)? {
-                    PreserveAttempt::Preserved(result) => return Ok(result),
-                    PreserveAttempt::Declined(context) => {
-                        return synthesize(entry, None, Some(context));
-                    }
-                }
-            }
-            synthesize(entry, displaced.as_ref(), None)
-        }
-        WriteRequest::OffCatalog { dialect } => match preserve(dialect)? {
-            PreserveAttempt::Preserved(result) => Ok(result),
-            PreserveAttempt::Declined(context) => refuse(dialect, context),
-        },
-    }
 }
 
 /// Resolve target syntax and inheritance once, before codec-specific delivery.
@@ -257,7 +215,12 @@ pub fn resolve_write_request<'a>(
         .map(cadmpeg_core::dialect::DialectMatch::dialect)
         .filter(|dialect| dialect.as_str() != entry.id)
         .cloned();
-    Ok(WriteRequest::Catalog { entry, displaced })
+    Ok(WriteRequest::Catalog {
+        entry,
+        preserve: same_format_source_dialect(ir, format)
+            .is_some_and(|source| source.dialect().as_str() == entry.id),
+        displaced,
+    })
 }
 
 /// State that a write displaced the source dialect with another target.
@@ -269,55 +232,6 @@ pub fn source_dialect_displaced_message(
     format!(
         "source dialect {displaced} was displaced by target dialect {target}; the source dialect identity is not preserved"
     )
-}
-
-/// The whole write resolution of a synthesis-only encoder: the
-/// writer target a request names, and why the source's own dialect is not it.
-///
-/// A synthesis-only encoder has no retained-image path, so every export is
-/// built from the neutral IR and the catalog is the exact set of dialects it
-/// can produce. That makes the resolution a function of the request, the
-/// catalog, and the source alone, identical in every such codec:
-///
-/// - `Explicit(id)` — resolve it, or refuse it as outside the catalog.
-/// - `Inherit` with nothing to inherit — the catalog default.
-/// - `Inherit` over a same-format source — that source's own dialect, or a
-///   refusal naming it and the catalog when `parse` rejects it.
-///
-/// `off_catalog_source_reason` states why *this* writer cannot reproduce a
-/// source dialect the catalog does not carry — the one sentence that is
-/// genuinely per-codec, because the reason is the codec's own write model.
-///
-/// The returned dialect is the same-format source dialect displaced by the
-/// selected catalog row. It is absent when the write keeps the source dialect
-/// or when there is no same-format source.
-///
-/// Not for a codec that preserves off-catalog dialects by patch or replay
-/// (`FCStd`, IGES). There a source dialect outside the catalog is written back
-/// from the retained image rather than refused, so the third bullet is a
-/// different law.
-pub fn resolve_catalog_write(
-    ir: &CadIr,
-    request: TargetRequest<'_>,
-    format: &str,
-    targets: &'static [TargetDescriptor],
-    off_catalog_source_reason: &str,
-) -> Result<
-    (
-        &'static TargetDescriptor,
-        Option<cadmpeg_core::dialect::DialectId>,
-    ),
-    CodecError,
-> {
-    match resolve_write_request(ir, request, format, targets)? {
-        WriteRequest::Catalog { entry, displaced } => Ok((entry, displaced)),
-        WriteRequest::OffCatalog { dialect } => Err(unsupported_target(
-            format,
-            dialect.as_str(),
-            off_catalog_source_reason,
-            targets,
-        )),
-    }
 }
 
 fn refusal(

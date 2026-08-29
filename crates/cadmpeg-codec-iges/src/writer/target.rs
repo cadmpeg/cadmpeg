@@ -4,8 +4,7 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    plan_preserve_or_synthesize, resolve_write_request, same_format_source_dialect,
-    unsupported_target, EncodeInput, ExportPlan, PreserveAttempt, TargetRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
@@ -23,32 +22,39 @@ pub(crate) fn plan<'a>(
         crate::dialect::FORMAT,
         crate::dialect::TARGETS,
     )?;
-    plan_preserve_or_synthesize(
-        resolved,
-        |target| match replay_bytes(input.ir, input.fidelity, target)? {
-            Replay::Replayed { bytes, dialect } => Ok(PreserveAttempt::Preserved(replayed_plan(
-                input.ir, dialect, bytes,
-            ))),
-            Replay::Declined { reason } => Ok(PreserveAttempt::Declined(reason)),
-        },
-        |entry, displaced, replay_declined| {
+    match resolved {
+        WriteRequest::Catalog {
+            entry,
+            displaced,
+            preserve: should_preserve,
+        } => {
+            let mut replay_failure = None;
+            if should_preserve {
+                match replay_bytes(input.ir, input.fidelity)? {
+                    Replay::Replayed { bytes } => {
+                        return Ok(replayed_plan(input.ir, DialectId::pinned(entry.id), bytes));
+                    }
+                    Replay::Declined { reason } => replay_failure = reason,
+                }
+            }
             synthesized_plan(
                 input,
                 crate::dialect::target_version(entry),
-                displaced,
-                replay_declined.flatten(),
+                displaced.as_ref(),
+                replay_failure,
             )
-        },
-        |dialect, _| {
-            Err(unsupported_target(
+        }
+        WriteRequest::OffCatalog { dialect } => match replay_bytes(input.ir, input.fidelity)? {
+            Replay::Replayed { bytes } => Ok(replayed_plan(input.ir, dialect.clone(), bytes)),
+            Replay::Declined { .. } => Err(unsupported_target(
                 crate::dialect::FORMAT,
                 dialect.as_str(),
                 "its retained source image is unavailable for byte replay and the semantic \
                      writer cannot synthesize it",
                 crate::dialect::TARGETS,
-            ))
+            )),
         },
-    )
+    }
 }
 
 fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'_> {
@@ -128,7 +134,7 @@ fn synthesized_plan<'a>(
 }
 
 enum Replay {
-    Replayed { bytes: Vec<u8>, dialect: DialectId },
+    Replayed { bytes: Vec<u8> },
     Declined { reason: Option<String> },
 }
 
@@ -144,11 +150,7 @@ impl Replay {
     }
 }
 
-fn replay_bytes(
-    ir: &CadIr,
-    fidelity: Option<&SourceFidelity>,
-    target: &DialectId,
-) -> Result<Replay, CodecError> {
+fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay, CodecError> {
     let Some(source) = ir
         .source
         .as_ref()
@@ -160,21 +162,6 @@ fn replay_bytes(
         return Ok(Replay::declined_because(format!(
             "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
         )));
-    };
-    let source_dialect = match same_format_source_dialect(ir, crate::dialect::FORMAT)
-        .map(cadmpeg_core::dialect::DialectMatch::dialect)
-    {
-        None => {
-            return Ok(Replay::declined_because(format!(
-                "preserved IGES source records no dialect, target is {target}; byte replay skipped"
-            )));
-        }
-        Some(dialect) if dialect != target => {
-            return Ok(Replay::declined_because(format!(
-                "source is {dialect}, target is {target}; byte replay skipped"
-            )));
-        }
-        Some(dialect) => dialect.clone(),
     };
     if crate::document_digest(ir) != *expected {
         return Ok(Replay::declined_because(
@@ -197,6 +184,5 @@ fn replay_bytes(
     }
     Ok(Replay::Replayed {
         bytes: data.to_vec(),
-        dialect: source_dialect,
     })
 }
