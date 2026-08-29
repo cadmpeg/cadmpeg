@@ -730,29 +730,6 @@ seam = "eight-byte feature-operation form-code padding"
 witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:33"
 
 [[dialect]]
-# Mandatory `unknown` row (B4), and the only row any golden fixture reaches:
-# no golden carries a `swSolidWorks` block, so all twenty classify here.
-# A part reaches it when `swVersion` is absent or does not read as a `u32`
-# above zero (operations.rs:32-33 returns `None` for an absent attribute, for
-# a `parse::<u32>()` failure -- which is every non-numeric, negative, or
-# over-wide declaration -- and for zero).
-# The container branch does not decide this row. `add_solidworks_xml_metadata`
-# (decode.rs:3172-3191) walks `ContainerScan::sections`, which chains blocks
-# AND compound streams (container.rs:256-261), and `payload_family` returns
-# "xml" for any payload starting `<?xml` (container.rs:63-67). A compound-file
-# part whose stream carries the `swSolidWorks` document therefore classifies
-# by its `swVersion` like any other. The hard-set `0` at container.rs:403 is
-# the outer version word, a different field that no row reads.
-# Disposition: admitted-unverified, naming itself as `nearest`. The padding
-# filter is simply not applied (operations.rs:70, :111) and the ambiguity
-# resolver runs unconstrained (operations.rs:82-91), so the strategy
-# substituted for the missing declaration is this row's own fallback and no
-# other row lent its grammar. That fallback binds an operation code only where
-# the four- and eight-byte candidates agree, but agreement between candidates
-# is consistency, not a declaration: admission verifies a declared identity and
-# this row is the absence of one. A residual row is therefore never `Admitted`,
-# and the codec charges `source.dialect-unverified` here, which `DecodeMode::
-# Strict` refuses.
 id = "sldprt:unknown"
 title = "SolidWorks part with no usable swVersion declaration"
 discriminants = { sw_version = "absent, not a u32 above zero" }
@@ -861,29 +838,6 @@ seam = "the body occupies the contiguous region before the directory instead of 
 witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_directory_b2_cylinder.catpart"
 
 [[dialect]]
-# `Variant::Unknown` (variant.rs:32), reached at container.rs:1273 (no inner
-# container and no a9 records) and container.rs:1292 (an FBB region neither
-# edge-table grammar admits).
-# Disposition: ADMITTED, not refused. No route in families/mod.rs:46-68
-# matches `Unknown`, so decode falls through to `build_metadata_ir` +
-# `build_container_report(..., false)` (decode.rs:75-77), retains the file as
-# an `UnknownRecord` (assemble.rs:580-601), and charges
-# `GeometryBrepNotTransferred` (assemble.rs:665) and `TopologyGraphNotBuilt`
-# (assemble.rs:679). This is the `unknown: admitted-unverified` line B4 exists
-# to force into the open.
-#
-# Those two are geometry and topology losses, not dialect losses. The dialect
-# loss this row carries is `catia/source.dialect-unverified`
-# (`CatiaLossCode::SourceDialectUnverified`), charged from the same predicate
-# that produces the admission (`dialect::admission`), so the two cannot
-# disagree.
-#
-# `Admission::AdmittedUnverified.nearest` names this row itself. The strategy
-# applied is the metadata-IR fallback, which is no other CATIA dialect's
-# declared strategy; `nearest` is typed as a `DialectId` and can only name a
-# dialect, so the self-reference is the only honest referent available. This is
-# a template conflict, recorded rather than resolved by naming a family whose
-# grammar was never applied.
 id = "catia:unknown"
 title = "CATIA V5 unrecognized storage layout"
 discriminants = { variant = "no admitted family" }
@@ -1286,15 +1240,6 @@ discriminants = { magic = "ACIS BinaryFile", save_format_major = "218" }
 witness = "code:crates/cadmpeg-asm/src/dialect.rs:29"
 
 [[dialect]]
-# Same magic, any other major. Disposition: recovery -- the records are framed
-# and decoded with the nearer verified band's grammar
-# (`cadmpeg_asm::dialect::nearest_verified_acis`,
-# crates/cadmpeg-asm/src/dialect.rs:50), the match carries
-# `Admission::AdmittedUnverified` naming that band, and the host charges its
-# `source.kernel-dialect-unverified` loss: `cadmpeg-codec-sat` for the kernel row
-# (crates/cadmpeg-codec-sat/src/dialect.rs:203) and `cadmpeg-codec-inventor`
-# on this kernel layer (crates/cadmpeg-codec-inventor/src/decode.rs:1881).
-# Mirrored as an inspect note at detect.rs:130-136.
 id = "acis:save-format-binary-other"
 title = "Spatial ACIS binary stream outside save formats 217 and 218"
 discriminants = { magic = "ACIS BinaryFile", save_format_major = "any other" }
