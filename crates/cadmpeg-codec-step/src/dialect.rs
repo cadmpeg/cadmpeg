@@ -173,22 +173,6 @@ pub(crate) enum StepDialect {
 /// defaults follow, so it names the strategy used.
 const NEAREST_STRATEGY: StepDialect = StepDialect::Ap242Edition3;
 
-/// Schema name of AP203 edition 1.
-const NAME_AP203_E1: &str = "CONFIG_CONTROL_DESIGN";
-/// Schema name of AP203 edition 2. Only one registry row carries this name, so
-/// the arcs discriminate nothing and the row keys on the name alone.
-const NAME_AP203_E2: &str =
-    "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF";
-/// Schema name of AP214. One row, so the arcs discriminate nothing.
-const NAME_AP214: &str = "AUTOMOTIVE_DESIGN";
-/// Schema name shared by the four AP242 rows.
-///
-/// The object identifier is optional in a Part 21 schema identifier, so this
-/// name alone is a complete declaration: it declares the schema and leaves the
-/// edition unspecified. That is [`StepDialect::Ap242`]. The same name with arcs
-/// declares an edition, and the arcs select which row.
-const NAME_AP242: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
-
 impl StepDialect {
     const fn from_write_schema(schema: StepSchema) -> Self {
         match schema {
@@ -266,21 +250,22 @@ impl StepDialect {
         let Some((name, object_identifier)) = split_schema_identifier(identifier) else {
             return Self::Unknown;
         };
-        if name.eq_ignore_ascii_case(NAME_AP242) {
+        let ap242_name = split_schema_identifier(StepSchema::Ap242Edition1.file_schema())
+            .expect("writer schemas are valid identifiers")
+            .0;
+        if name.eq_ignore_ascii_case(ap242_name) {
             if object_identifier.is_none() {
                 return Self::Ap242;
             }
             return Self::from_ap242_edition(StepSchema::ap242_edition(identifier));
         }
-        if name.eq_ignore_ascii_case(NAME_AP203_E1) {
-            Self::Ap203Edition1
-        } else if name.eq_ignore_ascii_case(NAME_AP203_E2) {
-            Self::Ap203Edition2
-        } else if name.eq_ignore_ascii_case(NAME_AP214) {
-            Self::Ap214
-        } else {
-            Self::Unknown
-        }
+        StepSchema::ALL
+            .into_iter()
+            .find(|schema| {
+                split_schema_identifier(schema.file_schema())
+                    .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
+            })
+            .map_or(Self::Unknown, Self::from_write_schema)
     }
 
     /// Maps the edition recognizer's result without treating a future word as
