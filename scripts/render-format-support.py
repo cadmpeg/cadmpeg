@@ -30,9 +30,10 @@ import argparse
 import difflib
 import re
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from dialect_support_data import RegistryDataError, joined_rows, load_documents
 
 ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_REL = Path("docs") / "dialects.toml"
@@ -118,31 +119,13 @@ class Format:
             raise RenderError(f"{SUPPORT_REL}: format.{self.fmt} has no level")
         return f"L{self.level}"
 
-def _load_toml(path: Path) -> dict:
-    try:
-        with path.open("rb") as handle:
-            return tomllib.load(handle)
-    except FileNotFoundError as exc:
-        raise RenderError(f"{path}: not found") from exc
-    except tomllib.TOMLDecodeError as exc:
-        raise RenderError(f"{path}: {exc}") from exc
-
-
 def load_formats(root: Path) -> dict[str, Format]:
     """Join the registries into per-format row sets."""
-    identity = _load_toml(root / IDENTITY_REL)
-    capability = _load_toml(root / SUPPORT_REL)
-    evaluations = _load_toml(root / EVALUATIONS_REL)
-
-    declared = identity.get("format")
-    if not isinstance(declared, dict) or not declared:
-        raise RenderError(f"{IDENTITY_REL}: no [format.<id>] entries")
-    dialects = identity.get("dialect")
-    if not isinstance(dialects, list) or not dialects:
-        raise RenderError(f"{IDENTITY_REL}: no [[dialect]] rows")
-    supports = capability.get("support")
-    if not isinstance(supports, list) or not supports:
-        raise RenderError(f"{SUPPORT_REL}: no [[support]] rows")
+    try:
+        identity, capability, evaluations = load_documents(root)
+        declared, joined = joined_rows(identity, capability)
+    except RegistryDataError as error:
+        raise RenderError(str(error)) from error
     format_levels = capability.get("format")
     if not isinstance(format_levels, dict):
         raise RenderError(f"{SUPPORT_REL}: no [format.<id>] entries")
@@ -155,26 +138,10 @@ def load_formats(root: Path) -> dict[str, Format]:
         if isinstance(row, dict) and isinstance(row.get("dialect"), str)
     }
 
-    by_dialect: dict[str, dict] = {}
-    for support in supports:
-        dialect = support.get("dialect")
-        if not isinstance(dialect, str):
-            raise RenderError(f"{SUPPORT_REL}: a [[support]] row has no dialect id")
-        if dialect in by_dialect:
-            raise RenderError(f"{SUPPORT_REL}: duplicate support row for {dialect}")
-        by_dialect[dialect] = support
-
     grouped: dict[str, list[Row]] = {fmt: [] for fmt in declared}
-    for entry in dialects:
-        dialect = entry.get("id")
-        if not isinstance(dialect, str) or ":" not in dialect:
-            raise RenderError(f"{IDENTITY_REL}: bad dialect id {dialect!r}")
+    for entry, support in joined:
+        dialect = entry["id"]
         fmt, _, _ = dialect.partition(":")
-        if fmt not in declared:
-            raise RenderError(f"{IDENTITY_REL}: {dialect} names undeclared format {fmt}")
-        support = by_dialect.pop(dialect, None)
-        if support is None:
-            raise RenderError(f"{SUPPORT_REL}: no support row for {dialect}")
         grouped[fmt].append(
             Row(
                 dialect=dialect,
@@ -182,9 +149,6 @@ def load_formats(root: Path) -> dict[str, Format]:
                 write=support.get("write", ""),
             )
         )
-    if by_dialect:
-        orphans = ", ".join(sorted(by_dialect))
-        raise RenderError(f"{SUPPORT_REL}: support rows name no identity row: {orphans}")
 
     missing = sorted(set(declared) - set(TARGETS))
     if missing:

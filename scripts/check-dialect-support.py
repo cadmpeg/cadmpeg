@@ -41,6 +41,8 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
+from dialect_support_data import RegistryDataError, joined_rows, load_documents
+
 ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_REL = Path("docs") / "dialects.toml"
 SUPPORT_REL = Path("docs") / "dialect-support.toml"
@@ -366,10 +368,10 @@ def check(root: Path) -> tuple[list[str], str]:
     """Check the capability registry under ``root``. Returns failures + summary."""
     failures: list[str] = []
 
-    identity = _load(root / IDENTITY_REL, IDENTITY_REL.as_posix(), failures)
-    support = _load(root / SUPPORT_REL, SUPPORT_REL.as_posix(), failures)
-    evaluations_doc = _load(root / EVALUATIONS_REL, EVALUATIONS_REL.as_posix(), failures)
-    if identity is None or support is None or evaluations_doc is None:
+    try:
+        identity, support, evaluations_doc = load_documents(root)
+    except RegistryDataError as error:
+        failures.append(str(error))
         return failures, ""
 
     known = {
@@ -380,6 +382,10 @@ def check(root: Path) -> tuple[list[str], str]:
     if not known:
         failures.append(f"{IDENTITY_REL.as_posix()}: no identity rows to support")
         return failures, ""
+    try:
+        joined_rows(identity, support)
+    except RegistryDataError as error:
+        failures.append(str(error))
 
     formats = check_formats(support.get("format"), known, failures)
     evaluations = check_evaluations(evaluations_doc, known, failures)
