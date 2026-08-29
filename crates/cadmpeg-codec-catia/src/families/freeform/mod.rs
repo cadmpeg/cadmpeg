@@ -777,18 +777,15 @@ pub(crate) fn try_decode_freeform_surfaces(
     }
     Some(FamilyOutput {
         ir,
-        report: DecodeReport {
-            dialects: Some(cadmpeg_core::dialect::DialectLayers::of(
-                crate::dialect::classify(scan),
-            )),
-            format: "catia".to_string(),
-            container_only: false,
-            geometry_transferred: true,
+        report: DecodeReport::unclassified(
+            "catia",
+            false,
+            true,
             coverage,
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
-            notes: container::summarize(scan).notes,
-        },
+            container::summarize(scan).notes,
+            cadmpeg_ir::report::TransferLedger::default(),
+        ),
         annotations,
         unknowns,
         standard_face_population: false,

@@ -54,7 +54,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(&scan, ir, report, annotations, unknowns);
     }
 
     for route in families::ROUTES {
@@ -3484,7 +3484,7 @@ fn finish_decode(
         &mut admitted_entities,
         "admit CATIA entities",
     )?;
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(scan, ir, report, annotations, unknowns)
 }
 
 fn modeling_graph_scope(
@@ -3508,16 +3508,26 @@ fn modeling_graph_scope(
 
 /// The single site that finishes a decode and charges dialect admission loss.
 ///
-/// Every route constructs its primary dialect layer with the report. This
-/// function charges the dialect-unverified loss from that same layer, so a
+/// Every route supplies an unclassified report. This function classifies it
+/// once and charges the dialect-unverified loss from that same layer, so a
 /// report can carry `AdmittedUnverified` without its loss only if this function
 /// is bypassed.
 fn decode_result(
+    scan: &ContainerScan,
     mut ir: CadIr,
-    mut report: DecodeReport,
+    report: DecodeReport,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
+    let mut report = DecodeReport::classified(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::classify(scan)),
+        report.container_only,
+        report.geometry_transferred,
+        report.coverage,
+        report.losses,
+        report.notes,
+        report.transfer_ledger,
+    );
     let matched = report
         .dialects
         .as_ref()

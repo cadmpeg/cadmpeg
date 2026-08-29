@@ -262,18 +262,15 @@ pub(crate) fn try_decode_e5(
     let annotations = annotations.build();
     Some(FamilyOutput {
         ir,
-        report: DecodeReport {
-            dialects: Some(cadmpeg_core::dialect::DialectLayers::of(
-                crate::dialect::classify(scan),
-            )),
-            format: "catia".to_string(),
-            container_only: false,
-            geometry_transferred: true,
-            coverage: std::collections::BTreeMap::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        report: DecodeReport::unclassified(
+            "catia",
+            false,
+            true,
+            std::collections::BTreeMap::new(),
             losses,
-            notes: container::summarize(scan).notes,
-        },
+            container::summarize(scan).notes,
+            cadmpeg_ir::report::TransferLedger::default(),
+        ),
         annotations,
         unknowns,
         standard_face_population: false,
