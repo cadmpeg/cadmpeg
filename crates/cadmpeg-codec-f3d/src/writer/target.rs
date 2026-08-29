@@ -14,10 +14,6 @@ use crate::dialect;
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
-/// The dialect `writer::generate::write_new` produces, read off the catalog so
-/// the generator and the catalog cannot name different rows.
-const SYNTHESIS_TARGET: &str = dialect::SYNTHESIS_TARGET_ID;
-
 /// Resolve the request against the source, then plan the export it names.
 ///
 /// `Explicit(id)` refuses an id outside the synthesis catalog, and is
@@ -132,44 +128,34 @@ fn synthesized_plan<'a>(
     target: &DialectId,
     displaced: Option<&DialectId>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    if target.as_str() != SYNTHESIS_TARGET {
-        return Err(unsupported_target(
-            dialect::FORMAT,
-            target.as_str(),
-            "the semantic generator emits only its pinned synthesis dialect",
-            dialect::TARGETS,
-        ));
-    }
     let mut bytes = Vec::new();
     super::generate::write_new(input.ir, &mut bytes)?;
-    let expects_preserved_source = input
-        .ir
-        .source
-        .as_ref()
-        .is_some_and(|source| source.format == dialect::FORMAT);
-    let fidelity = if displaced.is_some() {
-        if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        }
-    } else if input.fidelity.is_some() || expects_preserved_source {
+    let preservation_eligible = displaced.is_none()
+        && input
+            .ir
+            .source
+            .as_ref()
+            .is_some_and(|source| source.format == dialect::FORMAT);
+    let source_available = input
+        .fidelity
+        .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
+        .is_some();
+    let fidelity = if preservation_eligible && !source_available {
         FidelityResolution::Degraded {
             reason: "preserved F3D source image is unavailable".into(),
         }
+    } else if input.fidelity.is_some() {
+        FidelityResolution::NotConsumed
     } else {
         FidelityResolution::NotProvided
     };
-    let mut losses: Vec<_> = (matches!(fidelity, FidelityResolution::Degraded { .. })
-        && input.ir.source.as_ref().is_some_and(|source| {
-            source.format == dialect::FORMAT && source.dialect.as_ref() == Some(target)
-        }))
-    .then(|| {
-        F3dLossCode::SourcePreservedImageUnavailable
-            .note("preserved F3D source image is unavailable; regenerated from IR")
-    })
-    .into_iter()
-    .collect();
+    let mut losses: Vec<_> = (preservation_eligible && !source_available)
+        .then(|| {
+            F3dLossCode::SourcePreservedImageUnavailable
+                .note("preserved F3D source image is unavailable; regenerated from IR")
+        })
+        .into_iter()
+        .collect();
     if let Some(source) = displaced.as_ref() {
         losses.push(F3dLossCode::SourceDialectDisplaced.note(
             cadmpeg_ir::codec::source_dialect_displaced_message(source, target),
