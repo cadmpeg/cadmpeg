@@ -277,7 +277,7 @@ fn compressed_ascii_preserves_v4_and_v5_0_profiles() {
             .unwrap();
         assert_eq!(result.ir().model.points.len(), 2, "{version}");
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            result.report().dialects().unwrap().primary().declared["effective_version"],
             version
         );
     }

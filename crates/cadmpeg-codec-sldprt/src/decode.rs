@@ -3094,10 +3094,8 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
 /// Leaves the primary-layer match for `DecodeResult` to mirror into
 /// [`SourceMeta::dialect`].
 ///
-/// The `sw_version` attribute stays where it is, and so does every other key:
-/// absence in this map is load-bearing at the sites that read it, `sw_name` and
-/// `sldprt_active_partition_unresolved` gate the writer, and these fields are
-/// additive. Retiring the ad-hoc keys is a later phase.
+/// Non-identity source metadata stays in the attribute map. `sw_name` and
+/// `sldprt_active_partition_unresolved` gate the writer.
 fn source_meta_with_dialect(attributes: BTreeMap<String, String>) -> SourceMeta {
     SourceMeta {
         format: crate::dialect::FORMAT.to_string(),
@@ -3170,7 +3168,6 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
     let active_configuration_name = container::active_configuration_name(scan);
     if let Some(envelope) = container::solidworks_envelope(scan) {
         for (key, value) in [
-            ("sw_version", envelope.sw_version),
             ("sw_creation_time_unix", envelope.creation_time),
             ("sw_path", envelope.path),
             ("sw_name", envelope.model_name),

@@ -256,12 +256,10 @@ fn classification_is_total_over_the_padding_rule() {
 }
 
 #[test]
-fn the_scan_read_and_the_attribute_read_classify_the_same_declaration() {
-    // `classify_scan` reads through `container::declared_sw_version` and
-    // `source_meta` reads `attributes["sw_version"]`. Both are the output of
-    // `add_solidworks_xml_metadata`, so the report entry and the `SourceMeta`
-    // mirror cannot disagree. This checks the wiring end to end over a real
-    // container rather than the identity of the two expressions.
+fn the_scan_read_and_the_report_classify_the_same_declaration() {
+    // `classify_scan` reads through `container::declared_sw_version`.
+    // This checks the report wiring end to end over a real container rather
+    // than the identity of two expressions.
     for declaration in ["11999", "12000", "SW2019"] {
         let bytes = container_declaring(declaration);
         let scan = scan_bytes(&bytes);

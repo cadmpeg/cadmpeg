@@ -815,18 +815,7 @@ pub struct Container<'a> {
     /// Modern version byte at file offset 8, or the legacy UGII payload
     /// version when the source is a CFB wrapper.
     ///
-    /// Zero stands in when the modern header is too short to carry the byte,
-    /// so this field cannot tell a declared zero from a substituted one. Read
-    /// [`Container::declared_version`] wherever that distinction matters.
     pub version: u8,
-    /// The version byte as the source declared it, or `None` when the modern
-    /// header did not carry one.
-    ///
-    /// What the source said, as against [`Self::version`], which is what the
-    /// decoder proceeds with. A value cadmpeg synthesizes is not a
-    /// declaration, so this is the field the dialect match records. The legacy
-    /// arm reads its byte after a length check and always declares one.
-    pub declared_version: Option<u8>,
     /// Modern file-specific 24-bit little-endian value at offset 9; zero for
     /// a legacy CFB wrapper.
     pub file_tag: u32,
@@ -966,8 +955,10 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
             "missing SPLMSSTR magic".to_string(),
         ));
     }
-    let declared_version = data.get(splmsstr::VERSION_TAG).copied();
-    let version = declared_version.unwrap_or(0);
+    let version = data
+        .get(splmsstr::VERSION_TAG)
+        .copied()
+        .ok_or_else(|| CodecError::Malformed("SPLMSSTR header has no version byte".to_string()))?;
     let file_tag = u24_le(&data, splmsstr::FILE_TAG);
     let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
     let fo = usize::try_from(footer_offset)
@@ -1026,7 +1017,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     Ok(Container {
         data,
         version,
-        declared_version,
         file_tag,
         footer_offset,
         header_entry_count,
@@ -1114,7 +1104,6 @@ pub fn scan_legacy<'a>(
     let container = Container {
         data: Cow::Borrowed(logical_data.window()),
         version,
-        declared_version: Some(version),
         file_tag: 0,
         footer_offset: 0,
         header_entry_count,

@@ -34,7 +34,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
         let result = decode(bounded_plane_entity_file(global, 100, "100,0,0,0,1,0,1,0;"));
 
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            result.report().dialects().unwrap().primary().declared["effective_version"],
             expected_version
         );
         let face = result

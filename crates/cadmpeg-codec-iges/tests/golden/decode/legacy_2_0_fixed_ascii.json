@@ -1006,8 +1006,6 @@
     "source": {
       "attributes": {
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "iges_version": "2.0",
-        "iges_version_flag": "3",
         "native_file_name": "part.igs",
         "native_units": "MM",
         "parameter_delimiter": ",",

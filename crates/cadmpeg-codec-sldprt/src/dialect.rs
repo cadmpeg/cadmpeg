@@ -98,8 +98,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 /// Absent when the document declares no `swVersion`, which is every document
 /// carrying no `swSolidWorks` XML payload at all. The value is the attribute
 /// text exactly as written, including declarations that do not read as a
-/// number; it is the same string that reaches
-/// `SourceMeta::attributes["sw_version"]`.
+/// number.
 pub(crate) const DECLARED_SW_VERSION: &str = "sw_version";
 
 /// One row of `docs/dialects.toml` under the `sldprt` namespace.
@@ -206,10 +205,8 @@ impl SldprtDialect {
 
     /// Classifies one scanned document, reading the declaration from the scan.
     ///
-    /// The read is [`crate::container::declared_sw_version`], which is the same
-    /// extraction that fills `SourceMeta::attributes["sw_version"]`. Callers
-    /// that have already built those attributes read the key from there and
-    /// call [`Self::classify`] instead, so the two never diverge.
+    /// The read is [`crate::container::declared_sw_version`], so the retained
+    /// declaration has one extraction and one report location.
     pub(crate) fn classify_scan(scan: &ContainerScan<'_>) -> DialectMatch {
         Self::classify(crate::container::declared_sw_version(scan).as_deref())
     }

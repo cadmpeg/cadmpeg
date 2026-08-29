@@ -2417,8 +2417,7 @@
           "plain_streams": "0",
           "rmfastload_active_body_count": "1",
           "rmfastload_active_object_count": "50",
-          "rmfastload_hits": "50",
-          "splmsstr_version": "6"
+          "rmfastload_hits": "50"
         },
         "dialect": {
           "admission": "admitted",

@@ -510,8 +510,6 @@
           "offset_store_control_count": "1",
           "partition_streams": "0",
           "plain_streams": "0",
-          "product_version": "NX 2027.3102",
-          "splmsstr_version": "6",
           "unclassified_offset_store_control_count": "0"
         },
         "dialect": {

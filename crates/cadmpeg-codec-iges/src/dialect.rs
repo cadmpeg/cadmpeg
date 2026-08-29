@@ -137,7 +137,7 @@ const DECLARED_VERSION_FLAG: &str = "version_flag";
 /// Key of the version after the postprocessor clamp, in
 /// [`DialectMatch::declared`].
 ///
-/// The same value as the `iges_version` source attribute.
+/// This is the sole report location for the effective version.
 const DECLARED_EFFECTIVE_VERSION: &str = "effective_version";
 /// Key of the numeric version flag after a postprocessor clamp, in
 /// [`DialectMatch::declared`]. Absent when no clamp occurred.

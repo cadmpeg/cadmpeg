@@ -1181,9 +1181,6 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
 
 /// Builds source metadata from the container scan.
 ///
-/// The `splmsstr_version`, `product_version`, and `ugii_version` attributes
-/// stay. They duplicate the declared keys of the arm that ran; retiring the
-/// ad-hoc attribute keys is a later phase.
 pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     let legacy_cfb = scan.container.is_legacy_cfb();
@@ -1201,18 +1198,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     );
     if legacy_cfb {
         attributes.insert("container_kind".to_string(), "cfb".to_string());
-        attributes.insert(
-            "ugii_version".to_string(),
-            scan.container.version.to_string(),
-        );
     } else {
-        attributes.insert(
-            "splmsstr_version".to_string(),
-            scan.container.version.to_string(),
-        );
-        if let Some(header) = crate::native::store_headers(&scan.container).first() {
-            attributes.insert("product_version".to_string(), header.version.clone());
-        }
         attributes.insert(
             "footer_offset".to_string(),
             scan.container.footer_offset.to_string(),

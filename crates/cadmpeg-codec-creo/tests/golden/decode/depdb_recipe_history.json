@@ -242,7 +242,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "151",
-        "layout": "DEPDB",
         "section.0.length": "75",
         "section.0.name": "DEPDB_DATA",
         "section.0.offset": "76",

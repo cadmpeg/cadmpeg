@@ -17,8 +17,6 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The `iges_version` attribute stays. It duplicates the `effective_version`
-/// declared key for now; retiring the ad-hoc attribute keys is a later phase.
 fn source_meta(global: &global::ResolvedGlobal, representation: Representation) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("representation".into(), representation.as_str().into());
@@ -29,11 +27,6 @@ fn source_meta(global: &global::ResolvedGlobal, representation: Representation) 
     attributes.insert(
         "record_delimiter".into(),
         char::from(global.record_delimiter).to_string(),
-    );
-    attributes.insert("iges_version".into(), global.version_name().into());
-    attributes.insert(
-        "iges_version_flag".into(),
-        global.declared_version_flag().to_string(),
     );
     if let Some(value) = global.units_name() {
         attributes.insert("native_units".into(), value);
