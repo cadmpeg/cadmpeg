@@ -698,9 +698,9 @@ struct DecodeReportWire {
 
 impl<'de> Deserialize<'de> for DecodeReport {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let mut wire = DecodeReportWire::deserialize(deserializer)?;
+        let wire = DecodeReportWire::deserialize(deserializer)?;
         let dialects =
-            split_dialect_layers(&wire.format, &mut wire.wire_layers).map_err(D::Error::custom)?;
+            DialectLayers::from_rows(&wire.format, wire.wire_layers).map_err(D::Error::custom)?;
         Ok(Self {
             format: wire.format,
             container_only: wire.container_only,
@@ -712,33 +712,6 @@ impl<'de> Deserialize<'de> for DecodeReport {
             dialects,
         })
     }
-}
-
-fn split_dialect_layers(
-    format: &str,
-    layers: &mut Vec<DialectMatch>,
-) -> Result<Option<DialectLayers>, String> {
-    if layers.is_empty() {
-        return Ok(None);
-    }
-    let mut primary = layers
-        .iter()
-        .enumerate()
-        .filter(|(_, layer)| layer.format == format);
-    let Some((primary_index, _)) = primary.next() else {
-        return Err(format!(
-            "populated dialects for format {format:?} contain no primary layer"
-        ));
-    };
-    if primary.next().is_some() {
-        return Err(format!(
-            "populated dialects for format {format:?} contain multiple primary layers"
-        ));
-    }
-    let primary = layers.remove(primary_index);
-    DialectLayers::new(primary, std::mem::take(layers))
-        .map(Some)
-        .map_err(|error| error.to_string())
 }
 
 /// Final disposition of one source record or semantic object.
