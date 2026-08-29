@@ -258,12 +258,6 @@ pub(crate) struct SegmentDescriptor<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BulkReadMode {
-    HeaderOnly,
-    Expand,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BulkForm(u16);
 
 impl BulkForm {
@@ -277,7 +271,7 @@ pub(crate) struct SegmentBulk<'a> {
     pub(crate) prefix: [u8; 16],
     pub(crate) form: BulkForm,
     pub(crate) compressed: View<'a>,
-    pub(crate) expanded: Option<View<'a>>,
+    pub(crate) expanded: View<'a>,
     pub(crate) records: RecordFrameState<'a>,
 }
 
@@ -328,7 +322,6 @@ impl<'a> RseInventory<'a> {
     pub(crate) fn build(
         ctx: &DecodeContext<'a>,
         snapshot: &CompoundSnapshot<'a>,
-        bulk_mode: BulkReadMode,
     ) -> Result<Self, CodecError> {
         let mut databases = Vec::new();
         let mut metadata = BTreeMap::new();
@@ -442,7 +435,7 @@ impl<'a> RseInventory<'a> {
                     .stream_by_id(pair.bulk)
                     .ok_or_else(|| CodecError::Malformed("RSe bulk stream handle is absent".into()))
                     .and_then(|entry| snapshot.open(ctx, entry))
-                    .and_then(|view| parse_bulk_stream(ctx, view, bulk_mode));
+                    .and_then(|view| parse_bulk_stream(ctx, view));
                 let bulk = match bulk {
                     Ok(bulk) => SegmentBulkState::Framed(bulk),
                     Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
@@ -568,7 +561,6 @@ fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegis
 fn parse_bulk_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
-    mode: BulkReadMode,
 ) -> Result<SegmentBulk<'a>, CodecError> {
     let bytes = source.window();
     let header = bytes
@@ -585,10 +577,7 @@ fn parse_bulk_stream<'a>(
     let compressed = source
         .child(source.start() + header.len(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
-    let expanded = match mode {
-        BulkReadMode::HeaderOnly => None,
-        BulkReadMode::Expand => Some(inflate_zlib_exact(ctx, compressed)?),
-    };
+    let expanded = inflate_zlib_exact(ctx, compressed)?;
     Ok(SegmentBulk {
         prefix,
         form,
@@ -606,9 +595,7 @@ fn frame_segment_records<'a>(
         let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
             continue;
         };
-        let Some(expanded) = bulk.expanded else {
-            continue;
-        };
+        let expanded = bulk.expanded;
         let result = match (&segment.meta, segment.registry_version_major) {
             (SegmentMetaState::Parsed(meta), Some(version)) => {
                 frame_bulk_records(ctx, expanded, &meta.tables, version)
@@ -701,7 +688,7 @@ pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
 }
 
 pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _ = parse_bulk_stream(ctx, source, BulkReadMode::Expand);
+    let _ = parse_bulk_stream(ctx, source);
 }
 
 struct MetaCursor<'a> {
@@ -878,15 +865,11 @@ mod tests {
             0x0104
         );
         assert!(bytes.len() > 18);
-        let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::Expand)
-            .expect("synthetic bulk stream parses");
+        let bulk = parse_bulk_stream(&ctx, root).expect("synthetic bulk stream parses");
         assert_eq!(bulk.prefix.len(), 16);
         assert_eq!(bulk.prefix, [0x3c; 16]);
         assert_eq!(bulk.form.value(), 0x0104);
-        assert_eq!(
-            bulk.expanded.expect("expanded in decode mode").window(),
-            b"framed bulk records"
-        );
+        assert_eq!(bulk.expanded.window(), b"framed bulk records");
     }
 
     #[test]
@@ -895,19 +878,16 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("truncated envelope fits policy");
-        assert!(parse_bulk_stream(&ctx, root, BulkReadMode::HeaderOnly).is_err());
+        assert!(parse_bulk_stream(&ctx, root).is_err());
     }
 
     #[test]
-    fn bulk_stream_header_only_does_not_inflate_and_suffix_is_rejected() {
+    fn bulk_stream_rejects_a_suffix_after_the_exact_zlib_member() {
         let bytes = bulk_fixture(true);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic bulk stream fits policy");
-        let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::HeaderOnly)
-            .expect("header-only framing does not consume the member");
-        assert!(bulk.expanded.is_none());
-        assert!(parse_bulk_stream(&ctx, root, BulkReadMode::Expand).is_err());
+        assert!(parse_bulk_stream(&ctx, root).is_err());
     }
 
     fn meta_fixture(suffix: bool) -> Vec<u8> {

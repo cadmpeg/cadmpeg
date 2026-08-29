@@ -38,14 +38,20 @@ pub(crate) fn decode_asm_binary(
     bytes: &[u8],
 ) -> Result<DecodeResult, CodecError> {
     let header = asm_header::parse(bytes).ok_or_else(|| {
-        CodecError::Malformed("ASM binary magic without a parseable header".to_string())
+        unsupported_unframed(
+            &StreamEvidence::AsmBinary(None),
+            "ASM binary magic has no parseable header",
+        )
     })?;
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
     let width = usize::from(header.width);
     let start = asm_header::record_stream_start(bytes).ok_or_else(|| {
-        CodecError::Malformed("ASM binary header without a record stream".to_string())
+        unsupported_unframed(
+            &StreamEvidence::AsmBinary(None),
+            "ASM binary header has no record stream",
+        )
     })?;
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
@@ -75,7 +81,10 @@ pub(crate) fn decode_acis_binary(
     bytes: &[u8],
 ) -> Result<DecodeResult, CodecError> {
     let header = acis_header::parse(bytes).ok_or_else(|| {
-        CodecError::Malformed("ACIS binary magic without a parseable header".to_string())
+        unsupported_unframed(
+            &StreamEvidence::AcisBinary(None),
+            "ACIS binary magic has no parseable header",
+        )
     })?;
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
@@ -86,7 +95,10 @@ pub(crate) fn decode_acis_binary(
     let evidence = StreamEvidence::AcisBinary(Some(&header));
     let (matched, kernel) = layers(&evidence);
     let start = acis_header::record_stream_start(bytes).ok_or_else(|| {
-        CodecError::Malformed("ACIS binary header without a record stream".to_string())
+        unsupported_unframed(
+            &StreamEvidence::AcisBinary(None),
+            "ACIS binary header has no record stream",
+        )
     })?;
     let framed = match acis_header::solved_record_limit(bytes) {
         Some(limit) => sab::frame(bytes, start, limit, 4),
@@ -109,7 +121,10 @@ pub(crate) fn decode_acis_binary(
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
     let stream = sat::parse(bytes).map_err(|error| {
-        CodecError::malformed(format_args!("text stream parse failed: {error}"))
+        unsupported_unframed(
+            &StreamEvidence::Text(None),
+            format!("text stream does not frame: {error}"),
+        )
     })?;
     let header = stream.header.as_kernel_header();
     let family = match stream.terminator {
@@ -145,6 +160,17 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         matched,
         kernel,
     )
+}
+
+/// Refusal for bytes whose SAT discriminant matched but whose stream did not
+/// frame. Inspection reports the same primary match.
+fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String>) -> CodecError {
+    let (matched, _) = layers(evidence);
+    CodecError::UnsupportedDialect {
+        format: FORMAT.into(),
+        dialect_match: Box::new(matched),
+        message: message.into(),
+    }
 }
 
 /// Builds source metadata from non-dialect stream attributes.

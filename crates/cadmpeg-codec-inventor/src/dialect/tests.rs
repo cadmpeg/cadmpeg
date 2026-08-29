@@ -299,6 +299,12 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
         let decoded = InventorCodec
             .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
             .expect("the synthetic document decodes");
+        assert_eq!(
+            summary.dialects,
+            decoded.report().dialects,
+            "{}: inspect and decode must report the full layer list",
+            case.label
+        );
         let source = decoded.ir().source.as_ref().expect("Inventor source meta");
         assert_eq!(source.format, FORMAT, "{}", case.label);
         assert_eq!(source.dialect.as_ref(), Some(&matched), "{}", case.label);

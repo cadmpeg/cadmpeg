@@ -15,11 +15,11 @@
 //!
 //! The host rows are discriminated by the stream's leading bytes alone
 //! ([`StreamKind`]), which are read exactly: `ASM BinaryFile4`/`8`, `ACIS
-//! BinaryFile`, or the two text header lines. A stream that stops at its own
-//! discriminant — the magic matched and nothing past it parsed — is
-//! structurally unframed and takes [`Admission::Refused`]. That state is
-//! reachable at inspect only; decode returns a malformed error on the same
-//! bytes.
+//! BinaryFile`, or the two text header lines. A recognized stream that has no
+//! binary record-stream boundary or complete text framing takes
+//! [`Admission::Refused`]. Inspection reports that match, and decode returns
+//! [`cadmpeg_core::CodecError::UnsupportedDialect`] carrying the same primary
+//! match.
 //!
 //! The kernel save format is banded on the separate `acis:` layer. The Spatial
 //! ACIS record decoders are verified against majors 217 and 218; the ASM record
@@ -109,9 +109,8 @@ pub(crate) struct TextEvidence<'a> {
 /// What one stream's own bytes said, as the reading path read them.
 ///
 /// One variant per [`StreamKind`]. `None` inside a variant means the kind's
-/// discriminant matched but nothing past it parsed. That state is reachable at
-/// inspect, which reports what it could read; decode returns a malformed error
-/// on the same bytes and builds no match at all.
+/// discriminant matched but nothing past it parsed. Inspection reports what it
+/// could read, and decode refuses with the same primary match.
 pub(crate) enum StreamEvidence<'a> {
     /// `ASM BinaryFile4`/`8`. The header is `None` only if the magic matched
     /// and `asm_header::parse` still declined, which its own contract makes

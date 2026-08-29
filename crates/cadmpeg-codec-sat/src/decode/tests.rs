@@ -140,19 +140,85 @@ fn an_unverified_band_that_decodes_nothing_reports_honest_coverage() {
 }
 
 #[test]
-fn a_framing_failure_is_still_refused() {
-    // Structural refusal stands: an ACIS magic whose header does not carry a
-    // record stream is malformed, not recovered.
+fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
     let mut bytes = b"ACIS BinaryFile".to_vec();
     bytes.extend_from_slice(&UNVERIFIED_SAVE_FORMAT.to_le_bytes());
     bytes.extend_from_slice(&[0u8; 4]);
+    let summary = SatCodec
+        .inspect(
+            &mut Cursor::new(&bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect("the recognized stream kind inspects at refusal depth");
+    let layers = summary
+        .dialects
+        .expect("inspection classifies the host and kernel layers");
+    let inspected = layers.primary();
+    assert_eq!(
+        inspected
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("sat:acis-binary")
+    );
+    assert_eq!(
+        inspected.admission,
+        cadmpeg_core::dialect::Admission::Refused
+    );
+    assert_eq!(layers.iter().count(), 2, "inspect retains both layers");
+
     let error = SatCodec
         .decode(
             &mut Cursor::new(bytes),
             &cadmpeg_ir::codec::DecodeOptions::default(),
         )
         .unwrap_err();
-    assert!(matches!(error, CodecError::Malformed(_)), "{error:?}");
+    let CodecError::UnsupportedDialect { dialect_match, .. } = error else {
+        panic!("expected identified dialect refusal, got {error:?}");
+    };
+    assert_eq!(dialect_match.as_ref(), inspected);
+}
+
+#[test]
+fn unframed_discriminant_has_the_same_refused_match_at_inspect_and_decode() {
+    let bytes = b"21800 0 1 0 \n1";
+    let summary = SatCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect("the recognized stream kind inspects at refusal depth");
+    let layers = summary
+        .dialects
+        .expect("inspection classifies the host and kernel layers");
+    let inspected = layers.primary();
+    assert_eq!(
+        inspected
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("sat:text")
+    );
+    assert_eq!(
+        inspected.admission,
+        cadmpeg_core::dialect::Admission::Refused
+    );
+    assert_eq!(
+        layers.iter().count(),
+        2,
+        "the full inspect layer list is retained"
+    );
+
+    let error = SatCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect_err("the unframed identified stream is refused");
+    let CodecError::UnsupportedDialect { dialect_match, .. } = error else {
+        panic!("expected identified dialect refusal, got {error:?}");
+    };
+    assert_eq!(dialect_match.as_ref(), inspected);
 }
 
 #[test]

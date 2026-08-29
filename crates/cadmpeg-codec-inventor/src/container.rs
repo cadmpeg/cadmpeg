@@ -8,23 +8,8 @@ use cadmpeg_core::{CodecError, ContainerSummary};
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
 use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
 use crate::protein::{parse as parse_protein, ProteinState};
+use crate::rse::SegmentBulkState;
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
-use crate::rse::{BulkReadMode, SegmentBulkState};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ContainerPurpose {
-    Inspect,
-    Decode,
-}
-
-impl ContainerPurpose {
-    const fn bulk_mode(self) -> BulkReadMode {
-        match self {
-            Self::Inspect => BulkReadMode::HeaderOnly,
-            Self::Decode => BulkReadMode::Expand,
-        }
-    }
-}
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
@@ -36,11 +21,7 @@ pub(crate) struct InventorContainer<'a> {
 }
 
 impl<'a> InventorContainer<'a> {
-    pub(crate) fn open(
-        ctx: &DecodeContext<'a>,
-        root: View<'a>,
-        purpose: ContainerPurpose,
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn open(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let snapshot = CompoundSnapshot::new(ctx, root)?;
         if !matches!(
             snapshot.entry("RSeStorage"),
@@ -50,7 +31,7 @@ impl<'a> InventorContainer<'a> {
                 "Inventor document has no RSeStorage storage".into(),
             ));
         }
-        let rse = RseInventory::build(ctx, &snapshot, purpose.bulk_mode())?;
+        let rse = RseInventory::build(ctx, &snapshot)?;
         let property_sets = property_set_inventory(ctx, &snapshot)?;
         let protein = parse_protein(ctx, &snapshot)?;
         let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
@@ -116,11 +97,10 @@ impl<'a> InventorContainer<'a> {
                     bulk_entry
                         .attributes
                         .insert("bulk_form".into(), format!("0x{:04x}", bulk.form.value()));
-                    if let Some(expanded) = bulk.expanded {
-                        bulk_entry
-                            .attributes
-                            .insert("expanded_size".into(), expanded.window().len().to_string());
-                    }
+                    bulk_entry.attributes.insert(
+                        "expanded_size".into(),
+                        bulk.expanded.window().len().to_string(),
+                    );
                 }
                 SegmentBulkState::Malformed(error) => {
                     bulk_entry
