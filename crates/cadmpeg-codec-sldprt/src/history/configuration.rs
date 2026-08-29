@@ -132,11 +132,13 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
-    let form_padding = ir.source.as_ref().and_then(|source| {
-        crate::resolved_features::operations::form_code_padding(
-            source.attributes.get("sw_version").map(String::as_str),
-        )
-    });
+    let form_padding = crate::dialect::SldprtDialect::from_declaration(
+        ir.source
+            .as_ref()
+            .and_then(|source| source.attributes.get("sw_version"))
+            .map(String::as_str),
+    )
+    .form_code_padding();
     let mut resolved_base_features = ir.model.features.clone();
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut resolved_base_features,

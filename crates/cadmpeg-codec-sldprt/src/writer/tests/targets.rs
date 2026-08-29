@@ -23,7 +23,8 @@ fn first_solidworks_envelope_selects_the_written_dialect() {
         ),
     ];
     let declaration =
-        crate::decode::first_declared_sw_version(sections.iter().map(|(_, payload)| *payload));
+        crate::container::first_solidworks_envelope(sections.iter().map(|(_, payload)| *payload))
+            .and_then(|envelope| envelope.sw_version);
     let dialect = crate::dialect::SldprtDialect::from_declaration(declaration.as_deref());
 
     assert_eq!(dialect, crate::dialect::SldprtDialect::SwVersionPre12000);

@@ -257,7 +257,7 @@ fn classification_is_total_over_the_padding_rule() {
 
 #[test]
 fn the_scan_read_and_the_attribute_read_classify_the_same_declaration() {
-    // `classify_scan` reads through `decode::declared_sw_version` and
+    // `classify_scan` reads through `container::declared_sw_version` and
     // `source_meta` reads `attributes["sw_version"]`. Both are the output of
     // `add_solidworks_xml_metadata`, so the report entry and the `SourceMeta`
     // mirror cannot disagree. This checks the wiring end to end over a real
@@ -267,7 +267,7 @@ fn the_scan_read_and_the_attribute_read_classify_the_same_declaration() {
         let scan = scan_bytes(&bytes);
 
         assert_eq!(
-            crate::decode::declared_sw_version(&scan).as_deref(),
+            crate::container::declared_sw_version(&scan).as_deref(),
             Some(declaration),
             "swVersion {declaration:?} must survive the scan"
         );
@@ -285,7 +285,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     let scan = scan_bytes(&bytes);
     let matched = SldprtDialect::classify_scan(&scan);
 
-    assert_eq!(crate::decode::declared_sw_version(&scan), None);
+    assert_eq!(crate::container::declared_sw_version(&scan), None);
     assert_eq!(
         matched.dialect.as_ref().map(DialectId::as_str),
         Some("sldprt:unknown")

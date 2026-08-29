@@ -183,7 +183,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         None
     );
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Eight),),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
         Some(1)
     );
     assert_eq!(
@@ -379,32 +379,40 @@ fn ambiguous_direct_form_code_padding_does_not_shift_the_code() {
 
     let (lane, name) = direct_lane(0, 11, 4);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Four)),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(4)),
         Some(0)
     );
 
     let (lane, name) = direct_lane(11, 0, 8);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Eight)),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
         Some(11)
     );
 }
 
 #[test]
 fn form_code_padding_follows_the_solidworks_schema_version() {
-    assert_eq!(form_code_padding(None), None);
-    assert_eq!(form_code_padding(Some("")), None);
+    use crate::dialect::SldprtDialect;
+
     assert_eq!(
-        form_code_padding(Some("11000")),
-        Some(FormCodePadding::Four)
+        SldprtDialect::from_declaration(None).form_code_padding(),
+        None
     );
     assert_eq!(
-        form_code_padding(Some("12000")),
-        Some(FormCodePadding::Eight)
+        SldprtDialect::from_declaration(Some("")).form_code_padding(),
+        None
     );
     assert_eq!(
-        form_code_padding(Some("34000")),
-        Some(FormCodePadding::Eight)
+        SldprtDialect::from_declaration(Some("11000")).form_code_padding(),
+        Some(4)
+    );
+    assert_eq!(
+        SldprtDialect::from_declaration(Some("12000")).form_code_padding(),
+        Some(8)
+    );
+    assert_eq!(
+        SldprtDialect::from_declaration(Some("34000")).form_code_padding(),
+        Some(8)
     );
 }
 
@@ -596,7 +604,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &base,
         &histories,
         &[operation_lane.clone()],
-        Some(FormCodePadding::Four),
+        Some(4),
     );
     assert!(matches!(
         inherited[0].definition,
@@ -617,7 +625,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &base,
         &histories,
         &[operation_lane],
-        Some(FormCodePadding::Four),
+        Some(4),
     );
     assert!(matches!(
         unresolved[0].definition,

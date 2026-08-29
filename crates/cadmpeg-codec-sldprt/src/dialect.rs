@@ -26,7 +26,7 @@
 //!
 //! `swVersion` is the axis. It is not in the container header: it is an
 //! attribute of a `swSolidWorks` XML payload extracted after the scan, and it
-//! is the sole input to [`form_code_padding`], which selects the byte width of
+//! selects the dialect row, whose [`SldprtDialect::form_code_padding`] method owns the byte width of
 //! the feature-operation form-code padding — four bytes below 12000, eight at
 //! 12000 and above. That padding shifts every feature-operation read, so the
 //! boundary is B1.
@@ -71,7 +71,6 @@
 
 use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
-use crate::resolved_features::operations::{form_code_padding, FormCodePadding};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::LossNote;
@@ -106,7 +105,7 @@ pub(crate) const DECLARED_SW_VERSION: &str = "sw_version";
 /// One row of `docs/dialects.toml` under the `sldprt` namespace.
 ///
 /// Three rows, and the classification is total over them: the two grammar
-/// classes `form_code_padding` selects, plus the mandatory `unknown` row that
+/// classes selected by the padding boundary, plus the mandatory `unknown` row that
 /// absorbs every declaration it cannot use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum SldprtDialect {
@@ -143,17 +142,25 @@ impl SldprtDialect {
 
     /// The row a `swVersion` declaration selects.
     ///
-    /// Derived from [`form_code_padding`] rather than from a second reading of
-    /// the same string: the padding this returns *is* the discriminant, so a
-    /// classification bug and a decode bug cannot be different bugs. The
+    /// The padding this row owns is the discriminant, so a classification bug
+    /// and a decode bug cannot be different bugs. The
     /// boundary value 12000 belongs to the `Eight` arm, and every declaration
     /// the padding rule cannot use — absent, non-numeric, negative,
     /// wider than `u32`, or zero — lands on [`Self::Unknown`].
     pub(crate) fn from_declaration(sw_version: Option<&str>) -> Self {
-        match form_code_padding(sw_version) {
-            Some(FormCodePadding::Four) => Self::SwVersionPre12000,
-            Some(FormCodePadding::Eight) => Self::SwVersion12000Plus,
-            None => Self::Unknown,
+        match sw_version.and_then(|value| value.parse::<u32>().ok()) {
+            Some(1..12_000) => Self::SwVersionPre12000,
+            Some(12_000..) => Self::SwVersion12000Plus,
+            _ => Self::Unknown,
+        }
+    }
+
+    /// Feature-operation form-code padding width selected by this row.
+    pub(crate) const fn form_code_padding(self) -> Option<usize> {
+        match self {
+            Self::SwVersionPre12000 => Some(4),
+            Self::SwVersion12000Plus => Some(8),
+            Self::Unknown => None,
         }
     }
 
@@ -187,12 +194,12 @@ impl SldprtDialect {
 
     /// Classifies one scanned document, reading the declaration from the scan.
     ///
-    /// The read is [`crate::decode::declared_sw_version`], which is the same
+    /// The read is [`crate::container::declared_sw_version`], which is the same
     /// extraction that fills `SourceMeta::attributes["sw_version"]`. Callers
     /// that have already built those attributes read the key from there and
     /// call [`Self::classify`] instead, so the two never diverge.
     pub(crate) fn classify_scan(scan: &ContainerScan<'_>) -> DialectMatch {
-        Self::classify(crate::decode::declared_sw_version(scan).as_deref())
+        Self::classify(crate::container::declared_sw_version(scan).as_deref())
     }
 }
 

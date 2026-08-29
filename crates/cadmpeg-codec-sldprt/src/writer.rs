@@ -288,9 +288,10 @@ pub(crate) fn write_semantic_with_records(
     // which is the whole synthesis catalog. The decoder's first-envelope fold
     // classifies the written bytes here and on re-decode.
     Ok(crate::dialect::SldprtDialect::from_declaration(
-        crate::decode::first_declared_sw_version(
+        crate::container::first_solidworks_envelope(
             sections.iter().map(|(_, payload)| payload.as_slice()),
         )
+        .and_then(|envelope| envelope.sw_version)
         .as_deref(),
     )
     .id())
