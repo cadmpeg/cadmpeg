@@ -50,9 +50,36 @@ pub fn write_step(
     schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> Result<ExportReport, StepError> {
+    let outcome = write_step_outcome(ir, w, schema, opts)?;
+    Ok(ExportReport::native(
+        DialectId::pinned(schema.target()),
+        crate::dialect::FORMAT.into(),
+        outcome.census,
+        FidelityResolution::NotProvided,
+        WritePath::Synthesized,
+        outcome.losses,
+        outcome.notes,
+    ))
+}
+
+/// Report components produced by the STEP writer before the caller fixes its
+/// fidelity and source-target context.
+pub(crate) struct StepWriteOutcome {
+    pub(crate) census: cadmpeg_ir::EntityCensus,
+    pub(crate) losses: Vec<LossNote>,
+    pub(crate) notes: Vec<String>,
+}
+
+/// Writes STEP bytes and returns the facts measured by the writer.
+pub(crate) fn write_step_outcome(
+    ir: &CadIr,
+    w: &mut (impl Write + ?Sized),
+    schema: StepSchema,
+    opts: &StepWriteOptions,
+) -> Result<StepWriteOutcome, StepError> {
     let mut b = Builder::new(ir, schema);
     b.build();
-    let report = b.finish_report();
+    let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines();
 
     write_header(w, schema, opts)?;
@@ -62,7 +89,7 @@ pub fn write_step(
     }
     writeln!(w, "ENDSEC;")?;
     writeln!(w, "END-ISO-10303-21;")?;
-    Ok(report)
+    Ok(outcome)
 }
 
 fn write_header(
@@ -4465,24 +4492,15 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn finish_report(&self) -> ExportReport {
-        ExportReport::native(
-            // The schema this builder emitted, read back from the builder
-            // rather than from the caller's request, so the reported target
-            // and the `FILE_SCHEMA` record cannot disagree.
-            DialectId::pinned(self.schema.target()),
-            crate::dialect::FORMAT.into(),
-            cadmpeg_ir::EntityCensus {
+    fn finish_outcome(&self) -> StepWriteOutcome {
+        StepWriteOutcome {
+            census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::TargetRecords,
                 counts: self.emitter.counts(),
             },
-            FidelityResolution::NotProvided,
-            // STEP is a target-only format here: every record is emitted from
-            // the neutral IR, with no source container to replay or patch.
-            WritePath::Synthesized,
-            self.losses.clone(),
-            self.notes.clone(),
-        )
+            losses: self.losses.clone(),
+            notes: self.notes.clone(),
+        }
     }
 }
 

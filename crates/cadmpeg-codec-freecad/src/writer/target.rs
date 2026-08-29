@@ -12,11 +12,10 @@ use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, TargetRequest};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::FidelityResolution;
+use cadmpeg_ir::report::{ExportReport, FidelityResolution};
 
 use super::write;
 use crate::dialect;
-use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use crate::FcstdWriteOptions;
 
@@ -35,7 +34,6 @@ pub(crate) struct Resolution {
     /// The persistence band to write. Always the one the retained document
     /// graph carries.
     options: FcstdWriteOptions,
-    displaced: Option<DialectId>,
 }
 
 impl Resolution {
@@ -104,28 +102,21 @@ pub(crate) fn plan_options(
 /// Write the resolved export and state what the fidelity sidecar did.
 fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'_>, CodecError> {
     let mut bytes = Vec::new();
-    let displaced = resolution.displaced.clone();
-    let mut report = write(input.ir, &mut bytes, resolution)?;
-    // `write` takes no fidelity sidecar, so the report it returns states the
-    // only resolution it can see. Whether the caller supplied one is known
-    // here, and only here. There is no degraded arm: a write that would change
-    // the source's dialect does not reach this point, because this writer
-    // cannot perform one and `resolve` refuses it by name.
-    report.fidelity = if input.fidelity.is_some() {
-        FidelityResolution::NotConsumed
-    } else {
-        FidelityResolution::NotProvided
-    };
-    if let Some(source) = displaced.as_ref() {
-        let target = report
-            .target()
-            .expect("FCStd report constructed without a target");
-        report
-            .losses
-            .push(FreecadLossCode::SourceDialectDisplaced.note(
-                cadmpeg_ir::codec::source_dialect_displaced_message(source, target),
-            ));
-    }
+    let outcome = write(input.ir, &mut bytes, resolution)?;
+    // A plan constructs its report once, after every report input is final.
+    let report = ExportReport::native(
+        outcome.target,
+        dialect::FORMAT.into(),
+        outcome.census,
+        if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        },
+        cadmpeg_ir::WritePath::Patched,
+        Vec::new(),
+        outcome.notes,
+    );
     Ok(ExportPlan::buffered(report, bytes))
 }
 
@@ -135,17 +126,16 @@ pub(in crate::writer) fn resolve(
     request: TargetRequest<'_>,
 ) -> Result<Resolution, CodecError> {
     // This writer has no synthesize fallback, so it flattens the request locally.
-    let (target, displaced) = match cadmpeg_ir::codec::resolve_write_request(
+    let target = match cadmpeg_ir::codec::resolve_write_request(
         ir,
         request,
         dialect::FORMAT,
         dialect::TARGETS,
     )? {
-        cadmpeg_ir::codec::WriteRequest::Catalog { entry, displaced } => (
-            dialect::written_dialect(dialect::target_options(entry)),
-            displaced,
-        ),
-        cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect } => (dialect.clone(), None),
+        cadmpeg_ir::codec::WriteRequest::Catalog { entry, .. } => {
+            dialect::written_dialect(dialect::target_options(entry))
+        }
+        cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect } => dialect.clone(),
     };
     // Deliverability, not preference. This writer patches the retained
     // `Document.xml` and regenerates none, so the resolved target is reachable
@@ -155,7 +145,7 @@ pub(in crate::writer) fn resolve(
     // refusal is typed and carries the catalog, like every other write refusal;
     // it used to surface as a bare message string from deep inside `write`.
     retained_baseline(ir, &target)
-        .map(|options| Resolution { options, displaced })
+        .map(|options| Resolution { options })
         .ok_or_else(|| {
             unsupported_target(
                 dialect::FORMAT,

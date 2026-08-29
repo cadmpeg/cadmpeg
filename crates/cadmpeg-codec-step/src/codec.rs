@@ -8,11 +8,11 @@ use cadmpeg_ir::codec::{
     resolve_catalog_write, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
     Encoder, ExportPlan, TargetDescriptor, TargetRequest,
 };
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
-use crate::export::write_step;
+use crate::export::write_step_outcome;
 use crate::options::StepWriteOptions;
 use crate::parse;
 use crate::reader;
@@ -60,24 +60,29 @@ impl Encoder for StepCodec {
         )?;
         let schema = crate::dialect::target_schema(entry);
         let mut bytes = Vec::new();
-        let mut report =
-            write_step(input.ir, &mut bytes, schema, &self.options).map_err(CodecError::from)?;
-        let target = report
-            .target()
-            .expect("STEP report constructed without a target");
+        let outcome = write_step_outcome(input.ir, &mut bytes, schema, &self.options)
+            .map_err(CodecError::from)?;
+        let target = cadmpeg_core::dialect::DialectId::pinned(schema.target());
+        let mut losses = outcome.losses;
         if let Some(source) = displaced.as_ref() {
-            report
-                .losses
-                .push(crate::loss::StepLossCode::SourceDialectDisplaced.note(
-                    cadmpeg_ir::codec::source_dialect_displaced_message(source, target),
-                ));
+            losses.push(crate::loss::StepLossCode::SourceDialectDisplaced.note(
+                cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
+            ));
         }
-        // `write_step` does not consume the optional fidelity sidecar.
-        report.fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        };
+        // A plan constructs its report once, after every report input is final.
+        let report = ExportReport::native(
+            target,
+            crate::dialect::FORMAT.into(),
+            outcome.census,
+            if input.fidelity.is_some() {
+                FidelityResolution::NotConsumed
+            } else {
+                FidelityResolution::NotProvided
+            },
+            WritePath::Synthesized,
+            losses,
+            outcome.notes,
+        );
         Ok(ExportPlan::buffered(report, bytes))
     }
 }

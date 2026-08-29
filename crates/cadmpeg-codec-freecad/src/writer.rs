@@ -14,7 +14,6 @@ use std::io::{Seek, SeekFrom, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::report::ExportReport;
 use zip::write::SimpleFileOptions;
 
 use crate::dialect;
@@ -28,7 +27,7 @@ pub(crate) fn write(
     ir: &CadIr,
     output: &mut dyn Write,
     resolution: Resolution,
-) -> Result<ExportReport, CodecError> {
+) -> Result<WriteOutcome, CodecError> {
     let mut staged = tempfile::tempfile()?;
     let report = write_seekable(ir, &mut staged, resolution)?;
     staged.seek(SeekFrom::Start(0))?;
@@ -46,7 +45,7 @@ pub(crate) fn write_seekable(
     ir: &CadIr,
     output: &mut dyn WriteSeek,
     resolution: Resolution,
-) -> Result<ExportReport, CodecError> {
+) -> Result<WriteOutcome, CodecError> {
     let options = resolution.options();
     let target = dialect::written_dialect(options);
     let namespace = ir
@@ -133,26 +132,26 @@ pub(crate) fn write_seekable(
             CodecError::malformed(format_args!("cannot finish FCStd archive: {error}"))
         })?;
     }
-    Ok(ExportReport::native(
-        target.clone(),
-        "fcstd".into(),
-        cadmpeg_ir::EntityCensus {
+    Ok(WriteOutcome {
+        target: target.clone(),
+        census: cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: ir.census(),
         },
-        cadmpeg_ir::FidelityResolution::NotProvided,
-        // Refuses without a retained `fcstd` native graph, then rewrites
-        // `Document.xml` inside that entry set and repacks the rest.
-        cadmpeg_ir::WritePath::Patched,
-        Vec::new(),
-        vec![
+        notes: vec![
             format!(
                 "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
                 options.schema_version, options.file_version
             ),
             "unsupported retained entries and unedited XML records were preserved".into(),
         ],
-    ))
+    })
+}
+
+pub(crate) struct WriteOutcome {
+    pub(crate) target: cadmpeg_core::dialect::DialectId,
+    pub(crate) census: cadmpeg_ir::EntityCensus,
+    pub(crate) notes: Vec<String>,
 }
 
 struct EntrySlot {

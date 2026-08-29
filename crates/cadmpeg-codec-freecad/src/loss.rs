@@ -35,8 +35,6 @@ pub enum FreecadLossCode {
     SourceDialectUnverified,
     /// The GUI document used schema-1 vocabulary under another declaration.
     SourceGuiSchemaUnverified,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
 }
 
 impl FreecadLossCode {
@@ -50,7 +48,6 @@ impl FreecadLossCode {
         Self::AppearanceTopologyColorCountMismatch,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
-        Self::SourceDialectDisplaced,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -66,7 +63,6 @@ impl FreecadLossCode {
             }
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
         }
     }
 
@@ -80,8 +76,7 @@ impl FreecadLossCode {
             | Self::SketchNativeConstraint => Severity::Blocking,
             Self::AppearanceTopologyColorCountMismatch
             | Self::SourceDialectUnverified
-            | Self::SourceGuiSchemaUnverified
-            | Self::SourceDialectDisplaced => Severity::Warning,
+            | Self::SourceGuiSchemaUnverified => Severity::Warning,
         }
     }
 
@@ -96,7 +91,6 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
         }
     }
 
@@ -136,7 +130,6 @@ mod tests {
                 "appearance.topology-color-count-mismatch",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
-                "target.source-dialect-displaced",
             ]
         );
     }
