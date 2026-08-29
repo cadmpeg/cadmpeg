@@ -184,6 +184,8 @@ pub(crate) struct DecodedMesh {
     pub(crate) tessellation: Tessellation,
     /// Per-object warnings.
     pub(crate) warnings: Vec<String>,
+    /// Typed losses raised while selecting writer-version-dependent fields.
+    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Whether source coordinates were converted to millimeters.
     pub(crate) scaled: bool,
     /// Number of stored n-gon group records not represented in the IR.
@@ -214,6 +216,7 @@ struct MeshChannels {
     normals: Vec<Vector3>,
     channels: Vec<TessellationChannel>,
     warnings: Vec<String>,
+    losses: Vec<cadmpeg_ir::report::LossNote>,
 }
 
 /// Returns whether a UUID is `ON_Mesh`.
@@ -429,11 +432,9 @@ pub(crate) fn decode(
     if major == 3 && minor >= 4 && !post_2006_fields {
         let dropped = reader.skip_remaining()?;
         if dropped != 0 && writer_version.is_none() {
-            decoded.warnings.push(format!(
-                "ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, \
-                 double-precision vertices) because {}",
-                crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
-            ));
+            decoded.losses.push(crate::loss::writer_stamp_unverified(format!(
+                "ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp"
+            )));
         }
     }
     let skipped = reader.skip_remaining()?;
@@ -536,6 +537,7 @@ pub(crate) fn decode(
             channels: decoded.channels,
         },
         warnings: decoded.warnings,
+        losses: decoded.losses,
         scaled: scale != 1.0,
         ngon_count,
         quad_count,

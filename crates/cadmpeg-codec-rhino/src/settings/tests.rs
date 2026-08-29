@@ -761,10 +761,12 @@ fn unstamped_layer_charges_the_parent_link_stamp_loss() {
     assert_eq!(unstamped_metadata.layers[0].parent_id, None);
     assert_eq!(unstamped_metadata.layers[0].expanded, None);
     assert!(
-        unstamped
+        unstamped_metadata
+            .losses
             .iter()
-            .any(|warning| warning.contains(LAYER_PARENT_DIALECT)),
-        "{unstamped:?}"
+            .any(|loss| loss.message.contains(LAYER_PARENT_DIALECT)),
+        "{:?}",
+        unstamped_metadata.losses
     );
 
     // The stamped arm must read a layer, or its silence proves nothing.

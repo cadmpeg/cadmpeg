@@ -88,6 +88,7 @@ fn region_raw(
         expected_type: crate::brep::RawBrepBaseType::Curve,
     };
     crate::brep::RawBrep {
+        losses: Vec::new(),
         minor: 3,
         c2: empty_curves(),
         c3: empty_curves(),
@@ -276,6 +277,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
     (
         data,
         crate::brep::RawBrep {
+            losses: Vec::new(),
             minor: 2,
             c2: crate::brep::RawBrepChildren {
                 slots: c2_ranges
@@ -1244,12 +1246,10 @@ fn redundant_field_diagnostics_use_the_typed_repair_loss() {
 
 /// The body-kind and B-rep domain charges reach the report as typed codes.
 ///
-/// Both are pushed as warning strings and promoted by
-/// [`BODY_KIND_GAUGE_PREFIX`] and [`dialect_unverified_diagnostic`]. Asserting
-/// the warning text alone would leave the promotion untested, so this asserts
-/// the loss codes the report carries.
+/// Both are produced as typed losses at their parse sites. This asserts the
+/// loss codes that survive the decode pipeline.
 #[test]
-fn missing_stamp_promotes_brep_warnings_to_typed_loss_codes() {
+fn missing_stamp_carries_brep_typed_loss_codes() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     let decode_archive = |bytes: Vec<u8>| {

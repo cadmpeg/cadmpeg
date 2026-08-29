@@ -246,6 +246,8 @@ pub(crate) struct RawBrepRegion {
 /// Parsed Brep data before semantic validation.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RawBrep {
+    /// Typed losses raised while selecting writer-version-dependent layouts.
+    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Packed payload minor.
     pub(crate) minor: u8,
     /// C2 curve slots.
@@ -602,6 +604,7 @@ pub(crate) fn parse(
     }
     let minor = version & 0x0f;
     let mut warnings = Vec::new();
+    let mut losses = Vec::new();
     let c2 = read_children(
         bytes,
         &mut reader,
@@ -627,10 +630,22 @@ pub(crate) fn parse(
         &mut warnings,
     )?;
     let (vertices, vertex_array_range) = read_vertices(bytes, &mut reader, archive, &mut warnings)?;
-    let (edges, edge_array_range) =
-        read_edges(bytes, &mut reader, archive, writer_version, &mut warnings)?;
-    let (trims, trim_array_range) =
-        read_trims(bytes, &mut reader, archive, writer_version, &mut warnings)?;
+    let (edges, edge_array_range) = read_edges(
+        bytes,
+        &mut reader,
+        archive,
+        writer_version,
+        &mut warnings,
+        &mut losses,
+    )?;
+    let (trims, trim_array_range) = read_trims(
+        bytes,
+        &mut reader,
+        archive,
+        writer_version,
+        &mut warnings,
+        &mut losses,
+    )?;
     let (loops, loop_array_range) = read_loops(bytes, &mut reader, archive, &mut warnings)?;
     let (faces, face_array_range) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
     let bounds = bbox(&mut reader)?;
@@ -686,6 +701,7 @@ pub(crate) fn parse(
         warnings.push(format!("ON_Brep skipped {skipped} trailing bytes"));
     }
     let raw = RawBrep {
+        losses,
         minor,
         c2,
         c3,
@@ -1192,6 +1208,7 @@ fn parse_legacy_major2(
         warnings.push(format!("legacy ON_Brep skipped {skipped} trailing bytes"));
     }
     let raw = RawBrep {
+        losses: Vec::new(),
         minor,
         c2: RawBrepChildren {
             slots: c2_slots,
@@ -1575,12 +1592,11 @@ fn unstamped_legacy_layout(
     writer_version: Option<i64>,
     count: usize,
     field: &str,
-) -> Option<String> {
+) -> Option<cadmpeg_ir::report::LossNote> {
     (archive.value() >= 3 && writer_version.is_none() && count > 0).then(|| {
-        format!(
-            "Brep {field} read with the pre-2002 layout for {count} records because {}",
-            crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
-        )
+        crate::loss::writer_stamp_unverified(format!(
+            "Brep {field} read with the pre-2002 layout for {count} records because the archive has no writer-version stamp"
+        ))
     })
 }
 
@@ -1590,13 +1606,14 @@ fn read_edges(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(Vec<RawBrepEdge>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "edge", 44)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
-    if let Some(warning) = unstamped_legacy_layout(archive, writer_version, count, "edge domains") {
-        warnings.push(warning);
+    if let Some(loss) = unstamped_legacy_layout(archive, writer_version, count, "edge domains") {
+        losses.push(loss);
     }
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
@@ -1636,18 +1653,19 @@ fn read_trims(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(Vec<RawBrepTrim>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "trim", 132)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
-    if let Some(warning) = unstamped_legacy_layout(
+    if let Some(loss) = unstamped_legacy_layout(
         archive,
         writer_version,
         count,
         "trim domains and proxy senses",
     ) {
-        warnings.push(warning);
+        losses.push(loss);
     }
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
@@ -2853,6 +2871,7 @@ mod tests {
             })
             .collect();
         RawBrep {
+            losses: Vec::new(),
             minor: 0,
             c2: RawBrepChildren {
                 slots: vec![Some(raw_child(RawBrepBaseType::Curve))],
@@ -2913,6 +2932,7 @@ mod tests {
     fn degenerate_trim_raw(trim_type: i32, curve: i32) -> RawBrep {
         let interval = Interval([0.0, 1.0]);
         RawBrep {
+            losses: Vec::new(),
             minor: 0,
             c2: RawBrepChildren {
                 slots: vec![Some(raw_child(RawBrepBaseType::Curve))],
@@ -3087,6 +3107,7 @@ mod tests {
                 &mut reader,
                 ArchiveVersion::V5,
                 Some(writer),
+                &mut Vec::new(),
                 &mut Vec::new(),
             )
             .expect("trims");
