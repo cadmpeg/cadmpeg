@@ -246,6 +246,9 @@ pub(crate) fn write_semantic_with_records(
         &active_partition_section,
         retain_native_brep,
     )?;
+    let has_document_envelope = opaque
+        .iter()
+        .any(|(_, payload)| payload.windows(12).any(|window| window == b"swSolidWorks"));
     if let Some(active) = ir
         .model
         .configurations
@@ -255,9 +258,6 @@ pub(crate) fn write_semantic_with_records(
         let active_name = active.name.resolved().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
-        let has_document_envelope = opaque
-            .iter()
-            .any(|(_, payload)| payload.windows(12).any(|window| window == b"swSolidWorks"));
         if !has_document_envelope {
             sections.push((
                 "Contents/SolidWorks".into(),
@@ -280,20 +280,18 @@ pub(crate) fn write_semantic_with_records(
     for entry in section_directory_entries(retained_records, &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
-    // The identity claim, read out of the bytes just written rather than
-    // inferred from which branch produced them. A retained envelope carries the
-    // source's own `swVersion` through unchanged; a generated one declares
-    // none; a document with no active configuration and no retained envelope
-    // carries no envelope at all. The last two classify onto the totality row,
-    // which is the whole synthesis catalog. The decoder's first-envelope fold
-    // classifies the written bytes here and on re-decode.
-    Ok(crate::dialect::SldprtDialect::from_declaration(
-        crate::container::first_solidworks_envelope(
-            sections.iter().map(|(_, payload)| payload.as_slice()),
-        )
-        .and_then(|envelope| envelope.sw_version)
-        .as_deref(),
-    )
+    // A retained envelope preserves the already-classified source row. A
+    // generated or absent envelope declares no identity and lands on the
+    // totality row.
+    Ok(if has_document_envelope {
+        ir.source
+            .as_ref()
+            .and_then(|source| source.dialect.as_ref())
+            .and_then(crate::dialect::SldprtDialect::from_match)
+            .unwrap_or(crate::dialect::SldprtDialect::Unknown)
+    } else {
+        crate::dialect::SldprtDialect::Unknown
+    }
     .id())
 }
 
