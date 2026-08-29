@@ -11,7 +11,7 @@
 //! This module owns the primary `sat:` host layer. Each classified stream also
 //! emits the non-primary `acis:` kernel layer owned by `cadmpeg-asm`.
 //!
-//! # Identity is the magic; admission is the save-format band
+//! # Identity and admission are the host grammar
 //!
 //! The host rows are discriminated by the stream's leading bytes alone
 //! ([`StreamKind`]), which are read exactly: `ASM BinaryFile4`/`8`, `ACIS
@@ -21,17 +21,17 @@
 //! reachable at inspect only; decode returns a malformed error on the same
 //! bytes.
 //!
-//! What *is* banded is the kernel save format inside the stream. The Spatial
+//! The kernel save format is banded on the separate `acis:` layer. The Spatial
 //! ACIS record decoders are verified against majors 217 and 218; the ASM record
 //! decoders compare no save format at all. A stream outside the verified band
 //! is not refused: its records are read with the verified band's grammar, which
-//! is [`Admission::AdmittedUnverified`] exactly, and `nearest` names the
+//! is [`Admission::AdmittedUnverified`] on that layer, and `nearest` names the
 //! verified `acis:` row whose grammar was substituted. The recovery is charged
 //! as [`SatLossCode::SourceDialectUnverified`] by [`dialect_loss`], on a result
 //! that carries whatever those records decoded.
 //!
-//! [`admission`] is the single construction path for both, so the report and
-//! the result can never disagree.
+//! [`layers`] classifies both layers once, so the report and result share the
+//! same host and kernel decisions.
 //!
 //! [`SatLossCode::SourceDialectUnverified`]:
 //!     crate::loss::SatLossCode::SourceDialectUnverified
@@ -153,7 +153,15 @@ impl StreamEvidence<'_> {
 /// comparison, and both recover outside it; the ASM binary and ASM text
 /// branches compare no save format, so they are admitted at any band.
 fn admission(evidence: &StreamEvidence<'_>) -> Admission {
-    kernel_layer(evidence).admission
+    match evidence {
+        StreamEvidence::AsmBinary(Some(_))
+        | StreamEvidence::AcisBinary(Some(_))
+        | StreamEvidence::Text(Some(_)) => Admission::Admitted,
+        StreamEvidence::AsmBinary(None)
+        | StreamEvidence::AcisBinary(None)
+        | StreamEvidence::Text(None)
+        | StreamEvidence::Unknown => Admission::Refused,
+    }
 }
 
 /// The recovery loss a match charges, if it recovered.
@@ -231,7 +239,7 @@ pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
 /// [`admission`]. The two are computed independently and never from each other:
 /// an ACIS stream outside the verified band keeps its own registry row while
 /// its records are read with a verified band's grammar.
-pub(crate) fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
+fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
     DialectMatch::layer(
         FORMAT,
         evidence.kind().id(),
@@ -241,7 +249,7 @@ pub(crate) fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.
-pub(crate) fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
+fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
     let header = match evidence {
         StreamEvidence::AsmBinary(Some(header)) => {
             cadmpeg_asm::dialect::KernelHeaderRef::Asm(header)
@@ -259,6 +267,11 @@ pub(crate) fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
         | StreamEvidence::Unknown => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
     };
     cadmpeg_asm::dialect::classify(header)
+}
+
+/// Classifies the host and kernel layers from one evidence value.
+pub(crate) fn layers(evidence: &StreamEvidence<'_>) -> (DialectMatch, DialectMatch) {
+    (classify(evidence), kernel_layer(evidence))
 }
 
 #[cfg(test)]

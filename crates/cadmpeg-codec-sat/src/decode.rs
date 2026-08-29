@@ -18,10 +18,7 @@ use cadmpeg_ir::units::{Tolerances, Units};
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
-use crate::dialect::{
-    classify as classify_dialect, dialect_loss, kernel_layer, terminator_line, StreamEvidence,
-    TextEvidence,
-};
+use crate::dialect::{dialect_loss, layers, terminator_line, StreamEvidence, TextEvidence};
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
@@ -69,8 +66,7 @@ pub(crate) fn decode_asm_binary(
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "asm", &mut attributes);
     let evidence = StreamEvidence::AsmBinary(Some(&header));
-    let matched = classify_dialect(&evidence);
-    let kernel = kernel_layer(&evidence);
+    let (matched, kernel) = layers(&evidence);
     build_result(ctx, brep, attributes, &header, None, matched, kernel)
 }
 
@@ -88,8 +84,7 @@ pub(crate) fn decode_acis_binary(
     // grammar applied is the one the stream's own save format declares; it
     // gates nothing.
     let evidence = StreamEvidence::AcisBinary(Some(&header));
-    let matched = classify_dialect(&evidence);
-    let kernel = kernel_layer(&evidence);
+    let (matched, kernel) = layers(&evidence);
     let start = acis_header::record_stream_start(bytes).ok_or_else(|| {
         CodecError::Malformed("ACIS binary header without a record stream".to_string())
     })?;
@@ -132,8 +127,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         branch: stream.terminator,
         header: &header,
     }));
-    let matched = classify_dialect(&evidence);
-    let kernel = kernel_layer(&evidence);
+    let (matched, kernel) = layers(&evidence);
     let brep = decode_with_header(
         &stream.records,
         bytes,
@@ -188,7 +182,7 @@ fn build_result(
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     let mut losses = Vec::new();
-    losses.extend(dialect_loss(&matched));
+    losses.extend(dialect_loss(&kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{dialect}`.")
