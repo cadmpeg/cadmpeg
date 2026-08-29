@@ -31,16 +31,10 @@ use crate::FcstdWriteOptions;
 /// needs no target gate of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Resolution {
-    /// The persistence band to write. Always the one the retained document
-    /// graph carries.
-    options: FcstdWriteOptions,
-}
-
-impl Resolution {
-    /// The write options the retained graph delivers.
-    pub(crate) fn options(self) -> FcstdWriteOptions {
-        self.options
-    }
+    pub(crate) schema: crate::dialect::FcstdDialect,
+    pub(crate) target: DialectId,
+    pub(crate) schema_version: String,
+    pub(crate) file_version: String,
 }
 
 /// Resolve the request against the source, then plan the export it names.
@@ -69,7 +63,7 @@ pub(crate) fn plan<'a>(
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
     let resolution = resolve(input.ir, request)?;
-    finish(input, resolution)
+    finish(input, &resolution)
 }
 
 /// Plan the write that [`crate::FcstdCodec::encode_with_options`] names.
@@ -87,7 +81,9 @@ pub(crate) fn plan_options(
 ) -> Result<ExportPlan<'_>, CodecError> {
     let target = dialect::written_dialect(options);
     let resolution = resolve(input.ir, TargetRequest::Explicit(target.as_str()))?;
-    if resolution.options != options {
+    if resolution.schema_version != options.schema_version.to_string()
+        || resolution.file_version != options.file_version.to_string()
+    {
         return Err(unsupported_target(
             dialect::FORMAT,
             target.as_str(),
@@ -96,11 +92,14 @@ pub(crate) fn plan_options(
             dialect::TARGETS,
         ));
     }
-    finish(input, resolution)
+    finish(input, &resolution)
 }
 
 /// Write the resolved export and state what the fidelity sidecar did.
-fn finish(input: EncodeInput<'_>, resolution: Resolution) -> Result<ExportPlan<'_>, CodecError> {
+fn finish<'a>(
+    input: EncodeInput<'a>,
+    resolution: &Resolution,
+) -> Result<ExportPlan<'a>, CodecError> {
     let mut bytes = Vec::new();
     let outcome = write(input.ir, &mut bytes, resolution)?;
     // A plan constructs its report once, after every report input is final.
@@ -144,17 +143,15 @@ pub(in crate::writer) fn resolve(
     // flavor, and the plan refuses by name where it cannot deliver". The
     // refusal is typed and carries the catalog, like every other write refusal;
     // it used to surface as a bare message string from deep inside `write`.
-    retained_baseline(ir, &target)
-        .map(|options| Resolution { options })
-        .ok_or_else(|| {
-            unsupported_target(
-                dialect::FORMAT,
-                target.as_str(),
-                "the retained FCStd document graph does not declare it, and this writer \
+    retained_baseline(ir, &target).ok_or_else(|| {
+        unsupported_target(
+            dialect::FORMAT,
+            target.as_str(),
+            "the retained FCStd document graph does not declare it, and this writer \
                  regenerates no Document.xml, so it cannot be written",
-                dialect::TARGETS,
-            )
-        })
+            dialect::TARGETS,
+        )
+    })
 }
 
 /// The write options that reproduce `source_dialect` from the retained document
@@ -166,18 +163,18 @@ pub(in crate::writer) fn resolve(
 /// it in a form the write options can restate. A `SchemaVersion` of `"04"`
 /// classifies as `fcstd:unknown` and does not round-trip through `u32`, so it
 /// fails the last condition rather than being rewritten as `"4"`.
-fn retained_baseline(ir: &CadIr, source_dialect: &DialectId) -> Option<FcstdWriteOptions> {
+fn retained_baseline(ir: &CadIr, source_dialect: &DialectId) -> Option<Resolution> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
     let [document] = documents.as_slice() else {
         return None;
     };
-    let options = FcstdWriteOptions {
-        schema_version: document.schema_version.parse().ok()?,
-        file_version: document.file_version.parse().ok()?,
-    };
-    (options.schema_version.to_string() == document.schema_version
-        && options.file_version.to_string() == document.file_version
-        && dialect::written_dialect(options) == *source_dialect)
-        .then_some(options)
+    let classified = ir.source.as_ref()?.dialect.as_ref()?.dialect.as_ref()?;
+    let schema = dialect::FcstdDialect::from_id(classified)?;
+    (schema != dialect::FcstdDialect::Unknown && classified == source_dialect).then(|| Resolution {
+        schema,
+        target: source_dialect.clone(),
+        schema_version: document.schema_version.clone(),
+        file_version: document.file_version.clone(),
+    })
 }

@@ -45,16 +45,11 @@ pub struct Graph {
     reason = "the declaration-reading entry point remains the schema identity owner"
 )]
 pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
-    let root = xml.root_element();
-    let schema = crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
-        .ok_or_else(|| {
-            CodecError::Malformed("Document element has no SchemaVersion attribute".into())
-        })?;
-    parse_document(text, &xml, FcstdDialect::from_schema_version(&schema), None)
+    let (_, schema, _) = crate::container::parse_document(bytes).map_err(|error| match error {
+        CodecError::WrongFormat(message) => CodecError::Malformed(message),
+        error => error,
+    })?;
+    parse_with_context(bytes, schema, None)
 }
 
 /// Recover the persistence graph, charging retained property XML against the session.

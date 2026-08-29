@@ -1243,8 +1243,12 @@ impl CodecBackend for FcstdCodec {
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
             let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
-            let (string_tables, mut element_maps) =
-                element_map::parse(document_bytes, &graph.properties, &entry_records)?;
+            let (string_tables, mut element_maps) = element_map::parse(
+                document_bytes,
+                scan.file_version,
+                &graph.properties,
+                &entry_records,
+            )?;
             namespace.set_arena("objects", &graph.objects)?;
             namespace.set_arena("extensions", &graph.extensions)?;
             namespace.set_arena("properties", &graph.properties)?;
