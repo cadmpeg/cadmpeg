@@ -81,7 +81,7 @@ pub fn is_f3z(scan: &ContainerScan) -> bool {
     scan.is_multi_document()
 }
 
-/// Inspect the selected model-root member under the F3Z archive identity.
+/// Inspect every document member under the F3Z archive identity.
 pub(crate) fn inspect(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -91,17 +91,12 @@ pub(crate) fn inspect(
             CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
         })?;
     let (model_root, _) = model_root_member(scan, &manifest.root)?;
-    let root_view = scan.entry_view(&model_root).ok_or_else(|| {
+    scan.entry_view(&model_root).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let member_scan = crate::container::scan(ctx, root_view)?;
-    let kernel_layers = crate::dialect::kernel_layers(&member_scan);
-    let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers.matches)
-        .expect("an F3D member's kernel layers have unique identities");
-    let mut layers = DialectLayers::of(scan.dialect.clone());
-    merge_member_layers(&mut layers, &member_layers, &model_root);
+    let layers = classify_archive_layers(ctx, scan)?;
     let summary = crate::container::summarize(scan, &[]);
     Ok(ContainerSummary::classified(
         layers,
@@ -128,12 +123,7 @@ pub fn decode(
     })?;
     let (mut ir, mut report, mut fidelity) =
         crate::decode::decode_member(ctx, root_view)?.into_parts();
-    let member_layers = report
-        .dialects()
-        .expect("an F3D member decode reports its primary layer")
-        .clone();
-    let mut outer_layers = DialectLayers::of(scan.dialect.clone());
-    merge_member_layers(&mut outer_layers, &member_layers, &model_root);
+    let outer_layers = classify_archive_layers(ctx, scan)?;
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -167,7 +157,6 @@ pub fn decode(
         ctx,
         &mut ir,
         &mut report,
-        &mut outer_layers,
         &mut fidelity,
         scan,
         &table,
@@ -222,6 +211,32 @@ fn finalize_result(
         );
     }
     result
+}
+
+/// Classify every F3D document member and attach its layers to its archive path.
+fn classify_archive_layers(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<DialectLayers, CodecError> {
+    let mut layers = DialectLayers::of(scan.dialect.clone());
+    for member_path in scan
+        .entries
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .filter(|name| is_f3d_member(name))
+    {
+        let member_view = scan.entry_view(member_path).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "f3z document member {member_path} is not readable"
+            ))
+        })?;
+        let member_scan = crate::container::scan(ctx, member_view)?;
+        let kernel_layers = crate::dialect::kernel_layers(&member_scan);
+        let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers.matches)
+            .expect("an F3D member's kernel layers have unique identities");
+        merge_member_layers(&mut layers, &member_layers, member_path);
+    }
+    Ok(layers)
 }
 
 /// Attach one archive member's identity and nested layers to its archive path.
@@ -343,14 +358,10 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
 /// A reference that cannot be resolved -- a cycle, an absent member, a member
 /// that fails to decode, or one whose units differ -- is recorded as a loss and
 /// skipped, leaving the rest of the archive to merge.
-// The merge owns all recursive document accumulators; grouping them would hide
-// which values are mutated across one member decode.
-#[allow(clippy::too_many_arguments)]
 fn merge_references(
     ctx: &DecodeContext<'_>,
     parent_ir: &mut cadmpeg_ir::CadIr,
     parent_report: &mut cadmpeg_ir::DecodeReport,
-    parent_layers: &mut DialectLayers,
     parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
     scan: &ContainerScan<'_>,
     table: &XrefTable,
@@ -407,17 +418,11 @@ fn merge_references(
         let child_table = xref_table_from_ir(component.ir())?;
         let (mut component_ir, mut component_report, mut component_fidelity) =
             component.into_parts();
-        let component_layers = component_report
-            .dialects()
-            .expect("an F3D component report is classified")
-            .clone();
-        merge_member_layers(parent_layers, &component_layers, &reference.relative_path);
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(
             ctx,
             &mut component_ir,
             &mut component_report,
-            parent_layers,
             &mut component_fidelity,
             scan,
             &child_table,
