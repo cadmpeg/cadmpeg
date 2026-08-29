@@ -1414,3 +1414,17 @@ crate = "cadmpeg-registry"
 kind = "deletion"
 item = "cadmpeg_registry::INSPECTION_FLOOR"
 reason = "identification uses the same confidence winner as source resolution and inspects a unique winner at every accepted confidence"
+
+[[change]]
+commit = "685df9ebbf4ba9982085277de0d8a9170686a74a"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::document::SourceMeta::dialect"
+reason = "source metadata preserves the complete primary `DialectMatch`, including declarations and admission, instead of flattening its registry id"
+
+[[change]]
+commit = "685df9ebbf4ba9982085277de0d8a9170686a74a"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::document::SourceMeta::declared"
+reason = "primary-layer declarations remain owned by `DialectMatch` and are no longer duplicated beside the source dialect"

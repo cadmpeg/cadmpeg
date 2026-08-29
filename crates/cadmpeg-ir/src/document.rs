@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
-use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::dialect::DialectMatch;
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -475,29 +475,21 @@ pub struct SourceMeta {
     /// Format-specific attributes.
     #[serde(default)]
     pub attributes: BTreeMap<String, String>,
-    /// Primary-layer dialect of the source document.
+    /// Primary-layer dialect match of the source document.
     ///
     /// Mirrors the [`cadmpeg_core::dialect::DialectMatch`] entry whose `format`
     /// equals [`Self::format`], so the round-trip default survives a CADIR
     /// intermediate.
     ///
-    /// `None` on a synthetic document that no decode produced, and on a decode
-    /// whose primary layer the registry does not name. `DecodeResult`
-    /// guarantees the exact report mirror after construction and report edits.
+    /// `None` on a synthetic document that no decode produced and on an
+    /// unclassified decode. A match can carry no registry dialect id while it
+    /// retains declarations and admission. `DecodeResult` guarantees the exact
+    /// report mirror after construction and report edits.
     ///
     /// Always serialized, as `null` when absent. Documents written before the
     /// field existed omit the key and read back `None`.
     #[serde(default)]
-    pub dialect: Option<DialectId>,
-    /// Version fields the source declared, verbatim, for the primary layer.
-    ///
-    /// Evidence, not a control input. Neutral model semantics never branch on
-    /// it; [`Self::attributes`] keeps its other duties.
-    ///
-    /// Always serialized. Documents written before the field existed omit the
-    /// key and read back empty.
-    #[serde(default)]
-    pub declared: BTreeMap<String, String>,
+    pub dialect: Option<DialectMatch>,
 }
 
 #[cfg(test)]

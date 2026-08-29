@@ -717,10 +717,14 @@
         "srf_array_count": "2",
         "version_line": "#UGC:2 P c"
       },
-      "declared": {
-        "version_line": "#UGC:2 P c"
+      "dialect": {
+        "admission": "admitted",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:nd",
+        "format": "creo"
       },
-      "dialect": "creo:nd",
       "format": "creo"
     },
     "tolerances": {

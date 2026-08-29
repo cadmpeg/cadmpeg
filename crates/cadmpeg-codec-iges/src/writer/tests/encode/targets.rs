@@ -96,6 +96,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
             .unwrap()
             .dialect
             .as_ref()
+            .and_then(|matched| matched.dialect.as_ref())
             .map(ToString::to_string),
         Some("iges:1.0-fixed-ascii".to_owned())
     );

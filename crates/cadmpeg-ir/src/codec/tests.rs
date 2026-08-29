@@ -285,8 +285,12 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     let mut ir = unit_cube();
     ir.source = Some(crate::SourceMeta {
         format: "test".into(),
-        dialect: Some(DialectId::pinned("test:wrong")),
-        declared: BTreeMap::from([("wrong".into(), "value".into())]),
+        dialect: Some(DialectMatch {
+            format: "test".into(),
+            dialect: Some(DialectId::pinned("test:wrong")),
+            declared: BTreeMap::from([("wrong".into(), "value".into())]),
+            admission: Admission::Admitted,
+        }),
         ..Default::default()
     });
     let mut primary = dialect_layer("test", "test:only");
@@ -308,8 +312,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         .source
         .as_ref()
         .expect("source metadata remains");
-    assert_eq!(source.dialect, primary.dialect);
-    assert_eq!(source.declared, primary.declared);
+    assert_eq!(source.dialect, Some(primary));
 }
 
 fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
@@ -373,7 +376,14 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.source = source.map(|(format, dialect)| crate::document::SourceMeta {
         format: format.to_owned(),
-        dialect: dialect.map(DialectId::pinned),
+        dialect: dialect.map(|id| {
+            DialectMatch::layer(
+                format,
+                DialectId::pinned(id),
+                BTreeMap::new(),
+                Admission::Admitted,
+            )
+        }),
         ..Default::default()
     });
     ir

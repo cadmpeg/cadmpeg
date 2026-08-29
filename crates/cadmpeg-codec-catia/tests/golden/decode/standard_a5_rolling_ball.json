@@ -505,8 +505,11 @@
         "variant": "standard_nested",
         "vertex_records": "3"
       },
-      "declared": {},
-      "dialect": "catia:standard-nested",
+      "dialect": {
+        "admission": "admitted",
+        "dialect": "catia:standard-nested",
+        "format": "catia"
+      },
       "format": "catia"
     },
     "tolerances": {

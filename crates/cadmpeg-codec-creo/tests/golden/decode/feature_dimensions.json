@@ -497,10 +497,14 @@
         "section_count": "3",
         "version_line": "#UGC:2 P c"
       },
-      "declared": {
-        "version_line": "#UGC:2 P c"
+      "dialect": {
+        "admission": "admitted",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:depdb",
+        "format": "creo"
       },
-      "dialect": "creo:depdb",
       "format": "creo"
     },
     "tolerances": {

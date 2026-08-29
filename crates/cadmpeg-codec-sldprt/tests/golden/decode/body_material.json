@@ -271,8 +271,15 @@
         "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
-      "declared": {},
-      "dialect": "sldprt:unknown",
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "sldprt:unknown"
+          }
+        },
+        "dialect": "sldprt:unknown",
+        "format": "sldprt"
+      },
       "format": "sldprt"
     },
     "tolerances": {

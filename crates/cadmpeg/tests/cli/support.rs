@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixture builders shared by the CLI test groups.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 
@@ -200,7 +199,6 @@ pub fn sldprt_cube() -> cadmpeg_ir::CadIr {
 pub fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
     let mut ir = unit_cube();
     ir.source = Some(cadmpeg_ir::SourceMeta {
-        declared: BTreeMap::new(),
         dialect: None,
         format: "synthetic".into(),
         attributes: attributes

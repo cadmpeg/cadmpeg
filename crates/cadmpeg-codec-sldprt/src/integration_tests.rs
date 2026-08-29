@@ -296,6 +296,7 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
             .source
             .as_ref()
             .and_then(|meta| meta.dialect.as_ref())
+            .and_then(|matched| matched.dialect.as_ref())
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("sldprt:sw-version-12000-plus")
     );

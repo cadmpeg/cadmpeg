@@ -468,10 +468,14 @@
           "plain_streams": "0",
           "splmsstr_version": "6"
         },
-        "declared": {
-          "splmsstr_version": "6"
+        "dialect": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
         },
-        "dialect": "nx:splmsstr",
         "format": "nx"
       },
       "tolerances": {

@@ -404,8 +404,11 @@
         "preview_count": "0",
         "variant": "zero_entity"
       },
-      "declared": {},
-      "dialect": "catia:zero-entity",
+      "dialect": {
+        "admission": "admitted",
+        "dialect": "catia:zero-entity",
+        "format": "catia"
+      },
       "format": "catia"
     },
     "tolerances": {

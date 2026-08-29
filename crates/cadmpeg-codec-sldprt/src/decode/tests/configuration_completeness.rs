@@ -498,7 +498,6 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     }));
 
     ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        declared: BTreeMap::new(),
         dialect: None,
         format: "sldprt".into(),
         attributes: BTreeMap::from([("sw_configuration_0_needs_update".into(), "YES".into())]),

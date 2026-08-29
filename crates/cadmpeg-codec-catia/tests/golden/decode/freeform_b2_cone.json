@@ -111,8 +111,11 @@
         "variant": "float_packed_inner_no_fbb",
         "vertex_records": "0"
       },
-      "declared": {},
-      "dialect": "catia:float-packed-inner-no-fbb",
+      "dialect": {
+        "admission": "admitted",
+        "dialect": "catia:float-packed-inner-no-fbb",
+        "format": "catia"
+      },
       "format": "catia"
     },
     "tolerances": {

@@ -42,7 +42,13 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .iter()
         .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
         .expect("version displacement is charged");
-    assert!(displacement.message.contains(source_dialect.as_str()));
+    assert!(displacement.message.contains(
+        source_dialect
+            .dialect
+            .as_ref()
+            .expect("the decoded source dialect is named")
+            .as_str()
+    ));
     assert!(displacement.message.contains("iges:5.2-fixed-ascii"));
 }
 
@@ -86,7 +92,14 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(
         report.target(),
-        decoded.ir().source.as_ref().unwrap().dialect.as_ref()
+        decoded
+            .ir()
+            .source
+            .as_ref()
+            .unwrap()
+            .dialect
+            .as_ref()
+            .and_then(|matched| matched.dialect.as_ref())
     );
 }
 

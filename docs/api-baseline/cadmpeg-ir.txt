@@ -1,4 +1,4 @@
-# generated at f97645a31
+# generated at 685df9ebb
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -935,8 +935,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::document::Model
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::document::Model
 pub struct cadmpeg_ir::document::SourceMeta
 pub cadmpeg_ir::document::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_ir::document::SourceMeta::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_ir::document::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectId>
+pub cadmpeg_ir::document::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectMatch>
 pub cadmpeg_ir::document::SourceMeta::format: alloc::string::String
 impl core::clone::Clone for cadmpeg_ir::document::SourceMeta
 pub fn cadmpeg_ir::document::SourceMeta::clone(&self) -> cadmpeg_ir::document::SourceMeta
@@ -18857,8 +18856,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::source_fidelity::So
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::source_fidelity::SourceFidelity
 pub struct cadmpeg_ir::SourceMeta
 pub cadmpeg_ir::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_ir::SourceMeta::declared: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_ir::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectId>
+pub cadmpeg_ir::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectMatch>
 pub cadmpeg_ir::SourceMeta::format: alloc::string::String
 impl core::clone::Clone for cadmpeg_ir::document::SourceMeta
 pub fn cadmpeg_ir::document::SourceMeta::clone(&self) -> cadmpeg_ir::document::SourceMeta

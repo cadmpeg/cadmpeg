@@ -3092,8 +3092,8 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
     source_meta_with_dialect(attributes)
 }
 
-/// Mirrors the primary-layer match into [`SourceMeta::dialect`] and
-/// [`SourceMeta::declared`].
+/// Leaves the primary-layer match for `DecodeResult` to mirror into
+/// [`SourceMeta::dialect`].
 ///
 /// The `sw_version` attribute stays where it is, and so does every other key:
 /// absence in this map is load-bearing at the sites that read it, `sw_name` and

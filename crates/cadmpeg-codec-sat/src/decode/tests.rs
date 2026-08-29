@@ -107,7 +107,10 @@ fn an_unverified_acis_text_band_is_decoded_and_marked() {
         .any(|loss| loss.code == SatLossCode::SourceDialectUnverified.kind()));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
-    assert_eq!(source.declared["encoding"], "text");
+    assert_eq!(
+        source.dialect.as_ref().unwrap().declared["encoding"],
+        "text"
+    );
     assert!(!source.attributes.contains_key("encoding"));
     assert!(!source.attributes.contains_key("terminator"));
 }

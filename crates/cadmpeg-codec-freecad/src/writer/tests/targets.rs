@@ -194,6 +194,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .source
             .as_ref()
             .and_then(|source| source.dialect.as_ref())
+            .and_then(|matched| matched.dialect.as_ref())
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );
@@ -220,6 +221,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .source
             .as_ref()
             .and_then(|source| source.dialect.as_ref())
+            .and_then(|matched| matched.dialect.as_ref())
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );

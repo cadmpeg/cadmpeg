@@ -74,7 +74,12 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
         .for_each(|edge| edge.param_range = None);
     ir.source = Some(SourceMeta {
         format: "sldprt".into(),
-        dialect: Some(cadmpeg_core::dialect::DialectId::pinned(dialect)),
+        dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
+            "sldprt",
+            cadmpeg_core::dialect::DialectId::pinned(dialect),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )),
         ..SourceMeta::default()
     });
     ir

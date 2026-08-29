@@ -176,10 +176,18 @@
         "document_kind": "unknown",
         "rse_segment_pairs": "0"
       },
-      "declared": {
-        "cfb_major_version": "3"
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "inventor:cfb3-rse31-meta8"
+          }
+        },
+        "declared": {
+          "cfb_major_version": "3"
+        },
+        "dialect": "inventor:unknown",
+        "format": "inventor"
       },
-      "dialect": "inventor:unknown",
       "format": "inventor"
     },
     "tolerances": {

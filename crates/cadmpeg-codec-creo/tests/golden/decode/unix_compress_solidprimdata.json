@@ -72,10 +72,18 @@
         "section_count": "1",
         "version_line": "#UGC:2 P test"
       },
-      "declared": {
-        "version_line": "#UGC:2 P test"
+      "dialect": {
+        "admission": {
+          "admitted_unverified": {
+            "nearest": "creo:unknown"
+          }
+        },
+        "declared": {
+          "version_line": "#UGC:2 P test"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
       },
-      "dialect": "creo:unknown",
       "format": "creo"
     },
     "tolerances": {
