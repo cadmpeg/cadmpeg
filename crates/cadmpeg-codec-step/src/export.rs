@@ -1616,9 +1616,10 @@ impl<'a> Builder<'a> {
                     StepLossCode::HiddenBodyVisibilityUnsupported,
                     format!(
                         "{hidden} hidden body visibility assignment(s) are unsupported by \
-                         {}. step:ap203-e1 is the only write target that omits INVISIBILITY; \
+                         {}. {} is the only write target that omits INVISIBILITY; \
                          every other step target carries it",
-                        self.schema.file_schema()
+                        self.schema.file_schema(),
+                        StepSchema::Ap203Edition1.target()
                     ),
                 );
             }
@@ -1665,9 +1666,10 @@ impl<'a> Builder<'a> {
                 StepLossCode::HiddenAppearanceVisibilityUnsupported,
                 format!(
                     "{hidden_bindings} hidden appearance binding visibility assignment(s) \
-                     are unsupported by {}. step:ap203-e1 is the only write target that omits \
+                     are unsupported by {}. {} is the only write target that omits \
                      INVISIBILITY; every other step target carries it",
-                    self.schema.file_schema()
+                    self.schema.file_schema(),
+                    StepSchema::Ap203Edition1.target()
                 ),
             );
             return;
@@ -1694,9 +1696,10 @@ impl<'a> Builder<'a> {
                 StepLossCode::HiddenPresentationLayerVisibilityUnsupported,
                 format!(
                     "{hidden_layers} hidden presentation layer visibility assignment(s) are \
-                     unsupported by {}. step:ap203-e1 is the only write target that omits \
+                     unsupported by {}. {} is the only write target that omits \
                      INVISIBILITY; every other step target carries it",
-                    self.schema.file_schema()
+                    self.schema.file_schema(),
+                    StepSchema::Ap203Edition1.target()
                 ),
             );
             return;
@@ -1822,10 +1825,13 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::TessellationRequiresAp242,
                 format!(
-                    "{} tessellation(s) require an AP242 target: step:ap242-e1, \
-                     step:ap242-e2, and step:ap242-e3 carry tessellated geometry and would not \
+                    "{} tessellation(s) require an AP242 target: {}, \
+                     {}, and {} carry tessellated geometry and would not \
                      charge this",
-                    self.ir.model.tessellations.len()
+                    self.ir.model.tessellations.len(),
+                    StepSchema::Ap242Edition1.target(),
+                    StepSchema::Ap242Edition2.target(),
+                    StepSchema::Ap242Edition3.target()
                 ),
             );
             return;
@@ -3358,10 +3364,11 @@ impl<'a> Builder<'a> {
                     StepLossCode::HiddenPmiVisibilityUnsupported,
                     format!(
                         "{} hidden PMI annotation visibility assignment(s) are unsupported \
-                         by {}. step:ap203-e1 is the only write target that omits INVISIBILITY; \
+                         by {}. {} is the only write target that omits INVISIBILITY; \
                          every other step target carries it",
                         hidden_presentation_items.len(),
-                        self.schema.file_schema()
+                        self.schema.file_schema(),
+                        StepSchema::Ap203Edition1.target()
                     ),
                 );
             }
@@ -4257,8 +4264,15 @@ impl<'a> Builder<'a> {
             let avoidable = if self.schema.supports_semantic_pmi() {
                 ""
             } else {
-                "; step:ap242-e1, step:ap242-e2, and step:ap242-e3 carry semantic PMI and would \
-                 not charge this"
+                return self.loss(
+                    StepLossCode::PmiAnnotationNotWritten,
+                    format!(
+                        "{unwritten_pmi} PMI annotation(s) were not written to STEP; {}, {}, and {} carry semantic PMI and would not charge this",
+                        StepSchema::Ap242Edition1.target(),
+                        StepSchema::Ap242Edition2.target(),
+                        StepSchema::Ap242Edition3.target()
+                    ),
+                );
             };
             self.loss(
                 StepLossCode::PmiAnnotationNotWritten,
