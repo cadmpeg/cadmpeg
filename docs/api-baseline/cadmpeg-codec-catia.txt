@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_catia
 pub struct cadmpeg_codec_catia::CatiaCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_catia::CatiaCodec
@@ -6,17 +6,3 @@ pub fn cadmpeg_codec_catia::CatiaCodec::decode_impl(&self, &cadmpeg_core::decode
 pub fn cadmpeg_codec_catia::CatiaCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_catia::CatiaCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_catia::CatiaCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl core::clone::Clone for cadmpeg_codec_catia::CatiaCodec
-pub fn cadmpeg_codec_catia::CatiaCodec::clone(&self) -> cadmpeg_codec_catia::CatiaCodec
-impl core::default::Default for cadmpeg_codec_catia::CatiaCodec
-pub fn cadmpeg_codec_catia::CatiaCodec::default() -> cadmpeg_codec_catia::CatiaCodec
-impl core::fmt::Debug for cadmpeg_codec_catia::CatiaCodec
-pub fn cadmpeg_codec_catia::CatiaCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_catia::CatiaCodec
-impl core::marker::Freeze for cadmpeg_codec_catia::CatiaCodec
-impl core::marker::Send for cadmpeg_codec_catia::CatiaCodec
-impl core::marker::Sync for cadmpeg_codec_catia::CatiaCodec
-impl core::marker::Unpin for cadmpeg_codec_catia::CatiaCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_catia::CatiaCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_catia::CatiaCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_catia::CatiaCodec

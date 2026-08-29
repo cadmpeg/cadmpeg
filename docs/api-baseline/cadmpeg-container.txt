@@ -1,4 +1,4 @@
-# generated at fb9a11f1c
+# generated at 0cb4ec82a
 pub mod cadmpeg_container
 pub mod cadmpeg_container::compound
 pub enum cadmpeg_container::compound::CompoundAllocation
@@ -6,43 +6,12 @@ pub cadmpeg_container::compound::CompoundAllocation::Mini
 pub cadmpeg_container::compound::CompoundAllocation::Regular
 impl cadmpeg_container::compound::CompoundAllocation
 pub const fn cadmpeg_container::compound::CompoundAllocation::label(self) -> &'static str
-impl core::clone::Clone for cadmpeg_container::compound::CompoundAllocation
-pub fn cadmpeg_container::compound::CompoundAllocation::clone(&self) -> cadmpeg_container::compound::CompoundAllocation
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundAllocation
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundAllocation
-pub fn cadmpeg_container::compound::CompoundAllocation::eq(&self, &cadmpeg_container::compound::CompoundAllocation) -> bool
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundAllocation
-pub fn cadmpeg_container::compound::CompoundAllocation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_container::compound::CompoundAllocation
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundAllocation
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundAllocation
-impl core::marker::Send for cadmpeg_container::compound::CompoundAllocation
-impl core::marker::Sync for cadmpeg_container::compound::CompoundAllocation
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundAllocation
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundAllocation
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundAllocation
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundAllocation
 pub enum cadmpeg_container::compound::CompoundEntry
 pub cadmpeg_container::compound::CompoundEntry::Storage(cadmpeg_container::compound::CompoundStorageEntry)
 pub cadmpeg_container::compound::CompoundEntry::Stream(cadmpeg_container::compound::CompoundStreamEntry)
 impl cadmpeg_container::compound::CompoundEntry
 pub const fn cadmpeg_container::compound::CompoundEntry::directory_id(&self) -> u32
 pub fn cadmpeg_container::compound::CompoundEntry::path(&self) -> &str
-impl core::clone::Clone for cadmpeg_container::compound::CompoundEntry
-pub fn cadmpeg_container::compound::CompoundEntry::clone(&self) -> cadmpeg_container::compound::CompoundEntry
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundEntry
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundEntry
-pub fn cadmpeg_container::compound::CompoundEntry::eq(&self, &cadmpeg_container::compound::CompoundEntry) -> bool
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundEntry
-pub fn cadmpeg_container::compound::CompoundEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundEntry
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundEntry
-impl core::marker::Send for cadmpeg_container::compound::CompoundEntry
-impl core::marker::Sync for cadmpeg_container::compound::CompoundEntry
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundEntry
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundEntry
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundEntry
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundEntry
 pub enum cadmpeg_container::compound::CompoundPrefixProbe
 pub cadmpeg_container::compound::CompoundPrefixProbe::DirectoryEvidence(alloc::vec::Vec<alloc::string::String>)
 pub cadmpeg_container::compound::CompoundPrefixProbe::Incomplete
@@ -51,66 +20,14 @@ pub cadmpeg_container::compound::CompoundPrefixProbe::NotCompound
 impl cadmpeg_container::compound::CompoundPrefixProbe
 pub fn cadmpeg_container::compound::CompoundPrefixProbe::inspect(&[u8]) -> Self
 pub fn cadmpeg_container::compound::CompoundPrefixProbe::paths(&self) -> core::option::Option<&[alloc::string::String]>
-impl core::clone::Clone for cadmpeg_container::compound::CompoundPrefixProbe
-pub fn cadmpeg_container::compound::CompoundPrefixProbe::clone(&self) -> cadmpeg_container::compound::CompoundPrefixProbe
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundPrefixProbe
-pub fn cadmpeg_container::compound::CompoundPrefixProbe::eq(&self, &cadmpeg_container::compound::CompoundPrefixProbe) -> bool
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundPrefixProbe
-pub fn cadmpeg_container::compound::CompoundPrefixProbe::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::marker::Send for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::marker::Sync for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundPrefixProbe
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundPrefixProbe
 pub struct cadmpeg_container::compound::CompoundEntryId(_)
 impl cadmpeg_container::compound::CompoundEntryId
 pub const fn cadmpeg_container::compound::CompoundEntryId::directory_id(self) -> u32
-impl core::clone::Clone for cadmpeg_container::compound::CompoundEntryId
-pub fn cadmpeg_container::compound::CompoundEntryId::clone(&self) -> cadmpeg_container::compound::CompoundEntryId
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundEntryId
-impl core::cmp::Ord for cadmpeg_container::compound::CompoundEntryId
-pub fn cadmpeg_container::compound::CompoundEntryId::cmp(&self, &cadmpeg_container::compound::CompoundEntryId) -> core::cmp::Ordering
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundEntryId
-pub fn cadmpeg_container::compound::CompoundEntryId::eq(&self, &cadmpeg_container::compound::CompoundEntryId) -> bool
-impl core::cmp::PartialOrd for cadmpeg_container::compound::CompoundEntryId
-pub fn cadmpeg_container::compound::CompoundEntryId::partial_cmp(&self, &cadmpeg_container::compound::CompoundEntryId) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundEntryId
-pub fn cadmpeg_container::compound::CompoundEntryId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for cadmpeg_container::compound::CompoundEntryId
-pub fn cadmpeg_container::compound::CompoundEntryId::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for cadmpeg_container::compound::CompoundEntryId
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundEntryId
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundEntryId
-impl core::marker::Send for cadmpeg_container::compound::CompoundEntryId
-impl core::marker::Sync for cadmpeg_container::compound::CompoundEntryId
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundEntryId
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundEntryId
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundEntryId
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundEntryId
 pub struct cadmpeg_container::compound::CompoundPhysicalSpan
 pub cadmpeg_container::compound::CompoundPhysicalSpan::end: u64
 pub cadmpeg_container::compound::CompoundPhysicalSpan::entry: core::option::Option<alloc::string::String>
 pub cadmpeg_container::compound::CompoundPhysicalSpan::role: alloc::string::String
 pub cadmpeg_container::compound::CompoundPhysicalSpan::start: u64
-impl core::clone::Clone for cadmpeg_container::compound::CompoundPhysicalSpan
-pub fn cadmpeg_container::compound::CompoundPhysicalSpan::clone(&self) -> cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundPhysicalSpan
-pub fn cadmpeg_container::compound::CompoundPhysicalSpan::eq(&self, &cadmpeg_container::compound::CompoundPhysicalSpan) -> bool
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundPhysicalSpan
-pub fn cadmpeg_container::compound::CompoundPhysicalSpan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::marker::Send for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::marker::Sync for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundPhysicalSpan
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundPhysicalSpan
 pub struct cadmpeg_container::compound::CompoundSnapshot<'a>
 impl<'a> cadmpeg_container::compound::CompoundSnapshot<'a>
 pub fn cadmpeg_container::compound::CompoundSnapshot<'a>::container_entries(&self, impl core::ops::function::Fn(&cadmpeg_container::compound::CompoundEntry) -> &'static str) -> alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
@@ -123,59 +40,13 @@ pub fn cadmpeg_container::compound::CompoundSnapshot<'a>::physical_ledger(&self)
 pub const fn cadmpeg_container::compound::CompoundSnapshot<'a>::sector_size(&self) -> usize
 pub fn cadmpeg_container::compound::CompoundSnapshot<'a>::stream(&self, &str) -> core::option::Option<&cadmpeg_container::compound::CompoundStreamEntry>
 pub fn cadmpeg_container::compound::CompoundSnapshot<'a>::stream_by_id(&self, cadmpeg_container::compound::CompoundStreamId) -> core::option::Option<&cadmpeg_container::compound::CompoundStreamEntry>
-impl<'a> core::fmt::Debug for cadmpeg_container::compound::CompoundSnapshot<'a>
-pub fn cadmpeg_container::compound::CompoundSnapshot<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Freeze for cadmpeg_container::compound::CompoundSnapshot<'a>
-impl<'a> core::marker::Send for cadmpeg_container::compound::CompoundSnapshot<'a>
-impl<'a> core::marker::Sync for cadmpeg_container::compound::CompoundSnapshot<'a>
-impl<'a> core::marker::Unpin for cadmpeg_container::compound::CompoundSnapshot<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundSnapshot<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundSnapshot<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundSnapshot<'a>
 pub struct cadmpeg_container::compound::CompoundStorageEntry
 impl cadmpeg_container::compound::CompoundStorageEntry
 pub const fn cadmpeg_container::compound::CompoundStorageEntry::id(&self) -> cadmpeg_container::compound::CompoundStorageId
 pub fn cadmpeg_container::compound::CompoundStorageEntry::path(&self) -> &str
-impl core::clone::Clone for cadmpeg_container::compound::CompoundStorageEntry
-pub fn cadmpeg_container::compound::CompoundStorageEntry::clone(&self) -> cadmpeg_container::compound::CompoundStorageEntry
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundStorageEntry
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundStorageEntry
-pub fn cadmpeg_container::compound::CompoundStorageEntry::eq(&self, &cadmpeg_container::compound::CompoundStorageEntry) -> bool
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundStorageEntry
-pub fn cadmpeg_container::compound::CompoundStorageEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundStorageEntry
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundStorageEntry
-impl core::marker::Send for cadmpeg_container::compound::CompoundStorageEntry
-impl core::marker::Sync for cadmpeg_container::compound::CompoundStorageEntry
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundStorageEntry
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundStorageEntry
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundStorageEntry
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundStorageEntry
 pub struct cadmpeg_container::compound::CompoundStorageId(_)
 impl cadmpeg_container::compound::CompoundStorageId
 pub const fn cadmpeg_container::compound::CompoundStorageId::directory_id(self) -> u32
-impl core::clone::Clone for cadmpeg_container::compound::CompoundStorageId
-pub fn cadmpeg_container::compound::CompoundStorageId::clone(&self) -> cadmpeg_container::compound::CompoundStorageId
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundStorageId
-impl core::cmp::Ord for cadmpeg_container::compound::CompoundStorageId
-pub fn cadmpeg_container::compound::CompoundStorageId::cmp(&self, &cadmpeg_container::compound::CompoundStorageId) -> core::cmp::Ordering
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundStorageId
-pub fn cadmpeg_container::compound::CompoundStorageId::eq(&self, &cadmpeg_container::compound::CompoundStorageId) -> bool
-impl core::cmp::PartialOrd for cadmpeg_container::compound::CompoundStorageId
-pub fn cadmpeg_container::compound::CompoundStorageId::partial_cmp(&self, &cadmpeg_container::compound::CompoundStorageId) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundStorageId
-pub fn cadmpeg_container::compound::CompoundStorageId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for cadmpeg_container::compound::CompoundStorageId
-pub fn cadmpeg_container::compound::CompoundStorageId::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for cadmpeg_container::compound::CompoundStorageId
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundStorageId
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundStorageId
-impl core::marker::Send for cadmpeg_container::compound::CompoundStorageId
-impl core::marker::Sync for cadmpeg_container::compound::CompoundStorageId
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundStorageId
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundStorageId
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundStorageId
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundStorageId
 pub struct cadmpeg_container::compound::CompoundStreamEntry
 impl cadmpeg_container::compound::CompoundStreamEntry
 pub const fn cadmpeg_container::compound::CompoundStreamEntry::allocation(&self) -> cadmpeg_container::compound::CompoundAllocation
@@ -183,46 +54,9 @@ pub const fn cadmpeg_container::compound::CompoundStreamEntry::id(&self) -> cadm
 pub const fn cadmpeg_container::compound::CompoundStreamEntry::logical_size(&self) -> u64
 pub fn cadmpeg_container::compound::CompoundStreamEntry::path(&self) -> &str
 pub const fn cadmpeg_container::compound::CompoundStreamEntry::start_sector(&self) -> u32
-impl core::clone::Clone for cadmpeg_container::compound::CompoundStreamEntry
-pub fn cadmpeg_container::compound::CompoundStreamEntry::clone(&self) -> cadmpeg_container::compound::CompoundStreamEntry
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundStreamEntry
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundStreamEntry
-pub fn cadmpeg_container::compound::CompoundStreamEntry::eq(&self, &cadmpeg_container::compound::CompoundStreamEntry) -> bool
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundStreamEntry
-pub fn cadmpeg_container::compound::CompoundStreamEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundStreamEntry
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundStreamEntry
-impl core::marker::Send for cadmpeg_container::compound::CompoundStreamEntry
-impl core::marker::Sync for cadmpeg_container::compound::CompoundStreamEntry
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundStreamEntry
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundStreamEntry
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundStreamEntry
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundStreamEntry
 pub struct cadmpeg_container::compound::CompoundStreamId(_)
 impl cadmpeg_container::compound::CompoundStreamId
 pub const fn cadmpeg_container::compound::CompoundStreamId::directory_id(self) -> u32
-impl core::clone::Clone for cadmpeg_container::compound::CompoundStreamId
-pub fn cadmpeg_container::compound::CompoundStreamId::clone(&self) -> cadmpeg_container::compound::CompoundStreamId
-impl core::cmp::Eq for cadmpeg_container::compound::CompoundStreamId
-impl core::cmp::Ord for cadmpeg_container::compound::CompoundStreamId
-pub fn cadmpeg_container::compound::CompoundStreamId::cmp(&self, &cadmpeg_container::compound::CompoundStreamId) -> core::cmp::Ordering
-impl core::cmp::PartialEq for cadmpeg_container::compound::CompoundStreamId
-pub fn cadmpeg_container::compound::CompoundStreamId::eq(&self, &cadmpeg_container::compound::CompoundStreamId) -> bool
-impl core::cmp::PartialOrd for cadmpeg_container::compound::CompoundStreamId
-pub fn cadmpeg_container::compound::CompoundStreamId::partial_cmp(&self, &cadmpeg_container::compound::CompoundStreamId) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for cadmpeg_container::compound::CompoundStreamId
-pub fn cadmpeg_container::compound::CompoundStreamId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for cadmpeg_container::compound::CompoundStreamId
-pub fn cadmpeg_container::compound::CompoundStreamId::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for cadmpeg_container::compound::CompoundStreamId
-impl core::marker::StructuralPartialEq for cadmpeg_container::compound::CompoundStreamId
-impl core::marker::Freeze for cadmpeg_container::compound::CompoundStreamId
-impl core::marker::Send for cadmpeg_container::compound::CompoundStreamId
-impl core::marker::Sync for cadmpeg_container::compound::CompoundStreamId
-impl core::marker::Unpin for cadmpeg_container::compound::CompoundStreamId
-impl core::marker::UnsafeUnpin for cadmpeg_container::compound::CompoundStreamId
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::CompoundStreamId
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundStreamId
 pub fn cadmpeg_container::compound::read_detection_prefix(&mut dyn std::io::Read, usize, u64) -> core::io::error::Result<alloc::vec::Vec<u8>>
 pub mod cadmpeg_container::compression
 pub fn cadmpeg_container::compression::inflate_bounded_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
@@ -236,22 +70,6 @@ pub cadmpeg_container::EntryCompression::Stored
 pub cadmpeg_container::EntryCompression::Zstd
 impl cadmpeg_container::EntryCompression
 pub const fn cadmpeg_container::EntryCompression::label(self) -> &'static str
-impl core::clone::Clone for cadmpeg_container::EntryCompression
-pub fn cadmpeg_container::EntryCompression::clone(&self) -> cadmpeg_container::EntryCompression
-impl core::cmp::Eq for cadmpeg_container::EntryCompression
-impl core::cmp::PartialEq for cadmpeg_container::EntryCompression
-pub fn cadmpeg_container::EntryCompression::eq(&self, &cadmpeg_container::EntryCompression) -> bool
-impl core::fmt::Debug for cadmpeg_container::EntryCompression
-pub fn cadmpeg_container::EntryCompression::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_container::EntryCompression
-impl core::marker::StructuralPartialEq for cadmpeg_container::EntryCompression
-impl core::marker::Freeze for cadmpeg_container::EntryCompression
-impl core::marker::Send for cadmpeg_container::EntryCompression
-impl core::marker::Sync for cadmpeg_container::EntryCompression
-impl core::marker::Unpin for cadmpeg_container::EntryCompression
-impl core::marker::UnsafeUnpin for cadmpeg_container::EntryCompression
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::EntryCompression
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::EntryCompression
 pub struct cadmpeg_container::ArchiveSnapshot<'a>
 impl<'a> cadmpeg_container::ArchiveSnapshot<'a>
 pub fn cadmpeg_container::ArchiveSnapshot<'a>::container_entries(&self, impl core::ops::function::Fn(&str) -> &'static str) -> alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
@@ -260,15 +78,6 @@ pub fn cadmpeg_container::ArchiveSnapshot<'a>::entry(&self, &str) -> core::optio
 pub fn cadmpeg_container::ArchiveSnapshot<'a>::new(cadmpeg_core::decode::view::View<'a>) -> core::result::Result<Self, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::ArchiveSnapshot<'a>::open(&self, &cadmpeg_core::decode::context::DecodeContext<'a>, &cadmpeg_container::EntryRecord) -> core::result::Result<cadmpeg_core::decode::view::View<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::ArchiveSnapshot<'a>::physical_ledger(&self) -> core::result::Result<alloc::vec::Vec<cadmpeg_container::PhysicalSpan>, cadmpeg_core::error::CodecError>
-impl<'a> core::fmt::Debug for cadmpeg_container::ArchiveSnapshot<'a>
-pub fn cadmpeg_container::ArchiveSnapshot<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Freeze for cadmpeg_container::ArchiveSnapshot<'a>
-impl<'a> core::marker::Send for cadmpeg_container::ArchiveSnapshot<'a>
-impl<'a> core::marker::Sync for cadmpeg_container::ArchiveSnapshot<'a>
-impl<'a> core::marker::Unpin for cadmpeg_container::ArchiveSnapshot<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_container::ArchiveSnapshot<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::ArchiveSnapshot<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_container::ArchiveSnapshot<'a>
 pub struct cadmpeg_container::EntryRecord
 pub cadmpeg_container::EntryRecord::central_start: u64
 pub cadmpeg_container::EntryRecord::compressed_size: u64
@@ -281,38 +90,8 @@ pub cadmpeg_container::EntryRecord::uncompressed_size: u64
 impl cadmpeg_container::EntryRecord
 pub fn cadmpeg_container::EntryRecord::data_end(&self) -> core::result::Result<u64, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::EntryRecord::uses_utf8_name_encoding(&self) -> bool
-impl core::clone::Clone for cadmpeg_container::EntryRecord
-pub fn cadmpeg_container::EntryRecord::clone(&self) -> cadmpeg_container::EntryRecord
-impl core::cmp::Eq for cadmpeg_container::EntryRecord
-impl core::cmp::PartialEq for cadmpeg_container::EntryRecord
-pub fn cadmpeg_container::EntryRecord::eq(&self, &cadmpeg_container::EntryRecord) -> bool
-impl core::fmt::Debug for cadmpeg_container::EntryRecord
-pub fn cadmpeg_container::EntryRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_container::EntryRecord
-impl core::marker::Freeze for cadmpeg_container::EntryRecord
-impl core::marker::Send for cadmpeg_container::EntryRecord
-impl core::marker::Sync for cadmpeg_container::EntryRecord
-impl core::marker::Unpin for cadmpeg_container::EntryRecord
-impl core::marker::UnsafeUnpin for cadmpeg_container::EntryRecord
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::EntryRecord
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::EntryRecord
 pub struct cadmpeg_container::PhysicalSpan
 pub cadmpeg_container::PhysicalSpan::end: u64
 pub cadmpeg_container::PhysicalSpan::entry: core::option::Option<alloc::string::String>
 pub cadmpeg_container::PhysicalSpan::role: alloc::string::String
 pub cadmpeg_container::PhysicalSpan::start: u64
-impl core::clone::Clone for cadmpeg_container::PhysicalSpan
-pub fn cadmpeg_container::PhysicalSpan::clone(&self) -> cadmpeg_container::PhysicalSpan
-impl core::cmp::Eq for cadmpeg_container::PhysicalSpan
-impl core::cmp::PartialEq for cadmpeg_container::PhysicalSpan
-pub fn cadmpeg_container::PhysicalSpan::eq(&self, &cadmpeg_container::PhysicalSpan) -> bool
-impl core::fmt::Debug for cadmpeg_container::PhysicalSpan
-pub fn cadmpeg_container::PhysicalSpan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_container::PhysicalSpan
-impl core::marker::Freeze for cadmpeg_container::PhysicalSpan
-impl core::marker::Send for cadmpeg_container::PhysicalSpan
-impl core::marker::Sync for cadmpeg_container::PhysicalSpan
-impl core::marker::Unpin for cadmpeg_container::PhysicalSpan
-impl core::marker::UnsafeUnpin for cadmpeg_container::PhysicalSpan
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::PhysicalSpan
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::PhysicalSpan

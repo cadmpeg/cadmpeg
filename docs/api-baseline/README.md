@@ -2,11 +2,11 @@
 
 Any commit that intentionally changes a crate's public surface regenerates that crate's snapshot in the same commit. Breaking changes also add a `[[change]]` row to `docs/public-api-ledger.toml`; additions are recorded by the rustdoc baseline diff and do not require a ledger row. `git diff docs/api-baseline/` is the API change record; the snapshot commit hash is recorded at the top of each file.
 
-Regenerate a crate snapshot with nightly rustc and `cargo-public-api`. CI installs nightly and pins `cargo-public-api` 0.52.0. `-s` omits blanket impls (`Into`, `From`, `Any`).
+Regenerate a crate snapshot with nightly rustc and `cargo-public-api`. CI installs nightly and pins `cargo-public-api` 0.52.0. `-sss` omits blanket impls, auto-trait impls, and auto-derived impls.
 
 ```
 SHORT=$(git rev-parse --short HEAD)
-cargo +nightly public-api -p cadmpeg-core --color never -s \
+cargo +nightly public-api -p cadmpeg-core --color never -sss \
   | { echo "# generated at $SHORT"; cat; } > docs/api-baseline/cadmpeg-core.txt
 ```
 

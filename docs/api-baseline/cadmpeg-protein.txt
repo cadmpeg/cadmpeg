@@ -1,4 +1,4 @@
-# generated at 9518f7666
+# generated at 0cb4ec82a
 pub mod cadmpeg_protein
 pub enum cadmpeg_protein::PropertyValue
 pub cadmpeg_protein::PropertyValue::Boolean(bool)
@@ -12,69 +12,13 @@ pub cadmpeg_protein::PropertyValue::Multiple(alloc::vec::Vec<cadmpeg_protein::Pr
 pub cadmpeg_protein::PropertyValue::Reference
 pub cadmpeg_protein::PropertyValue::String(alloc::string::String)
 pub cadmpeg_protein::PropertyValue::TextureUri(alloc::vec::Vec<alloc::string::String>)
-impl core::clone::Clone for cadmpeg_protein::PropertyValue
-pub fn cadmpeg_protein::PropertyValue::clone(&self) -> cadmpeg_protein::PropertyValue
-impl core::cmp::PartialEq for cadmpeg_protein::PropertyValue
-pub fn cadmpeg_protein::PropertyValue::eq(&self, &cadmpeg_protein::PropertyValue) -> bool
-impl core::fmt::Debug for cadmpeg_protein::PropertyValue
-pub fn cadmpeg_protein::PropertyValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_protein::PropertyValue
-impl serde_core::ser::Serialize for cadmpeg_protein::PropertyValue
-pub fn cadmpeg_protein::PropertyValue::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_protein::PropertyValue
-pub fn cadmpeg_protein::PropertyValue::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_protein::PropertyValue
-impl core::marker::Send for cadmpeg_protein::PropertyValue
-impl core::marker::Sync for cadmpeg_protein::PropertyValue
-impl core::marker::Unpin for cadmpeg_protein::PropertyValue
-impl core::marker::UnsafeUnpin for cadmpeg_protein::PropertyValue
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_protein::PropertyValue
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_protein::PropertyValue
 pub struct cadmpeg_protein::DecodeOutcome
 pub cadmpeg_protein::DecodeOutcome::records: alloc::vec::Vec<cadmpeg_protein::DecodedRecord>
 pub cadmpeg_protein::DecodeOutcome::rejected: alloc::vec::Vec<cadmpeg_protein::RejectedRecord>
-impl core::clone::Clone for cadmpeg_protein::DecodeOutcome
-pub fn cadmpeg_protein::DecodeOutcome::clone(&self) -> cadmpeg_protein::DecodeOutcome
-impl core::cmp::PartialEq for cadmpeg_protein::DecodeOutcome
-pub fn cadmpeg_protein::DecodeOutcome::eq(&self, &cadmpeg_protein::DecodeOutcome) -> bool
-impl core::default::Default for cadmpeg_protein::DecodeOutcome
-pub fn cadmpeg_protein::DecodeOutcome::default() -> cadmpeg_protein::DecodeOutcome
-impl core::fmt::Debug for cadmpeg_protein::DecodeOutcome
-pub fn cadmpeg_protein::DecodeOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_protein::DecodeOutcome
-impl serde_core::ser::Serialize for cadmpeg_protein::DecodeOutcome
-pub fn cadmpeg_protein::DecodeOutcome::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_protein::DecodeOutcome
-pub fn cadmpeg_protein::DecodeOutcome::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_protein::DecodeOutcome
-impl core::marker::Send for cadmpeg_protein::DecodeOutcome
-impl core::marker::Sync for cadmpeg_protein::DecodeOutcome
-impl core::marker::Unpin for cadmpeg_protein::DecodeOutcome
-impl core::marker::UnsafeUnpin for cadmpeg_protein::DecodeOutcome
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_protein::DecodeOutcome
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_protein::DecodeOutcome
 pub struct cadmpeg_protein::DecodedProperty
 pub cadmpeg_protein::DecodedProperty::connections: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_protein::DecodedProperty::value: cadmpeg_protein::PropertyValue
 pub cadmpeg_protein::DecodedProperty::value_offset: usize
-impl core::clone::Clone for cadmpeg_protein::DecodedProperty
-pub fn cadmpeg_protein::DecodedProperty::clone(&self) -> cadmpeg_protein::DecodedProperty
-impl core::cmp::PartialEq for cadmpeg_protein::DecodedProperty
-pub fn cadmpeg_protein::DecodedProperty::eq(&self, &cadmpeg_protein::DecodedProperty) -> bool
-impl core::fmt::Debug for cadmpeg_protein::DecodedProperty
-pub fn cadmpeg_protein::DecodedProperty::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_protein::DecodedProperty
-impl serde_core::ser::Serialize for cadmpeg_protein::DecodedProperty
-pub fn cadmpeg_protein::DecodedProperty::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_protein::DecodedProperty
-pub fn cadmpeg_protein::DecodedProperty::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_protein::DecodedProperty
-impl core::marker::Send for cadmpeg_protein::DecodedProperty
-impl core::marker::Sync for cadmpeg_protein::DecodedProperty
-impl core::marker::Unpin for cadmpeg_protein::DecodedProperty
-impl core::marker::UnsafeUnpin for cadmpeg_protein::DecodedProperty
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_protein::DecodedProperty
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_protein::DecodedProperty
 pub struct cadmpeg_protein::DecodedRecord
 pub cadmpeg_protein::DecodedRecord::asset_lib_id: alloc::string::String
 pub cadmpeg_protein::DecodedRecord::base: alloc::string::String
@@ -83,68 +27,12 @@ pub cadmpeg_protein::DecodedRecord::logical_offset: usize
 pub cadmpeg_protein::DecodedRecord::ordinal: u64
 pub cadmpeg_protein::DecodedRecord::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_protein::DecodedProperty>
 pub cadmpeg_protein::DecodedRecord::schema: alloc::string::String
-impl core::clone::Clone for cadmpeg_protein::DecodedRecord
-pub fn cadmpeg_protein::DecodedRecord::clone(&self) -> cadmpeg_protein::DecodedRecord
-impl core::cmp::PartialEq for cadmpeg_protein::DecodedRecord
-pub fn cadmpeg_protein::DecodedRecord::eq(&self, &cadmpeg_protein::DecodedRecord) -> bool
-impl core::fmt::Debug for cadmpeg_protein::DecodedRecord
-pub fn cadmpeg_protein::DecodedRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_protein::DecodedRecord
-impl serde_core::ser::Serialize for cadmpeg_protein::DecodedRecord
-pub fn cadmpeg_protein::DecodedRecord::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_protein::DecodedRecord
-pub fn cadmpeg_protein::DecodedRecord::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_protein::DecodedRecord
-impl core::marker::Send for cadmpeg_protein::DecodedRecord
-impl core::marker::Sync for cadmpeg_protein::DecodedRecord
-impl core::marker::Unpin for cadmpeg_protein::DecodedRecord
-impl core::marker::UnsafeUnpin for cadmpeg_protein::DecodedRecord
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_protein::DecodedRecord
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_protein::DecodedRecord
 pub struct cadmpeg_protein::RecordFrame
 pub cadmpeg_protein::RecordFrame::bytes: alloc::vec::Vec<u8>
 pub cadmpeg_protein::RecordFrame::logical_offset: usize
-impl core::clone::Clone for cadmpeg_protein::RecordFrame
-pub fn cadmpeg_protein::RecordFrame::clone(&self) -> cadmpeg_protein::RecordFrame
-impl core::cmp::Eq for cadmpeg_protein::RecordFrame
-impl core::cmp::PartialEq for cadmpeg_protein::RecordFrame
-pub fn cadmpeg_protein::RecordFrame::eq(&self, &cadmpeg_protein::RecordFrame) -> bool
-impl core::fmt::Debug for cadmpeg_protein::RecordFrame
-pub fn cadmpeg_protein::RecordFrame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_protein::RecordFrame
-impl serde_core::ser::Serialize for cadmpeg_protein::RecordFrame
-pub fn cadmpeg_protein::RecordFrame::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_protein::RecordFrame
-pub fn cadmpeg_protein::RecordFrame::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_protein::RecordFrame
-impl core::marker::Send for cadmpeg_protein::RecordFrame
-impl core::marker::Sync for cadmpeg_protein::RecordFrame
-impl core::marker::Unpin for cadmpeg_protein::RecordFrame
-impl core::marker::UnsafeUnpin for cadmpeg_protein::RecordFrame
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_protein::RecordFrame
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_protein::RecordFrame
 pub struct cadmpeg_protein::RejectedRecord
 pub cadmpeg_protein::RejectedRecord::detail: alloc::string::String
 pub cadmpeg_protein::RejectedRecord::ordinal: u64
-impl core::clone::Clone for cadmpeg_protein::RejectedRecord
-pub fn cadmpeg_protein::RejectedRecord::clone(&self) -> cadmpeg_protein::RejectedRecord
-impl core::cmp::Eq for cadmpeg_protein::RejectedRecord
-impl core::cmp::PartialEq for cadmpeg_protein::RejectedRecord
-pub fn cadmpeg_protein::RejectedRecord::eq(&self, &cadmpeg_protein::RejectedRecord) -> bool
-impl core::fmt::Debug for cadmpeg_protein::RejectedRecord
-pub fn cadmpeg_protein::RejectedRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_protein::RejectedRecord
-impl serde_core::ser::Serialize for cadmpeg_protein::RejectedRecord
-pub fn cadmpeg_protein::RejectedRecord::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_protein::RejectedRecord
-pub fn cadmpeg_protein::RejectedRecord::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_protein::RejectedRecord
-impl core::marker::Send for cadmpeg_protein::RejectedRecord
-impl core::marker::Sync for cadmpeg_protein::RejectedRecord
-impl core::marker::Unpin for cadmpeg_protein::RejectedRecord
-impl core::marker::UnsafeUnpin for cadmpeg_protein::RejectedRecord
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_protein::RejectedRecord
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_protein::RejectedRecord
 pub const cadmpeg_protein::CONTINUATION_MARKER: &[u8]
 pub const cadmpeg_protein::PAGE_SIZE: usize
 pub const cadmpeg_protein::RECORD_MARKER: &[u8]

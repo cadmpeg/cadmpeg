@@ -1,4 +1,4 @@
-# generated at 5ab799ccb
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_f3d
 pub struct cadmpeg_codec_f3d::F3dCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_f3d::F3dCodec
@@ -10,18 +10,4 @@ impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_f3d::F3dCodec
 pub fn cadmpeg_codec_f3d::F3dCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_f3d::F3dCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_f3d::F3dCodec::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
-impl core::clone::Clone for cadmpeg_codec_f3d::F3dCodec
-pub fn cadmpeg_codec_f3d::F3dCodec::clone(&self) -> cadmpeg_codec_f3d::F3dCodec
-impl core::default::Default for cadmpeg_codec_f3d::F3dCodec
-pub fn cadmpeg_codec_f3d::F3dCodec::default() -> cadmpeg_codec_f3d::F3dCodec
-impl core::fmt::Debug for cadmpeg_codec_f3d::F3dCodec
-pub fn cadmpeg_codec_f3d::F3dCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_f3d::F3dCodec
-impl core::marker::Freeze for cadmpeg_codec_f3d::F3dCodec
-impl core::marker::Send for cadmpeg_codec_f3d::F3dCodec
-impl core::marker::Sync for cadmpeg_codec_f3d::F3dCodec
-impl core::marker::Unpin for cadmpeg_codec_f3d::F3dCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_f3d::F3dCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_f3d::F3dCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_f3d::F3dCodec
 pub fn cadmpeg_codec_f3d::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::Finding>

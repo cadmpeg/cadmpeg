@@ -1,4 +1,4 @@
-# generated at ca8ec2229
+# generated at 0cb4ec82a
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -25,40 +25,9 @@ pub cadmpeg_asm::brep::attributes::DirectColorCarrier::DecimalRgb
 pub cadmpeg_asm::brep::attributes::DirectColorCarrier::DecimalRgb::field: usize
 pub cadmpeg_asm::brep::attributes::DirectColorCarrier::NormalizedRgb
 pub cadmpeg_asm::brep::attributes::DirectColorCarrier::NormalizedRgb::fields: [usize; 3]
-impl core::clone::Clone for cadmpeg_asm::brep::attributes::DirectColorCarrier
-pub fn cadmpeg_asm::brep::attributes::DirectColorCarrier::clone(&self) -> cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::cmp::Eq for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::cmp::PartialEq for cadmpeg_asm::brep::attributes::DirectColorCarrier
-pub fn cadmpeg_asm::brep::attributes::DirectColorCarrier::eq(&self, &cadmpeg_asm::brep::attributes::DirectColorCarrier) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::attributes::DirectColorCarrier
-pub fn cadmpeg_asm::brep::attributes::DirectColorCarrier::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::marker::Freeze for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::marker::Send for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::marker::Sync for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::marker::Unpin for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::attributes::DirectColorCarrier
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::attributes::DirectColorCarrier
 pub struct cadmpeg_asm::brep::attributes::DirectAttributeColor
 pub cadmpeg_asm::brep::attributes::DirectAttributeColor::carrier: cadmpeg_asm::brep::attributes::DirectColorCarrier
 pub cadmpeg_asm::brep::attributes::DirectAttributeColor::color: cadmpeg_ir::topology::Color
-impl core::clone::Clone for cadmpeg_asm::brep::attributes::DirectAttributeColor
-pub fn cadmpeg_asm::brep::attributes::DirectAttributeColor::clone(&self) -> cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::cmp::PartialEq for cadmpeg_asm::brep::attributes::DirectAttributeColor
-pub fn cadmpeg_asm::brep::attributes::DirectAttributeColor::eq(&self, &cadmpeg_asm::brep::attributes::DirectAttributeColor) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::attributes::DirectAttributeColor
-pub fn cadmpeg_asm::brep::attributes::DirectAttributeColor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::marker::Freeze for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::marker::Send for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::marker::Sync for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::marker::Unpin for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::attributes::DirectAttributeColor
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::attributes::DirectAttributeColor
 pub fn cadmpeg_asm::brep::attributes::attribute_chain_color(&cadmpeg_asm::sab::Record, &std::collections::hash::map::HashMap<i64, &cadmpeg_asm::sab::Record>) -> core::option::Option<cadmpeg_ir::topology::Color>
 pub fn cadmpeg_asm::brep::attributes::attribute_chain_color_carrier<'a>(&cadmpeg_asm::sab::Record, impl core::ops::function::FnMut(i64) -> core::option::Option<&'a cadmpeg_asm::sab::Record>) -> core::option::Option<(&'a cadmpeg_asm::sab::Record, cadmpeg_asm::brep::attributes::DirectAttributeColor)>
 pub fn cadmpeg_asm::brep::attributes::attribute_chain_name(&cadmpeg_asm::sab::Record, &std::collections::hash::map::HashMap<i64, &cadmpeg_asm::sab::Record>) -> core::option::Option<alloc::string::String>
@@ -75,26 +44,6 @@ pub mod cadmpeg_asm::brep::records
 pub enum cadmpeg_asm::brep::records::FaceContainment
 pub cadmpeg_asm::brep::records::FaceContainment::In
 pub cadmpeg_asm::brep::records::FaceContainment::Out
-impl core::clone::Clone for cadmpeg_asm::brep::records::FaceContainment
-pub fn cadmpeg_asm::brep::records::FaceContainment::clone(&self) -> cadmpeg_asm::brep::records::FaceContainment
-impl core::cmp::Eq for cadmpeg_asm::brep::records::FaceContainment
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::FaceContainment
-pub fn cadmpeg_asm::brep::records::FaceContainment::eq(&self, &cadmpeg_asm::brep::records::FaceContainment) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::FaceContainment
-pub fn cadmpeg_asm::brep::records::FaceContainment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_asm::brep::records::FaceContainment
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::FaceContainment
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::FaceContainment
-pub fn cadmpeg_asm::brep::records::FaceContainment::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::FaceContainment
-pub fn cadmpeg_asm::brep::records::FaceContainment::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::FaceContainment
-impl core::marker::Send for cadmpeg_asm::brep::records::FaceContainment
-impl core::marker::Sync for cadmpeg_asm::brep::records::FaceContainment
-impl core::marker::Unpin for cadmpeg_asm::brep::records::FaceContainment
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::FaceContainment
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::FaceContainment
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::FaceContainment
 pub enum cadmpeg_asm::brep::records::TolerantCoedgeExtension
 pub cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve
 pub cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve::curve_reversed: bool
@@ -106,49 +55,9 @@ pub cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty::target: core::op
 pub cadmpeg_asm::brep::records::TolerantCoedgeExtension::None
 pub cadmpeg_asm::brep::records::TolerantCoedgeExtension::Reference
 pub cadmpeg_asm::brep::records::TolerantCoedgeExtension::Reference::target: core::option::Option<i64>
-impl core::clone::Clone for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeExtension::clone(&self) -> cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeExtension::eq(&self, &cadmpeg_asm::brep::records::TolerantCoedgeExtension) -> bool
-impl core::default::Default for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeExtension::default() -> cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::fmt::Debug for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeExtension::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeExtension::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeExtension::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::marker::Send for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::marker::Sync for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::marker::Unpin for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::TolerantCoedgeExtension
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::TolerantCoedgeExtension
 pub enum cadmpeg_asm::brep::records::WireSide
 pub cadmpeg_asm::brep::records::WireSide::In
 pub cadmpeg_asm::brep::records::WireSide::Out
-impl core::clone::Clone for cadmpeg_asm::brep::records::WireSide
-pub fn cadmpeg_asm::brep::records::WireSide::clone(&self) -> cadmpeg_asm::brep::records::WireSide
-impl core::cmp::Eq for cadmpeg_asm::brep::records::WireSide
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::WireSide
-pub fn cadmpeg_asm::brep::records::WireSide::eq(&self, &cadmpeg_asm::brep::records::WireSide) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::WireSide
-pub fn cadmpeg_asm::brep::records::WireSide::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_asm::brep::records::WireSide
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::WireSide
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::WireSide
-pub fn cadmpeg_asm::brep::records::WireSide::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::WireSide
-pub fn cadmpeg_asm::brep::records::WireSide::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::WireSide
-impl core::marker::Send for cadmpeg_asm::brep::records::WireSide
-impl core::marker::Sync for cadmpeg_asm::brep::records::WireSide
-impl core::marker::Unpin for cadmpeg_asm::brep::records::WireSide
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::WireSide
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::WireSide
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::WireSide
 pub struct cadmpeg_asm::brep::records::BodyNativeKey
 pub cadmpeg_asm::brep::records::BodyNativeKey::asm_body_key: core::option::Option<u64>
 pub cadmpeg_asm::brep::records::BodyNativeKey::body: cadmpeg_ir::ids::BodyId
@@ -156,94 +65,22 @@ pub cadmpeg_asm::brep::records::BodyNativeKey::body_ordinal: u32
 pub cadmpeg_asm::brep::records::BodyNativeKey::id: alloc::string::String
 pub cadmpeg_asm::brep::records::BodyNativeKey::record_index: u32
 pub cadmpeg_asm::brep::records::BodyNativeKey::source_brep: core::option::Option<alloc::string::String>
-impl core::clone::Clone for cadmpeg_asm::brep::records::BodyNativeKey
-pub fn cadmpeg_asm::brep::records::BodyNativeKey::clone(&self) -> cadmpeg_asm::brep::records::BodyNativeKey
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::BodyNativeKey
-pub fn cadmpeg_asm::brep::records::BodyNativeKey::eq(&self, &cadmpeg_asm::brep::records::BodyNativeKey) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::BodyNativeKey
-pub fn cadmpeg_asm::brep::records::BodyNativeKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::BodyNativeKey
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::BodyNativeKey
-pub fn cadmpeg_asm::brep::records::BodyNativeKey::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::BodyNativeKey
-pub fn cadmpeg_asm::brep::records::BodyNativeKey::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::BodyNativeKey
-impl core::marker::Send for cadmpeg_asm::brep::records::BodyNativeKey
-impl core::marker::Sync for cadmpeg_asm::brep::records::BodyNativeKey
-impl core::marker::Unpin for cadmpeg_asm::brep::records::BodyNativeKey
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::BodyNativeKey
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::BodyNativeKey
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::BodyNativeKey
 pub struct cadmpeg_asm::brep::records::EdgeContinuity
 pub cadmpeg_asm::brep::records::EdgeContinuity::continuity: alloc::string::String
 pub cadmpeg_asm::brep::records::EdgeContinuity::edge: cadmpeg_ir::ids::EdgeId
 pub cadmpeg_asm::brep::records::EdgeContinuity::id: alloc::string::String
 pub cadmpeg_asm::brep::records::EdgeContinuity::record_index: u32
 pub cadmpeg_asm::brep::records::EdgeContinuity::sense: cadmpeg_ir::topology::Sense
-impl core::clone::Clone for cadmpeg_asm::brep::records::EdgeContinuity
-pub fn cadmpeg_asm::brep::records::EdgeContinuity::clone(&self) -> cadmpeg_asm::brep::records::EdgeContinuity
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::EdgeContinuity
-pub fn cadmpeg_asm::brep::records::EdgeContinuity::eq(&self, &cadmpeg_asm::brep::records::EdgeContinuity) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::EdgeContinuity
-pub fn cadmpeg_asm::brep::records::EdgeContinuity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::EdgeContinuity
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::EdgeContinuity
-pub fn cadmpeg_asm::brep::records::EdgeContinuity::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::EdgeContinuity
-pub fn cadmpeg_asm::brep::records::EdgeContinuity::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::EdgeContinuity
-impl core::marker::Send for cadmpeg_asm::brep::records::EdgeContinuity
-impl core::marker::Sync for cadmpeg_asm::brep::records::EdgeContinuity
-impl core::marker::Unpin for cadmpeg_asm::brep::records::EdgeContinuity
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::EdgeContinuity
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::EdgeContinuity
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::EdgeContinuity
 pub struct cadmpeg_asm::brep::records::EdgeOwnership
 pub cadmpeg_asm::brep::records::EdgeOwnership::edge: cadmpeg_ir::ids::EdgeId
 pub cadmpeg_asm::brep::records::EdgeOwnership::id: alloc::string::String
 pub cadmpeg_asm::brep::records::EdgeOwnership::owner_coedge: core::option::Option<cadmpeg_ir::ids::CoedgeId>
 pub cadmpeg_asm::brep::records::EdgeOwnership::record_index: u32
-impl core::clone::Clone for cadmpeg_asm::brep::records::EdgeOwnership
-pub fn cadmpeg_asm::brep::records::EdgeOwnership::clone(&self) -> cadmpeg_asm::brep::records::EdgeOwnership
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::EdgeOwnership
-pub fn cadmpeg_asm::brep::records::EdgeOwnership::eq(&self, &cadmpeg_asm::brep::records::EdgeOwnership) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::EdgeOwnership
-pub fn cadmpeg_asm::brep::records::EdgeOwnership::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::EdgeOwnership
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::EdgeOwnership
-pub fn cadmpeg_asm::brep::records::EdgeOwnership::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::EdgeOwnership
-pub fn cadmpeg_asm::brep::records::EdgeOwnership::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::EdgeOwnership
-impl core::marker::Send for cadmpeg_asm::brep::records::EdgeOwnership
-impl core::marker::Sync for cadmpeg_asm::brep::records::EdgeOwnership
-impl core::marker::Unpin for cadmpeg_asm::brep::records::EdgeOwnership
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::EdgeOwnership
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::EdgeOwnership
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::EdgeOwnership
 pub struct cadmpeg_asm::brep::records::FaceNativeKey
 pub cadmpeg_asm::brep::records::FaceNativeKey::asm_face_key: core::option::Option<u64>
 pub cadmpeg_asm::brep::records::FaceNativeKey::face: cadmpeg_ir::ids::FaceId
 pub cadmpeg_asm::brep::records::FaceNativeKey::id: alloc::string::String
 pub cadmpeg_asm::brep::records::FaceNativeKey::record_index: u32
-impl core::clone::Clone for cadmpeg_asm::brep::records::FaceNativeKey
-pub fn cadmpeg_asm::brep::records::FaceNativeKey::clone(&self) -> cadmpeg_asm::brep::records::FaceNativeKey
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::FaceNativeKey
-pub fn cadmpeg_asm::brep::records::FaceNativeKey::eq(&self, &cadmpeg_asm::brep::records::FaceNativeKey) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::FaceNativeKey
-pub fn cadmpeg_asm::brep::records::FaceNativeKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::FaceNativeKey
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::FaceNativeKey
-pub fn cadmpeg_asm::brep::records::FaceNativeKey::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::FaceNativeKey
-pub fn cadmpeg_asm::brep::records::FaceNativeKey::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::FaceNativeKey
-impl core::marker::Send for cadmpeg_asm::brep::records::FaceNativeKey
-impl core::marker::Sync for cadmpeg_asm::brep::records::FaceNativeKey
-impl core::marker::Unpin for cadmpeg_asm::brep::records::FaceNativeKey
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::FaceNativeKey
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::FaceNativeKey
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::FaceNativeKey
 pub struct cadmpeg_asm::brep::records::FaceSidedness
 pub cadmpeg_asm::brep::records::FaceSidedness::containment: core::option::Option<cadmpeg_asm::brep::records::FaceContainment>
 pub cadmpeg_asm::brep::records::FaceSidedness::face: cadmpeg_ir::ids::FaceId
@@ -251,94 +88,22 @@ pub cadmpeg_asm::brep::records::FaceSidedness::id: alloc::string::String
 pub cadmpeg_asm::brep::records::FaceSidedness::native_sense: cadmpeg_ir::topology::Sense
 pub cadmpeg_asm::brep::records::FaceSidedness::normalized_sense: cadmpeg_ir::topology::Sense
 pub cadmpeg_asm::brep::records::FaceSidedness::record_index: u32
-impl core::clone::Clone for cadmpeg_asm::brep::records::FaceSidedness
-pub fn cadmpeg_asm::brep::records::FaceSidedness::clone(&self) -> cadmpeg_asm::brep::records::FaceSidedness
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::FaceSidedness
-pub fn cadmpeg_asm::brep::records::FaceSidedness::eq(&self, &cadmpeg_asm::brep::records::FaceSidedness) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::FaceSidedness
-pub fn cadmpeg_asm::brep::records::FaceSidedness::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::FaceSidedness
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::FaceSidedness
-pub fn cadmpeg_asm::brep::records::FaceSidedness::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::FaceSidedness
-pub fn cadmpeg_asm::brep::records::FaceSidedness::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::FaceSidedness
-impl core::marker::Send for cadmpeg_asm::brep::records::FaceSidedness
-impl core::marker::Sync for cadmpeg_asm::brep::records::FaceSidedness
-impl core::marker::Unpin for cadmpeg_asm::brep::records::FaceSidedness
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::FaceSidedness
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::FaceSidedness
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::FaceSidedness
 pub struct cadmpeg_asm::brep::records::MeshSurfaceSentinel
 pub cadmpeg_asm::brep::records::MeshSurfaceSentinel::id: alloc::string::String
 pub cadmpeg_asm::brep::records::MeshSurfaceSentinel::record_index: u32
 pub cadmpeg_asm::brep::records::MeshSurfaceSentinel::surface: cadmpeg_ir::ids::SurfaceId
-impl core::clone::Clone for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-pub fn cadmpeg_asm::brep::records::MeshSurfaceSentinel::clone(&self) -> cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-pub fn cadmpeg_asm::brep::records::MeshSurfaceSentinel::eq(&self, &cadmpeg_asm::brep::records::MeshSurfaceSentinel) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-pub fn cadmpeg_asm::brep::records::MeshSurfaceSentinel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-pub fn cadmpeg_asm::brep::records::MeshSurfaceSentinel::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-pub fn cadmpeg_asm::brep::records::MeshSurfaceSentinel::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl core::marker::Send for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl core::marker::Sync for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl core::marker::Unpin for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::MeshSurfaceSentinel
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::MeshSurfaceSentinel
 pub struct cadmpeg_asm::brep::records::TolerantCoedgeParameters
 pub cadmpeg_asm::brep::records::TolerantCoedgeParameters::coedge: cadmpeg_ir::ids::CoedgeId
 pub cadmpeg_asm::brep::records::TolerantCoedgeParameters::extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension
 pub cadmpeg_asm::brep::records::TolerantCoedgeParameters::id: alloc::string::String
 pub cadmpeg_asm::brep::records::TolerantCoedgeParameters::parameter_range: [f64; 2]
 pub cadmpeg_asm::brep::records::TolerantCoedgeParameters::record_index: u32
-impl core::clone::Clone for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeParameters::clone(&self) -> cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeParameters::eq(&self, &cadmpeg_asm::brep::records::TolerantCoedgeParameters) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeParameters::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeParameters::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-pub fn cadmpeg_asm::brep::records::TolerantCoedgeParameters::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl core::marker::Send for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl core::marker::Sync for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl core::marker::Unpin for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::TolerantCoedgeParameters
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::TolerantCoedgeParameters
 pub struct cadmpeg_asm::brep::records::TolerantEdgeTail
 pub cadmpeg_asm::brep::records::TolerantEdgeTail::edge: cadmpeg_ir::ids::EdgeId
 pub cadmpeg_asm::brep::records::TolerantEdgeTail::entity_revision: i64
 pub cadmpeg_asm::brep::records::TolerantEdgeTail::id: alloc::string::String
 pub cadmpeg_asm::brep::records::TolerantEdgeTail::record_index: u32
 pub cadmpeg_asm::brep::records::TolerantEdgeTail::trailing_field: core::option::Option<i64>
-impl core::clone::Clone for cadmpeg_asm::brep::records::TolerantEdgeTail
-pub fn cadmpeg_asm::brep::records::TolerantEdgeTail::clone(&self) -> cadmpeg_asm::brep::records::TolerantEdgeTail
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::TolerantEdgeTail
-pub fn cadmpeg_asm::brep::records::TolerantEdgeTail::eq(&self, &cadmpeg_asm::brep::records::TolerantEdgeTail) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::TolerantEdgeTail
-pub fn cadmpeg_asm::brep::records::TolerantEdgeTail::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::TolerantEdgeTail
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::TolerantEdgeTail
-pub fn cadmpeg_asm::brep::records::TolerantEdgeTail::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::TolerantEdgeTail
-pub fn cadmpeg_asm::brep::records::TolerantEdgeTail::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::TolerantEdgeTail
-impl core::marker::Send for cadmpeg_asm::brep::records::TolerantEdgeTail
-impl core::marker::Sync for cadmpeg_asm::brep::records::TolerantEdgeTail
-impl core::marker::Unpin for cadmpeg_asm::brep::records::TolerantEdgeTail
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::TolerantEdgeTail
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::TolerantEdgeTail
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::TolerantEdgeTail
 pub struct cadmpeg_asm::brep::records::TolerantVertexTail
 pub cadmpeg_asm::brep::records::TolerantVertexTail::evaluated_unset: bool
 pub cadmpeg_asm::brep::records::TolerantVertexTail::id: alloc::string::String
@@ -346,24 +111,6 @@ pub cadmpeg_asm::brep::records::TolerantVertexTail::leading_tolerances: [f64; 2]
 pub cadmpeg_asm::brep::records::TolerantVertexTail::record_index: u32
 pub cadmpeg_asm::brep::records::TolerantVertexTail::trailing_field: core::option::Option<i64>
 pub cadmpeg_asm::brep::records::TolerantVertexTail::vertex: cadmpeg_ir::ids::VertexId
-impl core::clone::Clone for cadmpeg_asm::brep::records::TolerantVertexTail
-pub fn cadmpeg_asm::brep::records::TolerantVertexTail::clone(&self) -> cadmpeg_asm::brep::records::TolerantVertexTail
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::TolerantVertexTail
-pub fn cadmpeg_asm::brep::records::TolerantVertexTail::eq(&self, &cadmpeg_asm::brep::records::TolerantVertexTail) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::TolerantVertexTail
-pub fn cadmpeg_asm::brep::records::TolerantVertexTail::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::TolerantVertexTail
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::TolerantVertexTail
-pub fn cadmpeg_asm::brep::records::TolerantVertexTail::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::TolerantVertexTail
-pub fn cadmpeg_asm::brep::records::TolerantVertexTail::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::TolerantVertexTail
-impl core::marker::Send for cadmpeg_asm::brep::records::TolerantVertexTail
-impl core::marker::Sync for cadmpeg_asm::brep::records::TolerantVertexTail
-impl core::marker::Unpin for cadmpeg_asm::brep::records::TolerantVertexTail
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::TolerantVertexTail
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::TolerantVertexTail
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::TolerantVertexTail
 pub struct cadmpeg_asm::brep::records::TransformHints
 pub cadmpeg_asm::brep::records::TransformHints::body: cadmpeg_ir::ids::BodyId
 pub cadmpeg_asm::brep::records::TransformHints::id: alloc::string::String
@@ -371,48 +118,12 @@ pub cadmpeg_asm::brep::records::TransformHints::record_index: u32
 pub cadmpeg_asm::brep::records::TransformHints::reflection: bool
 pub cadmpeg_asm::brep::records::TransformHints::rotation: bool
 pub cadmpeg_asm::brep::records::TransformHints::shear: bool
-impl core::clone::Clone for cadmpeg_asm::brep::records::TransformHints
-pub fn cadmpeg_asm::brep::records::TransformHints::clone(&self) -> cadmpeg_asm::brep::records::TransformHints
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::TransformHints
-pub fn cadmpeg_asm::brep::records::TransformHints::eq(&self, &cadmpeg_asm::brep::records::TransformHints) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::TransformHints
-pub fn cadmpeg_asm::brep::records::TransformHints::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::TransformHints
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::TransformHints
-pub fn cadmpeg_asm::brep::records::TransformHints::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::TransformHints
-pub fn cadmpeg_asm::brep::records::TransformHints::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::TransformHints
-impl core::marker::Send for cadmpeg_asm::brep::records::TransformHints
-impl core::marker::Sync for cadmpeg_asm::brep::records::TransformHints
-impl core::marker::Unpin for cadmpeg_asm::brep::records::TransformHints
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::TransformHints
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::TransformHints
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::TransformHints
 pub struct cadmpeg_asm::brep::records::VertexOwnership
 pub cadmpeg_asm::brep::records::VertexOwnership::endpoint_index: u8
 pub cadmpeg_asm::brep::records::VertexOwnership::id: alloc::string::String
 pub cadmpeg_asm::brep::records::VertexOwnership::owning_edge: cadmpeg_ir::ids::EdgeId
 pub cadmpeg_asm::brep::records::VertexOwnership::record_index: u32
 pub cadmpeg_asm::brep::records::VertexOwnership::vertex: cadmpeg_ir::ids::VertexId
-impl core::clone::Clone for cadmpeg_asm::brep::records::VertexOwnership
-pub fn cadmpeg_asm::brep::records::VertexOwnership::clone(&self) -> cadmpeg_asm::brep::records::VertexOwnership
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::VertexOwnership
-pub fn cadmpeg_asm::brep::records::VertexOwnership::eq(&self, &cadmpeg_asm::brep::records::VertexOwnership) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::VertexOwnership
-pub fn cadmpeg_asm::brep::records::VertexOwnership::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::VertexOwnership
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::VertexOwnership
-pub fn cadmpeg_asm::brep::records::VertexOwnership::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::VertexOwnership
-pub fn cadmpeg_asm::brep::records::VertexOwnership::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::VertexOwnership
-impl core::marker::Send for cadmpeg_asm::brep::records::VertexOwnership
-impl core::marker::Sync for cadmpeg_asm::brep::records::VertexOwnership
-impl core::marker::Unpin for cadmpeg_asm::brep::records::VertexOwnership
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::VertexOwnership
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::VertexOwnership
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::VertexOwnership
 pub struct cadmpeg_asm::brep::records::WireTopology
 pub cadmpeg_asm::brep::records::WireTopology::edges: alloc::vec::Vec<cadmpeg_ir::ids::EdgeId>
 pub cadmpeg_asm::brep::records::WireTopology::free_vertex: core::option::Option<cadmpeg_ir::ids::VertexId>
@@ -420,24 +131,6 @@ pub cadmpeg_asm::brep::records::WireTopology::id: alloc::string::String
 pub cadmpeg_asm::brep::records::WireTopology::record_index: u32
 pub cadmpeg_asm::brep::records::WireTopology::shell: cadmpeg_ir::ids::ShellId
 pub cadmpeg_asm::brep::records::WireTopology::side: cadmpeg_asm::brep::records::WireSide
-impl core::clone::Clone for cadmpeg_asm::brep::records::WireTopology
-pub fn cadmpeg_asm::brep::records::WireTopology::clone(&self) -> cadmpeg_asm::brep::records::WireTopology
-impl core::cmp::PartialEq for cadmpeg_asm::brep::records::WireTopology
-pub fn cadmpeg_asm::brep::records::WireTopology::eq(&self, &cadmpeg_asm::brep::records::WireTopology) -> bool
-impl core::fmt::Debug for cadmpeg_asm::brep::records::WireTopology
-pub fn cadmpeg_asm::brep::records::WireTopology::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::records::WireTopology
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::WireTopology
-pub fn cadmpeg_asm::brep::records::WireTopology::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::WireTopology
-pub fn cadmpeg_asm::brep::records::WireTopology::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::records::WireTopology
-impl core::marker::Send for cadmpeg_asm::brep::records::WireTopology
-impl core::marker::Sync for cadmpeg_asm::brep::records::WireTopology
-impl core::marker::Unpin for cadmpeg_asm::brep::records::WireTopology
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::records::WireTopology
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::records::WireTopology
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::records::WireTopology
 pub mod cadmpeg_asm::brep::transfer
 pub struct cadmpeg_asm::brep::transfer::AsmTransferRemainder
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::annotation_records: alloc::vec::Vec<cadmpeg_asm::brep::AnnotationRecord>
@@ -445,44 +138,16 @@ pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::body_keys: std::collectio
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::face_keys: std::collections::hash::map::HashMap<cadmpeg_ir::ids::FaceId, u64>
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::stats: cadmpeg_asm::brep::Stats
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::unknowns: alloc::vec::Vec<cadmpeg_ir::unknown::UnknownRecord>
-impl core::marker::Freeze for cadmpeg_asm::brep::transfer::AsmTransferRemainder
-impl core::marker::Send for cadmpeg_asm::brep::transfer::AsmTransferRemainder
-impl core::marker::Sync for cadmpeg_asm::brep::transfer::AsmTransferRemainder
-impl core::marker::Unpin for cadmpeg_asm::brep::transfer::AsmTransferRemainder
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::transfer::AsmTransferRemainder
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::transfer::AsmTransferRemainder
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::transfer::AsmTransferRemainder
 pub fn cadmpeg_asm::brep::transfer::transfer_into_ir(&cadmpeg_core::decode::context::DecodeContext<'_>, &mut cadmpeg_ir::document::CadIr, &str, u32, cadmpeg_asm::brep::AsmBrep) -> core::result::Result<cadmpeg_asm::brep::transfer::AsmTransferRemainder, cadmpeg_core::error::CodecError>
 pub enum cadmpeg_asm::brep::DecodePurpose
 pub cadmpeg_asm::brep::DecodePurpose::History
 pub cadmpeg_asm::brep::DecodePurpose::Model
-impl core::clone::Clone for cadmpeg_asm::brep::DecodePurpose
-pub fn cadmpeg_asm::brep::DecodePurpose::clone(&self) -> cadmpeg_asm::brep::DecodePurpose
-impl core::cmp::Eq for cadmpeg_asm::brep::DecodePurpose
-impl core::cmp::PartialEq for cadmpeg_asm::brep::DecodePurpose
-pub fn cadmpeg_asm::brep::DecodePurpose::eq(&self, &cadmpeg_asm::brep::DecodePurpose) -> bool
-impl core::marker::Copy for cadmpeg_asm::brep::DecodePurpose
-impl core::marker::StructuralPartialEq for cadmpeg_asm::brep::DecodePurpose
-impl core::marker::Freeze for cadmpeg_asm::brep::DecodePurpose
-impl core::marker::Send for cadmpeg_asm::brep::DecodePurpose
-impl core::marker::Sync for cadmpeg_asm::brep::DecodePurpose
-impl core::marker::Unpin for cadmpeg_asm::brep::DecodePurpose
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::DecodePurpose
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::DecodePurpose
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::DecodePurpose
 pub struct cadmpeg_asm::brep::AnnotationRecord
 pub cadmpeg_asm::brep::AnnotationRecord::derived_fields: alloc::vec::Vec<&'static str>
 pub cadmpeg_asm::brep::AnnotationRecord::id: alloc::string::String
 pub cadmpeg_asm::brep::AnnotationRecord::offset: u64
 pub cadmpeg_asm::brep::AnnotationRecord::stream: alloc::string::String
 pub cadmpeg_asm::brep::AnnotationRecord::tag: alloc::string::String
-impl core::marker::Freeze for cadmpeg_asm::brep::AnnotationRecord
-impl core::marker::Send for cadmpeg_asm::brep::AnnotationRecord
-impl core::marker::Sync for cadmpeg_asm::brep::AnnotationRecord
-impl core::marker::Unpin for cadmpeg_asm::brep::AnnotationRecord
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::AnnotationRecord
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::AnnotationRecord
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::AnnotationRecord
 pub struct cadmpeg_asm::brep::AsmBrep
 pub cadmpeg_asm::brep::AsmBrep::annotation_records: alloc::vec::Vec<cadmpeg_asm::brep::AnnotationRecord>
 pub cadmpeg_asm::brep::AsmBrep::attributes: alloc::vec::Vec<cadmpeg_ir::attributes::SourceAttribute>
@@ -518,19 +183,6 @@ pub cadmpeg_asm::brep::AsmBrep::vertices: alloc::vec::Vec<cadmpeg_ir::topology::
 pub cadmpeg_asm::brep::AsmBrep::wire_topologies: alloc::vec::Vec<cadmpeg_asm::brep::records::WireTopology>
 impl cadmpeg_asm::brep::AsmBrep
 pub fn cadmpeg_asm::brep::AsmBrep::append(&mut self, Self)
-impl core::default::Default for cadmpeg_asm::brep::AsmBrep
-pub fn cadmpeg_asm::brep::AsmBrep::default() -> cadmpeg_asm::brep::AsmBrep
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::AsmBrep
-pub fn cadmpeg_asm::brep::AsmBrep::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::AsmBrep
-pub fn cadmpeg_asm::brep::AsmBrep::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::AsmBrep
-impl core::marker::Send for cadmpeg_asm::brep::AsmBrep
-impl core::marker::Sync for cadmpeg_asm::brep::AsmBrep
-impl core::marker::Unpin for cadmpeg_asm::brep::AsmBrep
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::AsmBrep
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::AsmBrep
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::AsmBrep
 pub struct cadmpeg_asm::brep::Stats
 pub cadmpeg_asm::brep::Stats::mesh_surface_faces: usize
 pub cadmpeg_asm::brep::Stats::missing_face_surface_kinds: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
@@ -546,19 +198,6 @@ pub cadmpeg_asm::brep::Stats::undecoded_pcurve_kinds: alloc::collections::btree:
 pub cadmpeg_asm::brep::Stats::undecoded_pcurve_refs: usize
 pub cadmpeg_asm::brep::Stats::unknown_surface_faces: usize
 pub cadmpeg_asm::brep::Stats::unknown_surface_kinds: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-impl core::default::Default for cadmpeg_asm::brep::Stats
-pub fn cadmpeg_asm::brep::Stats::default() -> cadmpeg_asm::brep::Stats
-impl serde_core::ser::Serialize for cadmpeg_asm::brep::Stats
-pub fn cadmpeg_asm::brep::Stats::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::Stats
-pub fn cadmpeg_asm::brep::Stats::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_asm::brep::Stats
-impl core::marker::Send for cadmpeg_asm::brep::Stats
-impl core::marker::Sync for cadmpeg_asm::brep::Stats
-impl core::marker::Unpin for cadmpeg_asm::brep::Stats
-impl core::marker::UnsafeUnpin for cadmpeg_asm::brep::Stats
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::brep::Stats
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::brep::Stats
 pub fn cadmpeg_asm::brep::collect_entity_adjacency(&serde_value::Value, &std::collections::hash::set::HashSet<alloc::string::String>, &mut std::collections::hash::map::HashMap<alloc::string::String, std::collections::hash::set::HashSet<alloc::string::String>>)
 pub fn cadmpeg_asm::brep::collect_owned_ids(&serde_value::Value, &mut std::collections::hash::set::HashSet<alloc::string::String>)
 pub fn cadmpeg_asm::brep::collect_references(&serde_value::Value, &std::collections::hash::set::HashSet<alloc::string::String>, &mut std::collections::hash::set::HashSet<alloc::string::String>)
@@ -576,18 +215,6 @@ pub cadmpeg_asm::dialect::KernelHeaderRef::Asm(&'a cadmpeg_asm::kernel_header::K
 pub cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&'a cadmpeg_asm::kernel_header::KernelHeader)
 pub cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&'a cadmpeg_asm::kernel_header::KernelHeader)
 pub cadmpeg_asm::dialect::KernelHeaderRef::Unknown
-impl<'a> core::clone::Clone for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-pub fn cadmpeg_asm::dialect::KernelHeaderRef<'a>::clone(&self) -> cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::fmt::Debug for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-pub fn cadmpeg_asm::dialect::KernelHeaderRef<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::marker::Freeze for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::marker::Send for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::marker::Sync for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::marker::Unpin for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::dialect::KernelHeaderRef<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::dialect::KernelHeaderRef<'a>
 pub const cadmpeg_asm::dialect::ACIS_ASM_BINARYFILE_4: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_ASM_BINARYFILE_8: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_217: cadmpeg_core::dialect::DialectId
@@ -641,26 +268,9 @@ pub fn cadmpeg_asm::edit::AsmEditSet::records(&self) -> &[cadmpeg_asm::sab::Reco
 pub const fn cadmpeg_asm::edit::AsmEditSet::ref_width(&self) -> usize
 pub fn cadmpeg_asm::edit::AsmEditSet::required_payload_field(&self, &[u8], &cadmpeg_asm::sab::Record, usize, u8) -> core::result::Result<usize, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::required_payload_field_at(&[u8], &cadmpeg_asm::sab::Record, usize, usize, u8) -> core::result::Result<usize, cadmpeg_core::error::CodecError>
-impl core::marker::Freeze for cadmpeg_asm::edit::AsmEditSet
-impl core::marker::Send for cadmpeg_asm::edit::AsmEditSet
-impl core::marker::Sync for cadmpeg_asm::edit::AsmEditSet
-impl core::marker::Unpin for cadmpeg_asm::edit::AsmEditSet
-impl core::marker::UnsafeUnpin for cadmpeg_asm::edit::AsmEditSet
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::AsmEditSet
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::AsmEditSet
 pub struct cadmpeg_asm::edit::NurbsCurveEdit<'a>
 pub cadmpeg_asm::edit::NurbsCurveEdit::curve: &'a cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::edit::NurbsCurveEdit::periodic: core::option::Option<bool>
-impl<'a> core::clone::Clone for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-pub fn cadmpeg_asm::edit::NurbsCurveEdit<'a>::clone(&self) -> cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::marker::Copy for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::marker::Freeze for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::marker::Send for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::marker::Sync for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::marker::Unpin for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::NurbsCurveEdit<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::NurbsCurveEdit<'a>
 pub struct cadmpeg_asm::edit::NurbsPcurveEdit<'a>
 pub cadmpeg_asm::edit::NurbsPcurveEdit::fit_tolerance: core::option::Option<f64>
 pub cadmpeg_asm::edit::NurbsPcurveEdit::native_geometry: &'a cadmpeg_ir::geometry::PcurveGeometry
@@ -668,49 +278,13 @@ pub cadmpeg_asm::edit::NurbsPcurveEdit::native_tail_flags: core::option::Option<
 pub cadmpeg_asm::edit::NurbsPcurveEdit::parameter_range: core::option::Option<[f64; 2]>
 pub cadmpeg_asm::edit::NurbsPcurveEdit::periodic: core::option::Option<bool>
 pub cadmpeg_asm::edit::NurbsPcurveEdit::wrapper_reversed: core::option::Option<bool>
-impl<'a> core::clone::Clone for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-pub fn cadmpeg_asm::edit::NurbsPcurveEdit<'a>::clone(&self) -> cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::marker::Copy for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::marker::Freeze for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::marker::Send for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::marker::Sync for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::marker::Unpin for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
 pub struct cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
 pub cadmpeg_asm::edit::NurbsSurfaceEdit::periodic: core::option::Option<[bool; 2]>
 pub cadmpeg_asm::edit::NurbsSurfaceEdit::surface: &'a cadmpeg_ir::geometry::NurbsSurface
-impl<'a> core::clone::Clone for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-pub fn cadmpeg_asm::edit::NurbsSurfaceEdit<'a>::clone(&self) -> cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::marker::Copy for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::marker::Freeze for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::marker::Send for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::marker::Sync for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::marker::Unpin for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
 pub mod cadmpeg_asm::ids
 pub struct cadmpeg_asm::ids::IdFormat<'a>(pub &'a str)
 impl core::fmt::Display for cadmpeg_asm::ids::IdFormat<'_>
 pub fn cadmpeg_asm::ids::IdFormat<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::clone::Clone for cadmpeg_asm::ids::IdFormat<'a>
-pub fn cadmpeg_asm::ids::IdFormat<'a>::clone(&self) -> cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::cmp::Eq for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::cmp::PartialEq for cadmpeg_asm::ids::IdFormat<'a>
-pub fn cadmpeg_asm::ids::IdFormat<'a>::eq(&self, &cadmpeg_asm::ids::IdFormat<'a>) -> bool
-impl<'a> core::fmt::Debug for cadmpeg_asm::ids::IdFormat<'a>
-pub fn cadmpeg_asm::ids::IdFormat<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::marker::StructuralPartialEq for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::marker::Freeze for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::marker::Send for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::marker::Sync for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::marker::Unpin for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::ids::IdFormat<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::ids::IdFormat<'a>
 pub mod cadmpeg_asm::kernel_header
 pub struct cadmpeg_asm::kernel_header::KernelHeader
 pub cadmpeg_asm::kernel_header::KernelHeader::angular: core::option::Option<f64>
@@ -730,20 +304,6 @@ pub fn cadmpeg_asm::kernel_header::KernelHeader::has_history_partition(&self) ->
 pub fn cadmpeg_asm::kernel_header::KernelHeader::save_format_major(&self) -> core::option::Option<u32>
 pub fn cadmpeg_asm::kernel_header::KernelHeader::save_format_minor(&self) -> core::option::Option<u32>
 pub fn cadmpeg_asm::kernel_header::KernelHeader::unassigned_flags(&self) -> core::option::Option<u64>
-impl core::clone::Clone for cadmpeg_asm::kernel_header::KernelHeader
-pub fn cadmpeg_asm::kernel_header::KernelHeader::clone(&self) -> cadmpeg_asm::kernel_header::KernelHeader
-impl core::cmp::PartialEq for cadmpeg_asm::kernel_header::KernelHeader
-pub fn cadmpeg_asm::kernel_header::KernelHeader::eq(&self, &cadmpeg_asm::kernel_header::KernelHeader) -> bool
-impl core::fmt::Debug for cadmpeg_asm::kernel_header::KernelHeader
-pub fn cadmpeg_asm::kernel_header::KernelHeader::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::kernel_header::KernelHeader
-impl core::marker::Freeze for cadmpeg_asm::kernel_header::KernelHeader
-impl core::marker::Send for cadmpeg_asm::kernel_header::KernelHeader
-impl core::marker::Sync for cadmpeg_asm::kernel_header::KernelHeader
-impl core::marker::Unpin for cadmpeg_asm::kernel_header::KernelHeader
-impl core::marker::UnsafeUnpin for cadmpeg_asm::kernel_header::KernelHeader
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::kernel_header::KernelHeader
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::kernel_header::KernelHeader
 pub const cadmpeg_asm::kernel_header::FORMAT_REVISION_FLAGS: u64
 pub const cadmpeg_asm::kernel_header::HISTORY_PARTITION_FLAG: u64
 pub mod cadmpeg_asm::nurbs
@@ -758,23 +318,9 @@ pub cadmpeg_asm::nurbs::core::CurvePatchLayout::int_width: usize
 pub cadmpeg_asm::nurbs::core::CurvePatchLayout::knots: cadmpeg_asm::nurbs::core::KnotPatchLayout
 pub cadmpeg_asm::nurbs::core::CurvePatchLayout::periodic_value_offset: usize
 pub cadmpeg_asm::nurbs::core::CurvePatchLayout::rational: bool
-impl core::marker::Freeze for cadmpeg_asm::nurbs::core::CurvePatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::core::CurvePatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::core::CurvePatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::core::CurvePatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::core::CurvePatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::core::CurvePatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::core::CurvePatchLayout
 pub struct cadmpeg_asm::nurbs::core::KnotPatchLayout
 pub cadmpeg_asm::nurbs::core::KnotPatchLayout::multiplicity_offsets: alloc::vec::Vec<usize>
 pub cadmpeg_asm::nurbs::core::KnotPatchLayout::value_offsets: alloc::vec::Vec<usize>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::core::KnotPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::core::KnotPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::core::KnotPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::core::KnotPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::core::KnotPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::core::KnotPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::core::KnotPatchLayout
 pub struct cadmpeg_asm::nurbs::core::SurfacePatchLayout
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::control_value_offsets: alloc::vec::Vec<usize>
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::degree_value_offsets: [usize; 2]
@@ -786,13 +332,6 @@ pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::u_count: usize
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::u_knots: cadmpeg_asm::nurbs::core::KnotPatchLayout
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::v_count: usize
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::v_knots: cadmpeg_asm::nurbs::core::KnotPatchLayout
-impl core::marker::Freeze for cadmpeg_asm::nurbs::core::SurfacePatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::core::SurfacePatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::core::SurfacePatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::core::SurfacePatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::core::SurfacePatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::core::SurfacePatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::core::SurfacePatchLayout
 pub fn cadmpeg_asm::nurbs::core::curve_cache_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
 pub fn cadmpeg_asm::nurbs::core::decode_curve_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
 pub fn cadmpeg_asm::nurbs::core::decode_owned_curve_cache_at(&[u8], usize) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
@@ -809,15 +348,6 @@ pub cadmpeg_asm::nurbs::pcurve::NurbsPcurve::degree: u32
 pub cadmpeg_asm::nurbs::pcurve::NurbsPcurve::knots: alloc::vec::Vec<f64>
 pub cadmpeg_asm::nurbs::pcurve::NurbsPcurve::periodic: bool
 pub cadmpeg_asm::nurbs::pcurve::NurbsPcurve::weights: core::option::Option<alloc::vec::Vec<f64>>
-impl core::clone::Clone for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-pub fn cadmpeg_asm::nurbs::pcurve::NurbsPcurve::clone(&self) -> cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-impl core::marker::Freeze for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-impl core::marker::Send for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-impl core::marker::Sync for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-impl core::marker::Unpin for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::pcurve::NurbsPcurve
 pub struct cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::control_count: usize
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::control_end: usize
@@ -827,13 +357,6 @@ pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::int_width: usize
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::knots: cadmpeg_asm::nurbs::core::KnotPatchLayout
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::periodic_value_offset: usize
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::weight_value_offsets: alloc::vec::Vec<usize>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
 pub fn cadmpeg_asm::nurbs::pcurve::decode_pcurve_cache(&[u8]) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
 pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache(&[cadmpeg_asm::sab::Token]) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
 pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(i64, &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
@@ -856,25 +379,11 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData::Mode3::trailing_vect
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData::VectorField
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData::VectorField::parameter_pairs: alloc::vec::Vec<[f64; 2]>
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData::VectorField::vectors: [cadmpeg_ir::math::Vector3; 4]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
 pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::Curve(cadmpeg_ir::geometry::NurbsCurve)
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference::flag: bool
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference::index: i64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
 pub enum cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose::flag: usize
@@ -882,23 +391,9 @@ pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged::flag: usize
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged::parameter_range: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged::role: core::ops::range::Range<usize>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout::component_parameters: alloc::vec::Vec<usize>
 pub cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout::parameters: alloc::vec::Vec<usize>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
 pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::cache_fit_tolerance: core::option::Option<f64>
 pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::compound: core::option::Option<cadmpeg_asm::nurbs::proc_curve::CompoundDefinition>
@@ -917,13 +412,6 @@ pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_two_sided_o
 pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::native_kind: alloc::string::String
 pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::subset: core::option::Option<cadmpeg_asm::nurbs::proc_curve::SubsetDefinition>
 pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::vector_offset: core::option::Option<cadmpeg_asm::nurbs::proc_curve::VectorOffsetDefinition>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::data: cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::discontinuities: [alloc::vec::Vec<f64>; 3]
@@ -933,50 +421,22 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::pcurves: [core::option::
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::source: cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::source_parameter_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::surfaces: [core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::parameter_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::pcurves: [core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::support_present: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::surfaces: [core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::additional: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula>
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::extension: i64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::primary: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::version: core::option::Option<cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion::parameter_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion::post_enum: i64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion::stamp: i64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::discontinuity_flag: bool
@@ -985,25 +445,11 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::pcurves: [cadmpeg_asm::n
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::source: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::surfaces: [cadmpeg_ir::geometry::SurfaceGeometry; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::tail: cadmpeg_ir::geometry::ProjectionTail
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::cast_surface: cadmpeg_ir::geometry::SurfaceGeometry
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::light_direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::silhouette: cadmpeg_ir::geometry::SilhouetteKind
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::cache_first: core::option::Option<cadmpeg_ir::geometry::CacheFirstCurveForm>
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::direction: i64
@@ -1014,13 +460,6 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::parameter_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::pcurves: [core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::surface_parameter_ranges: [core::option::Option<[[f64; 2]; 2]>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::surfaces: [core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base_endpoints: [core::option::Option<f64>; 2]
@@ -1033,26 +472,12 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::discontinuity_flag: b
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::distance: f64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::scale: f64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::shift: f64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::parameter_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::pcurves: [cadmpeg_asm::nurbs::pcurve::NurbsPcurve; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::selector: i64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::surfaces: [cadmpeg_ir::geometry::SurfaceGeometry; 3]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::discontinuity_flag: bool
@@ -1060,109 +485,39 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::offsets: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::parameter_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::pcurves: [core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::surfaces: [core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
 pub struct cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout::direction: usize
 pub cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout::native_position: usize
 pub cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout::parameter_interval: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout::angle_range: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout::apex_factor: usize
 pub cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout::axis: usize
 pub cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout::frame_vectors: [usize; 4]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout::discontinuities: [alloc::vec::Vec<usize>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout::discontinuity_flag: usize
 pub cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout::parameter_range: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::discontinuities: [alloc::vec::Vec<usize>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::discontinuity_flag: usize
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::parameter_range: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::tail: cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout::radii: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout::draft_factor: core::option::Option<usize>
 pub cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout::light_direction: usize
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout::direction: usize
 pub cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout::discontinuities: [alloc::vec::Vec<usize>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout::discontinuity_flag: usize
 pub cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout::parameter_range: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::SpringPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout::parameter_range: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::SubsetPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout::discontinuities: [alloc::vec::Vec<usize>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout::parameter_range: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::SurfaceCurvePatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout::base_range: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout::base_u_range: [usize; 2]
@@ -1173,46 +528,18 @@ pub cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout::distance: usize
 pub cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout::parameter_range: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout::scale: usize
 pub cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout::shift: usize
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::SurfaceOffsetPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout::discontinuities: [alloc::vec::Vec<usize>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout::parameter_range: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout::selector: usize
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout::discontinuities: [alloc::vec::Vec<usize>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout::discontinuity_flag: usize
 pub cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout::offsets: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout::parameter_range: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout::offset: usize
 pub cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout::parameter_range: [usize; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout
 pub fn cadmpeg_asm::nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<(alloc::string::String, cadmpeg_ir::geometry::ProceduralCurveDefinition)>
 pub fn cadmpeg_asm::nurbs::proc_curve::compound_patch_layout(&[u8], usize) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout>
 pub fn cadmpeg_asm::nurbs::proc_curve::decode_par_int_cur_isoline(&[u8], usize, core::option::Option<(&[u8], &cadmpeg_asm::nurbs::subtypes::SubtypeTables)>) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
@@ -1303,23 +630,9 @@ pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper:
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::taper: cadmpeg_ir::geometry::TaperSurfaceKind
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::VariableBlend(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend>)
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::VertexBlend(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend>)
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection::Curve(cadmpeg_ir::geometry::NurbsCurve)
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection::Vector(cadmpeg_ir::math::Vector3)
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Seven
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Seven::direction: cadmpeg_ir::math::Vector3
@@ -1341,13 +654,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::direction:
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::selector: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::trailing_flags: [bool; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::curve: cadmpeg_ir::geometry::NurbsCurve
@@ -1376,13 +682,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurv
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::selector: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::surface: cadmpeg_ir::geometry::SurfaceGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::vectors: [cadmpeg_ir::math::Vector3; 4]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::Full
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::Full::surface: core::option::Option<cadmpeg_ir::geometry::NurbsSurface>
@@ -1392,13 +691,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::coefficients: 
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::extension: core::option::Option<cadmpeg_ir::geometry::LoftBridgeToken>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::pcurve: core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::tolerance: f64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Algebraic
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Algebraic::operands: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression>
@@ -1425,23 +717,9 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::TransformVec::flags
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::TransformVec::scale: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::TransformVec::vectors: [cadmpeg_ir::math::Vector3; 4]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Vector(cadmpeg_ir::math::Vector3)
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector::None
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector::Value(f64)
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallRadiusSelector
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct::direction: cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
@@ -1457,25 +735,11 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Extended
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedVector::first_scale: core::option::Option<alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale>>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedVector::second_scale: alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedVector::selector: i64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::Full
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::None
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::None::parameter_ranges: [[f64; 2]; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::None::parameters: [alloc::vec::Vec<f64>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::curve: cadmpeg_ir::geometry::NurbsCurve
@@ -1487,13 +751,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles::path: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles::profiles: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles::tail: [i64; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitFormula
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitFormula::directions: [cadmpeg_ir::math::Vector3; 3]
@@ -1571,13 +828,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::profile: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::secondary_kind: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::spine: cadmpeg_ir::geometry::NurbsCurve
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Circle
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Circle::curve: cadmpeg_ir::geometry::CurveGeometry
@@ -1600,60 +850,25 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane::curve_endpoints: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane::normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane::parameters: [f64; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
 pub struct cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface::cache_fit_tolerance: core::option::Option<f64>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface::definition: cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::fifth_scale: core::option::Option<alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale>>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::scales: alloc::boxed::Box<[core::option::Option<cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale>; 4]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::tail: cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::auxiliaries: alloc::vec::Vec<cadmpeg_ir::geometry::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::members: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::path: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::tail: [i64; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::data: cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::discontinuity_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::support: cadmpeg_ir::geometry::SurfaceGeometry
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::center_curve: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::center_flag: i64
@@ -1666,49 +881,21 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::second: cadmpeg_asm::nurb
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::second_exact_surface: cadmpeg_ir::geometry::NurbsSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::singularity: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::trailing_parameters: [f64; 4]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::curve: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::label: alloc::string::String
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::pcurves: [core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::surface: cadmpeg_ir::geometry::SurfaceGeometry
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula::name: alloc::string::String
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula::variables: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::additional: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::parameter_ranges: core::option::Option<[[f64; 2]; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::primary: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::tail: cadmpeg_ir::geometry::LawSurfaceTail
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::bridge: alloc::vec::Vec<cadmpeg_ir::geometry::LoftBridgeToken>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::closures: [i64; 2]
@@ -1717,25 +904,11 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::parameters: cadmpeg_ir::geom
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::revision_form: core::option::Option<cadmpeg_ir::geometry::LoftRevisionForm>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::sections: [alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::singularities: [i64; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::auxiliaries: alloc::vec::Vec<cadmpeg_ir::geometry::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::curve: core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::endpoints: core::option::Option<[core::option::Option<f64>; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::flag: i64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData::asm_extension: core::option::Option<i64>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData::direction: core::option::Option<cadmpeg_ir::math::Vector3>
@@ -1745,36 +918,15 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData::secondary_pcurve:
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData::subdata: cadmpeg_ir::geometry::LoftSubdata
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData::support_bounds: [core::option::Option<f64>; 4]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData::surface: core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::curve: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::data: cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileData
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::endpoints: core::option::Option<[core::option::Option<f64>; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::type_code: i64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry::parameter: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry::path: cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry::profile: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface::directions: [cadmpeg_ir::math::Vector3; 4]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
@@ -1783,13 +935,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface::flag: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface::formulas: alloc::boxed::Box<[cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula; 4]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface::frame_parameters: [f64; 12]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface::sections: alloc::boxed::Box<[alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry>; 2]>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::base_path: cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::base_profile: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember>
@@ -1807,13 +952,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::tail_enum: i
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::tail_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::tail_parameterization: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::trailing_curve: core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::center: cadmpeg_ir::geometry::CurveGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::center_range: [core::option::Option<f64>; 2]
@@ -1833,13 +971,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::tail_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::tail_parameterization: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::u_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::v_range: [core::option::Option<f64>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::definition_index: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::discontinuities: [alloc::vec::Vec<f64>; 6]
@@ -1858,13 +989,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::tail_parameterization
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::third: core::option::Option<alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide>>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::u_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::v_range: [core::option::Option<f64>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide::curve: core::option::Option<cadmpeg_ir::geometry::CurveGeometry>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide::curve_range: [core::option::Option<f64>; 2]
@@ -1876,13 +1000,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide::support_kind: cad
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide::surface: core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide::surface_ranges: [[core::option::Option<f64>; 2]; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide::tertiary_pcurve: core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::curve: cadmpeg_ir::geometry::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::direction: cadmpeg_ir::math::Vector3
@@ -1893,13 +1010,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::pcurve: core
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::secondary_pcurve: core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::surface: cadmpeg_ir::geometry::SurfaceGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::tertiary_pcurve: core::option::Option<cadmpeg_asm::nurbs::pcurve::NurbsPcurve>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::branch: cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::discontinuities: [alloc::vec::Vec<f64>; 6]
@@ -1914,13 +1024,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_direction
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_kind: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_singularity: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::trailing_flags: [bool; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::count: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::direction: cadmpeg_ir::math::Vector3
@@ -1935,26 +1038,12 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::surface_boolean: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::surface_direction: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::surface_normal: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::trailing_parameter: f64
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::discontinuity_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::layout: cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::primary_kind: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::revision_form: core::option::Option<cadmpeg_ir::geometry::SweepRevisionForm>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::convexity: cadmpeg_ir::geometry::VariableBlendConvexity
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::cross_section: core::option::Option<cadmpeg_ir::geometry::VariableBlendCrossSection>
@@ -1984,25 +1073,11 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::tail_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::tail_parameterization: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::u_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::v_range: [core::option::Option<f64>; 2]
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::boundaries: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::fit_tolerance: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::grid_size: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::revision: core::option::Option<i64>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary::boundary_type: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary::fullness: f64
@@ -2010,13 +1085,6 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary::geometry: cad
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary::magic: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary::u_smoothing: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary::v_smoothing: bool
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
 pub struct cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::enumeration: i64
@@ -2024,13 +1092,6 @@ pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::fit_tolerance: core::
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::parameterization: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::solved_cache_domains: core::option::Option<[[f64; 2]; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail::tail_flag: bool
-impl core::marker::Freeze for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
-impl core::marker::Send for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
-impl core::marker::Sync for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
-impl core::marker::Unpin for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail
 pub fn cadmpeg_asm::nurbs::proc_surface::procedural_surface_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface>
 pub fn cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cadmpeg_asm::nurbs::toks::Cur<'_>) -> core::option::Option<cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceTail>
 pub mod cadmpeg_asm::nurbs::reader
@@ -2042,40 +1103,16 @@ pub fn cadmpeg_asm::nurbs::subtypes::SubtypeTables::for_width(&self, usize) -> &
 pub fn cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&[cadmpeg_asm::sab::Record], &[u8]) -> Self
 pub fn cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_stream(&[u8]) -> Self
 pub fn cadmpeg_asm::nurbs::subtypes::SubtypeTables::index_of_offset(&self, usize, usize) -> core::option::Option<usize>
-impl core::marker::Freeze for cadmpeg_asm::nurbs::subtypes::SubtypeTables
-impl core::marker::Send for cadmpeg_asm::nurbs::subtypes::SubtypeTables
-impl core::marker::Sync for cadmpeg_asm::nurbs::subtypes::SubtypeTables
-impl core::marker::Unpin for cadmpeg_asm::nurbs::subtypes::SubtypeTables
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::subtypes::SubtypeTables
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::subtypes::SubtypeTables
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::subtypes::SubtypeTables
 pub fn cadmpeg_asm::nurbs::subtypes::subtype_span(&[u8], usize, usize) -> core::option::Option<&[u8]>
 pub mod cadmpeg_asm::nurbs::toks
 pub struct cadmpeg_asm::nurbs::toks::Cur<'a>
 impl<'a> cadmpeg_asm::nurbs::toks::Cur<'a>
 pub fn cadmpeg_asm::nurbs::toks::Cur<'a>::at(&'a [cadmpeg_asm::sab::Token], usize) -> Self
 pub fn cadmpeg_asm::nurbs::toks::Cur<'a>::pos(&self) -> usize
-impl<'a> core::clone::Clone for cadmpeg_asm::nurbs::toks::Cur<'a>
-pub fn cadmpeg_asm::nurbs::toks::Cur<'a>::clone(&self) -> cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::marker::Copy for cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::marker::Freeze for cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::marker::Send for cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::marker::Sync for cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::marker::Unpin for cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::toks::Cur<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::toks::Cur<'a>
 pub struct cadmpeg_asm::nurbs::toks::SubtypeTable
 impl cadmpeg_asm::nurbs::toks::SubtypeTable
 pub fn cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&[cadmpeg_asm::sab::Record]) -> Self
 pub fn cadmpeg_asm::nurbs::toks::SubtypeTable::with_save_format_version(self, core::option::Option<u32>) -> Self
-impl core::marker::Freeze for cadmpeg_asm::nurbs::toks::SubtypeTable
-impl core::marker::Send for cadmpeg_asm::nurbs::toks::SubtypeTable
-impl core::marker::Sync for cadmpeg_asm::nurbs::toks::SubtypeTable
-impl core::marker::Unpin for cadmpeg_asm::nurbs::toks::SubtypeTable
-impl core::marker::UnsafeUnpin for cadmpeg_asm::nurbs::toks::SubtypeTable
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::nurbs::toks::SubtypeTable
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::nurbs::toks::SubtypeTable
 pub fn cadmpeg_asm::nurbs::toks::lex_test_span(&[u8], usize) -> alloc::sync::Arc<[cadmpeg_asm::sab::Token]>
 pub fn cadmpeg_asm::nurbs::toks::owned_construction_subtype(&[cadmpeg_asm::sab::Token]) -> core::option::Option<alloc::string::String>
 pub fn cadmpeg_asm::nurbs::toks::payload_subtype_toks<'r>(&'r cadmpeg_asm::sab::Record, usize, &str) -> core::option::Option<&'r [cadmpeg_asm::sab::Token]>
@@ -2102,40 +1139,11 @@ pub cadmpeg_asm::sab::Token::Vector2([f64; 2])
 pub cadmpeg_asm::sab::Token::Vector3([f64; 3])
 impl cadmpeg_asm::sab::Token
 pub fn cadmpeg_asm::sab::Token::is_payload_ident(&self) -> bool
-impl core::clone::Clone for cadmpeg_asm::sab::Token
-pub fn cadmpeg_asm::sab::Token::clone(&self) -> cadmpeg_asm::sab::Token
-impl core::cmp::PartialEq for cadmpeg_asm::sab::Token
-pub fn cadmpeg_asm::sab::Token::eq(&self, &cadmpeg_asm::sab::Token) -> bool
-impl core::fmt::Debug for cadmpeg_asm::sab::Token
-pub fn cadmpeg_asm::sab::Token::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::sab::Token
-impl core::marker::Freeze for cadmpeg_asm::sab::Token
-impl core::marker::Send for cadmpeg_asm::sab::Token
-impl core::marker::Sync for cadmpeg_asm::sab::Token
-impl core::marker::Unpin for cadmpeg_asm::sab::Token
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sab::Token
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sab::Token
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sab::Token
 pub struct cadmpeg_asm::sab::FrameError
 pub cadmpeg_asm::sab::FrameError::offset: usize
 pub cadmpeg_asm::sab::FrameError::reason: alloc::string::String
-impl core::clone::Clone for cadmpeg_asm::sab::FrameError
-pub fn cadmpeg_asm::sab::FrameError::clone(&self) -> cadmpeg_asm::sab::FrameError
-impl core::cmp::Eq for cadmpeg_asm::sab::FrameError
-impl core::cmp::PartialEq for cadmpeg_asm::sab::FrameError
-pub fn cadmpeg_asm::sab::FrameError::eq(&self, &cadmpeg_asm::sab::FrameError) -> bool
-impl core::fmt::Debug for cadmpeg_asm::sab::FrameError
-pub fn cadmpeg_asm::sab::FrameError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for cadmpeg_asm::sab::FrameError
 pub fn cadmpeg_asm::sab::FrameError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::sab::FrameError
-impl core::marker::Freeze for cadmpeg_asm::sab::FrameError
-impl core::marker::Send for cadmpeg_asm::sab::FrameError
-impl core::marker::Sync for cadmpeg_asm::sab::FrameError
-impl core::marker::Unpin for cadmpeg_asm::sab::FrameError
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sab::FrameError
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sab::FrameError
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sab::FrameError
 pub struct cadmpeg_asm::sab::Record
 pub cadmpeg_asm::sab::Record::head: alloc::string::String
 pub cadmpeg_asm::sab::Record::index: usize
@@ -2148,17 +1156,6 @@ pub fn cadmpeg_asm::sab::Record::chunk(&self, usize) -> core::option::Option<&ca
 pub fn cadmpeg_asm::sab::Record::chunk_len(&self) -> usize
 pub fn cadmpeg_asm::sab::Record::chunks(&self) -> impl core::iter::traits::double_ended::DoubleEndedIterator<Item = &cadmpeg_asm::sab::Token>
 pub fn cadmpeg_asm::sab::Record::ref_at(&self, usize) -> core::option::Option<i64>
-impl core::clone::Clone for cadmpeg_asm::sab::Record
-pub fn cadmpeg_asm::sab::Record::clone(&self) -> cadmpeg_asm::sab::Record
-impl core::fmt::Debug for cadmpeg_asm::sab::Record
-pub fn cadmpeg_asm::sab::Record::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_asm::sab::Record
-impl core::marker::Send for cadmpeg_asm::sab::Record
-impl core::marker::Sync for cadmpeg_asm::sab::Record
-impl core::marker::Unpin for cadmpeg_asm::sab::Record
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sab::Record
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sab::Record
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sab::Record
 pub fn cadmpeg_asm::sab::frame(&[u8], usize, usize, usize) -> core::result::Result<alloc::vec::Vec<cadmpeg_asm::sab::Record>, cadmpeg_asm::sab::FrameError>
 pub fn cadmpeg_asm::sab::frame_history(&[u8], usize, usize, usize) -> core::result::Result<alloc::vec::Vec<cadmpeg_asm::sab::Record>, cadmpeg_asm::sab::FrameError>
 pub fn cadmpeg_asm::sab::payload_subtype_range(&[u8], &cadmpeg_asm::sab::Record, usize, usize, &str) -> core::option::Option<core::ops::range::Range<usize>>
@@ -2168,43 +1165,12 @@ pub mod cadmpeg_asm::sat
 pub enum cadmpeg_asm::sat::Terminator
 pub cadmpeg_asm::sat::Terminator::Acis
 pub cadmpeg_asm::sat::Terminator::Asm
-impl core::clone::Clone for cadmpeg_asm::sat::Terminator
-pub fn cadmpeg_asm::sat::Terminator::clone(&self) -> cadmpeg_asm::sat::Terminator
-impl core::cmp::Eq for cadmpeg_asm::sat::Terminator
-impl core::cmp::PartialEq for cadmpeg_asm::sat::Terminator
-pub fn cadmpeg_asm::sat::Terminator::eq(&self, &cadmpeg_asm::sat::Terminator) -> bool
-impl core::fmt::Debug for cadmpeg_asm::sat::Terminator
-pub fn cadmpeg_asm::sat::Terminator::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_asm::sat::Terminator
-impl core::marker::StructuralPartialEq for cadmpeg_asm::sat::Terminator
-impl core::marker::Freeze for cadmpeg_asm::sat::Terminator
-impl core::marker::Send for cadmpeg_asm::sat::Terminator
-impl core::marker::Sync for cadmpeg_asm::sat::Terminator
-impl core::marker::Unpin for cadmpeg_asm::sat::Terminator
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sat::Terminator
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sat::Terminator
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sat::Terminator
 pub struct cadmpeg_asm::sat::SatError
 pub cadmpeg_asm::sat::SatError::offset: usize
 pub cadmpeg_asm::sat::SatError::reason: alloc::string::String
-impl core::clone::Clone for cadmpeg_asm::sat::SatError
-pub fn cadmpeg_asm::sat::SatError::clone(&self) -> cadmpeg_asm::sat::SatError
-impl core::cmp::Eq for cadmpeg_asm::sat::SatError
-impl core::cmp::PartialEq for cadmpeg_asm::sat::SatError
-pub fn cadmpeg_asm::sat::SatError::eq(&self, &cadmpeg_asm::sat::SatError) -> bool
 impl core::error::Error for cadmpeg_asm::sat::SatError
-impl core::fmt::Debug for cadmpeg_asm::sat::SatError
-pub fn cadmpeg_asm::sat::SatError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for cadmpeg_asm::sat::SatError
 pub fn cadmpeg_asm::sat::SatError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::sat::SatError
-impl core::marker::Freeze for cadmpeg_asm::sat::SatError
-impl core::marker::Send for cadmpeg_asm::sat::SatError
-impl core::marker::Sync for cadmpeg_asm::sat::SatError
-impl core::marker::Unpin for cadmpeg_asm::sat::SatError
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sat::SatError
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sat::SatError
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sat::SatError
 pub struct cadmpeg_asm::sat::TextHeader
 pub cadmpeg_asm::sat::TextHeader::entity_count: u64
 pub cadmpeg_asm::sat::TextHeader::flags: u64
@@ -2218,34 +1184,9 @@ pub cadmpeg_asm::sat::TextHeader::save_format_version: u32
 pub cadmpeg_asm::sat::TextHeader::scale: f64
 impl cadmpeg_asm::sat::TextHeader
 pub fn cadmpeg_asm::sat::TextHeader::as_kernel_header(&self) -> cadmpeg_asm::kernel_header::KernelHeader
-impl core::clone::Clone for cadmpeg_asm::sat::TextHeader
-pub fn cadmpeg_asm::sat::TextHeader::clone(&self) -> cadmpeg_asm::sat::TextHeader
-impl core::cmp::PartialEq for cadmpeg_asm::sat::TextHeader
-pub fn cadmpeg_asm::sat::TextHeader::eq(&self, &cadmpeg_asm::sat::TextHeader) -> bool
-impl core::fmt::Debug for cadmpeg_asm::sat::TextHeader
-pub fn cadmpeg_asm::sat::TextHeader::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_asm::sat::TextHeader
-impl core::marker::Freeze for cadmpeg_asm::sat::TextHeader
-impl core::marker::Send for cadmpeg_asm::sat::TextHeader
-impl core::marker::Sync for cadmpeg_asm::sat::TextHeader
-impl core::marker::Unpin for cadmpeg_asm::sat::TextHeader
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sat::TextHeader
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sat::TextHeader
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sat::TextHeader
 pub struct cadmpeg_asm::sat::TextStream
 pub cadmpeg_asm::sat::TextStream::header: cadmpeg_asm::sat::TextHeader
 pub cadmpeg_asm::sat::TextStream::records: alloc::vec::Vec<cadmpeg_asm::sab::Record>
 pub cadmpeg_asm::sat::TextStream::terminator: cadmpeg_asm::sat::Terminator
-impl core::clone::Clone for cadmpeg_asm::sat::TextStream
-pub fn cadmpeg_asm::sat::TextStream::clone(&self) -> cadmpeg_asm::sat::TextStream
-impl core::fmt::Debug for cadmpeg_asm::sat::TextStream
-pub fn cadmpeg_asm::sat::TextStream::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_asm::sat::TextStream
-impl core::marker::Send for cadmpeg_asm::sat::TextStream
-impl core::marker::Sync for cadmpeg_asm::sat::TextStream
-impl core::marker::Unpin for cadmpeg_asm::sat::TextStream
-impl core::marker::UnsafeUnpin for cadmpeg_asm::sat::TextStream
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::sat::TextStream
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::sat::TextStream
 pub fn cadmpeg_asm::sat::has_text_magic(&[u8]) -> bool
 pub fn cadmpeg_asm::sat::parse(&[u8]) -> core::result::Result<cadmpeg_asm::sat::TextStream, cadmpeg_asm::sat::SatError>

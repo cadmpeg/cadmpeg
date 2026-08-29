@@ -1,4 +1,4 @@
-# generated at 410399168
+# generated at 0cb4ec82a
 pub mod cadmpeg_codec_sat
 pub struct cadmpeg_codec_sat::SatCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_sat::SatCodec
@@ -6,10 +6,3 @@ pub fn cadmpeg_codec_sat::SatCodec::decode_impl(&self, &cadmpeg_core::decode::co
 pub fn cadmpeg_codec_sat::SatCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_sat::SatCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_sat::SatCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl core::marker::Freeze for cadmpeg_codec_sat::SatCodec
-impl core::marker::Send for cadmpeg_codec_sat::SatCodec
-impl core::marker::Sync for cadmpeg_codec_sat::SatCodec
-impl core::marker::Unpin for cadmpeg_codec_sat::SatCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_sat::SatCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sat::SatCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sat::SatCodec
