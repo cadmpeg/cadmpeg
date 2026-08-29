@@ -11,10 +11,10 @@
 //! native records under the `sat` namespace.
 //!
 //! Spatial ACIS 217 and 218 binary streams use the verified 32-bit SAB grammar.
-//! Other ACIS binary header bands recover through the nearest verified grammar,
-//! report admitted-unverified, and charge the recovery loss. Inspection and
-//! decode emit the primary `sat:` stream layer and the shared `acis:` kernel
-//! layer. A text stream frames on either branch terminator, and its decode
+//! Other ACIS binary header bands keep an admitted `sat:` host layer and recover
+//! through an admitted-unverified `acis:` kernel layer that names the nearest
+//! verified grammar and charges the recovery loss. Inspection and decode emit
+//! both layers. A text stream frames on either branch terminator, and its decode
 //! outcome decides whether the report carries geometry.
 //!
 //! <!-- generated: capability -->

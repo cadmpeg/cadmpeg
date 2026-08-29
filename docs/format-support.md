@@ -250,7 +250,7 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 <!-- /generated: dialects rhino -->
 
-Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above the scored rows. V1 decodes through the legacy flat-record path. Archive 5 uses the four-byte chunk scan and is admitted unverified against archive 50.
+Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above the scored rows. V1 decodes through the legacy flat-record path. Archive 5 uses the four-byte chunk scan and is admitted as `rhino:archive-5`.
 
 ### Read profile
 

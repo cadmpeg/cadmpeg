@@ -57,24 +57,23 @@
 #                      (representation.rs:59-66), so it is outside the
 #                      detect() domain and needs no row: B4 totality holds
 #                      without one.
-#   effective_version  Global field 23, clamped by `effective_version`
-#                      (crates/cadmpeg-codec-iges/src/global.rs:706-720) as
-#                      IGES 5.3 section 2.2.4.3.23 requires of a
-#                      postprocessor. The clamp is total: a flag below 1 maps
-#                      to 3 and a flag at or above 11 maps to 11, so every
-#                      declared value classifies.
-# The declared flag survives verbatim in the match as evidence; the row
-# reflects the effective version because classification uses the clamped value.
+#   version_flag       Global field 23 after the specification default is
+#                      applied to an absent or unreadable declaration. Identity
+#                      uses this declared flag without clamping. The Global
+#                      grammar separately clamps a flag below 1 to 3 and a flag
+#                      above 11 to 11 when it selects the effective version.
+# The declared and effective values both survive in the match. A declared flag
+# outside 1 through 11 does not satisfy an enumerated row and classifies as
+# `iges:unknown`, although the grammar uses the clamped effective version.
 [format.iges]
 complete = true
 
-# Version-flag values 1, 2, 3, 4, 5, and 7 select Global tables this codec has
-# not verified against their own specifications; `Dialect::from_effective_flag`
-# groups them as `Dialect::Legacy` (global.rs:70-79) and decode charges
-# `iges/source.dialect-unverified` (global.rs:1464-1490). They are still
-# distinct identity rows although several rows use the same fallback grammar.
-# `VERIFIED_VERSIONS` is ["4.0","5.0","5.1","5.2","5.3"]
-# (global.rs:282).
+# Version-flag values 1, 2, 3, 4, 5, and 7 have distinct Fixed ASCII identity
+# rows. Their Global tables recover through the 5.1 through 5.3 field layout,
+# so admission is `AdmittedUnverified`, `nearest` is the representation's 5.3
+# row, and decode charges `iges/source.dialect-unverified`. Flags 6 and 8
+# through 11 use the verified 4.0 and 5.0 through 5.3 tables. Flags 12 and 99
+# classify as `iges:unknown`; their effective grammar version is 5.3.
 #
 # Compressed ASCII and Binary rows exist only for the version values whose
 # specifications this repository cites for those representations:
@@ -1125,31 +1124,22 @@ witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs"
 # --------------------------------------------------------------------------
 # Autodesk Inventor
 # --------------------------------------------------------------------------
-# The id `inventor:cfb3-rse31-meta8` is pinned and used verbatim, but
-# it names three things the code does not do together. Recorded, not silently
-# corrected:
+# The id `inventor:cfb3-rse31-meta8` is pinned and used verbatim. Its row is
+# selected by the `RSeDb` schema and the `RSe` Meta Stream declaration:
 #
-#   cfb3   The Inventor codec never tests the CFB major version. The shared
-#          parser accepts 3 or 4 (`crates/cadmpeg-container/src/compound.rs:609`,
-#          `(3, 9) | (4, 12)`), and the Inventor crate only reports the value
-#          as a `cfb_major_version` attribute (decode.rs:87-89). A CFB v4
-#          Inventor file would be admitted.
-#   rse31  Real, but it is the u32 `schema` field inside an `RSeDb` stream
-#          (`RseSchema::SCHEMA_31`, database.rs:11; enforced at
-#          database.rs:105-111 and :131-136), NOT the `V<n>` storage-band
-#          number in the path. `StorageBand::parse` accepts any digits
-#          (rse.rs:24-33) and the code-built fixture uses `V1` with schema 31.
-#   meta8  Real: the marker string "RSe Meta Stream Version 8" AND the u16
-#          literal 8 must both match (rse.rs:577-581).
+#   cfb3   The shared compound parser accepts CFB major 3 and 4. The Inventor
+#          classifier records `cfb_major_version` but does not use it as a row
+#          discriminant (`dialect.rs`, `DialectRecovery::dialect`).
+#   rse31  The u32 `schema` field inside an `RSeDb` stream, not the `V<n>`
+#          storage-band number in its path (`database.rs`, `RseSchema`).
+#   meta8  Marker `RSe Meta Stream Version 8` and numeric version 8
+#          (`rse.rs`, `MetaStreamDeclaration::is_verified`).
 #
-# What actually admits a file is a three-conjunct detect: CFB directory
-# evidence (lib.rs:56-59), a path equal to `RSeStorage` (container.rs:152-154),
-# and either `RSeStorage/RSeSegInfo` or `RSeStorage/V<digits>/RSeDb`
-# (container.rs:155-157). The two version gates do NOT refuse: a schema
-# mismatch becomes `ParsedState::Unavailable` (rse.rs:313-317, with
-# `issue_detail` re-raising only `ResourceLimit`, lib.rs:38-44) and a meta
-# mismatch becomes `SegmentMetaState::Unsupported` (rse.rs:580). Decode
-# continues either way.
+# Identity requires at least one declared schema and Meta Stream, with every
+# schema equal to 31 and every Meta Stream verified. Admission additionally
+# requires every such stream to frame under those grammars. Another or absent
+# declaration selects `inventor:unknown`; an unframed verified declaration keeps
+# the declared row. Both cases are admitted unverified, never refused.
 #
 # No `.ipt`, `.iam`, `.idw`, or `.ipn` file exists in this repository; the
 # goldens are code-built. Both rows rest on code.
@@ -1161,7 +1151,7 @@ id = "inventor:cfb3-rse31-meta8"
 title = "Inventor CFB document, RSe database schema 31, Meta Stream version 8"
 discriminants = { cfb_storage = "RSeStorage", corroboration = "RSeStorage/RSeSegInfo or RSeStorage/V<digits>/RSeDb", rse_db_schema = "31", meta_stream_marker = "RSe Meta Stream Version 8", meta_stream_version = "8" }
 seam = "schema 31 selects the supported registry grammar; the Meta Stream marker and version select the segment metadata layout"
-witness = "code:crates/cadmpeg-codec-inventor/src/database.rs:105"
+witness = "code:crates/cadmpeg-codec-inventor/src/dialect.rs:230"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). Disposition: admitted and degraded, never
@@ -1174,7 +1164,7 @@ witness = "code:crates/cadmpeg-codec-inventor/src/database.rs:105"
 id = "inventor:unknown"
 title = "Inventor CFB document with another RSe schema or Meta Stream version"
 discriminants = { cfb_storage = "RSeStorage", rse_db_schema = "any other", meta_stream_version = "any other" }
-witness = "code:crates/cadmpeg-codec-inventor/src/rse.rs:580"
+witness = "code:crates/cadmpeg-codec-inventor/src/dialect.rs:230"
 
 # --------------------------------------------------------------------------
 # Bare ACIS/ASM streams (.sat/.sab/.smt/.smb)
@@ -1210,7 +1200,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
 id = "sat:acis-binary"
 title = "Bare Spatial ACIS binary stream"
 discriminants = { magic = "ACIS BinaryFile" }
-seam = "the save format bands the admission, never the decode: `dialect::admission` (crates/cadmpeg-codec-sat/src/dialect.rs:175) reports Admitted inside majors 217 and 218 and AdmittedUnverified outside them, naming the nearer verified band as `nearest`. Every band takes the same framing and record decode (crates/cadmpeg-codec-sat/src/decode.rs:75-119); an unverified band charges source.dialect-unverified and reports what its records decoded. Kernel layer: acis:save-format-217, acis:save-format-218, or acis:save-format-binary-other"
+seam = "the framed host stream is Admitted at every save format. The separate kernel layer is acis:save-format-217 or acis:save-format-218 with Admitted admission, or acis:save-format-binary-other with AdmittedUnverified admission and the nearer verified ACIS row as nearest. The kernel-layer recovery charges source.dialect-unverified"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 
 [[dialect]]
@@ -1221,7 +1211,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and bands ACIS-terminated streams by majors 217 and 218 through the same code as the ACIS binary path, `dialect::admission` (crates/cadmpeg-codec-sat/src/dialect.rs:175). The band moves the admission and the source.dialect-unverified mark, not the record decode, which runs identically at every band (crates/cadmpeg-codec-sat/src/decode.rs:112-149). The band keys on the terminator-derived branch, not on the product family the header names, so ASM-terminated text streams are Admitted at any save format. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
+seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere, with the nearer verified ACIS row as nearest and a source.dialect-unverified charge"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 
 [[dialect]]

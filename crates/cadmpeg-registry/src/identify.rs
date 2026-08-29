@@ -25,7 +25,7 @@ pub enum Inspection {
     Classified(ContainerSummary),
     /// The codec recognized the prefix but inspection failed.
     Failed(String),
-    /// Inspection was not applicable or the confidence stayed below its floor.
+    /// Inspection was not applicable or no single codec won resolution.
     Skipped,
 }
 
@@ -398,9 +398,9 @@ mod tests {
     /// A ZIP with no format marker is several formats at once, and the answer
     /// says so instead of picking one.
     ///
-    /// Every ZIP-based codec reports [`Confidence::Low`] for it, which is below
-    /// the inspection floor, so no container is opened and no dialect is
-    /// claimed. This is the design's `Ambiguous { Low, [fcstd, f3d, step] }`.
+    /// Every ZIP-based codec reports [`Confidence::Low`] for it. The shared
+    /// resolver returns the equal-confidence ambiguity, so no container is
+    /// opened and no dialect is claimed.
     #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]
     fn a_markerless_zip_identifies_as_several_formats_with_no_dialect() {
