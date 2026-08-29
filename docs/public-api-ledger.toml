@@ -1456,3 +1456,17 @@ crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::dialect::DialectLayers::from_rows"
 reason = "`DialectLayers` now serializes an explicit primary and no parent report needs to reconstruct identity from a flat row list"
+
+[[change]]
+commit = "ab82518f23f6287d5671454802a548ea722ff46b"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::dialect::DialectMatch::dialect"
+reason = "every production classifier selects a registry row, so a classified admission cannot represent a missing dialect identity"
+
+[[change]]
+commit = "ab82518f23f6287d5671454802a548ea722ff46b"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::CodecError::UnsupportedTarget::requested"
+reason = "writer refusals distinguish arbitrary requested target tokens from registered `DialectId` values through `TargetToken` instead of a raw string"
