@@ -71,8 +71,9 @@ pub enum CodecError {
     /// made. Identity survives refusal, so a caller can name what it was handed
     /// even though nothing was decoded.
     ///
-    /// Rhino archive rows without a read grammar and STEP alternate-encoding
-    /// rows construct this variant at their refusal boundaries.
+    /// The STEP codec constructs this variant for the Part 26 HDF5, Part 28
+    /// XML, and AP242 business-object XML encodings that it identifies but does
+    /// not decode.
     ///
     /// The identification is boxed: it is the widest payload any variant of
     /// this enum carries, and every `Result<_, CodecError>` in the workspace

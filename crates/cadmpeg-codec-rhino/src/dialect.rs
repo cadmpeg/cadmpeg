@@ -53,8 +53,8 @@ pub(crate) const FORMAT: &str = "rhino";
 /// input, one row per [`RhinoArchiveVersion`] variant.
 ///
 /// The chunked band this codec *reads* is wider than the band it writes:
-/// archives 1, 2, 3, 4, 5 and 90 decode but have no writer, and archive 5 and
-/// the totality row decode as admitted-unverified. None of them is a target,
+/// archives 1, 2, 3, 4, 5 and 90 decode but have no writer, and only the
+/// totality row decodes as admitted-unverified. None of them is a target,
 /// and — unlike IGES — there is no preservation path that could write them
 /// anyway (see [`crate::OFF_CATALOG_SOURCE_REASON`]).
 ///

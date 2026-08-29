@@ -59,7 +59,7 @@ These hold across every codec, every dialect, and every release. A change that b
 
 **Per-entity persistent identity.** Every entity carries a globally unique id under the entity-ID grammar, and that id is what `diff`, `query graph`, `query join`, and golden stability are built on. A dialect never appears in an id: classification refines, and an id that moved when the classifier improved would churn every diff and every golden against no collision that has ever been constructed.
 
-**The neutral IR is dialect-free.** `CadIr` holds no dialect, no version discriminant, and no branch on either. A dialect is a fact about a source document or about an output target, and it travels in `SourceMeta.dialect`, `ContainerSummary.dialects`, `DecodeReport.dialects`, and `ExportReport.target` — beside the IR, never inside it. `cadmpeg-core` carries the `DialectId` type and zero version branches.
+**The neutral model is dialect-free.** The neutral arenas and model records hold no dialect discriminant and do not branch on one. `CadIr.source` carries `SourceMeta.dialect`, the primary source `DialectMatch`, so classification survives a CADIR intermediate. Container, decode, and export reports carry the corresponding source layers or output target. `cadmpeg-core` carries the dialect types and no format-version branches.
 
 **cadmpeg's own version axes are separate.** `CadIr.ir_version`, `NativeNamespace::version`, report `schema_version`, and `DECODE_SIDECAR_VERSION` describe cadmpeg. A source dialect describes a file someone else wrote. Different lifecycles, different owners, different failure modes; they never share a type and no operation compares one to the other.
 
@@ -67,7 +67,7 @@ These hold across every codec, every dialect, and every release. A change that b
 
 **Decoders tolerate unknown records generationally.** A record a decoder does not recognize is retained, not fatal, and not a reason to select a different decoder. This is the open-world read architecture — the same rule sfnt and protobuf converged on. Version-selected decoder variants are not a cleanup of it; they are its replacement, and they break the previous invariant.
 
-**Transfer accounting closes.** Every drop goes through a `*LossCode` with a pinned `family.detail` string, a `LossTaxonomy`, a severity, and a strict floor, and the ledger closes: what was read, what was written, and what was charged agree. The dialect id in a report is the join key between a claim and one file's ground truth, which is what makes the accounting checkable by someone who did not run it.
+**Transfer accounting is explicit.** Every drop goes through a `*LossCode` with a pinned `family.detail` string, a `LossTaxonomy`, a severity, and a strict floor. IGES also fills `TransferLedger` so its read, write, and loss dispositions can be checked for closure. Other codecs currently leave that ledger empty. The dialect id in a report joins a claim to one file's classification.
 
 **Write reports are honest about bytes.** `ExportReport.target` names the dialect actually produced, on every write path, including the inherited dialect under preservation. The claim is verified against the output: re-decoding the written bytes through the codec's own classifier lands on exactly the dialect the report named. A report that names a target the bytes do not classify as is a defect, not a rounding.
 

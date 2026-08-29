@@ -895,20 +895,20 @@ dialect = "sat:acis-binary"
 read = "detected"
 write = "none"
 reason = """
-decoded at every save format: majors 217 and 218 are Admitted, and any
-other band is read with the nearer of those two grammars under
-`Admission::AdmittedUnverified` and a source.dialect-unverified charge.
-The golden that pins it is code-built"""
+the framed `sat:acis-binary` host row is Admitted at every save format. Its
+separate `acis:` kernel row is admitted unverified outside majors 217 and 218
+and charges source.dialect-unverified. The golden that pins the host row is
+code-built"""
 
 [[support]]
 dialect = "sat:text"
 read = "detected"
 write = "none"
 reason = """
-decoded at any save format under either terminator; an End-of-ACIS-data
-stream outside majors 217 and 218 is `Admission::AdmittedUnverified` with
-a source.dialect-unverified charge. The golden that pins it is code-
-built"""
+the framed `sat:text` host row is Admitted under either terminator at every
+save format. An `acis:text-acis` kernel layer outside majors 217 and 218 is
+admitted unverified and charges source.dialect-unverified. The golden that
+pins the host row is code-built"""
 
 [[support]]
 dialect = "sat:unknown"
