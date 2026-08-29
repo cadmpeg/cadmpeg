@@ -59,8 +59,8 @@ fn only_the_acis_kernel_branches_are_banded() {
             })),
         ] {
             let (host, kernel) = layers(&asm);
-            assert_eq!(host.admission, Admission::Admitted, "{version:?}");
-            assert_eq!(kernel.admission, Admission::Admitted, "{version:?}");
+            assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
+            assert_eq!(kernel.admission(), Admission::Admitted, "{version:?}");
         }
 
         for acis in [
@@ -71,13 +71,13 @@ fn only_the_acis_kernel_branches_are_banded() {
             })),
         ] {
             let (host, matched) = layers(&acis);
-            assert_eq!(host.admission, Admission::Admitted, "{version:?}");
+            assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
             if verified {
-                assert_eq!(matched.admission, Admission::Admitted, "{version:?}");
+                assert_eq!(matched.admission(), Admission::Admitted, "{version:?}");
                 assert!(dialect_loss(&matched).is_none(), "{version:?}");
             } else {
                 assert_eq!(
-                    matched.admission,
+                    matched.admission(),
                     Admission::AdmittedUnverified {
                         nearest: DialectId::pinned(nearest)
                     },
@@ -102,8 +102,8 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
         (StreamEvidence::Unknown, "sat:unknown"),
     ] {
         let (matched, _) = layers(&evidence);
-        assert_eq!(matched.dialect.as_str(), id);
-        assert_eq!(matched.admission, Admission::Refused, "{id}");
+        assert_eq!(matched.dialect().as_str(), id);
+        assert_eq!(matched.admission(), Admission::Refused, "{id}");
     }
 }
 
@@ -113,9 +113,9 @@ fn the_totality_row_never_carries_an_admitted_admission() {
     // confidence for it and both entry points return a malformed error before
     // classification, so the pair (unknown, Admitted) must be unreachable.
     let matched = classify(&StreamEvidence::Unknown);
-    assert_eq!(matched.dialect.as_str(), "sat:unknown");
-    assert_ne!(matched.admission, Admission::Admitted);
-    assert!(matched.declared.is_empty());
+    assert_eq!(matched.dialect().as_str(), "sat:unknown");
+    assert_ne!(matched.admission(), Admission::Admitted);
+    assert!(matched.declared().is_empty());
 }
 
 #[test]
@@ -146,10 +146,10 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
     ] {
         let (_, matched) = layers(&evidence);
         assert_eq!(
-            matches!(matched.admission, Admission::AdmittedUnverified { .. }),
+            matches!(matched.admission(), Admission::AdmittedUnverified { .. }),
             dialect_loss(&matched).is_some(),
             "{:?}",
-            matched.admission
+            matched.admission()
         );
     }
 }
@@ -158,7 +158,9 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
 fn the_declared_keys_are_pinned() {
     let kernel = header(Some(21_804));
 
-    let binary = classify(&StreamEvidence::AcisBinary(Some(&kernel))).declared;
+    let binary = classify(&StreamEvidence::AcisBinary(Some(&kernel)))
+        .declared()
+        .clone();
     assert_eq!(binary[DECLARED_ENCODING], "binary");
     assert_eq!(binary[DECLARED_SAVE_FORMAT_MAJOR], "218");
     assert_eq!(binary[DECLARED_SAVE_FORMAT_MINOR], "4");
@@ -168,7 +170,8 @@ fn the_declared_keys_are_pinned() {
         branch: sat::Terminator::Acis,
         header: &kernel,
     })))
-    .declared;
+    .declared()
+    .clone();
     assert_eq!(text[DECLARED_ENCODING], "text");
     assert_eq!(text[DECLARED_TERMINATOR], "End-of-ACIS-data");
     assert_eq!(text[DECLARED_SAVE_FORMAT_MAJOR], "218");
@@ -178,12 +181,15 @@ fn the_declared_keys_are_pinned() {
         branch: sat::Terminator::Asm,
         header: &kernel,
     })))
-    .declared;
+    .declared()
+    .clone();
     assert_eq!(asm_text[DECLARED_TERMINATOR], "End-of-ASM-data");
 
     // An absent save-format word declares no band, which is a different
     // statement from a declaration of zero.
-    let silent = classify(&StreamEvidence::AsmBinary(Some(&header(None)))).declared;
+    let silent = classify(&StreamEvidence::AsmBinary(Some(&header(None))))
+        .declared()
+        .clone();
     assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
     assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MINOR));
 }
@@ -296,7 +302,7 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .expect("SAT reports dialect layers")
             .primary();
 
-        assert_eq!(matched.admission, Admission::Admitted, "{}", case.label);
+        assert_eq!(matched.admission(), Admission::Admitted, "{}", case.label);
         let kernel = result
             .report()
             .dialects()
@@ -305,9 +311,9 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .iter()
             .nth(1)
             .expect("SAT reports its ACIS layer");
-        assert_eq!(kernel.admission, case.kernel_admission, "{}", case.label);
+        assert_eq!(kernel.admission(), case.kernel_admission, "{}", case.label);
         assert_eq!(
-            matches!(kernel.admission, Admission::AdmittedUnverified { .. }),
+            matches!(kernel.admission(), Admission::AdmittedUnverified { .. }),
             charged,
             "{}: admission and the recovery mark must agree",
             case.label
@@ -353,17 +359,17 @@ fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source
 
         assert_eq!(dialects.iter().count(), 2, "{}", case.label);
         let matched = dialects.primary();
-        assert_eq!(matched.format, FORMAT, "{}", case.label);
-        assert_eq!(matched.dialect.as_str(), case.id, "{}", case.label);
+        assert_eq!(matched.format(), FORMAT, "{}", case.label);
+        assert_eq!(matched.dialect().as_str(), case.id, "{}", case.label);
         let kernel = dialects.iter().nth(1).expect("SAT reports its ACIS layer");
-        assert_eq!(kernel.format, "acis", "{}", case.label);
-        assert_eq!(kernel.dialect.as_str(), case.kernel_id, "{}", case.label);
+        assert_eq!(kernel.format(), "acis", "{}", case.label);
+        assert_eq!(kernel.dialect().as_str(), case.kernel_id, "{}", case.label);
 
         // Identity survives refusal: the empty-IR result carries the same row.
         let source = result.ir().source.as_ref().expect("source metadata");
         assert_eq!(source.dialect.as_ref(), Some(matched), "{}", case.label);
         assert!(
-            !source.dialect.as_ref().unwrap().declared.is_empty(),
+            !source.dialect.as_ref().unwrap().declared().is_empty(),
             "{}: every stream declares at least its encoding",
             case.label
         );

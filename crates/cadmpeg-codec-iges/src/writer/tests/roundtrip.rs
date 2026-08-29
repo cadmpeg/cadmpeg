@@ -904,7 +904,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
             .dialects()
             .expect("Type 120 output has a dialect declaration")
             .primary()
-            .declared["effective_version"],
+            .declared()["effective_version"],
         version.name()
     );
     let source_surface = original

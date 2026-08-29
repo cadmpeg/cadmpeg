@@ -63,7 +63,7 @@ const DECLARED_LEGACY_ASCII_PRODUCT_RELEASE: &str = "legacy_ascii_product_releas
 ///
 /// `None` exactly when the completed match reports [`Admission::Admitted`].
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { .. } = &matched.admission else {
+    let Admission::AdmittedUnverified { .. } = matched.admission() else {
         return None;
     };
     Some(CreoLossCode::SourceDialectUnverified.note(

@@ -125,25 +125,25 @@ pub enum Admission {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DialectMatch {
     /// Format layer this classifies: `"rhino"`, `"acis"`, `"parasolid"`.
-    pub format: String,
+    format: String,
     /// Registry dialect id, for example `"rhino:archive-80"`.
-    pub dialect: DialectId,
+    dialect: DialectId,
     /// Version fields the source declared, verbatim, under keys pinned per
     /// codec in the registry.
     ///
     /// Declarations are evidence, never a control input: the dialect is what
     /// the bytes obey, not what they declare.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub declared: BTreeMap<String, String>,
+    declared: BTreeMap<String, String>,
     /// Instance of this format layer inside the containing document.
     ///
     /// `None` when the layer occurs once or has no report-local identity. This
     /// is not source-declared evidence and therefore does not belong in
     /// [`Self::declared`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub instance: Option<String>,
+    instance: Option<String>,
     /// How this layer was admitted.
-    pub admission: Admission,
+    admission: Admission,
 }
 
 /// A report's primary format layer and any nested or carried format layers.
@@ -240,6 +240,18 @@ impl fmt::Display for DialectLayersError {
 impl Error for DialectLayersError {}
 
 impl DialectMatch {
+    /// Constructs one identified dialect layer without declarations or an instance.
+    #[must_use]
+    pub fn new(format: impl Into<String>, dialect: DialectId, admission: Admission) -> Self {
+        Self {
+            format: format.into(),
+            dialect,
+            declared: BTreeMap::new(),
+            instance: None,
+            admission,
+        }
+    }
+
     /// Construct one identified dialect layer.
     #[must_use]
     pub fn layer(
@@ -248,13 +260,51 @@ impl DialectMatch {
         declared: BTreeMap<String, String>,
         admission: Admission,
     ) -> Self {
-        Self {
-            format: format.into(),
-            dialect,
-            declared,
-            instance: None,
-            admission,
-        }
+        Self::new(format, dialect, admission).with_declared(declared)
+    }
+
+    /// Attaches source-declared version fields before the match enters a report.
+    #[must_use]
+    pub fn with_declared(mut self, declared: BTreeMap<String, String>) -> Self {
+        self.declared = declared;
+        self
+    }
+
+    /// Attaches a report-local layer instance before the match enters a report.
+    #[must_use]
+    pub fn with_instance(mut self, instance: impl Into<String>) -> Self {
+        self.instance = Some(instance.into());
+        self
+    }
+
+    /// Returns the classified format layer.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        &self.format
+    }
+
+    /// Returns the registry dialect identity.
+    #[must_use]
+    pub fn dialect(&self) -> &DialectId {
+        &self.dialect
+    }
+
+    /// Returns the source-declared version fields.
+    #[must_use]
+    pub fn declared(&self) -> &BTreeMap<String, String> {
+        &self.declared
+    }
+
+    /// Returns the report-local layer instance.
+    #[must_use]
+    pub fn instance(&self) -> Option<&str> {
+        self.instance.as_deref()
+    }
+
+    /// Returns how this layer was admitted.
+    #[must_use]
+    pub fn admission(&self) -> Admission {
+        self.admission.clone()
     }
 }
 

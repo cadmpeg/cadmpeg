@@ -292,17 +292,14 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     let mut ir = unit_cube();
     ir.source = Some(crate::SourceMeta {
         format: "test".into(),
-        dialect: Some(DialectMatch {
-            format: "test".into(),
-            dialect: DialectId::pinned("test:wrong"),
-            declared: BTreeMap::from([("wrong".into(), "value".into())]),
-            instance: None,
-            admission: Admission::Admitted,
-        }),
+        dialect: Some(
+            DialectMatch::new("test", DialectId::pinned("test:wrong"), Admission::Admitted)
+                .with_declared(BTreeMap::from([("wrong".into(), "value".into())])),
+        ),
         ..Default::default()
     });
-    let mut primary = dialect_layer("test", "test:only");
-    primary.declared = BTreeMap::from([("version".into(), "only".into())]);
+    let primary = dialect_layer("test", "test:only")
+        .with_declared(BTreeMap::from([("version".into(), "only".into())]));
     let report = DecodeReport::classified(
         DialectLayers::new(primary.clone(), Vec::new()).unwrap(),
         false,
@@ -323,13 +320,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
 }
 
 fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
-    DialectMatch {
-        format: format.into(),
-        dialect: DialectId::pinned(id),
-        declared: BTreeMap::new(),
-        instance: None,
-        admission: Admission::Admitted,
-    }
+    DialectMatch::new(format, DialectId::pinned(id), Admission::Admitted)
 }
 
 /// An explicit target is refused by `plan` itself, with the catalog in the

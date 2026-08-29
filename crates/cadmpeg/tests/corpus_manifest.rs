@@ -82,7 +82,7 @@ fn classify(format: &str, bytes: &[u8]) -> String {
         .dialects()
         .unwrap_or_else(|| panic!("{format} inspect reported no primary layer"))
         .primary()
-        .dialect
+        .dialect()
         .as_str()
         .to_owned()
 }

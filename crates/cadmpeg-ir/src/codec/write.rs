@@ -243,7 +243,7 @@ pub fn resolve_write_request<'a>(
                 })?,
                 Some(_) => {
                     let dialect = same_format_source_dialect(ir, format)
-                        .map(|matched| &matched.dialect)
+                        .map(cadmpeg_core::dialect::DialectMatch::dialect)
                         .ok_or_else(|| unrecorded_source_dialect(format, targets))?;
                     let Some(entry) = find_target(targets, dialect.as_str()) else {
                         return Ok(WriteRequest::OffCatalog { dialect });
@@ -254,7 +254,7 @@ pub fn resolve_write_request<'a>(
         }
     };
     let displaced = same_format_source_dialect(ir, format)
-        .map(|matched| &matched.dialect)
+        .map(cadmpeg_core::dialect::DialectMatch::dialect)
         .filter(|dialect| dialect.as_str() != entry.id)
         .cloned();
     Ok(WriteRequest::Catalog { entry, displaced })

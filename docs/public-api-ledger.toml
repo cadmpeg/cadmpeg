@@ -1512,3 +1512,10 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::report::DecodeReport::{set_dialects,take_dialects}"
 reason = "classified reports are immutable values; F3Z accumulates dialect layers separately and constructs its outer report once after recursive component merging"
+
+[[change]]
+commit = "919f6edf8c09dbc709153dff72c907b6a1133f44"
+crate = "cadmpeg-core"
+kind = "visibility"
+item = "cadmpeg_core::dialect::DialectMatch::{format,dialect,declared,instance,admission}"
+reason = "private identity fields prevent post-classification mutation; constructors and consuming builders establish declarations and report-local instances before the match enters `DialectLayers`"

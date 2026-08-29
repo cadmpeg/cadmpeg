@@ -198,7 +198,7 @@ fn kernel_layer_of(bytes: &[u8]) -> (cadmpeg_core::dialect::DialectMatch, Vec<St
         .as_ref()
         .expect("the report is classified")
         .iter()
-        .find(|matched| matched.format == "acis")
+        .find(|matched| matched.format() == "acis")
         .unwrap_or_else(|| panic!("a kernel layer, got {:#?}", report.dialects()))
         .clone();
     let codes = report
@@ -217,8 +217,11 @@ fn a_verified_acis_carrier_reports_its_band_admitted() {
     );
     let (layer, codes) = kernel_layer_of(&bytes);
 
-    assert_eq!(layer.dialect.as_str(), "acis:save-format-218");
-    assert_eq!(layer.admission, cadmpeg_core::dialect::Admission::Admitted);
+    assert_eq!(layer.dialect().as_str(), "acis:save-format-218");
+    assert_eq!(
+        layer.admission(),
+        cadmpeg_core::dialect::Admission::Admitted
+    );
     assert!(
         !codes.iter().any(|code| code.contains("dialect-unverified")),
         "{codes:?}"
@@ -235,14 +238,14 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     );
     let (layer, codes) = kernel_layer_of(&bytes);
 
-    assert_eq!(layer.dialect.as_str(), "acis:save-format-binary-other");
+    assert_eq!(layer.dialect().as_str(), "acis:save-format-binary-other");
     assert_eq!(
-        layer.admission,
+        layer.admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("acis:save-format-218")
         }
     );
-    assert_eq!(layer.declared["save_format_major"], "700");
+    assert_eq!(layer.declared()["save_format_major"], "700");
     assert!(
         codes
             .iter()

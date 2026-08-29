@@ -29,14 +29,14 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
         .as_ref()
         .expect("Rhino decode reports dialect layers")
         .primary();
-    assert_eq!(matched.dialect.as_str(), "rhino:unknown");
+    assert_eq!(matched.dialect().as_str(), "rhino:unknown");
     assert_eq!(
-        matched.admission,
+        matched.admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-90"),
         }
     );
-    assert_eq!(matched.declared["archive_version"], "100");
+    assert_eq!(matched.declared()["archive_version"], "100");
     assert_eq!(
         result
             .report()

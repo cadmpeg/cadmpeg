@@ -40,7 +40,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
     assert_eq!(conic.field("form"), Some(1.into()));
     assert!(round_trip.report().losses.is_empty());
     assert_eq!(
-        round_trip.report().dialects().unwrap().primary().declared["effective_version"],
+        round_trip.report().dialects().unwrap().primary().declared()["effective_version"],
         "5.0"
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());

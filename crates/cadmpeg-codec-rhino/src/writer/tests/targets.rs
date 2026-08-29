@@ -301,7 +301,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             .dialects()
             .unwrap_or_else(|| panic!("{version:?} output must classify a host dialect"))
             .primary()
-            .dialect
+            .dialect()
             .clone();
         assert_eq!(
             classified, claimed,

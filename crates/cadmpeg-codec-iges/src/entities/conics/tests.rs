@@ -43,7 +43,7 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
                 .unwrap();
 
             assert_eq!(
-                result.report().dialects().unwrap().primary().declared["effective_version"],
+                result.report().dialects().unwrap().primary().declared()["effective_version"],
                 version,
                 "{family}"
             );

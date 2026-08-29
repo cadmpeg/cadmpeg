@@ -162,7 +162,7 @@ fn replay_bytes(
         )));
     };
     let source_dialect = match same_format_source_dialect(ir, crate::dialect::FORMAT)
-        .map(|matched| &matched.dialect)
+        .map(cadmpeg_core::dialect::DialectMatch::dialect)
     {
         None => {
             return Ok(Replay::declined_because(format!(

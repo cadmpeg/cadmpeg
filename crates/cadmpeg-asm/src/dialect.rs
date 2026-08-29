@@ -79,13 +79,7 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
         }
         KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
     };
-    DialectMatch {
-        format: FORMAT.to_owned(),
-        dialect,
-        declared,
-        instance: None,
-        admission,
-    }
+    DialectMatch::layer(FORMAT, dialect, declared, admission)
 }
 
 /// Save-format majors the Spatial ACIS record decoders are verified against.
@@ -241,11 +235,11 @@ mod tests {
     fn classification_uses_family_and_canonical_declarations() {
         let acis = header(4, Some(21_703));
         let matched = classify(KernelHeaderRef::Acis(&acis));
-        assert_eq!(matched.format, FORMAT);
-        assert_eq!(matched.dialect, ACIS_SAVE_FORMAT_217);
-        assert_eq!(matched.admission, Admission::Admitted);
+        assert_eq!(matched.format(), FORMAT);
+        assert_eq!(matched.dialect(), &ACIS_SAVE_FORMAT_217);
+        assert_eq!(matched.admission(), Admission::Admitted);
         assert_eq!(
-            matched.declared.into_iter().collect::<Vec<_>>(),
+            matched.declared().clone().into_iter().collect::<Vec<_>>(),
             [
                 ("reference_width".to_owned(), "4".to_owned()),
                 ("save_format_major".to_owned(), "217".to_owned()),
@@ -256,33 +250,29 @@ mod tests {
         let asm = header(8, Some(70_001));
         assert_eq!(
             classify(KernelHeaderRef::Asm(&asm)),
-            DialectMatch {
-                format: FORMAT.to_owned(),
-                dialect: ACIS_ASM_BINARYFILE_8,
-                declared: [
+            DialectMatch::new(FORMAT, ACIS_ASM_BINARYFILE_8, Admission::Admitted).with_declared(
+                [
                     ("reference_width".to_owned(), "8".to_owned()),
                     ("save_format_major".to_owned(), "700".to_owned()),
                     ("save_format_minor".to_owned(), "1".to_owned()),
                 ]
                 .into_iter()
                 .collect(),
-                instance: None,
-                admission: Admission::Admitted,
-            }
+            )
         );
 
         assert_eq!(
-            classify(KernelHeaderRef::TextAsm(&asm)).dialect,
-            ACIS_TEXT_ASM
+            classify(KernelHeaderRef::TextAsm(&asm)).dialect(),
+            &ACIS_TEXT_ASM
         );
         assert_eq!(
-            classify(KernelHeaderRef::TextAcis(&acis)).dialect,
-            ACIS_TEXT_ACIS
+            classify(KernelHeaderRef::TextAcis(&acis)).dialect(),
+            &ACIS_TEXT_ACIS
         );
         let unknown = classify(KernelHeaderRef::Unknown);
-        assert_eq!(unknown.dialect, ACIS_UNKNOWN);
-        assert_eq!(unknown.admission, Admission::Refused);
-        assert!(unknown.declared.is_empty());
+        assert_eq!(unknown.dialect(), &ACIS_UNKNOWN);
+        assert_eq!(unknown.admission(), Admission::Refused);
+        assert!(unknown.declared().is_empty());
     }
 
     #[test]
@@ -301,7 +291,7 @@ mod tests {
             classify(KernelHeaderRef::Unknown),
         ]
         .into_iter()
-        .map(|matched| matched.dialect.to_string())
+        .map(|matched| matched.dialect().to_string())
         .collect();
         assert_eq!(ids, cadmpeg_test_support::registry_ids(FORMAT));
     }

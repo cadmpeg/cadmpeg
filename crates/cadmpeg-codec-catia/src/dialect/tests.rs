@@ -82,9 +82,9 @@ fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
         let scan = container::scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
 
-        assert_eq!(matched.format, FORMAT, "{}", witness.fixture);
+        assert_eq!(matched.format(), FORMAT, "{}", witness.fixture);
         assert_eq!(
-            matched.dialect.as_str(),
+            matched.dialect().as_str(),
             witness.id,
             "{} must witness its own row",
             witness.fixture
@@ -112,7 +112,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             witness.fixture
         );
         assert_eq!(
-            matched.admission == Admission::Admitted,
+            matched.admission() == Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             witness.fixture
@@ -153,15 +153,15 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     let scan = container::scan_bytes(bytes.as_slice());
     let matched = classify(&scan);
 
-    assert_eq!(matched.declared[DECLARED_VERSION], "5");
-    assert_eq!(matched.declared[DECLARED_RELEASE], "27");
-    assert_eq!(matched.declared[DECLARED_SERVICE_PACK], "2");
-    assert_eq!(matched.declared[DECLARED_HOT_FIX], "0");
-    assert_eq!(matched.declared[DECLARED_BUILD_DATE], "03-10-2017.22.00");
+    assert_eq!(matched.declared()[DECLARED_VERSION], "5");
+    assert_eq!(matched.declared()[DECLARED_RELEASE], "27");
+    assert_eq!(matched.declared()[DECLARED_SERVICE_PACK], "2");
+    assert_eq!(matched.declared()[DECLARED_HOT_FIX], "0");
+    assert_eq!(matched.declared()[DECLARED_BUILD_DATE], "03-10-2017.22.00");
 
-    assert_eq!(matched.dialect.as_str(), "catia:unknown");
+    assert_eq!(matched.dialect().as_str(), "catia:unknown");
     assert_eq!(
-        matched.admission,
+        matched.admission(),
         Admission::AdmittedUnverified {
             nearest: DialectId::pinned("catia:unknown"),
         }
@@ -177,11 +177,15 @@ fn an_absent_declaration_leaves_the_identity_intact() {
         let scan = container::scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
         assert_eq!(
-            matched.declared.is_empty(),
+            matched.declared().is_empty(),
             scan.last_save_version.is_none(),
             "{}: declared keys track the tuple's presence",
             witness.fixture
         );
-        assert!(!matched.dialect.as_str().is_empty(), "{}", witness.fixture);
+        assert!(
+            !matched.dialect().as_str().is_empty(),
+            "{}",
+            witness.fixture
+        );
     }
 }

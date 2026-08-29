@@ -108,7 +108,7 @@ pub enum CodecError {
     /// would otherwise grow to its width.
     #[error(
         "unsupported {format} dialect {}: {message}",
-        .dialect_match.dialect
+        .dialect_match.dialect()
     )]
     UnsupportedDialect {
         /// Format layer that refused.
@@ -204,13 +204,12 @@ mod tests {
     fn a_dialect_refusal_keeps_the_identification_it_refused() {
         let error = CodecError::UnsupportedDialect {
             format: "acis".into(),
-            dialect_match: Box::new(DialectMatch {
-                format: "acis".into(),
-                dialect: DialectId::pinned("acis:save-format-binary-other"),
-                declared: BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
-                instance: None,
-                admission: Admission::Refused,
-            }),
+            dialect_match: Box::new(DialectMatch::layer(
+                "acis",
+                DialectId::pinned("acis:save-format-binary-other"),
+                BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
+                Admission::Refused,
+            )),
             message: "save format 700 has no read grammar".into(),
         };
 
@@ -222,9 +221,9 @@ mod tests {
             panic!("the variant just built is the one matched");
         };
         assert_eq!(
-            dialect_match.dialect.as_str(),
+            dialect_match.dialect().as_str(),
             "acis:save-format-binary-other"
         );
-        assert_eq!(dialect_match.declared["save_format"], "700");
+        assert_eq!(dialect_match.declared()["save_format"], "700");
     }
 }

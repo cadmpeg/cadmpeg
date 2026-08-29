@@ -65,7 +65,7 @@ fn both_container_rows_are_admitted_because_classification_is_structural() {
     // exist. Anything else here would be an invented path.
     for legacy_cfb in [false, true] {
         let matched = NxDialect::classify(&container(legacy_cfb, 0x06));
-        assert_eq!(matched.admission, Admission::Admitted);
+        assert_eq!(matched.admission(), Admission::Admitted);
     }
     assert_eq!(NxDialect::Splmsstr.admission(), Admission::Admitted);
     assert_eq!(NxDialect::LegacyCfb.admission(), Admission::Admitted);
@@ -90,22 +90,22 @@ fn the_totality_row_is_declared_but_never_classified() {
 fn the_modern_arm_declares_the_container_version_byte_verbatim() {
     let matched = NxDialect::classify(&container(false, 0x06));
 
-    assert_eq!(matched.dialect.as_str(), "nx:splmsstr");
-    assert_eq!(matched.format, "nx");
-    assert_eq!(matched.declared[DECLARED_SPLMSSTR_VERSION], "6");
-    assert!(!matched.declared.contains_key(DECLARED_UGII_VERSION));
+    assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
+    assert_eq!(matched.format(), "nx");
+    assert_eq!(matched.declared()[DECLARED_SPLMSSTR_VERSION], "6");
+    assert!(!matched.declared().contains_key(DECLARED_UGII_VERSION));
     // No indexed store section, so no `store_version` record is available.
-    assert!(!matched.declared.contains_key(DECLARED_PRODUCT_VERSION));
+    assert!(!matched.declared().contains_key(DECLARED_PRODUCT_VERSION));
 }
 
 #[test]
 fn the_legacy_arm_declares_the_ugii_payload_version_verbatim() {
     let matched = NxDialect::classify(&container(true, 0x0a));
 
-    assert_eq!(matched.dialect.as_str(), "nx:legacy-cfb");
-    assert_eq!(matched.declared[DECLARED_UGII_VERSION], "10");
-    assert!(!matched.declared.contains_key(DECLARED_SPLMSSTR_VERSION));
-    assert!(!matched.declared.contains_key(DECLARED_PRODUCT_VERSION));
+    assert_eq!(matched.dialect().as_str(), "nx:legacy-cfb");
+    assert_eq!(matched.declared()[DECLARED_UGII_VERSION], "10");
+    assert!(!matched.declared().contains_key(DECLARED_SPLMSSTR_VERSION));
+    assert!(!matched.declared().contains_key(DECLARED_PRODUCT_VERSION));
 }
 
 #[test]
@@ -116,12 +116,12 @@ fn the_version_byte_is_evidence_and_never_moves_the_resolved_id() {
     // beside it, would be reading a field this codec does not branch on.
     for version in [0_u8, 1, 6, 255] {
         let matched = NxDialect::classify(&container(false, version));
-        assert_eq!(matched.dialect.as_str(), "nx:splmsstr");
+        assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
         assert_eq!(
-            matched.declared[DECLARED_SPLMSSTR_VERSION],
+            matched.declared()[DECLARED_SPLMSSTR_VERSION],
             version.to_string()
         );
-        assert_eq!(matched.admission, Admission::Admitted);
+        assert_eq!(matched.admission(), Admission::Admitted);
     }
 }
 

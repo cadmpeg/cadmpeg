@@ -277,7 +277,7 @@ fn compressed_ascii_preserves_v4_and_v5_0_profiles() {
             .unwrap();
         assert_eq!(result.ir().model.points.len(), 2, "{version}");
         assert_eq!(
-            result.report().dialects().unwrap().primary().declared["effective_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
     }
@@ -337,7 +337,7 @@ fn compressed_global_with_version_flag(version_flag: &str) -> Vec<u8> {
 fn only_match(dialects: Option<&DialectLayers>) -> &DialectMatch {
     let layers = dialects.expect("IGES reports dialect layers");
     assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
-    assert_eq!(layers.primary().format, "iges");
+    assert_eq!(layers.primary().format(), "iges");
     layers.primary()
 }
 
@@ -351,9 +351,9 @@ fn compressed_ascii_classifies_into_its_own_representation_row() {
         .unwrap();
 
     let matched = only_match(decoded.report().dialects());
-    assert_eq!(matched.dialect.as_str(), "iges:5.3-compressed-ascii");
-    assert_eq!(matched.admission, Admission::Admitted);
-    assert_eq!(matched.declared["representation"], "compressed-ascii");
+    assert_eq!(matched.dialect().as_str(), "iges:5.3-compressed-ascii");
+    assert_eq!(matched.admission(), Admission::Admitted);
+    assert_eq!(matched.declared()["representation"], "compressed-ascii");
 
     let source_meta = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source_meta.dialect.as_ref(), Some(matched));
@@ -378,16 +378,16 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
         .unwrap();
 
     let matched = only_match(decoded.report().dialects());
-    assert_eq!(matched.dialect.as_str(), "iges:unknown");
+    assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
-        matched.admission,
+        matched.admission(),
         Admission::AdmittedUnverified {
             nearest: DialectId::pinned("iges:5.3-compressed-ascii"),
         }
     );
-    assert_eq!(matched.declared["representation"], "compressed-ascii");
-    assert_eq!(matched.declared["version_flag"], "4");
-    assert_eq!(matched.declared["effective_version"], "3.0");
+    assert_eq!(matched.declared()["representation"], "compressed-ascii");
+    assert_eq!(matched.declared()["version_flag"], "4");
+    assert_eq!(matched.declared()["effective_version"], "3.0");
     assert!(decoded
         .report()
         .losses

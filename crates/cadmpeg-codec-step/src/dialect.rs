@@ -390,11 +390,11 @@ fn implementation_level(exchange: &Exchange) -> Option<String> {
 /// the string and reading the exchange with the AP242 entity vocabulary
 /// anyway, which is a recovery, not a verified read.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
         return None;
     };
     let declaration = matched
-        .declared
+        .declared()
         .get(DECLARED_FILE_SCHEMA_IDENTIFIER)
         .map_or_else(
             || "The exchange declares no FILE_SCHEMA identifier".to_owned(),

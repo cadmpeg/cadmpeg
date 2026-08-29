@@ -286,12 +286,12 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let left_dialect = left
         .dialect
         .as_ref()
-        .map(|matched| &matched.dialect)
+        .map(cadmpeg_core::dialect::DialectMatch::dialect)
         .map(|id| id.as_str().to_owned());
     let right_dialect = right
         .dialect
         .as_ref()
-        .map(|matched| &matched.dialect)
+        .map(cadmpeg_core::dialect::DialectMatch::dialect)
         .map(|id| id.as_str().to_owned());
     let mut result = SourceDiff {
         format_change: (left.format != right.format)
@@ -299,13 +299,14 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
         dialect_change: (left_dialect != right_dialect)
             .then(|| (left_dialect.clone(), right_dialect.clone())),
         declared: attribute_changes(
-            left.dialect
-                .as_ref()
-                .map_or(&empty_declared, |matched| &matched.declared),
-            right
-                .dialect
-                .as_ref()
-                .map_or(&empty_declared, |matched| &matched.declared),
+            left.dialect.as_ref().map_or(
+                &empty_declared,
+                cadmpeg_core::dialect::DialectMatch::declared,
+            ),
+            right.dialect.as_ref().map_or(
+                &empty_declared,
+                cadmpeg_core::dialect::DialectMatch::declared,
+            ),
         ),
         ..SourceDiff::default()
     };
@@ -678,36 +679,22 @@ mod tests {
 
         let mut declared_left = with_source(&[]);
         let mut declared_right = declared_left.clone();
-        declared_left
-            .source
-            .as_mut()
-            .unwrap()
-            .dialect
-            .get_or_insert_with(|| {
-                cadmpeg_core::dialect::DialectMatch::layer(
-                    "rhino",
-                    cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-                    BTreeMap::new(),
-                    cadmpeg_core::dialect::Admission::Admitted,
-                )
-            })
-            .declared
-            .insert("archive_version".into(), "70".into());
-        declared_right
-            .source
-            .as_mut()
-            .unwrap()
-            .dialect
-            .get_or_insert_with(|| {
-                cadmpeg_core::dialect::DialectMatch::layer(
-                    "rhino",
-                    cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-                    BTreeMap::new(),
-                    cadmpeg_core::dialect::Admission::Admitted,
-                )
-            })
-            .declared
-            .insert("archive_version".into(), "80".into());
+        declared_left.source.as_mut().unwrap().dialect = Some(
+            cadmpeg_core::dialect::DialectMatch::new(
+                "rhino",
+                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                cadmpeg_core::dialect::Admission::Admitted,
+            )
+            .with_declared(BTreeMap::from([("archive_version".into(), "70".into())])),
+        );
+        declared_right.source.as_mut().unwrap().dialect = Some(
+            cadmpeg_core::dialect::DialectMatch::new(
+                "rhino",
+                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                cadmpeg_core::dialect::Admission::Admitted,
+            )
+            .with_declared(BTreeMap::from([("archive_version".into(), "80".into())])),
+        );
 
         let declared = diff(&declared_left, &declared_right);
         assert!(!declared.is_empty());

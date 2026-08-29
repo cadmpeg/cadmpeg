@@ -227,14 +227,14 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
         .as_ref()
         .expect("the primary layer is classified")
         .primary();
-    assert_eq!(matched.dialect.as_str(), "f3d:unknown");
+    assert_eq!(matched.dialect().as_str(), "f3d:unknown");
     assert_eq!(
-        matched.admission,
+        matched.admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
             nearest: cadmpeg_core::dialect::DialectId::pinned("f3d:manifest-3-2-0-0"),
         }
     );
-    assert_eq!(matched.declared["top_level_manifest_version"], "3-3-0-0");
+    assert_eq!(matched.declared()["top_level_manifest_version"], "3-3-0-0");
 
     let expected = crate::loss::F3dLossCode::SourceDialectUnverified.kind();
     assert!(
@@ -428,7 +428,7 @@ fn the_patch_path_names_the_preserved_dialect() {
             .report()
             .dialects()
             .map(cadmpeg_core::dialect::DialectLayers::primary)
-            .map(|entry| &entry.dialect)
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("f3d:unknown")
     );
@@ -480,7 +480,7 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
             .dialects()
             .unwrap_or_else(|| panic!("{label} output must classify a host dialect"))
             .primary()
-            .dialect
+            .dialect()
             .clone();
         assert_eq!(
             classified.as_str(),

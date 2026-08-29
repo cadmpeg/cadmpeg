@@ -69,7 +69,7 @@ fn preserve(input: EncodeInput<'_>, target: &DialectId) -> Result<Preservation, 
     let Some(source_dialect) = same_format_source_dialect(input.ir, dialect::FORMAT) else {
         return Ok(Preservation::Declined);
     };
-    if &source_dialect.dialect != target {
+    if source_dialect.dialect() != target {
         return Ok(Preservation::Declined);
     }
     let Some(record) = input

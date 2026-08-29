@@ -163,31 +163,33 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
         let matched = StepDialect::classify(&exchange(case.identifiers, "2;1"));
         let context = format!("FILE_SCHEMA {:?}", case.identifiers);
 
-        assert_eq!(matched.dialect.as_str(), case.id, "{context}");
+        assert_eq!(matched.dialect().as_str(), case.id, "{context}");
         assert_eq!(
-            matched.declared[DECLARED_FILE_SCHEMA_IDENTIFIER], case.identifiers[0],
+            matched.declared()[DECLARED_FILE_SCHEMA_IDENTIFIER],
+            case.identifiers[0],
             "{context}: the declaration is recorded as the source made it"
         );
         assert_eq!(
             matched
-                .declared
+                .declared()
                 .get(DECLARED_LONG_FORM_ARCS)
                 .map(String::as_str),
             case.arcs,
             "{context}: the arcs are recorded verbatim when the identifier carries them"
         );
         assert_eq!(
-            matched.declared[DECLARED_IMPLEMENTATION_LEVEL], "2;1",
+            matched.declared()[DECLARED_IMPLEMENTATION_LEVEL],
+            "2;1",
             "{context}: the implementation level is evidence, recorded and not classified on"
         );
         assert_eq!(
             matched
-                .declared
+                .declared()
                 .contains_key(DECLARED_FILE_SCHEMA_IDENTIFIERS),
             case.identifiers.len() > 1,
             "{context}: the whole list is recorded only when it declares more than one identifier"
         );
-        assert_eq!(matched.format, FORMAT, "{context}");
+        assert_eq!(matched.format(), FORMAT, "{context}");
     }
 }
 
@@ -199,7 +201,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     for case in CASES {
         let matched = StepDialect::classify(&exchange(case.identifiers, "2;1"));
         let charged = dialect_loss(&matched).is_some_and(|note| note.code == expected);
-        let admitted = matched.admission == Admission::Admitted;
+        let admitted = matched.admission() == Admission::Admitted;
 
         assert_eq!(
             admitted, !charged,
@@ -214,7 +216,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         );
         if !admitted {
             assert_eq!(
-                matched.admission,
+                matched.admission(),
                 Admission::AdmittedUnverified {
                     nearest: NEAREST_STRATEGY.id(),
                 },
@@ -236,10 +238,10 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
         "2;1",
     ));
 
-    assert_eq!(matched.dialect.as_str(), "step:ap242");
-    assert_eq!(matched.admission, Admission::Admitted);
+    assert_eq!(matched.dialect().as_str(), "step:ap242");
+    assert_eq!(matched.admission(), Admission::Admitted);
     assert!(dialect_loss(&matched).is_none());
-    assert!(!matched.declared.contains_key(DECLARED_LONG_FORM_ARCS));
+    assert!(!matched.declared().contains_key(DECLARED_LONG_FORM_ARCS));
 }
 
 #[test]
@@ -262,10 +264,10 @@ fn the_implementation_level_is_recorded_and_never_classified_on() {
         let matched = StepDialect::classify(&exchange(&["AUTOMOTIVE_DESIGN"], level));
 
         assert_eq!(
-            matched.dialect.as_str(),
+            matched.dialect().as_str(),
             "step:ap214",
             "implementation level {level:?} must not move the identity"
         );
-        assert_eq!(matched.declared[DECLARED_IMPLEMENTATION_LEVEL], level);
+        assert_eq!(matched.declared()[DECLARED_IMPLEMENTATION_LEVEL], level);
     }
 }

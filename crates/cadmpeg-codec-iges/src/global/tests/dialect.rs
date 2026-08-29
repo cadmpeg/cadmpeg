@@ -90,7 +90,7 @@ fn fixed_ascii_verified_versions_decode_under_their_versioned_profiles() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.report().dialects().unwrap().primary().declared["effective_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version_name
         );
         assert_eq!(result.ir().model.points.len(), 1);
@@ -118,7 +118,7 @@ fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
             .unwrap();
-        let declared = &result.report().dialects().unwrap().primary().declared;
+        let declared = &result.report().dialects().unwrap().primary().declared();
         assert_eq!(declared["effective_version"], version_name);
         assert_eq!(declared["version_flag"], flag);
         assert_eq!(result.ir().model.points.len(), 1);
@@ -150,7 +150,7 @@ fn a_clamped_version_flag_is_recorded_verbatim_and_charges_the_dialect_loss() {
         )
         .unwrap();
 
-    let declared = &result.report().dialects().unwrap().primary().declared;
+    let declared = &result.report().dialects().unwrap().primary().declared();
     assert_eq!(declared["effective_version"], "5.3");
     assert_eq!(declared["version_flag"], "99");
     assert_eq!(dialect_losses(result.report()), 1);
@@ -165,7 +165,7 @@ fn a_verified_declared_version_charges_no_dialect_loss() {
         )
         .unwrap();
 
-    let declared = &result.report().dialects().unwrap().primary().declared;
+    let declared = &result.report().dialects().unwrap().primary().declared();
     assert_eq!(declared["effective_version"], "5.3");
     assert_eq!(declared["version_flag"], "11");
     assert_eq!(dialect_losses(result.report()), 0);
@@ -231,7 +231,7 @@ fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss()
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
 
-    let declared = &result.report().dialects().unwrap().primary().declared;
+    let declared = &result.report().dialects().unwrap().primary().declared();
     assert_eq!(declared["effective_version"], "2.0");
     assert_eq!(declared["version_flag"], "3");
     assert_eq!(result.ir().model.points.len(), 1);
@@ -600,7 +600,7 @@ fn an_absent_version_flag_reports_the_default_dialect() {
         )
         .unwrap();
 
-    let declared = &result.report().dialects().unwrap().primary().declared;
+    let declared = &result.report().dialects().unwrap().primary().declared();
     assert_eq!(declared["effective_version"], "2.0");
     assert_eq!(declared["version_flag"], "3");
     assert_eq!(result.ir().model.points.len(), 1);

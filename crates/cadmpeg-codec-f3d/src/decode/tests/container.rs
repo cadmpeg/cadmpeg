@@ -162,11 +162,11 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         .as_ref()
         .expect("the report is classified")
         .iter()
-        .find(|matched| matched.format == "acis")
+        .find(|matched| matched.format() == "acis")
         .expect("text carrier has a shared kernel identity");
-    assert_eq!(kernel.dialect.as_str(), "acis:text-asm");
+    assert_eq!(kernel.dialect().as_str(), "acis:text-asm");
     assert_eq!(
-        kernel.declared["carrier"],
+        kernel.declared()["carrier"],
         "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"
     );
     assert_eq!(decoded.ir().model.bodies.len(), 1);
@@ -259,12 +259,12 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
         .as_ref()
         .expect("the report is classified")
         .iter()
-        .filter(|matched| matched.format == "acis")
+        .filter(|matched| matched.format() == "acis")
         .collect::<Vec<_>>();
     assert_eq!(kernel_layers.len(), 2);
-    assert_eq!(kernel_layers[0].declared["carrier"], valid_path);
-    assert_eq!(kernel_layers[1].dialect.as_str(), "acis:unknown");
-    assert_eq!(kernel_layers[1].declared["carrier"], corrupt_path);
+    assert_eq!(kernel_layers[0].declared()["carrier"], valid_path);
+    assert_eq!(kernel_layers[1].dialect().as_str(), "acis:unknown");
+    assert_eq!(kernel_layers[1].declared()["carrier"], corrupt_path);
     let loss = decoded
         .report()
         .losses

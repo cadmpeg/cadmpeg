@@ -104,8 +104,8 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
         let matched = SldprtDialect::classify(case.declaration);
         let context = format!("swVersion {:?}", case.declaration);
 
-        assert_eq!(matched.dialect.as_str(), case.id, "{context}");
-        assert_eq!(matched.format, FORMAT, "{context}");
+        assert_eq!(matched.dialect().as_str(), case.id, "{context}");
+        assert_eq!(matched.format(), FORMAT, "{context}");
     }
 }
 
@@ -118,19 +118,19 @@ fn the_declaration_is_recorded_verbatim_and_only_when_the_source_makes_one() {
         match case.declaration {
             Some(declaration) => assert_eq!(
                 matched
-                    .declared
+                    .declared()
                     .get(DECLARED_SW_VERSION)
                     .map(String::as_str),
                 Some(declaration),
                 "{context}: the declaration is recorded as the source made it"
             ),
             None => assert!(
-                matched.declared.is_empty(),
+                matched.declared().is_empty(),
                 "{context}: a document that declares nothing declares nothing"
             ),
         }
         assert_eq!(
-            matched.declared.len(),
+            matched.declared().len(),
             usize::from(case.declaration.is_some()),
             "{context}: sw_version is the only declared key"
         );
@@ -146,8 +146,8 @@ fn the_identity_row_never_reads_the_declaration_a_second_time() {
     // exactly the files whose declarations are wrong.
     let matched = SldprtDialect::classify(Some("SW2019"));
 
-    assert_eq!(matched.declared[DECLARED_SW_VERSION], "SW2019");
-    assert_eq!(matched.dialect.as_str(), "sldprt:unknown");
+    assert_eq!(matched.declared()[DECLARED_SW_VERSION], "SW2019");
+    assert_eq!(matched.dialect().as_str(), "sldprt:unknown");
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let context = format!("swVersion {:?}", case.declaration);
 
         assert_eq!(
-            matched.admission == Admission::Admitted,
+            matched.admission() == Admission::Admitted,
             loss.is_none(),
             "{context}: admission and the dialect-unverified loss must agree"
         );
@@ -188,7 +188,7 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
     for case in CASES {
         let matched = SldprtDialect::classify(case.declaration);
         let context = format!("swVersion {:?}", case.declaration);
-        let residual = matched.dialect.as_str() == SldprtDialect::Unknown.id().as_str();
+        let residual = matched.dialect().as_str() == SldprtDialect::Unknown.id().as_str();
 
         let expected = if residual {
             Admission::AdmittedUnverified {
@@ -197,7 +197,7 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
         } else {
             Admission::Admitted
         };
-        assert_eq!(matched.admission, expected, "{context}");
+        assert_eq!(matched.admission(), expected, "{context}");
         assert_eq!(
             residual,
             case.id == "sldprt:unknown",
@@ -276,10 +276,10 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     let matched = SldprtDialect::classify_scan(&scan);
 
     assert_eq!(crate::container::declared_sw_version(&scan), None);
-    assert_eq!(matched.dialect.as_str(), "sldprt:unknown");
-    assert!(matched.declared.is_empty());
+    assert_eq!(matched.dialect().as_str(), "sldprt:unknown");
+    assert!(matched.declared().is_empty());
     assert_eq!(
-        matched.admission,
+        matched.admission(),
         Admission::AdmittedUnverified {
             nearest: SldprtDialect::Unknown.id()
         }
@@ -297,8 +297,8 @@ fn exactly_one_entry_names_the_reporting_format() {
     assert_eq!(
         dialects
             .iter()
-            .find(|entry| entry.format == FORMAT)
-            .map(|entry| &entry.dialect),
+            .find(|entry| entry.format() == FORMAT)
+            .map(|entry| entry.dialect()),
         Some(&SldprtDialect::SwVersion12000Plus.id())
     );
 }

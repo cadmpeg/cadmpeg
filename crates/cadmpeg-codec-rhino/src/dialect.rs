@@ -230,11 +230,11 @@ impl ArchiveVersion {
 /// structural: the note charged and the admission reported come from one value,
 /// not from two authors agreeing.
 pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { nearest } = &matched.admission else {
+    let Admission::AdmittedUnverified { nearest } = matched.admission() else {
         return None;
     };
     let word = matched
-        .declared
+        .declared()
         .get(DECLARED_ARCHIVE_VERSION)
         .map_or("absent", String::as_str);
     Some(

@@ -61,7 +61,7 @@ impl ContainerSummary {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            format: dialects.primary().format.clone(),
+            format: dialects.primary().format().to_owned(),
             container_kind: container_kind.into(),
             entries,
             notes,
@@ -101,8 +101,6 @@ impl ContainerSummary {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::ContainerSummary;
     use crate::dialect::{Admission, DialectId};
     use crate::dialect::{DialectLayers, DialectMatch};
@@ -128,20 +126,16 @@ mod tests {
             summary
         );
 
-        let primary = DialectMatch {
-            format: "rhino".into(),
-            dialect: DialectId::pinned("rhino:archive-80"),
-            declared: BTreeMap::new(),
-            instance: None,
-            admission: Admission::Admitted,
-        };
-        let extra = DialectMatch {
-            format: "acis".into(),
-            dialect: DialectId::pinned("acis:save-format-217"),
-            declared: BTreeMap::new(),
-            instance: None,
-            admission: Admission::Admitted,
-        };
+        let primary = DialectMatch::new(
+            "rhino",
+            DialectId::pinned("rhino:archive-80"),
+            Admission::Admitted,
+        );
+        let extra = DialectMatch::new(
+            "acis",
+            DialectId::pinned("acis:save-format-217"),
+            Admission::Admitted,
+        );
         let summary = ContainerSummary::classified(
             DialectLayers::new(primary.clone(), vec![extra.clone()])
                 .expect("the extra uses another format"),
@@ -162,7 +156,7 @@ mod tests {
                 .dialects()
                 .expect("the summary remains classified")
                 .primary()
-                .format,
+                .format(),
             "rhino"
         );
     }
