@@ -49,7 +49,7 @@ pub(crate) fn decode_asm_binary(
     let width = usize::from(header.width);
     let start = asm_header::record_stream_start(bytes).ok_or_else(|| {
         unsupported_unframed(
-            &StreamEvidence::AsmBinary(None),
+            &StreamEvidence::UnframedAsmBinary(&header),
             "ASM binary header has no record stream",
         )
     })?;
@@ -96,7 +96,7 @@ pub(crate) fn decode_acis_binary(
     let (matched, kernel) = layers(&evidence);
     let start = acis_header::record_stream_start(bytes).ok_or_else(|| {
         unsupported_unframed(
-            &StreamEvidence::AcisBinary(None),
+            &StreamEvidence::UnframedAcisBinary(&header),
             "ACIS binary header has no record stream",
         )
     })?;

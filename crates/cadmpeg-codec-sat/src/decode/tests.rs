@@ -166,6 +166,26 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
         cadmpeg_core::dialect::Admission::Refused
     );
     assert_eq!(layers.iter().count(), 2, "inspect retains both layers");
+    assert_eq!(inspected.declared["encoding"], "binary");
+    assert_eq!(
+        inspected.declared["save_format_major"],
+        (UNVERIFIED_SAVE_FORMAT / 100).to_string()
+    );
+    let kernel = layers
+        .iter()
+        .nth(1)
+        .expect("inspect retains the kernel layer");
+    assert_eq!(
+        kernel
+            .dialect
+            .as_ref()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("acis:save-format-binary-other")
+    );
+    assert_eq!(
+        kernel.declared["save_format_major"],
+        (UNVERIFIED_SAVE_FORMAT / 100).to_string()
+    );
 
     let error = SatCodec
         .decode(

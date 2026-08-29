@@ -124,7 +124,7 @@ fn the_totality_row_never_carries_an_admitted_admission() {
 #[test]
 fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
     // The biconditional §7 requires: `AdmittedUnverified` and the
-    // `source.dialect-unverified` charge are the same fact, read from one
+    // `source.kernel-dialect-unverified` charge are the same fact, read from one
     // place. `Refused` here is structural — the discriminant matched and the
     // stream did not frame — and carries no recovery mark.
     let verified = header(Some(21_800));

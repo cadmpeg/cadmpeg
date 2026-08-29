@@ -44,7 +44,7 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
-            Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
 
@@ -98,7 +98,7 @@ mod tests {
             [
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
-                "source.dialect-unverified",
+                "source.kernel-dialect-unverified",
             ]
         );
     }
