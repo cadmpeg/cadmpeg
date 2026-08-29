@@ -7,10 +7,10 @@
 //! depth, and nothing above them: no conversion pipeline, no artifact store,
 //! no command layer.
 //!
-//! 1. **What is this file?** — [`identify()`], which runs prefix detection to
-//!    pick candidates and then reconstructs the container of each candidate it
-//!    is confident enough about, so the answer carries a dialect and not just
-//!    a format.
+//! 1. **What is this file?** — [`identify()`], which uses the loader's prefix
+//!    winner selection and then reconstructs that winner's container, so the
+//!    answer carries a dialect and not just a format. Equal-confidence
+//!    ambiguity remains explicit and is not inspected.
 //! 2. **What can I save as?** — [`Format`] and [`build_encoder`] give the
 //!    synthesis catalogs (`Encoder::targets`), and [`dialects`] / [`support`]
 //!    serve the registries from tables compiled into the binary.
@@ -36,9 +36,7 @@ pub use catalog::{
 };
 pub use encoders::{build_encoder, write_targets};
 pub use format::Format;
-pub use identify::{
-    identify, identify_with, Identification, Inspection, DETECTION_PREFIX_LEN, INSPECTION_FLOOR,
-};
+pub use identify::{identify, identify_with, Identification, Inspection, DETECTION_PREFIX_LEN};
 pub use support::{
     dialect_provenance, dialect_table, dialects, format_rows, support, DialectEntry,
     DialectProvenance, DialectRow, Disposition, FormatDialects, FormatRow, ReadDisposition,
