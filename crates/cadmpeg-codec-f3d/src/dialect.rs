@@ -312,5 +312,21 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     )
 }
 
+/// Dialect-derived losses implied by a report's final classified layers.
+pub(crate) fn report_dialect_losses(
+    layers: &cadmpeg_core::dialect::DialectLayers,
+) -> Vec<LossNote> {
+    let mut losses = dialect_loss(layers.primary())
+        .into_iter()
+        .collect::<Vec<_>>();
+    losses.extend(
+        layers
+            .iter()
+            .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
+            .filter_map(kernel_dialect_loss),
+    );
+    losses
+}
+
 #[cfg(test)]
 mod tests;

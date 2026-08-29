@@ -13,7 +13,7 @@ use serde_value::Value;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
-use cadmpeg_core::CodecError;
+use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::{Native, NativeRecord};
@@ -81,6 +81,31 @@ pub fn is_f3z(scan: &ContainerScan) -> bool {
     scan.is_multi_document()
 }
 
+/// Inspect the selected model-root member and restate its layers under F3Z.
+pub(crate) fn inspect(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
+        .map_err(|error| {
+            CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+        })?;
+    let (model_root, _) = model_root_member(scan, &manifest.root)?;
+    let root_view = scan.entry_view(&model_root).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "f3z root member {model_root} is not present in the archive"
+        ))
+    })?;
+    let member_scan = crate::container::scan(ctx, root_view)?;
+    let kernel_layers = crate::dialect::kernel_layers(&member_scan);
+    let mut summary = crate::container::summarize(scan, &[]);
+    summary.dialects = Some(
+        DialectLayers::new(scan.dialect.clone(), kernel_layers.matches)
+            .expect("F3D member extras use formats other than the F3Z primary"),
+    );
+    Ok(summary)
+}
+
 /// Decode a scanned `.f3z` archive into one merged document.
 pub fn decode(
     ctx: &DecodeContext<'_>,
@@ -96,26 +121,15 @@ pub fn decode(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let (ir, mut report, mut fidelity) = crate::decode::decode(ctx, root_view)?.into_parts();
+    let (ir, mut report, mut fidelity) = crate::decode::decode_member(ctx, root_view)?.into_parts();
     let member_layers = report
         .dialects
         .take()
         .expect("an F3D member decode reports its primary layer");
-    let old_dialect_losses = dialect_losses(&member_layers);
     let (_, extra) = member_layers.into_parts();
     report.dialects = Some(
         DialectLayers::new(scan.dialect.clone(), extra)
             .expect("F3D member extras use formats other than the F3Z primary"),
-    );
-    replace_dialect_losses(
-        &mut report.losses,
-        old_dialect_losses,
-        dialect_losses(
-            report
-                .dialects
-                .as_ref()
-                .expect("the restated F3Z report is classified"),
-        ),
     );
     fidelity
         .retained_records
@@ -185,64 +199,29 @@ fn finalize_result(
     result
 }
 
-/// Attach a merged component's non-primary layers to the same occurrence
-/// prefix as its losses. The component's primary row is document-local.
+/// Attach a merged component's non-primary layers to its occurrence prefix.
+/// The component's primary row is document-local.
 fn merge_component_layers(
     target: &mut Option<DialectLayers>,
     component: DialectLayers,
     occurrence: &str,
-) -> Vec<cadmpeg_ir::report::LossNote> {
+) {
     let (primary, mut extra) = target
         .take()
         .expect("the parent F3Z report is classified")
         .into_parts();
     let (_, component_extra) = component.into_parts();
-    let mut losses = Vec::new();
     for mut matched in component_extra {
         matched.instance = Some(matched.instance.as_ref().map_or_else(
             || occurrence.to_owned(),
             |nested| format!("{occurrence}/{nested}"),
         ));
-        losses.extend(crate::dialect::kernel_dialect_loss(&matched));
         extra.push(matched);
     }
     *target = Some(
         DialectLayers::new(primary, extra)
             .expect("merged F3D component extras cannot repeat the F3Z primary"),
     );
-    losses
-}
-
-/// Dialect-derived losses implied by the classified layers in one member.
-fn dialect_losses(layers: &DialectLayers) -> Vec<cadmpeg_ir::report::LossNote> {
-    let mut losses = crate::dialect::dialect_loss(layers.primary())
-        .into_iter()
-        .collect::<Vec<_>>();
-    losses.extend(
-        layers
-            .iter()
-            .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
-            .filter_map(crate::dialect::kernel_dialect_loss),
-    );
-    losses
-}
-
-/// Replace the losses derived from old layers with those derived from the
-/// final restated layers. Each old note is removed once so an unrelated equal
-/// note cannot remove more report state than the old classification supplied.
-fn replace_dialect_losses(
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
-    old: Vec<cadmpeg_ir::report::LossNote>,
-    new: Vec<cadmpeg_ir::report::LossNote>,
-) {
-    for old_loss in old {
-        let position = losses
-            .iter()
-            .position(|loss| *loss == old_loss)
-            .expect("a member report contains every loss implied by its dialect layers");
-        losses.remove(position);
-    }
-    losses.extend(new);
 }
 
 fn model_root_member(
@@ -378,7 +357,7 @@ fn merge_references(
                 )));
             continue;
         };
-        let component = match crate::decode::decode(ctx, member_view) {
+        let component = match crate::decode::decode_member(ctx, member_view) {
             Ok(component) => component,
             Err(error) => {
                 parent_report
@@ -436,11 +415,7 @@ fn merge_references(
             .dialects
             .take()
             .expect("an F3D component report is classified");
-        let old_dialect_losses = dialect_losses(&component_layers);
-        replace_dialect_losses(&mut component_report.losses, old_dialect_losses, Vec::new());
-        let component_dialect_losses =
-            merge_component_layers(&mut parent_report.dialects, component_layers, &occurrence);
-        parent_report.losses.extend(component_dialect_losses);
+        merge_component_layers(&mut parent_report.dialects, component_layers, &occurrence);
         for mut loss in component_report.losses {
             loss.message = format!("xref {label}: {}", loss.message);
             parent_report.losses.push(loss);
