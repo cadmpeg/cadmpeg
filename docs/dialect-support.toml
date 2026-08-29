@@ -13,7 +13,8 @@
 #                read      `L0`..`L9`, `detected`, `refused`, or
 #                          `unclassified-recovered`.
 #                write     `verified`, `emitted`, `preserved`, or `none`.
-#                reason    required when `read = "refused"`. Optional
+#                reason    required when `read = "refused"` and references a
+#                          registry id or names an `evidence gap`. Optional
 #                          otherwise.
 #
 # Snapshot-domain gating. A row whose dialect id appears in no checked-in
@@ -527,24 +528,27 @@ dialect = "step:part28-xml"
 read = "refused"
 write = "none"
 reason = """
-`refuse_alternate_encoding` returns NotImplemented before any exchange
-structure exists"""
+`step:part28-xml` is recognized from its XML namespace and root element, but
+the codec implements no Part 28 exchange grammar; `refuse_alternate_encoding`
+returns UnsupportedDialect with that classified row"""
 
 [[support]]
 dialect = "step:ap242-bo-model-xml"
 read = "refused"
 write = "none"
 reason = """
-`refuse_alternate_encoding` returns NotImplemented before any exchange
-structure exists"""
+`step:ap242-bo-model-xml` is recognized from its BO-Model namespace and root,
+but the codec implements no BO-Model graph grammar; `refuse_alternate_encoding`
+returns UnsupportedDialect with that classified row"""
 
 [[support]]
 dialect = "step:part26-hdf5"
 read = "refused"
 write = "none"
 reason = """
-`refuse_alternate_encoding` returns NotImplemented before any exchange
-structure exists"""
+`step:part26-hdf5` is recognized from its HDF5 signature and STEP marker, but
+the codec implements no Part 26 resource mapping; `refuse_alternate_encoding`
+returns UnsupportedDialect with that classified row"""
 
 [[support]]
 dialect = "step:unknown"
@@ -793,8 +797,8 @@ dialect = "nx:unknown"
 read = "refused"
 write = "none"
 reason = """
-refused at the container boundary with WrongFormat, before any report
-exists"""
+`nx:unknown` means neither NX container framing matched. The forced codec path
+returns WrongFormat before a report exists"""
 
 # --------------------------------------------------------------------------
 # creo
@@ -913,7 +917,8 @@ dialect = "sat:unknown"
 read = "refused"
 write = "none"
 reason = """
-`Admission::Refused`, and unreachable: detect reports Confidence::No first"""
+`sat:unknown` means no ASM, ACIS, or text stream framing matched. Detection
+returns Confidence::No and the forced codec path returns WrongFormat"""
 
 # --------------------------------------------------------------------------
 # acis
@@ -990,7 +995,7 @@ dialect = "acis:unknown"
 read = "refused"
 write = "none"
 reason = """
-a kernel stream whose framing markers match no declared row: no header,
+`acis:unknown` is a kernel stream whose framing markers match no declared row: no header,
 terminator, or width selects a record grammar, so there is no strategy
 to attempt. SAT reports it when only the host discriminant frames, and
 F3D reports it for unframed kernel carriers"""
