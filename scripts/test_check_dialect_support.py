@@ -3,8 +3,8 @@
 """Unit tests for ``check-dialect-support.py``.
 
 Every rule the checker enforces is exercised here by synthesizing a pair of
-registries (plus, where the rule needs it, a fixture tree and a golden
-snapshot) that violate exactly that rule, and asserting the matching failure
+registries (plus, where the rule needs it, a golden fixture and snapshot) that
+violate exactly that rule, and asserting the matching failure
 fires. The last tests run the checker against the committed registries and
 require a clean pass.
 """
@@ -46,7 +46,7 @@ discriminants = { marker = "0x02" }
 witness = "spec:Demo specification section 2"
 """
 
-# `demo:one` is fixture-backed and scored; `demo:two` is the fixture-less row.
+# `demo:one` has a golden snapshot domain and is scored; `demo:two` does not.
 GOOD_SUPPORT = """
 [format.demo]
 level = 2
@@ -56,13 +56,11 @@ scored = ["demo:one", "demo:two"]
 dialect = "demo:one"
 read = "L2"
 write = "none"
-fixtures = ["crates/cadmpeg-codec-demo/tests/golden/fixtures/one.demo"]
 
 [[support]]
 dialect = "demo:two"
 read = "detected"
 write = "none"
-fixtures = []
 reason = "no demo two file exists"
 """
 
@@ -152,7 +150,7 @@ class TestFileLevel(SupportCase):
 class TestRowShape(SupportCase):
     def test_missing_required_keys(self):
         failures, _ = self.run_check('[[support]]\ndialect = "demo:one"\n')
-        for key in ("read", "write", "fixtures"):
+        for key in ("read", "write"):
             self.assertTrue(
                 any(f"missing {key}" in failure for failure in failures),
                 f"expected missing {key} in {failures}",
@@ -163,12 +161,6 @@ class TestRowShape(SupportCase):
 
     def test_dialect_not_a_string(self):
         self.assertFires("[[support]]\ndialect = 7\n", "dialect must be a string")
-
-    def test_grammar_must_be_a_non_empty_string(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace('read = "detected"', 'grammar = ""\nread = "detected"'),
-            "grammar must be a non-empty string",
-        )
 
     def test_reason_must_be_a_non_empty_string(self):
         self.assertFires(
@@ -217,7 +209,7 @@ class TestCrossReferences(SupportCase):
         self.assertFires(
             GOOD_SUPPORT
             + '\n[[support]]\ndialect = "demo:three"\nread = "detected"\nwrite = "none"\n'
-            + 'fixtures = []\nreason = "why"\n',
+            + 'reason = "why"\n',
             "no identity row for dialect demo:three",
         )
 
@@ -229,64 +221,20 @@ class TestCrossReferences(SupportCase):
         self.assertFires(
             GOOD_SUPPORT
             + '\n[[support]]\ndialect = "demo:two"\nread = "detected"\nwrite = "none"\n'
-            + 'fixtures = []\nreason = "again"\n',
+            + 'reason = "again"\n',
             "demo:two: 2 support rows; expected one",
         )
 
 
-class TestFixtures(SupportCase):
-    def test_fixtures_not_a_list(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace(f'fixtures = ["{FIXTURE}"]', 'fixtures = "one.demo"'),
-            "fixtures must be a list",
-        )
+class TestSnapshotDomainGating(SupportCase):
+    def test_a_score_with_no_snapshot_domain_is_refused(self):
+        self.assertFires(GOOD_SUPPORT, "no golden snapshot domain", snapshot_id=None)
 
-    def test_fixture_entry_not_a_string(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace(f'fixtures = ["{FIXTURE}"]', "fixtures = [7]"),
-            "fixture entry must be a non-empty string",
-        )
-
-    def test_absolute_fixture_path(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace(FIXTURE, "/etc/passwd"), "fixture must be a repo-relative path"
-        )
-
-    def test_escaping_fixture_path(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace(FIXTURE, "../outside.demo"),
-            "fixture must be a repo-relative path",
-        )
-
-    def test_fixture_file_not_found(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace(FIXTURE, "crates/gone/tests/golden/fixtures/one.demo"),
-            "fixture file not found",
-        )
-
-
-class TestFixtureGating(SupportCase):
-    def test_a_score_with_no_fixtures_is_refused(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace(f'fixtures = ["{FIXTURE}"]', "fixtures = []"),
-            "cannot claim above detected",
-        )
-
-    def test_detected_with_no_fixtures_is_allowed_with_a_reason(self):
+    def test_detected_with_no_snapshot_domain_is_allowed(self):
         self.assertClean(
-            GOOD_SUPPORT.replace('read = "L2"', 'read = "detected"').replace(
-                f'fixtures = ["{FIXTURE}"]', 'fixtures = []\nreason = "no file yet"'
-            ),
-            # No golden pins this dialect, so nothing is owed to the row.
+            GOOD_SUPPORT.replace('read = "L2"', 'read = "detected"'),
             snapshot_id=None,
         )
-
-    def test_a_score_needs_a_fixture_a_snapshot_confirms(self):
-        # The file exists, but no golden snapshot pins any dialect for it.
-        self.assertFires(GOOD_SUPPORT, "no fixture confirmed by a golden", snapshot_id=None)
-
-    def test_a_fixture_pinned_to_another_dialect_is_refused(self):
-        self.assertFires(GOOD_SUPPORT, "decodes to ['demo:two'], not demo:one", snapshot_id="demo:two")
 
     def test_an_inspect_branch_snapshot_confirms_a_fixture(self):
         self.assertClean(
@@ -300,18 +248,22 @@ class TestFixtureGating(SupportCase):
             snapshot_id=None,
         )
 
-    def test_a_pinned_fixture_the_row_omits_is_refused(self):
-        self.assertFires(
+    def test_every_pinned_fixture_joins_the_domain_without_a_registry_list(self):
+        summary = self.assertClean(
             GOOD_SUPPORT,
-            "but the support row does not list it",
             files={
                 FIXTURE: "demo bytes",
                 "crates/cadmpeg-codec-demo/tests/golden/fixtures/second.demo": "more bytes",
+                "crates/cadmpeg-codec-demo/tests/golden/decode/one.json": json.dumps(
+                    {"dialects": [{"dialect": "demo:one"}]}
+                ),
                 "crates/cadmpeg-codec-demo/tests/golden/decode/second.json": json.dumps(
                     {"dialects": [{"dialect": "demo:one"}]}
                 ),
             },
+            snapshot_id=None,
         )
+        self.assertIn("2 golden fixture-domain confirmations", summary)
 
     def test_a_flat_snapshot_layout_confirms_a_fixture(self):
         self.assertClean(
@@ -471,13 +423,7 @@ class TestDeclaredLevelComparisons(SupportCase):
         support = GOOD_SUPPORT.replace('read = "detected"', 'read = "unclassified-recovered"')
         self.assertClean(support, evaluations=TestEvaluations.record())
 
-    def test_empty_fixtures_require_a_reason(self):
-        self.assertFires(
-            GOOD_SUPPORT.replace('reason = "no demo two file exists"', ""),
-            "no fixtures requires a reason",
-        )
-
-    def test_a_refused_row_with_fixtures_still_requires_a_reason(self):
+    def test_a_refused_row_still_requires_a_reason(self):
         self.assertFires(
             GOOD_SUPPORT.replace('read = "L2"', 'read = "refused"'),
             "read refused requires a reason",

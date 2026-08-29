@@ -446,6 +446,7 @@ dependencies = [
  "cadmpeg-ir",
  "crc32fast",
  "serde",
+ "serde_json",
  "thiserror",
  "toml",
 ]

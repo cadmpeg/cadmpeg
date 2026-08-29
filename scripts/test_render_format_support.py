@@ -59,7 +59,6 @@ scored = ["demo:one", "demo:two"]
 dialect = "demo:one"
 read = "L3"
 write = "verified"
-fixtures = ["demo/a.bin", "demo/b.bin"]
 
 [[support]]
 dialect = "demo:two"
@@ -80,19 +79,17 @@ class HeadlineCase(unittest.TestCase):
     """The owner-declared digit is printed without arithmetic."""
 
     def _format(self, *, level: int = 3, evaluated: frozenset[str] = frozenset()):
-        row = renderer.Row("demo:one", "detected", "none", 0)
+        row = renderer.Row("demo:one", "detected", "none")
         return renderer.Format("demo", level, frozenset({"demo:one"}), evaluated, (row,))
 
     def test_headline_is_the_declared_digit(self):
         self.assertEqual(self._format(level=7).headline, "L7")
 
-    def test_unevaluated_detected_cut_row_displays_pending(self):
+    def test_format_section_prints_the_registry_read_cell(self):
         fmt = self._format()
-        self.assertEqual(fmt.displayed_read(fmt.rows[0]), "pending")
-
-    def test_evaluated_detected_cut_row_stays_detected(self):
-        fmt = self._format(evaluated=frozenset({"demo:one"}))
-        self.assertEqual(fmt.displayed_read(fmt.rows[0]), "detected")
+        rendered = renderer.format_section("demo", {"demo": fmt})
+        self.assertIn("detected", rendered)
+        self.assertNotIn("pending", rendered)
 
 
 class SpliceCase(unittest.TestCase):

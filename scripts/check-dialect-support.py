@@ -7,27 +7,23 @@ The identity registry (``docs/dialects.toml``, checked by
 cadmpeg does with each of them, and it changes per commit. It is a sibling
 script rather than a section of the identity checker because its inputs are
 different in kind: the identity checker reads one TOML file, while this one
-reads three TOML files and the fixture tree on disk.
+reads three TOML files and the golden snapshot domains on disk.
 
 The rules, all cross-referencing:
 
 * every ``[[support]]`` row names a dialect the identity registry declares;
 * every identity row has exactly one support row (totality, both ways);
-* every path in ``fixtures`` names a file that exists;
 * **fixture gating** -- a row may not claim a read score (``L0``..``L9``)
-  with zero fixtures. ``detected`` is the honest cell for an unwitnessed
+  with no golden snapshot domain. ``detected`` is the honest cell for an unwitnessed
   dialect, and the resulting unevenness is the output, not a defect;
-* a row that is ``read = "refused"``, or that has no fixtures, carries a
-  ``reason``;
+* a row that is ``read = "refused"`` carries a ``reason``;
 * compiled write-catalog policy is checked in ``cadmpeg-registry`` tests,
   against the embedded identity and support registries.
 
 Fixture self-verification (design section 5, "decode each fixture, read back
-the emitted dialect id") is not done here. It is a Rust duty and lives with
-the per-codec golden suites, whose checked-in decode snapshots pin the
-emitted dialect id per fixture; ``check_snapshot_dialects`` below re-reads
-those snapshots and compares them with this registry, which is the Python
-half of the same guarantee.
+the emitted dialect id") is a Rust duty and lives with the per-codec golden
+suites. This checker derives each dialect's snapshot domain from those
+checked-in results and uses it directly as the read-score gate.
 
 Run ``--self-test`` to execute the synthesized-violation suite in
 ``scripts/test_check_dialect_support.py``; every rule below fires there.
@@ -51,8 +47,8 @@ SUPPORT_REL = Path("docs") / "dialect-support.toml"
 EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 SELF_TEST_REL = Path("scripts") / "test_check_dialect_support.py"
 
-ROW_KEYS = frozenset({"dialect", "grammar", "read", "write", "fixtures", "reason"})
-REQUIRED_ROW_KEYS = ("dialect", "read", "write", "fixtures")
+ROW_KEYS = frozenset({"dialect", "read", "write", "reason"})
+REQUIRED_ROW_KEYS = ("dialect", "read", "write")
 FORMAT_KEYS = frozenset({"level", "scored"})
 REQUIRED_FORMAT_KEYS = ("level", "scored")
 EVALUATION_KEYS = frozenset({"dialect", "date", "level", "files", "result"})
@@ -61,7 +57,7 @@ REGISTRY_ONLY_FORMATS = frozenset({"acis", "parasolid"})
 PATH_LIKE = re.compile(r"(?:[/\\]|(?:^|\s)\.\.?(?:[/\\]|$)|\b[A-Za-z]:[/\\])")
 
 # `L0`..`L9` are the ladder; the other three are the non-score dispositions
-# (design section 6.2). `detected` is the floor a fixture-less row may claim.
+# (design section 6.2). `detected` is the floor an unwitnessed row may claim.
 READ_SCORES = frozenset(f"L{n}" for n in range(10))
 READ_OTHER = frozenset({"detected", "refused", "unclassified-recovered"})
 READ_VALUES = READ_SCORES | READ_OTHER
@@ -92,7 +88,13 @@ def _load(path: Path, label: str, failures: list[str]) -> dict | None:
 # --------------------------------------------------------------------------
 
 
-def check_row(row: object, index: int, known: set[str], root: Path, failures: list[str]):
+def check_row(
+    row: object,
+    index: int,
+    known: set[str],
+    snapshot_domains: dict[str, list[str]],
+    failures: list[str],
+):
     """Validate one ``[[support]]`` row. Returns ``(dialect id, read, write)``."""
     if not _is_table(row):
         failures.append(f"support #{index}: not a table")
@@ -125,50 +127,22 @@ def check_row(row: object, index: int, known: set[str], root: Path, failures: li
         failures.append(f"{label}: write must be one of verified, emitted, preserved, none")
         write = None
 
-    if "grammar" in row and (not isinstance(row["grammar"], str) or not row["grammar"].strip()):
-        failures.append(f"{label}: grammar must be a non-empty string")
-
     reason = row.get("reason")
     if "reason" in row and (not isinstance(reason, str) or not reason.strip()):
         failures.append(f"{label}: reason must be a non-empty string")
         reason = None
 
-    fixtures = check_fixtures(label, row.get("fixtures"), root, failures)
-
-    # Fixture gating. A score is a claim about decoded files; with no file the
-    # claim has no evidence, and `detected` is the honest cell.
-    if read in READ_SCORES and not fixtures:
-        failures.append(f"{label}: read {read} with no fixtures; a fixture-less row cannot claim above detected")
+    # Snapshot-domain gating. A score is a claim about decoded files; without
+    # a golden result that emits this dialect, `detected` is the honest cell.
+    if read in READ_SCORES and dialect_id not in snapshot_domains:
+        failures.append(
+            f"{label}: read {read} with no golden snapshot domain; "
+            "an unwitnessed row cannot claim above detected"
+        )
 
     if read == "refused" and not (isinstance(reason, str) and reason.strip()):
         failures.append(f"{label}: read refused requires a reason")
-    if "fixtures" in row and not fixtures and not (isinstance(reason, str) and reason.strip()):
-        failures.append(f"{label}: no fixtures requires a reason")
-
     return dialect_id, read, write
-
-
-def check_fixtures(label: str, fixtures: object, root: Path, failures: list[str]) -> list[str]:
-    """Validate the ``fixtures`` list and return the paths that parsed."""
-    if fixtures is None:
-        return []
-    if not isinstance(fixtures, list):
-        failures.append(f"{label}: fixtures must be a list of repo-relative paths")
-        return []
-    paths: list[str] = []
-    for entry in fixtures:
-        if not isinstance(entry, str) or not entry.strip():
-            failures.append(f"{label}: fixture entry must be a non-empty string")
-            continue
-        path = Path(entry)
-        if path.is_absolute() or ".." in path.parts:
-            failures.append(f"{label}: fixture must be a repo-relative path: {entry}")
-            continue
-        if not (root / path).is_file():
-            failures.append(f"{label}: fixture file not found: {entry}")
-            continue
-        paths.append(entry)
-    return paths
 
 
 def check_totality(known: set[str], covered: Counter[str], failures: list[str]) -> None:
@@ -374,56 +348,13 @@ def _walk_dialect_ids(node: object) -> set[str]:
     return ids
 
 
-def check_snapshot_dialects(
-    root: Path,
-    fixtures_by_dialect: dict[str, list[str]],
-    reads: dict[str, object],
-    failures: list[str],
-) -> int:
-    """A fixture listed under a dialect must decode to that dialect.
-
-    The oracle is the codec's own checked-in golden snapshot, which pins the
-    dialect id the decoder emitted. This is the Python half of design section
-    5's "decode each fixture, read back the emitted dialect id": the Rust half
-    is the golden harness itself, which re-decodes every frozen fixture and
-    compares it with the snapshot on every test run.
-
-    Three rules fire here. A listed fixture whose snapshot pins a different id
-    is a failure. A row claiming a read score must have at least one fixture
-    that is pinned at all -- otherwise an arbitrary file on disk would satisfy
-    the fixture gate without any decoder ever confirming its dialect. And the
-    listing is complete in the other direction too: a fixture a golden suite
-    already pins to a dialect must appear under that dialect's row, so the
-    evidence column cannot quietly fall behind the suites that produce it.
-    """
-    pinned = snapshot_dialects(root)
-    checked = 0
-    for dialect_id, paths in sorted(fixtures_by_dialect.items()):
-        confirmed = 0
-        for path in paths:
-            emitted = pinned.get(path)
-            if emitted is None:
-                continue
-            if dialect_id in emitted:
-                confirmed += 1
-                checked += 1
-            else:
-                failures.append(
-                    f"{dialect_id}: fixture {path} decodes to {sorted(emitted)}, not {dialect_id}"
-                )
-        if reads.get(dialect_id) in READ_SCORES and confirmed == 0:
-            failures.append(
-                f"{dialect_id}: read {reads[dialect_id]} with no fixture confirmed by a golden "
-                "snapshot; a score needs a decoder that reads this id back"
-            )
-    for path, emitted in sorted(pinned.items()):
-        for dialect_id in sorted(emitted):
-            if dialect_id in fixtures_by_dialect and path not in fixtures_by_dialect[dialect_id]:
-                failures.append(
-                    f"{dialect_id}: a golden snapshot pins {path} to this dialect, "
-                    "but the support row does not list it"
-                )
-    return checked
+def snapshot_domains(root: Path) -> dict[str, list[str]]:
+    """Return the golden fixture paths that emit each dialect id."""
+    domains: dict[str, list[str]] = {}
+    for path, dialects in sorted(snapshot_dialects(root).items()):
+        for dialect_id in sorted(dialects):
+            domains.setdefault(dialect_id, []).append(path)
+    return domains
 
 
 # --------------------------------------------------------------------------
@@ -452,6 +383,7 @@ def check(root: Path) -> tuple[list[str], str]:
 
     formats = check_formats(support.get("format"), known, failures)
     evaluations = check_evaluations(evaluations_doc, known, failures)
+    domains = snapshot_domains(root)
 
     rows = support.get("support")
     if rows is None:
@@ -464,34 +396,26 @@ def check(root: Path) -> tuple[list[str], str]:
     covered: Counter[str] = Counter()
     writes: dict[str, object] = {}
     reads: dict[str, object] = {}
-    fixtures_by_dialect: dict[str, list[str]] = {}
     tally: Counter[str] = Counter()
-    fixture_total = 0
     for index, row in enumerate(rows):
-        dialect_id, read, write = check_row(row, index, known, root, failures)
+        dialect_id, read, write = check_row(row, index, known, domains, failures)
         if dialect_id is None:
             continue
         covered[dialect_id] += 1
         writes[dialect_id] = write
         reads[dialect_id] = read
-        listed = row.get("fixtures")
-        if isinstance(listed, list):
-            paths = [e for e in listed if isinstance(e, str)]
-            fixtures_by_dialect[dialect_id] = paths
-            fixture_total += len(paths)
         if isinstance(read, str):
             tally[read] += 1
 
     check_totality(known, covered, failures)
     check_declared_levels(formats, reads, evaluations, failures)
-    verified = check_snapshot_dialects(root, fixtures_by_dialect, reads, failures)
-
     scored = sum(n for value, n in tally.items() if value in READ_SCORES)
+    fixture_total = sum(len(paths) for paths in domains.values())
     summary = (
         f"dialect-support: ok ({len(rows)} rows covering {len(known)} identity rows; "
         f"{scored} scored, {tally['detected']} detected, {tally['refused']} refused, "
         f"{tally['unclassified-recovered']} unclassified-recovered; "
-        f"{fixture_total} fixtures, {verified} confirmed against golden decode snapshots; "
+        f"{fixture_total} golden fixture-domain confirmations; "
         f"{sum(1 for value in writes.values() if value == 'preserved')} preserved)"
     )
     return failures, summary

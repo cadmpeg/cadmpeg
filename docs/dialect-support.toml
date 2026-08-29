@@ -13,25 +13,14 @@
 #                read      `L0`..`L9`, `detected`, `refused`, or
 #                          `unclassified-recovered`.
 #                write     `verified`, `emitted`, `preserved`, or `none`.
-#                fixtures  repo-relative paths to files this row decodes.
-#                          Every path must exist.
-#                reason    required when `read = "refused"` or `fixtures` is
-#                          empty. Optional otherwise.
-#                grammar   optional grammar class, recorded only where the
-#                          codec's own code names one.
+#                reason    required when `read = "refused"`. Optional
+#                          otherwise.
 #
-# Fixture gating. A row with zero fixtures cannot claim a read score: the
-# floor for an unwitnessed dialect is `detected`. The gate is not advisory --
-# where it contradicts a prose score in `docs/format-support.md`, the cell
-# says `detected` and the reason says why. The unevenness this exposes is the
-# output of the table, not a defect in it. The count is self-verifying: each
-# listed fixture is a frozen input of a per-codec golden suite whose
-# checked-in snapshot pins the dialect id the decoder emitted for it, and
-# `check_snapshot_dialects` compares the two. A path with no such snapshot
-# cannot be smuggled in as evidence, and the listing is complete in the other
-# direction too: a fixture a golden suite already pins to a dialect must
-# appear under that dialect's row, so the evidence column cannot fall behind
-# the suites that produce it.
+# Snapshot-domain gating. A row whose dialect id appears in no checked-in
+# golden snapshot cannot claim a read score: the floor for an unwitnessed
+# dialect is `detected`. The checker derives each domain from the golden
+# harness fixture roots and snapshots. The registry does not duplicate that
+# derived set.
 #
 # How the read cell is chosen.
 #
@@ -49,8 +38,7 @@
 #   rows that level covers. A fixture-backed read level or a maintainer
 #   evaluation below the declared level is a contradiction. An absent fixture
 #   or evaluation does not contradict the level. The renderer prints the
-#   declared level and derives `pending` for a scored `detected` row that has
-#   neither fixture nor evaluation evidence.
+#   declared level and prints each row's read cell verbatim.
 #
 # How the write cell is chosen. There are two write capabilities, and the
 # column never conflates them.
@@ -167,10 +155,8 @@ scored = ["sat:text"]
 
 [[support]]
 dialect = "iges:1.0-fixed-ascii"
-grammar = "fixed-ascii"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
@@ -184,10 +170,8 @@ refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:ansi-y14.26m-1981-fixed-ascii"
-grammar = "fixed-ascii"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
@@ -201,12 +185,8 @@ refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:2.0-fixed-ascii"
-grammar = "fixed-ascii"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = [
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/legacy_2_0_fixed_ascii.igs",
-]
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
@@ -228,10 +208,8 @@ refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:3.0-fixed-ascii"
-grammar = "fixed-ascii"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
@@ -245,10 +223,8 @@ refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:asme-ansi-y14.26m-1987-fixed-ascii"
-grammar = "fixed-ascii"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
@@ -262,10 +238,8 @@ refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:4.0-fixed-ascii"
-grammar = "fixed-ascii"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 decoded against its own verified Global table and exported as write target
 4.0, but no fixture declares this version; the profile's L9 has no per-
@@ -273,10 +247,8 @@ dialect evidence here"""
 
 [[support]]
 dialect = "iges:asme-y14.26m-1989-fixed-ascii"
-grammar = "fixed-ascii"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = []
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
@@ -290,10 +262,8 @@ refuses rather than synthesizing"""
 
 [[support]]
 dialect = "iges:5.0-fixed-ascii"
-grammar = "fixed-ascii"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 decoded against its own verified Global table and exported as write target
 5.0, but no fixture declares this version; the profile's L9 has no per-
@@ -301,10 +271,8 @@ dialect evidence here"""
 
 [[support]]
 dialect = "iges:5.1-fixed-ascii"
-grammar = "fixed-ascii"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 decoded against its own verified Global table and exported as write target
 5.1, but no fixture declares this version; the profile's L9 has no per-
@@ -312,10 +280,8 @@ dialect evidence here"""
 
 [[support]]
 dialect = "iges:5.2-fixed-ascii"
-grammar = "fixed-ascii"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 decoded against its own verified Global table and exported as write target
 5.2, but no fixture declares this version; the profile's L9 has no per-
@@ -323,96 +289,13 @@ dialect evidence here"""
 
 [[support]]
 dialect = "iges:5.3-fixed-ascii"
-grammar = "fixed-ascii"
 read = "L9"
 write = "verified"
-fixtures = [
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_cone_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_cylinder_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_plane_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_sphere_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_torus_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/associativity_definition.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/attribute_definition_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/attribute_instance_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/bounded_associativity_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/bounded_plane.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/colored_explicit_vertex_loop.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/composite_curve.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/conic_ellipse.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/conic_hyperbola.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/conic_parabola.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/connected_network_subfigure.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/copious_linear_path.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/copious_points_vectors.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/copious_witness_line.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/definition_levels.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/dimension_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/direction.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/drawing_with_properties.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_cylinder_seam.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_multi_pcurve_loop.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_non_manifold_open_shell.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_open_shell.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_tetrahedron_solid.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_tetrahedron_solid_with_boolean.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_vertex_loop.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/external_reference_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/flow_associativity_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/function_offset_line.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/group_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/leader_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/legacy_dimension_and_label_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/line.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/line_font_definitions.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/linear_offset_line.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/mixed_analytic_composite_curve.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/multi_pcurve_boundary.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/nested_subfigure.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/nested_transformed_point.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/network_subfigure.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/null_entity.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/nurbs_curve.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/nurbs_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/offset_plane.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/parameter_domain_trimmed_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/parametric_spline_curve.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/parametric_spline_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/parametrically_bounded_plane.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/patterned_instance.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/placed_surface_of_revolution.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/plane.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/point.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/primitive_solids.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/procedural_and_boolean_solids.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/product_property.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/ruled_surface.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/scalar_property_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/solid_assembly.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/solid_instance.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/surface_of_revolution.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/symbol_and_sectioned_area.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/tabulated_cylinder.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/text_annotation.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/text_display_template_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/text_font_definition.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/trimmed_plane.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/trimmed_plane_inner_loop.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/uniform_offset_circle.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/units_data.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/variable_schema_property_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/view_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/view_visibility_forms.igs",
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/weighted_line.igs",
-]
 
 [[support]]
 dialect = "iges:4.0-compressed-ascii"
-grammar = "compressed-ascii"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
 profile calls this a separate envelope and states no score for it. Write
@@ -424,10 +307,8 @@ row is absent from the synthesis catalog by construction
 
 [[support]]
 dialect = "iges:5.0-compressed-ascii"
-grammar = "compressed-ascii"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
 profile calls this a separate envelope and states no score for it. Write
@@ -439,10 +320,8 @@ row is absent from the synthesis catalog by construction
 
 [[support]]
 dialect = "iges:5.1-compressed-ascii"
-grammar = "compressed-ascii"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
 profile calls this a separate envelope and states no score for it. Write
@@ -454,10 +333,8 @@ row is absent from the synthesis catalog by construction
 
 [[support]]
 dialect = "iges:5.2-compressed-ascii"
-grammar = "compressed-ascii"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `compressed.rs`, but no Compressed ASCII fixture exists; the
 profile calls this a separate envelope and states no score for it. Write
@@ -469,12 +346,8 @@ row is absent from the synthesis catalog by construction
 
 [[support]]
 dialect = "iges:5.3-compressed-ascii"
-grammar = "compressed-ascii"
 read = "L1"
 write = "preserved"
-fixtures = [
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/compressed_ascii_5_3.igs",
-]
 reason = """
 L1 is what the fixture demonstrates, not the Fixed ASCII band's score.
 `compressed_ascii_5_3.igs` carries the C flag card, the shared Start and
@@ -495,10 +368,8 @@ this row on that path"""
 
 [[support]]
 dialect = "iges:4.0-binary"
-grammar = "binary"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
 this a separate envelope and states no score for it. Write is preservation
@@ -509,10 +380,8 @@ catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.0-binary"
-grammar = "binary"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
 this a separate envelope and states no score for it. Write is preservation
@@ -523,10 +392,8 @@ catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.1-binary"
-grammar = "binary"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
 this a separate envelope and states no score for it. Write is preservation
@@ -537,10 +404,8 @@ catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.2-binary"
-grammar = "binary"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
 this a separate envelope and states no score for it. Write is preservation
@@ -551,10 +416,8 @@ catalog by construction (`dialect.rs:41-47`)"""
 
 [[support]]
 dialect = "iges:5.3-binary"
-grammar = "binary"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded by `binary.rs`, but no Binary fixture exists; the profile calls
 this a separate envelope and states no score for it. Write is preservation
@@ -567,9 +430,6 @@ catalog by construction (`dialect.rs:41-47`)"""
 dialect = "iges:unknown"
 read = "unclassified-recovered"
 write = "preserved"
-fixtures = [
-  "crates/cadmpeg-codec-iges/tests/golden/fixtures/unknown_version_flag_99.igs",
-]
 reason = """
 a version flag outside the declared table (12, 99, or an unreadable field
 23); read with the nearest verified row's Global table.
@@ -592,12 +452,8 @@ filter, so a source that classifies here replays its own bytes under
 
 [[support]]
 dialect = "step:ap203-e1"
-grammar = "part21"
 read = "L9"
 write = "verified"
-fixtures = [
-  "crates/cadmpeg-codec-step/tests/fixtures/ap203_sheet.p21",
-]
 reason = """
 `tests/golden/encode/ap203_sheet.json` freezes the bytes an `Inherit`
 request writes for this row, with `FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'))`
@@ -608,22 +464,16 @@ puts the written bytes back through the classifier"""
 
 [[support]]
 dialect = "step:ap203-e2"
-grammar = "part21"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 decoded and exported as write target ap203e2, but no fixture declares this
 schema"""
 
 [[support]]
 dialect = "step:ap214"
-grammar = "part21"
 read = "L9"
 write = "verified"
-fixtures = [
-  "crates/cadmpeg-codec-step/tests/fixtures/ap214_sheet.p21",
-]
 reason = """
 the catalog default. All four encode goldens freeze an `explicit_default`
 arm writing this row -- from an ap203-e1, an ap214, an ap242-e2, and an
@@ -634,24 +484,8 @@ reaching the same row from a source that declares it"""
 
 [[support]]
 dialect = "step:ap242"
-grammar = "part21"
 read = "L9"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_assembly.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_conversion_units.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_degree_cone.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_external_documents.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_geometric_set.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_geometry.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_mapped_assembly.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_occurrence_mapped_assembly.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_presentation_pmi.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_semantic_pmi.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_tessellation.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_vertex_loop.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/complex_instance.p21",
-]
 reason = """
 a read-side row: a header with no schema object identifier has no write
 target, because the writer always declares an edition. The `inherit` arm of
@@ -661,22 +495,16 @@ rather than silently writing an edition the source never declared"""
 
 [[support]]
 dialect = "step:ap242-e1"
-grammar = "part21"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 decoded and exported as write target ap242e1, but no fixture declares this
 schema"""
 
 [[support]]
 dialect = "step:ap242-e2"
-grammar = "part21"
 read = "L9"
 write = "verified"
-fixtures = [
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_minimal.p21",
-]
 reason = """
 `tests/golden/encode/ap242_minimal.json` freezes the `Inherit` arm writing
 `FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF
@@ -686,10 +514,8 @@ in one artifact"""
 
 [[support]]
 dialect = "step:ap242-e3"
-grammar = "part21"
 read = "detected"
 write = "verified"
-fixtures = []
 reason = """
 no fixture declares this schema, so the read cell stays `detected`. The
 write cell is separate evidence: all four encode goldens freeze an
@@ -700,44 +526,32 @@ from four different source rows"""
 
 [[support]]
 dialect = "step:part28-xml"
-grammar = "part28-xml"
 read = "refused"
 write = "none"
-fixtures = []
 reason = """
 `refuse_alternate_encoding` returns NotImplemented before any exchange
 structure exists"""
 
 [[support]]
 dialect = "step:ap242-bo-model-xml"
-grammar = "bo-model-xml"
 read = "refused"
 write = "none"
-fixtures = []
 reason = """
 `refuse_alternate_encoding` returns NotImplemented before any exchange
 structure exists"""
 
 [[support]]
 dialect = "step:part26-hdf5"
-grammar = "part26-hdf5"
 read = "refused"
 write = "none"
-fixtures = []
 reason = """
 `refuse_alternate_encoding` returns NotImplemented before any exchange
 structure exists"""
 
 [[support]]
 dialect = "step:unknown"
-grammar = "part21"
 read = "unclassified-recovered"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/noncanonical_solid_angle.p21",
-  "crates/cadmpeg-codec-step/tests/fixtures/strings.p21",
-]
 reason = """
 an unrecognized schema identifier, read with the AP242 edition 3 strategy"""
 
@@ -747,12 +561,8 @@ an unrecognized schema identifier, read with the AP242 edition 3 strategy"""
 
 [[support]]
 dialect = "rhino:archive-1"
-grammar = "flat-legacy-record"
 read = "detected"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v1.3dm",
-]
 reason = """
 decoded through the legacy flat-record path; the profile states it does
 not reach L1, and the one fixture pins the row at inspect while decode
@@ -760,37 +570,25 @@ refuses the truncated body"""
 
 [[support]]
 dialect = "rhino:archive-2"
-grammar = "chunked"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 inside the profile's L1 chunked band, but no archive 2 fixture exists"""
 
 [[support]]
 dialect = "rhino:archive-3"
-grammar = "chunked"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v3.3dm",
-]
 
 [[support]]
 dialect = "rhino:archive-4"
-grammar = "chunked"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v4.3dm",
-]
 
 [[support]]
 dialect = "rhino:archive-5"
-grammar = "chunked"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 the decoder attempts the same four-byte chunk-value scan used for archive words
 2 through 4 and admits the declared row. No frozen fixture exists, so the row
@@ -798,75 +596,35 @@ cannot claim a score"""
 
 [[support]]
 dialect = "rhino:archive-50"
-grammar = "chunked"
 read = "L1"
 write = "emitted"
-fixtures = [
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/arc.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/brep.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/brep_singular_seam.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/circle.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/curves_mixed.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/extrusion.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/extrusion_hole.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/line.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/mesh_v1_0.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/mesh_v3_5.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/nurbs_curve.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/point.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/point_cloud.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/polycurve.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/polyline.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/rev_surface.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v50.3dm",
-]
 
 [[support]]
 dialect = "rhino:archive-60"
-grammar = "chunked"
 read = "L1"
 write = "emitted"
-fixtures = [
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/instance_reference_expanded.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/instance_reference_retained.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/mesh_v3_8.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v60.3dm",
-]
 
 [[support]]
 dialect = "rhino:archive-70"
-grammar = "chunked"
 read = "L1"
 write = "emitted"
-fixtures = [
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v70.3dm",
-]
 
 [[support]]
 dialect = "rhino:archive-80"
-grammar = "chunked"
 read = "L1"
 write = "emitted"
-fixtures = [
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/generated_point.3dm",
-  "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v80.3dm",
-]
 
 [[support]]
 dialect = "rhino:archive-90"
-grammar = "chunked"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 inside the profile's L1 chunked band, but no archive 90 fixture exists"""
 
 [[support]]
 dialect = "rhino:unknown"
-grammar = "chunked"
 read = "unclassified-recovered"
 write = "none"
-fixtures = []
 reason = """
 an archive word outside the declared set is read with the chunked scan words 2
 through 90 share, on the strategy `rhino:archive-90` declares;
@@ -880,10 +638,8 @@ the codec's own suite, not by this table"""
 
 [[support]]
 dialect = "fcstd:schema-2"
-grammar = "features-vocabulary"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 admitted for decode as a separate legacy profile and never synthesized; no
 schema 2 fixture exists, so the row cannot claim a score. It is written on
@@ -898,10 +654,8 @@ byte-identical"""
 
 [[support]]
 dialect = "fcstd:schema-3"
-grammar = "objects-vocabulary"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 admitted for decode as a separate legacy profile and never synthesized; no
 schema 3 fixture exists, so the row cannot claim a score. It is written on
@@ -913,29 +667,13 @@ schema 4 cover the branch"""
 
 [[support]]
 dialect = "fcstd:schema-4"
-grammar = "objects-vocabulary"
 read = "L5"
 write = "verified"
-fixtures = [
-  "corpus/freecad_fcstd/fixtures/application_payloads.FCStd",
-  "corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd",
-  "corpus/freecad_fcstd/fixtures/core_design_product.FCStd",
-  "corpus/freecad_fcstd/fixtures/core_operations.FCStd",
-  "corpus/freecad_fcstd/fixtures/design_history.FCStd",
-  "corpus/freecad_fcstd/fixtures/external_component.FCStd",
-  "corpus/freecad_fcstd/fixtures/geometry_topology.FCStd",
-  "corpus/freecad_fcstd/fixtures/gui_appearance.FCStd",
-  "corpus/freecad_fcstd/fixtures/product_assembly.FCStd",
-  "corpus/freecad_fcstd/fixtures/sketch_conics.FCStd",
-  "corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd",
-  "corpus/freecad_fcstd/fixtures/techdraw_annotations.FCStd",
-]
 
 [[support]]
 dialect = "fcstd:unknown"
 read = "unclassified-recovered"
 write = "none"
-fixtures = []
 reason = """
 an undeclared schema version, read with the schema 4 strategy; no fixture
 exists"""
@@ -946,10 +684,8 @@ exists"""
 
 [[support]]
 dialect = "sldprt:sw-version-pre-12000"
-grammar = "form-code-padding-4"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded with four-byte form-code padding, but every golden fixture
 declares no swVersion, so the profile's L4 has no fixture-backed row on
@@ -966,10 +702,8 @@ covers operation decoding with four-byte padding"""
 
 [[support]]
 dialect = "sldprt:sw-version-12000-plus"
-grammar = "form-code-padding-8"
 read = "detected"
 write = "preserved"
-fixtures = []
 reason = """
 decoded with eight-byte form-code padding, but no fixture declares a
 swVersion. Write is preservation only, by the same whole-file replay and
@@ -983,28 +717,6 @@ covers operation decoding with eight-byte padding"""
 dialect = "sldprt:unknown"
 read = "unclassified-recovered"
 write = "emitted"
-fixtures = [
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/analytic_cylinder.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/analytic_planar.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/analytic_sphere.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/body_display_list.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/body_history.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/body_material.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/colliding_sites.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/compressed_nested_sketch.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/container_metadata.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/document_envelope.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_arc_sketch.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_circular_sketch.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_elliptical_sketch.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_nurbs_sketches.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_sketch_profile.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nurbs_curve_surface.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nurbs_surface.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/partition_and_deltas.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/pmi_semantic_dimension.sldprt",
-  "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/resolved_features.sldprt",
-]
 reason = """
 the container declares no swVersion, so the padding filter is not applied
 and candidates must agree; this is the row every golden fixture and the
@@ -1018,69 +730,36 @@ sole write target carry"""
 dialect = "catia:standard-nested"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_cylinder_surface_curve.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_guide_curve.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_nurbs_surface_curve.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/standard_a5_rolling_ball.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/standard_part.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/tetrahedron_topology.catpart",
-]
 
 [[support]]
 dialect = "catia:fbb-only"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/fbb_only_fallthrough.catpart",
-]
 
 [[support]]
 dialect = "catia:e5-stream"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/e5_circle.catpart",
-]
 
 [[support]]
 dialect = "catia:zero-entity"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/zero_entity_cylinder.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/zero_entity_markers.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/zero_entity_nurbs.catpart",
-]
 
 [[support]]
 dialect = "catia:float-packed-inner-no-fbb"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_a5_surface.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_a8_nurbs.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_a8_rolling_ball.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_b2_cone.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_b5_topology.catpart",
-]
 
 [[support]]
 dialect = "catia:inner-no-directory"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_directory_a8_nurbs.catpart",
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_directory_b2_cylinder.catpart",
-]
 
 [[support]]
 dialect = "catia:unknown"
 read = "unclassified-recovered"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directory_only.catpart",
-]
 reason = """
 a storage family outside the declared set; decoded to metadata IR with a
 self-referential nearest"""
@@ -1091,20 +770,16 @@ self-referential nearest"""
 
 [[support]]
 dialect = "nx:splmsstr"
-grammar = "splmsstr"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded, and every golden pins this row, but the NX goldens are code-
 built: no SPLMSSTR file on disk backs the profile's L2"""
 
 [[support]]
 dialect = "nx:legacy-cfb"
-grammar = "cfb"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded through the same bounded entry interface. The golden
 `legacy_cfb_with_ug_part` now pins the row at both inspect and decode:
@@ -1112,15 +787,13 @@ decoded through the same bounded entry interface. The golden
 version 0x32, 2 directory entries`, three entries at the roles `directory`,
 `part-payload`, and `parasolid-stream`, one retained record, and a blocking
 `geometry.not-transferred` loss. That is what L1 asks for, but the cell
-stays `detected`: the fixture gate counts files on disk, and this input is
-code-built like every other NX golden, so there is no path the `fixtures`
-column could name"""
+stays `detected`: the snapshot-domain gate maps frozen input files by golden
+basename, and this input is code-built like every other NX golden"""
 
 [[support]]
 dialect = "nx:unknown"
 read = "refused"
 write = "none"
-fixtures = []
 reason = """
 refused at the container boundary with WrongFormat, before any report
 exists"""
@@ -1131,36 +804,18 @@ exists"""
 
 [[support]]
 dialect = "creo:depdb"
-grammar = "depdb"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/depdb_recipe_history.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/feature_dimensions.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/relation_model_name.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/relation_unit_declarations.prt",
-]
 
 [[support]]
 dialect = "creo:nd"
-grammar = "nd"
 read = "L1"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/interpolation_spline_prototype.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/line_extrusion_plane.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/named_cylinder_prototype.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/named_torus_two_direction_prototype.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/nd_visibgeom_layout.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/paired_sphere_envelopes.prt",
-]
 
 [[support]]
 dialect = "creo:legacy-ascii"
-grammar = "legacy-ascii"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded and asserted at classify level in `dialect/tests.rs`, but no
 legacy ASCII fixture exists"""
@@ -1169,26 +824,6 @@ legacy ASCII fixture exists"""
 dialect = "creo:unknown"
 read = "unclassified-recovered"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/axis_aligned_plane.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/class_911_hole.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/classified_sections.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/closed_plane_intersection_brep.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/datum_history_merge.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/datum_plane_carrier.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/featdefs_sketch_variables.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/geometryless_preserved_sections.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/mdlstatus_feature_history.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/native_model_name.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/positional_cylinder.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/positional_torus.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/surface_parameter_slots.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/thumbnail_jpeg.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/type26_five_coordinate_envelope.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/type26_split_coordinate_envelope.prt",
-  "crates/cadmpeg-codec-creo/tests/golden/fixtures/unix_compress_solidprimdata.prt",
-]
 reason = """
 no ND or DEPDB layout marker; read with a self-referential nearest, which
 is the row most golden fixtures carry"""
@@ -1199,79 +834,13 @@ is the row most golden fixtures carry"""
 
 [[support]]
 dialect = "f3d:manifest-3-2-0-0"
-grammar = "top-level-manifest"
 read = "L4"
 write = "verified"
-fixtures = [
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/attributes.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/binaryfile4.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/binaryfile4_nurbs.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/body_color.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/body_transform.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/compound_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/compound_loft_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/container_metadata_only.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/cyl_spline_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/deformable_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/degenerate_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_appearances_protein.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_base_feature.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_base_flange.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_configuration.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_copy_paste.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_copy_paste_bodies.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_form.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_remove_body.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_surface_stitch.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/exact_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/exact_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/face_color.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/free_vertex_body.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/g2_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/generated_unit_cube.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/helix_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/helix_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/history.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/law_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/law_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/loft_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/mesh_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/mixed_face_wire_body.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/net_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/offset_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_inline.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_rational.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_ref.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/projection_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/revolution_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/rolling_ball_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/ruled_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/scaled_compound_loft_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/silhouette_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sketch_link.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/skin_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/spring_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sub_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/subset_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sum_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/surface_intersection_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/surface_offset_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sweep_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/taper_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/topology_base.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/tspline_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/variable_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/vertex_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/wire_body.f3d",
-]
 
 [[support]]
 dialect = "f3d:f3z-multi-document"
-grammar = "f3z-multi-document"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded and asserted end to end in `f3z/tests.rs`, but no F3Z archive
 fixture exists"""
@@ -1280,7 +849,6 @@ fixture exists"""
 dialect = "f3d:unknown"
 read = "unclassified-recovered"
 write = "none"
-fixtures = []
 reason = """
 `manifest::parse_top_level` parses any readable version with the 3-2-0-0
 layout, so a document that declares another version and fits that layout is
@@ -1295,10 +863,8 @@ cause. No .f3d file of another generation is in the repository"""
 
 [[support]]
 dialect = "inventor:cfb3-rse31-meta8"
-grammar = "rse31-meta8"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded, and the golden pins this row, but the Inventor goldens are code-
 built: no .ipt or .iam file exists in the repository, so the profile's L1
@@ -1308,7 +874,6 @@ has no fixture"""
 dialect = "inventor:unknown"
 read = "unclassified-recovered"
 write = "none"
-fixtures = []
 reason = """
 an RSeDb schema or Meta Stream version other than 31/8, read with the
 primary row's strategy; the golden that pins it is code-built"""
@@ -1319,20 +884,16 @@ primary row's strategy; the golden that pins it is code-built"""
 
 [[support]]
 dialect = "sat:asm-binary"
-grammar = "asm-binary"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded at any save format, and the golden pins this row, but the SAT
 goldens are code-built: no stream file on disk backs the profile's L3"""
 
 [[support]]
 dialect = "sat:acis-binary"
-grammar = "acis-binary"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded at every save format: majors 217 and 218 are Admitted, and any
 other band is read with the nearer of those two grammars under
@@ -1341,10 +902,8 @@ The golden that pins it is code-built"""
 
 [[support]]
 dialect = "sat:text"
-grammar = "text"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 decoded at any save format under either terminator; an End-of-ACIS-data
 stream outside majors 217 and 218 is `Admission::AdmittedUnverified` with
@@ -1355,7 +914,6 @@ built"""
 dialect = "sat:unknown"
 read = "refused"
 write = "none"
-fixtures = []
 reason = """
 `Admission::Refused`, and unreachable: detect reports Confidence::No first"""
 
@@ -1367,10 +925,6 @@ reason = """
 dialect = "acis:asm-binaryfile-4"
 read = "detected"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/binaryfile4.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/binaryfile4_nurbs.f3d",
-]
 reason = """
 admitted at every save format: the ASM record decoders compare none. F3D and
 Inventor emit this id as the non-primary kernel layer of a four-byte-width
@@ -1380,67 +934,6 @@ carrier; the F3D goldens pin it"""
 dialect = "acis:asm-binaryfile-8"
 read = "detected"
 write = "none"
-fixtures = [
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/attributes.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/body_color.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/body_transform.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/compound_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/compound_loft_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/container_metadata_only.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/cyl_spline_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/deformable_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/degenerate_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_appearances_protein.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_base_feature.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_base_flange.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_configuration.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_copy_paste.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_copy_paste_bodies.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_form.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_remove_body.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_surface_stitch.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/exact_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/exact_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/face_color.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/free_vertex_body.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/g2_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/generated_unit_cube.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/helix_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/helix_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/history.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/law_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/law_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/loft_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/mesh_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/mixed_face_wire_body.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/net_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/offset_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_inline.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_rational.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_ref.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/projection_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/revolution_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/rolling_ball_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/ruled_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/scaled_compound_loft_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/silhouette_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sketch_link.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/skin_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/spring_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sub_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/subset_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sum_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/surface_intersection_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/surface_offset_curve.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/sweep_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/taper_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/topology_base.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/tspline_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/variable_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/vertex_blend_surface.f3d",
-  "crates/cadmpeg-codec-f3d/tests/golden/fixtures/wire_body.f3d",
-]
 reason = """
 the eight-byte-width half of `acis:asm-binaryfile-4`; F3D goldens pin the
 non-primary layer"""
@@ -1449,7 +942,6 @@ non-primary layer"""
 dialect = "acis:save-format-217"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 a verified band: `Admission::Admitted` on the Inventor kernel layer, and
 the `nearest` grammar `cadmpeg-codec-sat` names when it recovers a band
@@ -1460,7 +952,6 @@ witness it; no golden carries the id"""
 dialect = "acis:save-format-218"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 a verified band, under the same note as `acis:save-format-217`: named as
 the `nearest` grammar for an unverified band at or above major 218"""
@@ -1469,7 +960,6 @@ the `nearest` grammar for an unverified band at or above major 218"""
 dialect = "acis:save-format-binary-other"
 read = "unclassified-recovered"
 write = "none"
-fixtures = []
 reason = """
 the unverified save-format band: framed and decoded with the nearer
 verified band's record grammar, in `cadmpeg-codec-sat` and again in
@@ -1482,7 +972,6 @@ no golden carries the id, so the row lists no fixture"""
 dialect = "acis:text-asm"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 SAT emits this kernel row after an ASM-terminated text stream alongside
 the primary `sat:text` host row. The SAT goldens are code-built, so no
@@ -1492,7 +981,6 @@ stream file on disk backs the profile's L3"""
 dialect = "acis:text-acis"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 SAT emits this kernel row after an ACIS-terminated text stream alongside
 the primary `sat:text` host row. The SAT goldens are code-built, so no
@@ -1502,7 +990,6 @@ stream file on disk backs the profile's L3"""
 dialect = "acis:unknown"
 read = "refused"
 write = "none"
-fixtures = []
 reason = """
 a kernel stream whose framing markers match no declared row: no header,
 terminator, or width selects a record grammar, so there is no strategy
@@ -1517,7 +1004,6 @@ F3D reports it for unframed kernel carriers"""
 dialect = "parasolid:sch-sw-33103"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 the `parasolid:` namespace has no owning crate, so no code classifies this
 id on the read side: the schema token is read as an attribute inside the
@@ -1529,7 +1015,6 @@ all solid (writer.rs:126-130), which is the default branch"""
 dialect = "parasolid:sch-sw-32001"
 read = "detected"
 write = "emitted"
-fixtures = []
 reason = """
 the `parasolid:` namespace has no owning crate, so no code classifies this
 id on the read side: the schema token is read as an attribute inside the
@@ -1541,7 +1026,6 @@ sheet (writer.rs:120-130)"""
 dialect = "parasolid:format-13006"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 no code emits this id: the `parasolid:` namespace has no owning crate, and
 the schema token is read as an attribute inside the sldprt and nx readers
@@ -1552,7 +1036,6 @@ selecting the mesh stream grammar"""
 dialect = "parasolid:unknown"
 read = "detected"
 write = "none"
-fixtures = []
 reason = """
 no code emits this id: the `parasolid:` namespace has no owning crate, and
 the schema token is read as an attribute inside the sldprt and nx readers
