@@ -58,13 +58,14 @@ pub(crate) const FORMAT: &str = "rhino";
 /// and — unlike IGES — there is no preservation path that could write them
 /// anyway (see [`crate::OFF_CATALOG_SOURCE_REASON`]).
 ///
-/// The alias of each row is its bare archive word and its bare Rhino major, so
-/// `--to 60` and `--to rhino:archive-60` name the same row.
+/// Each row has its bare archive word as an alias. Archives 60 through 80 also
+/// accept the corresponding Rhino major. Archive word 5 is a distinct,
+/// read-only dialect and is not an alias for archive 50.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
         id: RhinoArchiveVersion::V5.pinned(),
         label: "Rhino 5 archive (50)",
-        aliases: &["5", "50"],
+        aliases: &["50"],
         default: false,
     },
     TargetDescriptor {

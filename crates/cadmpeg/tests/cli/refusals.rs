@@ -321,6 +321,34 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         );
 }
 
+/// Archive word 5 is a read-only dialect, not shorthand for archive 50.
+#[test]
+fn rhino_word_5_is_refused_with_the_encoder_catalog() {
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let output = dir.path().join("cube.3dm");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--to",
+            "5",
+            "--allow-errors",
+        ])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("rhino cannot write 5")
+                .and(predicate::str::contains("rhino:archive-50"))
+                .and(predicate::str::contains("rhino:archive-80")),
+        );
+    assert!(!output.exists());
+}
+
 /// `--reject-lossy` takes an optional scope, and each scope refuses on its own
 /// half of the loss surface.
 ///
