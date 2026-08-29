@@ -827,17 +827,6 @@ impl DecodeReport {
         self.dialects.as_ref()
     }
 
-    /// Removes and returns the classified dialect layers.
-    pub fn take_dialects(&mut self) -> Option<DialectLayers> {
-        self.dialects.take()
-    }
-
-    /// Replaces the classification and derives the report format from it.
-    pub fn set_dialects(&mut self, dialects: DialectLayers) {
-        self.format.clone_from(&dialects.primary().format);
-        self.dialects = Some(dialects);
-    }
-
     /// Records a coverage measure count for a statically declared key.
     ///
     /// Producers pass the observed count (not an implied +1). Repeated calls

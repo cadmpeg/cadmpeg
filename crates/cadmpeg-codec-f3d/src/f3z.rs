@@ -98,12 +98,7 @@ pub(crate) fn inspect(
     })?;
     let member_scan = crate::container::scan(ctx, root_view)?;
     let kernel_layers = crate::dialect::kernel_layers(&member_scan);
-    let mut summary = crate::container::summarize(scan, &[]);
-    summary.set_dialects(
-        DialectLayers::new(scan.dialect.clone(), kernel_layers.matches)
-            .expect("F3D member extras use formats other than the F3Z primary"),
-    );
-    Ok(summary)
+    Ok(crate::container::summarize(scan, &kernel_layers.matches))
 }
 
 /// Decode a scanned `.f3z` archive into one merged document.
@@ -121,15 +116,15 @@ pub fn decode(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let (ir, mut report, mut fidelity) = crate::decode::decode_member(ctx, root_view)?.into_parts();
+    let (mut ir, mut report, mut fidelity) =
+        crate::decode::decode_member(ctx, root_view)?.into_parts();
     let member_layers = report
-        .take_dialects()
-        .expect("an F3D member decode reports its primary layer");
+        .dialects()
+        .expect("an F3D member decode reports its primary layer")
+        .clone();
     let (_, extra) = member_layers.into_parts();
-    report.set_dialects(
-        DialectLayers::new(scan.dialect.clone(), extra)
-            .expect("F3D member extras use formats other than the F3Z primary"),
-    );
+    let mut outer_layers = DialectLayers::new(scan.dialect.clone(), extra)
+        .expect("F3D member extras use formats other than the F3Z primary");
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -149,18 +144,21 @@ pub fn decode(
     report.notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
-    let root = finalize_result(ir, report, fidelity);
     if ctx.container_only() {
-        return Ok(root);
+        return Ok(finalize_result(
+            ir,
+            classify_outer_report(report, outer_layers),
+            fidelity,
+        ));
     }
 
-    let (mut ir, mut report, mut fidelity) = root.into_parts();
     let table = xref_table_from_ir(&ir)?;
     let mut stack = vec![model_root];
     let merged = merge_references(
         ctx,
         &mut ir,
         &mut report,
+        &mut outer_layers,
         &mut fidelity,
         scan,
         &table,
@@ -179,7 +177,26 @@ pub fn decode(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     make_sibling_ordinals_unique(&mut ir.model.occurrences);
-    Ok(finalize_result(ir, report, fidelity))
+    Ok(finalize_result(
+        ir,
+        classify_outer_report(report, outer_layers),
+        fidelity,
+    ))
+}
+
+fn classify_outer_report(
+    report: cadmpeg_ir::DecodeReport,
+    dialects: DialectLayers,
+) -> cadmpeg_ir::DecodeReport {
+    cadmpeg_ir::DecodeReport::classified(
+        dialects,
+        report.container_only,
+        report.geometry_transferred,
+        report.coverage,
+        report.losses,
+        report.notes,
+        report.transfer_ledger,
+    )
 }
 
 fn finalize_result(
@@ -200,22 +217,19 @@ fn finalize_result(
 
 /// Attach a merged component's non-primary layers to its occurrence prefix.
 /// The component's primary row is document-local.
-fn merge_component_layers(
-    target: DialectLayers,
-    component: DialectLayers,
-    occurrence: &str,
-) -> DialectLayers {
-    let (primary, mut extra) = target.into_parts();
-    let (_, component_extra) = component.into_parts();
-    for mut matched in component_extra {
+fn merge_component_layers(target: &mut DialectLayers, component: &DialectLayers, occurrence: &str) {
+    let primary = target.primary().clone();
+    let mut extra = target.iter().skip(1).cloned().collect::<Vec<_>>();
+    for mut matched in component.iter().skip(1).cloned() {
         matched.instance = Some(matched.instance.as_ref().map_or_else(
             || occurrence.to_owned(),
             |nested| format!("{occurrence}/{nested}"),
         ));
         extra.push(matched);
     }
-    DialectLayers::new(primary, extra)
-        .expect("merged F3D component extras cannot repeat the F3Z primary")
+    let merged = DialectLayers::new(primary, extra)
+        .expect("merged F3D component extras cannot repeat the F3Z primary");
+    *target = merged;
 }
 
 fn model_root_member(
@@ -320,6 +334,7 @@ fn merge_references(
     ctx: &DecodeContext<'_>,
     parent_ir: &mut cadmpeg_ir::CadIr,
     parent_report: &mut cadmpeg_ir::DecodeReport,
+    parent_layers: &mut DialectLayers,
     parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
     scan: &ContainerScan<'_>,
     table: &XrefTable,
@@ -376,11 +391,16 @@ fn merge_references(
         let child_table = xref_table_from_ir(component.ir())?;
         let (mut component_ir, mut component_report, mut component_fidelity) =
             component.into_parts();
+        let mut component_layers = component_report
+            .dialects()
+            .expect("an F3D component report is classified")
+            .clone();
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(
             ctx,
             &mut component_ir,
             &mut component_report,
+            &mut component_layers,
             &mut component_fidelity,
             scan,
             &child_table,
@@ -405,17 +425,7 @@ fn merge_references(
         )?;
         merged += descendants + 1;
         parent_report.geometry_transferred |= component_report.geometry_transferred;
-        let component_layers = component_report
-            .take_dialects()
-            .expect("an F3D component report is classified");
-        let parent_layers = parent_report
-            .take_dialects()
-            .expect("the parent F3Z report is classified");
-        parent_report.set_dialects(merge_component_layers(
-            parent_layers,
-            component_layers,
-            &occurrence,
-        ));
+        merge_component_layers(parent_layers, &component_layers, &occurrence);
         for mut loss in component_report.losses {
             loss.message = format!("xref {label}: {}", loss.message);
             parent_report.losses.push(loss);
