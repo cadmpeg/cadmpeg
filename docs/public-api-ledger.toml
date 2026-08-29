@@ -1437,6 +1437,20 @@ item = "cadmpeg_ir::document::SourceMeta::declared"
 reason = "primary-layer declarations remain owned by `DialectMatch` and are no longer duplicated beside the source dialect"
 
 [[change]]
+commit = "1e0d3772d09a723c55e950bac24cf7b7124a312a"
+crate = "cadmpeg-core"
+kind = "visibility"
+item = "cadmpeg_core::container::ContainerSummary::{format,dialects}"
+reason = "private invariant fields and checked constructors prevent a summary format from disagreeing with its primary dialect layer"
+
+[[change]]
+commit = "1e0d3772d09a723c55e950bac24cf7b7124a312a"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::report::DecodeReport::{format,dialects}"
+reason = "private invariant fields and checked constructors prevent a decode report format from disagreeing with its primary dialect layer"
+
+[[change]]
 commit = "4af7b9427fc9d7a84facf7e0b1451ef8901472f4"
 crate = "cadmpeg-core"
 kind = "deletion"
