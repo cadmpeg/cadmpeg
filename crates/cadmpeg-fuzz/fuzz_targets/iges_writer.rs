@@ -6,7 +6,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::{IgesCodec, IgesEncoder, IgesVersion};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::WritePath;
 use cadmpeg_ir::{CadIr, UnknownRecord};
