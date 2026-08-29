@@ -793,9 +793,8 @@ write = "none"
 fixtures = []
 reason = """
 the decoder attempts the same four-byte chunk-value scan used for archive words
-2 through 4. It reports `Admission::AdmittedUnverified` with
-`rhino:archive-50` as nearest and charges `source.dialect-unverified`; no frozen
-fixture exists, so the row cannot claim a score"""
+2 through 4 and admits the declared row. No frozen fixture exists, so the row
+cannot claim a score"""
 
 [[support]]
 dialect = "rhino:archive-50"

@@ -102,23 +102,15 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
 }
 
 #[test]
-fn archive_word_5_names_archive_50_as_the_nearest_verified_grammar() {
+fn archive_word_5_is_admitted_on_its_declared_narrow_chunk_grammar() {
     let matched = classify_word(5);
-    assert_eq!(
-        matched.admission,
-        Admission::AdmittedUnverified {
-            nearest: ArchiveVersion::V5.id()
-        }
-    );
-    assert!(admission_loss(&matched).is_some());
+    assert_eq!(matched.admission, Admission::Admitted);
+    assert!(admission_loss(&matched).is_none());
 }
 
 #[test]
 fn verified_rows_charge_no_admission_loss() {
     for (word, _) in ENUMERATED {
-        if *word == 5 {
-            continue;
-        }
         assert!(
             admission_loss(&classify_word(*word)).is_none(),
             "archive word {word}: verified rows do not charge a dialect loss"

@@ -243,9 +243,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
             .expect("Rhino inspection reports dialect layers")
             .primary()
             .admission,
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50")
-        }
+        cadmpeg_core::dialect::Admission::Admitted
     );
 
     let decoded = RhinoCodec
@@ -266,11 +264,9 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
             .expect("Rhino decode reports dialect layers")
             .primary()
             .admission,
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            nearest: cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50")
-        }
+        cadmpeg_core::dialect::Admission::Admitted
     );
-    assert!(decoded
+    assert!(!decoded
         .report()
         .losses
         .iter()

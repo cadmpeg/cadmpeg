@@ -190,11 +190,7 @@ impl ArchiveVersion {
     /// verified identity; the totality row carries no declared identity at all,
     /// so it names the row whose strategy was substituted for it.
     fn admission(self) -> Admission {
-        if matches!(self, Self::LegacyV5) {
-            Admission::AdmittedUnverified {
-                nearest: Self::V5.id(),
-            }
-        } else if matches!(self, Self::Other(_)) {
+        if matches!(self, Self::Other(_)) {
             Admission::AdmittedUnverified {
                 nearest: if self.uses_eight_byte_values() {
                     Self::V9.id()
