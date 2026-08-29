@@ -15,14 +15,6 @@ use crate::native::{
 const MAX_OBJECTS: usize = 1_000_000;
 const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
-/// Element vocabulary selected by a persistence schema declaration.
-pub(crate) fn persistence_tags(schema: FcstdDialect) -> (&'static str, &'static str, &'static str) {
-    match schema {
-        FcstdDialect::Schema2 => ("Features", "FeatureData", "Feature"),
-        _ => ("Objects", "ObjectData", "Object"),
-    }
-}
-
 struct DependencyInfo {
     dependencies: Vec<String>,
     allow_partial: Option<i64>,
@@ -79,7 +71,7 @@ fn parse_document(
     // because an element vocabulary that does not fit fails below exactly as a
     // corrupt schema-4 document does. `crate::dialect` charges the
     // dialect-unverified loss for the undeclared case.
-    let (declarations_tag, data_tag, record_tag) = persistence_tags(schema);
+    let (declarations_tag, data_tag, record_tag) = schema.persistence_tags();
     let objects_node = unique_section(root, declarations_tag)?;
     let data_node = unique_section(root, data_tag)?;
 
