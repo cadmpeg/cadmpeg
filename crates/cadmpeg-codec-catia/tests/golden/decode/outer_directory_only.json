@@ -455,8 +455,9 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": {
           "admitted_unverified": {
             "nearest": "catia:unknown"
@@ -465,7 +466,7 @@
         "dialect": "catia:unknown",
         "format": "catia"
       }
-    ],
+    },
     "format": "catia",
     "geometry_transferred": false,
     "losses": [

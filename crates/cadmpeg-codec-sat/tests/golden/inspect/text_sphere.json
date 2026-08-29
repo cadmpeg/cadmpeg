@@ -1,7 +1,18 @@
 {
   "container_kind": "stream",
-  "dialects": [
-    {
+  "dialects": {
+    "extra": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "save_format_major": "232",
+          "save_format_minor": "0"
+        },
+        "dialect": "acis:text-asm",
+        "format": "acis"
+      }
+    ],
+    "primary": {
       "admission": "admitted",
       "declared": {
         "encoding": "text",
@@ -11,17 +22,8 @@
       },
       "dialect": "sat:text",
       "format": "sat"
-    },
-    {
-      "admission": "admitted",
-      "declared": {
-        "save_format_major": "232",
-        "save_format_minor": "0"
-      },
-      "dialect": "acis:text-asm",
-      "format": "acis"
     }
-  ],
+  },
   "entries": [
     {
       "attributes": {

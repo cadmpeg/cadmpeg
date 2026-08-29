@@ -4094,8 +4094,9 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": {
           "admitted_unverified": {
             "nearest": "creo:unknown"
@@ -4107,7 +4108,7 @@
         "dialect": "creo:unknown",
         "format": "creo"
       }
-    ],
+    },
     "format": "creo",
     "geometry_transferred": true,
     "losses": [

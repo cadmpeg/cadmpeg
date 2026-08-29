@@ -602,8 +602,8 @@
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (2441 bytes uncompressed)"
     ],
-    "dialects": [
-      {
+    "dialects": {
+      "primary": {
         "format": "f3d",
         "dialect": "f3d:manifest-3-2-0-0",
         "declared": {
@@ -611,18 +611,20 @@
         },
         "admission": "admitted"
       },
-      {
-        "format": "acis",
-        "dialect": "acis:asm-binaryfile-8",
-        "declared": {
-          "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "reference_width": "8",
-          "save_format_major": "231",
-          "save_format_minor": "0"
-        },
-        "admission": "admitted"
-      }
-    ]
+      "extra": [
+        {
+          "format": "acis",
+          "dialect": "acis:asm-binaryfile-8",
+          "declared": {
+            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "reference_width": "8",
+            "save_format_major": "231",
+            "save_format_minor": "0"
+          },
+          "admission": "admitted"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "version": "3",

@@ -1,7 +1,8 @@
 {
   "container_kind": "iso-10303-21-clear-text",
-  "dialects": [
-    {
+  "dialects": {
+    "extra": [],
+    "primary": {
       "admission": {
         "admitted_unverified": {
           "nearest": "step:ap242-e3"
@@ -14,7 +15,7 @@
       "dialect": "step:unknown",
       "format": "step"
     }
-  ],
+  },
   "entries": [
     {
       "attributes": {},

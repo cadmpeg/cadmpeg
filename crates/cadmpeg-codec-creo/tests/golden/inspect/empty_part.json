@@ -1,7 +1,8 @@
 {
   "container_kind": "psb",
-  "dialects": [
-    {
+  "dialects": {
+    "extra": [],
+    "primary": {
       "admission": {
         "admitted_unverified": {
           "nearest": "creo:unknown"
@@ -13,7 +14,7 @@
       "dialect": "creo:unknown",
       "format": "creo"
     }
-  ],
+  },
   "entries": [],
   "format": "creo",
   "notes": [

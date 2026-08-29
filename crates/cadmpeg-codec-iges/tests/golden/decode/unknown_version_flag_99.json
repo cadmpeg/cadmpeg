@@ -1042,8 +1042,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": {
           "admitted_unverified": {
             "nearest": "iges:5.3-fixed-ascii"
@@ -1058,7 +1059,7 @@
         "dialect": "iges:unknown",
         "format": "iges"
       }
-    ],
+    },
     "format": "iges",
     "geometry_transferred": true,
     "losses": [

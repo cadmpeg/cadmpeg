@@ -2315,8 +2315,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "effective_version": "5.3",
@@ -2326,7 +2327,7 @@
         "dialect": "iges:5.3-fixed-ascii",
         "format": "iges"
       }
-    ],
+    },
     "format": "iges",
     "geometry_transferred": true,
     "losses": [],

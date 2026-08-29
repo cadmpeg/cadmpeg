@@ -1100,8 +1100,9 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 2
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "version_line": "#UGC:2 P c"
@@ -1109,7 +1110,7 @@
         "dialect": "creo:nd",
         "format": "creo"
       }
-    ],
+    },
     "format": "creo",
     "geometry_transferred": true,
     "losses": [

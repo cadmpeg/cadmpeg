@@ -1,7 +1,8 @@
 {
   "container_kind": "iso-10303-21-clear-text",
-  "dialects": [
-    {
+  "dialects": {
+    "extra": [],
+    "primary": {
       "admission": "admitted",
       "declared": {
         "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
@@ -10,7 +11,7 @@
       "dialect": "step:ap242",
       "format": "step"
     }
-  ],
+  },
   "entries": [
     {
       "attributes": {},

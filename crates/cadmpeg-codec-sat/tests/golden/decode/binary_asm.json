@@ -173,8 +173,20 @@
       "unknown_records": 0,
       "unknown_surface_faces": 0
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "reference_width": "8",
+            "save_format_major": "232",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-8",
+          "format": "acis"
+        }
+      ],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "encoding": "binary",
@@ -183,18 +195,8 @@
         },
         "dialect": "sat:asm-binary",
         "format": "sat"
-      },
-      {
-        "admission": "admitted",
-        "declared": {
-          "reference_width": "8",
-          "save_format_major": "232",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:asm-binaryfile-8",
-        "format": "acis"
       }
-    ],
+    },
     "format": "sat",
     "geometry_transferred": true,
     "losses": [],

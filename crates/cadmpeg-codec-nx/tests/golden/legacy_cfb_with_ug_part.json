@@ -85,8 +85,9 @@
     },
     "report": {
       "container_only": false,
-      "dialects": [
-        {
+      "dialects": {
+        "extra": [],
+        "primary": {
           "admission": "admitted",
           "declared": {
             "ugii_version": "50"
@@ -94,7 +95,7 @@
           "dialect": "nx:legacy-cfb",
           "format": "nx"
         }
-      ],
+      },
       "format": "nx",
       "geometry_transferred": false,
       "losses": [
@@ -146,8 +147,9 @@
   },
   "inspect": {
     "container_kind": "cfb",
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "ugii_version": "50"
@@ -155,7 +157,7 @@
         "dialect": "nx:legacy-cfb",
         "format": "nx"
       }
-    ],
+    },
     "entries": [
       {
         "attributes": {

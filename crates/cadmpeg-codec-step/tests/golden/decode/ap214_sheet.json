@@ -380,8 +380,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "file_schema_identifier": "AUTOMOTIVE_DESIGN",
@@ -390,7 +391,7 @@
         "dialect": "step:ap214",
         "format": "step"
       }
-    ],
+    },
     "format": "step",
     "geometry_transferred": true,
     "losses": [

@@ -260,8 +260,9 @@
     },
     "report": {
       "container_only": false,
-      "dialects": [
-        {
+      "dialects": {
+        "extra": [],
+        "primary": {
           "admission": "admitted",
           "declared": {
             "splmsstr_version": "6"
@@ -269,7 +270,7 @@
           "dialect": "nx:splmsstr",
           "format": "nx"
         }
-      ],
+      },
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -424,8 +425,9 @@
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "splmsstr_version": "6"
@@ -433,7 +435,7 @@
         "dialect": "nx:splmsstr",
         "format": "nx"
       }
-    ],
+    },
     "entries": [
       {
         "attributes": {

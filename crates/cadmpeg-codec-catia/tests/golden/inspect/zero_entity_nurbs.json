@@ -1,12 +1,13 @@
 {
   "container_kind": "v5-cfv2",
-  "dialects": [
-    {
+  "dialects": {
+    "extra": [],
+    "primary": {
       "admission": "admitted",
       "dialect": "catia:zero-entity",
       "format": "catia"
     }
-  ],
+  },
   "entries": [],
   "format": "catia",
   "notes": [

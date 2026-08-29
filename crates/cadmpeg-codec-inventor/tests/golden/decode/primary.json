@@ -490,8 +490,20 @@
       "ufrx_model_states": 0,
       "ufrx_occurrences": 0
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "reference_width": "4",
+            "save_format_major": "7",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-4",
+          "format": "acis"
+        }
+      ],
+      "primary": {
         "admission": "admitted",
         "declared": {
           "cfb_major_version": "3",
@@ -501,18 +513,8 @@
         },
         "dialect": "inventor:cfb3-rse31-meta8",
         "format": "inventor"
-      },
-      {
-        "admission": "admitted",
-        "declared": {
-          "reference_width": "4",
-          "save_format_major": "7",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:asm-binaryfile-4",
-        "format": "acis"
       }
-    ],
+    },
     "format": "inventor",
     "geometry_transferred": false,
     "losses": [

@@ -262,8 +262,9 @@
       "ufrx_model_states": 0,
       "ufrx_occurrences": 0
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": {
           "admitted_unverified": {
             "nearest": "inventor:cfb3-rse31-meta8"
@@ -275,7 +276,7 @@
         "dialect": "inventor:unknown",
         "format": "inventor"
       }
-    ],
+    },
     "format": "inventor",
     "geometry_transferred": false,
     "losses": [

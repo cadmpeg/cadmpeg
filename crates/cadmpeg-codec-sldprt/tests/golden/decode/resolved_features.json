@@ -455,8 +455,9 @@
   },
   "report": {
     "container_only": false,
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": {
           "admitted_unverified": {
             "nearest": "sldprt:unknown"
@@ -465,7 +466,7 @@
         "dialect": "sldprt:unknown",
         "format": "sldprt"
       }
-    ],
+    },
     "format": "sldprt",
     "geometry_transferred": true,
     "losses": [

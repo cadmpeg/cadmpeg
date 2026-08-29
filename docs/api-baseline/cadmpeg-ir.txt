@@ -1,4 +1,4 @@
-# generated at 81779b0ff
+# generated at 88ab385a1
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -11463,7 +11463,7 @@ impl core::marker::StructuralPartialEq for cadmpeg_ir::report::DecodeReport
 impl serde_core::ser::Serialize for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub fn cadmpeg_ir::report::DecodeReport::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl core::marker::Freeze for cadmpeg_ir::report::DecodeReport
 impl core::marker::Send for cadmpeg_ir::report::DecodeReport
 impl core::marker::Sync for cadmpeg_ir::report::DecodeReport
@@ -17512,7 +17512,7 @@ impl core::marker::StructuralPartialEq for cadmpeg_ir::report::DecodeReport
 impl serde_core::ser::Serialize for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub fn cadmpeg_ir::report::DecodeReport::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl core::marker::Freeze for cadmpeg_ir::report::DecodeReport
 impl core::marker::Send for cadmpeg_ir::report::DecodeReport
 impl core::marker::Sync for cadmpeg_ir::report::DecodeReport

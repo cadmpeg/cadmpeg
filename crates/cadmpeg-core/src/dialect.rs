@@ -153,10 +153,10 @@ pub struct DialectMatch {
 /// A report's primary format layer and any nested or carried format layers.
 ///
 /// Construction rejects an extra layer whose format equals the primary
-/// layer's format. This makes the primary unique without adding a marker to
-/// the serialized rows. Enclosing reports deserialize the flat wire array
-/// because their `format` field identifies which row is primary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// layer's format. The wire names the primary explicitly, so the collection
+/// carries its complete identity without an enclosing report's format.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DialectLayers {
     primary: DialectMatch,
     extra: Vec<DialectMatch>,
@@ -186,37 +186,6 @@ impl DialectLayers {
         Ok(Self { primary, extra })
     }
 
-    /// Reconstructs dialect layers from their flat wire rows.
-    ///
-    /// The unique row whose format equals `parent_format` is the primary.
-    /// An empty row list represents an unclassified parent.
-    pub fn from_rows(
-        parent_format: &str,
-        mut rows: Vec<DialectMatch>,
-    ) -> Result<Option<Self>, DialectLayersError> {
-        if rows.is_empty() {
-            return Ok(None);
-        }
-        let mut primary_indices = rows
-            .iter()
-            .enumerate()
-            .filter_map(|(index, layer)| (layer.format == parent_format).then_some(index));
-        let Some(primary_index) = primary_indices.next() else {
-            return Err(DialectLayersError {
-                format: parent_format.to_owned(),
-                reason: DialectLayersErrorReason::MissingPrimary,
-            });
-        };
-        if primary_indices.next().is_some() {
-            return Err(DialectLayersError {
-                format: parent_format.to_owned(),
-                reason: DialectLayersErrorReason::MultiplePrimaries,
-            });
-        }
-        let primary = rows.remove(primary_index);
-        Self::new(primary, rows).map(Some)
-    }
-
     /// Returns the report's primary format layer.
     #[must_use]
     pub fn primary(&self) -> &DialectMatch {
@@ -235,23 +204,6 @@ impl DialectLayers {
     }
 }
 
-impl Serialize for DialectLayers {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.iter())
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for DialectLayers {
-    fn schema_name() -> Cow<'static, str> {
-        Cow::Borrowed("DialectLayers")
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        Vec::<DialectMatch>::json_schema(generator)
-    }
-}
-
 /// A dialect collection included a second layer for its primary format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectLayersError {
@@ -262,8 +214,6 @@ pub struct DialectLayersError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DialectLayersErrorReason {
     RepeatedPrimary,
-    MissingPrimary,
-    MultiplePrimaries,
 }
 
 impl fmt::Display for DialectLayersError {
@@ -272,16 +222,6 @@ impl fmt::Display for DialectLayersError {
             DialectLayersErrorReason::RepeatedPrimary => write!(
                 f,
                 "extra dialect layer repeats primary format {:?}",
-                self.format
-            ),
-            DialectLayersErrorReason::MissingPrimary => write!(
-                f,
-                "populated dialects for format {:?} contain no primary layer",
-                self.format
-            ),
-            DialectLayersErrorReason::MultiplePrimaries => write!(
-                f,
-                "populated dialects for format {:?} contain multiple primary layers",
                 self.format
             ),
         }
@@ -378,13 +318,20 @@ mod tests {
     }
 
     #[test]
-    fn dialect_layers_serialize_as_the_existing_flat_array() {
+    fn dialect_layers_serialize_with_an_explicit_primary() {
         let layers = DialectLayers::new(layer("rhino"), vec![layer("acis")]).unwrap();
         let serialized = serde_json::to_value(&layers).unwrap();
 
         assert_eq!(
             serialized,
-            serde_json::json!([layer("rhino"), layer("acis")])
+            serde_json::json!({
+                "primary": layer("rhino"),
+                "extra": [layer("acis")],
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<DialectLayers>(serialized).unwrap(),
+            layers
         );
         assert_eq!(
             layers

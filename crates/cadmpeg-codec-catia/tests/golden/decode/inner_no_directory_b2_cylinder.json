@@ -529,13 +529,14 @@
       "unresolved_unreferenced_relation_expression_count": 0,
       "unselected_object_stream_run_count": 0
     },
-    "dialects": [
-      {
+    "dialects": {
+      "extra": [],
+      "primary": {
         "admission": "admitted",
         "dialect": "catia:inner-no-directory",
         "format": "catia"
       }
-    ],
+    },
     "format": "catia",
     "geometry_transferred": true,
     "losses": [
