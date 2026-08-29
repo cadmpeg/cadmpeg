@@ -27,7 +27,7 @@
 //! producer pinned.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -148,9 +148,10 @@ pub struct DialectMatch {
 
 /// A report's primary format layer and any nested or carried format layers.
 ///
-/// Construction rejects an extra layer whose format equals the primary
-/// layer's format. The wire names the primary explicitly, so the collection
-/// carries its complete identity without an enclosing report's format.
+/// Extra layers are unique by `(format, instance)`. An extra layer for the
+/// primary format has an instance that identifies it inside the containing
+/// document. The wire names the primary explicitly, so the collection carries
+/// its complete identity without an enclosing report's format.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DialectLayers {
@@ -181,16 +182,27 @@ impl DialectLayers {
         }
     }
 
-    /// Constructs dialect layers with one unique primary format.
+    /// Constructs dialect layers with extras unique by `(format, instance)`.
     pub fn new(
         primary: DialectMatch,
         extra: Vec<DialectMatch>,
     ) -> Result<Self, DialectLayersError> {
-        if extra.iter().any(|layer| layer.format == primary.format) {
-            return Err(DialectLayersError {
-                format: primary.format,
-                reason: DialectLayersErrorReason::RepeatedPrimary,
-            });
+        let mut keys = BTreeSet::new();
+        for layer in &extra {
+            if layer.format == primary.format && layer.instance.is_none() {
+                return Err(DialectLayersError {
+                    format: layer.format.clone(),
+                    instance: None,
+                    reason: DialectLayersErrorReason::UnidentifiedPrimaryFormatExtra,
+                });
+            }
+            if !keys.insert((&layer.format, &layer.instance)) {
+                return Err(DialectLayersError {
+                    format: layer.format.clone(),
+                    instance: layer.instance.clone(),
+                    reason: DialectLayersErrorReason::DuplicateExtra,
+                });
+            }
         }
         Ok(Self { primary, extra })
     }
@@ -213,25 +225,32 @@ impl DialectLayers {
     }
 }
 
-/// A dialect collection included a second layer for its primary format.
+/// A dialect collection violated the extra-layer identity invariant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectLayersError {
     format: String,
+    instance: Option<String>,
     reason: DialectLayersErrorReason,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DialectLayersErrorReason {
-    RepeatedPrimary,
+    UnidentifiedPrimaryFormatExtra,
+    DuplicateExtra,
 }
 
 impl fmt::Display for DialectLayersError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.reason {
-            DialectLayersErrorReason::RepeatedPrimary => write!(
+            DialectLayersErrorReason::UnidentifiedPrimaryFormatExtra => write!(
                 f,
-                "extra dialect layer repeats primary format {:?}",
+                "extra dialect layer for primary format {:?} requires an instance",
                 self.format
+            ),
+            DialectLayersErrorReason::DuplicateExtra => write!(
+                f,
+                "duplicate extra dialect layer for format {:?} and instance {:?}",
+                self.format, self.instance
             ),
         }
     }
@@ -366,18 +385,31 @@ mod tests {
     }
 
     #[test]
-    fn dialect_layers_reject_a_same_format_extra() {
+    fn dialect_layers_accept_a_same_format_extra_with_an_instance() {
+        let member = layer("rhino").with_instance("components/member.3dm");
+        let layers = DialectLayers::new(layer("rhino"), vec![member.clone()]).unwrap();
+
+        let serialized = serde_json::to_value(&layers).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DialectLayers>(serialized).unwrap(),
+            layers
+        );
+        assert_eq!(layers.into_parts().1, [member]);
+    }
+
+    #[test]
+    fn dialect_layers_reject_a_same_format_extra_without_an_instance() {
         let error = DialectLayers::new(layer("rhino"), vec![layer("acis"), layer("rhino")])
-            .expect_err("a second rhino layer must be rejected");
+            .expect_err("an unidentified nested rhino layer must be rejected");
 
         assert_eq!(
             error.to_string(),
-            "extra dialect layer repeats primary format \"rhino\""
+            "extra dialect layer for primary format \"rhino\" requires an instance"
         );
     }
 
     #[test]
-    fn dialect_layers_deserialization_rejects_a_same_format_extra() {
+    fn dialect_layers_deserialization_rejects_an_unidentified_same_format_extra() {
         let serialized = serde_json::json!({
             "primary": layer("rhino"),
             "extra": [layer("acis"), layer("rhino")],
@@ -388,9 +420,32 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("extra dialect layer repeats primary format \"rhino\""),
+                .contains("extra dialect layer for primary format \"rhino\" requires an instance"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn dialect_layers_reject_duplicate_format_instance_pairs() {
+        let first = layer("acis").with_instance("body");
+        let duplicate = layer("acis").with_instance("body");
+        let error = DialectLayers::new(layer("rhino"), vec![first, duplicate])
+            .expect_err("duplicate extra-layer keys must be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "duplicate extra dialect layer for format \"acis\" and instance Some(\"body\")"
+        );
+    }
+
+    #[test]
+    fn dialect_layers_keep_cross_format_extras_with_distinct_instances() {
+        let anonymous = layer("acis");
+        let named = layer("acis").with_instance("body");
+        let layers =
+            DialectLayers::new(layer("rhino"), vec![anonymous.clone(), named.clone()]).unwrap();
+
+        assert_eq!(layers.into_parts().1, [anonymous, named]);
     }
 
     #[test]

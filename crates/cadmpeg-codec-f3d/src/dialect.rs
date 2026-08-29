@@ -272,6 +272,16 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
             )));
         }
     }
+    let format_counts = matches.iter().fold(BTreeMap::new(), |mut counts, matched| {
+        *counts.entry(matched.format().to_owned()).or_insert(0usize) += 1;
+        counts
+    });
+    for matched in &mut matches {
+        if format_counts[matched.format()] > 1 && matched.instance().is_none() {
+            let carrier = matched.declared()["carrier"].clone();
+            *matched = matched.clone().with_instance(carrier);
+        }
+    }
     KernelLayers { matches, losses }
 }
 

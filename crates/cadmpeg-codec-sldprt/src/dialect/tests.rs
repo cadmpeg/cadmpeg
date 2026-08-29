@@ -298,7 +298,7 @@ fn exactly_one_entry_names_the_reporting_format() {
         dialects
             .iter()
             .find(|entry| entry.format() == FORMAT)
-            .map(|entry| entry.dialect()),
+            .map(cadmpeg_core::dialect::DialectMatch::dialect),
         Some(&SldprtDialect::SwVersion12000Plus.id())
     );
 }
