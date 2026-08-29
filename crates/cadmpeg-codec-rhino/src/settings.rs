@@ -584,6 +584,8 @@ pub(crate) struct EmbeddedDescriptor {
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
 pub(crate) struct DocumentMetadata {
+    /// Typed losses raised while decoding metadata.
+    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Document properties.
     pub(crate) properties: Properties,
     /// Document settings.
@@ -2117,6 +2119,7 @@ fn parse_layer(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
         parse_class_wrapper_with_userdata(data, record.body.clone(), archive, warnings)?;
@@ -2176,9 +2179,8 @@ fn parse_layer(
     let id = (version.1 >= 5).then(|| uuid(&mut reader)).transpose()?;
     let parent_compatible = writer_version.is_some_and(|version| version > 200_505_110);
     if version.1 >= 6 && writer_version.is_none() {
-        warnings.push(format!(
-            "layer parent link and expanded state were not read because {}",
-            crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
+        losses.push(crate::loss::writer_stamp_unverified(
+            "layer parent link and expanded state were not read because the archive has no writer-version stamp",
         ));
     }
     let parent_id = if version.1 >= 6 && parent_compatible {
@@ -2422,7 +2424,14 @@ pub(crate) fn parse_metadata(
                 parse_setting(data, record, &mut metadata.settings, archive)
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
-                match parse_layer(data, record, archive, writer_version, warnings) {
+                match parse_layer(
+                    data,
+                    record,
+                    archive,
+                    writer_version,
+                    warnings,
+                    &mut metadata.losses,
+                ) {
                     Ok((layer, userdata_degraded)) => {
                         if let Some(id) = layer.id {
                             if !ids.insert(id) {

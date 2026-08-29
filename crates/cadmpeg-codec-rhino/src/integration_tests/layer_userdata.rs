@@ -196,11 +196,10 @@ fn layer_userdata_future_payload_retains_complete_layer_record() {
 
 /// The layer parent-link charge reaches the report as a typed loss code.
 ///
-/// `parse_layer` pushes a bare warning string that `dialect_unverified_diagnostic`
-/// promotes in the scan-warning loop. Asserting the warning text alone would
-/// leave that promotion untested, so this asserts the code the report carries.
+/// `parse_layer` creates the typed loss at the decision site. This asserts the
+/// code that survives the decode pipeline.
 #[test]
-fn unstamped_layer_promotes_the_parent_link_warning_to_a_typed_loss_code() {
+fn unstamped_layer_carries_the_parent_link_typed_loss_code() {
     let archive = ArchiveVersion::V8;
     let layer = layer_record(archive, &[0xde, 0xad]);
 

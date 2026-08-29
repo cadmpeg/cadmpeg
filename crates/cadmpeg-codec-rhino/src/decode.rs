@@ -451,6 +451,8 @@ pub(crate) struct DecodeContext<'a> {
     mesh_budget: crate::mesh::MeshBudget,
     geometry_transferred: bool,
     phase_warnings: Vec<String>,
+    /// Typed parse-phase losses emitted after container-scan diagnostics.
+    phase_losses: Vec<LossNote>,
     /// Typed loss notes from semantic conversion; drain into report `losses`.
     typed_losses: Vec<LossNote>,
     selected_object: Option<usize>,
@@ -489,6 +491,7 @@ impl<'a> DecodeContext<'a> {
             mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
             geometry_transferred: false,
             phase_warnings: Vec::new(),
+            phase_losses: Vec::new(),
             typed_losses: Vec::new(),
             selected_object: None,
             instance_key: None,
@@ -2363,6 +2366,8 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> DecodeResult {
+        self.phase_losses
+            .extend(self.scan.metadata.losses.iter().cloned());
         self.typed_losses
             .extend(crate::annotations::install(self.scan, &mut self.ir));
         for source in crate::document_data::install(self.scan, &mut self.ir) {
@@ -2457,8 +2462,6 @@ impl<'a> DecodeContext<'a> {
         losses.extend(self.scan.warnings.iter().map(|warning| {
             if integrity_diagnostic(warning) {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
-            } else if dialect_unverified_diagnostic(warning) {
-                crate::loss::writer_stamp_unverified(warning.clone())
             } else if warning.contains(" has invalid color source ") {
                 RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
             } else if brep_mesh_cache_diagnostic(warning) {
@@ -2471,14 +2474,11 @@ impl<'a> DecodeContext<'a> {
                 RhinoLossCode::ContainerScanDiagnostic.note(warning.clone())
             }
         }));
+        losses.append(&mut self.phase_losses);
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for warning in &self.phase_warnings {
             if integrity_diagnostic(warning) {
                 losses.push(RhinoLossCode::IntegrityFailure.note(warning.clone()));
-                continue;
-            }
-            if dialect_unverified_diagnostic(warning) {
-                losses.push(crate::loss::writer_stamp_unverified(warning.clone()));
                 continue;
             }
             if brep_mesh_cache_diagnostic(warning) {
@@ -3216,6 +3216,11 @@ impl<'a> DecodeContext<'a> {
         if !self.charge_entities(source_order, 1) {
             return false;
         }
+        self.phase_losses
+            .extend(mesh.losses.into_iter().map(|mut loss| {
+                loss.message = format!("{}: {}", identity.source_id, loss.message);
+                loss
+            }));
         self.phase_warnings.extend(
             mesh.warnings
                 .into_iter()
@@ -3295,6 +3300,10 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
+        let raw = match &parsed {
+            crate::brep::BrepParse::Valid(value) => value.raw(),
+            crate::brep::BrepParse::SemanticInvalid { raw, .. } => raw,
+        };
         let warnings = match &parsed {
             crate::brep::BrepParse::Valid(value) => value.warnings(),
             crate::brep::BrepParse::SemanticInvalid { warnings, .. } => warnings,
@@ -3314,6 +3323,11 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
+        self.phase_losses
+            .extend(raw.losses.iter().cloned().map(|mut loss| {
+                loss.message = format!("{}: {}", object.class_uuid, loss.message);
+                loss
+            }));
         let Some(scale) = self.unit_scale() else {
             self.scan_warning(
                 source_order,
@@ -3383,9 +3397,6 @@ impl<'a> DecodeContext<'a> {
                             self.typed_losses.push(
                                 RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(&warning),
                             );
-                        } else if dialect_unverified_diagnostic(&warning) {
-                            self.typed_losses
-                                .push(crate::loss::writer_stamp_unverified(&warning));
                         } else if let Some(cause) = warning.strip_prefix("Brep topology fallback: ")
                         {
                             self.typed_losses.push(
@@ -3474,11 +3485,6 @@ fn redundant_field_diagnostic(message: &str) -> bool {
     message.starts_with("redundant ")
         || message.contains(": redundant ")
         || message.contains("invalid optional Brep region topology discarded")
-}
-
-/// True for a diagnostic raised because the archive carries no writer stamp.
-fn dialect_unverified_diagnostic(message: &str) -> bool {
-    message.contains(crate::loss::WRITER_STAMP_UNVERIFIED_MARKER)
 }
 
 fn brep_mesh_cache_diagnostic(message: &str) -> bool {

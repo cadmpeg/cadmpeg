@@ -1932,9 +1932,7 @@ fn parse_material(
             transparent = diffuse;
         } else if writer_version.is_none() && diffuse != transparent {
             losses.push(crate::loss::writer_stamp_unverified(format!(
-                "legacy material at offset {source_offset} kept its stored transparent color \
-                 instead of the pre-2009 diffuse substitution because {}",
-                crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
+                "legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp"
             )));
         }
     }
@@ -3721,9 +3719,7 @@ fn parse_text_style(
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
                 losses.push(crate::loss::writer_stamp_unverified(format!(
-                    "legacy text style at offset {source_offset} dropped the PostScript font \
-                     name \"{description}\" because {}",
-                    crate::loss::WRITER_STAMP_UNVERIFIED_MARKER
+                    "legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp"
                 )));
             }
             String::new()
