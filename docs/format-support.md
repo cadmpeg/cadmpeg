@@ -74,10 +74,10 @@ lists. Every profile below describes the envelope its rows cover.
 
 **Ladder: L1.**
 
-| Dialect                     | Read                   | Write | Fixtures |
-| --------------------------- | ---------------------- | ----- | -------- |
-| `inventor:cfb3-rse31-meta8` | detected               | none  | 0        |
-| `inventor:unknown`          | unclassified-recovered | none  | 0        |
+| Dialect                     | Read                   | Write |
+| --------------------------- | ---------------------- | ----- |
+| `inventor:cfb3-rse31-meta8` | detected               | none  |
+| `inventor:unknown`          | unclassified-recovered | none  |
 
 <!-- /generated: dialects inventor -->
 
@@ -102,12 +102,12 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 **Ladder: L1.**
 
-| Dialect           | Read     | Write | Fixtures |
-| ----------------- | -------- | ----- | -------- |
-| `sat:asm-binary`  | detected | none  | 0        |
-| `sat:acis-binary` | detected | none  | 0        |
-| `sat:text`        | detected | none  | 0        |
-| `sat:unknown`     | refused  | none  | 0        |
+| Dialect           | Read     | Write |
+| ----------------- | -------- | ----- |
+| `sat:asm-binary`  | detected | none  |
+| `sat:acis-binary` | detected | none  |
+| `sat:text`        | detected | none  |
+| `sat:unknown`     | refused  | none  |
 
 <!-- /generated: dialects sat -->
 
@@ -136,12 +136,12 @@ See [`formats/asm.md`](formats/asm.md) and [`formats/asm-open-items.md`](formats
 
 **Ladder: L5.**
 
-| Dialect          | Read                   | Write     | Fixtures |
-| ---------------- | ---------------------- | --------- | -------- |
-| `fcstd:schema-2` | detected               | preserved | 0        |
-| `fcstd:schema-3` | detected               | preserved | 0        |
-| `fcstd:schema-4` | L5                     | verified  | 12       |
-| `fcstd:unknown`  | unclassified-recovered | none      | 0        |
+| Dialect          | Read                   | Write     |
+| ---------------- | ---------------------- | --------- |
+| `fcstd:schema-2` | detected               | preserved |
+| `fcstd:schema-3` | detected               | preserved |
+| `fcstd:schema-4` | L5                     | verified  |
+| `fcstd:unknown`  | unclassified-recovered | none      |
 
 <!-- /generated: dialects fcstd -->
 
@@ -161,30 +161,30 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 **Ladder: L9.**
 
-| Dialect                                   | Read                   | Write     | Fixtures |
-| ----------------------------------------- | ---------------------- | --------- | -------- |
-| `iges:1.0-fixed-ascii`                    | unclassified-recovered | preserved | 0        |
-| `iges:ansi-y14.26m-1981-fixed-ascii`      | unclassified-recovered | preserved | 0        |
-| `iges:2.0-fixed-ascii`                    | unclassified-recovered | preserved | 1        |
-| `iges:3.0-fixed-ascii`                    | unclassified-recovered | preserved | 0        |
-| `iges:asme-ansi-y14.26m-1987-fixed-ascii` | unclassified-recovered | preserved | 0        |
-| `iges:4.0-fixed-ascii`                    | detected               | emitted   | 0        |
-| `iges:asme-y14.26m-1989-fixed-ascii`      | unclassified-recovered | preserved | 0        |
-| `iges:5.0-fixed-ascii`                    | pending                | emitted   | 0        |
-| `iges:5.1-fixed-ascii`                    | detected               | emitted   | 0        |
-| `iges:5.2-fixed-ascii`                    | detected               | emitted   | 0        |
-| `iges:5.3-fixed-ascii`                    | L9                     | verified  | 78       |
-| `iges:4.0-compressed-ascii`               | detected               | preserved | 0        |
-| `iges:5.0-compressed-ascii`               | detected               | preserved | 0        |
-| `iges:5.1-compressed-ascii`               | detected               | preserved | 0        |
-| `iges:5.2-compressed-ascii`               | detected               | preserved | 0        |
-| `iges:5.3-compressed-ascii`               | L1                     | preserved | 1        |
-| `iges:4.0-binary`                         | detected               | preserved | 0        |
-| `iges:5.0-binary`                         | detected               | preserved | 0        |
-| `iges:5.1-binary`                         | detected               | preserved | 0        |
-| `iges:5.2-binary`                         | detected               | preserved | 0        |
-| `iges:5.3-binary`                         | detected               | preserved | 0        |
-| `iges:unknown`                            | unclassified-recovered | preserved | 1        |
+| Dialect                                   | Read                   | Write     |
+| ----------------------------------------- | ---------------------- | --------- |
+| `iges:1.0-fixed-ascii`                    | unclassified-recovered | preserved |
+| `iges:ansi-y14.26m-1981-fixed-ascii`      | unclassified-recovered | preserved |
+| `iges:2.0-fixed-ascii`                    | unclassified-recovered | preserved |
+| `iges:3.0-fixed-ascii`                    | unclassified-recovered | preserved |
+| `iges:asme-ansi-y14.26m-1987-fixed-ascii` | unclassified-recovered | preserved |
+| `iges:4.0-fixed-ascii`                    | detected               | emitted   |
+| `iges:asme-y14.26m-1989-fixed-ascii`      | unclassified-recovered | preserved |
+| `iges:5.0-fixed-ascii`                    | detected               | emitted   |
+| `iges:5.1-fixed-ascii`                    | detected               | emitted   |
+| `iges:5.2-fixed-ascii`                    | detected               | emitted   |
+| `iges:5.3-fixed-ascii`                    | L9                     | verified  |
+| `iges:4.0-compressed-ascii`               | detected               | preserved |
+| `iges:5.0-compressed-ascii`               | detected               | preserved |
+| `iges:5.1-compressed-ascii`               | detected               | preserved |
+| `iges:5.2-compressed-ascii`               | detected               | preserved |
+| `iges:5.3-compressed-ascii`               | L1                     | preserved |
+| `iges:4.0-binary`                         | detected               | preserved |
+| `iges:5.0-binary`                         | detected               | preserved |
+| `iges:5.1-binary`                         | detected               | preserved |
+| `iges:5.2-binary`                         | detected               | preserved |
+| `iges:5.3-binary`                         | detected               | preserved |
+| `iges:unknown`                            | unclassified-recovered | preserved |
 
 <!-- /generated: dialects iges -->
 
@@ -234,19 +234,19 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 **Ladder: L1.**
 
-| Dialect            | Read                   | Write   | Fixtures |
-| ------------------ | ---------------------- | ------- | -------- |
-| `rhino:archive-1`  | detected               | none    | 1        |
-| `rhino:archive-2`  | detected               | none    | 0        |
-| `rhino:archive-3`  | L1                     | none    | 1        |
-| `rhino:archive-4`  | L1                     | none    | 1        |
-| `rhino:archive-5`  | detected               | none    | 0        |
-| `rhino:archive-50` | L1                     | emitted | 17       |
-| `rhino:archive-60` | L1                     | emitted | 4        |
-| `rhino:archive-70` | L1                     | emitted | 1        |
-| `rhino:archive-80` | L1                     | emitted | 2        |
-| `rhino:archive-90` | detected               | none    | 0        |
-| `rhino:unknown`    | unclassified-recovered | none    | 0        |
+| Dialect            | Read                   | Write   |
+| ------------------ | ---------------------- | ------- |
+| `rhino:archive-1`  | detected               | none    |
+| `rhino:archive-2`  | detected               | none    |
+| `rhino:archive-3`  | L1                     | none    |
+| `rhino:archive-4`  | L1                     | none    |
+| `rhino:archive-5`  | detected               | none    |
+| `rhino:archive-50` | L1                     | emitted |
+| `rhino:archive-60` | L1                     | emitted |
+| `rhino:archive-70` | L1                     | emitted |
+| `rhino:archive-80` | L1                     | emitted |
+| `rhino:archive-90` | detected               | none    |
+| `rhino:unknown`    | unclassified-recovered | none    |
 
 <!-- /generated: dialects rhino -->
 
@@ -280,11 +280,11 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md), [`formats/rhino_3dm-open-ite
 
 **Ladder: L1.**
 
-| Dialect                        | Read                   | Write     | Fixtures |
-| ------------------------------ | ---------------------- | --------- | -------- |
-| `sldprt:sw-version-pre-12000`  | detected               | preserved | 0        |
-| `sldprt:sw-version-12000-plus` | detected               | preserved | 0        |
-| `sldprt:unknown`               | unclassified-recovered | emitted   | 20       |
+| Dialect                        | Read                   | Write     |
+| ------------------------------ | ---------------------- | --------- |
+| `sldprt:sw-version-pre-12000`  | detected               | preserved |
+| `sldprt:sw-version-12000-plus` | detected               | preserved |
+| `sldprt:unknown`               | unclassified-recovered | emitted   |
 
 <!-- /generated: dialects sldprt -->
 
@@ -316,11 +316,11 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 **Ladder: L4.**
 
-| Dialect                  | Read                   | Write    | Fixtures |
-| ------------------------ | ---------------------- | -------- | -------- |
-| `f3d:manifest-3-2-0-0`   | L4                     | verified | 61       |
-| `f3d:f3z-multi-document` | detected               | none     | 0        |
-| `f3d:unknown`            | unclassified-recovered | none     | 0        |
+| Dialect                  | Read                   | Write    |
+| ------------------------ | ---------------------- | -------- |
+| `f3d:manifest-3-2-0-0`   | L4                     | verified |
+| `f3d:f3z-multi-document` | detected               | none     |
+| `f3d:unknown`            | unclassified-recovered | none     |
 
 <!-- /generated: dialects f3d -->
 
@@ -374,11 +374,11 @@ See [`formats/f3d.md`](formats/f3d.md), [`formats/f3d-open-items.md`](formats/f3
 
 **Ladder: L1.**
 
-| Dialect         | Read     | Write | Fixtures |
-| --------------- | -------- | ----- | -------- |
-| `nx:splmsstr`   | detected | none  | 0        |
-| `nx:legacy-cfb` | detected | none  | 0        |
-| `nx:unknown`    | refused  | none  | 0        |
+| Dialect         | Read     | Write |
+| --------------- | -------- | ----- |
+| `nx:splmsstr`   | detected | none  |
+| `nx:legacy-cfb` | detected | none  |
+| `nx:unknown`    | refused  | none  |
 
 <!-- /generated: dialects nx -->
 
@@ -415,15 +415,15 @@ See the [format specification](formats/siemens_nx.md), [coverage contract](forma
 
 **Ladder: L1.**
 
-| Dialect                           | Read                   | Write | Fixtures |
-| --------------------------------- | ---------------------- | ----- | -------- |
-| `catia:standard-nested`           | L1                     | none  | 6        |
-| `catia:fbb-only`                  | L1                     | none  | 1        |
-| `catia:e5-stream`                 | L1                     | none  | 1        |
-| `catia:zero-entity`               | L1                     | none  | 3        |
-| `catia:float-packed-inner-no-fbb` | L1                     | none  | 5        |
-| `catia:inner-no-directory`        | L1                     | none  | 2        |
-| `catia:unknown`                   | unclassified-recovered | none  | 1        |
+| Dialect                           | Read                   | Write |
+| --------------------------------- | ---------------------- | ----- |
+| `catia:standard-nested`           | L1                     | none  |
+| `catia:fbb-only`                  | L1                     | none  |
+| `catia:e5-stream`                 | L1                     | none  |
+| `catia:zero-entity`               | L1                     | none  |
+| `catia:float-packed-inner-no-fbb` | L1                     | none  |
+| `catia:inner-no-directory`        | L1                     | none  |
+| `catia:unknown`                   | unclassified-recovered | none  |
 
 <!-- /generated: dialects catia -->
 
@@ -456,12 +456,12 @@ See the [coverage contract](formats/catia-coverage.md), [format specification](f
 
 **Ladder: L1.**
 
-| Dialect             | Read                   | Write | Fixtures |
-| ------------------- | ---------------------- | ----- | -------- |
-| `creo:depdb`        | L1                     | none  | 4        |
-| `creo:nd`           | L1                     | none  | 6        |
-| `creo:legacy-ascii` | detected               | none  | 0        |
-| `creo:unknown`      | unclassified-recovered | none  | 18       |
+| Dialect             | Read                   | Write |
+| ------------------- | ---------------------- | ----- |
+| `creo:depdb`        | L1                     | none  |
+| `creo:nd`           | L1                     | none  |
+| `creo:legacy-ascii` | detected               | none  |
+| `creo:unknown`      | unclassified-recovered | none  |
 
 <!-- /generated: dialects creo -->
 
@@ -496,19 +496,19 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 **Ladder: L9.**
 
-| Dialect                   | Read                   | Write    | Fixtures |
-| ------------------------- | ---------------------- | -------- | -------- |
-| `step:ap203-e1`           | L9                     | verified | 1        |
-| `step:ap203-e2`           | detected               | emitted  | 0        |
-| `step:ap214`              | L9                     | verified | 1        |
-| `step:ap242`              | L9                     | none     | 13       |
-| `step:ap242-e1`           | detected               | emitted  | 0        |
-| `step:ap242-e2`           | L9                     | verified | 1        |
-| `step:ap242-e3`           | pending                | verified | 0        |
-| `step:part28-xml`         | refused                | none     | 0        |
-| `step:ap242-bo-model-xml` | refused                | none     | 0        |
-| `step:part26-hdf5`        | refused                | none     | 0        |
-| `step:unknown`            | unclassified-recovered | none     | 3        |
+| Dialect                   | Read                   | Write    |
+| ------------------------- | ---------------------- | -------- |
+| `step:ap203-e1`           | L9                     | verified |
+| `step:ap203-e2`           | detected               | emitted  |
+| `step:ap214`              | L9                     | verified |
+| `step:ap242`              | L9                     | none     |
+| `step:ap242-e1`           | detected               | emitted  |
+| `step:ap242-e2`           | L9                     | verified |
+| `step:ap242-e3`           | detected               | verified |
+| `step:part28-xml`         | refused                | none     |
+| `step:ap242-bo-model-xml` | refused                | none     |
+| `step:part26-hdf5`        | refused                | none     |
+| `step:unknown`            | unclassified-recovered | none     |
 
 <!-- /generated: dialects step -->
 

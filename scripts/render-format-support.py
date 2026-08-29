@@ -100,7 +100,6 @@ class Row:
     dialect: str
     read: str
     write: str
-    fixtures: int
 
 
 @dataclass(frozen=True)
@@ -118,17 +117,6 @@ class Format:
         if self.level is None:
             raise RenderError(f"{SUPPORT_REL}: format.{self.fmt} has no level")
         return f"L{self.level}"
-
-    def displayed_read(self, row: Row) -> str:
-        if (
-            row.dialect in self.scored
-            and row.read == "detected"
-            and row.fixtures == 0
-            and row.dialect not in self.evaluated
-        ):
-            return "pending"
-        return row.read
-
 
 def _load_toml(path: Path) -> dict:
     try:
@@ -192,7 +180,6 @@ def load_formats(root: Path) -> dict[str, Format]:
                 dialect=dialect,
                 read=support.get("read", ""),
                 write=support.get("write", ""),
-                fixtures=len(support.get("fixtures", [])),
             )
         )
     if by_dialect:
@@ -279,11 +266,8 @@ def ladder_table(formats: dict[str, Format]) -> str:
 
 def format_section(fmt: str, formats: dict[str, Format]) -> str:
     entry = formats[fmt]
-    rows = [
-        (f"`{row.dialect}`", entry.displayed_read(row), row.write, str(row.fixtures))
-        for row in entry.rows
-    ]
-    header = ("Dialect", "Read", "Write", "Fixtures")
+    rows = [(f"`{row.dialect}`", row.read, row.write) for row in entry.rows]
+    header = ("Dialect", "Read", "Write")
     return f"\n**Ladder: {entry.headline}.**\n\n{_table(header, rows)}\n"
 
 

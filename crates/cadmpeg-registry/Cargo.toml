@@ -60,6 +60,7 @@ toml.workspace = true
 
 [dev-dependencies]
 crc32fast.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
