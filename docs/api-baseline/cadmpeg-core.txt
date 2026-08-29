@@ -1,4 +1,4 @@
-# generated at 0cb4ec82a
+# generated at a60190517
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -34,8 +34,6 @@ impl cadmpeg_core::container::ContainerSummary
 pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
-pub fn cadmpeg_core::container::ContainerSummary::set_dialects(&mut self, cadmpeg_core::dialect::DialectLayers)
-pub fn cadmpeg_core::container::ContainerSummary::take_dialects(&mut self) -> core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub mod cadmpeg_core::decode
 pub enum cadmpeg_core::decode::AddressStepKind
@@ -409,8 +407,6 @@ impl cadmpeg_core::container::ContainerSummary
 pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
-pub fn cadmpeg_core::container::ContainerSummary::set_dialects(&mut self, cadmpeg_core::dialect::DialectLayers)
-pub fn cadmpeg_core::container::ContainerSummary::take_dialects(&mut self) -> core::option::Option<cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub struct cadmpeg_core::TargetToken(_)
 impl cadmpeg_core::error::TargetToken

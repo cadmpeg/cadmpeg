@@ -254,7 +254,7 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
 fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     let mut ir = unit_cube();
     ir.source = None;
-    let mut report = DecodeReport::classified(
+    let report = DecodeReport::classified(
         DialectLayers::new(
             dialect_layer("test", "test:only"),
             vec![dialect_layer("acis", "acis:save-format-217")],
@@ -271,8 +271,19 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
 
     assert_eq!(result.report().dialects().unwrap().iter().count(), 2);
 
-    report.take_dialects();
-    let unclassified = DecodeResult::new(ir, report, SourceFidelity::default());
+    let unclassified = DecodeResult::new(
+        ir,
+        DecodeReport::unclassified(
+            "test",
+            report.container_only,
+            report.geometry_transferred,
+            report.coverage,
+            report.losses,
+            report.notes,
+            report.transfer_ledger,
+        ),
+        SourceFidelity::default(),
+    );
     assert!(unclassified.report().dialects().is_none());
 }
 

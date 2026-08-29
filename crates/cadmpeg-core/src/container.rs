@@ -97,17 +97,6 @@ impl ContainerSummary {
     pub fn dialects(&self) -> Option<&DialectLayers> {
         self.dialects.as_ref()
     }
-
-    /// Removes and returns the classified dialect layers.
-    pub fn take_dialects(&mut self) -> Option<DialectLayers> {
-        self.dialects.take()
-    }
-
-    /// Replaces the classification and derives the summary format from it.
-    pub fn set_dialects(&mut self, dialects: DialectLayers) {
-        self.format.clone_from(&dialects.primary().format);
-        self.dialects = Some(dialects);
-    }
 }
 
 #[cfg(test)]

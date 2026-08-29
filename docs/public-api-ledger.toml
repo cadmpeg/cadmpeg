@@ -1498,3 +1498,17 @@ crate = "cadmpeg-core"
 kind = "field"
 item = "cadmpeg_core::CodecError::UnsupportedTarget::requested"
 reason = "writer refusals distinguish arbitrary requested target tokens from registered `DialectId` values through `TargetToken` instead of a raw string"
+
+[[change]]
+commit = "a601905178ae6660a95aca7ecefbc6518163c939"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::container::ContainerSummary::{set_dialects,take_dialects}"
+reason = "classified summaries are immutable values; callers construct a new summary from the classification value instead of removing or replacing its dialect layers"
+
+[[change]]
+commit = "a601905178ae6660a95aca7ecefbc6518163c939"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::report::DecodeReport::{set_dialects,take_dialects}"
+reason = "classified reports are immutable values; F3Z accumulates dialect layers separately and constructs its outer report once after recursive component merging"
