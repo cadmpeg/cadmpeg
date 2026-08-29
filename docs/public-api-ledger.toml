@@ -1,8 +1,7 @@
 # Public API change ledger for the refactor.
 # Phase 2+ adds one row per intentional public deletion, module move, visibility
-# reduction, signature change, removed trait implementation, or field encapsulation,
-# and one per deliberately published new surface (kind = "addition"), so a new
-# public name is a decision on the record rather than a diff nobody chose.
+# reduction, signature change, removed trait implementation, or field encapsulation.
+# Additions are recorded by the rustdoc API baselines and need no new ledger row.
 # `commit` is the commit whose diff contains the API change. A new row cannot
 # contain its own final SHA, so its provisional value names the parent and thus
 # the landing range; a provenance pass replaces it with the change commit.

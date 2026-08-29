@@ -51,6 +51,7 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 GENERATED = re.compile(r"^# generated at [0-9a-f]+$")
 ADDED_CHANGE = re.compile(r"^\+\s*\[\[change\]\]\s*(?:#.*)?$")
 ADDED_CRATE = re.compile(r'^\+\s*crate\s*=\s*"([^"]+)"\s*(?:#.*)?$')
+ADDED_KIND = re.compile(r'^\+\s*kind\s*=\s*"([^"]+)"\s*(?:#.*)?$')
 ADDED_TABLE = re.compile(r"^\+\s*\[+[^]]+\]+")
 CRATE_SOURCE = re.compile(r"^crates/([^/]+)/src(?:/|$)")
 DIFF_LINE_LIMIT = 60
@@ -166,23 +167,41 @@ def check_git_objects(data: dict[str, object]) -> list[str]:
 
 
 def added_change_crates(staged_diff: str) -> set[str]:
-    """Return crates named by added ``[[change]]`` rows in a git diff."""
+    """Return crates named by added breaking-change rows in a git diff."""
     crates: set[str] = set()
     in_added_change = False
+    crate: str | None = None
+    kind: str | None = None
+
+    def finish() -> None:
+        if crate is not None and kind != "addition":
+            crates.add(crate)
+
     for line in staged_diff.splitlines():
         if ADDED_CHANGE.fullmatch(line):
+            if in_added_change:
+                finish()
             in_added_change = True
+            crate = None
+            kind = None
             continue
         if line.startswith("+") and not line.startswith("+++"):
             if ADDED_TABLE.match(line):
+                if in_added_change:
+                    finish()
                 in_added_change = False
                 continue
-            match = ADDED_CRATE.fullmatch(line)
-            if in_added_change and match is not None:
-                crates.add(match.group(1))
+            if in_added_change:
+                if match := ADDED_CRATE.fullmatch(line):
+                    crate = match.group(1)
+                elif match := ADDED_KIND.fullmatch(line):
+                    kind = match.group(1)
             continue
         if in_added_change:
+            finish()
             in_added_change = False
+    if in_added_change:
+        finish()
     return crates
 
 
@@ -197,7 +216,7 @@ def regen_command(crate: str) -> str:
 
 
 def check_staged_coupling(staged_diff: str, staged_paths: set[str]) -> list[str]:
-    """Require each crate added to the ledger to have a staged snapshot."""
+    """Require each breaking-change row to have a staged snapshot."""
     failures: list[str] = []
     for crate in sorted(added_change_crates(staged_diff)):
         snapshot = f"docs/api-baseline/{crate}.txt"
