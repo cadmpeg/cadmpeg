@@ -255,6 +255,12 @@ pub(super) fn print_decode_report(
         report.geometry_transferred,
         report.container_only
     )?;
+    if let Some(dialects) = report.dialects() {
+        writeln!(writer, "dialects:")?;
+        for dialect in dialects.iter() {
+            writeln!(writer, "  {}: {}", dialect.format, dialect.dialect)?;
+        }
+    }
     if !report.losses.is_empty() {
         writeln!(writer, "losses:")?;
         for loss in &report.losses {
