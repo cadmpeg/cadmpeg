@@ -38,7 +38,6 @@ use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use crate::FcstdWriteOptions;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -71,12 +70,12 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 }];
 
 /// The write options represented by a canonical catalog entry.
-pub(crate) fn target_options(target: &TargetDescriptor) -> Result<FcstdWriteOptions, CodecError> {
+pub(crate) fn target_options(target: &TargetDescriptor) -> FcstdWriteOptions {
     match target.id {
-        id if id == FcstdDialect::Schema4.pinned() => Ok(FcstdWriteOptions {
+        id if id == FcstdDialect::Schema4.pinned() => FcstdWriteOptions {
             schema_version: 4,
             file_version: TARGET_FILE_VERSION,
-        }),
+        },
         _ => unreachable!("FreeCAD TARGETS entries map to FcstdWriteOptions"),
     }
 }

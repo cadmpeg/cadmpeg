@@ -42,7 +42,6 @@
 use crate::chunks::ArchiveVersion;
 use crate::RhinoArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -95,8 +94,8 @@ impl RhinoArchiveVersion {
 }
 
 /// The archive version represented by a canonical catalog entry.
-pub(crate) fn target_version(target: &TargetDescriptor) -> Result<RhinoArchiveVersion, CodecError> {
-    Ok([
+pub(crate) fn target_version(target: &TargetDescriptor) -> RhinoArchiveVersion {
+    [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
         RhinoArchiveVersion::V7,
@@ -104,7 +103,7 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> Result<RhinoArchiveVe
     ]
     .into_iter()
     .find(|version| version.target() == target.id)
-    .expect("Rhino TARGETS entries map to RhinoArchiveVersion"))
+    .expect("Rhino TARGETS entries map to RhinoArchiveVersion")
 }
 
 /// Key of the archive-version word in [`DialectMatch::declared`].

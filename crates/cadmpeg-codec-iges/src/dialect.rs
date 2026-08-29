@@ -32,7 +32,6 @@ use crate::global::{DialectRecovery, ResolvedGlobal};
 use crate::representation::Representation;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -84,11 +83,11 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[
 ];
 
 /// The write version represented by a canonical catalog entry.
-pub(crate) fn target_version(target: &TargetDescriptor) -> Result<IgesVersion, CodecError> {
-    Ok(IgesVersion::ALL
+pub(crate) fn target_version(target: &TargetDescriptor) -> IgesVersion {
+    IgesVersion::ALL
         .into_iter()
         .find(|version| IgesDialect::fixed_ascii(*version).pinned() == target.id)
-        .expect("IGES TARGETS entries map to IgesVersion::ALL"))
+        .expect("IGES TARGETS entries map to IgesVersion::ALL")
 }
 
 /// The dialect-unverified loss required by a classified Global declaration.
