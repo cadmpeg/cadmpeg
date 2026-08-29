@@ -96,7 +96,16 @@ pub fn decode(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let (ir, mut report, fidelity) = crate::decode::decode(ctx, root_view)?.into_parts();
+    let (ir, mut report, mut fidelity) = crate::decode::decode(ctx, root_view)?.into_parts();
+    remove_primary_layer(&mut report.dialects, &report.format);
+    report.dialects.insert(0, scan.dialect.clone());
+    report
+        .losses
+        .retain(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind());
+    fidelity
+        .retained_records
+        .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
+    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)]);
     if let Some(drawing_root) = omitted_drawing_root {
         report
             .losses
@@ -112,12 +121,7 @@ pub fn decode(
     report.notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
-    // The inner decode classified the root member, which is an `f3d:` document
-    // in its own right. The file handed to the codec is the outer archive, so
-    // the report states the outer archive's row. Restated before the
-    // container-only return and before the digest stamp below, so both paths
-    // carry it.
-    let root = restate_outer_dialect(DecodeResult::new(ir, report, fidelity), scan);
+    let root = finalize_result(ir, report, fidelity);
     if ctx.container_only() {
         return Ok(root);
     }
@@ -147,50 +151,45 @@ pub fn decode(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     make_sibling_ordinals_unique(&mut ir.model.occurrences);
-    let hash = crate::decode::document_local_sha256(&ir);
-    if let Some(source) = &mut ir.source {
+    Ok(finalize_result(ir, report, fidelity))
+}
+
+fn remove_primary_layer(dialects: &mut Vec<DialectMatch>, format: &str) {
+    let primary = cadmpeg_core::dialect::primary_layer(dialects, format)
+        .expect("an F3D member decode must report its primary layer");
+    let index = dialects
+        .iter()
+        .position(|matched| std::ptr::eq(matched, primary))
+        .expect("the primary layer is borrowed from the report");
+    dialects.remove(index);
+}
+
+fn finalize_result(
+    ir: cadmpeg_ir::CadIr,
+    report: cadmpeg_ir::DecodeReport,
+    fidelity: cadmpeg_ir::SourceFidelity,
+) -> DecodeResult {
+    let mut result = DecodeResult::new(ir, report, fidelity);
+    let hash = crate::decode::document_local_sha256(result.ir());
+    if let Some(source) = &mut result.ir_mut().source {
         source.attributes.insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
     }
-    Ok(DecodeResult::new(ir, report, fidelity))
+    result
 }
 
-/// Replace the root member's primary dialect match with the outer archive's.
-///
-/// [`crate::decode::decode`] runs on the root `.f3d` member and classifies that
-/// member as `f3d:manifest-3-2-0-0`. The document under decode is the `.f3z`
-/// archive, whose own scan classified it as `f3d:f3z-multi-document`, so the
-/// report and [`cadmpeg_ir::document::SourceMeta`] state that row. Non-primary
-/// `acis:` kernel rows remain attached to their kernel losses.
-fn restate_outer_dialect(root: DecodeResult, scan: &ContainerScan<'_>) -> DecodeResult {
-    let (ir, mut report, fidelity) = root.into_parts();
-    let mut dialects = vec![scan.dialect.clone()];
-    dialects.extend(
-        report
-            .dialects
-            .drain(..)
-            .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT),
-    );
-    report
-        .losses
-        .retain(|loss| loss.code != F3dLossCode::SourceDialectUnverified.kind());
-    report.dialects = dialects;
-    DecodeResult::new(ir, report, fidelity)
-}
-
-/// Attach a merged component's kernel rows to the same occurrence prefix as
-/// its losses. The component's `f3d:` row is document-local and does not travel.
-fn merge_component_kernel_layers(
+/// Attach a merged component's non-primary layers to the same occurrence
+/// prefix as its losses. The component's primary row is document-local.
+fn merge_component_layers(
     target: &mut Vec<DialectMatch>,
-    component: Vec<DialectMatch>,
+    mut component: Vec<DialectMatch>,
+    component_format: &str,
     occurrence: &str,
 ) {
-    for mut matched in component
-        .into_iter()
-        .filter(|matched| matched.format == cadmpeg_asm::dialect::FORMAT)
-    {
+    remove_primary_layer(&mut component, component_format);
+    for mut matched in component {
         if let Some(carrier) = matched.declared.get_mut("carrier") {
             *carrier = format!("xref {occurrence}: {carrier}");
         }
@@ -385,9 +384,10 @@ fn merge_references(
         )?;
         merged += descendants + 1;
         parent_report.geometry_transferred |= component_report.geometry_transferred;
-        merge_component_kernel_layers(
+        merge_component_layers(
             &mut parent_report.dialects,
             component_report.dialects,
+            &component_report.format,
             &occurrence,
         );
         for mut loss in component_report.losses {

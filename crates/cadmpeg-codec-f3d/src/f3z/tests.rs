@@ -487,22 +487,63 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(archive.as_slice()),
+            &DecodeOptions::default(),
+        )
         .unwrap();
 
     assert!(decoded
         .source_fidelity()
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_some());
-    let mut replayed = Vec::new();
-    F3dCodec
+    let plan = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .and_then(|plan| plan.write_to(&mut replayed))
-        .expect("unmerged F3Z root member remains replayable");
-    assert_eq!(replayed, root);
+        .expect("unmerged F3Z archive remains replayable");
+    let reported = plan
+        .report()
+        .target()
+        .expect("an F3D export names its target")
+        .clone();
+    let mut replayed = Vec::new();
+    plan.write_to(&mut replayed).unwrap();
+    assert_eq!(replayed, archive);
+
+    let redecode = F3dCodec
+        .decode(&mut Cursor::new(replayed), &DecodeOptions::default())
+        .unwrap();
+    let primary = cadmpeg_core::dialect::primary_layer(
+        &redecode.report().dialects,
+        &redecode.report().format,
+    )
+    .expect("re-decoded F3Z archive has a primary layer");
+    assert_eq!(primary.dialect.as_ref(), Some(&reported));
+}
+
+#[test]
+fn f3z_container_only_stamps_the_outer_document_digest() {
+    let root = f3d_with_smbh(&synthetic_geometry_smbh());
+    let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+
+    let source = decoded.ir().source.as_ref().unwrap();
+    assert_eq!(
+        source
+            .attributes
+            .get(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+        Some(&crate::decode::document_local_sha256(decoded.ir()))
+    );
 }
 
 #[test]
@@ -662,7 +703,7 @@ fn unverified_acis_text_member() -> Vec<u8> {
 }
 
 #[test]
-fn f3z_restatement_retains_the_root_kernel_row_and_loss() {
+fn f3z_decode_retains_the_root_kernel_row_and_loss() {
     let stream = unverified_acis_text_member();
     let root = f3d_with_text_brep_stream(
         &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
@@ -701,7 +742,7 @@ fn f3z_restatement_retains_the_root_kernel_row_and_loss() {
 }
 
 #[test]
-fn f3z_restatement_drops_the_displaced_member_dialect_loss() {
+fn f3z_decode_drops_the_member_dialect_loss() {
     let root = f3d_with_smbh_and_manifest_version(&synthetic_smbh(), "9-9-9-9");
     let member = F3dCodec
         .decode(&mut Cursor::new(root.clone()), &DecodeOptions::default())

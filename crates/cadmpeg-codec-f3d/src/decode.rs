@@ -3714,7 +3714,7 @@ fn decode_result(
     Ok(result)
 }
 
-fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
+pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     let id = crate::ids::FILE_SOURCE_IMAGE_ID;
     UnknownRecord {
         id: UnknownId(id.into()),
