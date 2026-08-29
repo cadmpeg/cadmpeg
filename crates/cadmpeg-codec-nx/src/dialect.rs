@@ -47,11 +47,12 @@
 //! stays unreachable from [`NxDialect::classify`].
 
 use crate::container::Container;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "nx";
+const PARASOLID_FORMAT: &str = "parasolid";
 
 /// Key of the modern container version byte in [`DialectMatch::declared`].
 ///
@@ -80,6 +81,54 @@ pub(crate) enum NxDialect {
     // only in-code anchor.
     #[allow(dead_code)]
     Unknown,
+}
+
+/// Classify the host container and every schema-bearing Parasolid stream.
+pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
+    let streams = scan
+        .streams
+        .iter()
+        .filter_map(|stream| {
+            stream
+                .kind
+                .is_parasolid()
+                .then_some(stream)
+                .and_then(|stream| stream.schema.as_deref().map(|schema| (stream, schema)))
+        })
+        .collect::<Vec<_>>();
+    let several = streams.len() > 1;
+    let extra = streams
+        .into_iter()
+        .map(|(stream, schema)| {
+            let id = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
+                "parasolid:sch-sw-33103"
+            } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
+                "parasolid:sch-sw-32001"
+            } else if schema.to_ascii_uppercase().ends_with("_13006") {
+                "parasolid:format-13006"
+            } else {
+                "parasolid:unknown"
+            };
+            let carrier = format!("stream@{}", stream.file_offset);
+            let declared = BTreeMap::from([
+                ("schema".to_owned(), schema.to_owned()),
+                ("carrier".to_owned(), carrier.clone()),
+            ]);
+            let matched = DialectMatch::layer(
+                PARASOLID_FORMAT,
+                DialectId::pinned(id),
+                declared,
+                Admission::Admitted,
+            );
+            if several {
+                matched.with_instance(carrier)
+            } else {
+                matched
+            }
+        })
+        .collect();
+    DialectLayers::new(NxDialect::classify(&scan.container), extra)
+        .expect("Parasolid stream offsets have unique instances")
 }
 
 impl NxDialect {

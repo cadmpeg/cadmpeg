@@ -63,10 +63,8 @@
 # format that has a catalog must appear in it. It also proves each exported
 # id is a subset of that format's identity rows and is not `write = "none"`.
 #
-# `parasolid:` has no owning crate, so nothing classifies it on the read side:
-# its schema tokens are read as attributes inside the sldprt and nx readers.
-# The schema has no cell for "identity row with no reader", so those four rows
-# carry the disposition the wrapping code enforces and say so in the reason.
+# `parasolid:` has no owning crate. The sldprt and nx hosts classify its schema
+# tokens as extra layers from the same parsed stream headers used by decode.
 # Two of them are written even so: the sldprt writer stamps a Parasolid schema
 # token on every stream it generates, which is synthesis at the kernel layer,
 # and an embedded-kernel dialect is never its host's `targets()` row.
@@ -1006,9 +1004,8 @@ dialect = "parasolid:sch-sw-33103"
 read = "detected"
 write = "emitted"
 reason = """
-the `parasolid:` namespace has no owning crate, so no code classifies this
-id on the read side: the schema token is read as an attribute inside the
-sldprt and nx readers. It is synthesized, though. The sldprt writer stamps
+the sldprt and nx readers classify this id from a framed Parasolid stream's
+`SCH_SW_33103_11000` token. The sldprt writer also stamps
 `SCH_SW_33103_11000` on every Parasolid stream it generates whose bodies are
 all solid (writer.rs:126-130), which is the default branch"""
 
@@ -1017,9 +1014,8 @@ dialect = "parasolid:sch-sw-32001"
 read = "detected"
 write = "emitted"
 reason = """
-the `parasolid:` namespace has no owning crate, so no code classifies this
-id on the read side: the schema token is read as an attribute inside the
-sldprt and nx readers. It is synthesized, though. The sldprt writer stamps
+the sldprt and nx readers classify this id from a framed Parasolid stream's
+`SCH_SW_32001_11000` token. The sldprt writer also stamps
 `SCH_SW_32001_11000` on a generated Parasolid stream when any body is a
 sheet (writer.rs:120-130)"""
 
@@ -1028,16 +1024,14 @@ dialect = "parasolid:format-13006"
 read = "detected"
 write = "none"
 reason = """
-no code emits this id: the `parasolid:` namespace has no owning crate, and
-the schema token is read as an attribute inside the sldprt and nx readers
-rather than classified; it is the one token the read path branches on,
-selecting the mesh stream grammar"""
+the sldprt and nx readers emit this layer when a framed Parasolid stream's
+schema token ends in `_13006`; the same suffix selects the mesh stream
+grammar"""
 
 [[support]]
 dialect = "parasolid:unknown"
 read = "detected"
 write = "none"
 reason = """
-no code emits this id: the `parasolid:` namespace has no owning crate, and
-the schema token is read as an attribute inside the sldprt and nx readers
-rather than classified"""
+the sldprt and nx readers emit this residual layer for every other schema token
+extracted from a framed Parasolid stream"""

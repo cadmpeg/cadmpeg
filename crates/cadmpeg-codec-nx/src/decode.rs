@@ -21,7 +21,6 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::{self, Container, EntryContent};
-use crate::dialect::NxDialect;
 use crate::loss::NxLossCode;
 use crate::parasolid::{self, Stream, StreamKind};
 
@@ -604,10 +603,7 @@ pub fn summarize(scan: &Scan) -> (cadmpeg_core::dialect::DialectLayers, Vec<Stri
                 .to_string(),
         );
     }
-    (
-        cadmpeg_core::dialect::DialectLayers::of(NxDialect::classify(&scan.container)),
-        notes,
-    )
+    (crate::dialect::classify_layers(scan), notes)
 }
 
 #[cfg(test)]

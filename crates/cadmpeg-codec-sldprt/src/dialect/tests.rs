@@ -13,7 +13,9 @@
 
 use super::*;
 use crate::container::scan_bytes;
-use crate::test_support::{make_block, outer_header};
+use crate::test_support::{
+    make_block, outer_header, sldprt_with_colliding_sites, synthetic_sldprt,
+};
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
@@ -39,6 +41,42 @@ fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
         "sldprt",
         &SldprtDialect::ALL.map(SldprtDialect::id),
     );
+}
+
+#[test]
+fn parasolid_schema_evidence_emits_a_kernel_layer() {
+    let bytes = synthetic_sldprt();
+    let scan = scan_bytes(&bytes);
+    let layers = classify_layers(&scan);
+    let kernel = layers
+        .iter()
+        .find(|matched| matched.format() == PARASOLID_FORMAT)
+        .expect("the framed Parasolid stream emits a layer");
+
+    assert_eq!(kernel.dialect().as_str(), "parasolid:sch-sw-33103");
+    assert_eq!(kernel.declared()[PARASOLID_SCHEMA], "SCH_SW_33103_11000");
+    assert_eq!(kernel.instance(), None);
+}
+
+#[test]
+fn several_parasolid_streams_use_their_source_carriers_as_instances() {
+    let bytes = sldprt_with_colliding_sites();
+    let scan = scan_bytes(&bytes);
+    let kernels = classify_layers(&scan)
+        .iter()
+        .filter(|matched| matched.format() == PARASOLID_FORMAT)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert_eq!(kernels.len(), 2);
+    assert!(kernels.iter().all(|matched| {
+        matched.instance()
+            == matched
+                .declared()
+                .get(PARASOLID_CARRIER)
+                .map(String::as_str)
+    }));
+    assert_ne!(kernels[0].instance(), kernels[1].instance());
 }
 
 /// One `swVersion` declaration and the row it selects.

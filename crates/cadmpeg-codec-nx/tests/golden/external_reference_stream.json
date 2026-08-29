@@ -359,7 +359,17 @@
     "report": {
       "container_only": false,
       "dialects": {
-        "extra": [],
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "stream@120",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
         "primary": {
           "admission": "admitted",
           "declared": {
@@ -511,7 +521,17 @@
   "inspect": {
     "container_kind": "splmsstr",
     "dialects": {
-      "extra": [],
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "stream@120",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
       "primary": {
         "admission": "admitted",
         "declared": {

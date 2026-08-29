@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::container::MAGIC;
-use crate::test_support::single_part_prt;
+use crate::test_support::{extract_streams, single_part_prt};
 use std::sync::OnceLock;
 
 /// A container carrying nothing but the dispatch flag and the version byte.
@@ -34,6 +34,24 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
 #[test]
 fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
     cadmpeg_test_support::assert_registry_closed("nx", &NxDialect::ALL.map(NxDialect::id));
+}
+
+#[test]
+fn extracted_parasolid_schema_emits_a_kernel_layer() {
+    let bytes = single_part_prt();
+    let scan = crate::decode::Scan {
+        container: crate::container::scan_bytes(bytes.clone()).unwrap(),
+        streams: extract_streams(&bytes),
+    };
+    let layers = classify_layers(&scan);
+    let kernel = layers
+        .iter()
+        .find(|matched| matched.format() == PARASOLID_FORMAT)
+        .expect("the extracted Parasolid stream emits a layer");
+
+    assert_eq!(kernel.dialect().as_str(), "parasolid:unknown");
+    assert_eq!(kernel.declared()["schema"], "SCH_TEST_1_9999");
+    assert_eq!(kernel.instance(), None);
 }
 
 #[test]
