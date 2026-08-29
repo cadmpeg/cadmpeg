@@ -19,8 +19,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 
 use cadmpeg_registry::{
-    build_encoder, dialect_table, ForcedInput, Format, InputCatalog, ResolvedSource,
-    DETECTION_PREFIX_LEN,
+    build_encoder, ForcedInput, Format, InputCatalog, ResolvedSource, DETECTION_PREFIX_LEN,
 };
 
 use crate::application::refusal::classify_decode_failure;
@@ -350,7 +349,26 @@ fn execute_conversion(
     conversion: &ConversionArgs,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let selection = TargetSelection::resolve(to, out)?;
+    let selection = match TargetSelection::resolve(to, out) {
+        Ok(selection) => selection,
+        Err(error) => {
+            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
+                write_command_report(
+                    path,
+                    conversion.report.as_deref(),
+                    conversion.policy.force,
+                    "convert",
+                    CommandReportBody {
+                        decode_report: None,
+                        check_report: None,
+                        export: None,
+                        refusal: Some(refusal),
+                    },
+                )?;
+            }
+            return Err(error);
+        }
+    };
     let target = export_target(selection);
 
     let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
@@ -523,100 +541,6 @@ pub fn diff(
     }
 }
 
-/// What `--to` and the output path together say the conversion writes.
-impl TargetSelection {
-    /// Reads `--to VALUE` against the output path.
-    ///
-    /// The grammar, in the order it is tried:
-    ///
-    /// * `FORMAT:DIALECT` — the left half names the output format and the
-    ///   right half is the unresolved catalog token. The encoder matches it
-    ///   as the format-local part of an id or as an alias.
-    /// * `FORMAT` — the format, with no dialect stated. `--to step` is the
-    ///   same statement `-f step` has always made: it says what kind of file
-    ///   to write, not which dialect of it, so a same-format conversion still
-    ///   inherits.
-    /// * anything else — a dialect of the format the output path implies. This
-    ///   is what keeps the native short vocabularies usable (`--to 5.1`,
-    ///   `--to 60`, `--to ap242e3`). The value is not checked against a
-    ///   catalog here; `plan` refuses it after the read, naming the catalog.
-    ///
-    /// The third case is unambiguous because no target alias is also an output
-    /// format name. The registry test
-    /// `compiled_write_catalogs_match_registry_policy` proves that.
-    fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
-        let inferred = format_from_path(out);
-        let Some(value) = to else {
-            let format = inferred.ok_or_else(|| {
-                anyhow!("cannot infer format from the output path; pass --to FORMAT")
-            })?;
-            return Ok(Self::new(format, None));
-        };
-
-        if let Some((left, right)) = value.split_once(':') {
-            let format = Format::from_name(left).ok_or_else(|| {
-                anyhow!(
-                    "--to {value}: {left} is not an output format of this build; available: {}",
-                    Format::vocabulary()
-                )
-            })?;
-            if right.is_empty() {
-                bail!(
-                    "--to {value}: nothing after the colon; write --to {left} for the format alone"
-                );
-            }
-            warn_on_extension_disagreement(format, inferred);
-            return Ok(Self::new(format, Some(right.to_owned())));
-        }
-
-        if let Some(format) = Format::from_name(value) {
-            warn_on_extension_disagreement(format, inferred);
-            return Ok(Self::new(format, None));
-        }
-
-        if dialect_table(None)?
-            .iter()
-            .any(|entry| entry.format == value)
-        {
-            bail!(
-                "--to {value}: {value} is not an output format of this build; available: {}",
-                Format::vocabulary()
-            );
-        }
-
-        let format = inferred.ok_or_else(|| {
-            anyhow!(
-                "--to {value}: not an output format of this build ({}), and no output path to read \
-                 a format from; write --to FORMAT:{value}",
-                Format::vocabulary()
-            )
-        })?;
-        Ok(Self::new(format, Some(value.to_owned())))
-    }
-}
-
-/// Warns when an explicitly named output format disagrees with the output
-/// path's extension. The named format wins; the warning says so.
-/// The output format an `-o` path implies, read from its extension.
-fn format_from_path(path: Option<&Path>) -> Option<Format> {
-    path.and_then(Path::extension)
-        .and_then(|extension| extension.to_str())
-        .and_then(Format::from_extension)
-}
-
-fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
-    if let Some(inferred) = inferred {
-        if inferred != named {
-            eprintln!(
-                "warning: explicit format {} disagrees with output extension format {}; using {}",
-                named.name(),
-                inferred.name(),
-                named.name()
-            );
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,5 +586,47 @@ mod tests {
                 path.display()
             )
         );
+    }
+
+    #[cfg(feature = "iges")]
+    #[test]
+    fn an_unknown_explicit_target_is_refused_before_the_input_is_opened() {
+        let conversion = ConversionArgs {
+            policy: ConversionPolicy {
+                force: false,
+                binary_stdout: false,
+                allow_errors: false,
+                allow_empty: false,
+                reject_decode_losses: false,
+                reject_export_losses: false,
+                destination: Some(PathBuf::from("out.iges")),
+            },
+            report: None,
+            forced_input: None,
+        };
+        let decode = DecodeArgs {
+            container_only: false,
+            no_salvage: false,
+            limits: crate::LimitProfile::Desktop,
+        };
+
+        let error = execute_conversion(
+            &catalogs(),
+            Path::new("missing-input-that-must-not-be-opened.step"),
+            Some("iges:nonesuch"),
+            Some(Path::new("out.iges")),
+            &conversion,
+            &decode,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error.downcast_ref::<ConversionRefusal>(),
+            Some(ConversionRefusal::UnsupportedTarget {
+                decode_report: None,
+                validation: None,
+                ..
+            })
+        ));
     }
 }

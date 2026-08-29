@@ -17,6 +17,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
 [[change]]
+commit = "784c24977ad12f8a78b2eba4f2a8f8dd3229de69"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::write_targets"
+reason = "the wrapper added no invariant beyond `build_encoder(format).targets()`; target grammar and early explicit-target admission now live on `TargetSelection`"
+
+[[change]]
 commit = "cc5d1d37049dbd14e459cdd993cf79675fcef878"
 crate = "cadmpeg-ir"
 kind = "addition"

@@ -23,7 +23,7 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers};
 use cadmpeg_ir::codec::{find_target, TargetDescriptor};
 use serde::Deserialize;
 
-use crate::{write_targets, Format, InputCatalog};
+use crate::{build_encoder, Format, InputCatalog};
 
 /// The identity registry, embedded.
 const IDENTITY_TOML: &str = include_str!("../../../docs/dialects.toml");
@@ -339,7 +339,7 @@ pub fn support(dialect: &DialectId) -> Option<Disposition> {
 /// The synthesis catalog of `format`'s encoder in this build, or `None` when
 /// this build carries no encoder for it.
 fn catalog_of(format: &str) -> Option<&'static [TargetDescriptor]> {
-    Format::from_name(format).map(write_targets)
+    Format::from_name(format).map(|format| build_encoder(format).targets())
 }
 
 /// What `cadmpeg inspect` knows about the dialect it matched.
@@ -669,7 +669,7 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
 
         for format in Format::ALL {
-            let targets = write_targets(*format);
+            let targets = build_encoder(*format).targets();
             cadmpeg_ir::codec::assert_valid_target_catalog(targets);
             let prefix = format!("{}:", format.name());
             for target in targets {

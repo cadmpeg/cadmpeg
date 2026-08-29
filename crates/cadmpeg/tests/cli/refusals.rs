@@ -232,8 +232,8 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
         .stderr(predicate::str::contains("nothing after the colon"));
 }
 
-/// A dialect outside the encoder's catalog is refused with that catalog, and
-/// only after the source has been read.
+/// A dialect outside the encoder's catalog is refused with that catalog before
+/// the source is read.
 ///
 /// This is the whole error surface the deleted `--iges-target requires IGES
 /// output` strings used to hand-write. The catalog in the message comes from
@@ -293,14 +293,11 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         ])
         .assert()
         .code(1)
-        .stderr(
-            predicate::str::contains("iges cannot write 9.9")
-                .and(predicate::str::contains("decode report (iges)")),
-        );
+        .stderr(predicate::str::contains("iges cannot write 9.9"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "unsupported_target");
-    assert!(value["decode_report"].is_object());
-    assert!(value["check_report"].is_object());
+    assert!(value["decode_report"].is_null());
+    assert!(value["check_report"].is_null());
 
     // A format-qualified token outside the catalog is the same refusal. The
     // encoder receives the token after the colon unchanged.
