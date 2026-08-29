@@ -20,13 +20,6 @@
 
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
-/// The phrase every missing-writer-stamp diagnostic carries.
-///
-/// Parsers deep in the crate report a substituted reading as a warning string;
-/// decode promotes any warning containing this phrase to
-/// [`RhinoLossCode::SourceWriterStampUnverified`] instead of the generic
-/// container/decode diagnostic, the same way integrity and redundant-field
-/// diagnostics are promoted.
 /// Construct the loss charged when a reading depends on an absent writer stamp.
 pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNote {
     RhinoLossCode::SourceWriterStampUnverified.note(message)
