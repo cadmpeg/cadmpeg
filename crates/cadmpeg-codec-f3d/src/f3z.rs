@@ -330,6 +330,9 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
 /// A reference that cannot be resolved -- a cycle, an absent member, a member
 /// that fails to decode, or one whose units differ -- is recorded as a loss and
 /// skipped, leaving the rest of the archive to merge.
+// The merge owns all recursive document accumulators; grouping them would hide
+// which values are mutated across one member decode.
+#[allow(clippy::too_many_arguments)]
 fn merge_references(
     ctx: &DecodeContext<'_>,
     parent_ir: &mut cadmpeg_ir::CadIr,

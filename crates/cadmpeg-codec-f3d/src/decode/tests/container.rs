@@ -263,8 +263,10 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
         .collect::<Vec<_>>();
     assert_eq!(kernel_layers.len(), 2);
     assert_eq!(kernel_layers[0].declared()["carrier"], valid_path);
+    assert_eq!(kernel_layers[0].instance(), Some(valid_path));
     assert_eq!(kernel_layers[1].dialect().as_str(), "acis:unknown");
     assert_eq!(kernel_layers[1].declared()["carrier"], corrupt_path);
+    assert_eq!(kernel_layers[1].instance(), Some(corrupt_path));
     let loss = decoded
         .report()
         .losses
