@@ -9,7 +9,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::CadIr;
