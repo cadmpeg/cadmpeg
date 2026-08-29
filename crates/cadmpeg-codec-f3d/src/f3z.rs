@@ -81,7 +81,7 @@ pub fn is_f3z(scan: &ContainerScan) -> bool {
     scan.is_multi_document()
 }
 
-/// Inspect the selected model-root member and restate its layers under F3Z.
+/// Inspect the selected model-root member under the F3Z archive identity.
 pub(crate) fn inspect(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -98,7 +98,17 @@ pub(crate) fn inspect(
     })?;
     let member_scan = crate::container::scan(ctx, root_view)?;
     let kernel_layers = crate::dialect::kernel_layers(&member_scan);
-    Ok(crate::container::summarize(scan, &kernel_layers.matches))
+    let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers.matches)
+        .expect("an F3D member's kernel layers have unique identities");
+    let mut layers = DialectLayers::of(scan.dialect.clone());
+    merge_member_layers(&mut layers, &member_layers, &model_root);
+    let summary = crate::container::summarize(scan, &[]);
+    Ok(ContainerSummary::classified(
+        layers,
+        summary.container_kind,
+        summary.entries,
+        summary.notes,
+    ))
 }
 
 /// Decode a scanned `.f3z` archive into one merged document.
@@ -122,9 +132,8 @@ pub fn decode(
         .dialects()
         .expect("an F3D member decode reports its primary layer")
         .clone();
-    let (_, extra) = member_layers.into_parts();
-    let mut outer_layers = DialectLayers::new(scan.dialect.clone(), extra)
-        .expect("F3D member extras use formats other than the F3Z primary");
+    let mut outer_layers = DialectLayers::of(scan.dialect.clone());
+    merge_member_layers(&mut outer_layers, &member_layers, &model_root);
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -215,20 +224,24 @@ fn finalize_result(
     result
 }
 
-/// Attach a merged component's non-primary layers to its occurrence prefix.
-/// The component's primary row is document-local.
-fn merge_component_layers(target: &mut DialectLayers, component: &DialectLayers, occurrence: &str) {
+/// Attach one archive member's identity and nested layers to its archive path.
+fn merge_member_layers(target: &mut DialectLayers, member: &DialectLayers, member_path: &str) {
     let primary = target.primary().clone();
     let mut extra = target.iter().skip(1).cloned().collect::<Vec<_>>();
-    for matched in component.iter().skip(1).cloned() {
+    for matched in member.iter().cloned() {
         let instance = matched.instance().map_or_else(
-            || occurrence.to_owned(),
-            |nested| format!("{occurrence}/{nested}"),
+            || member_path.to_owned(),
+            |nested| format!("{member_path}/{nested}"),
         );
-        extra.push(matched.with_instance(instance));
+        let matched = matched.with_instance(instance);
+        if !extra.iter().any(|existing| {
+            existing.format() == matched.format() && existing.instance() == matched.instance()
+        }) {
+            extra.push(matched);
+        }
     }
     let merged = DialectLayers::new(primary, extra)
-        .expect("merged F3D component extras cannot repeat the F3Z primary");
+        .expect("archive member layers have unique format and archive-path instances");
     *target = merged;
 }
 
@@ -394,16 +407,17 @@ fn merge_references(
         let child_table = xref_table_from_ir(component.ir())?;
         let (mut component_ir, mut component_report, mut component_fidelity) =
             component.into_parts();
-        let mut component_layers = component_report
+        let component_layers = component_report
             .dialects()
             .expect("an F3D component report is classified")
             .clone();
+        merge_member_layers(parent_layers, &component_layers, &reference.relative_path);
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(
             ctx,
             &mut component_ir,
             &mut component_report,
-            &mut component_layers,
+            parent_layers,
             &mut component_fidelity,
             scan,
             &child_table,
@@ -428,11 +442,7 @@ fn merge_references(
         )?;
         merged += descendants + 1;
         parent_report.geometry_transferred |= component_report.geometry_transferred;
-        merge_component_layers(parent_layers, &component_layers, &occurrence);
-        for mut loss in component_report.losses {
-            loss.message = format!("xref {label}: {}", loss.message);
-            parent_report.losses.push(loss);
-        }
+        parent_report.losses.extend(component_report.losses);
         let placement = if reference.transform.is_some() {
             "Design occurrence transform"
         } else {

@@ -2950,18 +2950,12 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
     entry.rsplit('/').next()?.strip_prefix("BREP.")
 }
 
-/// Decode an F3D or F3Z reader and append dialect losses from its final layers.
+/// Decode an F3D or F3Z reader.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
-    let (ir, mut report, fidelity) = decode_member(ctx, root)?.into_parts();
-    if let Some(layers) = report.dialects() {
-        report
-            .losses
-            .extend(crate::dialect::report_dialect_losses(layers));
-    }
-    Ok(DecodeResult::new(ir, report, fidelity))
+    decode_member(ctx, root)
 }
 
-/// Decode one archive member without dialect-derived losses.
+/// Decode one archive member with its document-local dialect losses.
 pub(crate) fn decode_member<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
