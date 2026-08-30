@@ -1478,3 +1478,10 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::codec::same_format_source_dialect"
 reason = "source classification is private resolution state, and one three-state classification now distinguishes other-format, unrecorded, and recorded identities for the whole resolve operation"
+
+[[change]]
+commit = "ffc972f4f4dd307e319265c88f518116c5ed5ef3"
+crate = "cadmpeg-registry"
+kind = "variant"
+item = "cadmpeg_registry::UnknownDialectKind::RefusedResidual"
+reason = "the registry now distinguishes a classified residual that is refused from one that is recovered; exhaustive downstream matches must add the refusal case"
