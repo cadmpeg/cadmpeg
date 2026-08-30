@@ -4,7 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, SourceRelation,
+    TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
@@ -37,18 +38,20 @@ pub(crate) fn plan<'a>(
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     match resolved {
         WriteRequest::Identity => unreachable!("F3D has a non-empty target catalog"),
-        WriteRequest::Catalog {
-            entry,
-            displaced,
-            preserve: should_preserve,
-        } => {
+        WriteRequest::Catalog { entry, source } => {
             let target = DialectId::pinned(entry.id);
-            if should_preserve {
-                if let Preservation::Written { bytes, write_path } = preserve(input)? {
-                    return Ok(preserved_plan(input.ir, target, write_path, bytes));
+            match source {
+                SourceRelation::Preserve => {
+                    if let Preservation::Written { bytes, write_path } = preserve(input)? {
+                        return Ok(preserved_plan(input.ir, target, write_path, bytes));
+                    }
+                    synthesized_plan(input, &target, None)
                 }
+                SourceRelation::Displaced(displaced) => {
+                    synthesized_plan(input, &target, Some(&displaced))
+                }
+                SourceRelation::None => synthesized_plan(input, &target, None),
             }
-            synthesized_plan(input, &target, displaced.as_ref())
         }
         WriteRequest::OffCatalog { dialect } => match preserve(input)? {
             Preservation::Written { bytes, write_path } => {

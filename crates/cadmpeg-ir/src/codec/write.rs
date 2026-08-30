@@ -138,6 +138,17 @@ fn unrecorded_source_dialect(format: &str, targets: &[TargetDescriptor]) -> Code
     refusal(format, None, UNRECORDED_SOURCE_DIALECT_REASON, targets)
 }
 
+/// How a catalog target relates to the recorded same-format source dialect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceRelation {
+    /// The input has no recorded same-format source dialect.
+    None,
+    /// The target preserves the recorded same-format source dialect.
+    Preserve,
+    /// The target replaces the recorded same-format source dialect.
+    Displaced(cadmpeg_core::dialect::DialectId),
+}
+
 /// A write request resolved against the encoder catalog and source identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WriteRequest<'a> {
@@ -147,10 +158,8 @@ pub enum WriteRequest<'a> {
     Catalog {
         /// The canonical catalog entry.
         entry: &'static TargetDescriptor,
-        /// The same-format source dialect displaced by this target, if any.
-        displaced: Option<cadmpeg_core::dialect::DialectId>,
-        /// Whether the resolved target preserves the same-format source dialect.
-        preserve: bool,
+        /// How this target relates to the recorded same-format source dialect.
+        source: SourceRelation,
     },
     /// `Inherit` names a same-format source dialect outside the catalog.
     OffCatalog {
@@ -228,16 +237,14 @@ pub fn resolve_write_request<'a>(
             }
         }
     };
-    let displaced = same_format_source_dialect(ir, format)
+    let source = match same_format_source_dialect(ir, format)
         .map(cadmpeg_core::dialect::DialectMatch::dialect)
-        .filter(|dialect| dialect.as_str() != entry.id)
-        .cloned();
-    Ok(WriteRequest::Catalog {
-        entry,
-        preserve: same_format_source_dialect(ir, format)
-            .is_some_and(|source| source.dialect().as_str() == entry.id),
-        displaced,
-    })
+    {
+        Some(dialect) if dialect.as_str() == entry.id => SourceRelation::Preserve,
+        Some(dialect) => SourceRelation::Displaced(dialect.clone()),
+        None => SourceRelation::None,
+    };
+    Ok(WriteRequest::Catalog { entry, source })
 }
 
 /// State that a write displaced the source dialect with another target.

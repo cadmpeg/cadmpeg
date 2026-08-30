@@ -4,7 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, SourceRelation,
+    TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
@@ -34,32 +35,27 @@ pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,
 ) -> Result<ExportPlan<'a>, CodecError> {
-    let (target, displaced, preserve) = resolve(input, request)?;
-    let (written, bytes) = write(input, preserve)?;
+    let (target, source) = resolve(input, request)?;
+    let (written, bytes) = write(input, matches!(&source, SourceRelation::Preserve))?;
     check_honesty(&target, &written)?;
-    Ok(finish(input, target, displaced.as_ref(), &written, bytes))
+    Ok(finish(input, target, &source, &written, bytes))
 }
 
 /// Resolve an explicit catalog request or inherit the same-format source row.
 fn resolve(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<(DialectId, Option<DialectId>, bool), CodecError> {
-    // This writer has no synthesize fallback, so it flattens the request locally.
+) -> Result<(DialectId, SourceRelation), CodecError> {
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let Some(target) = resolved.dialect_id() else {
         unreachable!("SLDPRT has a non-empty target catalog")
     };
-    let (displaced, preserve) = match resolved {
-        WriteRequest::Identity => (None, false),
-        WriteRequest::Catalog {
-            displaced,
-            preserve,
-            ..
-        } => (displaced, preserve),
-        WriteRequest::OffCatalog { .. } => (None, true),
+    let source = match resolved {
+        WriteRequest::Identity => SourceRelation::None,
+        WriteRequest::Catalog { source, .. } => source,
+        WriteRequest::OffCatalog { .. } => SourceRelation::Preserve,
     };
-    Ok((target, displaced, preserve))
+    Ok((target, source))
 }
 
 /// Run replay when the target equals the source row; otherwise run the
@@ -124,7 +120,7 @@ fn check_honesty(target: &DialectId, written: &Written) -> Result<(), CodecError
 fn finish<'a>(
     input: EncodeInput<'a>,
     target: DialectId,
-    displaced: Option<&DialectId>,
+    source: &SourceRelation,
     written: &Written,
     bytes: Vec<u8>,
 ) -> ExportPlan<'a> {
@@ -144,7 +140,7 @@ fn finish<'a>(
         })
         .into_iter()
         .collect();
-    if let Some(source) = displaced.as_ref() {
+    if let SourceRelation::Displaced(source) = source {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(
             cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
         ));
