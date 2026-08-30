@@ -44,14 +44,12 @@ KINDS = frozenset(
         "trait_impl",
         "field",
         "variant",
-        "addition",
     }
 )
 SHA = re.compile(r"^[0-9a-f]{40}$")
 GENERATED = re.compile(r"^# generated at [0-9a-f]+$")
 ADDED_CHANGE = re.compile(r"^\+\s*\[\[change\]\]\s*(?:#.*)?$")
 ADDED_CRATE = re.compile(r'^\+\s*crate\s*=\s*"([^"]+)"\s*(?:#.*)?$')
-ADDED_KIND = re.compile(r'^\+\s*kind\s*=\s*"([^"]+)"\s*(?:#.*)?$')
 ADDED_TABLE = re.compile(r"^\+\s*\[+[^]]+\]+")
 CRATE_SOURCE = re.compile(r"^crates/([^/]+)/src(?:/|$)")
 DIFF_LINE_LIMIT = 60
@@ -171,10 +169,9 @@ def added_change_crates(staged_diff: str) -> set[str]:
     crates: set[str] = set()
     in_added_change = False
     crate: str | None = None
-    kind: str | None = None
 
     def finish() -> None:
-        if crate is not None and kind != "addition":
+        if crate is not None:
             crates.add(crate)
 
     for line in staged_diff.splitlines():
@@ -183,7 +180,6 @@ def added_change_crates(staged_diff: str) -> set[str]:
                 finish()
             in_added_change = True
             crate = None
-            kind = None
             continue
         if line.startswith("+") and not line.startswith("+++"):
             if ADDED_TABLE.match(line):
@@ -194,8 +190,6 @@ def added_change_crates(staged_diff: str) -> set[str]:
             if in_added_change:
                 if match := ADDED_CRATE.fullmatch(line):
                     crate = match.group(1)
-                elif match := ADDED_KIND.fullmatch(line):
-                    kind = match.group(1)
             continue
         if in_added_change:
             finish()
