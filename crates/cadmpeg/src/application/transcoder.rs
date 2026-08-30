@@ -323,6 +323,7 @@ impl PreparedConversion {
                 ),
                 decode_report: self.document.decode_report().cloned(),
                 validation: self.validation.clone(),
+                export_report: plan.report().clone(),
             }
             .into());
         }

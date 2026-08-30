@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use cadmpeg_ir::report::{DecodeReport, ValidationReport};
+use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use serde_json::{json, Value};
 
 /// Classifies codec decode failures while preserving operational I/O errors.
@@ -132,6 +132,8 @@ pub enum ConversionRefusal {
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
         validation: Option<ValidationReport>,
+        /// Export report computed by encoder planning before rejection.
+        export_report: ExportReport,
     },
     /// Geometry export refused because decode transferred no geometry.
     EmptyGeometry {
@@ -256,6 +258,15 @@ impl ConversionRefusal {
             | Self::EmptyGeometry { validation, .. }
             | Self::UnsupportedTarget { validation, .. } => validation.as_ref(),
             Self::DecodeLossRejected { .. } | Self::BinaryStdoutRejected { .. } => None,
+        }
+    }
+
+    /// Export report to include in an optional command report.
+    #[must_use]
+    pub fn export_report(&self) -> Option<&ExportReport> {
+        match self {
+            Self::ExportLossRejected { export_report, .. } => Some(export_report),
+            _ => None,
         }
     }
 
