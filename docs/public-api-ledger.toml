@@ -1624,3 +1624,10 @@ crate = "cadmpeg-registry"
 kind = "field"
 item = "cadmpeg_registry::DialectProvenance::id"
 reason = "provenance exists only for a classified primary dialect, so its identity is required and the outer `Option<DialectProvenance>` alone represents no classification"
+
+[[change]]
+commit = "952d1c52f42a610117a019742ee851621a309e0e"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::Format::ALL"
+reason = "writable format enumeration projects from the compiled descriptor registry through `Format::all`, so capability membership has one author"

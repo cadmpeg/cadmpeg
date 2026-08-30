@@ -1,4 +1,4 @@
-# generated at 0f32bf91c
+# generated at 952d1c52f
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
