@@ -9,6 +9,14 @@ use crate::container::MAGIC;
 use crate::test_support::{extract_streams, single_part_prt};
 use std::sync::OnceLock;
 
+#[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &NxDialect::ALL.map(NxDialect::id),
+        &super::generated::ROWS,
+    );
+}
+
 /// A container carrying nothing but the dispatch flag and the version byte.
 ///
 /// Classification reads exactly these two fields, so an empty directory is a

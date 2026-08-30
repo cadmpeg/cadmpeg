@@ -6,6 +6,14 @@
 
 use super::*;
 
+#[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &FcstdDialect::ALL.map(FcstdDialect::id),
+        &super::generated::ROWS,
+    );
+}
+
 /// A document element carrying `schema_version`, with the other declarations
 /// fixed.
 fn document(schema_version: &str) -> DocumentFacts {

@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. `docs/dialects.toml` generates the pinned constants
-//! and exhaustive row list in `dialect/generated.rs`.
+//! vocabulary is closed. `docs/dialects.toml` generates the exhaustive row
+//! list in `dialect/generated.rs`.
 //!
 //! This module owns the primary `sat:` host layer. Each classified stream also
 //! emits the non-primary `acis:` kernel layer owned by `cadmpeg-asm`.
@@ -42,6 +42,7 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 use crate::loss::SatLossCode;
@@ -61,6 +62,11 @@ const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 const DECLARED_TERMINATOR: &str = "terminator";
 
 impl StreamKind {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 4] =
+        [Self::AsmBinary, Self::AcisBinary, Self::Text, Self::Unknown];
+
     /// The pinned registry id.
     ///
     /// One row of `docs/dialects.toml` under the `sat` namespace per stream
@@ -76,10 +82,10 @@ impl StreamKind {
     /// [`Confidence::No`]: cadmpeg_ir::codec::Confidence::No
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::AsmBinary => generated::ASM_BINARY_STR,
-            Self::AcisBinary => generated::ACIS_BINARY_STR,
-            Self::Text => generated::TEXT_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::AsmBinary => "sat:asm-binary",
+            Self::AcisBinary => "sat:acis-binary",
+            Self::Text => "sat:text",
+            Self::Unknown => "sat:unknown",
         })
     }
 }

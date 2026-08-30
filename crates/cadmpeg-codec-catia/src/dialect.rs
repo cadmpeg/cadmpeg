@@ -7,7 +7,7 @@
 //! vocabulary is closed. The enum is [`Variant`] itself, so this module gives
 //! that existing enum a pinned-id surface instead of standing up a second enum
 //! that would have to be kept in step with it by hand. `docs/dialects.toml`
-//! generates the pinned constants and exhaustive row list in `dialect/generated.rs`.
+//! generates the exhaustive row list in `dialect/generated.rs`.
 //!
 //! # Identity is structural here, and there is no declaration to disagree with
 //!
@@ -34,6 +34,7 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 /// The format layer every match here classifies.
@@ -51,6 +52,18 @@ const DECLARED_HOT_FIX: &str = "last_save_hot_fix";
 const DECLARED_BUILD_DATE: &str = "last_save_build_date";
 
 impl Variant {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 7] = [
+        Self::StandardNested,
+        Self::FbbOnly,
+        Self::ZeroEntity,
+        Self::FloatPackedInnerNoFbb,
+        Self::E5Stream,
+        Self::InnerNoDirectory,
+        Self::Unknown,
+    ];
+
     /// The pinned registry id. The only string boundary this enum has.
     ///
     /// Distinct from [`Variant::token`], which is the report and container
@@ -59,13 +72,13 @@ impl Variant {
     /// the id is a workspace-wide namespaced identity that is stable forever.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::StandardNested => generated::STANDARD_NESTED_STR,
-            Self::FbbOnly => generated::FBB_ONLY_STR,
-            Self::ZeroEntity => generated::ZERO_ENTITY_STR,
-            Self::FloatPackedInnerNoFbb => generated::FLOAT_PACKED_INNER_NO_FBB_STR,
-            Self::E5Stream => generated::E5_STREAM_STR,
-            Self::InnerNoDirectory => generated::INNER_NO_DIRECTORY_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::StandardNested => "catia:standard-nested",
+            Self::FbbOnly => "catia:fbb-only",
+            Self::ZeroEntity => "catia:zero-entity",
+            Self::FloatPackedInnerNoFbb => "catia:float-packed-inner-no-fbb",
+            Self::E5Stream => "catia:e5-stream",
+            Self::InnerNoDirectory => "catia:inner-no-directory",
+            Self::Unknown => "catia:unknown",
         })
     }
 }

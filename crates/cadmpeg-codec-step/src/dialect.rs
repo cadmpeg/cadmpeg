@@ -5,7 +5,7 @@
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
 //! are the boundary, [`StepDialect::classify`] is the one construction path for
 //! a [`DialectMatch`], and the vocabulary is closed. `docs/dialects.toml`
-//! generates the pinned constants and exhaustive row list in `dialect/generated.rs`.
+//! generates the exhaustive row list in `dialect/generated.rs`.
 //!
 //! # The identity axis is the `FILE_SCHEMA` identifier
 //!
@@ -55,6 +55,7 @@ use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 /// The format layer every match here classifies.
@@ -175,6 +176,22 @@ pub(crate) enum StepDialect {
 const NEAREST_STRATEGY: StepDialect = StepDialect::Ap242Edition3;
 
 impl StepDialect {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 11] = [
+        Self::Ap203Edition1,
+        Self::Ap203Edition2,
+        Self::Ap214,
+        Self::Ap242,
+        Self::Ap242Edition1,
+        Self::Ap242Edition2,
+        Self::Ap242Edition3,
+        Self::Part28Xml,
+        Self::Ap242BoModelXml,
+        Self::Part26Hdf5,
+        Self::Unknown,
+    ];
+
     const fn from_write_schema(schema: StepSchema) -> Self {
         match schema {
             StepSchema::Ap203Edition1 => Self::Ap203Edition1,
@@ -193,17 +210,17 @@ impl StepDialect {
 
     const fn pinned(self) -> &'static str {
         match self {
-            Self::Ap203Edition1 => generated::AP203_E1_STR,
-            Self::Ap203Edition2 => generated::AP203_E2_STR,
-            Self::Ap214 => generated::AP214_STR,
-            Self::Ap242 => generated::AP242_STR,
-            Self::Ap242Edition1 => generated::AP242_E1_STR,
-            Self::Ap242Edition2 => generated::AP242_E2_STR,
-            Self::Ap242Edition3 => generated::AP242_E3_STR,
-            Self::Part28Xml => generated::PART28_XML_STR,
-            Self::Ap242BoModelXml => generated::AP242_BO_MODEL_XML_STR,
-            Self::Part26Hdf5 => generated::PART26_HDF5_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::Ap203Edition1 => "step:ap203-e1",
+            Self::Ap203Edition2 => "step:ap203-e2",
+            Self::Ap214 => "step:ap214",
+            Self::Ap242 => "step:ap242",
+            Self::Ap242Edition1 => "step:ap242-e1",
+            Self::Ap242Edition2 => "step:ap242-e2",
+            Self::Ap242Edition3 => "step:ap242-e3",
+            Self::Part28Xml => "step:part28-xml",
+            Self::Ap242BoModelXml => "step:ap242-bo-model-xml",
+            Self::Part26Hdf5 => "step:part26-hdf5",
+            Self::Unknown => "step:unknown",
         }
     }
 

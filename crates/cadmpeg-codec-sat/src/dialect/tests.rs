@@ -16,6 +16,14 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+#[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &StreamKind::ALL.map(StreamKind::id),
+        &super::generated::ROWS,
+    );
+}
+
 /// A kernel header declaring `save_format_version` and nothing else that
 /// classification reads.
 fn header(save_format_version: Option<u32>) -> KernelHeader {

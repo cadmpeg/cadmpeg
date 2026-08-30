@@ -5,7 +5,7 @@
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`NxDialect::classify`] is the one construction
 //! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! pinned constants and exhaustive row list in `dialect/generated.rs`.
+//! exhaustive row list in `dialect/generated.rs`.
 //!
 //! # Classification is structural, so every admitted document is `Admitted`
 //!
@@ -49,6 +49,7 @@ use crate::container::Container;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 /// The format layer every match here classifies.
@@ -136,12 +137,16 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
 }
 
 impl NxDialect {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 3] = [Self::Splmsstr, Self::LegacyCfb, Self::Unknown];
+
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::Splmsstr => generated::SPLMSSTR_STR,
-            Self::LegacyCfb => generated::LEGACY_CFB_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::Splmsstr => "nx:splmsstr",
+            Self::LegacyCfb => "nx:legacy-cfb",
+            Self::Unknown => "nx:unknown",
         })
     }
 

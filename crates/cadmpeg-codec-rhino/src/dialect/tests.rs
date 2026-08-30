@@ -6,6 +6,14 @@
 
 use super::*;
 
+#[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &ArchiveVersion::ALL.map(ArchiveVersion::id),
+        &super::generated::ROWS,
+    );
+}
+
 /// Every archive word with a row of its own, beside the row it must reach.
 const ENUMERATED: &[(u64, &str)] = &[
     (1, "rhino:archive-1"),

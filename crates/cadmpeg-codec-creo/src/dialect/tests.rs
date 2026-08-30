@@ -12,6 +12,14 @@ use super::*;
 use crate::container::scan_bytes;
 use crate::test_support::{build_prt, build_prt_raw};
 
+#[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &Layout::ALL.map(Layout::id),
+        &super::generated::ROWS,
+    );
+}
+
 /// A PSB file whose only section carries the `ND:` raw-name decoration.
 fn nd_bytes() -> Vec<u8> {
     build_prt("c", &[("ND:0:VisibGeom", b"payload".to_vec())])
