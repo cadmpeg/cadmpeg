@@ -25,6 +25,34 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
 }
 
 #[test]
+fn rejected_expansion_discards_every_report_bucket() {
+    let mut report = ReportBuckets::default();
+    report.phase_warnings.push("existing warning".to_string());
+    report
+        .phase_losses
+        .push(RhinoLossCode::ContainerScanDiagnostic.note("existing parse-phase loss"));
+    report
+        .typed_losses
+        .push(RhinoLossCode::IntegrityFailure.note("existing typed loss"));
+    let checkpoint = report.checkpoint();
+
+    report.phase_warnings.push("rejected warning".to_string());
+    report
+        .phase_losses
+        .push(RhinoLossCode::ContainerScanDiagnostic.note("rejected parse-phase loss"));
+    report
+        .typed_losses
+        .push(RhinoLossCode::IntegrityFailure.note("rejected typed loss"));
+    report.rollback(checkpoint);
+
+    assert_eq!(report.phase_warnings, ["existing warning"]);
+    assert_eq!(report.phase_losses.len(), 1);
+    assert_eq!(report.phase_losses[0].message, "existing parse-phase loss");
+    assert_eq!(report.typed_losses.len(), 1);
+    assert_eq!(report.typed_losses[0].message, "existing typed loss");
+}
+
+#[test]
 fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let plane = crate::settings::Plane {
         origin: crate::settings::Point3([10.0, 20.0, 30.0]),

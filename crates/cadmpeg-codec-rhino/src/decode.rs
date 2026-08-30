@@ -97,6 +97,36 @@ struct AnnotationCheckpoint {
     exactness: BTreeMap<String, ExactnessNote>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct ReportBuckets {
+    phase_warnings: Vec<String>,
+    phase_losses: Vec<LossNote>,
+    typed_losses: Vec<LossNote>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReportCheckpoint {
+    phase_warnings: usize,
+    phase_losses: usize,
+    typed_losses: usize,
+}
+
+impl ReportBuckets {
+    fn checkpoint(&self) -> ReportCheckpoint {
+        ReportCheckpoint {
+            phase_warnings: self.phase_warnings.len(),
+            phase_losses: self.phase_losses.len(),
+            typed_losses: self.typed_losses.len(),
+        }
+    }
+
+    fn rollback(&mut self, checkpoint: ReportCheckpoint) {
+        self.phase_warnings.truncate(checkpoint.phase_warnings);
+        self.phase_losses.truncate(checkpoint.phase_losses);
+        self.typed_losses.truncate(checkpoint.typed_losses);
+    }
+}
+
 impl AnnotationCheckpoint {
     fn capture(annotations: &cadmpeg_ir::Annotations) -> Self {
         Self {
@@ -450,11 +480,8 @@ pub(crate) struct DecodeContext<'a> {
     retention_limits: [usize; 2],
     mesh_budget: crate::mesh::MeshBudget,
     geometry_transferred: bool,
-    phase_warnings: Vec<String>,
-    /// Typed parse-phase losses emitted after container-scan diagnostics.
-    phase_losses: Vec<LossNote>,
-    /// Typed loss notes from semantic conversion; drain into report `losses`.
-    typed_losses: Vec<LossNote>,
+    /// Transactional report buckets produced by semantic decode phases.
+    report: ReportBuckets,
     selected_object: Option<usize>,
     instance_key: Option<String>,
     instance_path: Vec<String>,
@@ -490,9 +517,7 @@ impl<'a> DecodeContext<'a> {
             retention_limits: [RETAINED_RECORD_CAP, RETAINED_DOCUMENT_CAP],
             mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
             geometry_transferred: false,
-            phase_warnings: Vec::new(),
-            phase_losses: Vec::new(),
-            typed_losses: Vec::new(),
+            report: ReportBuckets::default(),
             selected_object: None,
             instance_key: None,
             instance_path: Vec::new(),
@@ -768,7 +793,7 @@ impl<'a> DecodeContext<'a> {
             let note = code.note(format!(
                 "{role} in object record {source_order} references object {id}"
             ));
-            self.typed_losses.push(note);
+            self.report.typed_losses.push(note);
         }
         resolved
     }
@@ -1050,7 +1075,7 @@ impl<'a> DecodeContext<'a> {
                         ] {
                             let count = duplicate_userdata_count(&object.userdata, class);
                             if count > 1 {
-                                self.typed_losses.push(
+                                self.report.typed_losses.push(
                                     RhinoLossCode::DuplicateRecordResolved.note(format!(
                                         "{label} object at offset {} has {count} matching userdata records; first serialized record wins",
                                         object.range.start
@@ -1091,11 +1116,12 @@ impl<'a> DecodeContext<'a> {
                         order,
                     );
                     if dimension.override_present {
-                        self.typed_losses
-                            .push(RhinoLossCode::DimensionOverrideDropped.note(format!(
+                        self.report.typed_losses.push(
+                            RhinoLossCode::DimensionOverrideDropped.note(format!(
                                 "dimension object at offset {} has an unapplied style override",
                                 dimension.source_range.start
-                            )));
+                            )),
+                        );
                     }
                     let links = [annotation.id.0.clone()];
                     let result = self.validate_candidate(|candidate, _annotations| {
@@ -1106,7 +1132,7 @@ impl<'a> DecodeContext<'a> {
                             self.append_links(source_order, &links);
                             self.mark_decoded(source_order);
                             for code in unresolved {
-                                self.typed_losses.push(code.note(format!(
+                                self.report.typed_losses.push(code.note(format!(
                                     "dimension record {source_order} reference is not resolved to a \
                                      decoded record"
                                 )));
@@ -1171,7 +1197,7 @@ impl<'a> DecodeContext<'a> {
         let duplicate_count =
             duplicate_userdata_count(&object.userdata, crate::hatch::V5_HATCH_EXTRA);
         if duplicate_count > 1 {
-            self.typed_losses.push(
+            self.report.typed_losses.push(
                 RhinoLossCode::DuplicateRecordResolved.note(format!(
                     "hatch object at offset {} has {duplicate_count} matching userdata records; last valid serialized record wins",
                     object.range.start
@@ -1879,8 +1905,7 @@ impl<'a> DecodeContext<'a> {
         let original_statuses = self.statuses.clone();
         let original_outcomes = self.outcomes.clone();
         let original_geometry_transferred = self.geometry_transferred;
-        let original_warning_count = self.phase_warnings.len();
-        let original_loss_count = self.typed_losses.len();
+        let report_checkpoint = self.report.checkpoint();
         let original_selection = self.selected_object;
         let original_key = self.instance_key.clone();
         let original_path = self.instance_path.clone();
@@ -1934,8 +1959,7 @@ impl<'a> DecodeContext<'a> {
         self.statuses = original_statuses;
         self.outcomes = original_outcomes;
         self.geometry_transferred = original_geometry_transferred;
-        self.phase_warnings.truncate(original_warning_count);
-        self.typed_losses.truncate(original_loss_count);
+        self.report.rollback(report_checkpoint);
         self.selected_object = original_selection;
         self.instance_key = original_key;
         self.instance_path = original_path;
@@ -2169,7 +2193,7 @@ impl<'a> DecodeContext<'a> {
                 self.annotations.exactness.remove(&id);
                 self.annotations.provenance.remove(&id);
             }
-            self.phase_warnings.push(
+            self.report.phase_warnings.push(
                 "instance: transformed procedural definition omitted; exact solved carrier retained"
                     .to_string(),
             );
@@ -2259,7 +2283,8 @@ impl<'a> DecodeContext<'a> {
             self.scan_warning(source_order, &warning);
         }
         for diagnostic in enum_diagnostics {
-            self.typed_losses
+            self.report
+                .typed_losses
                 .push(RhinoLossCode::EnumerationValueDegraded.note(diagnostic.message()));
         }
         if neutral_metadata {
@@ -2366,21 +2391,23 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> DecodeResult {
-        self.phase_losses
+        self.report
+            .phase_losses
             .extend(self.scan.metadata.losses.iter().cloned());
-        self.typed_losses
+        self.report
+            .typed_losses
             .extend(crate::annotations::install(self.scan, &mut self.ir));
         for source in crate::document_data::install(self.scan, &mut self.ir) {
             self.retain_opaque_record(&source);
         }
         let presentation = crate::presentation::install(self.scan, &mut self.ir);
-        self.typed_losses.extend(presentation.losses);
+        self.report.typed_losses.extend(presentation.losses);
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source);
         }
         crate::product::install(self.scan, &mut self.ir);
         let views = crate::views::install(self.scan, &mut self.ir);
-        self.typed_losses.extend(views.losses);
+        self.report.typed_losses.extend(views.losses);
         for source in views.opaque_records {
             self.retain_opaque_record(&source);
         }
@@ -2441,7 +2468,7 @@ impl<'a> DecodeContext<'a> {
                 );
             }
         }
-        self.typed_losses.extend(omissions);
+        self.report.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(
                 RhinoLossCode::ContainerInstanceDefinitionDegraded
@@ -2458,7 +2485,7 @@ impl<'a> DecodeContext<'a> {
                     }),
             );
         }
-        losses.append(&mut self.typed_losses);
+        losses.append(&mut self.report.typed_losses);
         losses.extend(self.scan.warnings.iter().map(|warning| {
             if integrity_diagnostic(warning) {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
@@ -2474,9 +2501,9 @@ impl<'a> DecodeContext<'a> {
                 RhinoLossCode::ContainerScanDiagnostic.note(warning.clone())
             }
         }));
-        losses.append(&mut self.phase_losses);
+        losses.append(&mut self.report.phase_losses);
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
-        for warning in &self.phase_warnings {
+        for warning in &self.report.phase_warnings {
             if integrity_diagnostic(warning) {
                 losses.push(RhinoLossCode::IntegrityFailure.note(warning.clone()));
                 continue;
@@ -2648,7 +2675,9 @@ impl<'a> DecodeContext<'a> {
                 .find(|object| object.class_uuid.to_string() == class)
                 .map_or(0, |object| object.range.start as u64);
         }
-        self.phase_warnings.push(format!("{class}: {message}"));
+        self.report
+            .phase_warnings
+            .push(format!("{class}: {message}"));
     }
 
     fn charge_entities(&mut self, source_order: usize, amount: usize) -> bool {
@@ -2755,7 +2784,7 @@ impl<'a> DecodeContext<'a> {
                     scaled,
                     warnings,
                 } = cloud;
-                self.phase_warnings.extend(
+                self.report.phase_warnings.extend(
                     warnings
                         .into_iter()
                         .map(|warning| format!("{}: {warning}", identity.source_id)),
@@ -2844,7 +2873,7 @@ impl<'a> DecodeContext<'a> {
                     return false;
                 }
                 let warnings = curve_warnings(&curve);
-                self.phase_warnings.extend(
+                self.report.phase_warnings.extend(
                     warnings
                         .into_iter()
                         .map(|warning| format!("{}: {warning}", identity.source_id)),
@@ -3005,7 +3034,7 @@ impl<'a> DecodeContext<'a> {
         let links = match result {
             Ok(links) => links,
             Err(findings) => {
-                self.phase_warnings.push(format!(
+                self.report.phase_warnings.push(format!(
                     "procedural-surface: candidate rejected by IR validation: {findings}"
                 ));
                 return false;
@@ -3211,12 +3240,13 @@ impl<'a> DecodeContext<'a> {
         if !self.charge_entities(source_order, 1) {
             return false;
         }
-        self.phase_losses
+        self.report
+            .phase_losses
             .extend(mesh.losses.into_iter().map(|mut loss| {
                 loss.message = format!("{}: {}", identity.source_id, loss.message);
                 loss
             }));
-        self.phase_warnings.extend(
+        self.report.phase_warnings.extend(
             mesh.warnings
                 .into_iter()
                 .map(|warning| format!("{}: {warning}", identity.source_id)),
@@ -3250,14 +3280,16 @@ impl<'a> DecodeContext<'a> {
             },
         );
         if mesh.ngon_count != 0 {
-            self.typed_losses
+            self.report
+                .typed_losses
                 .push(RhinoLossCode::MeshNgonGroupingDropped.note(format!(
                     "{} n-gon grouping record(s) were not transferred for mesh {id}",
                     mesh.ngon_count
                 )));
         }
         if mesh.quad_count != 0 {
-            self.typed_losses
+            self.report
+                .typed_losses
                 .push(RhinoLossCode::MeshQuadTopologyTriangulated.note(format!(
                     "{} quadrilateral face(s) were triangulated for mesh {id}",
                     mesh.quad_count
@@ -3305,7 +3337,8 @@ impl<'a> DecodeContext<'a> {
         };
         for warning in warnings {
             if warning.starts_with("invalid Brep is_solid value ") {
-                self.typed_losses
+                self.report
+                    .typed_losses
                     .push(RhinoLossCode::EnumerationValueDegraded.note(warning));
             } else {
                 self.scan_warning(source_order, warning);
@@ -3318,7 +3351,8 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
-        self.phase_losses
+        self.report
+            .phase_losses
             .extend(raw.losses.iter().cloned().map(|mut loss| {
                 loss.message = format!("{}: {}", object.class_uuid, loss.message);
                 loss
@@ -3388,18 +3422,20 @@ impl<'a> DecodeContext<'a> {
                     );
                 } else {
                     self.append_links(source_order, &links);
-                    self.typed_losses.extend(typed_losses);
+                    self.report.typed_losses.extend(typed_losses);
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
-                            self.typed_losses.push(
+                            self.report.typed_losses.push(
                                 RhinoLossCode::TopologyBrepFallback
                                     .note(format!("Brep topology fallback: {cause}")),
                             );
                         } else if warning.contains("polycurve join moved endpoints") {
-                            self.typed_losses
+                            self.report
+                                .typed_losses
                                 .push(RhinoLossCode::PolycurveJoinGap.note(&warning));
                         } else if warning.contains(" C2 omitted: ") {
-                            self.typed_losses
+                            self.report
+                                .typed_losses
                                 .push(RhinoLossCode::TrimPcurveDropped.note(&warning));
                         } else {
                             self.scan_warning(source_order, &warning);
@@ -5530,21 +5566,22 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
         Ok((0, 0, 0, 0)) => {}
         Ok((untyped, failed, dropped_dependencies, redundant_repairs)) => {
             if untyped != 0 {
-                context
-                    .typed_losses
-                    .push(RhinoLossCode::HistoryGeometryNotTransferred.note(format!(
+                context.report.typed_losses.push(
+                    RhinoLossCode::HistoryGeometryNotTransferred.note(format!(
                         "{untyped} history value(s) decoded without a neutral carrier"
-                    )));
+                    )),
+                );
             }
             if failed != 0 {
-                context
-                    .typed_losses
-                    .push(RhinoLossCode::HistoryEmbeddedGeometryDropped.note(format!(
+                context.report.typed_losses.push(
+                    RhinoLossCode::HistoryEmbeddedGeometryDropped.note(format!(
                         "{failed} embedded history geometry value(s) could not be decoded"
-                    )));
+                    )),
+                );
             }
             if dropped_dependencies != 0 {
                 context
+                    .report
                     .typed_losses
                     .push(RhinoLossCode::HistoryDependencyDropped.note(format!(
                         "{dropped_dependencies} history dependency edge(s) point to later or ambiguous producers"
@@ -5552,6 +5589,7 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             }
             if redundant_repairs != 0 {
                 context
+                    .report
                     .typed_losses
                     .push(RhinoLossCode::RedundantFieldRepaired.note(format!(
                         "{redundant_repairs} history geometry optional channel repair(s)"
