@@ -100,71 +100,14 @@ impl InputCatalog {
     /// Creates a catalog containing every input format shipped with the CLI.
     pub fn with_builtins() -> Self {
         let catalog = Self {
-            descriptors: vec![
-                #[cfg(feature = "fcstd")]
-                input(
-                    "fcstd",
-                    &["fcstd"],
-                    Some(Box::new(cadmpeg_codec_freecad::FcstdCodec)),
-                ),
-                #[cfg(feature = "f3d")]
-                input(
-                    "f3d",
-                    &["f3d", "f3z"],
-                    Some(Box::new(cadmpeg_codec_f3d::F3dCodec)),
-                ),
-                #[cfg(feature = "inventor")]
-                input(
-                    "inventor",
-                    &["ipt", "iam"],
-                    Some(Box::new(cadmpeg_codec_inventor::InventorCodec)),
-                ),
-                #[cfg(feature = "sldprt")]
-                input(
-                    "sldprt",
-                    &["sldprt"],
-                    Some(Box::new(cadmpeg_codec_sldprt::SldprtCodec)),
-                ),
-                #[cfg(feature = "catia")]
-                input(
-                    "catia",
-                    &["catpart"],
-                    Some(Box::new(cadmpeg_codec_catia::CatiaCodec)),
-                ),
-                #[cfg(feature = "creo")]
-                input(
-                    "creo",
-                    &["prt"],
-                    Some(Box::new(cadmpeg_codec_creo::CreoCodec)),
-                ),
-                #[cfg(feature = "nx")]
-                input("nx", &["prt"], Some(Box::new(cadmpeg_codec_nx::NxCodec))),
-                #[cfg(feature = "rhino")]
-                input(
-                    "rhino",
-                    &["3dm"],
-                    Some(Box::new(cadmpeg_codec_rhino::RhinoCodec)),
-                ),
-                #[cfg(feature = "step")]
-                input(
-                    "step",
-                    &["step", "stp"],
-                    Some(Box::new(cadmpeg_codec_step::StepCodec::default())),
-                ),
-                #[cfg(feature = "iges")]
-                input(
-                    "iges",
-                    &["iges", "igs"],
-                    Some(Box::new(cadmpeg_codec_iges::IgesCodec)),
-                ),
-                #[cfg(feature = "sat")]
-                input(
-                    "sat",
-                    &["sat", "sab", "smt", "smb"],
-                    Some(Box::new(cadmpeg_codec_sat::SatCodec)),
-                ),
-                input("cadir", &["cadir", "json"], None),
-            ],
+            descriptors: crate::descriptors::FORMAT_DESCRIPTORS
+                .iter()
+                .map(|descriptor| InputDescriptor {
+                    id: descriptor.id,
+                    extensions: descriptor.input_extensions,
+                    codec: descriptor.decoder.map(|constructor| constructor()),
+                })
+                .collect(),
         };
         debug_assert!(catalog
             .descriptors
@@ -293,18 +236,6 @@ impl InputCatalog {
 pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
     let prefix = prefix.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(prefix);
     prefix.iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&b'{')
-}
-
-fn input(
-    id: &'static str,
-    extensions: &'static [&'static str],
-    codec: Option<Box<dyn Codec>>,
-) -> InputDescriptor {
-    InputDescriptor {
-        id,
-        extensions,
-        codec,
-    }
 }
 
 #[cfg(test)]

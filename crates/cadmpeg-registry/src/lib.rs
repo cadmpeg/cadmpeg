@@ -25,6 +25,7 @@
 //! the implementation modules stay private, so each item has one path.
 
 mod catalog;
+mod descriptors;
 mod encoders;
 mod format;
 mod identify;
@@ -34,6 +35,7 @@ pub use catalog::{
     DetectionOutcome, ForcedInput, InputCatalog, InputDescriptor, ResolveSourceError,
     ResolvedSource,
 };
+pub use descriptors::{forced_input, input_names, native_validators};
 pub use encoders::build_encoder;
 pub use format::Format;
 pub use identify::{identify, identify_with, Identification, Inspection, DETECTION_PREFIX_LEN};

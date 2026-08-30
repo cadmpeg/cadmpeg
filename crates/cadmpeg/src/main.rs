@@ -69,90 +69,22 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum InputFormat {
-    /// `FreeCAD` `.FCStd`.
-    #[cfg(feature = "fcstd")]
-    Fcstd,
-    /// Autodesk Fusion `.f3d`.
-    #[cfg(feature = "f3d")]
-    F3d,
-    /// Autodesk Inventor `.ipt` or `.iam`.
-    #[cfg(feature = "inventor")]
-    #[value(alias = "ipt", alias = "iam")]
-    Inventor,
-    /// `SolidWorks` `.sldprt`.
-    #[cfg(feature = "sldprt")]
-    Sldprt,
-    /// CATIA V5 `.CATPart`.
-    #[cfg(feature = "catia")]
-    #[value(alias = "catia")]
-    Catpart,
-    /// Siemens NX `.prt`.
-    #[cfg(feature = "nx")]
-    Nx,
-    /// Creo Parametric `.prt`.
-    #[cfg(feature = "creo")]
-    Creo,
-    /// Rhino `.3dm`.
-    #[cfg(feature = "rhino")]
-    #[value(alias = "3dm")]
-    Rhino,
-    /// IGES `.igs` or `.iges`.
-    #[cfg(feature = "iges")]
-    #[value(alias = "igs")]
-    Iges,
-    /// ISO 10303 STEP.
-    #[cfg(feature = "step")]
-    Step,
-    /// Bare ASM `.sat`/`.smt`/`.smb`/`.sab` stream.
-    #[cfg(feature = "sat")]
-    #[value(alias = "smt", alias = "smb", alias = "sab")]
-    Sat,
-    /// CADIR JSON.
-    Cadir,
-}
-
-impl InputFormat {
-    fn resolution(self) -> ForcedInput {
-        match self {
-            #[cfg(feature = "fcstd")]
-            Self::Fcstd => ForcedInput::Codec("fcstd"),
-            #[cfg(feature = "f3d")]
-            Self::F3d => ForcedInput::Codec("f3d"),
-            #[cfg(feature = "inventor")]
-            Self::Inventor => ForcedInput::Codec("inventor"),
-            #[cfg(feature = "sldprt")]
-            Self::Sldprt => ForcedInput::Codec("sldprt"),
-            #[cfg(feature = "catia")]
-            Self::Catpart => ForcedInput::Codec("catia"),
-            #[cfg(feature = "nx")]
-            Self::Nx => ForcedInput::Codec("nx"),
-            #[cfg(feature = "creo")]
-            Self::Creo => ForcedInput::Codec("creo"),
-            #[cfg(feature = "rhino")]
-            Self::Rhino => ForcedInput::Codec("rhino"),
-            #[cfg(feature = "iges")]
-            Self::Iges => ForcedInput::Codec("iges"),
-            #[cfg(feature = "step")]
-            Self::Step => ForcedInput::Codec("step"),
-            #[cfg(feature = "sat")]
-            Self::Sat => ForcedInput::Codec("sat"),
-            Self::Cadir => ForcedInput::Cadir,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Args)]
 struct InputArgs {
     /// Treat the input as this format.
-    #[arg(long, visible_alias = "from", value_enum)]
-    input_format: Option<InputFormat>,
+    #[arg(
+        long,
+        visible_alias = "from",
+        value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+    )]
+    input_format: Option<String>,
 }
 
 impl InputArgs {
     fn forced(&self) -> Option<ForcedInput> {
-        self.input_format.map(InputFormat::resolution)
+        self.input_format
+            .as_deref()
+            .map(|name| cadmpeg_registry::forced_input(name).expect("clap validates input formats"))
     }
 }
 
@@ -435,11 +367,17 @@ enum Command {
         /// Second CAD file.
         b: PathBuf,
         /// Treat the first file as this format.
-        #[arg(long, value_enum)]
-        input_format_a: Option<InputFormat>,
+        #[arg(
+            long,
+            value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+        )]
+        input_format_a: Option<String>,
         /// Treat the second file as this format.
-        #[arg(long, value_enum)]
-        input_format_b: Option<InputFormat>,
+        #[arg(
+            long,
+            value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+        )]
+        input_format_b: Option<String>,
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
@@ -585,11 +523,15 @@ fn main() -> ExitCode {
             &catalogs,
             commands::DiffInput {
                 path: &a,
-                forced: input_format_a.map(InputFormat::resolution),
+                forced: input_format_a
+                    .as_deref()
+                    .and_then(cadmpeg_registry::forced_input),
             },
             commands::DiffInput {
                 path: &b,
-                forced: input_format_b.map(InputFormat::resolution),
+                forced: input_format_b
+                    .as_deref()
+                    .and_then(cadmpeg_registry::forced_input),
             },
             &decode,
             json,

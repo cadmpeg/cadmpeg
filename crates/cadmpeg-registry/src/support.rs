@@ -691,8 +691,8 @@ mod tests {
             .map(|row| (row.id.as_str(), row.disposition))
             .collect::<BTreeMap<_, _>>();
 
-        for format in Format::ALL {
-            let targets = build_encoder(*format).targets();
+        for format in Format::all() {
+            let targets = build_encoder(format).targets();
             cadmpeg_ir::codec::assert_valid_target_catalog(targets);
             let prefix = format!("{}:", format.name());
             for target in targets {
