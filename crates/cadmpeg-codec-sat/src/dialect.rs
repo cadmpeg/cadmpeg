@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. `docs/dialects.toml` generates the exhaustive row
-//! list in `dialect/generated.rs`.
+//! vocabulary is closed. `docs/dialects.toml` generates the exhaustive
+//! reportable row list in `dialect/generated.rs`.
 //!
 //! This module owns the primary `sat:` host layer. Each classified stream also
 //! emits the non-primary `acis:` kernel layer owned by `cadmpeg-asm`.
@@ -62,31 +62,29 @@ const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 const DECLARED_TERMINATOR: &str = "terminator";
 
 impl StreamKind {
-    /// Every dialect identity this enum can name.
+    /// Every stream kind that can produce a dialect report.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 4] =
-        [Self::AsmBinary, Self::AcisBinary, Self::Text, Self::Unknown];
+    pub(crate) const ALL: [Self; 3] = [Self::AsmBinary, Self::AcisBinary, Self::Text];
 
-    /// The pinned registry id.
+    /// The pinned registry id when this kind reaches classification.
     ///
     /// One row of `docs/dialects.toml` under the `sat` namespace per stream
     /// kind: the discriminant is the leading magic, or the two-line header shape
-    /// for text. [`Self::Unknown`] is the mandatory totality row;
-    /// `detect::confidence` reports [`Confidence::No`] for it, so it is
-    /// unreachable through the normal catalog and exists to keep classification
-    /// total.
+    /// for text. `detect::confidence` reports [`Confidence::No`] for
+    /// [`Self::Unknown`], and both entry points return before classification,
+    /// so it has no reportable id.
     ///
     /// Identity here is the detection discriminant and nothing else. This is the
     /// only registry string boundary the enum has.
     ///
     /// [`Confidence::No`]: cadmpeg_ir::codec::Confidence::No
-    pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
-            Self::AsmBinary => "sat:asm-binary",
-            Self::AcisBinary => "sat:acis-binary",
-            Self::Text => "sat:text",
-            Self::Unknown => "sat:unknown",
-        })
+    pub(crate) const fn reportable_id(self) -> Option<DialectId> {
+        match self {
+            Self::AsmBinary => Some(DialectId::pinned("sat:asm-binary")),
+            Self::AcisBinary => Some(DialectId::pinned("sat:acis-binary")),
+            Self::Text => Some(DialectId::pinned("sat:text")),
+            Self::Unknown => None,
+        }
     }
 }
 
@@ -105,9 +103,9 @@ pub(crate) struct TextEvidence<'a> {
 
 /// What one stream's own bytes said, as the reading path read them.
 ///
-/// One variant per [`StreamKind`]. `None` inside a variant means the kind's
-/// discriminant matched but nothing past it parsed. Inspection reports what it
-/// could read, and decode refuses with the same primary match.
+/// One variant per reportable [`StreamKind`]. `None` inside a variant means
+/// the kind's discriminant matched but nothing past it parsed. Inspection
+/// reports what it could read, and decode refuses with the same primary match.
 pub(crate) enum StreamEvidence<'a> {
     /// `ASM BinaryFile4`/`8`. The header is `None` only if the magic matched
     /// and `asm_header::parse` still declined, which its own contract makes
@@ -122,14 +120,6 @@ pub(crate) enum StreamEvidence<'a> {
     UnframedAcisBinary(&'a KernelHeader),
     /// Text header lines; `None` when the stream did not parse past them.
     Text(Option<TextEvidence<'a>>),
-    /// No discriminant matched.
-    ///
-    /// Never constructed in production: `inspect` and `decode` both return a
-    /// malformed error on these bytes before any classification, and detection
-    /// reports no confidence for them. The variant keeps [`classify`] total
-    /// over `StreamKind`, and the tests exercise it.
-    #[allow(dead_code)]
-    Unknown,
 }
 
 impl StreamEvidence<'_> {
@@ -141,7 +131,6 @@ impl StreamEvidence<'_> {
             Self::AcisBinary(_) => StreamKind::AcisBinary,
             Self::UnframedAcisBinary(_) => StreamKind::AcisBinary,
             Self::Text(_) => StreamKind::Text,
-            Self::Unknown => StreamKind::Unknown,
         }
     }
 }
@@ -163,8 +152,7 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
         | StreamEvidence::UnframedAsmBinary(_)
         | StreamEvidence::AcisBinary(None)
         | StreamEvidence::UnframedAcisBinary(_)
-        | StreamEvidence::Text(None)
-        | StreamEvidence::Unknown => Admission::Refused,
+        | StreamEvidence::Text(None) => Admission::Refused,
     }
 }
 
@@ -222,7 +210,6 @@ fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
             );
             Some(text.header)
         }
-        StreamEvidence::Unknown => None,
     };
     if let Some(header) = header {
         if let Some(major) = header.save_format_major() {
@@ -251,12 +238,12 @@ pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
 /// an ACIS stream outside the verified band keeps its own registry row while
 /// its records are read with a verified band's grammar.
 fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
-    DialectMatch::layer(
-        evidence.kind().id(),
-        declared(evidence),
-        admission(evidence),
-    )
-    .expect("SAT classifier produced an invalid dialect match")
+    let dialect = evidence
+        .kind()
+        .reportable_id()
+        .expect("stream evidence is constructed only for reportable kinds");
+    DialectMatch::layer(dialect, declared(evidence), admission(evidence))
+        .expect("SAT classifier produced an invalid dialect match")
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.
@@ -280,8 +267,7 @@ fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
         },
         StreamEvidence::AsmBinary(None)
         | StreamEvidence::AcisBinary(None)
-        | StreamEvidence::Text(None)
-        | StreamEvidence::Unknown => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+        | StreamEvidence::Text(None) => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
     };
     cadmpeg_asm::dialect::classify(header)
 }

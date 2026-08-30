@@ -206,6 +206,12 @@ def check_row(row: object, index: int, formats: dict, root: Path, failures: list
     elif unknown_kind is not None and unknown_kind not in UNKNOWN_KINDS:
         allowed = ", ".join(sorted(UNKNOWN_KINDS))
         failures.append(f"{label}: unknown_kind must be one of {allowed}")
+    elif (
+        unknown_kind == "detect-unreachable"
+        and raw_id not in dialect_codegen.DETECT_UNREACHABLE_IDS
+    ):
+        allowed = ", ".join(sorted(dialect_codegen.DETECT_UNREACHABLE_IDS))
+        failures.append(f"{label}: detect-unreachable is admitted only for {allowed}")
 
     discriminants = row.get("discriminants")
     if "discriminants" in row:
@@ -326,7 +332,7 @@ def check(root: Path) -> tuple[list[str], str]:
 
 
 def check_codec_emitted_ids(root: Path) -> list[str]:
-    """Require each pinned id in non-comment Rust text under workspace crates.
+    """Require each reportable pinned id in non-comment workspace Rust text.
 
     This text scan removes ``//`` line comments and non-nested ``/* ... */``
     block comments. It does not parse Rust syntax, distinguish comment markers
@@ -355,7 +361,14 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
 
     failures: list[str] = []
     for row in rows if isinstance(rows, list) else []:
-        if not _is_table(row) or row.get("pinned") is False:
+        if (
+            not _is_table(row)
+            or row.get("pinned") is False
+            or (
+                row.get("unknown_kind") == "detect-unreachable"
+                and row.get("id") in dialect_codegen.DETECT_UNREACHABLE_IDS
+            )
+        ):
             continue
         dialect_id = row.get("id")
         if isinstance(dialect_id, str) and dialect_id not in literals:

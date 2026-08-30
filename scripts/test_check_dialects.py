@@ -218,6 +218,13 @@ class TestRowShape(RegistryCase):
         row = GOOD_ROW.replace('"demo:one"', '"demo:unknown"')
         self.assertClean(_registry(row + 'unknown_kind = "refused-residual"\n'))
 
+    def test_detect_unreachable_is_limited_to_verified_rows(self):
+        row = GOOD_ROW.replace('"demo:one"', '"demo:unknown"')
+        self.assertFires(
+            _registry(row + 'unknown_kind = "detect-unreachable"\n'),
+            "detect-unreachable is admitted only for nx:unknown, sat:unknown",
+        )
+
     def test_unknown_kind_is_unknown_only(self):
         self.assertFires(
             _registry(GOOD_ROW + 'unknown_kind = "recovered-residual"\n'),
@@ -425,6 +432,34 @@ class TestExtensionPoints(unittest.TestCase):
                 checker.check_codec_emitted_ids(root),
                 ["demo:bogus-closure-proof: no string literal under crates/*/src"],
             )
+
+    def test_detect_unreachable_id_needs_no_code_anchor(self):
+        row = GOOD_ROW.replace("demo:one", "nx:unknown")
+        row += 'unknown_kind = "detect-unreachable"\n'
+        self.assertEqual(self.emitted_id_failures(row), [])
+
+    def test_codegen_excludes_detect_unreachable_rows_from_enum_closure(self):
+        rows = GOOD_ROW.replace("demo:one", "nx:splmsstr")
+        rows += (
+            GOOD_ROW.replace("demo:one", "nx:unknown")
+            + 'unknown_kind = "detect-unreachable"\n'
+        )
+        formats = "[format.nx]\ncomplete = false\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            (root / "docs" / "dialects.toml").write_text(
+                _registry(rows, formats=formats), encoding="utf-8"
+            )
+            (root / "crates" / "cadmpeg-codec-nx").mkdir(parents=True)
+
+            outputs = checker.dialect_codegen.outputs(root)
+            rendered = outputs[
+                root / "crates" / "cadmpeg-codec-nx" / "src" / "dialect" / "generated.rs"
+            ]
+
+        self.assertIn('DialectId::pinned("nx:splmsstr")', rendered)
+        self.assertNotIn("nx:unknown", rendered)
 
     def test_id_present_only_in_line_comment_fails(self):
         for source in ('// "demo:one"', '/// "demo:one"'):

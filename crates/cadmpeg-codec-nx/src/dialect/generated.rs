@@ -5,8 +5,7 @@
 use cadmpeg_core::dialect::DialectId;
 
 #[rustfmt::skip]
-pub(super) const ROWS: [DialectId; 3] = [
+pub(super) const ROWS: [DialectId; 2] = [
     DialectId::pinned("nx:splmsstr"),
     DialectId::pinned("nx:legacy-cfb"),
-    DialectId::pinned("nx:unknown"),
 ];

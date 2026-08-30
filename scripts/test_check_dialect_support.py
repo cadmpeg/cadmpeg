@@ -273,6 +273,26 @@ class TestCrossReferences(SupportCase):
         )
         self.assertClean(support, identity=identity)
 
+    def test_detect_unreachable_requires_refused_read(self):
+        identity = UNKNOWN_IDENTITY.replace(
+            'unknown_kind = "recovered-residual"', 'unknown_kind = "detect-unreachable"'
+        )
+        self.assertFires(
+            UNKNOWN_SUPPORT,
+            "unknown_kind detect-unreachable requires read refused, got unclassified-recovered",
+            identity=identity,
+        )
+
+    def test_detect_unreachable_accepts_refused_read(self):
+        identity = UNKNOWN_IDENTITY.replace(
+            'unknown_kind = "recovered-residual"', 'unknown_kind = "detect-unreachable"'
+        )
+        support = UNKNOWN_SUPPORT.replace(
+            'read = "unclassified-recovered"',
+            'read = "refused"\nreason = "`demo:unknown` cannot reach classification"',
+        )
+        self.assertClean(support, identity=identity)
+
 
 class TestSnapshotDomainGating(SupportCase):
     def test_a_score_with_no_snapshot_domain_is_refused(self):
