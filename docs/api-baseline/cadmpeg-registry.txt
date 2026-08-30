@@ -1,4 +1,4 @@
-# generated at 9468af2c3
+# generated at 82ff824c4
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -69,18 +69,13 @@ pub fn cadmpeg_registry::WriteDisposition::fmt(&self, &mut core::fmt::Formatter<
 pub struct cadmpeg_registry::DialectEntry
 pub cadmpeg_registry::DialectEntry::disposition: cadmpeg_registry::Disposition
 pub cadmpeg_registry::DialectEntry::id: cadmpeg_core::dialect::DialectId
+pub cadmpeg_registry::DialectEntry::target: bool
 pub cadmpeg_registry::DialectEntry::title: alloc::string::String
 pub cadmpeg_registry::DialectEntry::unknown_kind: core::option::Option<cadmpeg_registry::UnknownDialectKind>
 pub struct cadmpeg_registry::DialectProvenance
 pub cadmpeg_registry::DialectProvenance::id: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_registry::DialectProvenance::read: core::option::Option<cadmpeg_registry::ReadDisposition>
 pub cadmpeg_registry::DialectProvenance::write_targets: alloc::vec::Vec<&'static str>
-pub struct cadmpeg_registry::DialectRow
-pub cadmpeg_registry::DialectRow::id: &'static cadmpeg_core::dialect::DialectId
-pub cadmpeg_registry::DialectRow::read: cadmpeg_registry::ReadDisposition
-pub cadmpeg_registry::DialectRow::target: bool
-pub cadmpeg_registry::DialectRow::title: &'static str
-pub cadmpeg_registry::DialectRow::write: cadmpeg_registry::WriteDisposition
 pub struct cadmpeg_registry::Disposition
 pub cadmpeg_registry::Disposition::read: cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::Disposition::write: cadmpeg_registry::WriteDisposition
@@ -88,7 +83,7 @@ pub struct cadmpeg_registry::FormatDialects
 pub cadmpeg_registry::FormatDialects::catalog: core::option::Option<&'static [cadmpeg_ir::codec::write::TargetDescriptor]>
 pub cadmpeg_registry::FormatDialects::default_target: core::option::Option<&'static str>
 pub cadmpeg_registry::FormatDialects::format: alloc::string::String
-pub cadmpeg_registry::FormatDialects::rows: alloc::vec::Vec<cadmpeg_registry::DialectRow>
+pub cadmpeg_registry::FormatDialects::rows: alloc::vec::Vec<cadmpeg_registry::DialectEntry>
 pub struct cadmpeg_registry::FormatRow
 pub cadmpeg_registry::FormatRow::extensions: &'static [&'static str]
 pub cadmpeg_registry::FormatRow::id: &'static str

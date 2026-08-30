@@ -59,11 +59,11 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
             println!(
                 "  {:<34} {:<24} {:<24} {}",
                 row.id.as_str(),
-                row.read,
+                row.disposition.read,
                 if row.target {
-                    format!("{} (target)", row.write)
+                    format!("{} (target)", row.disposition.write)
                 } else {
-                    row.write.to_string()
+                    row.disposition.write.to_string()
                 },
                 row.title
             );

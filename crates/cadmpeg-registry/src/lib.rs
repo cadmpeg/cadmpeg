@@ -39,6 +39,6 @@ pub use format::Format;
 pub use identify::{identify, identify_with, Identification, Inspection, DETECTION_PREFIX_LEN};
 pub use support::{
     dialect_provenance, dialect_table, dialects, format_rows, support, DialectEntry,
-    DialectProvenance, DialectRow, Disposition, FormatDialects, FormatRow, ReadDisposition,
-    UnknownDialectKind, UnknownDisposition, UnknownFormat, WriteDisposition,
+    DialectProvenance, Disposition, FormatDialects, FormatRow, ReadDisposition, UnknownDialectKind,
+    UnknownDisposition, UnknownFormat, WriteDisposition,
 };

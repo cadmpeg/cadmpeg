@@ -184,7 +184,7 @@ pub enum UnknownDialectKind {
 }
 
 /// One dialect, as the two registries jointly describe it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectEntry {
     /// The registry id, `<format>:<name>`.
     pub id: DialectId,
@@ -192,6 +192,8 @@ pub struct DialectEntry {
     pub title: String,
     /// The capability row for this id.
     pub disposition: Disposition,
+    /// Whether this build's encoder carries the dialect as a target.
+    pub target: bool,
     /// The meaning of an `unknown` row; `None` for every named dialect row.
     pub unknown_kind: Option<UnknownDialectKind>,
 }
@@ -298,6 +300,13 @@ impl Registries {
                         .ok_or_else(|| RegistryLoadError::IdentityWithoutSupport(row.id.clone()))?;
                     Ok(DialectEntry {
                         disposition,
+                        target: row
+                            .id
+                            .as_str()
+                            .split_once(':')
+                            .and_then(|(format, _)| catalog_of(format))
+                            .and_then(|targets| find_target(targets, row.id.as_str()))
+                            .is_some(),
                         id: row.id,
                         title: row.title,
                         unknown_kind: row.unknown_kind,
@@ -436,22 +445,6 @@ pub struct UnknownFormat {
     known: String,
 }
 
-/// One dialect of one format, joined across both registries and this build's
-/// encoder catalog.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DialectRow {
-    /// The registry id, `<format>:<name>`.
-    pub id: &'static DialectId,
-    /// The declared read disposition.
-    pub read: ReadDisposition,
-    /// The declared write disposition.
-    pub write: WriteDisposition,
-    /// Whether this build's encoder for the format carries it as a target.
-    pub target: bool,
-    /// The human-facing name.
-    pub title: &'static str,
-}
-
 /// Every declared dialect of one format, with this build's write catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatDialects {
@@ -463,7 +456,7 @@ pub struct FormatDialects {
     /// The catalog's default target id, when it declares one.
     pub default_target: Option<&'static str>,
     /// The declared dialects, in registry order.
-    pub rows: Vec<DialectRow>,
+    pub rows: Vec<DialectEntry>,
 }
 
 /// The identity registry crossed with the capability registry.
@@ -497,18 +490,7 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Unknow
                 default_target: catalog
                     .and_then(|targets| targets.iter().find(|target| target.default))
                     .map(|target| target.id),
-                rows: registries
-                    .rows_of(&name)
-                    .map(|row| DialectRow {
-                        id: &row.id,
-                        read: row.disposition.read,
-                        write: row.disposition.write,
-                        target: catalog
-                            .and_then(|targets| find_target(targets, row.id.as_str()))
-                            .is_some(),
-                        title: row.title.as_str(),
-                    })
-                    .collect(),
+                rows: registries.rows_of(&name).cloned().collect(),
                 format: name,
             }
         })
