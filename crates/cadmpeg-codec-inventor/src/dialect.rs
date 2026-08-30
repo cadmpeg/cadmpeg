@@ -225,7 +225,7 @@ impl DialectRecovery {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
-                using: InventorDialect::Cfb3Rse31Meta8.id(),
+                using: Some(InventorDialect::Cfb3Rse31Meta8.id()),
             }
         };
         let mut declared = BTreeMap::new();
@@ -367,9 +367,22 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
-    Some(InventorLossCode::KernelDialectUnverified.note(
-        cadmpeg_asm::dialect::acis_recovery_message("the active kernel carrier", &declared, &using),
-    ))
+    let message = using.as_ref().map_or_else(
+        || {
+            format!(
+                "the active kernel carrier declares {declared}; its residual path substituted no \
+                 declared ACIS grammar"
+            )
+        },
+        |using| {
+            cadmpeg_asm::dialect::acis_recovery_message(
+                "the active kernel carrier",
+                &declared,
+                using,
+            )
+        },
+    );
+    Some(InventorLossCode::KernelDialectUnverified.note(message))
 }
 
 #[cfg(test)]

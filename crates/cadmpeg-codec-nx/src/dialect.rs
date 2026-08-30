@@ -113,7 +113,7 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
             };
             let id = DialectId::pinned(id);
             let admission = if id.as_str() == "parasolid:unknown" {
-                Admission::AdmittedUnverified { using: id.clone() }
+                Admission::AdmittedUnverified { using: None }
             } else {
                 Admission::Admitted
             };

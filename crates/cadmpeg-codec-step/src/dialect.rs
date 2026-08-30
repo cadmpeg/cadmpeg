@@ -265,7 +265,7 @@ impl StepDialect {
     const fn admission(self) -> Admission {
         if matches!(self, Self::Unknown) {
             Admission::AdmittedUnverified {
-                using: NEAREST_STRATEGY.id(),
+                using: Some(NEAREST_STRATEGY.id()),
             }
         } else {
             Admission::Admitted
@@ -383,9 +383,13 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             || "The exchange declares no FILE_SCHEMA identifier".to_owned(),
             |identifier| format!("FILE_SCHEMA identifier {identifier}"),
         );
+    let strategy = using.as_ref().map_or_else(
+        || "without substituting a declared STEP entity vocabulary".to_owned(),
+        |using| format!("with the entity vocabulary verified for {using}"),
+    );
     Some(StepLossCode::SourceDialectUnverified.note(format!(
         "{declaration}; it satisfies no declared STEP dialect, so this decode read the exchange \
-with the entity vocabulary verified for {using}"
+{strategy}"
     )))
 }
 

@@ -764,7 +764,7 @@ read = "unclassified-recovered"
 write = "none"
 reason = """
 a storage family outside the declared set; decoded to metadata IR with a
-self-referential `using` value"""
+residual admission and no substituted dialect grammar"""
 
 # --------------------------------------------------------------------------
 # nx
@@ -827,8 +827,9 @@ dialect = "creo:unknown"
 read = "unclassified-recovered"
 write = "none"
 reason = """
-no ND or DEPDB layout marker; read with a self-referential `using` value, which
-is the row most golden fixtures carry"""
+no ND or DEPDB layout marker; read through the layout-independent residual path
+without substituting a declared dialect grammar; this is the row most golden
+fixtures carry"""
 
 # --------------------------------------------------------------------------
 # f3d

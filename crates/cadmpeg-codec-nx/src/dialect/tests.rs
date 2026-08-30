@@ -49,9 +49,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     assert_eq!(kernel.instance(), None);
     assert_eq!(
         kernel.admission(),
-        Admission::AdmittedUnverified {
-            using: DialectId::pinned("parasolid:unknown")
-        }
+        Admission::AdmittedUnverified { using: None }
     );
 }
 

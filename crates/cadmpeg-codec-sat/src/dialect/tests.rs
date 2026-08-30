@@ -75,7 +75,7 @@ fn only_the_acis_kernel_branches_are_banded() {
                 assert_eq!(
                     matched.admission(),
                     Admission::AdmittedUnverified {
-                        using: DialectId::pinned(nearest)
+                        using: Some(DialectId::pinned(nearest))
                     },
                     "{version:?}"
                 );
@@ -244,7 +244,7 @@ fn cases() -> Vec<Case> {
             id: "sat:text",
             kernel_id: "acis:text-acis",
             kernel_admission: Admission::AdmittedUnverified {
-                using: DialectId::pinned("acis:save-format-217"),
+                using: Some(DialectId::pinned("acis:save-format-217")),
             },
         },
         Case {
@@ -253,7 +253,7 @@ fn cases() -> Vec<Case> {
             id: "sat:text",
             kernel_id: "acis:text-acis",
             kernel_admission: Admission::AdmittedUnverified {
-                using: DialectId::pinned("acis:save-format-218"),
+                using: Some(DialectId::pinned("acis:save-format-218")),
             },
         },
         Case {
@@ -262,7 +262,7 @@ fn cases() -> Vec<Case> {
             id: "sat:acis-binary",
             kernel_id: "acis:save-format-binary-other",
             kernel_admission: Admission::AdmittedUnverified {
-                using: DialectId::pinned("acis:save-format-218"),
+                using: Some(DialectId::pinned("acis:save-format-218")),
             },
         },
         Case {

@@ -100,21 +100,16 @@ impl Layout {
 /// [`DialectMatch`] in this codec, so a classification bug and the report
 /// can never disagree.
 ///
-/// # `using` on the unclassified path
+/// # No substituted grammar on the unclassified path
 ///
-/// [`Admission::AdmittedUnverified`] documents `using` as the dialect
-/// whose declared strategy was substituted for the parse. Creo's
-/// unclassified path substitutes nothing — it skips every layout gate — so
-/// the only row that describes the strategy actually applied is
-/// `creo:unknown` itself. Naming `creo:nd` or `creo:depdb` would assert a
-/// substitution that did not happen, which is the one thing the field must
-/// not do.
+/// Creo's unclassified path substitutes nothing: it skips every layout gate.
+/// The admission therefore carries no `using` value. Naming `creo:nd`,
+/// `creo:depdb`, or the residual row itself would assert a substitution that
+/// did not happen.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
     let layout = scan.framing.layout;
     let admission = if layout == Layout::Unknown {
-        Admission::AdmittedUnverified {
-            using: Layout::Unknown.id(),
-        }
+        Admission::AdmittedUnverified { using: None }
     } else {
         Admission::Admitted
     };

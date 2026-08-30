@@ -382,7 +382,7 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
     assert_eq!(
         matched.admission(),
         Admission::AdmittedUnverified {
-            using: DialectId::pinned("iges:5.3-compressed-ascii"),
+            using: Some(DialectId::pinned("iges:5.3-compressed-ascii")),
         }
     );
     assert_eq!(matched.declared()["representation"], "compressed-ascii");

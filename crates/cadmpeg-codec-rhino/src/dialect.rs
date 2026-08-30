@@ -171,11 +171,11 @@ impl ArchiveVersion {
     fn admission(self) -> Admission {
         if matches!(self, Self::Other(_)) {
             Admission::AdmittedUnverified {
-                using: if self.uses_eight_byte_values() {
+                using: Some(if self.uses_eight_byte_values() {
                     Self::V9.id()
                 } else {
                     Self::V4.id()
-                },
+                }),
             }
         } else {
             Admission::Admitted
@@ -219,13 +219,23 @@ pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
         .declared()
         .get(DECLARED_ARCHIVE_VERSION)
         .map_or("absent", String::as_str);
-    Some(
-        crate::loss::RhinoLossCode::SourceDialectUnverified.note(format!(
-        "archive version word {word} has no declared row, so no declared identity was verified. \
-The document is read using {using}, which uses the chunk value width selected by the \
-         archive word."
-    )),
-    )
+    let message = using.as_ref().map_or_else(
+        || {
+            format!(
+                "archive version word {word} has no declared row, so no declared identity was \
+                 verified. No declared Rhino grammar was substituted; the archive word selects \
+                 the chunk value width."
+            )
+        },
+        |using| {
+            format!(
+                "archive version word {word} has no declared row, so no declared identity was \
+                 verified. The document is read using {using}, which uses the chunk value width \
+                 selected by the archive word."
+            )
+        },
+    );
+    Some(crate::loss::RhinoLossCode::SourceDialectUnverified.note(message))
 }
 
 #[cfg(test)]

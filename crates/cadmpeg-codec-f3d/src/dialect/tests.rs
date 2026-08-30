@@ -34,7 +34,7 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
     assert_eq!(
         matched.admission(),
         Admission::AdmittedUnverified {
-            using: DialectId::pinned("f3d:manifest-3-2-0-0"),
+            using: Some(DialectId::pinned("f3d:manifest-3-2-0-0")),
         }
     );
 
@@ -100,7 +100,7 @@ fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
         DialectMatch::new(
             cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
             Admission::AdmittedUnverified {
-                using: cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+                using: Some(cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
             },
         )
         .expect("the residual ACIS dialect is admitted unverified"),

@@ -125,7 +125,7 @@ pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
         Admission::Admitted
     } else {
         Admission::AdmittedUnverified {
-            using: nearest_verified_acis(save_format_major),
+            using: Some(nearest_verified_acis(save_format_major)),
         }
     }
 }
@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(
             acis_admission(Some(700)),
             Admission::AdmittedUnverified {
-                using: ACIS_SAVE_FORMAT_218
+                using: Some(ACIS_SAVE_FORMAT_218)
             }
         );
     }

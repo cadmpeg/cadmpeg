@@ -24,8 +24,8 @@
 //! [`DialectMatch::declared`] as evidence and branched on nowhere.
 //!
 //! [`Variant::Unknown`] uses the metadata-IR fallback. Its
-//! [`Admission::AdmittedUnverified`] value names `catia:unknown`, the registry
-//! row for that fallback; no recognized family grammar is applied.
+//! [`Admission::AdmittedUnverified`] value names no substituted grammar; no
+//! recognized family grammar is applied.
 
 use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
@@ -93,9 +93,7 @@ pub(crate) fn admission(variant: Variant) -> Admission {
         | Variant::FloatPackedInnerNoFbb
         | Variant::E5Stream
         | Variant::InnerNoDirectory => Admission::Admitted,
-        Variant::Unknown => Admission::AdmittedUnverified {
-            using: Variant::Unknown.id(),
-        },
+        Variant::Unknown => Admission::AdmittedUnverified { using: None },
     }
 }
 
@@ -114,12 +112,14 @@ pub(crate) fn admission(variant: Variant) -> Admission {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified { using } => {
+        Admission::AdmittedUnverified { .. } => {
             Some(CatiaLossCode::SourceDialectUnverified.note(format!(
                 "This container matched no CATIA V5 storage family's structural invariants, so it \
-is `{using}`. No decode route declares a grammar for that row; the file was \
+is `{}`. No decode route declares a grammar for that row, and no declared \
+                 dialect grammar was substituted; the file was \
                  admitted under the metadata-IR fallback, which enumerates the container and \
-                 retains the source bytes without applying any family's record grammar."
+                 retains the source bytes without applying any family's record grammar.",
+                matched.dialect()
             )))
         }
     }

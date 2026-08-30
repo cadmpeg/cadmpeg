@@ -102,9 +102,7 @@
       },
       "dialect": {
         "admission": {
-          "admitted_unverified": {
-            "using": "catia:unknown"
-          }
+          "admitted_unverified": {}
         },
         "dialect": "catia:unknown",
         "format": "catia"
@@ -459,9 +457,7 @@
       "extra": [],
       "primary": {
         "admission": {
-          "admitted_unverified": {
-            "using": "catia:unknown"
-          }
+          "admitted_unverified": {}
         },
         "dialect": "catia:unknown",
         "format": "catia"
@@ -494,7 +490,7 @@
           "kind": "source_dialect_unverified",
           "namespace": "catia"
         },
-        "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
+        "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row, and no declared dialect grammar was substituted; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
         "severity": "warning"
       }
     ],

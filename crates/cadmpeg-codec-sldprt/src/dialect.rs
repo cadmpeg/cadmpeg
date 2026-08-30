@@ -44,9 +44,8 @@
 //!
 //! Admission verifies a *declared* identity, and `sldprt:unknown` is the
 //! absence of one. So the two versioned rows are [`Admission::Admitted`] and
-//! `sldprt:unknown` is [`Admission::AdmittedUnverified`], naming *itself* as
-//! `using`: the strategy substituted for the missing declaration is the
-//! row's own declared fallback, and no other row lent its grammar.
+//! `sldprt:unknown` is [`Admission::AdmittedUnverified`] with no substituted
+//! grammar. Its residual fallback does not claim another row's strategy.
 //!
 //! That fallback is well-defined — the padding filter is not applied and the
 //! ambiguity resolver requires the two candidate offsets to agree before it
@@ -172,7 +171,7 @@ fn parasolid_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dialec
     };
     let id = DialectId::pinned(id);
     let admission = if id.as_str() == "parasolid:unknown" {
-        Admission::AdmittedUnverified { using: id.clone() }
+        Admission::AdmittedUnverified { using: None }
     } else {
         Admission::Admitted
     };
@@ -244,14 +243,11 @@ impl SldprtDialect {
     /// The one predicate behind both the report's [`Admission`] and
     /// [`dialect_loss`]: a versioned row carries a declared identity that the
     /// parse verified, and the residual row carries no declared identity at
-    /// all, so it names itself as the substituted strategy. Neither answer is
-    /// recomputed anywhere else.
+    /// all or substituted grammar. Neither answer is recomputed anywhere else.
     fn admission(self) -> Admission {
         match self {
             Self::SwVersionPre12000 | Self::SwVersion12000Plus => Admission::Admitted,
-            Self::Unknown => Admission::AdmittedUnverified {
-                using: Self::Unknown.id(),
-            },
+            Self::Unknown => Admission::AdmittedUnverified { using: None },
         }
     }
 
@@ -286,7 +282,7 @@ impl SldprtDialect {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted => None,
-        Admission::AdmittedUnverified { using } => {
+        Admission::AdmittedUnverified { .. } => {
             let declaration = match matched.declared().get(DECLARED_SW_VERSION) {
                 Some(value) => format!(
                     "the swSolidWorks swVersion declaration {value:?} does not read as a version \
@@ -296,9 +292,11 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             };
             Some(SldprtLossCode::SourceDialectUnverified.note(format!(
                 "{declaration}, so no declared identity was verified. The document is read on \
-{using}: the feature-operation form-code padding filter is not applied, and an \
+the `{}` residual path without substituting a declared dialect grammar: the \
+                 feature-operation form-code padding filter is not applied, and an \
                  operation code binds only where the four- and eight-byte candidates agree. \
-                 Agreement is consistency, not a declaration."
+                 Agreement is consistency, not a declaration.",
+                matched.dialect()
             )))
         }
         Admission::Refused => None,
