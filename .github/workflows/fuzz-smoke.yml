@@ -2,8 +2,10 @@ name: Fuzz smoke
 
 on:
   schedule:
-    # Nightly at 03:17 UTC (off the hour to avoid the cron rush).
-    - cron: "17 3 * * *"
+    # Every 5 days at 00:17 UTC (off the hour to avoid the cron rush).
+    # Day-of-month stepping resets at month boundaries, so the gap around
+    # the 1st can be shorter than 5 days.
+    - cron: "17 0 */5 * *"
   workflow_dispatch:
 
 permissions:
