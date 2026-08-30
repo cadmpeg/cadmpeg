@@ -195,7 +195,7 @@ impl FcstdDialect {
     pub(crate) fn classify(document: &DocumentFacts, dialect: Self) -> DialectMatch {
         let admission = if dialect == Self::Unknown {
             Admission::AdmittedUnverified {
-                using: Self::NEAREST_VERIFIED.id(),
+                using: Some(Self::NEAREST_VERIFIED.id()),
             }
         } else {
             Admission::Admitted

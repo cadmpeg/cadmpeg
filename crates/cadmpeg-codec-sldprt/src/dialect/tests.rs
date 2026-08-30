@@ -57,9 +57,7 @@ fn residual_parasolid_schema_is_admitted_unverified() {
     assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified {
-            using: DialectId::pinned("parasolid:unknown")
-        }
+        Admission::AdmittedUnverified { using: None }
     );
 }
 
@@ -225,8 +223,8 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
     // Admission verifies a *declared* identity. A part declaring 11999 or
     // 12000 is read with the padding its own declaration selects, so it is
     // `Admitted`. A part declaring nothing usable has no declaration to verify
-    // against, so it is `AdmittedUnverified` naming itself: the fallback
-    // applied is the residual row's own, and no other row lent its grammar.
+    // against, so it is `AdmittedUnverified` without a substituted grammar.
+    // The residual fallback does not claim another row's strategy.
     // The pair (`sldprt:unknown`, `Admitted`) must be unreachable.
     for case in CASES {
         let matched = SldprtDialect::classify(case.declaration);
@@ -234,9 +232,7 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
         let residual = matched.dialect().as_str() == SldprtDialect::Unknown.id().as_str();
 
         let expected = if residual {
-            Admission::AdmittedUnverified {
-                using: SldprtDialect::Unknown.id(),
-            }
+            Admission::AdmittedUnverified { using: None }
         } else {
             Admission::Admitted
         };
@@ -329,9 +325,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     assert!(matched.declared().is_empty());
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified {
-            using: SldprtDialect::Unknown.id()
-        }
+        Admission::AdmittedUnverified { using: None }
     );
     assert!(dialect_loss(&matched).is_some());
 }

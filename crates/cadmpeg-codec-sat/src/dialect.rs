@@ -180,13 +180,16 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         (Some(major), None) => format!("save format major {major}"),
         (None, _) => "no save format".to_owned(),
     };
-    Some(
-        SatLossCode::SourceDialectUnverified.note(cadmpeg_asm::dialect::acis_recovery_message(
-            "the stream",
-            &declared,
-            &using,
-        )),
-    )
+    let message = using.as_ref().map_or_else(
+        || {
+            format!(
+                "the stream declares {declared}; its residual path substituted no declared ACIS \
+                 grammar"
+            )
+        },
+        |using| cadmpeg_asm::dialect::acis_recovery_message("the stream", &declared, using),
+    );
+    Some(SatLossCode::SourceDialectUnverified.note(message))
 }
 
 /// The declarations the stream made, verbatim, under keys pinned above.

@@ -116,15 +116,11 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 }
 
 #[test]
-fn the_totality_row_is_admitted_unverified_and_names_itself() {
+fn the_totality_row_is_admitted_unverified_without_a_substituted_grammar() {
     assert_eq!(
         admission(Variant::Unknown),
-        Admission::AdmittedUnverified {
-            using: DialectId::pinned("catia:unknown"),
-        },
-        "no CATIA family's grammar is substituted for an unrecognized layout, so the only \
-         honest `using` value is the row whose declared disposition is the \
-         metadata-IR fallback itself"
+        Admission::AdmittedUnverified { using: None },
+        "no CATIA family's grammar is substituted for an unrecognized layout"
     );
     for variant in [
         Variant::StandardNested,
@@ -165,9 +161,7 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     assert_eq!(matched.dialect().as_str(), "catia:unknown");
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified {
-            using: DialectId::pinned("catia:unknown"),
-        }
+        Admission::AdmittedUnverified { using: None }
     );
 }
 

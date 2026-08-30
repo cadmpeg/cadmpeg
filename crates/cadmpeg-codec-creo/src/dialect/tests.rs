@@ -164,9 +164,7 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
-            Admission::AdmittedUnverified {
-                using: DialectId::pinned("creo:unknown"),
-            }
+            Admission::AdmittedUnverified { using: None }
         };
         assert_eq!(matched.admission(), expected_admission, "{}", case.label);
     }

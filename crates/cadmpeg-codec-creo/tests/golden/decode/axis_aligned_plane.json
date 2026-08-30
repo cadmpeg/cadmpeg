@@ -612,9 +612,7 @@
       },
       "dialect": {
         "admission": {
-          "admitted_unverified": {
-            "using": "creo:unknown"
-          }
+          "admitted_unverified": {}
         },
         "declared": {
           "version_line": "#UGC:2 P c"
@@ -1001,9 +999,7 @@
       "extra": [],
       "primary": {
         "admission": {
-          "admitted_unverified": {
-            "using": "creo:unknown"
-          }
+          "admitted_unverified": {}
         },
         "declared": {
           "version_line": "#UGC:2 P c"

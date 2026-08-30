@@ -428,7 +428,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             .primary()
             .admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
+            using: Some(cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4")),
         }
     );
 
@@ -512,7 +512,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
             .primary()
             .admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
+            using: Some(cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4")),
         }
     );
 

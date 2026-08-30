@@ -221,9 +221,7 @@
         "extra": [
           {
             "admission": {
-              "admitted_unverified": {
-                "using": "parasolid:unknown"
-              }
+              "admitted_unverified": {}
             },
             "declared": {
               "carrier": "stream@178",
@@ -387,9 +385,7 @@
       "extra": [
         {
           "admission": {
-            "admitted_unverified": {
-              "using": "parasolid:unknown"
-            }
+            "admitted_unverified": {}
           },
           "declared": {
             "carrier": "stream@178",

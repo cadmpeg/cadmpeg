@@ -25,9 +25,7 @@
     ],
     "primary": {
       "admission": {
-        "admitted_unverified": {
-          "using": "sldprt:unknown"
-        }
+        "admitted_unverified": {}
       },
       "dialect": "sldprt:unknown",
       "format": "sldprt"

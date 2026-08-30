@@ -109,7 +109,7 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
             Admission::Admitted
         } else {
             Admission::AdmittedUnverified {
-                using: DialectId::pinned("fcstd:schema-4"),
+                using: Some(DialectId::pinned("fcstd:schema-4")),
             }
         };
         assert_eq!(matched.admission(), expected_admission, "{context}");

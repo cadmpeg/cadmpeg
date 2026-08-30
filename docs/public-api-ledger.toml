@@ -17,6 +17,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
 [[change]]
+commit = "dba146f22442ab245a1100defbfd22b1cb98e40a"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::dialect::Admission::AdmittedUnverified::using"
+reason = "an optional strategy distinguishes a declared grammar applied to an unverified parse from a residual path that applies no declared grammar"
+
+[[change]]
 commit = "442491a677de4875b8adb38c9189215f1ff1e20e"
 crate = "cadmpeg-core"
 kind = "field"

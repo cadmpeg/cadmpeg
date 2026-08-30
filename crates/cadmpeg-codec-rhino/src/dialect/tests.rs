@@ -72,7 +72,7 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
         assert_eq!(
             matched.admission(),
             Admission::AdmittedUnverified {
-                using: nearest.id()
+                using: Some(nearest.id())
             },
             "archive word {word}"
         );

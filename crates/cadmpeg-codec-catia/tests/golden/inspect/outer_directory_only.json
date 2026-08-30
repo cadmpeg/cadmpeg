@@ -4,9 +4,7 @@
     "extra": [],
     "primary": {
       "admission": {
-        "admitted_unverified": {
-          "using": "catia:unknown"
-        }
+        "admitted_unverified": {}
       },
       "dialect": "catia:unknown",
       "format": "catia"

@@ -242,7 +242,9 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     assert_eq!(
         layer.admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: cadmpeg_core::dialect::DialectId::pinned("acis:save-format-218")
+            using: Some(cadmpeg_core::dialect::DialectId::pinned(
+                "acis:save-format-218"
+            ))
         }
     );
     assert_eq!(layer.declared()["save_format_major"], "700");

@@ -161,7 +161,7 @@ impl F3dDialect {
         match self {
             Self::Manifest3200 | Self::F3zMultiDocument => Admission::Admitted,
             Self::Unknown => Admission::AdmittedUnverified {
-                using: Self::Manifest3200.id(),
+                using: Some(Self::Manifest3200.id()),
             },
         }
     }
@@ -203,11 +203,21 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
                 .declared()
                 .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
                 .map_or("(none)", String::as_str);
+            let strategy = using.as_ref().map_or_else(
+                || {
+                    "No declared manifest grammar was substituted; only the residual path ran."
+                        .to_owned()
+                },
+                |using| {
+                    format!(
+                        "The document is read on {using}: every field after the version was parsed \
+                         with that layout. The layout fitting is consistency, not a declaration."
+                    )
+                },
+            );
             Some(F3dLossCode::SourceDialectUnverified.note(format!(
                 "the top-level manifest declares version {version:?}, which no dialect row of \
-                 this codec names, so no declared identity was verified. The document is read on \
-{using}: every field after the version was parsed with that layout. The layout \
-                 fitting is consistency, not a declaration."
+                 this codec names, so no declared identity was verified. {strategy}"
             )))
         }
     }
@@ -307,10 +317,20 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
-    let message = cadmpeg_asm::dialect::acis_recovery_message(
-        &format!("the kernel carrier {carrier}"),
-        &declared,
-        &using,
+    let message = using.as_ref().map_or_else(
+        || {
+            format!(
+                "the kernel carrier {carrier} declares {declared}; its residual path substituted \
+                 no declared ACIS grammar"
+            )
+        },
+        |using| {
+            cadmpeg_asm::dialect::acis_recovery_message(
+                &format!("the kernel carrier {carrier}"),
+                &declared,
+                using,
+            )
+        },
     );
     let message = matched
         .declared()
