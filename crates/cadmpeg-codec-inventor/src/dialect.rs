@@ -4,10 +4,9 @@
 //!
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
 //! are the boundary, [`DialectRecovery::classify`] is the one
-//! construction path, and the vocabulary is closed. Every variant here has a row in
-//! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row` fails on
-//! drift in either direction. Two variants is still a closed vocabulary, and
-//! the drift test is what keeps it one.
+//! construction path, and the vocabulary is closed. `docs/dialects.toml`
+//! generates the pinned constants and exhaustive row list in
+//! `dialect/generated.rs`.
 //!
 //! # Declarations select identity; framing selects admission
 //!
@@ -62,6 +61,8 @@
 
 use std::collections::BTreeMap;
 
+mod generated;
+
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 
@@ -114,19 +115,11 @@ pub(crate) enum InventorDialect {
 }
 
 impl InventorDialect {
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 2] = [Self::Cfb3Rse31Meta8, Self::Unknown];
-
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::Cfb3Rse31Meta8 => "inventor:cfb3-rse31-meta8",
-            Self::Unknown => "inventor:unknown",
+            Self::Cfb3Rse31Meta8 => generated::CFB3_RSE31_META8_STR,
+            Self::Unknown => generated::UNKNOWN_STR,
         })
     }
 }

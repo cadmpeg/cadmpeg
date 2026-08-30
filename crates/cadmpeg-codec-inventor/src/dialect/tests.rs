@@ -19,14 +19,6 @@ use crate::test_support::{
 };
 use crate::InventorCodec;
 
-#[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed(
-        "inventor",
-        &InventorDialect::ALL.map(InventorDialect::id),
-    );
-}
-
 /// One matrix row: a document's declarations and what they must classify as.
 struct Case {
     /// What the test is about, for assertion context.

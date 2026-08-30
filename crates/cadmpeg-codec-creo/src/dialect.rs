@@ -4,9 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction
-//! path, and the vocabulary is closed. Every layout has a row in
-//! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
-//! fails on drift in either direction.
+//! path, and the vocabulary is closed. `docs/dialects.toml` generates the
+//! pinned constants and exhaustive row list in `dialect/generated.rs`.
 //!
 //! # The discriminant is the layout classification
 //!
@@ -37,6 +36,8 @@ use crate::loss::CreoLossCode;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
+
+mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "creo";
@@ -75,14 +76,6 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 }
 
 impl Layout {
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a layout added without a registry row, or a row
-    /// added without a layout, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 4] = [Self::Nd, Self::Depdb, Self::LegacyAscii, Self::Unknown];
-
     /// The pinned registry id.
     ///
     /// One row of `docs/dialects.toml` under the `creo` namespace, and the only
@@ -95,10 +88,10 @@ impl Layout {
     /// exhaustive, so `detect`'s whole domain classifies.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::Nd => "creo:nd",
-            Self::Depdb => "creo:depdb",
-            Self::LegacyAscii => "creo:legacy-ascii",
-            Self::Unknown => "creo:unknown",
+            Self::Nd => generated::ND_STR,
+            Self::Depdb => generated::DEPDB_STR,
+            Self::LegacyAscii => generated::LEGACY_ASCII_STR,
+            Self::Unknown => generated::UNKNOWN_STR,
         })
     }
 }

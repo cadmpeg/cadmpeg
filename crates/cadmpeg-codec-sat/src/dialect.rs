@@ -4,9 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. Every [`StreamKind`] has a row in `docs/dialects.toml`
-//! under the `sat` namespace; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
-//! fails on drift in either direction.
+//! vocabulary is closed. `docs/dialects.toml` generates the pinned constants
+//! and exhaustive row list in `dialect/generated.rs`.
 //!
 //! This module owns the primary `sat:` host layer. Each classified stream also
 //! emits the non-primary `acis:` kernel layer owned by `cadmpeg-asm`.
@@ -43,6 +42,8 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+mod generated;
+
 use crate::loss::SatLossCode;
 
 /// Key of the stream encoding in [`DialectMatch::declared`].
@@ -60,15 +61,6 @@ const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 const DECLARED_TERMINATOR: &str = "terminator";
 
 impl StreamKind {
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a stream kind added without a registry row, or a row
-    /// added without a stream kind, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 4] =
-        [Self::AsmBinary, Self::AcisBinary, Self::Text, Self::Unknown];
-
     /// The pinned registry id.
     ///
     /// One row of `docs/dialects.toml` under the `sat` namespace per stream
@@ -84,10 +76,10 @@ impl StreamKind {
     /// [`Confidence::No`]: cadmpeg_ir::codec::Confidence::No
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::AsmBinary => "sat:asm-binary",
-            Self::AcisBinary => "sat:acis-binary",
-            Self::Text => "sat:text",
-            Self::Unknown => "sat:unknown",
+            Self::AsmBinary => generated::ASM_BINARY_STR,
+            Self::AcisBinary => generated::ACIS_BINARY_STR,
+            Self::Text => generated::TEXT_STR,
+            Self::Unknown => generated::UNKNOWN_STR,
         })
     }
 }

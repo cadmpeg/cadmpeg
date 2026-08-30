@@ -4,9 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`NxDialect::classify`] is the one construction
-//! path, and the vocabulary is closed. Every variant here has a row in
-//! `docs/dialects.toml`; the registry cross-check in this module's tests fails
-//! on drift in either direction.
+//! path, and the vocabulary is closed. `docs/dialects.toml` generates the
+//! pinned constants and exhaustive row list in `dialect/generated.rs`.
 //!
 //! # Classification is structural, so every admitted document is `Admitted`
 //!
@@ -49,6 +48,8 @@
 use crate::container::Container;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use std::collections::BTreeMap;
+
+mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "nx";
@@ -128,20 +129,12 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
 }
 
 impl NxDialect {
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 3] = [Self::Splmsstr, Self::LegacyCfb, Self::Unknown];
-
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::Splmsstr => "nx:splmsstr",
-            Self::LegacyCfb => "nx:legacy-cfb",
-            Self::Unknown => "nx:unknown",
+            Self::Splmsstr => generated::SPLMSSTR_STR,
+            Self::LegacyCfb => generated::LEGACY_CFB_STR,
+            Self::Unknown => generated::UNKNOWN_STR,
         })
     }
 

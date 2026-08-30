@@ -16,11 +16,6 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
-#[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed("sat", &StreamKind::ALL.map(StreamKind::id));
-}
-
 /// A kernel header declaring `save_format_version` and nothing else that
 /// classification reads.
 fn header(save_format_version: Option<u32>) -> KernelHeader {

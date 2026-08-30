@@ -21,11 +21,6 @@ fn document(schema_version: &str) -> DocumentFacts {
     }
 }
 
-#[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed("fcstd", &FcstdDialect::ALL.map(FcstdDialect::id));
-}
-
 /// One matrix row: a `SchemaVersion` declaration and what it must classify as.
 struct Case {
     /// `Document/@SchemaVersion` as written in the file.

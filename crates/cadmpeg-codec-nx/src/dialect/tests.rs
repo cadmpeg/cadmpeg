@@ -32,11 +32,6 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
 }
 
 #[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed("nx", &NxDialect::ALL.map(NxDialect::id));
-}
-
-#[test]
 fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {

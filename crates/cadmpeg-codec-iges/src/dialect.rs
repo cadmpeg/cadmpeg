@@ -4,9 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
 //! are the boundary, [`IgesDialect::classify`] is the one construction path,
-//! and the vocabulary is closed. Every variant here has a row in
-//! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row` fails on
-//! drift in either direction.
+//! and the vocabulary is closed. `docs/dialects.toml` generates the pinned
+//! constants and exhaustive row list in `dialect/generated.rs`.
 //!
 //! Identity rows and parser grammars are independent, and IGES shows the gap
 //! plainly. The registry enumerates eleven Fixed ASCII versions
@@ -35,6 +34,8 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
+
+mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "iges";
@@ -186,37 +187,6 @@ pub(crate) enum IgesDialect {
 }
 
 impl IgesDialect {
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 22] = [
-        Self::V1_0FixedAscii,
-        Self::AnsiY1426M1981FixedAscii,
-        Self::V2_0FixedAscii,
-        Self::V3_0FixedAscii,
-        Self::AsmeAnsiY1426M1987FixedAscii,
-        Self::V4_0FixedAscii,
-        Self::AsmeY1426M1989FixedAscii,
-        Self::V5_0FixedAscii,
-        Self::V5_1FixedAscii,
-        Self::V5_2FixedAscii,
-        Self::V5_3FixedAscii,
-        Self::V4_0CompressedAscii,
-        Self::V5_0CompressedAscii,
-        Self::V5_1CompressedAscii,
-        Self::V5_2CompressedAscii,
-        Self::V5_3CompressedAscii,
-        Self::V4_0Binary,
-        Self::V5_0Binary,
-        Self::V5_1Binary,
-        Self::V5_2Binary,
-        Self::V5_3Binary,
-        Self::Unknown,
-    ];
-
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(self.pinned())
@@ -226,28 +196,28 @@ impl IgesDialect {
     /// and for [`crate::IgesVersion::target`].
     pub(crate) const fn pinned(self) -> &'static str {
         match self {
-            Self::V1_0FixedAscii => "iges:1.0-fixed-ascii",
-            Self::AnsiY1426M1981FixedAscii => "iges:ansi-y14.26m-1981-fixed-ascii",
-            Self::V2_0FixedAscii => "iges:2.0-fixed-ascii",
-            Self::V3_0FixedAscii => "iges:3.0-fixed-ascii",
-            Self::AsmeAnsiY1426M1987FixedAscii => "iges:asme-ansi-y14.26m-1987-fixed-ascii",
-            Self::V4_0FixedAscii => "iges:4.0-fixed-ascii",
-            Self::AsmeY1426M1989FixedAscii => "iges:asme-y14.26m-1989-fixed-ascii",
-            Self::V5_0FixedAscii => "iges:5.0-fixed-ascii",
-            Self::V5_1FixedAscii => "iges:5.1-fixed-ascii",
-            Self::V5_2FixedAscii => "iges:5.2-fixed-ascii",
-            Self::V5_3FixedAscii => "iges:5.3-fixed-ascii",
-            Self::V4_0CompressedAscii => "iges:4.0-compressed-ascii",
-            Self::V5_0CompressedAscii => "iges:5.0-compressed-ascii",
-            Self::V5_1CompressedAscii => "iges:5.1-compressed-ascii",
-            Self::V5_2CompressedAscii => "iges:5.2-compressed-ascii",
-            Self::V5_3CompressedAscii => "iges:5.3-compressed-ascii",
-            Self::V4_0Binary => "iges:4.0-binary",
-            Self::V5_0Binary => "iges:5.0-binary",
-            Self::V5_1Binary => "iges:5.1-binary",
-            Self::V5_2Binary => "iges:5.2-binary",
-            Self::V5_3Binary => "iges:5.3-binary",
-            Self::Unknown => "iges:unknown",
+            Self::V1_0FixedAscii => generated::D_1_0_FIXED_ASCII_STR,
+            Self::AnsiY1426M1981FixedAscii => generated::ANSI_Y14_26M_1981_FIXED_ASCII_STR,
+            Self::V2_0FixedAscii => generated::D_2_0_FIXED_ASCII_STR,
+            Self::V3_0FixedAscii => generated::D_3_0_FIXED_ASCII_STR,
+            Self::AsmeAnsiY1426M1987FixedAscii => generated::ASME_ANSI_Y14_26M_1987_FIXED_ASCII_STR,
+            Self::V4_0FixedAscii => generated::D_4_0_FIXED_ASCII_STR,
+            Self::AsmeY1426M1989FixedAscii => generated::ASME_Y14_26M_1989_FIXED_ASCII_STR,
+            Self::V5_0FixedAscii => generated::D_5_0_FIXED_ASCII_STR,
+            Self::V5_1FixedAscii => generated::D_5_1_FIXED_ASCII_STR,
+            Self::V5_2FixedAscii => generated::D_5_2_FIXED_ASCII_STR,
+            Self::V5_3FixedAscii => generated::D_5_3_FIXED_ASCII_STR,
+            Self::V4_0CompressedAscii => generated::D_4_0_COMPRESSED_ASCII_STR,
+            Self::V5_0CompressedAscii => generated::D_5_0_COMPRESSED_ASCII_STR,
+            Self::V5_1CompressedAscii => generated::D_5_1_COMPRESSED_ASCII_STR,
+            Self::V5_2CompressedAscii => generated::D_5_2_COMPRESSED_ASCII_STR,
+            Self::V5_3CompressedAscii => generated::D_5_3_COMPRESSED_ASCII_STR,
+            Self::V4_0Binary => generated::D_4_0_BINARY_STR,
+            Self::V5_0Binary => generated::D_5_0_BINARY_STR,
+            Self::V5_1Binary => generated::D_5_1_BINARY_STR,
+            Self::V5_2Binary => generated::D_5_2_BINARY_STR,
+            Self::V5_3Binary => generated::D_5_3_BINARY_STR,
+            Self::Unknown => generated::UNKNOWN_STR,
         }
     }
 

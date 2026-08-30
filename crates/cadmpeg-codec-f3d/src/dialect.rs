@@ -4,9 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`] strings
 //! are the boundary, `F3dDialect::matched` is the one construction path, and
-//! the vocabulary is closed. Every variant here has a row in
-//! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
-//! fails on drift in either direction.
+//! the vocabulary is closed. `docs/dialects.toml` generates the pinned
+//! constants and exhaustive row list in `dialect/generated.rs`.
 //!
 //! # Two grammars, one enum, and one recovery row
 //!
@@ -38,6 +37,8 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::BTreeMap;
+
+mod generated;
 
 use crate::loss::F3dLossCode;
 use crate::manifest::TOP_LEVEL_MANIFEST_VERSION;
@@ -107,14 +108,6 @@ pub(crate) enum F3dDialect {
 }
 
 impl F3dDialect {
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 3] = [Self::Manifest3200, Self::F3zMultiDocument, Self::Unknown];
-
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(self.pinned())
@@ -122,9 +115,9 @@ impl F3dDialect {
 
     const fn pinned(self) -> &'static str {
         match self {
-            Self::Manifest3200 => "f3d:manifest-3-2-0-0",
-            Self::F3zMultiDocument => "f3d:f3z-multi-document",
-            Self::Unknown => "f3d:unknown",
+            Self::Manifest3200 => generated::MANIFEST_3_2_0_0_STR,
+            Self::F3zMultiDocument => generated::F3Z_MULTI_DOCUMENT_STR,
+            Self::Unknown => generated::UNKNOWN_STR,
         }
     }
 
