@@ -40,8 +40,9 @@ pub struct ExportTarget {
 ///
 /// `--to` names a dialect outright. A `--to` that names only a format, or no
 /// `--to` at all, leaves `request` unstated so the encoder inherits from the
-/// source. Explicit tokens are admitted by the encoder catalog here. The
-/// encoder resolves aliases and source-dependent preservation during planning.
+/// source. Explicit tokens reach the encoder unchanged. The encoder admits
+/// catalog tokens and resolves aliases and source-dependent preservation
+/// during planning.
 #[derive(Debug, Clone)]
 pub struct TargetSelection {
     /// Selected output format.
@@ -576,9 +577,9 @@ pub(crate) fn emit_export_plan(
 
 /// Builds an [`ExportTarget`] from the command-line selection.
 ///
-/// Explicit request tokens were checked by [`TargetSelection::resolve`] before
-/// input decode. An inherit request remains source-dependent and is resolved by
-/// `plan`.
+/// [`TargetSelection::resolve`] checks the format grammar only. The encoder's
+/// `plan` admits explicit request tokens and resolves source-dependent inherit
+/// requests.
 ///
 /// `losses` is a policy, never a target: reading it as one would turn
 /// `convert a.step -o b.step --reject-lossy=export` into an explicit AP214
