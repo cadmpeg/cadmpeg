@@ -6,9 +6,8 @@
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
 //! <!-- /generated: capability -->
 //!
-//! The codec provides bounded 3DM
-//! container inspection, partial typed decoding, and explicitly versioned
-//! semantic native writing.
+//! The codec provides bounded 3DM container inspection, typed decoding, and
+//! explicitly versioned native writing from neutral IR.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};

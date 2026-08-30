@@ -78,10 +78,11 @@
 //! [`SldprtCodec`] implements [`Encoder`] through `plan` → `write_to`. Encoding
 //! with the retained `source_fidelity` sidecar replays or patches the source
 //! image. Omitting `fidelity` regenerates the supported source-less profile.
-//! Supported geometry edits can patch the native partition when the entity graph
-//! and provenance remain stable. Retained writing can synchronize supported
-//! feature, sketch, parameter, configuration, and PMI edits and returns
-//! [`CodecError::NotImplemented`] for an unsupported IR shape.
+//! Supported geometry edits can patch the native partition when the entity
+//! graph and provenance remain stable. Retained writing synchronizes supported
+//! feature, sketch, parameter, configuration, and PMI edits. Semantic writing
+//! returns [`CodecError::NotImplemented`] when the requested IR shape cannot be
+//! represented.
 //!
 //! The semantic writer supports solid bodies with at most five regions and at
 //! most six shells per solid region, sheet bodies with one shell per region,

@@ -1427,11 +1427,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ActiveCarrierState::Unavailable(detail) => {
                 format!("The active Inventor kernel carrier is unavailable: {detail}")
             }
-            ActiveCarrierState::NotApplicable => {
+            ActiveCarrierState::NotApplicable | ActiveCarrierState::NotExpanded => {
                 "Inventor geometry is not available for this document kind.".into()
-            }
-            ActiveCarrierState::NotExpanded => {
-                unreachable!("non-container decode expands RSe bulk streams")
             }
         });
         losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail));

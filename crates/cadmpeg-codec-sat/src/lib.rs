@@ -3,7 +3,7 @@
 //! Decode bare Autodesk `ShapeManager` (ASM) B-rep streams.
 //!
 //! A bare stream is an ASM serialization outside any container: a binary
-//! `.smb`/`.smbh`-style SAB stream or a text `.sat`/`.smt` stream. Content
+//! `.sab`/`.smb` SAB stream or a text `.sat`/`.smt` stream. Content
 //! selects the path, never the file extension: the `ASM BinaryFile` magic
 //! selects the binary framer and the ASCII header lines select the text
 //! parser. Both paths decode through the shared kernel decoders in

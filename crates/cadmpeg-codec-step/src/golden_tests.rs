@@ -49,9 +49,9 @@ fn encode_branch() -> [Branch; 1] {
 /// Fixture stems the encode branch covers.
 ///
 /// One per way `plan` can resolve a target from a source. `ap203_sheet`
-/// declares `AUTOMOTIVE_DESIGN`, so `Inherit` reproduces the catalog default;
-/// `ap214_sheet` declares `CONFIG_CONTROL_DESIGN`, so `Inherit` reproduces a
-/// non-default row; `ap242_minimal` carries an edition in its schema object
+/// declares `CONFIG_CONTROL_DESIGN`, so `Inherit` reproduces a non-default row;
+/// `ap214_sheet` declares `AUTOMOTIVE_DESIGN`, so `Inherit` reproduces the
+/// catalog default; `ap242_minimal` carries an edition in its schema object
 /// identifier; and `ap242_geometry` declares `AP242_..._MIM_LF` with no
 /// edition, which names no catalog row and must refuse rather than guess one.
 const ENCODE_FIXTURES: [&str; 4] = [

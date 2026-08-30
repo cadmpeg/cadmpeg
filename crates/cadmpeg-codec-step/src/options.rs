@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writer header metadata.
+//! Writer targets and header metadata.
 //!
 //! These configure *how* a target is written. Which target is written is the
 //! export request's answer, resolved against the source: `StepCodec::plan`
