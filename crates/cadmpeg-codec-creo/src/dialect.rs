@@ -5,7 +5,7 @@
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction
 //! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! pinned constants and exhaustive row list in `dialect/generated.rs`.
+//! exhaustive row list in `dialect/generated.rs`.
 //!
 //! # The discriminant is the layout classification
 //!
@@ -37,6 +37,7 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 /// The format layer every match here classifies.
@@ -76,6 +77,10 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 }
 
 impl Layout {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 4] = [Self::Nd, Self::Depdb, Self::LegacyAscii, Self::Unknown];
+
     /// The pinned registry id.
     ///
     /// One row of `docs/dialects.toml` under the `creo` namespace, and the only
@@ -88,10 +93,10 @@ impl Layout {
     /// exhaustive, so `detect`'s whole domain classifies.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::Nd => generated::ND_STR,
-            Self::Depdb => generated::DEPDB_STR,
-            Self::LegacyAscii => generated::LEGACY_ASCII_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::Nd => "creo:nd",
+            Self::Depdb => "creo:depdb",
+            Self::LegacyAscii => "creo:legacy-ascii",
+            Self::Unknown => "creo:unknown",
         })
     }
 }

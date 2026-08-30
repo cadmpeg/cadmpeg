@@ -11,6 +11,14 @@ use crate::test_support::{outer_body_catpart, summary_preview_segment};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+#[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &Variant::ALL.map(Variant::id),
+        &super::generated::ROWS,
+    );
+}
+
 /// One registry row: the witness fixture it cites and the id it must classify
 /// into.
 struct Witness {

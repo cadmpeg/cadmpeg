@@ -5,8 +5,7 @@
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
 //! are the boundary, [`DialectRecovery::classify`] is the one
 //! construction path, and the vocabulary is closed. `docs/dialects.toml`
-//! generates the pinned constants and exhaustive row list in
-//! `dialect/generated.rs`.
+//! generates the exhaustive row list in `dialect/generated.rs`.
 //!
 //! # Declarations select identity; framing selects admission
 //!
@@ -61,6 +60,7 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
@@ -115,11 +115,15 @@ pub(crate) enum InventorDialect {
 }
 
 impl InventorDialect {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 2] = [Self::Cfb3Rse31Meta8, Self::Unknown];
+
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
-            Self::Cfb3Rse31Meta8 => generated::CFB3_RSE31_META8_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::Cfb3Rse31Meta8 => "inventor:cfb3-rse31-meta8",
+            Self::Unknown => "inventor:unknown",
         })
     }
 }

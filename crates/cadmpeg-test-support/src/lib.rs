@@ -5,8 +5,31 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::dialect::DialectId;
+
 pub mod golden;
 pub mod roundtrip;
+
+/// Assert that a codec enum and its generated registry rows are equal.
+pub fn assert_dialect_rows_closed(ids: &[DialectId], rows: &[DialectId]) {
+    let enum_ids = ids.iter().map(DialectId::as_str).collect::<BTreeSet<_>>();
+    let registry_ids = rows.iter().map(DialectId::as_str).collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        enum_ids.len(),
+        ids.len(),
+        "two enum variants pin the same id"
+    );
+    assert_eq!(
+        registry_ids.len(),
+        rows.len(),
+        "two registry rows pin the same id"
+    );
+    assert_eq!(
+        enum_ids, registry_ids,
+        "the codec enum and generated registry rows disagree"
+    );
+}
 
 /// Dialect ids under one format prefix in the identity registry.
 ///

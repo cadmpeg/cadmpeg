@@ -8,6 +8,14 @@ use super::*;
 use std::collections::BTreeSet;
 
 #[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &StepDialect::ALL.map(StepDialect::id),
+        &super::generated::ROWS,
+    );
+}
+
+#[test]
 fn exactly_the_alternate_encoding_rows_carry_a_refusal_message() {
     let refused = [
         StepDialect::Ap203Edition1,

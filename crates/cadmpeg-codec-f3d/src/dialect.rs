@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`] strings
 //! are the boundary, `F3dDialect::matched` is the one construction path, and
-//! the vocabulary is closed. `docs/dialects.toml` generates the pinned
-//! constants and exhaustive row list in `dialect/generated.rs`.
+//! the vocabulary is closed. `docs/dialects.toml` generates the exhaustive row
+//! list in `dialect/generated.rs`.
 //!
 //! # Two grammars, one enum, and one recovery row
 //!
@@ -38,6 +38,7 @@ use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 use crate::loss::F3dLossCode;
@@ -117,6 +118,10 @@ pub(crate) enum F3dDialect {
 }
 
 impl F3dDialect {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 3] = [Self::Manifest3200, Self::F3zMultiDocument, Self::Unknown];
+
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(self.pinned())
@@ -124,9 +129,9 @@ impl F3dDialect {
 
     const fn pinned(self) -> &'static str {
         match self {
-            Self::Manifest3200 => generated::MANIFEST_3_2_0_0_STR,
-            Self::F3zMultiDocument => generated::F3Z_MULTI_DOCUMENT_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::Manifest3200 => "f3d:manifest-3-2-0-0",
+            Self::F3zMultiDocument => "f3d:f3z-multi-document",
+            Self::Unknown => "f3d:unknown",
         }
     }
 

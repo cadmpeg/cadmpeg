@@ -7,6 +7,14 @@
 use super::*;
 
 #[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &F3dDialect::ALL.map(F3dDialect::id),
+        &super::generated::ROWS,
+    );
+}
+
+#[test]
 fn a_document_match_names_its_row_and_records_the_version_the_parse_read() {
     let matched = F3dDialect::classify_document("3-2-0-0");
 

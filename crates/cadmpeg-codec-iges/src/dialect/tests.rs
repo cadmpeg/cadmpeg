@@ -12,6 +12,14 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &IgesDialect::ALL.map(IgesDialect::id),
+        &super::generated::ROWS,
+    );
+}
+
+#[test]
 fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits() {
     // Fixed ASCII enumerates all eleven flags the version table declares.
     for flag in 1..=11 {

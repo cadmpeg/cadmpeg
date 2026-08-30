@@ -5,7 +5,7 @@
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`FcstdDialect::classify`] is the one construction
 //! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! pinned constants and exhaustive row list in `dialect/generated.rs`.
+//! exhaustive row list in `dialect/generated.rs`.
 //!
 //! The discriminant is `Document.xml`'s `SchemaVersion`, read by
 //! [`crate::container::parse_document`] before any element vocabulary is
@@ -40,6 +40,7 @@ use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 mod generated;
 
 /// Admission result for the independent `GuiDocument.xml` schema layer.
@@ -126,6 +127,10 @@ pub(crate) enum FcstdDialect {
 }
 
 impl FcstdDialect {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 4] = [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown];
+
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(self.pinned())
@@ -133,10 +138,10 @@ impl FcstdDialect {
 
     const fn pinned(self) -> &'static str {
         match self {
-            Self::Schema2 => generated::SCHEMA_2_STR,
-            Self::Schema3 => generated::SCHEMA_3_STR,
-            Self::Schema4 => generated::SCHEMA_4_STR,
-            Self::Unknown => generated::UNKNOWN_STR,
+            Self::Schema2 => "fcstd:schema-2",
+            Self::Schema3 => "fcstd:schema-3",
+            Self::Schema4 => "fcstd:schema-4",
+            Self::Unknown => "fcstd:unknown",
         }
     }
 
