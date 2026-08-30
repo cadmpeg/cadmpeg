@@ -111,12 +111,18 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
             } else {
                 "parasolid:unknown"
             };
+            let id = DialectId::pinned(id);
+            let admission = if id.as_str() == "parasolid:unknown" {
+                Admission::AdmittedUnverified { using: id.clone() }
+            } else {
+                Admission::Admitted
+            };
             let carrier = format!("stream@{}", stream.file_offset);
             let declared = BTreeMap::from([
                 ("schema".to_owned(), schema.to_owned()),
                 ("carrier".to_owned(), carrier.clone()),
             ]);
-            let matched = DialectMatch::layer(DialectId::pinned(id), declared, Admission::Admitted);
+            let matched = DialectMatch::layer(id, declared, admission);
             if several {
                 matched.with_instance(carrier)
             } else {

@@ -47,6 +47,12 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     assert_eq!(kernel.dialect().as_str(), "parasolid:unknown");
     assert_eq!(kernel.declared()["schema"], "SCH_TEST_1_9999");
     assert_eq!(kernel.instance(), None);
+    assert_eq!(
+        kernel.admission(),
+        Admission::AdmittedUnverified {
+            using: DialectId::pinned("parasolid:unknown")
+        }
+    );
 }
 
 #[test]
