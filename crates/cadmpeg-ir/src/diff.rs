@@ -61,9 +61,11 @@ pub struct AttributeChange {
 pub struct SourceDiff {
     /// `(left, right)` source format ids, present only when they differ.
     pub format_change: Option<(String, String)>,
-    /// `(left, right)` primary-layer dialect ids, present only when they differ.
+    /// `(left, right)` primary-layer dialect ids, present when the complete
+    /// matches differ.
     ///
-    /// Rendered as the plain ids; an absent dialect renders as `None`.
+    /// Rendered as the plain ids; an absent dialect renders as `None`. The ids
+    /// can be equal when admission or the report-local instance differs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dialect_change: Option<(Option<String>, Option<String>)>,
     /// Differing declared version fields, each a difference.
@@ -296,7 +298,7 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let mut result = SourceDiff {
         format_change: (left.format != right.format)
             .then(|| (left.format.clone(), right.format.clone())),
-        dialect_change: (left_dialect != right_dialect)
+        dialect_change: (left.dialect != right.dialect)
             .then(|| (left_dialect.clone(), right_dialect.clone())),
         declared: attribute_changes(
             left.dialect.as_ref().map_or(
@@ -698,7 +700,13 @@ mod tests {
 
         let declared = diff(&declared_left, &declared_right);
         assert!(!declared.is_empty());
-        assert!(declared.source.dialect_change.is_none());
+        assert_eq!(
+            declared.source.dialect_change,
+            Some((
+                Some("rhino:archive-70".into()),
+                Some("rhino:archive-70".into())
+            ))
+        );
         assert_eq!(
             declared.source.declared,
             [super::AttributeChange {
@@ -708,6 +716,35 @@ mod tests {
             }]
         );
         assert!(declared.source.attributes.is_empty());
+    }
+
+    #[test]
+    fn admission_and_instance_divergence_are_differences() {
+        use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+
+        let mut left = with_source(&[]);
+        let mut right = left.clone();
+        left.source.as_mut().unwrap().dialect = Some(DialectMatch::new(
+            "rhino",
+            DialectId::pinned("rhino:archive-80"),
+            Admission::Admitted,
+        ));
+        right.source.as_mut().unwrap().dialect = Some(DialectMatch::new(
+            "rhino",
+            DialectId::pinned("rhino:archive-80"),
+            Admission::Refused,
+        ));
+        assert!(!diff(&left, &right).is_empty());
+
+        right.source.as_mut().unwrap().dialect = Some(
+            DialectMatch::new(
+                "rhino",
+                DialectId::pinned("rhino:archive-80"),
+                Admission::Admitted,
+            )
+            .with_instance("embedded/model.3dm"),
+        );
+        assert!(!diff(&left, &right).is_empty());
     }
 
     /// The staged fields add nothing to the serialized diff while they are
