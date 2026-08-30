@@ -16,6 +16,7 @@ use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
+use crate::dialect::{classify_gui_schema, GuiSchemaAdmission};
 use crate::loss::FreecadLossCode;
 use crate::native::{
     ElementMapGroup, ElementMapRecord, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
@@ -115,7 +116,7 @@ pub(crate) fn transfer(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
     let schema_version = declared_schema_version(xml.root_element())?;
-    if schema_version == Some(1) {
+    let GuiSchemaAdmission::Unverified { declaration } = classify_gui_schema(schema_version) else {
         let (graph, plan) = transfer_schema_one(
             ir,
             text,
@@ -129,9 +130,8 @@ pub(crate) fn transfer(
         )?;
         plan.apply(ir);
         return Ok(graph);
-    }
+    };
 
-    let declaration = schema_version.map_or_else(|| "missing".into(), |value| value.to_string());
     match transfer_schema_one(
         ir,
         text,

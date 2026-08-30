@@ -41,6 +41,29 @@ use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
+/// Admission result for the independent `GuiDocument.xml` schema layer.
+pub(crate) enum GuiSchemaAdmission {
+    /// Schema 1 uses the verified GUI vocabulary.
+    Schema1,
+    /// Any other declaration is read with the schema-1 vocabulary without a
+    /// verified declaration match.
+    Unverified { declaration: String },
+}
+
+/// Classifies the `GuiDocument.xml` schema before GUI parsing selects its
+/// admission path.
+pub(crate) fn classify_gui_schema(schema_version: Option<u32>) -> GuiSchemaAdmission {
+    match schema_version {
+        Some(1) => GuiSchemaAdmission::Schema1,
+        Some(value) => GuiSchemaAdmission::Unverified {
+            declaration: value.to_string(),
+        },
+        None => GuiSchemaAdmission::Unverified {
+            declaration: "missing".into(),
+        },
+    }
+}
+
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "fcstd";
 
