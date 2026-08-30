@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn format_rows_preserve_the_readable_input_catalog() {
         let catalog = InputCatalog::with_builtins();
-        let rows = crate::support::format_rows(&catalog);
+        let rows = crate::views::format_rows(&catalog);
         assert_eq!(rows.len(), catalog.descriptors().count());
         assert!(!rows.is_empty());
         assert!(rows.iter().all(|row| !row.extensions.is_empty()));
