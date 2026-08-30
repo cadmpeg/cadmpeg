@@ -1,4 +1,4 @@
-# generated at 0cb4ec82a
+# generated at 621035d48
 pub mod cadmpeg_codec_inventor
 pub struct cadmpeg_codec_inventor::InventorCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_inventor::InventorCodec
@@ -6,4 +6,4 @@ pub fn cadmpeg_codec_inventor::InventorCodec::decode_impl(&self, &cadmpeg_core::
 pub fn cadmpeg_codec_inventor::InventorCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_inventor::InventorCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_inventor::InventorCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_inventor::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::Finding>
+pub fn cadmpeg_codec_inventor::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::check::Finding>

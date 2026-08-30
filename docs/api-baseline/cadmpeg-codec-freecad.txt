@@ -1,4 +1,4 @@
-# generated at 6f34c6453
+# generated at 621035d48
 pub mod cadmpeg_codec_freecad
 pub enum cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Document
@@ -32,4 +32,4 @@ pub fn cadmpeg_codec_freecad::FcstdPropertyValue::empty(impl core::convert::Into
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::text(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::with_attribute(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_codec_freecad::FcstdPropertyValue::with_child(self, Self) -> Self
-pub fn cadmpeg_codec_freecad::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::Finding>
+pub fn cadmpeg_codec_freecad::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::check::Finding>

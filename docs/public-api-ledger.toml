@@ -1493,6 +1493,41 @@ item = "cadmpeg_codec_step::StepError"
 reason = "the remaining single-variant wrapper represented only std::io::Error and added no guarantee"
 
 [[change]]
+commit = "6ac9a9eb33cdf54f0befda6750a4fd9c9bc9790d"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::report::{loss,decode,export,check}"
+reason = "report definitions move to concern-owned modules while the report facade and crate-root re-exports retain the supported public import paths"
+
+[[change]]
+commit = "6ac9a9eb33cdf54f0befda6750a4fd9c9bc9790d"
+crate = "cadmpeg-codec-f3d"
+kind = "signature"
+item = "cadmpeg_codec_f3d::validate_native"
+reason = "the return type's canonical rustdoc path follows Finding into the concern-owned check report module"
+
+[[change]]
+commit = "6ac9a9eb33cdf54f0befda6750a4fd9c9bc9790d"
+crate = "cadmpeg-codec-freecad"
+kind = "signature"
+item = "cadmpeg_codec_freecad::validate_native"
+reason = "the return type's canonical rustdoc path follows Finding into the concern-owned check report module"
+
+[[change]]
+commit = "6ac9a9eb33cdf54f0befda6750a4fd9c9bc9790d"
+crate = "cadmpeg-codec-inventor"
+kind = "signature"
+item = "cadmpeg_codec_inventor::validate_native"
+reason = "the return type's canonical rustdoc path follows Finding into the concern-owned check report module"
+
+[[change]]
+commit = "6ac9a9eb33cdf54f0befda6750a4fd9c9bc9790d"
+crate = "cadmpeg-codec-sldprt"
+kind = "signature"
+item = "cadmpeg_codec_sldprt::validate_native"
+reason = "the return type's canonical rustdoc path follows Finding into the concern-owned check report module"
+
+[[change]]
 commit = "7e83d7b0f616e204b4c62e132fb96ccdfa7044c5"
 crate = "cadmpeg-registry"
 kind = "field"

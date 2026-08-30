@@ -1,4 +1,4 @@
-# generated at 338dc6ace
+# generated at 621035d48
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -178,20 +178,20 @@ pub cadmpeg_ir::codec::WriteRequest::OffCatalog::dialect: &'a cadmpeg_core::dial
 impl cadmpeg_ir::codec::WriteRequest<'_>
 pub fn cadmpeg_ir::codec::WriteRequest<'_>::dialect_id(&self) -> core::option::Option<cadmpeg_core::dialect::DialectId>
 pub struct cadmpeg_ir::codec::CadirEncoder
-impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
-pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
+pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
+pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 pub struct cadmpeg_ir::codec::DecodeOptions
 pub cadmpeg_ir::codec::DecodeOptions::container_only: bool
 pub cadmpeg_ir::codec::DecodeOptions::policy: cadmpeg_core::decode::policy::DecodePolicy
 #[non_exhaustive] pub struct cadmpeg_ir::codec::DecodeResult
 impl cadmpeg_ir::codec::DecodeResult
-pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
+pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
-pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
+pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 pub struct cadmpeg_ir::codec::EncodeInput<'a>
@@ -201,18 +201,17 @@ impl<'a> cadmpeg_ir::codec::EncodeInput<'a>
 pub const fn cadmpeg_ir::codec::EncodeInput<'a>::new(&'a cadmpeg_ir::document::CadIr, core::option::Option<&'a cadmpeg_ir::source_fidelity::SourceFidelity>) -> Self
 pub struct cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> cadmpeg_ir::codec::ExportPlan<'a>
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::buffered(cadmpeg_ir::report::ExportReport, alloc::vec::Vec<u8>) -> Self
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::deferred(cadmpeg_ir::report::ExportReport, impl core::ops::function::FnOnce(&mut dyn core::io::write::Write) -> core::result::Result<(), cadmpeg_core::error::CodecError> + 'a) -> Self
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::fidelity_resolution(&self) -> &cadmpeg_ir::report::FidelityResolution
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::report(&self) -> &cadmpeg_ir::report::ExportReport
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_path(&self) -> cadmpeg_ir::report::WritePath
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_to(self, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::buffered(cadmpeg_ir::ExportReport, alloc::vec::Vec<u8>) -> Self
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::deferred(cadmpeg_ir::ExportReport, impl core::ops::function::FnOnce(&mut dyn core::io::write::Write) -> core::result::Result<(), cadmpeg_core::error::CodecError> + 'a) -> Self
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::fidelity_resolution(&self) -> &cadmpeg_ir::FidelityResolution
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::report(&self) -> &cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_path(&self) -> cadmpeg_ir::WritePath
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_to(self, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::ExportReport, cadmpeg_core::error::CodecError>
 pub struct cadmpeg_ir::codec::TargetDescriptor
 pub cadmpeg_ir::codec::TargetDescriptor::aliases: &'static [&'static str]
 pub cadmpeg_ir::codec::TargetDescriptor::default: bool
 pub cadmpeg_ir::codec::TargetDescriptor::id: &'static str
 pub cadmpeg_ir::codec::TargetDescriptor::label: &'static str
-pub const cadmpeg_ir::codec::UNRECORDED_SOURCE_DIALECT_REASON: &str
 pub trait cadmpeg_ir::codec::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
@@ -228,10 +227,10 @@ pub trait cadmpeg_ir::codec::Encoder
 pub fn cadmpeg_ir::codec::Encoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::Encoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
-impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
-pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
+pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
+pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 pub fn cadmpeg_ir::codec::assert_valid_target_catalog(&[cadmpeg_ir::codec::TargetDescriptor])
 pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
@@ -375,8 +374,8 @@ pub struct cadmpeg_ir::draft::ModelDraft
 impl cadmpeg_ir::draft::ModelDraft
 pub fn cadmpeg_ir::draft::ModelDraft::arena<T: cadmpeg_ir::draft::ArenaEntity>(&self) -> &alloc::vec::Vec<T>
 pub fn cadmpeg_ir::draft::ModelDraft::arena_mut<T: cadmpeg_ir::draft::ArenaEntity>(&mut self) -> &mut alloc::vec::Vec<T>
-pub fn cadmpeg_ir::draft::ModelDraft::commit(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::report::LossNote>, &mut cadmpeg_ir::report::TransferLedger) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
-pub fn cadmpeg_ir::draft::ModelDraft::commit_incomplete(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::report::LossNote>, &mut cadmpeg_ir::report::TransferLedger, impl core::ops::function::FnMut(cadmpeg_ir::schema::EntityKind, &str) -> bool) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::commit(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::LossNote>, &mut cadmpeg_ir::report::TransferLedger) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::commit_incomplete(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::LossNote>, &mut cadmpeg_ir::report::TransferLedger, impl core::ops::function::FnMut(cadmpeg_ir::schema::EntityKind, &str) -> bool) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
 pub fn cadmpeg_ir::draft::ModelDraft::commit_model(self, &mut cadmpeg_ir::document::CadIr) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
 pub fn cadmpeg_ir::draft::ModelDraft::entity_count(&self) -> usize
 pub fn cadmpeg_ir::draft::ModelDraft::exactness(&mut self, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::Exactness)
@@ -385,7 +384,7 @@ pub fn cadmpeg_ir::draft::ModelDraft::ledger_mut(&mut self) -> &mut cadmpeg_ir::
 pub fn cadmpeg_ir::draft::ModelDraft::model(&self) -> &cadmpeg_ir::document::Model
 pub fn cadmpeg_ir::draft::ModelDraft::model_mut(&mut self) -> &mut cadmpeg_ir::document::Model
 pub fn cadmpeg_ir::draft::ModelDraft::new() -> Self
-pub fn cadmpeg_ir::draft::ModelDraft::note(&mut self, cadmpeg_ir::report::LossNote)
+pub fn cadmpeg_ir::draft::ModelDraft::note(&mut self, cadmpeg_ir::LossNote)
 pub fn cadmpeg_ir::draft::ModelDraft::retain_exactness(&mut self, impl core::ops::function::FnMut(&str) -> bool)
 pub trait cadmpeg_ir::draft::ArenaEntity: cadmpeg_ir::draft::private::Sealed + cadmpeg_ir::schema::EntitySchema + core::marker::Sized
 pub fn cadmpeg_ir::draft::ArenaEntity::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
@@ -4246,8 +4245,8 @@ pub cadmpeg_ir::report::Check::Tolerances
 pub cadmpeg_ir::report::Check::Units
 pub cadmpeg_ir::report::Check::Version
 pub cadmpeg_ir::report::Check::WireTopology
-impl core::fmt::Display for cadmpeg_ir::report::Check
-pub fn cadmpeg_ir::report::Check::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::Check
+pub fn cadmpeg_ir::Check::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum cadmpeg_ir::report::FidelityResolution
 pub cadmpeg_ir::report::FidelityResolution::Degraded
 pub cadmpeg_ir::report::FidelityResolution::Degraded::reason: alloc::string::String
@@ -4264,8 +4263,8 @@ pub cadmpeg_ir::report::LossCategory::Other
 pub cadmpeg_ir::report::LossCategory::Product
 pub cadmpeg_ir::report::LossCategory::Topology
 pub cadmpeg_ir::report::LossCategory::Units
-impl core::fmt::Display for cadmpeg_ir::report::LossCategory
-pub fn cadmpeg_ir::report::LossCategory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::LossCategory
+pub fn cadmpeg_ir::LossCategory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum cadmpeg_ir::report::LossTaxonomy
 pub cadmpeg_ir::report::LossTaxonomy::AnalyticSurfaceNormalized
 pub cadmpeg_ir::report::LossTaxonomy::AppearanceReduced
@@ -4309,23 +4308,23 @@ pub cadmpeg_ir::report::LossTaxonomy::TopologyGaugeSubstituted
 pub cadmpeg_ir::report::LossTaxonomy::TopologyNotTransferred
 pub cadmpeg_ir::report::LossTaxonomy::UnknownSurfaceFaceOmitted
 pub cadmpeg_ir::report::LossTaxonomy::UnsupportedObjectFamily
-impl cadmpeg_ir::report::LossTaxonomy
-pub const fn cadmpeg_ir::report::LossTaxonomy::as_str(self) -> &'static str
-pub const fn cadmpeg_ir::report::LossTaxonomy::category(self) -> cadmpeg_ir::report::LossCategory
-pub const fn cadmpeg_ir::report::LossTaxonomy::default_severity(self) -> cadmpeg_ir::report::Severity
-pub fn cadmpeg_ir::report::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
-pub const fn cadmpeg_ir::report::LossTaxonomy::strict_floor(self) -> core::option::Option<cadmpeg_ir::report::Severity>
-impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
-impl core::fmt::Display for cadmpeg_ir::report::LossTaxonomy
-pub fn cadmpeg_ir::report::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl cadmpeg_ir::LossTaxonomy
+pub const fn cadmpeg_ir::LossTaxonomy::as_str(self) -> &'static str
+pub const fn cadmpeg_ir::LossTaxonomy::category(self) -> cadmpeg_ir::LossCategory
+pub const fn cadmpeg_ir::LossTaxonomy::default_severity(self) -> cadmpeg_ir::Severity
+pub fn cadmpeg_ir::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
+pub const fn cadmpeg_ir::LossTaxonomy::strict_floor(self) -> core::option::Option<cadmpeg_ir::Severity>
+impl core::convert::From<cadmpeg_ir::LossTaxonomy> for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::from(cadmpeg_ir::LossTaxonomy) -> Self
+impl core::fmt::Display for cadmpeg_ir::LossTaxonomy
+pub fn cadmpeg_ir::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum cadmpeg_ir::report::Severity
 pub cadmpeg_ir::report::Severity::Blocking
 pub cadmpeg_ir::report::Severity::Error
 pub cadmpeg_ir::report::Severity::Info
 pub cadmpeg_ir::report::Severity::Warning
-impl core::fmt::Display for cadmpeg_ir::report::Severity
-pub fn cadmpeg_ir::report::Severity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::Severity
+pub fn cadmpeg_ir::Severity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum cadmpeg_ir::report::StrictConsequence
 pub cadmpeg_ir::report::StrictConsequence::Reject
 pub cadmpeg_ir::report::StrictConsequence::Tolerate
@@ -4338,82 +4337,82 @@ pub enum cadmpeg_ir::report::WritePath
 pub cadmpeg_ir::report::WritePath::Patched
 pub cadmpeg_ir::report::WritePath::Synthesized
 pub cadmpeg_ir::report::WritePath::VerbatimReplay
-impl core::fmt::Display for cadmpeg_ir::report::WritePath
-pub fn cadmpeg_ir::report::WritePath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::WritePath
+pub fn cadmpeg_ir::WritePath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_ir::report::CoverageKey(pub &'static str)
 pub struct cadmpeg_ir::report::DecodeReport
 pub cadmpeg_ir::report::DecodeReport::container_only: bool
 pub cadmpeg_ir::report::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub cadmpeg_ir::report::DecodeReport::geometry_transferred: bool
-pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
+pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::report::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::report::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedger
-impl cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
-pub fn cadmpeg_ir::report::DecodeReport::coverage_count(&self, cadmpeg_ir::report::CoverageKey) -> usize
-pub fn cadmpeg_ir::report::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
-pub fn cadmpeg_ir::report::DecodeReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::DecodeReport::format(&self) -> &str
-pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey, usize)
-pub fn cadmpeg_ir::report::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl cadmpeg_ir::DecodeReport
+pub fn cadmpeg_ir::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
+pub fn cadmpeg_ir::DecodeReport::coverage_count(&self, cadmpeg_ir::CoverageKey) -> usize
+pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_ir::DecodeReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
+pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
+pub fn cadmpeg_ir::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::DecodeReport
+pub fn cadmpeg_ir::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::report::EntityCensus
-pub cadmpeg_ir::report::EntityCensus::basis: cadmpeg_ir::report::CensusBasis
+pub cadmpeg_ir::report::EntityCensus::basis: cadmpeg_ir::CensusBasis
 pub cadmpeg_ir::report::EntityCensus::counts: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-impl cadmpeg_ir::report::EntityCensus
-pub fn cadmpeg_ir::report::EntityCensus::total(&self) -> usize
+impl cadmpeg_ir::EntityCensus
+pub fn cadmpeg_ir::EntityCensus::total(&self) -> usize
 pub struct cadmpeg_ir::report::ExportReport
-pub cadmpeg_ir::report::ExportReport::census: cadmpeg_ir::report::EntityCensus
-pub cadmpeg_ir::report::ExportReport::fidelity: cadmpeg_ir::report::FidelityResolution
+pub cadmpeg_ir::report::ExportReport::census: cadmpeg_ir::EntityCensus
+pub cadmpeg_ir::report::ExportReport::fidelity: cadmpeg_ir::FidelityResolution
 pub cadmpeg_ir::report::ExportReport::format: alloc::string::String
-pub cadmpeg_ir::report::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
+pub cadmpeg_ir::report::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::report::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::report::ExportReport::write_path: cadmpeg_ir::report::WritePath
-impl cadmpeg_ir::report::ExportReport
-pub fn cadmpeg_ir::report::ExportReport::cadir(cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
-pub fn cadmpeg_ir::report::ExportReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
-pub fn cadmpeg_ir::report::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
+pub cadmpeg_ir::report::ExportReport::write_path: cadmpeg_ir::WritePath
+impl cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::ExportReport::cadir(cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::ExportReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
 pub struct cadmpeg_ir::report::Finding
-pub cadmpeg_ir::report::Finding::check: cadmpeg_ir::report::Check
+pub cadmpeg_ir::report::Finding::check: cadmpeg_ir::Check
 pub cadmpeg_ir::report::Finding::entity: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::report::Finding::message: alloc::string::String
-pub cadmpeg_ir::report::Finding::severity: cadmpeg_ir::report::Severity
+pub cadmpeg_ir::report::Finding::severity: cadmpeg_ir::Severity
 pub struct cadmpeg_ir::report::LossKind
 pub cadmpeg_ir::report::LossKind::code: alloc::string::String
 pub cadmpeg_ir::report::LossKind::namespace: alloc::string::String
-pub cadmpeg_ir::report::LossKind::taxonomy: cadmpeg_ir::report::LossTaxonomy
-impl cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::as_str(&self) -> alloc::string::String
-pub const fn cadmpeg_ir::report::LossKind::category(&self) -> cadmpeg_ir::report::LossCategory
-pub const fn cadmpeg_ir::report::LossKind::default_severity(&self) -> cadmpeg_ir::report::Severity
-pub fn cadmpeg_ir::report::LossKind::from_v1_str(&str) -> core::option::Option<Self>
-pub fn cadmpeg_ir::report::LossKind::local_code(&self) -> &str
-pub fn cadmpeg_ir::report::LossKind::namespace(&self) -> &str
-pub fn cadmpeg_ir::report::LossKind::namespaced(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::LossTaxonomy) -> Self
-pub fn cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::report::LossTaxonomy) -> Self
-pub const fn cadmpeg_ir::report::LossKind::strict_floor(&self) -> core::option::Option<cadmpeg_ir::report::Severity>
-pub const fn cadmpeg_ir::report::LossKind::taxonomy(&self) -> cadmpeg_ir::report::LossTaxonomy
-pub fn cadmpeg_ir::report::LossKind::with_strict_floor(self, core::option::Option<cadmpeg_ir::report::Severity>) -> Self
-impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
-impl core::fmt::Display for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl serde_core::ser::Serialize for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub cadmpeg_ir::report::LossKind::taxonomy: cadmpeg_ir::LossTaxonomy
+impl cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::as_str(&self) -> alloc::string::String
+pub const fn cadmpeg_ir::LossKind::category(&self) -> cadmpeg_ir::LossCategory
+pub const fn cadmpeg_ir::LossKind::default_severity(&self) -> cadmpeg_ir::Severity
+pub fn cadmpeg_ir::LossKind::from_v1_str(&str) -> core::option::Option<Self>
+pub fn cadmpeg_ir::LossKind::local_code(&self) -> &str
+pub fn cadmpeg_ir::LossKind::namespace(&self) -> &str
+pub fn cadmpeg_ir::LossKind::namespaced(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::LossTaxonomy) -> Self
+pub fn cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy) -> Self
+pub const fn cadmpeg_ir::LossKind::strict_floor(&self) -> core::option::Option<cadmpeg_ir::Severity>
+pub const fn cadmpeg_ir::LossKind::taxonomy(&self) -> cadmpeg_ir::LossTaxonomy
+pub fn cadmpeg_ir::LossKind::with_strict_floor(self, core::option::Option<cadmpeg_ir::Severity>) -> Self
+impl core::convert::From<cadmpeg_ir::LossTaxonomy> for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::from(cadmpeg_ir::LossTaxonomy) -> Self
+impl core::fmt::Display for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::report::LossNote
-pub cadmpeg_ir::report::LossNote::code: cadmpeg_ir::report::LossKind
+pub cadmpeg_ir::report::LossNote::code: cadmpeg_ir::LossKind
 pub cadmpeg_ir::report::LossNote::message: alloc::string::String
 pub cadmpeg_ir::report::LossNote::provenance: core::option::Option<cadmpeg_ir::SourceProvenance>
-pub cadmpeg_ir::report::LossNote::severity: cadmpeg_ir::report::Severity
-impl cadmpeg_ir::report::LossNote
-pub fn cadmpeg_ir::report::LossNote::new(impl core::convert::Into<cadmpeg_ir::report::LossKind>, impl core::convert::Into<alloc::string::String>) -> Self
-pub fn cadmpeg_ir::report::LossNote::strict_consequence(&self) -> cadmpeg_ir::report::StrictConsequence
-pub fn cadmpeg_ir::report::LossNote::with_provenance(self, cadmpeg_ir::SourceProvenance) -> Self
-pub fn cadmpeg_ir::report::LossNote::with_severity(self, cadmpeg_ir::report::Severity) -> Self
+pub cadmpeg_ir::report::LossNote::severity: cadmpeg_ir::Severity
+impl cadmpeg_ir::LossNote
+pub fn cadmpeg_ir::LossNote::new(impl core::convert::Into<cadmpeg_ir::LossKind>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::LossNote::strict_consequence(&self) -> cadmpeg_ir::StrictConsequence
+pub fn cadmpeg_ir::LossNote::with_provenance(self, cadmpeg_ir::SourceProvenance) -> Self
+pub fn cadmpeg_ir::LossNote::with_severity(self, cadmpeg_ir::Severity) -> Self
 pub struct cadmpeg_ir::report::TransferLedger
 pub cadmpeg_ir::report::TransferLedger::entries: alloc::vec::Vec<cadmpeg_ir::report::TransferRecord>
 impl cadmpeg_ir::report::TransferLedger
@@ -4427,12 +4426,12 @@ pub cadmpeg_ir::report::TransferRecord::source: alloc::string::String
 pub cadmpeg_ir::report::TransferRecord::target: core::option::Option<alloc::string::String>
 pub struct cadmpeg_ir::report::ValidationReport
 pub cadmpeg_ir::report::ValidationReport::entity_counts: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub cadmpeg_ir::report::ValidationReport::findings: alloc::vec::Vec<cadmpeg_ir::report::Finding>
-pub cadmpeg_ir::report::ValidationReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
-impl cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::report::ValidationReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::ValidationReport::is_ok(&self) -> bool
-pub fn cadmpeg_ir::report::ValidationReport::warning_count(&self) -> usize
+pub cadmpeg_ir::report::ValidationReport::findings: alloc::vec::Vec<cadmpeg_ir::Finding>
+pub cadmpeg_ir::report::ValidationReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
+impl cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::ValidationReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::ValidationReport::is_ok(&self) -> bool
+pub fn cadmpeg_ir::ValidationReport::warning_count(&self) -> usize
 pub const cadmpeg_ir::report::SHARED_LOSS_NAMESPACE: &str
 pub mod cadmpeg_ir::schema
 pub enum cadmpeg_ir::schema::EntityKind
@@ -5281,10 +5280,10 @@ pub cadmpeg_ir::source_fidelity::SourceFidelityParseError::Json(serde_json::erro
 pub struct cadmpeg_ir::source_fidelity::DecodeSidecar
 pub cadmpeg_ir::source_fidelity::DecodeSidecar::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::source_fidelity::DecodeSidecar::ir_sha256: alloc::string::String
-pub cadmpeg_ir::source_fidelity::DecodeSidecar::report: cadmpeg_ir::report::DecodeReport
+pub cadmpeg_ir::source_fidelity::DecodeSidecar::report: cadmpeg_ir::DecodeReport
 impl cadmpeg_ir::source_fidelity::DecodeSidecar
-pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
-pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::DecodeSidecarParseError>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
@@ -5674,20 +5673,20 @@ pub fn cadmpeg_ir::validate::admissibility_freeze::accepted_empty() -> cadmpeg_i
 pub fn cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point(&str) -> cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region(&str) -> cadmpeg_ir::document::CadIr
 pub mod cadmpeg_ir::validate::admit
-pub const cadmpeg_ir::validate::admit::CATIA_ADMISSION_CHECKS: &[cadmpeg_ir::report::Check]
-pub const cadmpeg_ir::validate::admit::DRAFT_CORE_CHECKS: &[cadmpeg_ir::report::Check]
-pub const cadmpeg_ir::validate::admit::RHINO_DRAFT_CHECKS: &[cadmpeg_ir::report::Check]
-pub const cadmpeg_ir::validate::admit::RHINO_INSTANCE_CHECKS: &[cadmpeg_ir::report::Check]
-pub const cadmpeg_ir::validate::admit::SLDPRT_EXPORT_PRECONDITION_CHECKS: &[cadmpeg_ir::report::Check]
-pub fn cadmpeg_ir::validate::admit::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::admit::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::admit::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::admit::filter_checks(cadmpeg_ir::report::ValidationReport, &[cadmpeg_ir::report::Check]) -> cadmpeg_ir::report::ValidationReport
+pub const cadmpeg_ir::validate::admit::CATIA_ADMISSION_CHECKS: &[cadmpeg_ir::Check]
+pub const cadmpeg_ir::validate::admit::DRAFT_CORE_CHECKS: &[cadmpeg_ir::Check]
+pub const cadmpeg_ir::validate::admit::RHINO_DRAFT_CHECKS: &[cadmpeg_ir::Check]
+pub const cadmpeg_ir::validate::admit::RHINO_INSTANCE_CHECKS: &[cadmpeg_ir::Check]
+pub const cadmpeg_ir::validate::admit::SLDPRT_EXPORT_PRECONDITION_CHECKS: &[cadmpeg_ir::Check]
+pub fn cadmpeg_ir::validate::admit::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::validate::admit::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::validate::admit::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::validate::admit::filter_checks(cadmpeg_ir::ValidationReport, &[cadmpeg_ir::Check]) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::validate::entity_census(&cadmpeg_ir::document::CadIr) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub fn cadmpeg_ir::validate::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::validate_neutral_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::validate_neutral_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::validate::validate_neutral_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::validate::validate_neutral_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::validate::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub enum cadmpeg_ir::AssemblyGraphError
 pub cadmpeg_ir::AssemblyGraphError::DuplicateOccurrence(cadmpeg_ir::ids::OccurrenceId)
 pub cadmpeg_ir::AssemblyGraphError::MissingParent
@@ -5760,8 +5759,8 @@ pub cadmpeg_ir::Check::Tolerances
 pub cadmpeg_ir::Check::Units
 pub cadmpeg_ir::Check::Version
 pub cadmpeg_ir::Check::WireTopology
-impl core::fmt::Display for cadmpeg_ir::report::Check
-pub fn cadmpeg_ir::report::Check::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::Check
+pub fn cadmpeg_ir::Check::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum cadmpeg_ir::CoilExtent
 pub cadmpeg_ir::CoilExtent::HeightPitch
 pub cadmpeg_ir::CoilExtent::HeightPitch::height: cadmpeg_ir::features::Length
@@ -6407,8 +6406,8 @@ pub cadmpeg_ir::LossCategory::Other
 pub cadmpeg_ir::LossCategory::Product
 pub cadmpeg_ir::LossCategory::Topology
 pub cadmpeg_ir::LossCategory::Units
-impl core::fmt::Display for cadmpeg_ir::report::LossCategory
-pub fn cadmpeg_ir::report::LossCategory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::LossCategory
+pub fn cadmpeg_ir::LossCategory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum cadmpeg_ir::LossTaxonomy
 pub cadmpeg_ir::LossTaxonomy::AnalyticSurfaceNormalized
 pub cadmpeg_ir::LossTaxonomy::AppearanceReduced
@@ -6452,16 +6451,16 @@ pub cadmpeg_ir::LossTaxonomy::TopologyGaugeSubstituted
 pub cadmpeg_ir::LossTaxonomy::TopologyNotTransferred
 pub cadmpeg_ir::LossTaxonomy::UnknownSurfaceFaceOmitted
 pub cadmpeg_ir::LossTaxonomy::UnsupportedObjectFamily
-impl cadmpeg_ir::report::LossTaxonomy
-pub const fn cadmpeg_ir::report::LossTaxonomy::as_str(self) -> &'static str
-pub const fn cadmpeg_ir::report::LossTaxonomy::category(self) -> cadmpeg_ir::report::LossCategory
-pub const fn cadmpeg_ir::report::LossTaxonomy::default_severity(self) -> cadmpeg_ir::report::Severity
-pub fn cadmpeg_ir::report::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
-pub const fn cadmpeg_ir::report::LossTaxonomy::strict_floor(self) -> core::option::Option<cadmpeg_ir::report::Severity>
-impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
-impl core::fmt::Display for cadmpeg_ir::report::LossTaxonomy
-pub fn cadmpeg_ir::report::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl cadmpeg_ir::LossTaxonomy
+pub const fn cadmpeg_ir::LossTaxonomy::as_str(self) -> &'static str
+pub const fn cadmpeg_ir::LossTaxonomy::category(self) -> cadmpeg_ir::LossCategory
+pub const fn cadmpeg_ir::LossTaxonomy::default_severity(self) -> cadmpeg_ir::Severity
+pub fn cadmpeg_ir::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
+pub const fn cadmpeg_ir::LossTaxonomy::strict_floor(self) -> core::option::Option<cadmpeg_ir::Severity>
+impl core::convert::From<cadmpeg_ir::LossTaxonomy> for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::from(cadmpeg_ir::LossTaxonomy) -> Self
+impl core::fmt::Display for cadmpeg_ir::LossTaxonomy
+pub fn cadmpeg_ir::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum cadmpeg_ir::NativeConvertError
 pub cadmpeg_ir::NativeConvertError::InvalidOwner(alloc::string::String)
 pub cadmpeg_ir::NativeConvertError::MissingId
@@ -6583,8 +6582,8 @@ pub cadmpeg_ir::Severity::Blocking
 pub cadmpeg_ir::Severity::Error
 pub cadmpeg_ir::Severity::Info
 pub cadmpeg_ir::Severity::Warning
-impl core::fmt::Display for cadmpeg_ir::report::Severity
-pub fn cadmpeg_ir::report::Severity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::Severity
+pub fn cadmpeg_ir::Severity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum cadmpeg_ir::SketchAxis
 pub cadmpeg_ir::SketchAxis::Horizontal
 pub cadmpeg_ir::SketchAxis::Vertical
@@ -6950,8 +6949,8 @@ pub enum cadmpeg_ir::WritePath
 pub cadmpeg_ir::WritePath::Patched
 pub cadmpeg_ir::WritePath::Synthesized
 pub cadmpeg_ir::WritePath::VerbatimReplay
-impl core::fmt::Display for cadmpeg_ir::report::WritePath
-pub fn cadmpeg_ir::report::WritePath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::WritePath
+pub fn cadmpeg_ir::WritePath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_ir::AnnotationBuilder
 impl cadmpeg_ir::annotations::AnnotationBuilder
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::annotations(&self) -> &cadmpeg_ir::annotations::Annotations
@@ -7024,10 +7023,10 @@ pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_from<T: serde_core::ser:
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_owned(&mut self, &str, alloc::vec::Vec<cadmpeg_ir::unknown::UnknownRecord>)
 pub fn cadmpeg_ir::document::CadIr::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 pub struct cadmpeg_ir::CadirEncoder
-impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
-pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
+pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
+pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
 pub struct cadmpeg_ir::CameraState
 pub cadmpeg_ir::CameraState::orientation: core::option::Option<[f64; 4]>
 pub cadmpeg_ir::CameraState::position: core::option::Option<[f64; 3]>
@@ -7054,35 +7053,35 @@ pub struct cadmpeg_ir::DecodeReport
 pub cadmpeg_ir::DecodeReport::container_only: bool
 pub cadmpeg_ir::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub cadmpeg_ir::DecodeReport::geometry_transferred: bool
-pub cadmpeg_ir::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
+pub cadmpeg_ir::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedger
-impl cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
-pub fn cadmpeg_ir::report::DecodeReport::coverage_count(&self, cadmpeg_ir::report::CoverageKey) -> usize
-pub fn cadmpeg_ir::report::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
-pub fn cadmpeg_ir::report::DecodeReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::DecodeReport::format(&self) -> &str
-pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey, usize)
-pub fn cadmpeg_ir::report::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::DecodeReport
-pub fn cadmpeg_ir::report::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl cadmpeg_ir::DecodeReport
+pub fn cadmpeg_ir::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
+pub fn cadmpeg_ir::DecodeReport::coverage_count(&self, cadmpeg_ir::CoverageKey) -> usize
+pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_ir::DecodeReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
+pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
+pub fn cadmpeg_ir::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, bool, bool, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::DecodeReport
+pub fn cadmpeg_ir::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 #[non_exhaustive] pub struct cadmpeg_ir::DecodeResult
 impl cadmpeg_ir::codec::DecodeResult
-pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
+pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
-pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
+pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 pub struct cadmpeg_ir::DecodeSidecar
 pub cadmpeg_ir::DecodeSidecar::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::DecodeSidecar::ir_sha256: alloc::string::String
-pub cadmpeg_ir::DecodeSidecar::report: cadmpeg_ir::report::DecodeReport
+pub cadmpeg_ir::DecodeSidecar::report: cadmpeg_ir::DecodeReport
 impl cadmpeg_ir::source_fidelity::DecodeSidecar
-pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
-pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::DecodeSidecarParseError>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
@@ -7128,27 +7127,27 @@ pub const cadmpeg_ir::features::DesignParameter::KIND: cadmpeg_ir::schema::Entit
 pub fn cadmpeg_ir::features::DesignParameter::identity(&self) -> &str
 pub fn cadmpeg_ir::features::DesignParameter::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
 pub struct cadmpeg_ir::EntityCensus
-pub cadmpeg_ir::EntityCensus::basis: cadmpeg_ir::report::CensusBasis
+pub cadmpeg_ir::EntityCensus::basis: cadmpeg_ir::CensusBasis
 pub cadmpeg_ir::EntityCensus::counts: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-impl cadmpeg_ir::report::EntityCensus
-pub fn cadmpeg_ir::report::EntityCensus::total(&self) -> usize
+impl cadmpeg_ir::EntityCensus
+pub fn cadmpeg_ir::EntityCensus::total(&self) -> usize
 pub struct cadmpeg_ir::ExactnessNote
 pub cadmpeg_ir::ExactnessNote::entity: cadmpeg_ir::Exactness
 pub cadmpeg_ir::ExactnessNote::fields: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::Exactness>
 impl core::default::Default for cadmpeg_ir::annotations::ExactnessNote
 pub fn cadmpeg_ir::annotations::ExactnessNote::default() -> Self
 pub struct cadmpeg_ir::ExportReport
-pub cadmpeg_ir::ExportReport::census: cadmpeg_ir::report::EntityCensus
-pub cadmpeg_ir::ExportReport::fidelity: cadmpeg_ir::report::FidelityResolution
+pub cadmpeg_ir::ExportReport::census: cadmpeg_ir::EntityCensus
+pub cadmpeg_ir::ExportReport::fidelity: cadmpeg_ir::FidelityResolution
 pub cadmpeg_ir::ExportReport::format: alloc::string::String
-pub cadmpeg_ir::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
+pub cadmpeg_ir::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::ExportReport::write_path: cadmpeg_ir::report::WritePath
-impl cadmpeg_ir::report::ExportReport
-pub fn cadmpeg_ir::report::ExportReport::cadir(cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
-pub fn cadmpeg_ir::report::ExportReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::report::EntityCensus, cadmpeg_ir::report::FidelityResolution, cadmpeg_ir::report::WritePath, alloc::vec::Vec<cadmpeg_ir::report::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
-pub fn cadmpeg_ir::report::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
+pub cadmpeg_ir::ExportReport::write_path: cadmpeg_ir::WritePath
+impl cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::ExportReport::cadir(cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::ExportReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
 pub struct cadmpeg_ir::ExternalDocumentReference
 pub cadmpeg_ir::ExternalDocumentReference::document_id: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::ExternalDocumentReference::path: core::option::Option<alloc::string::String>
@@ -7184,10 +7183,10 @@ pub fn cadmpeg_ir::features::FeatureId::fmt(&self, &mut core::fmt::Formatter<'_>
 impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::features::FeatureId
 pub fn cadmpeg_ir::features::FeatureId::from(S) -> Self
 pub struct cadmpeg_ir::Finding
-pub cadmpeg_ir::Finding::check: cadmpeg_ir::report::Check
+pub cadmpeg_ir::Finding::check: cadmpeg_ir::Check
 pub cadmpeg_ir::Finding::entity: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::Finding::message: alloc::string::String
-pub cadmpeg_ir::Finding::severity: cadmpeg_ir::report::Severity
+pub cadmpeg_ir::Finding::severity: cadmpeg_ir::Severity
 pub struct cadmpeg_ir::IrDiff
 pub cadmpeg_ir::IrDiff::per_arena: alloc::vec::Vec<cadmpeg_ir::diff::ArenaDiff>
 pub cadmpeg_ir::IrDiff::source: cadmpeg_ir::diff::SourceDiff
@@ -7211,43 +7210,43 @@ pub cadmpeg_ir::LossCount::kind: alloc::string::String
 pub struct cadmpeg_ir::LossKind
 pub cadmpeg_ir::LossKind::code: alloc::string::String
 pub cadmpeg_ir::LossKind::namespace: alloc::string::String
-pub cadmpeg_ir::LossKind::taxonomy: cadmpeg_ir::report::LossTaxonomy
-impl cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::as_str(&self) -> alloc::string::String
-pub const fn cadmpeg_ir::report::LossKind::category(&self) -> cadmpeg_ir::report::LossCategory
-pub const fn cadmpeg_ir::report::LossKind::default_severity(&self) -> cadmpeg_ir::report::Severity
-pub fn cadmpeg_ir::report::LossKind::from_v1_str(&str) -> core::option::Option<Self>
-pub fn cadmpeg_ir::report::LossKind::local_code(&self) -> &str
-pub fn cadmpeg_ir::report::LossKind::namespace(&self) -> &str
-pub fn cadmpeg_ir::report::LossKind::namespaced(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::LossTaxonomy) -> Self
-pub fn cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::report::LossTaxonomy) -> Self
-pub const fn cadmpeg_ir::report::LossKind::strict_floor(&self) -> core::option::Option<cadmpeg_ir::report::Severity>
-pub const fn cadmpeg_ir::report::LossKind::taxonomy(&self) -> cadmpeg_ir::report::LossTaxonomy
-pub fn cadmpeg_ir::report::LossKind::with_strict_floor(self, core::option::Option<cadmpeg_ir::report::Severity>) -> Self
-impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
-impl core::fmt::Display for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl serde_core::ser::Serialize for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub cadmpeg_ir::LossKind::taxonomy: cadmpeg_ir::LossTaxonomy
+impl cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::as_str(&self) -> alloc::string::String
+pub const fn cadmpeg_ir::LossKind::category(&self) -> cadmpeg_ir::LossCategory
+pub const fn cadmpeg_ir::LossKind::default_severity(&self) -> cadmpeg_ir::Severity
+pub fn cadmpeg_ir::LossKind::from_v1_str(&str) -> core::option::Option<Self>
+pub fn cadmpeg_ir::LossKind::local_code(&self) -> &str
+pub fn cadmpeg_ir::LossKind::namespace(&self) -> &str
+pub fn cadmpeg_ir::LossKind::namespaced(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::LossTaxonomy) -> Self
+pub fn cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy) -> Self
+pub const fn cadmpeg_ir::LossKind::strict_floor(&self) -> core::option::Option<cadmpeg_ir::Severity>
+pub const fn cadmpeg_ir::LossKind::taxonomy(&self) -> cadmpeg_ir::LossTaxonomy
+pub fn cadmpeg_ir::LossKind::with_strict_floor(self, core::option::Option<cadmpeg_ir::Severity>) -> Self
+impl core::convert::From<cadmpeg_ir::LossTaxonomy> for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::from(cadmpeg_ir::LossTaxonomy) -> Self
+impl core::fmt::Display for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::LossKind
+pub fn cadmpeg_ir::LossKind::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::LossNote
-pub cadmpeg_ir::LossNote::code: cadmpeg_ir::report::LossKind
+pub cadmpeg_ir::LossNote::code: cadmpeg_ir::LossKind
 pub cadmpeg_ir::LossNote::message: alloc::string::String
 pub cadmpeg_ir::LossNote::provenance: core::option::Option<cadmpeg_ir::SourceProvenance>
-pub cadmpeg_ir::LossNote::severity: cadmpeg_ir::report::Severity
-impl cadmpeg_ir::report::LossNote
-pub fn cadmpeg_ir::report::LossNote::new(impl core::convert::Into<cadmpeg_ir::report::LossKind>, impl core::convert::Into<alloc::string::String>) -> Self
-pub fn cadmpeg_ir::report::LossNote::strict_consequence(&self) -> cadmpeg_ir::report::StrictConsequence
-pub fn cadmpeg_ir::report::LossNote::with_provenance(self, cadmpeg_ir::SourceProvenance) -> Self
-pub fn cadmpeg_ir::report::LossNote::with_severity(self, cadmpeg_ir::report::Severity) -> Self
+pub cadmpeg_ir::LossNote::severity: cadmpeg_ir::Severity
+impl cadmpeg_ir::LossNote
+pub fn cadmpeg_ir::LossNote::new(impl core::convert::Into<cadmpeg_ir::LossKind>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::LossNote::strict_consequence(&self) -> cadmpeg_ir::StrictConsequence
+pub fn cadmpeg_ir::LossNote::with_provenance(self, cadmpeg_ir::SourceProvenance) -> Self
+pub fn cadmpeg_ir::LossNote::with_severity(self, cadmpeg_ir::Severity) -> Self
 pub struct cadmpeg_ir::ModelDraft
 impl cadmpeg_ir::draft::ModelDraft
 pub fn cadmpeg_ir::draft::ModelDraft::arena<T: cadmpeg_ir::draft::ArenaEntity>(&self) -> &alloc::vec::Vec<T>
 pub fn cadmpeg_ir::draft::ModelDraft::arena_mut<T: cadmpeg_ir::draft::ArenaEntity>(&mut self) -> &mut alloc::vec::Vec<T>
-pub fn cadmpeg_ir::draft::ModelDraft::commit(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::report::LossNote>, &mut cadmpeg_ir::report::TransferLedger) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
-pub fn cadmpeg_ir::draft::ModelDraft::commit_incomplete(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::report::LossNote>, &mut cadmpeg_ir::report::TransferLedger, impl core::ops::function::FnMut(cadmpeg_ir::schema::EntityKind, &str) -> bool) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::commit(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::LossNote>, &mut cadmpeg_ir::report::TransferLedger) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::commit_incomplete(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::LossNote>, &mut cadmpeg_ir::report::TransferLedger, impl core::ops::function::FnMut(cadmpeg_ir::schema::EntityKind, &str) -> bool) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
 pub fn cadmpeg_ir::draft::ModelDraft::commit_model(self, &mut cadmpeg_ir::document::CadIr) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
 pub fn cadmpeg_ir::draft::ModelDraft::entity_count(&self) -> usize
 pub fn cadmpeg_ir::draft::ModelDraft::exactness(&mut self, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::Exactness)
@@ -7256,7 +7255,7 @@ pub fn cadmpeg_ir::draft::ModelDraft::ledger_mut(&mut self) -> &mut cadmpeg_ir::
 pub fn cadmpeg_ir::draft::ModelDraft::model(&self) -> &cadmpeg_ir::document::Model
 pub fn cadmpeg_ir::draft::ModelDraft::model_mut(&mut self) -> &mut cadmpeg_ir::document::Model
 pub fn cadmpeg_ir::draft::ModelDraft::new() -> Self
-pub fn cadmpeg_ir::draft::ModelDraft::note(&mut self, cadmpeg_ir::report::LossNote)
+pub fn cadmpeg_ir::draft::ModelDraft::note(&mut self, cadmpeg_ir::LossNote)
 pub fn cadmpeg_ir::draft::ModelDraft::retain_exactness(&mut self, impl core::ops::function::FnMut(&str) -> bool)
 pub struct cadmpeg_ir::ModifiedEntity
 pub cadmpeg_ir::ModifiedEntity::fields: alloc::vec::Vec<alloc::string::String>
@@ -7663,12 +7662,12 @@ impl core::convert::From<&cadmpeg_ir::unknown::UnknownRecord> for cadmpeg_ir::un
 pub fn cadmpeg_ir::unknown::NativeUnknownRecord::from(&cadmpeg_ir::unknown::UnknownRecord) -> Self
 pub struct cadmpeg_ir::ValidationReport
 pub cadmpeg_ir::ValidationReport::entity_counts: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub cadmpeg_ir::ValidationReport::findings: alloc::vec::Vec<cadmpeg_ir::report::Finding>
-pub cadmpeg_ir::ValidationReport::losses: alloc::vec::Vec<cadmpeg_ir::report::LossNote>
-impl cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::report::ValidationReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::ValidationReport::is_ok(&self) -> bool
-pub fn cadmpeg_ir::report::ValidationReport::warning_count(&self) -> usize
+pub cadmpeg_ir::ValidationReport::findings: alloc::vec::Vec<cadmpeg_ir::Finding>
+pub cadmpeg_ir::ValidationReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
+impl cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::ValidationReport::error_count(&self) -> usize
+pub fn cadmpeg_ir::ValidationReport::is_ok(&self) -> bool
+pub fn cadmpeg_ir::ValidationReport::warning_count(&self) -> usize
 pub struct cadmpeg_ir::ViewPresentation
 pub cadmpeg_ir::ViewPresentation::display_mode: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::ViewPresentation::expanded: core::option::Option<bool>
@@ -7688,16 +7687,16 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::presentation::ViewPresenta
 pub const cadmpeg_ir::presentation::ViewPresentation::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::presentation::ViewPresentation::identity(&self) -> &str
 pub fn cadmpeg_ir::presentation::ViewPresentation::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
-pub const cadmpeg_ir::CATIA_ADMISSION_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::CATIA_ADMISSION_CHECKS: &[cadmpeg_ir::Check]
 pub const cadmpeg_ir::DECODE_SIDECAR_VERSION: &str
 pub const cadmpeg_ir::DECODE_SIDECAR_VERSION_V1: &str
 pub const cadmpeg_ir::DECODE_SIDECAR_VERSION_V2: &str
-pub const cadmpeg_ir::DRAFT_CORE_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::DRAFT_CORE_CHECKS: &[cadmpeg_ir::Check]
 pub const cadmpeg_ir::IR_VERSION: &str
-pub const cadmpeg_ir::RHINO_DRAFT_CHECKS: &[cadmpeg_ir::report::Check]
-pub const cadmpeg_ir::RHINO_INSTANCE_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::RHINO_DRAFT_CHECKS: &[cadmpeg_ir::Check]
+pub const cadmpeg_ir::RHINO_INSTANCE_CHECKS: &[cadmpeg_ir::Check]
 pub const cadmpeg_ir::SHARED_LOSS_NAMESPACE: &str
-pub const cadmpeg_ir::SLDPRT_EXPORT_PRECONDITION_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::SLDPRT_EXPORT_PRECONDITION_CHECKS: &[cadmpeg_ir::Check]
 pub const cadmpeg_ir::SOURCE_FIDELITY_VERSION: &str
 pub trait cadmpeg_ir::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
@@ -7714,19 +7713,19 @@ pub trait cadmpeg_ir::Encoder
 pub fn cadmpeg_ir::Encoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::Encoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
-impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
-pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
-pub fn cadmpeg_ir::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
+pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
+pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor]
+pub fn cadmpeg_ir::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::decode_sidecar_path(&std::path::Path) -> std::path::PathBuf
 pub fn cadmpeg_ir::diff(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::document::CadIr) -> cadmpeg_ir::diff::IrDiff
 pub fn cadmpeg_ir::entity_census(&cadmpeg_ir::document::CadIr) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
-pub fn cadmpeg_ir::filter_checks(cadmpeg_ir::report::ValidationReport, &[cadmpeg_ir::report::Check]) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::filter_checks(cadmpeg_ir::ValidationReport, &[cadmpeg_ir::Check]) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::format_identity(&str, &str, &str, impl core::fmt::Display) -> core::result::Result<alloc::string::String, cadmpeg_ir::ids::IdentityError>
 pub fn cadmpeg_ir::is_valid_identity(&str) -> bool
-pub fn cadmpeg_ir::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub fn cadmpeg_ir::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub type cadmpeg_ir::DocumentDraft = cadmpeg_ir::draft::ModelDraft
