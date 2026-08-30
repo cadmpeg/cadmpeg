@@ -46,16 +46,25 @@ jobs:
       # coverage), and the proxy propagates `RUSTUP_TOOLCHAIN` to the inner
       # `cargo build` it spawns.
       #
-      # CARGO_BUILD_JOBS=2: ASAN-instrumented release compiles of the codec
-      # crates peak at several GB per rustc process. The ubuntu-latest runner
-      # has 4 cores and 16 GB, and the `jobs = 6` cap in .cargo/config.toml
-      # lets six of them run at once, so the kernel OOM-killer terminates the
-      # runner worker mid-build ("shutdown signal", exit 143). The
-      # cargo-job-count action used by other workflows would still allow 4,
-      # which is too close to the limit for instrumented builds.
+      # CARGO_BUILD_JOBS=1: ASAN-instrumented release compiles peak at 14.8 GiB
+      # per rustc process (cadmpeg_codec_f3d; cadmpeg_ir 13.1 GiB), and two
+      # overlapping instrumented compiles exceed the 16 GB of the
+      # ubuntu-latest runner, so the kernel OOM-killer terminates the runner
+      # worker mid-build ("shutdown signal", exit 143). Serializing bounds
+      # build RSS by the single worst crate, and the swap step below absorbs
+      # the transient overshoot. Peaks this close to the limit may still need
+      # a larger runner; move this job to one if the build OOMs again.
+      - name: Create build swap
+        run: |
+          set -euo pipefail
+          sudo fallocate -l 24G /build-swap
+          sudo chmod 600 /build-swap
+          sudo mkswap /build-swap
+          sudo swapon /build-swap
+
       - name: Build fuzz targets (no run)
         env:
-          CARGO_BUILD_JOBS: "2"
+          CARGO_BUILD_JOBS: "1"
         run: cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
 
       - name: Run each fuzz target briefly
