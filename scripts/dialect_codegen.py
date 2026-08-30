@@ -23,6 +23,16 @@ OWNERS = {
     "step": "cadmpeg-codec-step",
 }
 
+# These namespaces have shared owners instead of host-codec generated modules.
+# `cadmpeg-asm` closes `acis:` directly; `cadmpeg-container::parasolid` closes
+# the embedded Parasolid classifier shared by NX and SLDPRT.
+INTENTIONALLY_UNOWNED_FORMATS = frozenset({"acis", "parasolid"})
+
+
+class CodegenError(ValueError):
+    """The registry cannot be assigned completely to code-generation owners."""
+
+
 def render(ids: list[str]) -> str:
     """Render the registry rows one codec enum must cover exactly."""
     lines = [
@@ -46,6 +56,7 @@ def outputs(root: Path) -> dict[Path, str]:
     with (root / "docs/dialects.toml").open("rb") as handle:
         rows = tomllib.load(handle).get("dialect", [])
     by_format = {format_id: [] for format_id in OWNERS}
+    unmapped: set[str] = set()
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -55,6 +66,14 @@ def outputs(root: Path) -> dict[Path, str]:
         format_id = dialect_id.split(":", 1)[0]
         if format_id in by_format:
             by_format[format_id].append(dialect_id)
+        elif format_id not in INTENTIONALLY_UNOWNED_FORMATS:
+            unmapped.add(format_id)
+    if unmapped:
+        names = ", ".join(sorted(unmapped))
+        raise CodegenError(
+            f"unmapped dialect format namespace(s): {names}; add an OWNERS mapping or an "
+            "INTENTIONALLY_UNOWNED_FORMATS justification"
+        )
     return {
         root / "crates" / crate / "src/dialect/generated.rs": render(by_format[format_id])
         for format_id, crate in OWNERS.items()
@@ -65,7 +84,11 @@ def outputs(root: Path) -> dict[Path, str]:
 def check(root: Path) -> list[str]:
     """Return stale or missing generated-file failures."""
     failures = []
-    for path, expected in outputs(root).items():
+    try:
+        expected_outputs = outputs(root)
+    except CodegenError as error:
+        return [str(error)]
+    for path, expected in expected_outputs.items():
         try:
             actual = path.read_text(encoding="utf-8")
         except OSError:
@@ -95,7 +118,11 @@ def main() -> int:
         for failure in failures:
             print(f"error: {failure}")
         return int(bool(failures))
-    write(root)
+    try:
+        write(root)
+    except CodegenError as error:
+        print(f"error: {error}")
+        return 1
     return 0
 
 

@@ -17,6 +17,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("check-dialects.py")
@@ -58,7 +59,13 @@ class RegistryCase(unittest.TestCase):
                 target = root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("fixture", encoding="utf-8")
-            return checker.check(root)
+            allowed = checker.dialect_codegen.INTENTIONALLY_UNOWNED_FORMATS | {"demo"}
+            with mock.patch.object(
+                checker.dialect_codegen,
+                "INTENTIONALLY_UNOWNED_FORMATS",
+                allowed,
+            ):
+                return checker.check(root)
 
     def assertFires(self, text: str | None, needle: str, *, files: list[str] | None = None):
         failures, _ = self.run_check(text, files=files)
@@ -433,6 +440,36 @@ class TestExtensionPoints(unittest.TestCase):
 
     def test_explicitly_unpinned_row_is_exempt(self):
         self.assertEqual(self.emitted_id_failures(GOOD_ROW + "pinned = false\n"), [])
+
+    def test_codegen_rejects_an_unmapped_format_namespace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            (root / "docs" / "dialects.toml").write_text(
+                _registry(GOOD_ROW), encoding="utf-8"
+            )
+
+            self.assertEqual(
+                checker.dialect_codegen.check(root),
+                [
+                    "unmapped dialect format namespace(s): demo; add an OWNERS mapping or an "
+                    "INTENTIONALLY_UNOWNED_FORMATS justification"
+                ],
+            )
+
+    def test_codegen_accepts_only_the_justified_shared_namespaces(self):
+        rows = GOOD_ROW.replace("demo:one", "acis:one") + GOOD_ROW.replace(
+            "demo:one", "parasolid:one"
+        )
+        formats = "[format.acis]\ncomplete = true\n[format.parasolid]\ncomplete = true\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            (root / "docs" / "dialects.toml").write_text(
+                _registry(rows, formats=formats), encoding="utf-8"
+            )
+
+            self.assertEqual(checker.dialect_codegen.check(root), [])
 
     def test_support_tables_moved_to_the_renderer(self):
         """The stub is gone because the rule is enforced, not deferred."""
