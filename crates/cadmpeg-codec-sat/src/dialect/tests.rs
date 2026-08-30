@@ -18,10 +18,11 @@ use std::io::Cursor;
 
 #[test]
 fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(
-        &StreamKind::ALL.map(StreamKind::id),
-        &super::generated::ROWS,
-    );
+    let reportable = StreamKind::ALL.map(|kind| {
+        kind.reportable_id()
+            .expect("the reportable kind list excludes Unknown")
+    });
+    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, &super::generated::ROWS);
 }
 
 /// A kernel header declaring `save_format_version` and nothing else that
@@ -97,13 +98,11 @@ fn only_the_acis_kernel_branches_are_banded() {
 
 #[test]
 fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
-    // The three identified rows are shared by inspect and decode refusal. The
-    // unknown totality row remains unreachable through normal detection.
+    // The three identified rows are shared by inspect and decode refusal.
     for (evidence, id) in [
         (StreamEvidence::AsmBinary(None), "sat:asm-binary"),
         (StreamEvidence::AcisBinary(None), "sat:acis-binary"),
         (StreamEvidence::Text(None), "sat:text"),
-        (StreamEvidence::Unknown, "sat:unknown"),
     ] {
         let (matched, _) = layers(&evidence);
         assert_eq!(matched.dialect().as_str(), id);
@@ -112,14 +111,8 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
 }
 
 #[test]
-fn the_totality_row_never_carries_an_admitted_admission() {
-    // `sat:unknown` states that no discriminant matched. Detection reports no
-    // confidence for it and both entry points return a malformed error before
-    // classification, so the pair (unknown, Admitted) must be unreachable.
-    let matched = classify(&StreamEvidence::Unknown);
-    assert_eq!(matched.dialect().as_str(), "sat:unknown");
-    assert_ne!(matched.admission(), Admission::Admitted);
-    assert!(matched.declared().is_empty());
+fn the_detect_unreachable_kind_has_no_reportable_id() {
+    assert_eq!(StreamKind::Unknown.reportable_id(), None);
 }
 
 #[test]
@@ -146,7 +139,6 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
             header: &unverified,
         })),
         StreamEvidence::Text(None),
-        StreamEvidence::Unknown,
     ] {
         let (_, matched) = layers(&evidence);
         assert_eq!(

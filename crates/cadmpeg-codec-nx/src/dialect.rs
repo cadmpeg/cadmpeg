@@ -5,7 +5,7 @@
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`NxDialect::classify`] is the one construction
 //! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! exhaustive row list in `dialect/generated.rs`.
+//! exhaustive reportable row list in `dialect/generated.rs`.
 //!
 //! # Classification is structural, so every admitted document is `Admitted`
 //!
@@ -35,15 +35,16 @@
 //! A successful scan always reads the version byte, so the value used by decode
 //! and the declaration recorded here cannot diverge.
 //!
-//! # `nx:unknown` is a declared row this codec never emits
+//! # `nx:unknown` is a registry-only row this codec never emits
 //!
 //! The registry's mandatory totality row covers a part file
 //! matching neither container. NX refuses such a file at the container
 //! boundary — `NxCodec::detect` reports
 //! [`cadmpeg_ir::codec::Confidence::No`], and a forced scan returns
 //! `WrongFormat` — so no run ever produces a report to carry the row. The
-//! variant exists here for the registry cross-check, and the tests pin that it
-//! stays unreachable from [`NxDialect::classify`].
+//! `unknown_kind = "detect-unreachable"` excludes it from the generated
+//! reportable-row closure. No codec enum variant or report construction path
+//! names it.
 
 use crate::container::Container;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
@@ -69,21 +70,13 @@ const DECLARED_PRODUCT_VERSION: &str = "product_version";
 ///
 const DECLARED_UGII_VERSION: &str = "ugii_version";
 
-/// One row of `docs/dialects.toml` under the `nx` namespace.
+/// One reportable row of `docs/dialects.toml` under the `nx` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum NxDialect {
     /// The `SPLMSSTR` member table.
     Splmsstr,
     /// The legacy Compound File envelope around a `UG_PART/UG_PART` stream.
     LegacyCfb,
-    /// Mandatory totality row; refused at the container boundary, never
-    /// classified.
-    // Constructed only by the registry cross-check. A file matching neither
-    // container never reaches a report, so production code names this row and
-    // never builds one; deleting the variant would delete the registry row's
-    // only in-code anchor.
-    #[allow(dead_code)]
-    Unknown,
 }
 
 /// Classify the host container and every schema-bearing Parasolid stream.
@@ -112,16 +105,15 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
 }
 
 impl NxDialect {
-    /// Every dialect identity this enum can name.
+    /// Every reportable dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 3] = [Self::Splmsstr, Self::LegacyCfb, Self::Unknown];
+    pub(crate) const ALL: [Self; 2] = [Self::Splmsstr, Self::LegacyCfb];
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
             Self::Splmsstr => "nx:splmsstr",
             Self::LegacyCfb => "nx:legacy-cfb",
-            Self::Unknown => "nx:unknown",
         })
     }
 
@@ -133,7 +125,6 @@ impl NxDialect {
         match self {
             Self::Splmsstr => "splmsstr",
             Self::LegacyCfb => "cfb",
-            Self::Unknown => "unknown",
         }
     }
 
@@ -147,21 +138,6 @@ impl NxDialect {
             Self::LegacyCfb
         } else {
             Self::Splmsstr
-        }
-    }
-
-    /// How a document on this row was admitted.
-    ///
-    /// The one admission predicate in this codec. Both container rows name the
-    /// grammar that parsed the document, so both are admitted; nothing in NX
-    /// substitutes one row's strategy for another's, and no dialect-unverified
-    /// loss exists to charge. [`Self::Unknown`] is unreachable from
-    /// [`Self::of_container`] and carries the refusal disposition the registry
-    /// records; it answers here only to keep the function total.
-    pub(crate) const fn admission(self) -> Admission {
-        match self {
-            Self::Splmsstr | Self::LegacyCfb => Admission::Admitted,
-            Self::Unknown => Admission::Refused,
         }
     }
 
@@ -179,10 +155,7 @@ impl NxDialect {
             Self::LegacyCfb => {
                 declared.insert(DECLARED_UGII_VERSION.into(), container.version.to_string());
             }
-            // `of_container` returns one of the two container rows and never
-            // `Unknown`, which shares the modern arm only to keep the match
-            // total.
-            Self::Splmsstr | Self::Unknown => {
+            Self::Splmsstr => {
                 declared.insert(
                     DECLARED_SPLMSSTR_VERSION.into(),
                     container.version.to_string(),
@@ -192,7 +165,7 @@ impl NxDialect {
                 }
             }
         }
-        DialectMatch::layer(dialect.id(), declared, dialect.admission())
+        DialectMatch::layer(dialect.id(), declared, Admission::Admitted)
             .expect("NX classifier produced an invalid dialect match")
     }
 }

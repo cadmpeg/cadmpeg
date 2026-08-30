@@ -92,23 +92,6 @@ fn both_container_rows_are_admitted_because_classification_is_structural() {
         let matched = NxDialect::classify(&container(legacy_cfb, 0x06));
         assert_eq!(matched.admission(), Admission::Admitted);
     }
-    assert_eq!(NxDialect::Splmsstr.admission(), Admission::Admitted);
-    assert_eq!(NxDialect::LegacyCfb.admission(), Admission::Admitted);
-}
-
-#[test]
-fn the_totality_row_is_declared_but_never_classified() {
-    // `nx:unknown` is the B4 row for a file matching neither container. Such a
-    // file is refused at the container boundary — `detect` reports
-    // `Confidence::No` and a forced scan returns `WrongFormat` — so no run
-    // produces a match carrying it. Its declared disposition is refusal.
-    assert_eq!(NxDialect::Unknown.admission(), Admission::Refused);
-    for legacy_cfb in [false, true] {
-        assert_ne!(
-            NxDialect::of_container(&container(legacy_cfb, 0)),
-            NxDialect::Unknown
-        );
-    }
 }
 
 #[test]
