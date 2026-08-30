@@ -24,7 +24,6 @@ pub(crate) fn plan<'a>(
         crate::dialect::TARGETS,
     )?;
     match resolved {
-        WriteRequest::Identity => unreachable!("IGES has a non-empty target catalog"),
         WriteRequest::Catalog { entry, source } => match source {
             SourceRelation::Preserve => {
                 let replay_failure = match replay_bytes(input.ir, input.fidelity)? {

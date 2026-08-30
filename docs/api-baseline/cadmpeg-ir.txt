@@ -1,4 +1,4 @@
-# generated at 6838836b3
+# generated at 0728af1d5
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -175,11 +175,10 @@ pub enum cadmpeg_ir::codec::WriteRequest<'a>
 pub cadmpeg_ir::codec::WriteRequest::Catalog
 pub cadmpeg_ir::codec::WriteRequest::Catalog::entry: &'static cadmpeg_ir::codec::TargetDescriptor
 pub cadmpeg_ir::codec::WriteRequest::Catalog::source: cadmpeg_ir::codec::SourceRelation
-pub cadmpeg_ir::codec::WriteRequest::Identity
 pub cadmpeg_ir::codec::WriteRequest::OffCatalog
 pub cadmpeg_ir::codec::WriteRequest::OffCatalog::dialect: &'a cadmpeg_core::dialect::DialectId
 impl cadmpeg_ir::codec::WriteRequest<'_>
-pub fn cadmpeg_ir::codec::WriteRequest<'_>::dialect_id(&self) -> core::option::Option<cadmpeg_core::dialect::DialectId>
+pub fn cadmpeg_ir::codec::WriteRequest<'_>::dialect_id(&self) -> cadmpeg_core::dialect::DialectId
 pub struct cadmpeg_ir::codec::CadirEncoder
 impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
 pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str

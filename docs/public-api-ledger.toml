@@ -1673,3 +1673,17 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::codec::WriteRequest::Catalog::{displaced,preserve -> source}"
 reason = "one source-relation enum makes absent, preserved, and displaced source identities mutually exclusive instead of exposing an invalid optional-dialect and boolean combination"
+
+[[change]]
+commit = "0728af1d589840da09a27753f2d18f5fd2070fb7"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::WriteRequest::Identity"
+reason = "format identity belongs only to the dialect-free CADIR encoder; native resolution always names a catalog target or a preserved off-catalog source dialect"
+
+[[change]]
+commit = "0728af1d589840da09a27753f2d18f5fd2070fb7"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::WriteRequest::dialect_id"
+reason = "every native resolved request carries a dialect after removal of the format-identity variant, so the projection is total instead of optional"

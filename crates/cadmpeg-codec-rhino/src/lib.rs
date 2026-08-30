@@ -169,9 +169,6 @@ impl Encoder for RhinoEncoder {
             dialect::TARGETS,
         )?;
         let (entry, source) = match resolved {
-            cadmpeg_ir::codec::WriteRequest::Identity => {
-                unreachable!("Rhino has a non-empty target catalog")
-            }
             cadmpeg_ir::codec::WriteRequest::Catalog { entry, source } => (entry, source),
             cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect: source } => {
                 return Err(cadmpeg_ir::codec::unsupported_target(

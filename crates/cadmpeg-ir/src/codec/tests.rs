@@ -97,6 +97,23 @@ fn cadir_encoder_census_matches_validation_counts() {
     assert_eq!(plan.report().census.counts, validation_counts);
 }
 
+#[test]
+fn an_empty_native_catalog_has_no_format_identity_request() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let error = resolve_write_request(&ir, TargetRequest::Inherit, "cadir", &[]).unwrap_err();
+
+    let CodecError::UnsupportedTarget {
+        requested,
+        available,
+        ..
+    } = error
+    else {
+        panic!("an empty native catalog must refuse without inventing an identity request")
+    };
+    assert_eq!(requested, None);
+    assert_eq!(available, "none");
+}
+
 fn decode_result(ir: CadIr) -> DecodeResult {
     DecodeResult::new(
         ir,
