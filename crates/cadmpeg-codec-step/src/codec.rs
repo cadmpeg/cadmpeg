@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
     resolve_write_request, unsupported_target, CodecBackend, Confidence, DecodeOptions,
-    DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor, TargetRequest, WriteRequest,
+    DecodeResult, EncodeInput, Encoder, ExportPlan, SourceRelation, TargetDescriptor,
+    TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 
@@ -56,11 +57,9 @@ impl Encoder for StepCodec {
             crate::dialect::FORMAT,
             crate::dialect::TARGETS,
         )?;
-        let (entry, displaced) = match resolved {
+        let (entry, source) = match resolved {
             WriteRequest::Identity => unreachable!("STEP has a non-empty target catalog"),
-            WriteRequest::Catalog {
-                entry, displaced, ..
-            } => (entry, displaced),
+            WriteRequest::Catalog { entry, source } => (entry, source),
             WriteRequest::OffCatalog { dialect } => {
                 return Err(unsupported_target(
                     crate::dialect::FORMAT,
@@ -76,7 +75,7 @@ impl Encoder for StepCodec {
             .map_err(CodecError::from)?;
         let target = cadmpeg_core::dialect::DialectId::pinned(schema.target());
         let mut losses = outcome.losses;
-        if let Some(source) = displaced.as_ref() {
+        if let SourceRelation::Displaced(source) = &source {
             losses.push(crate::loss::StepLossCode::SourceDialectDisplaced.note(
                 cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
             ));

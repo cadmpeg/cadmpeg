@@ -283,7 +283,7 @@ fn target_selection_rejects_an_empty_qualified_dialect() {
 #[cfg(feature = "iges")]
 #[test]
 fn a_cross_format_convert_writes_the_catalog_default() {
-    use cadmpeg_ir::codec::{resolve_write_request, WriteRequest};
+    use cadmpeg_ir::codec::{resolve_write_request, SourceRelation, WriteRequest};
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     ir.source = Some(cadmpeg_ir::SourceMeta::unclassified(
@@ -292,14 +292,14 @@ fn a_cross_format_convert_writes_the_catalog_default() {
     ));
     let encoder = cadmpeg_codec_iges::IgesEncoder;
     let WriteRequest::Catalog {
-        entry, displaced, ..
+        entry,
+        source: SourceRelation::None,
     } = resolve_write_request(&ir, TargetRequest::Inherit, encoder.id(), encoder.targets())
         .expect("the fallback resolves")
     else {
         panic!("a cross-format request resolves to the catalog")
     };
     assert_eq!(entry.id, "iges:5.3-fixed-ascii");
-    assert_eq!(displaced, None);
 }
 
 /// CADIR has no catalog, so it takes `Inherit` either way.

@@ -12,8 +12,8 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor,
-    TargetRequest,
+    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, SourceRelation,
+    TargetDescriptor, TargetRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
@@ -168,13 +168,11 @@ impl Encoder for RhinoEncoder {
             dialect::FORMAT,
             dialect::TARGETS,
         )?;
-        let (entry, displaced) = match resolved {
+        let (entry, source) = match resolved {
             cadmpeg_ir::codec::WriteRequest::Identity => {
                 unreachable!("Rhino has a non-empty target catalog")
             }
-            cadmpeg_ir::codec::WriteRequest::Catalog {
-                entry, displaced, ..
-            } => (entry, displaced),
+            cadmpeg_ir::codec::WriteRequest::Catalog { entry, source } => (entry, source),
             cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect: source } => {
                 return Err(cadmpeg_ir::codec::unsupported_target(
                     dialect::FORMAT,
@@ -212,7 +210,7 @@ impl Encoder for RhinoEncoder {
             });
         let mut losses = Vec::new();
         let target = cadmpeg_core::dialect::DialectId::pinned(version.target());
-        if let Some(source) = displaced.as_ref() {
+        if let SourceRelation::Displaced(source) = &source {
             losses.push(loss::RhinoLossCode::SourceDialectDisplaced.note(
                 cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
             ));

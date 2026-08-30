@@ -436,8 +436,7 @@ fn write_request_resolves_an_explicit_on_catalog_target() {
         resolved,
         WriteRequest::Catalog {
             entry,
-            displaced: None,
-            preserve: false,
+            source: SourceRelation::None,
         } if entry.id == "test:old"
     ));
 }
@@ -467,8 +466,7 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
         resolved,
         WriteRequest::Catalog {
             entry,
-            displaced: None,
-            preserve: false,
+            source: SourceRelation::None,
         } if entry.id == "test:new"
     ));
 }
@@ -482,8 +480,7 @@ fn write_request_inherit_preserves_a_same_format_catalog_source() {
         resolved,
         WriteRequest::Catalog {
             entry,
-            displaced: None,
-            preserve: true,
+            source: SourceRelation::Preserve,
         } if entry.id == "test:old"
     ));
 }
@@ -511,18 +508,16 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
     .unwrap();
     let WriteRequest::Catalog {
         entry,
-        displaced,
-        preserve,
+        source: SourceRelation::Displaced(displaced),
     } = resolved
     else {
         panic!("expected a catalog target");
     };
     assert_eq!(entry.id, "test:new");
-    assert!(!preserve);
-    assert_eq!(displaced.as_ref(), Some(&DialectId::pinned("test:old")));
+    assert_eq!(displaced, DialectId::pinned("test:old"));
     assert_eq!(
         source_dialect_displaced_message(
-            displaced.as_ref().expect("the source dialect differs"),
+            &displaced,
             &DialectId::pinned(entry.id),
         ),
         "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved"

@@ -4,7 +4,8 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest, WriteRequest,
+    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, SourceRelation,
+    TargetRequest, WriteRequest,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
@@ -24,27 +25,31 @@ pub(crate) fn plan<'a>(
     )?;
     match resolved {
         WriteRequest::Identity => unreachable!("IGES has a non-empty target catalog"),
-        WriteRequest::Catalog {
-            entry,
-            displaced,
-            preserve: should_preserve,
-        } => {
-            let mut replay_failure = None;
-            if should_preserve {
-                match replay_bytes(input.ir, input.fidelity)? {
+        WriteRequest::Catalog { entry, source } => match source {
+            SourceRelation::Preserve => {
+                let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
                     Replay::Replayed { bytes } => {
                         return Ok(replayed_plan(input.ir, DialectId::pinned(entry.id), bytes));
                     }
-                    Replay::Declined { reason } => replay_failure = reason,
-                }
+                    Replay::Declined { reason } => reason,
+                };
+                synthesized_plan(
+                    input,
+                    crate::dialect::target_version(entry),
+                    None,
+                    replay_failure,
+                )
             }
-            synthesized_plan(
+            SourceRelation::Displaced(displaced) => synthesized_plan(
                 input,
                 crate::dialect::target_version(entry),
-                displaced.as_ref(),
-                replay_failure,
-            )
-        }
+                Some(&displaced),
+                None,
+            ),
+            SourceRelation::None => {
+                synthesized_plan(input, crate::dialect::target_version(entry), None, None)
+            }
+        },
         WriteRequest::OffCatalog { dialect } => match replay_bytes(input.ir, input.fidelity)? {
             Replay::Replayed { bytes } => Ok(replayed_plan(input.ir, dialect.clone(), bytes)),
             Replay::Declined { .. } => Err(unsupported_target(

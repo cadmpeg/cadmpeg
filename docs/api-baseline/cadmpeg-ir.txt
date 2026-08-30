@@ -1,4 +1,4 @@
-# generated at b7fed202e
+# generated at 6838836b3
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -164,14 +164,17 @@ pub cadmpeg_ir::codec::Confidence::Medium
 pub cadmpeg_ir::codec::Confidence::No
 impl core::fmt::Display for cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::codec::Confidence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum cadmpeg_ir::codec::SourceRelation
+pub cadmpeg_ir::codec::SourceRelation::Displaced(cadmpeg_core::dialect::DialectId)
+pub cadmpeg_ir::codec::SourceRelation::None
+pub cadmpeg_ir::codec::SourceRelation::Preserve
 pub enum cadmpeg_ir::codec::TargetRequest<'a>
 pub cadmpeg_ir::codec::TargetRequest::Explicit(&'a str)
 pub cadmpeg_ir::codec::TargetRequest::Inherit
 pub enum cadmpeg_ir::codec::WriteRequest<'a>
 pub cadmpeg_ir::codec::WriteRequest::Catalog
-pub cadmpeg_ir::codec::WriteRequest::Catalog::displaced: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_ir::codec::WriteRequest::Catalog::entry: &'static cadmpeg_ir::codec::TargetDescriptor
-pub cadmpeg_ir::codec::WriteRequest::Catalog::preserve: bool
+pub cadmpeg_ir::codec::WriteRequest::Catalog::source: cadmpeg_ir::codec::SourceRelation
 pub cadmpeg_ir::codec::WriteRequest::Identity
 pub cadmpeg_ir::codec::WriteRequest::OffCatalog
 pub cadmpeg_ir::codec::WriteRequest::OffCatalog::dialect: &'a cadmpeg_core::dialect::DialectId
