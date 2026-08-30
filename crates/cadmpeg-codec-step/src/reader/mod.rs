@@ -170,8 +170,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         );
     }
 
-    fn into_result(self, source_fidelity: SourceFidelity) -> DecodeResult {
-        DecodeResult::new(self.ir, self.report, source_fidelity)
+    fn into_result(self, source_fidelity: SourceFidelity) -> Result<DecodeResult, CodecError> {
+        Ok(DecodeResult::new(self.ir, self.report, source_fidelity)?)
     }
 }
 
@@ -235,7 +235,7 @@ fn decode_exchange_mode(
     let mut session = StepDecodeSession::new(exchange, diagnostics, options.container_only, ctx);
     if options.container_only {
         return Ok((
-            session.into_result(SourceFidelity::default()),
+            session.into_result(SourceFidelity::default())?,
             BTreeSet::new(),
         ));
     }
@@ -543,7 +543,7 @@ fn decode_exchange_mode(
             ))
         }));
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
-    Ok((session.into_result(source_fidelity), opaque_offsets))
+    Ok((session.into_result(source_fidelity)?, opaque_offsets))
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.

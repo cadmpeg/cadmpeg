@@ -583,21 +583,6 @@ impl SourceMeta {
             SourceClassification::Unclassified { .. } => None,
         }
     }
-
-    pub(crate) fn stamp_dialect(&mut self, dialect: Option<DialectMatch>) -> Result<(), String> {
-        let format = self.format().to_owned();
-        self.classification = match dialect {
-            Some(dialect) if dialect.format() != format => {
-                return Err(format!(
-                    "source format {format:?} does not match dialect format {:?}",
-                    dialect.format()
-                ));
-            }
-            Some(dialect) => SourceClassification::Classified(dialect),
-            None => SourceClassification::Unclassified { format },
-        };
-        Ok(())
-    }
 }
 
 #[cfg(test)]

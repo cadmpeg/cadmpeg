@@ -423,7 +423,7 @@ fn decode_zip(
         archive::ROOT_NAME
     ));
     report.notes.extend(resource_notes);
-    Ok(DecodeResult::new(ir, report, fidelity))
+    Ok(DecodeResult::new(ir, report, fidelity)?)
 }
 
 pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {

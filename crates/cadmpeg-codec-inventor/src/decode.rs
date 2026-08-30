@@ -1814,7 +1814,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             TransferLedger::default(),
         ),
         source_fidelity,
-    ))
+    )?)
 }
 
 fn version_record(version: VersionTuple) -> VersionTupleRecord {

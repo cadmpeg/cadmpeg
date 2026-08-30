@@ -716,7 +716,8 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
         diagnostic.source_range.start < diagnostic.source_range.end
             && !diagnostic.message.contains("unsupported class")
     }));
-    let container_only = crate::container::container_only_result(&scan);
+    let container_only = crate::container::container_only_result(&scan)
+        .expect("the Rhino source and report formats agree");
     assert!(container_only.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss
@@ -1179,7 +1180,9 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.decode_geometry();
         assert!(context.mesh_budget_used() > 0);
-        let result = context.commit();
+        let result = context
+            .commit()
+            .expect("the Rhino source and report formats agree");
         assert!(result.ir().model.tessellations.is_empty());
         assert!(result.ir().model.bodies.is_empty());
     });
@@ -1311,7 +1314,9 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry();
-        let result = context.commit();
+        let result = context
+            .commit()
+            .expect("the Rhino source and report formats agree");
         assert_eq!(result.ir().model.points.len(), 1);
         assert_eq!(
             result.ir().model.bodies[0]

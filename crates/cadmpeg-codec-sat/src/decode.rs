@@ -243,7 +243,7 @@ fn build_result(
         .map_err(|error| {
             CodecError::malformed(format_args!("unknown-record retention failed: {error}"))
         })?;
-    Ok(DecodeResult::new(ir, report, source_fidelity))
+    Ok(DecodeResult::new(ir, report, source_fidelity)?)
 }
 
 #[cfg(test)]

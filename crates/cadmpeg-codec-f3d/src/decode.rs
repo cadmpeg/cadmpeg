@@ -3709,7 +3709,7 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [source_image]);
-    let mut result = DecodeResult::new(ir, report, source_fidelity);
+    let mut result = DecodeResult::new(ir, report, source_fidelity)?;
     // Stamped after construction projects the primary dialect, so the write
     // path compares against the exact finalized document it returns.
     let hash = document_local_sha256(result.ir());

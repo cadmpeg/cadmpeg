@@ -2469,7 +2469,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
             TransferLedger::default(),
         ),
         source_fidelity,
-    ))
+    )?)
 }
 
 #[cfg(test)]

@@ -1033,7 +1033,9 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));
-        let result = context.commit();
+        let result = context
+            .commit()
+            .expect("the Rhino source and report formats agree");
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == crate::loss::RhinoLossCode::ObjectAttributesDegraded.kind()
         }));

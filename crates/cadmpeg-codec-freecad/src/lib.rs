@@ -1406,7 +1406,7 @@ impl CodecBackend for FcstdCodec {
                 cadmpeg_ir::report::TransferLedger::default(),
             ),
             source_fidelity,
-        ))
+        )?)
     }
 }
 

@@ -98,5 +98,5 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     );
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
-    Ok(DecodeResult::new(ir, report, source_fidelity))
+    Ok(DecodeResult::new(ir, report, source_fidelity)?)
 }
