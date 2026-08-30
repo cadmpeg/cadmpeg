@@ -37,7 +37,6 @@ pub(crate) fn plan<'a>(
 ) -> Result<ExportPlan<'a>, CodecError> {
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     match resolved {
-        WriteRequest::Identity => unreachable!("F3D has a non-empty target catalog"),
         WriteRequest::Catalog { entry, source } => {
             let target = DialectId::pinned(entry.id);
             match source {

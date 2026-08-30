@@ -58,7 +58,6 @@ impl Encoder for StepCodec {
             crate::dialect::TARGETS,
         )?;
         let (entry, source) = match resolved {
-            WriteRequest::Identity => unreachable!("STEP has a non-empty target catalog"),
             WriteRequest::Catalog { entry, source } => (entry, source),
             WriteRequest::OffCatalog { dialect } => {
                 return Err(unsupported_target(

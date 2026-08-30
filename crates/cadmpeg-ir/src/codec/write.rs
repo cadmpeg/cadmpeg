@@ -149,11 +149,9 @@ pub enum SourceRelation {
     Displaced(cadmpeg_core::dialect::DialectId),
 }
 
-/// A write request resolved against the encoder catalog and source identity.
+/// A native write request resolved against the encoder catalog and source identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WriteRequest<'a> {
-    /// `Inherit` on a dialect-free encoder resolves to format identity.
-    Identity,
     /// The request names a catalog row.
     Catalog {
         /// The canonical catalog entry.
@@ -169,13 +167,12 @@ pub enum WriteRequest<'a> {
 }
 
 impl WriteRequest<'_> {
-    /// Returns the canonical dialect id, or `None` for format identity.
+    /// Returns the canonical dialect id.
     #[must_use]
-    pub fn dialect_id(&self) -> Option<cadmpeg_core::dialect::DialectId> {
+    pub fn dialect_id(&self) -> cadmpeg_core::dialect::DialectId {
         match self {
-            Self::Identity => None,
-            Self::Catalog { entry, .. } => Some(cadmpeg_core::dialect::DialectId::pinned(entry.id)),
-            Self::OffCatalog { dialect } => Some((*dialect).clone()),
+            Self::Catalog { entry, .. } => cadmpeg_core::dialect::DialectId::pinned(entry.id),
+            Self::OffCatalog { dialect } => (*dialect).clone(),
         }
     }
 }
@@ -192,16 +189,17 @@ pub fn same_format_source_dialect<'a>(
         .and_then(|source| source.dialect())
 }
 
-/// Resolve target syntax and inheritance once, before codec-specific delivery.
+/// Resolve a native target and inheritance once, before codec-specific delivery.
+///
+/// Native requests always name a catalog or preserved off-catalog dialect.
+/// A dialect-free neutral encoder handles its format identity locally instead
+/// of adding an identity case to every native writer.
 pub fn resolve_write_request<'a>(
     ir: &'a CadIr,
     request: TargetRequest<'_>,
     format: &str,
     targets: &'static [TargetDescriptor],
 ) -> Result<WriteRequest<'a>, CodecError> {
-    if targets.is_empty() && request == TargetRequest::Inherit {
-        return Ok(WriteRequest::Identity);
-    }
     let entry = match request {
         TargetRequest::Explicit(id) => find_target(targets, id).ok_or_else(|| {
             unsupported_target(
@@ -405,10 +403,15 @@ impl Encoder for CadirEncoder {
         input: EncodeInput<'a>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan<'a>, CodecError> {
-        match resolve_write_request(input.ir, request, self.id(), self.targets())? {
-            WriteRequest::Identity => {}
-            WriteRequest::Catalog { .. } | WriteRequest::OffCatalog { .. } => {
-                unreachable!("an empty target catalog resolves only to identity")
+        match request {
+            TargetRequest::Inherit => {}
+            TargetRequest::Explicit(id) => {
+                return Err(unsupported_target(
+                    self.id(),
+                    id,
+                    "not a target this encoder can synthesize",
+                    self.targets(),
+                ));
             }
         }
         let report = ExportReport::cadir(

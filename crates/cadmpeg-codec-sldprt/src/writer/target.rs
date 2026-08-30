@@ -47,11 +47,8 @@ fn resolve(
     request: TargetRequest<'_>,
 ) -> Result<(DialectId, SourceRelation), CodecError> {
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
-    let Some(target) = resolved.dialect_id() else {
-        unreachable!("SLDPRT has a non-empty target catalog")
-    };
+    let target = resolved.dialect_id();
     let source = match resolved {
-        WriteRequest::Identity => SourceRelation::None,
         WriteRequest::Catalog { source, .. } => source,
         WriteRequest::OffCatalog { .. } => SourceRelation::Preserve,
     };
