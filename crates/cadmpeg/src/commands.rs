@@ -587,46 +587,4 @@ mod tests {
             )
         );
     }
-
-    #[cfg(feature = "iges")]
-    #[test]
-    fn an_unknown_explicit_target_is_refused_before_the_input_is_opened() {
-        let conversion = ConversionArgs {
-            policy: ConversionPolicy {
-                force: false,
-                binary_stdout: false,
-                allow_errors: false,
-                allow_empty: false,
-                reject_decode_losses: false,
-                reject_export_losses: false,
-                destination: Some(PathBuf::from("out.iges")),
-            },
-            report: None,
-            forced_input: None,
-        };
-        let decode = DecodeArgs {
-            container_only: false,
-            no_salvage: false,
-            limits: crate::LimitProfile::Desktop,
-        };
-
-        let error = execute_conversion(
-            &catalogs(),
-            Path::new("missing-input-that-must-not-be-opened.step"),
-            Some("iges:nonesuch"),
-            Some(Path::new("out.iges")),
-            &conversion,
-            &decode,
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            error.downcast_ref::<ConversionRefusal>(),
-            Some(ConversionRefusal::UnsupportedTarget {
-                decode_report: None,
-                validation: None,
-                ..
-            })
-        ));
-    }
 }

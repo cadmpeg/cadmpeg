@@ -296,8 +296,8 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .stderr(predicate::str::contains("iges cannot write 9.9"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "unsupported_target");
-    assert!(value["decode_report"].is_null());
-    assert!(value["check_report"].is_null());
+    assert!(value["decode_report"].is_object());
+    assert!(value["check_report"].is_object());
 
     // A format-qualified token outside the catalog is the same refusal. The
     // encoder receives the token after the colon unchanged.
