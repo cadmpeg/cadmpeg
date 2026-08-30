@@ -141,6 +141,35 @@ fn a_foreign_gui_schema_uses_the_schema_one_vocabulary() {
 }
 
 #[test]
+fn a_noncanonical_gui_schema_one_declaration_is_unverified() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="01"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 1 0 }"/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("noncanonical GUI schema with schema-1 vocabulary");
+
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
+    let documents = namespace
+        .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
+        .expect("GUI documents");
+    assert_eq!(documents[0].schema_version, Some(1));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.code == "source.gui-schema-unverified")
+        .expect("GUI schema warning");
+    assert!(loss.message.contains("declares schema 01"));
+}
+
+#[test]
 fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;

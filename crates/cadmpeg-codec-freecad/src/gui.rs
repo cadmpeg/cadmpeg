@@ -115,59 +115,48 @@ pub(crate) fn transfer(
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
-    let schema_version = declared_schema_version(xml.root_element())?;
-    let GuiSchemaAdmission::Unverified { declaration } = classify_gui_schema(schema_version) else {
-        let (graph, plan) = transfer_schema_one(
-            ir,
-            text,
-            &xml,
-            entries,
-            objects,
-            properties,
-            payloads,
-            element_maps,
-            requires_alpha_conversion,
-        )?;
-        plan.apply(ir);
-        return Ok(graph);
-    };
-
-    match transfer_schema_one(
+    let schema_declaration = crate::container::canonical_attribute(
+        xml.root_element(),
+        "SchemaVersion",
+        "schemaVersion",
+    )?;
+    let admission = classify_gui_schema(schema_declaration.as_deref());
+    let transferred = transfer_schema_one(
         ir,
         text,
         &xml,
+        schema_declaration.as_deref(),
         entries,
         objects,
         properties,
         payloads,
         element_maps,
         requires_alpha_conversion,
-    ) {
-        Ok((mut graph, plan)) => {
+    );
+    match (admission, transferred) {
+        (GuiSchemaAdmission::Schema1, result) => {
+            let (graph, plan) = result?;
+            plan.apply(ir);
+            Ok(graph)
+        }
+        (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
             plan.apply(ir);
             graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
                 "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
             )));
             Ok(graph)
         }
-        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => Ok(Graph {
+        (
+            GuiSchemaAdmission::Unverified { declaration },
+            Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })),
+        ) => Ok(Graph {
             losses: vec![FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
                 "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
             ))],
             ..Graph::default()
         }),
-        Err(error) => Err(error),
+        (GuiSchemaAdmission::Unverified { .. }, Err(error)) => Err(error),
     }
-}
-
-fn declared_schema_version(root: roxmltree::Node<'_, '_>) -> Result<Option<u32>, CodecError> {
-    crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
-        .map(|value| {
-            value.parse::<u32>().map_err(|_| {
-                CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
-            })
-        })
-        .transpose()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -175,6 +164,7 @@ fn transfer_schema_one(
     ir: &CadIr,
     text: &str,
     xml: &roxmltree::Document<'_>,
+    schema_declaration: Option<&str>,
     entries: &BTreeMap<String, View<'_>>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
@@ -183,7 +173,13 @@ fn transfer_schema_one(
     requires_alpha_conversion: bool,
 ) -> Result<(Graph, AppearancePlan), CodecError> {
     let root = xml.root_element();
-    let schema_version = declared_schema_version(root)?;
+    let schema_version = schema_declaration
+        .map(|value| {
+            value.parse::<u32>().map_err(|_| {
+                CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
+            })
+        })
+        .transpose()?;
     let mut plan = AppearancePlan::default();
     let camera_count = root
         .children()
