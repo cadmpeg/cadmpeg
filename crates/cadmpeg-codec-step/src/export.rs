@@ -27,7 +27,6 @@ use cadmpeg_ir::CadIr;
 #[cfg(test)]
 use cadmpeg_ir::{FidelityResolution, WritePath};
 
-use crate::error::StepError;
 use crate::geometry;
 use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
@@ -54,7 +53,7 @@ pub(crate) fn write_step(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
-) -> Result<ExportReport, StepError> {
+) -> std::io::Result<ExportReport> {
     let outcome = write_step_outcome(ir, w, schema, opts)?;
     Ok(ExportReport::native(
         DialectId::pinned(schema.target()),
@@ -81,7 +80,7 @@ pub(crate) fn write_step_outcome(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
-) -> Result<StepWriteOutcome, StepError> {
+) -> std::io::Result<StepWriteOutcome> {
     let mut b = Builder::new(ir, schema);
     b.build();
     let outcome = b.finish_outcome();
