@@ -11,7 +11,8 @@
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
 //! <!-- /generated: capability -->
 //!
-//! Geometry on the standard-nested layout shows as extras.
+//! Recognized storage families transfer typed geometry, topology, design
+//! records, and presentation data when their source relations are complete.
 //!
 //! # Decode a part
 //!

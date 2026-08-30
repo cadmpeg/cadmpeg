@@ -691,11 +691,11 @@ write = "preserved"
 reason = """
 decoded with four-byte form-code padding, but every golden fixture
 declares no swVersion, so the profile's L4 has no fixture-backed row on
-this side of the padding seam. Write is preservation only: the replay path
-(`lib.rs:186-216`) is an unconditional whole-file byte copy of the
+this side of the padding seam. Write is preservation only: `replay_bytes` is
+an unconditional whole-file byte copy of the
 retained source image once the digest matches, so it reproduces any
 swVersion the source carried, and the patch path keeps the retained
-`Contents/SolidWorks` payload (`writer.rs:250-259`). Synthesis emits no
+`Contents/SolidWorks` payload. Synthesis emits no
 swVersion at all, which is why `sldprt:unknown` is the whole catalog.
 `dialect::tests::each_declaration_classifies_into_the_row_its_discriminant_matches`
 covers this row's classification, and

@@ -679,22 +679,22 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 #
 #   container branch -- the real pre-parse dispatch, and the only one that is
 #     read from the leading bytes. `looks_like_sldprt`
-#     (crates/cadmpeg-codec-sldprt/src/container.rs:270-288) takes the CFB
+#     (`crates/cadmpeg-codec-sldprt/src/container.rs`) takes the CFB
 #     branch when the prefix carries the compound-file magic AND a directory
 #     entry whose last component is `ISolidWorksInformation`
-#     (container.rs:278), and the native block-envelope branch when the
+#     entry, and the native block-envelope branch when the
 #     6-byte marker [0x14,0x00,0x06,0x00,0x08,0x00] appears from offset 8
-#     (container.rs:282-287, layout.rs:98). `scan` then hard-sets the version
-#     word to 0 on the CFB branch (container.rs:403) and reads a big-endian
-#     u32 at offset 4 on the native branch (container.rs:334-338).
+#     (`container::MARKER`, `layout::outer_hdr::VERSION`). `scan` then
+#     hard-sets the version word to 0 on the CFB branch and reads a big-endian
+#     u32 at `outer_hdr::VERSION` on the native branch.
 #     That outer version word is NEVER compared to anything: its only uses are
-#     stringification into an `outer_version` attribute (container.rs:802,
-#     decode.rs:3059, decode.rs:3349). It is provenance, not evidence.
+#     stringification into an `outer_version` attribute. It is provenance, not
+#     evidence.
 #
 #   sw_version band -- the identity axis, because it is the only one that
 #     selects a byte layout. It is not read from the container header: it is
 #     the `swVersion` attribute of a `swSolidWorks` XML payload extracted after
-#     the scan (decode.rs:3172-3191) into `SourceMeta.attributes["sw_version"]`
+#     the scan into `SourceMeta.attributes["sw_version"]`
 #     and, verbatim, into the match's `sw_version` declared key.
 #
 # `crates/cadmpeg-codec-sldprt/src/dialect.rs` pins one enum variant per row
@@ -709,9 +709,9 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 # The padding branch is within-dialect adaptation: `form_code_padding` does not
 # select a parse strategy for
 # the document. It supplies a filter that narrows a candidate list of two
-# byte offsets ([8, 4], operations.rs:65-81 and :104-118), and when the
+# byte offsets `[8, 4]`, and when the
 # version is absent the resolver still binds an operation code by requiring
-# the candidates to agree (operations.rs:82-91). That is disambiguation
+# the candidates to agree. That is disambiguation
 # inside a grammar, not selection of one. The identity rows stand regardless.
 #
 # `complete = false`: the SolidWorks release space is not enumerable from any
@@ -720,14 +720,15 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 complete = false
 
 [[dialect]]
-# `form_code_padding` (crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:31-38):
+# `form_code_padding`
+# (crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs):
 # `(version > 0).then_some(if version >= 12_000 { Eight } else { Four })`.
-# The exact comparison is `>= 12_000` at operations.rs:33.
+# The exact comparison is `>= 12_000`.
 id = "sldprt:sw-version-pre-12000"
 title = "SolidWorks part with swVersion below 12000"
 discriminants = { sw_version = "1..11999" }
 seam = "four-byte feature-operation form-code padding, shifting every feature-operation read"
-witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:33"
+witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs"
 
 [[dialect]]
 # Same site, the `Eight` arm. The boundary value 12000 itself belongs to this

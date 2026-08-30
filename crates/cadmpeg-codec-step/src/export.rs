@@ -4265,9 +4265,7 @@ impl<'a> Builder<'a> {
             // schema gate is why they were dropped. A target that supports
             // semantic PMI and still left annotations unwritten dropped them for
             // some other reason, and pointing at another target would misdirect.
-            let avoidable = if self.schema.supports_semantic_pmi() {
-                ""
-            } else {
+            if !self.schema.supports_semantic_pmi() {
                 return self.loss(
                     StepLossCode::PmiAnnotationNotWritten,
                     format!(
@@ -4277,10 +4275,10 @@ impl<'a> Builder<'a> {
                         StepSchema::Ap242Edition3.target()
                     ),
                 );
-            };
+            }
             self.loss(
                 StepLossCode::PmiAnnotationNotWritten,
-                format!("{unwritten_pmi} PMI annotation(s) were not written to STEP{avoidable}"),
+                format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
             );
         }
         // STEP-native source associations identify records already represented
