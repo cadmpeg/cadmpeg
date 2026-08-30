@@ -92,6 +92,14 @@ impl RhinoArchiveVersion {
             Self::V8 => 80,
         }
     }
+
+    const fn uses_extended_brep_layout(self) -> bool {
+        !matches!(self, Self::V5)
+    }
+
+    const fn uses_face_array_v2(self) -> bool {
+        matches!(self, Self::V7 | Self::V8)
+    }
 }
 
 /// Native 3DM encoder.
