@@ -302,13 +302,13 @@ fn a_cross_format_convert_writes_the_catalog_default() {
     assert_eq!(entry.id, "iges:5.3-fixed-ascii");
 }
 
-/// CADIR has no catalog, so it takes `Inherit` either way.
+/// CADIR has no native dialect catalog, so it handles `Inherit` locally.
 #[test]
 fn cadir_takes_inherit() {
     let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .expect("CADIR identity resolves through the empty catalog");
+        .expect("CADIR admits its dialect-free format identity");
     assert_eq!(plan.report().target(), None);
 }
 
@@ -316,8 +316,8 @@ fn cadir_takes_inherit() {
 /// version the file already is.
 ///
 /// The whole chain the command line owns, minus argv parsing: no flag makes
-/// [`export_target`] build a Rhino encoder and an `Unstated` selection, the
-/// selection resolves to `Inherit` because the source is Rhino too, and the
+/// [`export_target`] build a Rhino encoder and a selection with no target
+/// token, the selection resolves to `Inherit`, and the
 /// encoder resolves `Inherit` against the source's dialect. The source is
 /// archive 50 and the catalog default is archive 80, so the assertion cannot
 /// pass by coincidence.
