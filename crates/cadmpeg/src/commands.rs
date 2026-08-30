@@ -147,7 +147,7 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
-    if let Some(line) = crate::registry_view::dialect_line(summary.dialects()) {
+    for line in crate::registry_view::dialect_lines(summary.dialects()) {
         println!("{line}");
     }
     println!();

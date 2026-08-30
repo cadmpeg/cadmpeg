@@ -72,19 +72,25 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
     Ok(())
 }
 
-/// The `dialect:` line `cadmpeg inspect` prints under `format:`.
+/// The `dialect:` lines human-readable commands print.
 ///
 /// Three sources in one sentence: the matched id, the declared read
 /// disposition, and the write targets this build can synthesize. `None` when
 /// the codec reported no dialects at all, which is the honest output for a
 /// codec that does not classify.
-pub fn dialect_line(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) -> Option<String> {
+pub fn dialect_lines(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) -> Vec<String> {
+    let Some(dialects) = dialects else {
+        return Vec::new();
+    };
     let DialectProvenance {
         id,
         read,
         write_targets,
-    } = dialect_provenance(dialects)?;
-    let id = id.map_or_else(|| "<unmatched>".to_owned(), |id| id.as_str().to_owned());
+    } = dialect_provenance(Some(dialects)).expect("dialect layers always have a primary layer");
+    let id = id
+        .expect("classified primary layers always name a dialect")
+        .as_str()
+        .to_owned();
 
     let mut clauses = Vec::new();
     if let Some(read) = read {
@@ -98,11 +104,19 @@ pub fn dialect_line(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) -> 
             .join(", ");
         clauses.push(format!("write targets {targets}"));
     }
-    Some(if clauses.is_empty() {
+    let primary = if clauses.is_empty() {
         format!("dialect: {id}")
     } else {
         format!("dialect: {id} — {}", clauses.join(", "))
-    })
+    };
+    std::iter::once(primary)
+        .chain(
+            dialects
+                .iter()
+                .skip(1)
+                .map(|layer| format!("dialect: {}", layer.dialect())),
+        )
+        .collect()
 }
 
 /// The part of a dialect id after its format prefix.
@@ -127,7 +141,8 @@ mod tests {
             DialectId::pinned("rhino:archive-50"),
             Admission::Admitted,
         ));
-        let line = dialect_line(Some(&dialects)).expect("a primary layer exists");
+        let lines = dialect_lines(Some(&dialects));
+        let line = &lines[0];
         assert!(line.starts_with("dialect: rhino:archive-50 — "), "{line}");
         assert!(line.contains("read "), "{line}");
         assert!(line.contains("write targets archive-50"), "{line}");
@@ -137,6 +152,27 @@ mod tests {
     /// A codec that classified nothing prints no dialect line.
     #[test]
     fn no_dialects_is_no_line() {
-        assert!(dialect_line(None).is_none());
+        assert!(dialect_lines(None).is_empty());
+    }
+
+    #[test]
+    fn every_classified_layer_gets_a_human_line() {
+        use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+
+        let dialects = DialectLayers::new(
+            DialectMatch::new(
+                "sldprt",
+                DialectId::pinned("sldprt:2024"),
+                Admission::Admitted,
+            ),
+            vec![DialectMatch::new(
+                "acis",
+                DialectId::pinned("acis:sat-32"),
+                Admission::Admitted,
+            )],
+        )
+        .expect("formats are unique");
+        assert_eq!(dialect_lines(Some(&dialects)).len(), 2);
+        assert_eq!(dialect_lines(Some(&dialects))[1], "dialect: acis:sat-32");
     }
 }
