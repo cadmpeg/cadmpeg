@@ -56,26 +56,30 @@ fn cli_admission_flags_resolve_to_distinct_modes() {
 
 #[test]
 fn destination_policy_discards_flags_irrelevant_to_the_destination() {
+    let file = DestinationPolicy::new(Some(PathBuf::from("part.step")), true, true);
     assert_eq!(
-        DestinationPolicy::new(Some(PathBuf::from("part.step")), true, true),
+        file,
         DestinationPolicy::File {
             path: PathBuf::from("part.step"),
             overwrite: true,
         }
     );
+    assert_eq!(file.path(), Some(Path::new("part.step")));
+    let stdout = DestinationPolicy::new(None, true, false);
     assert_eq!(
-        DestinationPolicy::new(None, true, false),
+        stdout,
         DestinationPolicy::Stdout {
             allow_binary: false,
         }
     );
+    assert_eq!(stdout.path(), None);
 }
 
 fn prepared(
     ir: CadIr,
     format: Format,
     encoder: Box<dyn Encoder>,
-    reject_export_losses: bool,
+    loss_policy: LossPolicy,
 ) -> PreparedConversion {
     PreparedConversion {
         document: LoadedDocument::neutral(ir),
@@ -84,11 +88,7 @@ fn prepared(
         encoder,
         selection: TargetSelection::new(format, None),
         destination: ResolvedDestination::Stdout,
-        plan_policy: if reject_export_losses {
-            PlanPolicy::RejectLosses
-        } else {
-            PlanPolicy::PermitLosses
-        },
+        loss_policy,
     }
 }
 
@@ -99,7 +99,7 @@ fn encoder_planning_owns_unknown_explicit_target_admission() {
         CadIr::empty(cadmpeg_ir::units::Units::default()),
         Format::Iges,
         Box::new(cadmpeg_codec_iges::IgesEncoder),
-        false,
+        LossPolicy::Allow,
     );
     conversion.selection.request = Some("nonesuch".into());
 
@@ -135,7 +135,7 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         step_ir_with_unrepresentable_native_content(),
         Format::Step,
         Box::new(cadmpeg_codec_step::StepCodec::default()),
-        true,
+        LossPolicy::RejectExport,
     );
     let Err(error) = conversion.plan() else {
         panic!("the plan loss must refuse");
@@ -174,7 +174,7 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
         step_ir_with_unrepresentable_native_content(),
         Format::Step,
         Box::new(cadmpeg_codec_step::StepCodec::default()),
-        false,
+        LossPolicy::Allow,
     );
     let planned = conversion.plan().expect("loss reporting is not refusal");
     assert!(
@@ -219,7 +219,7 @@ fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
         CadIr::empty(cadmpeg_ir::units::Units::default()),
         Format::Cadir,
         Box::new(NotImplementedEncoder),
-        true,
+        LossPolicy::RejectExport,
     );
     let Err(error) = conversion.plan() else {
         panic!("the synthetic writer is not implemented");

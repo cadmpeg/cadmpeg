@@ -69,7 +69,7 @@ pub struct ConversionArgs {
     /// Application conversion policy.
     pub policy: ConversionPolicy,
     /// Replace an existing command report.
-    pub force: bool,
+    pub report_overwrite: bool,
     /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
     /// Explicit input format selected by the user.
@@ -340,29 +340,17 @@ pub fn convert(
     catalogs: &AppCatalogs,
     path: &Path,
     to: Option<&str>,
-    out: Option<&Path>,
     conversion: &ConversionArgs,
     args: &DecodeArgs,
 ) -> Result<()> {
-    execute_conversion(catalogs, path, to, out, conversion, args)
-}
-
-fn execute_conversion(
-    catalogs: &AppCatalogs,
-    path: &Path,
-    to: Option<&str>,
-    out: Option<&Path>,
-    conversion: &ConversionArgs,
-    args: &DecodeArgs,
-) -> Result<()> {
-    let selection = match TargetSelection::resolve(to, out) {
+    let selection = match TargetSelection::resolve(to, conversion.policy.destination.path()) {
         Ok(selection) => selection,
         Err(error) => {
             if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
                 write_command_report(
                     path,
                     conversion.report.as_deref(),
-                    conversion.force,
+                    conversion.report_overwrite,
                     "convert",
                     refusal_report_body(refusal),
                 )?;
@@ -397,7 +385,7 @@ fn execute_conversion(
             write_command_report(
                 path,
                 conversion.report.as_deref(),
-                conversion.force,
+                conversion.report_overwrite,
                 "convert",
                 refusal_report_body(refusal),
             )?;
@@ -439,7 +427,7 @@ fn execute_conversion(
     write_command_report(
         path,
         conversion.report.as_deref(),
-        conversion.force,
+        conversion.report_overwrite,
         "convert",
         CommandReportBody {
             decode_report: decode_report.as_ref(),

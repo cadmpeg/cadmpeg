@@ -226,15 +226,21 @@ pub enum DestinationPolicy {
 impl DestinationPolicy {
     /// Resolves CLI destination flags into a destination-specific policy.
     #[must_use]
-    pub fn new(destination: Option<PathBuf>, force: bool, binary_stdout: bool) -> Self {
+    pub fn new(destination: Option<PathBuf>, overwrite: bool, binary_stdout: bool) -> Self {
         match destination {
-            Some(path) => Self::File {
-                path,
-                overwrite: force,
-            },
+            Some(path) => Self::File { path, overwrite },
             None => Self::Stdout {
                 allow_binary: binary_stdout,
             },
+        }
+    }
+
+    /// Returns the output path used for format inference, if any.
+    #[must_use]
+    pub(crate) fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Stdout { .. } => None,
+            Self::File { path, .. } => Some(path),
         }
     }
 
@@ -271,26 +277,6 @@ pub struct ConversionPolicy {
     pub destination: DestinationPolicy,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum PlanPolicy {
-    PermitLosses,
-    RejectLosses,
-}
-
-impl PlanPolicy {
-    const fn from_loss_policy(policy: LossPolicy) -> Self {
-        if policy.rejects_export() {
-            Self::RejectLosses
-        } else {
-            Self::PermitLosses
-        }
-    }
-
-    const fn rejects_losses(self) -> bool {
-        matches!(self, Self::RejectLosses)
-    }
-}
-
 #[derive(Debug, Clone)]
 enum ResolvedDestination {
     Stdout,
@@ -317,7 +303,7 @@ pub struct PreparedConversion {
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
     destination: ResolvedDestination,
-    plan_policy: PlanPolicy,
+    loss_policy: LossPolicy,
 }
 
 /// Application workflow that prepares and writes conversions.
@@ -406,7 +392,7 @@ impl<'a> Transcoder<'a> {
             encoder: target.encoder,
             selection: target.selection,
             destination,
-            plan_policy: PlanPolicy::from_loss_policy(policy.losses),
+            loss_policy: policy.losses,
         })
     }
 }
@@ -436,7 +422,7 @@ impl PreparedConversion {
                 ))
             }
         };
-        if self.plan_policy.rejects_losses() && !plan.report().losses.is_empty() {
+        if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
                 message: format!(
                     "export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)",
