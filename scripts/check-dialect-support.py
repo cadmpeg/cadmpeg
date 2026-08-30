@@ -13,6 +13,8 @@ The rules, all cross-referencing:
 
 * every ``[[support]]`` row names a dialect the identity registry declares;
 * every identity row has exactly one support row (totality, both ways);
+* each reachable residual identity has the read disposition declared by its
+  ``unknown_kind``;
 * **fixture gating** -- a row may not claim a read score (``L0``..``L9``)
   with no golden snapshot domain. ``detected`` is the honest cell for an unwitnessed
   dialect, and the resulting unevenness is the output, not a defect;
@@ -68,6 +70,13 @@ READ_VALUES = READ_SCORES | READ_OTHER
 WRITE_VALUES = frozenset({"verified", "emitted", "preserved", "none"})
 EVIDENCE_GAP = re.compile(r"evidence gap `([a-z0-9]+(?:-[a-z0-9]+)*)`")
 REGISTRY_ID = re.compile(r"`([a-z0-9]+:[a-z0-9.-]+)`")
+
+# Residual identities state whether classification recovers or refuses the
+# unmatched input. Their capability row must state the same disposition.
+RESIDUAL_READS = {
+    "recovered-residual": "unclassified-recovered",
+    "refused-residual": "refused",
+}
 
 
 def _is_table(value: object) -> bool:
@@ -165,6 +174,25 @@ def check_totality(known: set[str], covered: Counter[str], failures: list[str]) 
     for dialect_id, count in sorted(covered.items()):
         if count > 1:
             failures.append(f"{dialect_id}: {count} support rows; expected one")
+
+
+def check_residual_dispositions(
+    identity: dict, reads: dict[str, object], failures: list[str]
+) -> None:
+    """Require each reachable residual identity to match its read disposition."""
+    for row in identity.get("dialect", []):
+        if not _is_table(row):
+            continue
+        dialect_id = row.get("id")
+        expected = RESIDUAL_READS.get(row.get("unknown_kind"))
+        if not isinstance(dialect_id, str) or expected is None or dialect_id not in reads:
+            continue
+        actual = reads[dialect_id]
+        if actual != expected:
+            failures.append(
+                f"{dialect_id}: unknown_kind {row['unknown_kind']} requires "
+                f"read {expected}, got {actual}"
+            )
 
 
 def check_formats(value: object, known: set[str], failures: list[str]) -> dict[str, tuple[int, list[str]]]:
@@ -425,6 +453,7 @@ def check(root: Path) -> tuple[list[str], str]:
             tally[read] += 1
 
     check_totality(known, covered, failures)
+    check_residual_dispositions(identity, reads, failures)
     check_declared_levels(formats, reads, evaluations, failures)
     scored = sum(n for value, n in tally.items() if value in READ_SCORES)
     fixture_total = sum(len(paths) for paths in domains.values())
