@@ -1,4 +1,4 @@
-# generated at 0cb4ec82a
+# generated at f15fd3155
 pub mod cadmpeg_container
 pub mod cadmpeg_container::compound
 pub enum cadmpeg_container::compound::CompoundAllocation
@@ -64,6 +64,8 @@ pub fn cadmpeg_container::compression::inflate_deflate<'a>(&cadmpeg_core::decode
 pub fn cadmpeg_container::compression::inflate_zlib_exact<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::decode::view::View<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::compression::inflate_zlib_member<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>, cadmpeg_core::decode::context::ExpandSpec) -> core::result::Result<(cadmpeg_core::decode::view::View<'a>, usize), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::compression::inflate_zlib_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
+pub mod cadmpeg_container::parasolid
+pub fn cadmpeg_container::parasolid::classify_layer(&str, &str, bool) -> cadmpeg_core::dialect::DialectMatch
 pub enum cadmpeg_container::EntryCompression
 pub cadmpeg_container::EntryCompression::Deflate
 pub cadmpeg_container::EntryCompression::Stored

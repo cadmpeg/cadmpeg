@@ -17,6 +17,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
 
 [[change]]
+commit = "f15fd31550d6dbb72c8c2df398a8319d8949e5ac"
+crate = "cadmpeg-container"
+kind = "addition"
+item = "cadmpeg_container::parasolid::classify_layer"
+reason = "NX and SLDPRT share one owner for the identical embedded Parasolid schema classification and layer construction law"
+
+[[change]]
 commit = "dba146f22442ab245a1100defbfd22b1cb98e40a"
 crate = "cadmpeg-core"
 kind = "variant"

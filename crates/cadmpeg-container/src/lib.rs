@@ -4,5 +4,6 @@
 mod archive;
 pub mod compound;
 pub mod compression;
+pub mod parasolid;
 
 pub use archive::{ArchiveSnapshot, EntryCompression, EntryRecord, PhysicalSpan};
