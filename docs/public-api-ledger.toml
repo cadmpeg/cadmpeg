@@ -1101,6 +1101,13 @@ item = "cadmpeg_registry::DialectRow::{read,write}"
 reason = "both fields change from Option to their disposition types because registry loading now makes the identity/support join total"
 
 [[change]]
+commit = "82ff824c438f37478c64ec4b7e15e378cf43f61a"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::DialectRow"
+reason = "DialectEntry is the joined identity, support, and compiled-target row; a second public row type copied the same concept for dialect_table"
+
+[[change]]
 commit = "74d66189d0208f1476789511ffe616d426bf007d"
 crate = "cadmpeg-core"
 kind = "addition"
