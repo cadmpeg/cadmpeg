@@ -482,9 +482,10 @@ pub struct SourceMeta {
     /// intermediate.
     ///
     /// `None` on a synthetic document that no decode produced and on an
-    /// unclassified decode. A match can carry no registry dialect id while it
-    /// retains declarations and admission. `DecodeResult` guarantees the exact
-    /// report mirror after construction and report edits.
+    /// unclassified decode. A match contains the classified dialect id, source
+    /// declarations, admission, and optional instance discriminator.
+    /// [`crate::codec::DecodeResult::new`] copies the report's primary match
+    /// into this field when it constructs a decode result.
     ///
     /// Always serialized, as `null` when absent. Documents written before the
     /// field existed omit the key and read back `None`.
