@@ -16,7 +16,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
-use cadmpeg_ir::{Native, NativeRecord};
+use cadmpeg_ir::{LossNote, Native, NativeRecord};
 
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
@@ -96,10 +96,16 @@ pub(crate) fn inspect(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let layers = classify_archive_layers(ctx, scan)?;
-    let summary = crate::container::summarize(scan, &[]);
+    let classified = classify_archive_layers(ctx, scan)?;
+    let mut summary = crate::container::summarize(scan, &[]);
+    summary.notes.extend(
+        classified
+            .losses
+            .iter()
+            .map(|loss| format!("dialect classification loss: {}", loss.message)),
+    );
     Ok(ContainerSummary::classified(
-        layers,
+        classified.layers,
         summary.container_kind,
         summary.entries,
         summary.notes,
@@ -123,7 +129,8 @@ pub fn decode(
     })?;
     let (mut ir, mut report, mut fidelity) =
         crate::decode::decode_member(ctx, root_view)?.into_parts();
-    let outer_layers = classify_archive_layers(ctx, scan)?;
+    let outer = classify_archive_layers(ctx, scan)?;
+    report.losses.extend(outer.losses);
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -146,7 +153,7 @@ pub fn decode(
     if ctx.container_only() {
         return Ok(finalize_result(
             ir,
-            classify_outer_report(report, outer_layers),
+            classify_outer_report(report, outer.layers),
             fidelity,
         ));
     }
@@ -177,7 +184,7 @@ pub fn decode(
     make_sibling_ordinals_unique(&mut ir.model.occurrences);
     Ok(finalize_result(
         ir,
-        classify_outer_report(report, outer_layers),
+        classify_outer_report(report, outer.layers),
         fidelity,
     ))
 }
@@ -214,11 +221,17 @@ fn finalize_result(
 }
 
 /// Classify every F3D document member and attach its layers to its archive path.
+struct ArchiveClassification {
+    layers: DialectLayers,
+    losses: Vec<LossNote>,
+}
+
 fn classify_archive_layers(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-) -> Result<DialectLayers, CodecError> {
+) -> Result<ArchiveClassification, CodecError> {
     let mut layers = DialectLayers::of(scan.dialect.clone());
+    let mut losses = Vec::new();
     for member_path in scan
         .entries
         .iter()
@@ -234,30 +247,51 @@ fn classify_archive_layers(
         let kernel_layers = crate::dialect::kernel_layers(&member_scan);
         let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers.matches)
             .expect("an F3D member's kernel layers have unique identities");
-        merge_member_layers(&mut layers, &member_layers, member_path);
+        losses.extend(merge_member_layers(
+            &mut layers,
+            &member_layers,
+            member_path,
+        ));
     }
-    Ok(layers)
+    Ok(ArchiveClassification { layers, losses })
 }
 
 /// Attach one archive member's identity and nested layers to its archive path.
-fn merge_member_layers(target: &mut DialectLayers, member: &DialectLayers, member_path: &str) {
+fn merge_member_layers(
+    target: &mut DialectLayers,
+    member: &DialectLayers,
+    member_path: &str,
+) -> Vec<LossNote> {
     let primary = target.primary().clone();
     let mut extra = target.iter().skip(1).cloned().collect::<Vec<_>>();
+    let mut losses = Vec::new();
     for matched in member.iter().cloned() {
         let instance = matched.instance().map_or_else(
             || member_path.to_owned(),
             |nested| format!("{member_path}/{nested}"),
         );
-        let matched = matched.with_instance(instance);
-        if !extra.iter().any(|existing| {
+        let mut declared = matched.declared().clone();
+        declared.insert(
+            crate::dialect::DECLARED_ARCHIVE_MEMBER.to_owned(),
+            member_path.to_owned(),
+        );
+        let matched = matched.with_declared(declared).with_instance(instance);
+        if extra.iter().any(|existing| {
             existing.format() == matched.format() && existing.instance() == matched.instance()
         }) {
+            losses.push(F3dLossCode::DialectLayerCollision.note(format!(
+                "archive member {member_path} produced a duplicate {} dialect layer at instance {}; the later layer was omitted",
+                matched.format(),
+                matched.instance().expect("attached member layers have instances")
+            )));
+        } else {
             extra.push(matched);
         }
     }
     let merged = DialectLayers::new(primary, extra)
         .expect("archive member layers have unique format and archive-path instances");
     *target = merged;
+    losses
 }
 
 fn model_root_member(
@@ -418,6 +452,11 @@ fn merge_references(
         let child_table = xref_table_from_ir(component.ir())?;
         let (mut component_ir, mut component_report, mut component_fidelity) =
             component.into_parts();
+        label_xref_kernel_losses(
+            &mut component_report.losses,
+            &label,
+            &reference.relative_path,
+        );
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(
             ctx,
@@ -460,6 +499,17 @@ fn merge_references(
         ));
     }
     Ok(merged)
+}
+
+/// Add an XREF presentation label only where the design graph proved that the
+/// decoded document is an external reference.
+fn label_xref_kernel_losses(losses: &mut [LossNote], label: &str, member_path: &str) {
+    for loss in losses
+        .iter_mut()
+        .filter(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind())
+    {
+        loss.message = format!("xref {label} (member {member_path}): {}", loss.message);
+    }
 }
 
 /// Places one component's feature history after every feature already merged.

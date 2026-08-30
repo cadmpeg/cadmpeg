@@ -80,6 +80,15 @@ pub(crate) const DECLARED_TOP_LEVEL_MANIFEST_VERSION: &str = "top_level_manifest
 /// authored, and each is recorded verbatim as the archive spells it.
 pub(crate) const DECLARED_ROOT_DOCUMENT_MEMBERS: &str = "root_document_members";
 
+/// Key of the containing F3Z member path in an attached member layer.
+///
+/// Absent for a standalone F3D document. Unlike [`DialectMatch::instance`],
+/// this is presentation provenance rather than a uniqueness key.
+pub(crate) const DECLARED_ARCHIVE_MEMBER: &str = "archive_member";
+
+/// Key of the embedded B-rep carrier path within one F3D document.
+pub(crate) const DECLARED_KERNEL_CARRIER: &str = "carrier";
+
 /// Separator between root-level member names in
 /// [`DECLARED_ROOT_DOCUMENT_MEMBERS`].
 const MEMBER_SEPARATOR: &str = ",";
@@ -271,7 +280,7 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
     });
     for matched in &mut matches {
         if format_counts[matched.format()] > 1 && matched.instance().is_none() {
-            let carrier = matched.declared()["carrier"].clone();
+            let carrier = matched.declared()[DECLARED_KERNEL_CARRIER].clone();
             *matched = matched.clone().with_instance(carrier);
         }
     }
@@ -280,7 +289,7 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
 
 fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
     let mut declared = matched.declared().clone();
-    declared.insert("carrier".to_owned(), carrier.to_owned());
+    declared.insert(DECLARED_KERNEL_CARRIER.to_owned(), carrier.to_owned());
     matched.with_declared(declared)
 }
 
@@ -291,7 +300,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     };
     let carrier = matched
         .declared()
-        .get("carrier")
+        .get(DECLARED_KERNEL_CARRIER)
         .map_or("an unnamed carrier", String::as_str);
     let declared = matched.declared().get("save_format_major").map_or_else(
         || "no save format".to_owned(),
@@ -302,12 +311,13 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         &declared,
         &using,
     );
-    Some(
-        F3dLossCode::KernelDialectUnverified.note(matched.instance().map_or_else(
-            || message.clone(),
-            |instance| format!("xref {instance}: {message}"),
-        )),
-    )
+    let message = matched
+        .declared()
+        .get(DECLARED_ARCHIVE_MEMBER)
+        .map_or(message.clone(), |member| {
+            format!("archive member {member}: {message}")
+        });
+    Some(F3dLossCode::KernelDialectUnverified.note(message))
 }
 
 /// Dialect-derived losses implied by a report's final classified layers.
