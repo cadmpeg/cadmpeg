@@ -1,9 +1,5 @@
-# generated at d219d8e36
+# generated at 8af412ba9
 pub mod cadmpeg_codec_step
-pub enum cadmpeg_codec_step::StepError
-pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
-impl core::convert::From<cadmpeg_codec_step::StepError> for cadmpeg_core::error::CodecError
-pub fn cadmpeg_core::error::CodecError::from(cadmpeg_codec_step::StepError) -> Self
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
 pub cadmpeg_codec_step::StepSchema::Ap203Edition2

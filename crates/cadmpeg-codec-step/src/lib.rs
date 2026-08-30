@@ -30,14 +30,13 @@
 //! and surfaces map to their corresponding STEP carriers. Rational and
 //! non-rational NURBS use the `*_WITH_KNOTS` entities.
 //!
-//! [`StepError`] reports [`StepError::Io`] for output-sink failures. Because the writer streams the
-//! header and DATA section after acceptance, an I/O failure can leave partial
-//! output.
+//! Output-sink failures return [`std::io::Error`]. Because the writer streams
+//! the header and DATA section after acceptance, an I/O failure can leave
+//! partial output.
 
 mod archive;
 mod codec;
 mod dialect;
-mod error;
 mod export;
 mod geometry;
 mod ids;
@@ -56,7 +55,6 @@ mod writer;
 pub mod fuzz;
 
 pub use codec::StepCodec;
-pub use error::StepError;
 #[cfg(test)]
 pub(crate) use export::write_step;
 pub use options::{StepSchema, StepWriteOptions};
