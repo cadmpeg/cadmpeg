@@ -377,8 +377,8 @@ fn catalog_of(format: &str) -> Option<&'static [TargetDescriptor]> {
 /// rendered belongs to the caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectProvenance {
-    /// The matched id, or `None` when the layer matched no declared dialect.
-    pub id: Option<DialectId>,
+    /// The matched id.
+    pub id: DialectId,
     /// The declared read disposition for that id, when the registry has one.
     pub read: Option<ReadDisposition>,
     /// The target ids this build can synthesize for the format, in catalog
@@ -395,7 +395,7 @@ pub struct DialectProvenance {
 pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectProvenance> {
     let entry = dialects?.primary();
     Some(DialectProvenance {
-        id: Some(entry.dialect().clone()),
+        id: entry.dialect().clone(),
         read: support(entry.dialect()).map(|disposition| disposition.read),
         write_targets: catalog_of(entry.format())
             .unwrap_or(&[])
@@ -803,10 +803,7 @@ mod tests {
             Admission::Admitted,
         ));
         let provenance = dialect_provenance(Some(&dialects)).expect("a primary layer exists");
-        assert_eq!(
-            provenance.id.as_ref().map(DialectId::as_str),
-            Some("rhino:archive-50")
-        );
+        assert_eq!(provenance.id.as_str(), "rhino:archive-50");
         assert!(provenance.read.is_some());
         assert!(provenance.write_targets.contains(&"rhino:archive-50"));
         assert!(provenance.write_targets.contains(&"rhino:archive-80"));
