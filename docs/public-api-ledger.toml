@@ -1687,3 +1687,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::WriteRequest::dialect_id"
 reason = "every native resolved request carries a dialect after removal of the format-identity variant, so the projection is total instead of optional"
+
+[[change]]
+commit = "e2383e84a5b7237c55f5109d75d332ea57447caa"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::codec::same_format_source_dialect"
+reason = "source classification is private resolution state, and one three-state classification now distinguishes other-format, unrecorded, and recorded identities for the whole resolve operation"

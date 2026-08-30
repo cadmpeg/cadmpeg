@@ -489,6 +489,38 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
 }
 
 #[test]
+fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
+    let ir = catalog_write_ir(Some(("test", None)));
+    let error = resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS)
+        .unwrap_err();
+
+    let CodecError::UnsupportedTarget { requested, .. } = error else {
+        panic!("an unrecorded same-format source must produce a target refusal")
+    };
+    assert_eq!(requested, None);
+}
+
+#[test]
+fn write_request_explicit_over_an_unrecorded_source_has_no_recorded_relation() {
+    let ir = catalog_write_ir(Some(("test", None)));
+    let resolved = resolve_write_request(
+        &ir,
+        TargetRequest::Explicit("test:old"),
+        "test",
+        CATALOG_WRITE_TARGETS,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        resolved,
+        WriteRequest::Catalog {
+            entry,
+            source: SourceRelation::None,
+        } if entry.id == "test:old"
+    ));
+}
+
+#[test]
 fn write_request_inherit_preserves_a_same_format_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
     let resolved =

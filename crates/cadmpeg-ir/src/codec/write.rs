@@ -149,7 +149,8 @@ pub enum SourceRelation {
     Displaced(cadmpeg_core::dialect::DialectId),
 }
 
-/// A native write request resolved against the encoder catalog and source identity.
+/// A native write request resolved against the encoder catalog and source
+/// identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WriteRequest<'a> {
     /// The request names a catalog row.
@@ -177,16 +178,25 @@ impl WriteRequest<'_> {
     }
 }
 
-/// The source dialect when the document belongs to `format` and records one.
-#[must_use]
-pub fn same_format_source_dialect<'a>(
-    ir: &'a CadIr,
-    format: &str,
-) -> Option<&'a cadmpeg_core::dialect::DialectMatch> {
-    ir.source
+#[derive(Clone, Copy)]
+enum SourceIdentity<'a> {
+    Other,
+    Unrecorded,
+    Recorded(&'a cadmpeg_core::dialect::DialectId),
+}
+
+fn source_identity<'a>(ir: &'a CadIr, format: &str) -> SourceIdentity<'a> {
+    let Some(source) = ir
+        .source
         .as_ref()
         .filter(|source| source.format() == format)
-        .and_then(|source| source.dialect())
+    else {
+        return SourceIdentity::Other;
+    };
+    match source.dialect() {
+        Some(matched) => SourceIdentity::Recorded(matched.dialect()),
+        None => SourceIdentity::Unrecorded,
+    }
 }
 
 /// Resolve a native target and inheritance once, before codec-specific delivery.
@@ -200,6 +210,7 @@ pub fn resolve_write_request<'a>(
     format: &str,
     targets: &'static [TargetDescriptor],
 ) -> Result<WriteRequest<'a>, CodecError> {
+    let source = source_identity(ir, format);
     let entry = match request {
         TargetRequest::Explicit(id) => find_target(targets, id).ok_or_else(|| {
             unsupported_target(
@@ -209,38 +220,32 @@ pub fn resolve_write_request<'a>(
                 targets,
             )
         })?,
-        TargetRequest::Inherit => {
-            match ir
-                .source
-                .as_ref()
-                .filter(|source| source.format() == format)
-            {
-                None => default_target(targets).ok_or_else(|| {
-                    refusal(
-                        format,
-                        None,
-                        "there is nothing to inherit and this encoder has no synthesis catalog",
-                        targets,
-                    )
-                })?,
-                Some(_) => {
-                    let dialect = same_format_source_dialect(ir, format)
-                        .map(cadmpeg_core::dialect::DialectMatch::dialect)
-                        .ok_or_else(|| unrecorded_source_dialect(format, targets))?;
-                    let Some(entry) = find_target(targets, dialect.as_str()) else {
-                        return Ok(WriteRequest::OffCatalog { dialect });
-                    };
-                    entry
-                }
+        TargetRequest::Inherit => match source {
+            SourceIdentity::Other => default_target(targets).ok_or_else(|| {
+                refusal(
+                    format,
+                    None,
+                    "there is nothing to inherit and this encoder has no synthesis catalog",
+                    targets,
+                )
+            })?,
+            SourceIdentity::Unrecorded => {
+                return Err(unrecorded_source_dialect(format, targets));
             }
-        }
+            SourceIdentity::Recorded(dialect) => {
+                let Some(entry) = find_target(targets, dialect.as_str()) else {
+                    return Ok(WriteRequest::OffCatalog { dialect });
+                };
+                entry
+            }
+        },
     };
-    let source = match same_format_source_dialect(ir, format)
-        .map(cadmpeg_core::dialect::DialectMatch::dialect)
-    {
-        Some(dialect) if dialect.as_str() == entry.id => SourceRelation::Preserve,
-        Some(dialect) => SourceRelation::Displaced(dialect.clone()),
-        None => SourceRelation::None,
+    let source = match source {
+        SourceIdentity::Recorded(dialect) if dialect.as_str() == entry.id => {
+            SourceRelation::Preserve
+        }
+        SourceIdentity::Recorded(dialect) => SourceRelation::Displaced(dialect.clone()),
+        SourceIdentity::Other | SourceIdentity::Unrecorded => SourceRelation::None,
     };
     Ok(WriteRequest::Catalog { entry, source })
 }

@@ -1,4 +1,4 @@
-# generated at 0728af1d5
+# generated at e2383e84a
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -240,7 +240,6 @@ pub fn cadmpeg_ir::codec::assert_valid_target_catalog(&[cadmpeg_ir::codec::Targe
 pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::resolve_write_request<'a>(&'a cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::WriteRequest<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::same_format_source_dialect<'a>(&'a cadmpeg_ir::document::CadIr, &str) -> core::option::Option<&'a cadmpeg_core::dialect::DialectMatch>
 pub fn cadmpeg_ir::codec::source_dialect_displaced_message(&cadmpeg_core::dialect::DialectId, &cadmpeg_core::dialect::DialectId) -> alloc::string::String
 pub fn cadmpeg_ir::codec::unsupported_target(&str, &str, &str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
 pub mod cadmpeg_ir::compare
