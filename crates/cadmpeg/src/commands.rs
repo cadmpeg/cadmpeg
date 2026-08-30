@@ -220,7 +220,7 @@ pub fn dump(
                 CommandReportBody {
                     decode_report: None,
                     check_report: None,
-                    export: None,
+                    export: refusal.export_report(),
                     refusal: Some(refusal),
                 },
             )?;

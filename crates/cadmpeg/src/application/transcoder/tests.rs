@@ -79,6 +79,17 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         "{}",
         refusal.message()
     );
+    let report = refusal
+        .export_report()
+        .expect("the refusal retains the completed export plan report");
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("source-native record(s)")),
+        "{:?}",
+        report.losses
+    );
 }
 
 /// Without export-loss rejection the same STEP plan succeeds and retains
