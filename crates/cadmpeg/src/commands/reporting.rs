@@ -255,11 +255,8 @@ pub(super) fn print_decode_report(
         report.geometry_transferred,
         report.container_only
     )?;
-    if let Some(dialects) = report.dialects() {
-        writeln!(writer, "dialects:")?;
-        for dialect in dialects.iter() {
-            writeln!(writer, "  {}: {}", dialect.format(), dialect.dialect())?;
-        }
+    for line in crate::registry_view::dialect_lines(report.dialects()) {
+        writeln!(writer, "{line}")?;
     }
     if !report.losses.is_empty() {
         writeln!(writer, "losses:")?;
