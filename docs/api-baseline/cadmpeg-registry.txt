@@ -1,4 +1,4 @@
-# generated at 85909f988
+# generated at ffc972f4f
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -56,6 +56,7 @@ pub cadmpeg_registry::ResolvedSource::Unrecognized
 pub enum cadmpeg_registry::UnknownDialectKind
 pub cadmpeg_registry::UnknownDialectKind::DetectUnreachable
 pub cadmpeg_registry::UnknownDialectKind::RecoveredResidual
+pub cadmpeg_registry::UnknownDialectKind::RefusedResidual
 pub enum cadmpeg_registry::WriteDisposition
 pub cadmpeg_registry::WriteDisposition::Emitted
 pub cadmpeg_registry::WriteDisposition::None

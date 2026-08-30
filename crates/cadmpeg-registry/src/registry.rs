@@ -22,6 +22,8 @@ pub enum UnknownDialectKind {
     DetectUnreachable,
     /// Classification read the evidence and no declared dialect row matched it.
     RecoveredResidual,
+    /// Classification read the evidence, matched no declared row, and refused it.
+    RefusedResidual,
 }
 
 /// One dialect, as the two registries jointly describe it.
@@ -232,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_rows_report_whether_detection_or_recovery_owns_the_residual() {
+    fn unknown_rows_report_detection_recovery_or_refusal() {
         let registries = Registries::load().expect("the embedded registries parse");
         let kinds = registries
             .rows_all()
@@ -246,6 +248,10 @@ mod tests {
         assert_eq!(
             kinds.get("rhino:unknown"),
             Some(&UnknownDialectKind::RecoveredResidual)
+        );
+        assert_eq!(
+            kinds.get("acis:unknown"),
+            Some(&UnknownDialectKind::RefusedResidual)
         );
         assert_eq!(
             kinds.len(),
