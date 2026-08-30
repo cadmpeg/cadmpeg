@@ -5,13 +5,11 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
-use cadmpeg_ir::codec::{
-    find_target, unsupported_target, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest,
-};
+use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 
-use cadmpeg_registry::{build_encoder, dialect_table, ForcedInput, Format, InputCatalog};
+use cadmpeg_registry::{dialect_table, ForcedInput, Format, InputCatalog};
 
 use crate::application::refusal::classify_decode_failure;
 use crate::application::validators::validate_ir;
@@ -59,11 +57,11 @@ impl TargetSelection {
         Self { format, request }
     }
 
-    /// Resolves the `--to` grammar against the output path and validates an
-    /// explicit dialect against the selected encoder catalog.
+    /// Resolves the `--to` grammar against the output path. The selected
+    /// encoder admits an explicit dialect during export planning.
     pub fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
         let inferred = format_from_path(out);
-        let selection = match to {
+        Ok(match to {
             None => Self::new(
                 inferred.ok_or_else(|| {
                     anyhow!("cannot infer format from the output path; pass --to FORMAT")
@@ -71,9 +69,7 @@ impl TargetSelection {
                 None,
             ),
             Some(value) => Self::resolve_value(value, inferred)?,
-        };
-        selection.validate_explicit()?;
-        Ok(selection)
+        })
     }
 
     fn resolve_value(value: &str, inferred: Option<Format>) -> Result<Self> {
@@ -112,23 +108,6 @@ impl TargetSelection {
             )
         })?;
         Ok(Self::new(format, Some(value.to_owned())))
-    }
-
-    fn validate_explicit(&self) -> Result<()> {
-        let Some(requested) = self.request.as_deref() else {
-            return Ok(());
-        };
-        let encoder = build_encoder(self.format);
-        if find_target(encoder.targets(), requested).is_some() {
-            return Ok(());
-        }
-        let error = unsupported_target(
-            encoder.id(),
-            requested,
-            "not a target this encoder can synthesize",
-            encoder.targets(),
-        );
-        Err(plan_refusal(error, None, None))
     }
 
     /// Builds the encoder request.

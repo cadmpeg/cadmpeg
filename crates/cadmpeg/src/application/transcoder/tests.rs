@@ -19,6 +19,26 @@ fn prepared(
     }
 }
 
+#[cfg(feature = "iges")]
+#[test]
+fn encoder_planning_owns_unknown_explicit_target_admission() {
+    let mut conversion = prepared(
+        CadIr::empty(cadmpeg_ir::units::Units::default()),
+        Format::Iges,
+        Box::new(cadmpeg_codec_iges::IgesEncoder),
+        false,
+    );
+    conversion.selection.request = Some("nonesuch".into());
+
+    let Err(error) = conversion.plan() else {
+        panic!("the encoder must reject an unknown target");
+    };
+    assert!(matches!(
+        error.downcast_ref::<ConversionRefusal>(),
+        Some(ConversionRefusal::UnsupportedTarget { .. })
+    ));
+}
+
 #[cfg(feature = "step")]
 fn step_ir_with_unrepresentable_native_content() -> CadIr {
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
