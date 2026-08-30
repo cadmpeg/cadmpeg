@@ -356,14 +356,19 @@ class TestSupersedes(RegistryCase):
 
 
 class TestExtensionPoints(unittest.TestCase):
-    def emitted_id_failures(self, row: str, source: str = ""):
+    def emitted_id_failures(
+        self,
+        row: str,
+        source: str = "",
+        source_rel: str = "crates/demo/src/dialect.rs",
+    ):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
             (root / "docs" / "dialects.toml").write_text(
                 _registry(row), encoding="utf-8"
             )
-            source_path = root / "crates" / "demo" / "src" / "dialect.rs"
+            source_path = root / source_rel
             source_path.parent.mkdir(parents=True)
             source_path.write_text(source, encoding="utf-8")
             return checker.check_codec_emitted_ids(root)
@@ -375,6 +380,16 @@ class TestExtensionPoints(unittest.TestCase):
         self.assertEqual(
             self.emitted_id_failures(GOOD_ROW.replace("demo:one", "demo:fabricated")),
             ["demo:fabricated: no string literal under crates/*/src"],
+        )
+
+    def test_id_present_only_in_generated_dialect_module_fails(self):
+        self.assertEqual(
+            self.emitted_id_failures(
+                GOOD_ROW,
+                'const ID: &str = "demo:one";',
+                "crates/demo/src/dialect/generated.rs",
+            ),
+            ["demo:one: no string literal under crates/*/src"],
         )
 
     def test_id_present_only_in_line_comment_fails(self):
