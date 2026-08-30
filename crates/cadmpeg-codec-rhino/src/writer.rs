@@ -11,6 +11,7 @@ use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
+use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
@@ -82,7 +83,11 @@ const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
-pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
+pub(crate) fn write(
+    ir: &CadIr,
+    version: RhinoArchiveVersion,
+    output: &mut dyn Write,
+) -> Result<(), CodecError> {
     let mut staged = tempfile::tempfile()?;
     write_seekable(ir, version, &mut staged)?;
     staged.seek(SeekFrom::Start(0))?;
@@ -92,9 +97,10 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
 
 pub(crate) fn write_seekable(
     ir: &CadIr,
-    version: u64,
+    version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
+    let version = version.value();
     let mut plan = prepare_write(ir, version)?;
     write_archive_prefix(ir, version, output)?;
     let table_start = output.stream_position()?;

@@ -187,7 +187,7 @@ impl Encoder for RhinoEncoder {
         };
         let version = dialect::target_version(entry);
         let mut bytes = Vec::new();
-        writer::write(input.ir, version.value(), &mut bytes)?;
+        writer::write(input.ir, version, &mut bytes)?;
         let vertex_quantization = version == RhinoArchiveVersion::V5
             && input
                 .ir
