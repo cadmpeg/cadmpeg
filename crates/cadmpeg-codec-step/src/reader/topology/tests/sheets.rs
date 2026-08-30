@@ -31,7 +31,7 @@ pub(crate) fn decode_and_write_singular_vertex_loops() {
     write_step(
         result.ir(),
         &mut encoded,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write vertex loops");
@@ -124,7 +124,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
     let report = write_step(
         result.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write sheet pcurve");
@@ -221,7 +221,7 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
     write_step(
         result.ir(),
         &mut encoded,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write composite curve graph");
@@ -429,7 +429,7 @@ pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
     write_step(
         &source,
         &mut bytes,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();

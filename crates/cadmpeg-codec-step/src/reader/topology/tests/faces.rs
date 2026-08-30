@@ -836,7 +836,7 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
     write_step(
         decoded.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write named face");

@@ -73,7 +73,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
     let report = write_step(
         decoded.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write trimmed surface");
@@ -435,7 +435,7 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
     write_step(
         result.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write opposed-sense trimmed curve");

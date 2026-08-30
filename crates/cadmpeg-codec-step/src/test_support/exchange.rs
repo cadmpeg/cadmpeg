@@ -13,7 +13,7 @@ pub(crate) fn export(ir: &CadIr) -> String {
     write_step(
         ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write");

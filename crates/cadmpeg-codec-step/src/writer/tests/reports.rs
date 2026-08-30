@@ -168,7 +168,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes representable geometry");
@@ -218,7 +218,7 @@ fn writer_reports_unrepresented_topology_metadata() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes topology metadata fixture");
@@ -282,7 +282,7 @@ fn writer_reports_root_occurrence_scale() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes unscaled geometry");
@@ -321,7 +321,7 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
     let report = write_step(
         &source,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode should record the topology loss");
@@ -461,7 +461,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the product graph");
@@ -482,7 +482,7 @@ fn writer_reports_region_without_shells() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the remaining geometry");
@@ -501,7 +501,7 @@ fn writer_reports_topology_without_an_emitted_region() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the empty shape representation");
@@ -525,7 +525,7 @@ fn writer_reports_wire_region_without_connected_edges() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the remaining geometry");
@@ -546,7 +546,7 @@ fn writer_reports_wire_region_with_missing_shell_record() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the remaining geometry");
@@ -567,7 +567,7 @@ fn writer_reports_hidden_body_without_step_item() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the remaining geometry");
@@ -597,7 +597,7 @@ fn writer_reports_dangling_appearance_binding() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the representable geometry");
@@ -642,7 +642,7 @@ fn writer_reports_appearance_without_base_color() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the representable geometry");
@@ -733,7 +733,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
         let forward_report = write_step(
             &duplicate_target_style_ir(body_target, false, false),
             &mut forward_output,
-            StepSchema::default(),
+            StepSchema::Ap214,
             &StepWriteOptions::default(),
         )
         .expect("report mode writes geometry while omitting the conflict");
@@ -741,7 +741,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
         let reverse_report = write_step(
             &duplicate_target_style_ir(body_target, true, false),
             &mut reverse_output,
-            StepSchema::default(),
+            StepSchema::Ap214,
             &StepWriteOptions::default(),
         )
         .expect("reordered report mode writes geometry while omitting the conflict");
@@ -764,7 +764,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
     let equivalent_report = write_step(
         &duplicate_target_style_ir(false, false, true),
         &mut equivalent_output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("equal target styles are coalesced");
@@ -839,7 +839,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(
         &outer_face,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the surviving faces");
@@ -858,7 +858,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(
         &inner_loop,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the surviving outer loop");
@@ -873,7 +873,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(
         &missing_edge,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the surviving coedges");
@@ -892,7 +892,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(
         &missing_void,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the outer shell");
@@ -923,7 +923,7 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
     let report = write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the representable sheet");
@@ -959,7 +959,7 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
     let report = write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the representable sheet");
@@ -986,7 +986,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode writes the representable subset");
@@ -1216,7 +1216,7 @@ fn edge_without_curve_is_reported_and_omitted() {
     let report = write_step(
         &ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1284,7 +1284,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1323,7 +1323,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     let report = write_step(
         &ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1370,7 +1370,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     let report = write_step(
         &polygonal,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("polygonal face is reported as an export loss");
@@ -1394,7 +1394,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     let report = write_step(
         &nested_unknown,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("transformed unknown curve is reported as an export loss");
@@ -1433,7 +1433,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode must not panic on an unwritable procedural surface");
@@ -1468,7 +1468,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     let report = write_step(
         &ir,
         &mut Vec::new(),
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode must not panic on an unwritable procedural curve");
@@ -1493,7 +1493,7 @@ fn signed_analytic_radius_normalization_is_reported() {
     let report = write_step(
         &ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1520,7 +1520,7 @@ fn elliptical_cone_reduction_is_reported() {
     let report = write_step(
         &ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1558,7 +1558,7 @@ fn procedural_construction_reduction_is_reported() {
     let report = write_step(
         &ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1583,7 +1583,7 @@ fn source_native_record_reduction_is_reported() {
     let report = write_step(
         &ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1617,7 +1617,7 @@ fn incomplete_nurbs_surface_is_omitted_and_reported() {
     let report = write_step(
         &ir,
         &mut bytes,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("report mode omits the invalid carrier");

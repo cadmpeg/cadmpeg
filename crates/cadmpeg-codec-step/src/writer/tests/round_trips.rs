@@ -276,7 +276,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
     write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write NURBS pcurve");
@@ -372,7 +372,7 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
         write_step(
             &ir,
             &mut output,
-            StepSchema::default(),
+            StepSchema::Ap214,
             &StepWriteOptions::default(),
         )
         .expect("write exact pcurve");
@@ -412,7 +412,7 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
-    write_step(&ir, &mut output, StepSchema::default(), &options).expect("write placed body");
+    write_step(&ir, &mut output, StepSchema::Ap214, &options).expect("write placed body");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode placed body");
@@ -525,7 +525,7 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write wire body");
@@ -573,7 +573,7 @@ fn writer_round_trips_standalone_points_and_curves() {
     write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write standalone geometry");
@@ -669,7 +669,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
     write_step(
         &source,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write conics");
@@ -807,7 +807,7 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     let report = write_step(
         &unit_cube(),
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -857,7 +857,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     let report = write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write hidden appearance binding");
@@ -945,7 +945,7 @@ fn writer_round_trips_surface_appearance_transparency() {
     let report = write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write transparent surface appearance");
@@ -988,7 +988,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     let report = write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write hidden presentation layer");
@@ -1030,7 +1030,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     let report = write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write empty-label presentation layer");
@@ -1217,7 +1217,7 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
     let report = write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write mixed general body");
@@ -1246,7 +1246,7 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     let report = write_step(
         &source,
         &mut bytes,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("writer should recover a continuous loop order");
@@ -1297,7 +1297,7 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
     write_step(
         decoded.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("export salvaged IR");

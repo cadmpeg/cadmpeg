@@ -1366,7 +1366,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     write_step(
         &ir,
         &mut bytes,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write body presentation");
@@ -1491,7 +1491,7 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     let report = write_step(
         &ir,
         &mut buf,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
@@ -1694,7 +1694,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     let report = write_step(
         &ir,
         &mut bytes,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write point layer");
