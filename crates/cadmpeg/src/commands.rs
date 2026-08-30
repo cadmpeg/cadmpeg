@@ -76,6 +76,15 @@ pub struct ConversionArgs {
     pub forced_input: Option<ForcedInput>,
 }
 
+fn refusal_report_body(refusal: &ConversionRefusal) -> CommandReportBody<'_> {
+    CommandReportBody {
+        decode_report: refusal.decode_report(),
+        check_report: refusal.check_report(),
+        export: refusal.export_report(),
+        refusal: Some(refusal),
+    }
+}
+
 /// One input to a structural diff and its optional format override.
 #[derive(Clone, Copy)]
 pub(crate) struct DiffInput<'a> {
@@ -219,12 +228,7 @@ pub fn dump(
                 Some(report_path),
                 force,
                 "dump",
-                CommandReportBody {
-                    decode_report: None,
-                    check_report: None,
-                    export: refusal.export_report(),
-                    refusal: Some(refusal),
-                },
+                refusal_report_body(refusal),
             )?;
             return Err(error);
         }
@@ -360,12 +364,7 @@ fn execute_conversion(
                     conversion.report.as_deref(),
                     conversion.force,
                     "convert",
-                    CommandReportBody {
-                        decode_report: None,
-                        check_report: None,
-                        export: None,
-                        refusal: Some(refusal),
-                    },
+                    refusal_report_body(refusal),
                 )?;
             }
             return Err(error);
@@ -400,12 +399,7 @@ fn execute_conversion(
                 conversion.report.as_deref(),
                 conversion.force,
                 "convert",
-                CommandReportBody {
-                    decode_report: refusal.decode_report(),
-                    check_report: refusal.check_report(),
-                    export: None,
-                    refusal: Some(refusal),
-                },
+                refusal_report_body(refusal),
             )?;
         }
         Ok(())

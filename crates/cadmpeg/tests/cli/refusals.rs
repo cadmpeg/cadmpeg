@@ -360,6 +360,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     let dir = tempdir().unwrap();
     let lossy = geometryless_creo(dir.path(), "lossy.prt");
     let path = lossy.to_str().unwrap();
+    let export_report = dir.path().join("export-loss-refusal.json");
 
     for scope in [
         "--reject-lossy",
@@ -383,6 +384,8 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
             "step",
             "--allow-empty",
             "--reject-lossy=export",
+            "--report",
+            export_report.to_str().unwrap(),
         ])
         .assert()
         .code(1)
@@ -393,6 +396,12 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
                 ))
                 .and(predicate::str::contains("decode reported").not()),
         );
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(export_report).unwrap()).unwrap();
+    assert_eq!(report["refusal"]["code"], "export_loss_rejected");
+    assert!(report["export"].is_object());
+    assert_eq!(report["export"]["format"], "step");
+    assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 1);
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &unit_cube());
     for scope in [
