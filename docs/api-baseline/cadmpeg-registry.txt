@@ -1,4 +1,4 @@
-# generated at 82ff824c4
+# generated at a536ef2b8
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -73,7 +73,7 @@ pub cadmpeg_registry::DialectEntry::target: bool
 pub cadmpeg_registry::DialectEntry::title: alloc::string::String
 pub cadmpeg_registry::DialectEntry::unknown_kind: core::option::Option<cadmpeg_registry::UnknownDialectKind>
 pub struct cadmpeg_registry::DialectProvenance
-pub cadmpeg_registry::DialectProvenance::id: core::option::Option<cadmpeg_core::dialect::DialectId>
+pub cadmpeg_registry::DialectProvenance::id: cadmpeg_core::dialect::DialectId
 pub cadmpeg_registry::DialectProvenance::read: core::option::Option<cadmpeg_registry::ReadDisposition>
 pub cadmpeg_registry::DialectProvenance::write_targets: alloc::vec::Vec<&'static str>
 pub struct cadmpeg_registry::Disposition
