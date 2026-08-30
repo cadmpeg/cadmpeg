@@ -716,6 +716,15 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .expect("the report is classified")
         .iter()
         .skip(1)
+        .all(|matched| matched
+            .declared()
+            .contains_key(crate::dialect::DECLARED_ARCHIVE_MEMBER)));
+    assert!(decoded
+        .report()
+        .dialects()
+        .expect("the report is classified")
+        .iter()
+        .skip(1)
         .any(|matched| matched.format() == "f3d" && matched.instance() == Some("root.f3d")));
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect.as_ref(), Some(&inspected));
@@ -826,7 +835,7 @@ fn f3z_decode_retains_member_identity_and_unverified_loss() {
 }
 
 #[test]
-fn f3z_xref_kernel_row_uses_member_path_and_preserves_bare_loss() {
+fn f3z_xref_kernel_row_uses_member_path_and_actual_xref_label() {
     let stream = unverified_acis_text_member();
     let component = f3d_with_text_brep_stream(
         &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
@@ -867,6 +876,10 @@ fn f3z_xref_kernel_row_uses_member_path_and_preserves_bare_loss() {
     assert_eq!(kernel_layers.len(), 1);
     assert_eq!(kernel_layers[0].instance(), Some("comp.f3d"));
     assert_eq!(
+        kernel_layers[0].declared()[crate::dialect::DECLARED_ARCHIVE_MEMBER],
+        "comp.f3d"
+    );
+    assert_eq!(
         kernel_layers[0].declared()["carrier"],
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat"
     );
@@ -876,7 +889,32 @@ fn f3z_xref_kernel_row_uses_member_path_and_preserves_bare_loss() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind())
         .expect("component kernel loss travels with its row");
-    assert_eq!(loss, &bare_loss);
+    assert_eq!(loss.code, bare_loss.code);
+    assert_eq!(loss.severity, bare_loss.severity);
+    assert_eq!(
+        loss.message,
+        format!("xref component0 (member comp.f3d): {}", bare_loss.message)
+    );
+}
+
+#[test]
+fn duplicate_member_layer_identity_is_a_recorded_loss() {
+    let mut target =
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::F3dDialect::classify_f3z(&[
+            "part.f3d",
+        ]));
+    let member = cadmpeg_core::dialect::DialectLayers::of(
+        crate::dialect::F3dDialect::classify_document("3-2-0-0"),
+    );
+
+    assert!(super::merge_member_layers(&mut target, &member, "part.f3d").is_empty());
+    let losses = super::merge_member_layers(&mut target, &member, "part.f3d");
+
+    assert_eq!(target.iter().count(), 2);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, F3dLossCode::DialectLayerCollision.kind());
+    assert!(losses[0].message.contains("f3d"));
+    assert!(losses[0].message.contains("part.f3d"));
 }
 
 /// A single-document archive names its own row, not the F3Z one.

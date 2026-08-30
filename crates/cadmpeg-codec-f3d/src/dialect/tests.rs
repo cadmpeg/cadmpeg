@@ -93,3 +93,21 @@ fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
         F3dDialect::Unknown.id().as_str()
     );
 }
+
+#[test]
+fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
+    let matched = with_carrier(
+        DialectMatch::new(
+            cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
+            Admission::AdmittedUnverified {
+                using: cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+            },
+        ),
+        "FusionAssetName[Active]/Breps.BlobParts/Body1.sat",
+    )
+    .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");
+
+    let loss = kernel_dialect_loss(&matched).expect("unknown kernel grammar is unverified");
+    assert!(!loss.message.contains("xref"));
+    assert!(loss.message.contains("kernel carrier"));
+}

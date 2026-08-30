@@ -172,6 +172,8 @@ pub enum F3dLossCode {
     KernelDialectUnverified,
     /// An embedded kernel carrier could not be framed for dialect inspection.
     KernelCarrierUnparseable,
+    /// Two F3Z member layers resolved to the same core dialect identity.
+    DialectLayerCollision,
 }
 
 impl F3dLossCode {
@@ -253,6 +255,7 @@ impl F3dLossCode {
         Self::SourceDialectDisplaced,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
+        Self::DialectLayerCollision,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -340,6 +343,7 @@ impl F3dLossCode {
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
+            Self::DialectLayerCollision => "source.dialect-layer-collision",
         }
     }
 
@@ -432,7 +436,9 @@ impl F3dLossCode {
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
             }
-            Self::MeshContainerUndecoded => LossTaxonomy::DecodeDiagnostic,
+            Self::MeshContainerUndecoded | Self::DialectLayerCollision => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
             | Self::NurbsSurfaceCarrier
@@ -555,6 +561,7 @@ mod tests {
                 "target.source-dialect-displaced",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
+                "source.dialect-layer-collision",
             ]
         );
     }
