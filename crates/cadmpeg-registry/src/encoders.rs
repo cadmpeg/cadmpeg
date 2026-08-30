@@ -10,9 +10,9 @@
 use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::default_target;
+use cadmpeg_ir::codec::Encoder;
 #[cfg(test)]
 use cadmpeg_ir::codec::TargetRequest;
-use cadmpeg_ir::codec::{CadirEncoder, Encoder};
 
 use crate::Format;
 
@@ -22,25 +22,10 @@ use crate::Format;
 /// and nothing an encoder needs at construction can be wrong by then. What can
 /// be wrong is the dialect, and that is `plan`'s question, not this one's.
 pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
-    match format {
-        Format::Cadir => Box::new(CadirEncoder),
-        #[cfg(feature = "step")]
-        Format::Step => Box::new(cadmpeg_codec_step::StepCodec::default()),
-        #[cfg(feature = "fcstd")]
-        Format::Fcstd => Box::new(cadmpeg_codec_freecad::FcstdCodec),
-        #[cfg(feature = "f3d")]
-        Format::F3d => Box::new(cadmpeg_codec_f3d::F3dCodec),
-        #[cfg(feature = "sldprt")]
-        Format::Sldprt => Box::new(cadmpeg_codec_sldprt::SldprtCodec),
-        // Neither the Rhino nor the IGES encoder takes a constructed version.
-        // The archive version and the specification version are targets, and
-        // `TargetRequest` carries them; deciding one here is what silently
-        // rewrote a Rhino 5 file as archive 80.
-        #[cfg(feature = "rhino")]
-        Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder),
-        #[cfg(feature = "iges")]
-        Format::Iges => Box::new(cadmpeg_codec_iges::IgesEncoder),
-    }
+    let descriptor = crate::descriptors::by_output(format);
+    descriptor
+        .encoder
+        .expect("every output format has an encoder")()
 }
 
 #[cfg(test)]
@@ -56,8 +41,8 @@ mod tests {
     /// no catalog: it writes the neutral document, which has no dialect.
     #[test]
     fn every_catalog_names_declared_dialects_with_one_default() {
-        for format in Format::ALL {
-            let encoder = build_encoder(*format);
+        for format in Format::all() {
+            let encoder = build_encoder(format);
             let targets = encoder.targets();
             let default = default_target(targets);
             if targets.is_empty() {
@@ -95,8 +80,8 @@ mod tests {
     #[test]
     fn an_unknown_explicit_target_is_refused_with_the_catalog() {
         let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        for format in Format::ALL {
-            let encoder = build_encoder(*format);
+        for format in Format::all() {
+            let encoder = build_encoder(format);
             let error = encoder
                 .plan(
                     cadmpeg_ir::codec::EncodeInput::new(&ir, None),
@@ -136,8 +121,8 @@ mod tests {
     /// the same rule to every catalog compiled into the current build.
     #[test]
     fn no_target_alias_is_an_output_format_name() {
-        for format in Format::ALL {
-            let encoder = build_encoder(*format);
+        for format in Format::all() {
+            let encoder = build_encoder(format);
             for target in encoder.targets() {
                 for alias in target.aliases {
                     assert!(
@@ -153,8 +138,8 @@ mod tests {
 
     #[test]
     fn every_exportable_format_builds_an_encoder() {
-        for format in Format::ALL {
-            let encoder = build_encoder(*format);
+        for format in Format::all() {
+            let encoder = build_encoder(format);
             assert_eq!(encoder.id(), format.name());
         }
     }

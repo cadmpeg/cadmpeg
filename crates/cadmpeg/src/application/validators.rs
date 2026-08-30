@@ -35,16 +35,7 @@ impl NativeValidatorCatalog {
     /// Registers the four native validators shipped with the CLI.
     pub fn with_builtins() -> Self {
         Self {
-            entries: vec![
-                #[cfg(feature = "fcstd")]
-                ("fcstd", cadmpeg_codec_freecad::validate_native),
-                #[cfg(feature = "f3d")]
-                ("f3d", cadmpeg_codec_f3d::validate_native),
-                #[cfg(feature = "inventor")]
-                ("inventor", cadmpeg_codec_inventor::validate_native),
-                #[cfg(feature = "sldprt")]
-                ("sldprt", cadmpeg_codec_sldprt::validate_native),
-            ],
+            entries: cadmpeg_registry::native_validators().collect(),
         }
     }
 
