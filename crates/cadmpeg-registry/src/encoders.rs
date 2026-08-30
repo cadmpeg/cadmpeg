@@ -9,7 +9,7 @@
 #[cfg(test)]
 use cadmpeg_core::CodecError;
 #[cfg(test)]
-use cadmpeg_ir::codec::default_target;
+use cadmpeg_ir::codec::assert_valid_target_catalog;
 use cadmpeg_ir::codec::Encoder;
 #[cfg(test)]
 use cadmpeg_ir::codec::TargetRequest;
@@ -40,11 +40,11 @@ mod tests {
     /// all failures of the claim, not of style. CADIR is the one encoder with
     /// no catalog: it writes the neutral document, which has no dialect.
     #[test]
-    fn every_catalog_names_declared_dialects_with_one_default() {
+    fn every_catalog_names_declared_dialects_with_at_most_one_default() {
         for format in Format::all() {
             let encoder = build_encoder(format);
             let targets = encoder.targets();
-            let default = default_target(targets);
+            assert_valid_target_catalog(targets);
             if targets.is_empty() {
                 assert_eq!(
                     encoder.id(),
@@ -54,11 +54,6 @@ mod tests {
                 );
                 continue;
             }
-            assert!(
-                default.is_some(),
-                "{}: a catalog has exactly one cross-format default",
-                encoder.id()
-            );
             for target in targets {
                 assert!(
                     target.id.starts_with(&format!("{}:", encoder.id())),

@@ -53,9 +53,9 @@ pub(crate) struct Resolution {
 /// from the deliverability one, which no request can talk this writer out of.
 ///
 /// An `FCStd` source that records no dialect is refused too: there is nothing to
-/// preserve, and no identity to default to. The catalog default supplies the
-/// target only when there is nothing to inherit at all — no source, or one of
-/// another format.
+/// preserve, and no identity to default to. A source of another format is also
+/// refused because this catalog intentionally has no cross-format default: the
+/// writer cannot synthesize the retained `FCStd` graph that its only row needs.
 pub(crate) fn plan<'a>(
     input: EncodeInput<'a>,
     request: TargetRequest<'_>,

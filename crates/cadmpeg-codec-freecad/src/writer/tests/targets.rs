@@ -38,14 +38,17 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         Some("fcstd:schema-3")
     );
 
-    // A document with no retained graph has nothing this writer can patch,
-    // so `plan` refuses by name with the catalog rather than failing deep
-    // inside `write`. The request is irrelevant to the outcome: with
-    // nothing to inherit the catalog default stands in, and the retained
-    // graph cannot deliver that either.
-    let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    // A STEP document has no retained FCStd graph this writer can patch.
+    // The catalog intentionally has no cross-format default, so `plan`
+    // refuses without pretending schema 4 was requested and then naming it
+    // as both requested and available.
+    let mut step_source = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    step_source.source = Some(cadmpeg_ir::document::SourceMeta {
+        format: "step".to_owned(),
+        ..cadmpeg_ir::document::SourceMeta::default()
+    });
     let missing_graph = FcstdCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&step_source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
     let CodecError::UnsupportedTarget {
@@ -55,9 +58,10 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert_eq!(format, "fcstd");
+    assert_eq!(*requested, None);
     assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("fcstd:schema-4")
+        missing_graph.to_string(),
+        "fcstd cannot write an unrecorded source dialect: there is nothing to inherit and this encoder has no synthesis catalog; available targets: fcstd:schema-4"
     );
 }
 

@@ -39,7 +39,10 @@ pub struct TargetDescriptor {
     pub label: &'static str,
     /// Short spellings accepted for `id`, e.g. `["6"]` for `rhino:archive-60`.
     pub aliases: &'static [&'static str],
-    /// True on exactly one entry: the cross-format conversion default.
+    /// True on at most one entry: the cross-format conversion default.
+    ///
+    /// A catalog may have no default when the encoder cannot synthesize a
+    /// document from a source of another format.
     pub default: bool,
 }
 
@@ -92,8 +95,7 @@ pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a 
     })
 }
 
-/// The catalog's default target, or `None` for an encoder with no synthesis
-/// catalog.
+/// The catalog's cross-format default, or `None` when none is declared.
 #[must_use]
 pub fn default_target(targets: &'static [TargetDescriptor]) -> Option<&'static TargetDescriptor> {
     targets.iter().find(|target| target.default)
