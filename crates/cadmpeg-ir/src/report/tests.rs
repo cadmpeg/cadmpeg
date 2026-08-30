@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
+
+use cadmpeg_core::dialect::{DialectId, DialectLayers};
+
+use crate::SourceProvenance;
+
 use super::*;
 
 #[test]
