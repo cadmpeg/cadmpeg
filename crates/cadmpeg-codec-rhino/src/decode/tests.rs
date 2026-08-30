@@ -1152,7 +1152,9 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .expect("required invariant")
             .links
             .clear();
-        let result = context.commit();
+        let result = context
+            .commit()
+            .expect("the Rhino source and report formats agree");
         assert!(result
             .report()
             .losses

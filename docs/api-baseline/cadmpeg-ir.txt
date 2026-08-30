@@ -1,4 +1,4 @@
-# generated at ca4ccc950
+# generated at b7fed202e
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -190,10 +190,13 @@ impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> core::result::Result<Self, cadmpeg_ir::codec::DecodeResultError>
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
+#[non_exhaustive] pub struct cadmpeg_ir::codec::DecodeResultError
+impl core::convert::From<cadmpeg_ir::codec::DecodeResultError> for cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::error::CodecError::from(cadmpeg_ir::codec::DecodeResultError) -> Self
 pub struct cadmpeg_ir::codec::EncodeInput<'a>
 pub cadmpeg_ir::codec::EncodeInput::fidelity: core::option::Option<&'a cadmpeg_ir::source_fidelity::SourceFidelity>
 pub cadmpeg_ir::codec::EncodeInput::ir: &'a cadmpeg_ir::document::CadIr
@@ -7080,7 +7083,7 @@ impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> core::result::Result<Self, cadmpeg_ir::codec::DecodeResultError>
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_

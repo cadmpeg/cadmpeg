@@ -2,6 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -2390,7 +2391,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Commits the transaction and produces canonical IR and report state.
-    pub(crate) fn commit(mut self) -> DecodeResult {
+    pub(crate) fn commit(mut self) -> Result<DecodeResult, CodecError> {
         self.report
             .phase_losses
             .extend(self.scan.metadata.losses.iter().cloned());
@@ -2572,7 +2573,7 @@ impl<'a> DecodeContext<'a> {
         // Charged from the reported admission itself, so the document-level
         // `AdmittedUnverified` and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
-        DecodeResult::new(
+        Ok(DecodeResult::new(
             self.ir,
             DecodeReport::classified(
                 cadmpeg_core::dialect::DialectLayers::of(primary),
@@ -2584,7 +2585,7 @@ impl<'a> DecodeContext<'a> {
                 cadmpeg_ir::report::TransferLedger::default(),
             ),
             source_fidelity,
-        )
+        )?)
     }
 
     fn retain_object_records(&mut self) {
@@ -5547,7 +5548,10 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> SourceProvenance {
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> DecodeResult {
+pub(crate) fn decode(
+    scan: &Scan<'_>,
+    expand: crate::mesh::MeshExpand<'_>,
+) -> Result<DecodeResult, CodecError> {
     let mut context = DecodeContext::new(scan, expand);
     context.decode_geometry();
     context.decode_dimensions();
@@ -5626,7 +5630,9 @@ pub(crate) fn with_expand<R>(
 
 #[cfg(test)]
 pub(crate) fn decode_for_test(scan: &Scan<'_>) -> DecodeResult {
-    with_expand(scan, |expand| decode(scan, expand))
+    with_expand(scan, |expand| {
+        decode(scan, expand).expect("the Rhino source and report formats agree")
+    })
 }
 
 fn build_ir(scan: &Scan<'_>) -> CadIr {

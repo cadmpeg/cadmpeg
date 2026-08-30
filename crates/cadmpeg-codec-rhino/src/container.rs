@@ -1153,7 +1153,9 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
 }
 
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
+pub(crate) fn container_only_result(
+    scan: &Scan<'_>,
+) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(scan));
     let mut notes = vec![scan.version_note()];
@@ -1181,7 +1183,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     }));
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
-    cadmpeg_ir::codec::DecodeResult::new(
+    Ok(cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),
@@ -1193,7 +1195,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
             cadmpeg_ir::report::TransferLedger::default(),
         ),
         cadmpeg_ir::SourceFidelity::default(),
-    )
+    )?)
 }
 
 /// Return whether a version is inspectable only from its header, the complement
@@ -1235,12 +1237,9 @@ pub(crate) fn decode(
     }
     let scan = scan(data)?;
     if container_only && scan.archive.is_chunked() {
-        return Ok(container_only_result(&scan));
+        return container_only_result(&scan);
     }
-    Ok(crate::decode::decode(
-        &scan,
-        crate::mesh::MeshExpand::new(ctx, root),
-    ))
+    crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }
 
 #[cfg(test)]

@@ -151,11 +151,7 @@ pub fn decode(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
-        return Ok(finalize_result(
-            ir,
-            classify_outer_report(report, outer.layers),
-            fidelity,
-        ));
+        return finalize_result(ir, classify_outer_report(report, outer.layers), fidelity);
     }
 
     let table = xref_table_from_ir(&ir)?;
@@ -182,11 +178,7 @@ pub fn decode(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     make_sibling_ordinals_unique(&mut ir.model.occurrences);
-    Ok(finalize_result(
-        ir,
-        classify_outer_report(report, outer.layers),
-        fidelity,
-    ))
+    finalize_result(ir, classify_outer_report(report, outer.layers), fidelity)
 }
 
 fn classify_outer_report(
@@ -208,8 +200,8 @@ fn finalize_result(
     ir: cadmpeg_ir::CadIr,
     report: cadmpeg_ir::DecodeReport,
     fidelity: cadmpeg_ir::SourceFidelity,
-) -> DecodeResult {
-    let mut result = DecodeResult::new(ir, report, fidelity);
+) -> Result<DecodeResult, CodecError> {
+    let mut result = DecodeResult::new(ir, report, fidelity)?;
     let hash = crate::decode::document_local_sha256(result.ir());
     if let Some(source) = &mut result.ir_mut().source {
         source.attributes.insert(
@@ -217,7 +209,7 @@ fn finalize_result(
             hash,
         );
     }
-    result
+    Ok(result)
 }
 
 /// Classify every F3D document member and attach its layers to its archive path.

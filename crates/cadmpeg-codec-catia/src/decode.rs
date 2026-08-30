@@ -3540,7 +3540,7 @@ fn decode_result(
     report.losses.extend(crate::dialect::dialect_loss(matched));
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
-    Ok(DecodeResult::new(ir, report, source_fidelity))
+    Ok(DecodeResult::new(ir, report, source_fidelity)?)
 }
 
 #[cfg(test)]

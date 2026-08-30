@@ -1645,3 +1645,10 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::document::SourceMeta::{format,dialect}"
 reason = "classified source metadata stores one format identity, so callers construct classified or unclassified states instead of pairing public fields independently"
+
+[[change]]
+commit = "b7fed202ebcc98b07b1af9aca3edea506f0947c5"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::DecodeResult::new"
+reason = "decode construction rejects a source format that disagrees with the report primary instead of silently replacing the source classification"

@@ -111,6 +111,7 @@ fn decode_result(ir: CadIr) -> DecodeResult {
         ),
         SourceFidelity::default(),
     )
+    .expect("the test source and report formats agree")
 }
 
 fn retained_record(id: &str, offset: u64) -> RetainedSourceRecord {
@@ -206,7 +207,7 @@ impl CodecBackend for RejectFloorCodec {
         report
             .losses
             .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
-        Ok(DecodeResult::new(ir, report, fidelity))
+        Ok(DecodeResult::new(ir, report, fidelity)?)
     }
 }
 
@@ -268,7 +269,8 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
         Vec::new(),
         TransferLedger::default(),
     );
-    let result = DecodeResult::new(ir.clone(), report.clone(), SourceFidelity::default());
+    let result = DecodeResult::new(ir.clone(), report.clone(), SourceFidelity::default())
+        .expect("the test source and report formats agree");
 
     assert_eq!(result.report().dialects().unwrap().iter().count(), 2);
 
@@ -284,7 +286,8 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
             report.transfer_ledger,
         ),
         SourceFidelity::default(),
-    );
+    )
+    .expect("the test source and report formats agree");
     assert!(unclassified.report().dialects().is_none());
 }
 
@@ -309,13 +312,45 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         TransferLedger::default(),
     );
 
-    let result = DecodeResult::new(ir, report, SourceFidelity::default());
+    let result = DecodeResult::new(ir, report, SourceFidelity::default())
+        .expect("the test source and report formats agree");
     let source = result
         .ir()
         .source
         .as_ref()
         .expect("source metadata remains");
     assert_eq!(source.dialect(), Some(&primary));
+}
+
+#[test]
+fn a_decode_result_rejects_a_source_and_report_format_mismatch_before_stamping() {
+    let mut ir = unit_cube();
+    let original = DialectMatch::new(DialectId::pinned("step:ap242e3"), Admission::Admitted)
+        .expect("the known STEP dialect is classified");
+    ir.source = Some(crate::SourceMeta::classified(
+        original.clone(),
+        BTreeMap::new(),
+    ));
+    let report = DecodeReport::classified(
+        DialectLayers::of(
+            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
+                .expect("the known Rhino dialect is classified"),
+        ),
+        false,
+        true,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+
+    let error = DecodeResult::new(ir, report, SourceFidelity::default())
+        .expect_err("a decode result must not overwrite a foreign source classification");
+
+    assert_eq!(
+        error.to_string(),
+        "decode source format \"step\" does not match report primary format \"rhino\""
+    );
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {

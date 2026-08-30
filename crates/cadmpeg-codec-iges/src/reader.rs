@@ -549,7 +549,7 @@ fn decode_with_occurrence_limits(
             transfer_ledger,
         ),
         source_fidelity,
-    );
+    )?;
     let document_digest = match ctx {
         Some(ctx) => document_local_sha256_with_charge(
             result.ir(),

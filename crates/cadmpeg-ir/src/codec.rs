@@ -80,33 +80,67 @@ pub struct DecodeResult {
     source_fidelity: SourceFidelity,
 }
 
+/// A decoded document and its report disagree about the primary source format.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "decode source format {source_format:?} does not match report primary format {report_format:?}"
+)]
+#[non_exhaustive]
+pub struct DecodeResultError {
+    source_format: String,
+    report_format: String,
+}
+
+impl From<DecodeResultError> for CodecError {
+    fn from(error: DecodeResultError) -> Self {
+        Self::malformed(error)
+    }
+}
+
 impl DecodeResult {
     /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
-    pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeResultError`] when source metadata and the report primary
+    /// dialect name different formats.
+    pub fn new(
+        mut ir: CadIr,
+        report: DecodeReport,
+        mut source_fidelity: SourceFidelity,
+    ) -> Result<Self, DecodeResultError> {
         if let Some(source) = ir.source.as_mut() {
             match report
                 .dialects()
                 .map(cadmpeg_core::dialect::DialectLayers::primary)
             {
                 Some(matched) => {
-                    source
-                        .stamp_dialect(Some(matched.clone()))
-                        .expect("decode report primary format matches source metadata");
+                    if source.format() != matched.format() {
+                        return Err(DecodeResultError {
+                            source_format: source.format().to_owned(),
+                            report_format: matched.format().to_owned(),
+                        });
+                    }
+                    *source = crate::document::SourceMeta::classified(
+                        matched.clone(),
+                        std::mem::take(&mut source.attributes),
+                    );
                 }
                 None => {
-                    source
-                        .stamp_dialect(None)
-                        .expect("clearing source dialect preserves its format");
+                    *source = crate::document::SourceMeta::unclassified(
+                        source.format().to_owned(),
+                        std::mem::take(&mut source.attributes),
+                    );
                 }
             }
         }
         ir.finalize();
         source_fidelity.finalize();
-        Self {
+        Ok(Self {
             ir,
             report,
             source_fidelity,
-        }
+        })
     }
 
     /// Borrow the finalized IR.

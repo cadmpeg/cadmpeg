@@ -195,7 +195,7 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
-    let mut result = DecodeResult::new(ir, report, source_fidelity);
+    let mut result = DecodeResult::new(ir, report, source_fidelity)?;
     stamp_local_digests(&mut result.ir_mut());
     Ok(result)
 }
