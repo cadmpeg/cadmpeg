@@ -100,7 +100,7 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     let report = write_step(
         bounded.ir(),
         &mut bytes,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write curve-bounded surface");

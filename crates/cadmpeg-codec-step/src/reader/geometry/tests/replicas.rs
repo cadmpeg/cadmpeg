@@ -280,7 +280,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     write_step(
         result.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write trimmed replica");
@@ -340,7 +340,7 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     write_step(
         &source,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write replicas");
@@ -437,7 +437,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
     write_step(
         decoded.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write trimmed surface replica");
@@ -762,7 +762,7 @@ fn replicas_retain_bounded_parent_relations() {
     write_step(
         decoded.ir(),
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write replicas of bounded parents");

@@ -1315,7 +1315,7 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
     write_step(
         &ir,
         &mut output,
-        StepSchema::default(),
+        StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .expect("write placed body");
