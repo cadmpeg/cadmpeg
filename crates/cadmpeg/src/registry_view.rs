@@ -137,7 +137,6 @@ mod tests {
         use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 
         let dialects = DialectLayers::of(DialectMatch::new(
-            "rhino",
             DialectId::pinned("rhino:archive-50"),
             Admission::Admitted,
         ));
@@ -160,13 +159,8 @@ mod tests {
         use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 
         let dialects = DialectLayers::new(
-            DialectMatch::new(
-                "sldprt",
-                DialectId::pinned("sldprt:2024"),
-                Admission::Admitted,
-            ),
+            DialectMatch::new(DialectId::pinned("sldprt:2024"), Admission::Admitted),
             vec![DialectMatch::new(
-                "acis",
                 DialectId::pinned("acis:sat-32"),
                 Admission::Admitted,
             )],

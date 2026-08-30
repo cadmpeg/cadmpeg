@@ -207,7 +207,6 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
 fn classified_report_wire_requires_its_primary_format() {
     let report = DecodeReport::classified(
         DialectLayers::of(cadmpeg_core::dialect::DialectMatch::layer(
-            "rhino",
             DialectId::pinned("rhino:archive-80"),
             BTreeMap::new(),
             cadmpeg_core::dialect::Admission::Admitted,

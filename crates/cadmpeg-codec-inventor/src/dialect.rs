@@ -266,7 +266,7 @@ impl DialectRecovery {
         }
         let loss = (!matches!(admission, Admission::Admitted)).then(|| self.unverified_loss());
         DialectClassification {
-            matched: DialectMatch::layer(FORMAT, dialect.id(), declared, admission),
+            matched: DialectMatch::layer(dialect.id(), declared, admission),
             loss,
         }
     }

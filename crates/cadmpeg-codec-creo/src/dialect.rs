@@ -139,7 +139,7 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
             );
         }
     }
-    DialectMatch::layer(FORMAT, layout.id(), declared, admission)
+    DialectMatch::layer(layout.id(), declared, admission)
 }
 
 #[cfg(test)]

@@ -182,7 +182,7 @@ impl F3dDialect {
     /// The one [`DialectMatch`] construction path in this codec, so a
     /// classification bug and the report can never disagree.
     fn matched(self, declared: BTreeMap<String, String>) -> DialectMatch {
-        DialectMatch::layer(FORMAT, self.id(), declared, self.admission())
+        DialectMatch::layer(self.id(), declared, self.admission())
     }
 }
 

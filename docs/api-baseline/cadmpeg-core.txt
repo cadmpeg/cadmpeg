@@ -1,4 +1,4 @@
-# generated at 442491a67
+# generated at e7a9e5e2c
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -299,6 +299,7 @@ pub cadmpeg_core::dialect::Admission::Refused
 pub struct cadmpeg_core::dialect::DialectId(_)
 impl cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectId::as_str(&self) -> &str
+pub fn cadmpeg_core::dialect::DialectId::parse(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_core::dialect::DialectIdError>
 pub const fn cadmpeg_core::dialect::DialectId::pinned(&'static str) -> Self
 impl core::fmt::Debug for cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -308,6 +309,10 @@ impl serde_core::ser::Serialize for cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectId::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectId::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub struct cadmpeg_core::dialect::DialectIdError(_)
+impl core::error::Error for cadmpeg_core::dialect::DialectIdError
+impl core::fmt::Display for cadmpeg_core::dialect::DialectIdError
+pub fn cadmpeg_core::dialect::DialectIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_core::dialect::DialectLayers
 impl cadmpeg_core::dialect::DialectLayers
 pub fn cadmpeg_core::dialect::DialectLayers::into_parts(self) -> (cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>)
@@ -328,10 +333,12 @@ pub fn cadmpeg_core::dialect::DialectMatch::declared(&self) -> &alloc::collectio
 pub fn cadmpeg_core::dialect::DialectMatch::dialect(&self) -> &cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectMatch::format(&self) -> &str
 pub fn cadmpeg_core::dialect::DialectMatch::instance(&self) -> core::option::Option<&str>
-pub fn cadmpeg_core::dialect::DialectMatch::layer(impl core::convert::Into<alloc::string::String>, cadmpeg_core::dialect::DialectId, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>, cadmpeg_core::dialect::Admission) -> Self
-pub fn cadmpeg_core::dialect::DialectMatch::new(impl core::convert::Into<alloc::string::String>, cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::Admission) -> Self
+pub fn cadmpeg_core::dialect::DialectMatch::layer(cadmpeg_core::dialect::DialectId, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>, cadmpeg_core::dialect::Admission) -> Self
+pub fn cadmpeg_core::dialect::DialectMatch::new(cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::Admission) -> Self
 pub fn cadmpeg_core::dialect::DialectMatch::with_declared(self, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
 pub fn cadmpeg_core::dialect::DialectMatch::with_instance(self, impl core::convert::Into<alloc::string::String>) -> Self
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_core::dialect::DialectMatch::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
 pub cadmpeg_core::error::CodecError::InvalidInput(alloc::string::String)

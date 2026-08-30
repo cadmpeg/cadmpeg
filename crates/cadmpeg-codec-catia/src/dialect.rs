@@ -171,12 +171,7 @@ fn declared(scan: &ContainerScan) -> BTreeMap<String, String> {
 /// Identity is [`ContainerScan::variant`], the structural family the scan
 /// resolved; admission is [`admission`]. Neither is computed from the other.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
-    DialectMatch::layer(
-        FORMAT,
-        scan.variant.id(),
-        declared(scan),
-        admission(scan.variant),
-    )
+    DialectMatch::layer(scan.variant.id(), declared(scan), admission(scan.variant))
 }
 
 #[cfg(test)]

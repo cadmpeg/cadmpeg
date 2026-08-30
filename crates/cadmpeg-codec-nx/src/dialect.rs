@@ -52,6 +52,7 @@ use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "nx";
+#[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";
 
 /// Key of the modern container version byte in [`DialectMatch::declared`].
@@ -114,12 +115,7 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
                 ("schema".to_owned(), schema.to_owned()),
                 ("carrier".to_owned(), carrier.clone()),
             ]);
-            let matched = DialectMatch::layer(
-                PARASOLID_FORMAT,
-                DialectId::pinned(id),
-                declared,
-                Admission::Admitted,
-            );
+            let matched = DialectMatch::layer(DialectId::pinned(id), declared, Admission::Admitted);
             if several {
                 matched.with_instance(carrier)
             } else {
@@ -216,7 +212,7 @@ impl NxDialect {
                 }
             }
         }
-        DialectMatch::layer(FORMAT, dialect.id(), declared, dialect.admission())
+        DialectMatch::layer(dialect.id(), declared, dialect.admission())
     }
 }
 
