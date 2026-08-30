@@ -392,6 +392,29 @@ class TestExtensionPoints(unittest.TestCase):
             ["demo:one: no string literal under crates/*/src"],
         )
 
+    def test_generated_registry_addition_without_an_enum_owner_fails(self):
+        bogus_row = GOOD_ROW.replace("demo:one", "demo:bogus-closure-proof")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            (root / "docs" / "dialects.toml").write_text(
+                _registry(GOOD_ROW + bogus_row), encoding="utf-8"
+            )
+            source = root / "crates" / "demo" / "src" / "dialect.rs"
+            source.parent.mkdir(parents=True)
+            source.write_text('const ID: &str = "demo:one";', encoding="utf-8")
+            generated = source.parent / "dialect" / "generated.rs"
+            generated.parent.mkdir()
+            generated.write_text(
+                'const ROWS: &[&str] = &["demo:one", "demo:bogus-closure-proof"];',
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                checker.check_codec_emitted_ids(root),
+                ["demo:bogus-closure-proof: no string literal under crates/*/src"],
+            )
+
     def test_id_present_only_in_line_comment_fails(self):
         for source in ('// "demo:one"', '/// "demo:one"'):
             with self.subTest(source=source):
