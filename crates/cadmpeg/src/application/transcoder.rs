@@ -143,24 +143,167 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
     }
 }
 
-/// Policy controlling validation, loss refusal, and destination rules.
+/// Which conversion losses refuse the conversion.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LossPolicy {
+    /// Permit losses at both phases.
+    #[default]
+    Allow,
+    /// Refuse decode losses only.
+    RejectDecode,
+    /// Refuse export losses only.
+    RejectExport,
+    /// Refuse losses at either phase.
+    RejectAny,
+}
+
+impl LossPolicy {
+    /// Whether a decode loss refuses the conversion.
+    #[must_use]
+    pub const fn rejects_decode(self) -> bool {
+        matches!(self, Self::RejectDecode | Self::RejectAny)
+    }
+
+    /// Whether an export loss refuses the conversion.
+    #[must_use]
+    pub const fn rejects_export(self) -> bool {
+        matches!(self, Self::RejectExport | Self::RejectAny)
+    }
+}
+
+/// Validation and geometry admission for a conversion.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ValidationAdmission {
+    /// Require a valid document with transferred geometry.
+    #[default]
+    Strict,
+    /// Admit validation errors.
+    AllowErrors,
+    /// Admit a geometry export with no transferred geometry.
+    AllowEmpty,
+    /// Admit both validation errors and empty geometry.
+    AllowErrorsAndEmpty,
+}
+
+impl ValidationAdmission {
+    /// Constructs the admission mode from the independent CLI overrides.
+    #[must_use]
+    pub const fn new(allow_errors: bool, allow_empty: bool) -> Self {
+        match (allow_errors, allow_empty) {
+            (false, false) => Self::Strict,
+            (true, false) => Self::AllowErrors,
+            (false, true) => Self::AllowEmpty,
+            (true, true) => Self::AllowErrorsAndEmpty,
+        }
+    }
+
+    const fn admits_errors(self) -> bool {
+        matches!(self, Self::AllowErrors | Self::AllowErrorsAndEmpty)
+    }
+
+    const fn admits_empty(self) -> bool {
+        matches!(self, Self::AllowEmpty | Self::AllowErrorsAndEmpty)
+    }
+}
+
+/// Destination and overwrite rules for a conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DestinationPolicy {
+    /// Write to standard output.
+    Stdout {
+        /// Permit a binary format on standard output.
+        allow_binary: bool,
+    },
+    /// Write to a file.
+    File {
+        /// Output path.
+        path: PathBuf,
+        /// Replace an existing output.
+        overwrite: bool,
+    },
+}
+
+impl DestinationPolicy {
+    /// Resolves CLI destination flags into a destination-specific policy.
+    #[must_use]
+    pub fn new(destination: Option<PathBuf>, force: bool, binary_stdout: bool) -> Self {
+        match destination {
+            Some(path) => Self::File {
+                path,
+                overwrite: force,
+            },
+            None => Self::Stdout {
+                allow_binary: binary_stdout,
+            },
+        }
+    }
+
+    fn resolve(&self, source: &Path, format: Format) -> Result<ResolvedDestination> {
+        match self {
+            Self::Stdout {
+                allow_binary: false,
+            } if format.is_binary_container() => Err(ConversionRefusal::BinaryStdoutRejected {
+                message: format!(
+                    "refusing to write binary {name} to standard output; pass -o FILE.{name}, or \
+                     --input-format {name} (alias --from) if you meant to force how the INPUT is \
+                     read; pass --binary-stdout to stream the bytes anyway",
+                    name = format.name()
+                ),
+            }
+            .into()),
+            Self::Stdout { .. } => Ok(ResolvedDestination::Stdout),
+            Self::File { path, overwrite } => {
+                ArtifactStore::check_output_path(source, path, *overwrite)?;
+                Ok(ResolvedDestination::File(path.clone()))
+            }
+        }
+    }
+}
+
+/// Policy controlling the independent conversion phases.
 #[derive(Debug, Clone)]
-#[allow(clippy::struct_excessive_bools)] // mirrors the CLI flag surface
 pub struct ConversionPolicy {
-    /// Replace an existing output or report file.
-    pub force: bool,
-    /// Stream a binary output format to standard output instead of refusing.
-    pub binary_stdout: bool,
-    /// Write even if the check finds errors.
-    pub allow_errors: bool,
-    /// Export a geometry format when decoding transferred no geometry.
-    pub allow_empty: bool,
-    /// Refuse to export when the decode reported any loss.
-    pub reject_decode_losses: bool,
-    /// Refuse to export when export planning reported any loss.
-    pub reject_export_losses: bool,
-    /// Destination path; `None` writes the artifact to standard output.
-    pub destination: Option<PathBuf>,
+    /// Decode and export loss refusal.
+    pub losses: LossPolicy,
+    /// Validation and empty-geometry admission.
+    pub admission: ValidationAdmission,
+    /// Output destination rules.
+    pub destination: DestinationPolicy,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PlanPolicy {
+    PermitLosses,
+    RejectLosses,
+}
+
+impl PlanPolicy {
+    const fn from_loss_policy(policy: LossPolicy) -> Self {
+        if policy.rejects_export() {
+            Self::RejectLosses
+        } else {
+            Self::PermitLosses
+        }
+    }
+
+    const fn rejects_losses(self) -> bool {
+        matches!(self, Self::RejectLosses)
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ResolvedDestination {
+    Stdout,
+    File(PathBuf),
+}
+
+impl ResolvedDestination {
+    fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Stdout => None,
+            Self::File(path) => Some(path),
+        }
+    }
 }
 
 /// A conversion that has passed every refusal check and is ready to write.
@@ -173,8 +316,8 @@ pub struct PreparedConversion {
     pub validation: Option<ValidationReport>,
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
-    destination: Option<PathBuf>,
-    reject_export_losses: bool,
+    destination: ResolvedDestination,
+    plan_policy: PlanPolicy,
 }
 
 /// Application workflow that prepares and writes conversions.
@@ -202,23 +345,10 @@ impl<'a> Transcoder<'a> {
         &self,
         source: &SourceRequest<'_>,
         target: ExportTarget,
-        policy: ConversionPolicy,
+        policy: &ConversionPolicy,
     ) -> Result<PreparedConversion> {
         let format = target.selection.format;
-        if format.is_binary_container() && policy.destination.is_none() && !policy.binary_stdout {
-            return Err(ConversionRefusal::BinaryStdoutRejected {
-                message: format!(
-                    "refusing to write binary {name} to standard output; pass -o FILE.{name}, or \
-                     --input-format {name} (alias --from) if you meant to force how the INPUT is \
-                     read; pass --binary-stdout to stream the bytes anyway",
-                    name = format.name()
-                ),
-            }
-            .into());
-        }
-        if let Some(destination) = &policy.destination {
-            ArtifactStore::check_output_path(source.path, destination, policy.force)?;
-        }
+        let destination = policy.destination.resolve(source.path, format)?;
 
         let outcome =
             loader::load_artifact(self.inputs, source.path, source.options, source.forced)
@@ -227,9 +357,7 @@ impl<'a> Transcoder<'a> {
         let notices = outcome.notices;
         let decode_report = loaded.decode_report().cloned();
 
-        if let Some(refusal) =
-            decode_lossy_refusal(policy.reject_decode_losses, decode_report.as_ref(), format)
-        {
+        if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
             return Err(refusal.into());
         }
 
@@ -240,7 +368,7 @@ impl<'a> Transcoder<'a> {
                 loaded.fidelity(),
                 losses(decode_report.as_ref()),
             );
-            if !validation.is_ok() && !policy.allow_errors {
+            if !validation.is_ok() && !policy.admission.admits_errors() {
                 return Err(ConversionRefusal::CheckFailed {
                     message: format!(
                         "check found {} error(s); refusing to export (use --allow-errors to override)",
@@ -258,7 +386,7 @@ impl<'a> Transcoder<'a> {
             && decode_report
                 .as_ref()
                 .is_some_and(|report| !report.geometry_transferred)
-            && !policy.allow_empty
+            && !policy.admission.admits_empty()
         {
             return Err(ConversionRefusal::EmptyGeometry {
                 message: format!(
@@ -277,8 +405,8 @@ impl<'a> Transcoder<'a> {
             validation,
             encoder: target.encoder,
             selection: target.selection,
-            destination: policy.destination,
-            reject_export_losses: policy.reject_export_losses,
+            destination,
+            plan_policy: PlanPolicy::from_loss_policy(policy.losses),
         })
     }
 }
@@ -308,7 +436,7 @@ impl PreparedConversion {
                 ))
             }
         };
-        if self.reject_export_losses && !plan.report().losses.is_empty() {
+        if self.plan_policy.rejects_losses() && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
                 message: format!(
                     "export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)",
@@ -347,7 +475,7 @@ impl PlannedConversion<'_> {
         emit_export_plan(
             self.plan,
             prepared.selection.format,
-            prepared.destination.as_deref(),
+            prepared.destination.path(),
             prepared.document.decode_report(),
             prepared.document.fidelity(),
         )
@@ -383,11 +511,11 @@ fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
 }
 
 fn decode_lossy_refusal(
-    reject_decode_losses: bool,
+    policy: LossPolicy,
     report: Option<&DecodeReport>,
     format: Format,
 ) -> Option<ConversionRefusal> {
-    if !reject_decode_losses {
+    if !policy.rejects_decode() {
         return None;
     }
     let report = report?;
