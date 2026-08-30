@@ -311,6 +311,23 @@ fn input(
 mod tests {
     use super::*;
 
+    /// The rendered format rows retain the input catalog's readable formats
+    /// and extension data while adding write capability.
+    #[test]
+    fn format_rows_preserve_the_readable_input_catalog() {
+        let catalog = InputCatalog::with_builtins();
+        let rows = crate::support::format_rows(&catalog);
+        assert_eq!(rows.len(), catalog.descriptors().count());
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|row| !row.extensions.is_empty()));
+        for row in rows {
+            let input = catalog
+                .descriptor(row.id)
+                .expect("each format row comes from an input descriptor");
+            assert_eq!(row.extensions, input.extensions);
+        }
+    }
+
     #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]
     fn markerless_zip_is_explicitly_ambiguous() {

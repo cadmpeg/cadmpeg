@@ -837,14 +837,6 @@ mod tests {
         assert!(dialect_provenance(None).is_none());
     }
 
-    /// Every format row is readable and states its write capability.
-    #[test]
-    fn the_format_table_lists_readable_inputs_and_write_capability() {
-        let rows = format_rows(&InputCatalog::with_builtins());
-        assert!(!rows.is_empty());
-        assert!(rows.iter().all(|row| !row.extensions.is_empty()));
-    }
-
     /// The dialect table refuses a word the identity registry does not carry
     /// and serves the same rows `dialects` does for one it carries.
     #[test]
