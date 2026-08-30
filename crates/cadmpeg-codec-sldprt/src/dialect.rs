@@ -81,8 +81,6 @@ mod generated;
 pub(crate) const FORMAT: &str = "sldprt";
 #[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";
-const PARASOLID_SCHEMA: &str = "schema";
-const PARASOLID_CARRIER: &str = "carrier";
 
 /// The one dialect this writer synthesizes.
 ///
@@ -154,39 +152,12 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> DialectLayers {
     let several = kernels.len() > 1;
     let extra = kernels
         .drain(..)
-        .map(|(schema, carrier)| parasolid_layer(&schema, &carrier, several))
+        .map(|(schema, carrier)| {
+            cadmpeg_container::parasolid::classify_layer(&schema, &carrier, several)
+        })
         .collect();
     DialectLayers::new(SldprtDialect::classify_scan(scan), extra)
         .expect("Parasolid stream carriers have unique instances")
-}
-
-fn parasolid_layer(schema: &str, carrier: &str, instance_tagged: bool) -> DialectMatch {
-    let id = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
-        "parasolid:sch-sw-33103"
-    } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
-        "parasolid:sch-sw-32001"
-    } else if schema.to_ascii_uppercase().ends_with("_13006") {
-        "parasolid:format-13006"
-    } else {
-        "parasolid:unknown"
-    };
-    let id = DialectId::pinned(id);
-    let admission = if id.as_str() == "parasolid:unknown" {
-        Admission::AdmittedUnverified { using: None }
-    } else {
-        Admission::Admitted
-    };
-    let declared = BTreeMap::from([
-        (PARASOLID_SCHEMA.to_owned(), schema.to_owned()),
-        (PARASOLID_CARRIER.to_owned(), carrier.to_owned()),
-    ]);
-    let matched = DialectMatch::layer(id, declared, admission)
-        .expect("SLDPRT Parasolid classifier produced an invalid dialect match");
-    if instance_tagged {
-        matched.with_instance(carrier)
-    } else {
-        matched
-    }
 }
 
 impl SldprtDialect {

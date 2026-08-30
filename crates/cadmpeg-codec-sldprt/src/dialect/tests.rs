@@ -54,19 +54,8 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
         .expect("the framed Parasolid stream emits a layer");
 
     assert_eq!(kernel.dialect().as_str(), "parasolid:sch-sw-33103");
-    assert_eq!(kernel.declared()[PARASOLID_SCHEMA], "SCH_SW_33103_11000");
+    assert_eq!(kernel.declared()["schema"], "SCH_SW_33103_11000");
     assert_eq!(kernel.instance(), None);
-}
-
-#[test]
-fn residual_parasolid_schema_is_admitted_unverified() {
-    let matched = parasolid_layer("SCH_TEST_1_9999", "block@0:test+0", false);
-
-    assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
-    assert_eq!(
-        matched.admission(),
-        Admission::AdmittedUnverified { using: None }
-    );
 }
 
 #[test]
@@ -81,11 +70,7 @@ fn several_parasolid_streams_use_their_source_carriers_as_instances() {
 
     assert_eq!(kernels.len(), 2);
     assert!(kernels.iter().all(|matched| {
-        matched.instance()
-            == matched
-                .declared()
-                .get(PARASOLID_CARRIER)
-                .map(String::as_str)
+        matched.instance() == matched.declared().get("carrier").map(String::as_str)
     }));
     assert_ne!(kernels[0].instance(), kernels[1].instance());
 }

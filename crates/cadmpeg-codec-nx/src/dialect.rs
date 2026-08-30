@@ -103,33 +103,8 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
     let extra = streams
         .into_iter()
         .map(|(stream, schema)| {
-            let id = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
-                "parasolid:sch-sw-33103"
-            } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
-                "parasolid:sch-sw-32001"
-            } else if schema.to_ascii_uppercase().ends_with("_13006") {
-                "parasolid:format-13006"
-            } else {
-                "parasolid:unknown"
-            };
-            let id = DialectId::pinned(id);
-            let admission = if id.as_str() == "parasolid:unknown" {
-                Admission::AdmittedUnverified { using: None }
-            } else {
-                Admission::Admitted
-            };
             let carrier = format!("stream@{}", stream.file_offset);
-            let declared = BTreeMap::from([
-                ("schema".to_owned(), schema.to_owned()),
-                ("carrier".to_owned(), carrier.clone()),
-            ]);
-            let matched = DialectMatch::layer(id, declared, admission)
-                .expect("NX Parasolid classifier produced an invalid dialect match");
-            if several {
-                matched.with_instance(carrier)
-            } else {
-                matched
-            }
+            cadmpeg_container::parasolid::classify_layer(schema, &carrier, several)
         })
         .collect();
     DialectLayers::new(NxDialect::classify(&scan.container), extra)
