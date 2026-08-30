@@ -205,7 +205,6 @@ mod tests {
         let error = CodecError::UnsupportedDialect {
             format: "acis".into(),
             dialect_match: Box::new(DialectMatch::layer(
-                "acis",
                 DialectId::pinned("acis:save-format-binary-other"),
                 BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
                 Admission::Refused,

@@ -11,6 +11,7 @@ use crate::test_support::{
     UNVERIFIED_SAVE_FORMAT,
 };
 use crate::SatCodec;
+use crate::FORMAT;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;

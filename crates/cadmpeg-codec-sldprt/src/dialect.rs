@@ -78,6 +78,7 @@ use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "sldprt";
+#[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";
 const PARASOLID_SCHEMA: &str = "schema";
 const PARASOLID_CARRIER: &str = "carrier";
@@ -172,12 +173,7 @@ fn parasolid_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dialec
         (PARASOLID_SCHEMA.to_owned(), schema.to_owned()),
         (PARASOLID_CARRIER.to_owned(), carrier.to_owned()),
     ]);
-    let matched = DialectMatch::layer(
-        PARASOLID_FORMAT,
-        DialectId::pinned(id),
-        declared,
-        Admission::Admitted,
-    );
+    let matched = DialectMatch::layer(DialectId::pinned(id), declared, Admission::Admitted);
     if instance_tagged {
         matched.with_instance(carrier)
     } else {
@@ -272,7 +268,7 @@ impl SldprtDialect {
             declared.insert(DECLARED_SW_VERSION.into(), value.to_owned());
         }
         let dialect = Self::from_declaration(sw_version);
-        DialectMatch::layer(FORMAT, dialect.id(), declared, dialect.admission())
+        DialectMatch::layer(dialect.id(), declared, dialect.admission())
     }
 
     /// Classifies one scanned document, reading the declaration from the scan.

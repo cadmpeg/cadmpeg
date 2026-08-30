@@ -213,7 +213,7 @@ impl ArchiveVersion {
         if let Some(stamp) = writer_version {
             declared.insert(DECLARED_OPENNURBS_WRITER_VERSION.into(), stamp.to_string());
         }
-        DialectMatch::layer(FORMAT, self.id(), declared, self.admission())
+        DialectMatch::layer(self.id(), declared, self.admission())
     }
 
     /// Whether the archive word selects the chunked grammar.

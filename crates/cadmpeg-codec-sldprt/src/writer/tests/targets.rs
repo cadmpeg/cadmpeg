@@ -78,7 +78,6 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
     ir.source = Some(SourceMeta {
         format: "sldprt".into(),
         dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
-            "sldprt",
             cadmpeg_core::dialect::DialectId::pinned(dialect),
             std::collections::BTreeMap::default(),
             cadmpeg_core::dialect::Admission::Admitted,

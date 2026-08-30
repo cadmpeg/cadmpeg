@@ -44,7 +44,6 @@ use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 use crate::loss::SatLossCode;
-use crate::FORMAT;
 
 /// Key of the stream encoding in [`DialectMatch::declared`].
 const DECLARED_ENCODING: &str = "encoding";
@@ -252,7 +251,6 @@ pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
 /// its records are read with a verified band's grammar.
 fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
     DialectMatch::layer(
-        FORMAT,
         evidence.kind().id(),
         declared(evidence),
         admission(evidence),

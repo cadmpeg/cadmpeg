@@ -19,12 +19,12 @@
 //! codec, and orderings are codec-local where they are real at all. Outside its
 //! owning codec the id is comparable and printable; only the owner parses it.
 //!
-//! The construction path is [`DialectId::pinned`], which takes a `&'static
-//! str`. A codec backs its dialects with its own enum and returns pinned ids
-//! from it — the `*LossCode` template: enum inside, pinned string at the
-//! boundary, one construction path, closed vocabulary. Deserialization is the
-//! only other way an id comes into being, and it reconstructs an id that some
-//! producer pinned.
+//! Producers use [`DialectId::pinned`] for checked static ids. Wire readers use
+//! [`DialectId::parse`] for checked owned ids. A codec backs its dialects with
+//! its own enum and returns pinned ids from it — the `*LossCode` template: enum
+//! inside, pinned string at the boundary, one construction path, closed
+//! vocabulary. Deserialization is the only other way an id comes into being,
+//! and it reconstructs an id that some producer pinned.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,8 +38,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// A registry dialect id, for example `"rhino:archive-80"`.
 ///
 /// Canonical form is `<format>:<name>`, lowercase and hyphenated, stable
-/// forever. The form is a convention of the identity registry, not a parse this
-/// type performs: outside the owning codec the id is an opaque label.
+/// forever. Outside the owning codec the validated id is an opaque label.
 ///
 /// Serializes and deserializes as the plain string. Read it with
 /// [`DialectId::as_str`] or print it; there is no other access to the raw
@@ -56,7 +55,18 @@ impl DialectId {
     /// the ids greppable.
     #[must_use]
     pub const fn pinned(id: &'static str) -> Self {
+        assert!(valid_dialect_id(id), "invalid pinned dialect id");
         Self(Cow::Borrowed(id))
+    }
+
+    /// Parses and validates an owned dialect id.
+    pub fn parse(id: impl Into<String>) -> Result<Self, DialectIdError> {
+        let id = id.into();
+        if valid_dialect_id(&id) {
+            Ok(Self(Cow::Owned(id)))
+        } else {
+            Err(DialectIdError(id))
+        }
     }
 
     /// Returns the id as a string slice.
@@ -64,7 +74,58 @@ impl DialectId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    fn namespace(&self) -> &str {
+        self.as_str()
+            .split_once(':')
+            .expect("DialectId validation guarantees a namespace")
+            .0
+    }
 }
+
+const fn valid_dialect_id(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    let mut index = 0;
+    let mut colon = None;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b':' {
+            if colon.is_some() || index == 0 || index + 1 == bytes.len() {
+                return false;
+            }
+            colon = Some(index);
+        } else if (!byte.is_ascii_lowercase()
+            && !byte.is_ascii_digit()
+            && byte != b'-'
+            && byte != b'.')
+            || (byte == b'-'
+                && (index == 0
+                    || index + 1 == bytes.len()
+                    || bytes[index - 1] == b':'
+                    || bytes[index + 1] == b':'))
+        {
+            return false;
+        }
+        index += 1;
+    }
+    colon.is_some()
+}
+
+/// A string is not a canonical dialect id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectIdError(String);
+
+impl fmt::Display for DialectIdError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "invalid dialect id {:?}: expected <format>:<name> in lowercase canonical form",
+            self.0
+        )
+    }
+}
+
+impl Error for DialectIdError {}
 
 impl fmt::Display for DialectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -86,7 +147,7 @@ impl Serialize for DialectId {
 
 impl<'de> Deserialize<'de> for DialectId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer).map(|id| Self(Cow::Owned(id)))
+        Self::parse(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -121,7 +182,7 @@ pub enum Admission {
 /// A document carries several format layers: `.sldprt` contains Parasolid;
 /// `.f3d`, `.ipt`, and SAT contain ACIS; NX contains Parasolid and JT. One
 /// match describes one layer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DialectMatch {
     /// Format layer this classifies: `"rhino"`, `"acis"`, `"parasolid"`.
@@ -144,6 +205,37 @@ pub struct DialectMatch {
     instance: Option<String>,
     /// How this layer was admitted.
     admission: Admission,
+}
+
+#[derive(Deserialize)]
+struct DialectMatchWire {
+    format: String,
+    dialect: DialectId,
+    #[serde(default)]
+    declared: BTreeMap<String, String>,
+    #[serde(default)]
+    instance: Option<String>,
+    admission: Admission,
+}
+
+impl<'de> Deserialize<'de> for DialectMatch {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = DialectMatchWire::deserialize(deserializer)?;
+        if wire.format != wire.dialect.namespace() {
+            return Err(serde::de::Error::custom(format_args!(
+                "dialect {:?} is not in format namespace {:?}",
+                wire.dialect.as_str(),
+                wire.format
+            )));
+        }
+        Ok(Self {
+            format: wire.format,
+            dialect: wire.dialect,
+            declared: wire.declared,
+            instance: wire.instance,
+            admission: wire.admission,
+        })
+    }
 }
 
 /// A report's primary format layer and any nested or carried format layers.
@@ -261,9 +353,10 @@ impl Error for DialectLayersError {}
 impl DialectMatch {
     /// Constructs one identified dialect layer without declarations or an instance.
     #[must_use]
-    pub fn new(format: impl Into<String>, dialect: DialectId, admission: Admission) -> Self {
+    pub fn new(dialect: DialectId, admission: Admission) -> Self {
+        let format = dialect.namespace().to_owned();
         Self {
-            format: format.into(),
+            format,
             dialect,
             declared: BTreeMap::new(),
             instance: None,
@@ -274,12 +367,11 @@ impl DialectMatch {
     /// Construct one identified dialect layer.
     #[must_use]
     pub fn layer(
-        format: impl Into<String>,
         dialect: DialectId,
         declared: BTreeMap<String, String>,
         admission: Admission,
     ) -> Self {
-        Self::new(format, dialect, admission).with_declared(declared)
+        Self::new(dialect, admission).with_declared(declared)
     }
 
     /// Attaches source-declared version fields before the match enters a report.
@@ -336,7 +428,7 @@ mod tests {
     fn layer(format: &str) -> DialectMatch {
         DialectMatch {
             format: format.to_owned(),
-            dialect: DialectId::pinned("rhino:archive-80"),
+            dialect: DialectId::parse(format!("{format}:unknown")).unwrap(),
             declared: BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,
@@ -357,6 +449,21 @@ mod tests {
     }
 
     #[test]
+    fn dialect_id_deserialization_rejects_noncanonical_strings() {
+        for id in [
+            "rhino",
+            ":archive-80",
+            "rhino:",
+            "Rhino:archive-80",
+            "rhino:archive_80",
+            "rhino:-archive-80",
+        ] {
+            serde_json::from_value::<DialectId>(serde_json::json!(id))
+                .expect_err("a malformed dialect id must be rejected");
+        }
+    }
+
+    #[test]
     fn an_admitted_match_serializes_its_identity() {
         let admitted = DialectMatch {
             format: "rhino".into(),
@@ -369,6 +476,24 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&admitted).unwrap(),
             "{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}"
+        );
+    }
+
+    #[test]
+    fn dialect_match_deserialization_rejects_a_foreign_namespace() {
+        let malformed = serde_json::json!({
+            "format": "rhino",
+            "dialect": "step:ap242-e3",
+            "admission": "admitted",
+        });
+
+        let error = serde_json::from_value::<DialectMatch>(malformed)
+            .expect_err("the dialect namespace must equal the classified format");
+        assert!(
+            error
+                .to_string()
+                .contains("dialect \"step:ap242-e3\" is not in format namespace \"rhino\""),
+            "{error}"
         );
     }
 

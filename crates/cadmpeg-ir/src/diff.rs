@@ -657,13 +657,11 @@ mod tests {
         let mut left = with_source(&[]);
         let mut right = left.clone();
         left.source.as_mut().unwrap().dialect = Some(cadmpeg_core::dialect::DialectMatch::layer(
-            "rhino",
             cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
             BTreeMap::new(),
             cadmpeg_core::dialect::Admission::Admitted,
         ));
         right.source.as_mut().unwrap().dialect = Some(cadmpeg_core::dialect::DialectMatch::layer(
-            "rhino",
             cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
             BTreeMap::new(),
             cadmpeg_core::dialect::Admission::Admitted,
@@ -683,7 +681,6 @@ mod tests {
         let mut declared_right = declared_left.clone();
         declared_left.source.as_mut().unwrap().dialect = Some(
             cadmpeg_core::dialect::DialectMatch::new(
-                "rhino",
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
                 cadmpeg_core::dialect::Admission::Admitted,
             )
@@ -691,7 +688,6 @@ mod tests {
         );
         declared_right.source.as_mut().unwrap().dialect = Some(
             cadmpeg_core::dialect::DialectMatch::new(
-                "rhino",
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
                 cadmpeg_core::dialect::Admission::Admitted,
             )
@@ -725,24 +721,18 @@ mod tests {
         let mut left = with_source(&[]);
         let mut right = left.clone();
         left.source.as_mut().unwrap().dialect = Some(DialectMatch::new(
-            "rhino",
             DialectId::pinned("rhino:archive-80"),
             Admission::Admitted,
         ));
         right.source.as_mut().unwrap().dialect = Some(DialectMatch::new(
-            "rhino",
             DialectId::pinned("rhino:archive-80"),
             Admission::Refused,
         ));
         assert!(!diff(&left, &right).is_empty());
 
         right.source.as_mut().unwrap().dialect = Some(
-            DialectMatch::new(
-                "rhino",
-                DialectId::pinned("rhino:archive-80"),
-                Admission::Admitted,
-            )
-            .with_instance("embedded/model.3dm"),
+            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
+                .with_instance("embedded/model.3dm"),
         );
         assert!(!diff(&left, &right).is_empty());
     }

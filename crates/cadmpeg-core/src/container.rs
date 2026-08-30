@@ -126,13 +126,8 @@ mod tests {
             summary
         );
 
-        let primary = DialectMatch::new(
-            "rhino",
-            DialectId::pinned("rhino:archive-80"),
-            Admission::Admitted,
-        );
+        let primary = DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted);
         let extra = DialectMatch::new(
-            "acis",
             DialectId::pinned("acis:save-format-217"),
             Admission::Admitted,
         );

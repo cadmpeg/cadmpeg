@@ -52,7 +52,6 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
     ir.source = Some(SourceMeta {
         format: "f3d".into(),
         dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
-            "f3d",
             cadmpeg_core::dialect::DialectId::pinned(dialect),
             std::collections::BTreeMap::default(),
             cadmpeg_core::dialect::Admission::Admitted,

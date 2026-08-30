@@ -799,7 +799,6 @@ mod tests {
         use cadmpeg_core::dialect::{Admission, DialectMatch};
 
         let dialects = DialectLayers::of(DialectMatch::new(
-            "rhino",
             DialectId::pinned("rhino:archive-50"),
             Admission::Admitted,
         ));

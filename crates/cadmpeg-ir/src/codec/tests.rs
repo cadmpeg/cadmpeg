@@ -257,8 +257,8 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     ir.source = None;
     let report = DecodeReport::classified(
         DialectLayers::new(
-            dialect_layer("test", "test:only"),
-            vec![dialect_layer("acis", "acis:save-format-217")],
+            dialect_layer("test:only"),
+            vec![dialect_layer("acis:save-format-217")],
         )
         .unwrap(),
         false,
@@ -294,12 +294,12 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     ir.source = Some(crate::SourceMeta {
         format: "test".into(),
         dialect: Some(
-            DialectMatch::new("test", DialectId::pinned("test:wrong"), Admission::Admitted)
+            DialectMatch::new(DialectId::pinned("test:wrong"), Admission::Admitted)
                 .with_declared(BTreeMap::from([("wrong".into(), "value".into())])),
         ),
         ..Default::default()
     });
-    let primary = dialect_layer("test", "test:only")
+    let primary = dialect_layer("test:only")
         .with_declared(BTreeMap::from([("version".into(), "only".into())]));
     let report = DecodeReport::classified(
         DialectLayers::new(primary.clone(), Vec::new()).unwrap(),
@@ -320,8 +320,8 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     assert_eq!(source.dialect, Some(primary));
 }
 
-fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
-    DialectMatch::new(format, DialectId::pinned(id), Admission::Admitted)
+fn dialect_layer(id: &'static str) -> DialectMatch {
+    DialectMatch::new(DialectId::pinned(id), Admission::Admitted)
 }
 
 /// An explicit target is refused by `plan` itself, with the catalog in the
@@ -380,12 +380,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     ir.source = source.map(|(format, dialect)| crate::document::SourceMeta {
         format: format.to_owned(),
         dialect: dialect.map(|id| {
-            DialectMatch::layer(
-                format,
-                DialectId::pinned(id),
-                BTreeMap::new(),
-                Admission::Admitted,
-            )
+            DialectMatch::layer(DialectId::pinned(id), BTreeMap::new(), Admission::Admitted)
         }),
         ..Default::default()
     });

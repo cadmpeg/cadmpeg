@@ -208,7 +208,7 @@ impl FcstdDialect {
         if let Some(version) = &document.program_version {
             declared.insert(DECLARED_PROGRAM_VERSION.into(), version.clone());
         }
-        DialectMatch::layer(FORMAT, dialect.id(), declared, admission)
+        DialectMatch::layer(dialect.id(), declared, admission)
     }
 
     /// The loss charged when the document's schema names no declared row.

@@ -314,7 +314,6 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
     ir.source = Some(SourceMeta {
         format: "rhino".to_owned(),
         dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
-            "rhino",
             cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
             std::collections::BTreeMap::default(),
             cadmpeg_core::dialect::Admission::Admitted,
@@ -355,7 +354,6 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
     foreign.source = Some(SourceMeta {
         format: "iges".to_owned(),
         dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
-            "iges",
             cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
             std::collections::BTreeMap::default(),
             cadmpeg_core::dialect::Admission::Admitted,
