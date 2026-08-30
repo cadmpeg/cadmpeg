@@ -126,11 +126,13 @@ mod tests {
             summary
         );
 
-        let primary = DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted);
+        let primary = DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
+            .expect("the primary dialect is classified");
         let extra = DialectMatch::new(
             DialectId::pinned("acis:save-format-217"),
             Admission::Admitted,
-        );
+        )
+        .expect("the extra dialect is classified");
         let summary = ContainerSummary::classified(
             DialectLayers::new(primary.clone(), vec![extra.clone()])
                 .expect("the extra uses another format"),

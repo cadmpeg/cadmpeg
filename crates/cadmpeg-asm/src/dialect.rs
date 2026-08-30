@@ -80,6 +80,7 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
         KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
     };
     DialectMatch::layer(dialect, declared, admission)
+        .expect("ACIS classifier produced an invalid dialect match")
 }
 
 /// Save-format majors the Spatial ACIS record decoders are verified against.
@@ -250,15 +251,17 @@ mod tests {
         let asm = header(8, Some(70_001));
         assert_eq!(
             classify(KernelHeaderRef::Asm(&asm)),
-            DialectMatch::new(ACIS_ASM_BINARYFILE_8, Admission::Admitted).with_declared(
-                [
-                    ("reference_width".to_owned(), "8".to_owned()),
-                    ("save_format_major".to_owned(), "700".to_owned()),
-                    ("save_format_minor".to_owned(), "1".to_owned()),
-                ]
-                .into_iter()
-                .collect(),
-            )
+            DialectMatch::new(ACIS_ASM_BINARYFILE_8, Admission::Admitted)
+                .expect("a known ACIS dialect can be admitted")
+                .with_declared(
+                    [
+                        ("reference_width".to_owned(), "8".to_owned()),
+                        ("save_format_major".to_owned(), "700".to_owned()),
+                        ("save_format_minor".to_owned(), "1".to_owned()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                )
         );
 
         assert_eq!(

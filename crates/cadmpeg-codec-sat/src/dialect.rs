@@ -247,6 +247,7 @@ fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
         declared(evidence),
         admission(evidence),
     )
+    .expect("SAT classifier produced an invalid dialect match")
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.

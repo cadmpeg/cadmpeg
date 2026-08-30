@@ -102,7 +102,8 @@ fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
             Admission::AdmittedUnverified {
                 using: cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
             },
-        ),
+        )
+        .expect("the residual ACIS dialect is admitted unverified"),
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat",
     )
     .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");

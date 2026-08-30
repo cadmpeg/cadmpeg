@@ -204,11 +204,14 @@ mod tests {
     fn a_dialect_refusal_keeps_the_identification_it_refused() {
         let error = CodecError::UnsupportedDialect {
             format: "acis".into(),
-            dialect_match: Box::new(DialectMatch::layer(
-                DialectId::pinned("acis:save-format-binary-other"),
-                BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
-                Admission::Refused,
-            )),
+            dialect_match: Box::new(
+                DialectMatch::layer(
+                    DialectId::pinned("acis:save-format-binary-other"),
+                    BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
+                    Admission::Refused,
+                )
+                .expect("the refused dialect is classified"),
+            ),
             message: "save format 700 has no read grammar".into(),
         };
 

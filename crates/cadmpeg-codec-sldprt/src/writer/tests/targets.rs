@@ -75,13 +75,19 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    ir.source = Some(SourceMeta {
-        format: "sldprt".into(),
-        dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
+    let matched = if dialect == "sldprt:unknown" {
+        crate::dialect::SldprtDialect::classify(None)
+    } else {
+        cadmpeg_core::dialect::DialectMatch::layer(
             cadmpeg_core::dialect::DialectId::pinned(dialect),
             std::collections::BTreeMap::default(),
             cadmpeg_core::dialect::Admission::Admitted,
-        )),
+        )
+        .expect("the test source dialect is classified")
+    };
+    ir.source = Some(SourceMeta {
+        format: "sldprt".into(),
+        dialect: Some(matched),
         ..SourceMeta::default()
     });
     ir

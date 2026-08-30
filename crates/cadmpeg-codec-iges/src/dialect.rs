@@ -342,6 +342,7 @@ impl IgesDialect {
             declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());
         }
         DialectMatch::layer(dialect.id(), declared, admission)
+            .expect("IGES classifier produced an invalid dialect match")
     }
 }
 

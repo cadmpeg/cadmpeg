@@ -228,13 +228,10 @@ impl<'de> Deserialize<'de> for DialectMatch {
                 wire.format
             )));
         }
-        Ok(Self {
-            format: wire.format,
-            dialect: wire.dialect,
-            declared: wire.declared,
-            instance: wire.instance,
-            admission: wire.admission,
-        })
+        let mut matched = Self::layer(wire.dialect, wire.declared, wire.admission)
+            .map_err(serde::de::Error::custom)?;
+        matched.instance = wire.instance;
+        Ok(matched)
     }
 }
 
@@ -350,28 +347,47 @@ impl fmt::Display for DialectLayersError {
 
 impl Error for DialectLayersError {}
 
+/// A dialect match paired a residual identity with verified admission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectMatchError {
+    dialect: DialectId,
+}
+
+impl fmt::Display for DialectMatchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "residual dialect {:?} cannot use admitted admission",
+            self.dialect.as_str()
+        )
+    }
+}
+
+impl Error for DialectMatchError {}
+
 impl DialectMatch {
     /// Constructs one identified dialect layer without declarations or an instance.
-    #[must_use]
-    pub fn new(dialect: DialectId, admission: Admission) -> Self {
+    pub fn new(dialect: DialectId, admission: Admission) -> Result<Self, DialectMatchError> {
+        if dialect.as_str().ends_with(":unknown") && admission == Admission::Admitted {
+            return Err(DialectMatchError { dialect });
+        }
         let format = dialect.namespace().to_owned();
-        Self {
+        Ok(Self {
             format,
             dialect,
             declared: BTreeMap::new(),
             instance: None,
             admission,
-        }
+        })
     }
 
     /// Construct one identified dialect layer.
-    #[must_use]
     pub fn layer(
         dialect: DialectId,
         declared: BTreeMap<String, String>,
         admission: Admission,
-    ) -> Self {
-        Self::new(dialect, admission).with_declared(declared)
+    ) -> Result<Self, DialectMatchError> {
+        Ok(Self::new(dialect, admission)?.with_declared(declared))
     }
 
     /// Attaches source-declared version fields before the match enters a report.
@@ -426,13 +442,11 @@ mod tests {
     use super::*;
 
     fn layer(format: &str) -> DialectMatch {
-        DialectMatch {
-            format: format.to_owned(),
-            dialect: DialectId::parse(format!("{format}:unknown")).unwrap(),
-            declared: BTreeMap::new(),
-            instance: None,
-            admission: Admission::Admitted,
-        }
+        DialectMatch::new(
+            DialectId::parse(format!("{format}:known")).unwrap(),
+            Admission::Admitted,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -493,6 +507,33 @@ mod tests {
             error
                 .to_string()
                 .contains("dialect \"step:ap242-e3\" is not in format namespace \"rhino\""),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn residual_admitted_pair_is_rejected_by_constructors_and_wire() {
+        let dialect = DialectId::pinned("rhino:unknown");
+        let error = DialectMatch::new(dialect.clone(), Admission::Admitted)
+            .expect_err("a residual identity cannot be admitted as verified");
+        assert_eq!(
+            error.to_string(),
+            "residual dialect \"rhino:unknown\" cannot use admitted admission"
+        );
+        DialectMatch::layer(dialect, BTreeMap::new(), Admission::Admitted)
+            .expect_err("the declaration-bearing constructor must enforce the same law");
+
+        let malformed = serde_json::json!({
+            "format": "rhino",
+            "dialect": "rhino:unknown",
+            "admission": "admitted",
+        });
+        let error = serde_json::from_value::<DialectMatch>(malformed)
+            .expect_err("wire input must use the checked constructor");
+        assert!(
+            error
+                .to_string()
+                .contains("residual dialect \"rhino:unknown\" cannot use admitted admission"),
             "{error}"
         );
     }
