@@ -51,6 +51,19 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 }
 
 #[test]
+fn residual_parasolid_schema_is_admitted_unverified() {
+    let matched = parasolid_layer("SCH_TEST_1_9999", "block@0:test+0", false);
+
+    assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
+    assert_eq!(
+        matched.admission(),
+        Admission::AdmittedUnverified {
+            using: DialectId::pinned("parasolid:unknown")
+        }
+    );
+}
+
+#[test]
 fn several_parasolid_streams_use_their_source_carriers_as_instances() {
     let bytes = sldprt_with_colliding_sites();
     let scan = scan_bytes(&bytes);

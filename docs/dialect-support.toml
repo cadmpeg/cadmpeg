@@ -1035,8 +1035,9 @@ grammar"""
 
 [[support]]
 dialect = "parasolid:unknown"
-read = "detected"
+read = "unclassified-recovered"
 write = "none"
 reason = """
 the sldprt and nx readers emit this residual layer for every other schema token
-extracted from a framed Parasolid stream"""
+extracted from a framed Parasolid stream. The source token names no classified
+row, so recovery is admitted without claiming a verified dialect"""

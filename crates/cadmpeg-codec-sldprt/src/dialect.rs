@@ -170,11 +170,17 @@ fn parasolid_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dialec
     } else {
         "parasolid:unknown"
     };
+    let id = DialectId::pinned(id);
+    let admission = if id.as_str() == "parasolid:unknown" {
+        Admission::AdmittedUnverified { using: id.clone() }
+    } else {
+        Admission::Admitted
+    };
     let declared = BTreeMap::from([
         (PARASOLID_SCHEMA.to_owned(), schema.to_owned()),
         (PARASOLID_CARRIER.to_owned(), carrier.to_owned()),
     ]);
-    let matched = DialectMatch::layer(DialectId::pinned(id), declared, Admission::Admitted);
+    let matched = DialectMatch::layer(id, declared, admission);
     if instance_tagged {
         matched.with_instance(carrier)
     } else {

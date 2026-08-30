@@ -132,7 +132,11 @@
       "dialects": {
         "extra": [
           {
-            "admission": "admitted",
+            "admission": {
+              "admitted_unverified": {
+                "using": "parasolid:unknown"
+              }
+            },
             "declared": {
               "carrier": "stream@116",
               "schema": "SCH_test"
@@ -226,7 +230,11 @@
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "admitted_unverified": {
+              "using": "parasolid:unknown"
+            }
+          },
           "declared": {
             "carrier": "stream@116",
             "schema": "SCH_test"
