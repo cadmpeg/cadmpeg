@@ -1610,3 +1610,10 @@ crate = "cadmpeg-core"
 kind = "visibility"
 item = "cadmpeg_core::dialect::DialectMatch::{format,dialect,declared,instance,admission}"
 reason = "private identity fields prevent post-classification mutation; constructors and consuming builders establish declarations and report-local instances before the match enters `DialectLayers`"
+
+[[change]]
+commit = "277829234707fbe1b473972f877befe803e7bbdf"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::dialect::DialectMatch::{new,layer}"
+reason = "constructors derive the format namespace from a validated `DialectId`, so producer code cannot create a contradictory format and dialect identity"
