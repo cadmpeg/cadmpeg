@@ -1,7 +1,8 @@
 # Public API change ledger for the refactor.
-# Phase 2+ records each intentional public API change: additions, deletions,
+# Phase 2+ records each intentional breaking public API change: deletions,
 # module moves, visibility reductions, signature changes, removed trait
-# implementations, field encapsulations, and variant changes.
+# implementations, field encapsulations, and variant changes. Additions are
+# recorded by the API baseline diff and do not get ledger rows.
 # `commit` is the commit whose diff contains the API change. A new row cannot
 # contain its own final SHA, so its provisional value names the parent and thus
 # the landing range; a provenance pass replaces it with the change commit.
@@ -14,14 +15,7 @@
 baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
 audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
 api_baseline_dir = "docs/api-baseline"
-measured_at = "31894f1dcb4933048ae98588eb354a47511aed64"
-
-[[change]]
-commit = "f15fd31550d6dbb72c8c2df398a8319d8949e5ac"
-crate = "cadmpeg-container"
-kind = "addition"
-item = "cadmpeg_container::parasolid::classify_layer"
-reason = "NX and SLDPRT share one owner for the identical embedded Parasolid schema classification and layer construction law"
+measured_at = "85909f9883f3b1f02941019ea2d37d6b4cc1d635"
 
 [[change]]
 commit = "dba146f22442ab245a1100defbfd22b1cb98e40a"
@@ -45,32 +39,11 @@ item = "cadmpeg_codec_step::write_step"
 reason = "the direct writer bypassed `Encoder::plan` target resolution and admission; crate tests retain internal access while public callers use the encoder path"
 
 [[change]]
-commit = "e642fd2f3c2796f89b33f33784292b5af02b8708"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::codec::WriteRequest::dialect_id"
-reason = "writers share the representation-only projection from a resolved catalog or off-catalog request to its dialect id while retaining codec-specific write law"
-
-[[change]]
 commit = "784c24977ad12f8a78b2eba4f2a8f8dd3229de69"
 crate = "cadmpeg-registry"
 kind = "deletion"
 item = "cadmpeg_registry::write_targets"
 reason = "the wrapper added no invariant beyond `build_encoder(format).targets()`; target grammar and early explicit-target admission now live on `TargetSelection`"
-
-[[change]]
-commit = "cc5d1d37049dbd14e459cdd993cf79675fcef878"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::codec::same_format_source_dialect"
-reason = "same-format writers share one projection from `SourceMeta` to its matching `DialectMatch`; codec-local target and dialect projection remains with each writer"
-
-[[change]]
-commit = "81779b0ff3367382461a9a2832c5f3558bcea741"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::codec::{PreserveAttempt,plan_preserve_or_synthesize}"
-reason = "F3D and IGES share one preserve-or-synthesize control-flow ladder while codec callbacks retain preservation, synthesis, reporting, and refusal law"
 
 # Row shape:
 # [[change]]
@@ -954,39 +927,11 @@ item = "cadmpeg_registry::print_dialects"
 reason = "returns Result<(), UnknownFormat> instead of anyhow::Result<()>; a library refusal names its own type and the CLI wraps it"
 
 [[change]]
-commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
-crate = "cadmpeg-registry"
-kind = "addition"
-item = "cadmpeg_registry::{identify,identify_with,Identification,INSPECTION_FLOOR}"
-reason = "design section 10 question 1: prefix detection picks candidates, and a candidate at or above the floor is run through Codec::inspect so the answer carries a dialect; no admission field, because admission is the record of a run and a preflight reporting one would guess"
-
-[[change]]
-commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
-crate = "cadmpeg-registry"
-kind = "addition"
-item = "cadmpeg_registry::{dialects,support,DialectEntry,Disposition,ReadDisposition,WriteDisposition,UnknownDisposition}"
-reason = "design section 10.2: the capability registry's declared disposition, typed in its own vocabulary (L0..L9 | detected | refused | unclassified-recovered, and verified | emitted | preserved | none), served from the embedded tables with no I/O"
-
-[[change]]
-commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
-crate = "cadmpeg-registry"
-kind = "addition"
-item = "cadmpeg_registry::InputCatalog::candidates"
-reason = "identify needs every candidate the prefix allows, where detect collapses them to one selection; detect is now written on top of it"
-
-[[change]]
 commit = "c4ff88808ed16db9cc1bf0b01f1b0d85f6762a86"
 crate = "cadmpeg-registry"
 kind = "signature"
 item = "cadmpeg_registry::{Identification,Inspection,ResolvedSource}"
 reason = "`identify` now preserves the complete inspection summary or typed failure, and source resolution distinguishes CADIR JSON from unrecognized bytes"
-
-[[change]]
-commit = "16bfc3c3535bb0c3f47a2e81bb92b3a4761c9825"
-crate = "cadmpeg-registry"
-kind = "addition"
-item = "cadmpeg_registry::UnknownFormat"
-reason = "the refusal print_dialects returns after losing its anyhow dependency"
 
 [[change]]
 commit = "7ad71b13335380b5aba89f54333510c575edceed"
@@ -1008,13 +953,6 @@ crate = "cadmpeg-codec-step"
 kind = "signature"
 item = "cadmpeg_codec_step::write_step"
 reason = "takes the target StepSchema as its third argument, ahead of &StepWriteOptions, now that the schema is not a field of the options"
-
-[[change]]
-commit = "89bacdf79f85008cd0571ff8d0b07fe99b03b24d"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::codec::resolve_catalog_write"
-reason = "design section 8.2: the whole write resolution of a synthesis-only encoder, extracted from the identical private resolvers in StepCodec and RhinoEncoder. Not for a codec that preserves off-catalog dialects by patch or replay (FCStd, IGES)"
 
 [[change]]
 commit = "375d50a0b326383347e72554e3abbcd758d64f81"
@@ -1052,20 +990,6 @@ item = "cadmpeg_registry::dialect_provenance"
 reason = "returns DialectProvenance instead of a pre-rendered String; the three sources are the registry's, the sentence is the CLI's"
 
 [[change]]
-commit = "977133651548cbc6ccf7559d355551bd808beee4"
-crate = "cadmpeg-registry"
-kind = "addition"
-item = "cadmpeg_registry::{format_rows,dialect_table,DialectProvenance,FormatRow,FormatDialects,DialectRow}"
-reason = "the data behind the two table commands: what this build reads and writes, and the identity registry crossed with the capability registry and the compiled catalogs"
-
-[[change]]
-commit = "977133651548cbc6ccf7559d355551bd808beee4"
-crate = "cadmpeg-registry"
-kind = "addition"
-item = "cadmpeg_registry::write_targets"
-reason = "the catalog is static per format, so reading it needed no encoder instance; `catalog_of` was boxing an encoder with a dummy LossPolicy::Report to reach a 'static table"
-
-[[change]]
 commit = "46d15a7ac16f2b5aef46751ff6e7cb14fb625a0f"
 crate = "cadmpeg-registry"
 kind = "signature"
@@ -1078,20 +1002,6 @@ crate = "cadmpeg-codec-f3d"
 kind = "visibility"
 item = "cadmpeg_codec_f3d::F3dCodec::write_preserved_with_source_fidelity"
 reason = "the method bypasses TargetRequest and is used only by crate-owned replay tests; external writes must resolve through Encoder::plan"
-
-[[change]]
-commit = "66419386cf82ca78b2a24035637c771844405f53"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::decode::View::{f32_be,f32_be_at,f32_le_at,f64_be_at,f64_le_at,i16_be,i16_be_at,i16_le_at,i32_be,i32_be_at,i32_le_at,i64_be,i64_be_at,i64_le_at,req_f32_be,req_i16_be,req_i32_be,req_i64_be,u16_be_at,u16_le_at,u24_be_at,u24_le_at,u32_be_at,u32_le_at,u64_be_at,u64_le_at}"
-reason = "complete the signed, floating-point, endian, and retained-window read families on View"
-
-[[change]]
-commit = "66419386cf82ca78b2a24035637c771844405f53"
-crate = "cadmpeg-protein"
-kind = "addition"
-item = "cadmpeg_protein::{STREAM_HEADER_LEN,PAGE_SIZE,RECORD_MARKER,CONTINUATION_MARKER,TERMINAL_MARKER}"
-reason = "publish the generated instance-stream framing constants used by record_frames and its callers"
 
 [[change]]
 commit = "3d6a0c879a2dbb77232c49cc2f67088a57883f48"
@@ -1122,46 +1032,11 @@ item = "cadmpeg_registry::DialectRow"
 reason = "DialectEntry is the joined identity, support, and compiled-target row; a second public row type copied the same concept for dialect_table"
 
 [[change]]
-commit = "74d66189d0208f1476789511ffe616d426bf007d"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::bytes::{find,find_from,find_in,contains,find_iter}"
-reason = "one shared byte-window search surface replaces codec-local search helpers"
-
-[[change]]
-commit = "ed3994945f84b746b42427872d2bd28f8f77e31b"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::decode::DecodeContext::refuse_codec_limit"
-reason = "construct a codec-dimension resource refusal through the active decode context"
-
-[[change]]
 commit = "5f0685f5c0dbcf641aeda03c9300854955b59e6b"
 crate = "cadmpeg-codec-iges"
 kind = "variant"
 item = "cadmpeg_codec_iges::IgesVersion::{V4_0,V5_0}"
 reason = "the writer and dialect catalog support IGES 4.0 and 5.0 targets"
-
-[[change]]
-commit = "5f0685f5c0dbcf641aeda03c9300854955b59e6b"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::error::CodecError::malformed"
-reason = "centralize conversion of displayable parser context into Malformed messages"
-
-[[change]]
-commit = "754b0638f37a3c962c57e60d227fe334cec93e5b"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::decode::{WorkBudget::recursion_guard,WorkBudgetRecursionGuard}"
-reason = "bound recursive evaluation with an RAII guard that returns budget depth on drop"
-
-[[change]]
-commit = "3aabad359a483adc45adfddcdac8b376a74b6117"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::bytes::{assemble_u16_le,assemble_u16_be,assemble_u24_le,assemble_u24_be,assemble_u32_le,assemble_u32_be,assemble_u64_le,assemble_u64_be,assemble_f32_le,assemble_f32_be,assemble_f64_le,assemble_f64_be}"
-reason = "assemble typed endian values from exact arrays without host-endian decode-window conversions"
 
 [[change]]
 commit = "3aabad359a483adc45adfddcdac8b376a74b6117"
@@ -1190,41 +1065,6 @@ crate = "cadmpeg-codec-sldprt"
 kind = "visibility"
 item = "cadmpeg_codec_sldprt::SldprtCodec::write_preserved_with_source_fidelity"
 reason = "the method bypasses TargetRequest and is used only by crate-owned replay tests; external writes must resolve through Encoder::plan"
-
-[[change]]
-commit = "796cb27fca52cbcb6229d4bd7eee589f8fa3d2f8"
-crate = "cadmpeg-asm"
-kind = "addition"
-item = "cadmpeg_asm::dialect::acis_admission"
-reason = "the shared Spatial ACIS decoder band owns the complete Admission fold so SAT and Inventor cannot disagree about verified and nearest rows"
-
-[[change]]
-commit = "e174555acd923135306a5e3f0226d8606944bcb0"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::codec::{WriteRequest,resolve_write_request}"
-reason = "all native encoders resolve explicit catalog requests and inherited source identity once before applying their codec-owned preservation, synthesis, patch, or replay delivery law"
-
-[[change]]
-commit = "fb9a11f1c5a24fd1a955e70d67dc3c8af85fa519"
-crate = "cadmpeg-container"
-kind = "addition"
-item = "cadmpeg_container::compound::read_detection_prefix"
-reason = "library identification and the CLI must extend a CFB prefix through the same bounded directory-evidence reader"
-
-[[change]]
-commit = "d0abbc3d0314de9bf7ea14561968fea36691aa3e"
-crate = "cadmpeg-asm"
-kind = "addition"
-item = "cadmpeg_asm::dialect::{ACIS_TEXT_ASM,ACIS_TEXT_ACIS,ACIS_UNKNOWN}"
-reason = "the shared ACIS kernel namespace owns and pins the three text or unframed identity rows even though host codecs do not emit a separate kernel-layer match"
-
-[[change]]
-commit = "d54af826a85557e4679a1e2cf479611d49725608"
-crate = "cadmpeg-asm"
-kind = "addition"
-item = "cadmpeg_asm::dialect::{KernelHeaderRef,classify}"
-reason = "classify already-parsed ACIS and ASM headers through one canonical kernel-layer match constructor shared by host codecs"
 
 [[change]]
 commit = "1c8a5ad15ba6390c8ac8db60d0d068f04e6824a5"
@@ -1262,20 +1102,6 @@ item = "cadmpeg_ir::report::LossTaxonomy::SourceDialectDisplaced"
 reason = "distinguish write-side source dialect identity displacement from an unverified decode-side declaration"
 
 [[change]]
-commit = "f77c951f4e859ed325ebb5171a027e9ea5784b6a"
-crate = "cadmpeg-asm"
-kind = "addition"
-item = "cadmpeg_asm::{asm_header,acis_header}::{record_stream_start_with_header,solved_record_limit_with_header}"
-reason = "frame already-classified kernel carriers without reparsing their shared header"
-
-[[change]]
-commit = "d4c61cbe83d30113ebb0cd3e9503aa84951610c8"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::report::ExportReport::{cadir,native}"
-reason = "construction distinguishes the neutral report with no dialect from native reports that require a concrete target, while serde still accepts target absence in older artifacts"
-
-[[change]]
 commit = "8190c44a223890faa7a2f6ffaa8f4b6ee6b0cab1"
 crate = "cadmpeg-core"
 kind = "visibility"
@@ -1288,27 +1114,6 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::codec::unrecorded_source_dialect"
 reason = "only resolve_write_request constructs this refusal; callers should use the complete write-resolution operation instead of its one branch helper"
-
-[[change]]
-commit = "fc3799ee0f800d3601485bf7445f89a3dd17b819"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::codec::resolve_preserving_write"
-reason = "preserving encoders share one preserve-else-synthesize resolution law while keeping codec-specific preservation outcomes, synthesis, and refusal text"
-
-[[change]]
-commit = "85142caf95257564be7fb94bea1e55aad3126d26"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::dialect::DialectMatch::layer"
-reason = "codec identity classifiers construct identified dialect layers through one shared literal shape"
-
-[[change]]
-commit = "85142caf95257564be7fb94bea1e55aad3126d26"
-crate = "cadmpeg-asm"
-kind = "addition"
-item = "cadmpeg_asm::dialect::acis_recovery_message"
-reason = "kernel hosts report the shared unverified Spatial ACIS recovery consequence with one sentence template"
 
 [[change]]
 commit = "9d28e7674c2c8fcc8458ef0a045ce5a55cd3bab7"
@@ -1358,13 +1163,6 @@ crate = "cadmpeg-codec-step"
 kind = "deletion"
 item = "cadmpeg_codec_step::{StepUnsupportedPolicy,StepWriteOptions::unsupported}"
 reason = "export-loss refusal is owned by conversion policy after planning; the direct STEP writer reports every reduction and no longer exposes an unreachable second refusal gate"
-
-[[change]]
-commit = "ca8ec222990721927bf522c463df916849560445"
-crate = "cadmpeg-asm"
-kind = "addition"
-item = "cadmpeg_asm::dialect::FORMAT"
-reason = "the shared ACIS dialect owner supplies one format id to kernel classification and every host-layer comparison"
 
 [[change]]
 commit = "af653959aaba73937fe708e0b394f7696a4158fe"
@@ -1437,13 +1235,6 @@ item = "cadmpeg_registry::{FormatDialects::catalog,build_encoder,write_targets}"
 reason = "the write subsystem moved to its owning module; `cadmpeg_ir::codec` re-exports the complete surface so caller import paths remain valid"
 
 [[change]]
-commit = "855cbb586aa1fe80c9c56d66af32ac0e992e3320"
-crate = "cadmpeg-ir"
-kind = "addition"
-item = "cadmpeg_ir::codec::assert_valid_target_catalog"
-reason = "the registry-wide compiled-catalog test validates each static encoder catalog once while lookup accessors remain allocation-free for arbitrary caller slices"
-
-[[change]]
 commit = "0415224a10145f86a7918be75c4c2d474e510ba6"
 crate = "cadmpeg-ir"
 kind = "visibility"
@@ -1456,13 +1247,6 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::report::ExportReport::cadir"
 reason = "the neutral report constructor now fixes `format` to `cadir`, so callers cannot construct a target-less report for a native format"
-
-[[change]]
-commit = "7bf2aa40ef69c1d8d3661ac78c023f6a5b2368f7"
-crate = "cadmpeg-core"
-kind = "addition"
-item = "cadmpeg_core::dialect::{DialectLayers,DialectLayersError}"
-reason = "report dialect collections require one primary layer and reject an extra layer for the same format at construction"
 
 [[change]]
 commit = "c7dba3472e886441fb6be2c188d99f76edca2d7c"

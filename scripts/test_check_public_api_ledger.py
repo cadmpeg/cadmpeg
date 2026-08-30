@@ -57,6 +57,16 @@ class ShapeChecks(unittest.TestCase):
         }
         self.assertEqual(ledger.check_shape(data), [])
 
+    def test_addition_kind_is_rejected(self) -> None:
+        data = {
+            "baseline_commit": "0123456789abcdef0123456789abcdef01234567",
+            "api_baseline_dir": "docs/api-baseline",
+            "measured_at": "0123456789abcdef0123456789abcdef01234567",
+            "change": [_row(kind="addition")],
+        }
+        failures = ledger.check_shape(data)
+        self.assertEqual(failures, ["change[0] unknown kind 'addition'"])
+
     def test_short_sha(self) -> None:
         data = {
             "baseline_commit": "abc",
@@ -191,14 +201,6 @@ class StagedCouplingChecks(unittest.TestCase):
     def test_crate_outside_added_change_block_is_ignored(self) -> None:
         diff = REALISTIC_LEDGER_DIFF + "\n+[[metadata]]\n+crate = \"not-a-change\"\n"
         self.assertEqual(ledger.added_change_crates(diff), {"cadmpeg-core"})
-
-    def test_addition_row_does_not_require_ledger_snapshot_coupling(self) -> None:
-        addition = REALISTIC_LEDGER_DIFF.replace('kind = "deletion"', 'kind = "addition"')
-        self.assertEqual(ledger.added_change_crates(addition), set())
-        self.assertEqual(
-            ledger.check_staged_coupling(addition, {"docs/public-api-ledger.toml"}),
-            [],
-        )
 
 
 if __name__ == "__main__":
