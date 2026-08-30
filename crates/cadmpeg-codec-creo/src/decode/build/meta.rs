@@ -922,11 +922,7 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
         attributes.insert("first_quilt_ptr".to_string(), value.to_string());
     }
     (
-        SourceMeta {
-            format: crate::dialect::FORMAT.to_string(),
-            attributes,
-            ..Default::default()
-        },
+        SourceMeta::unclassified(crate::dialect::FORMAT, attributes),
         coverage,
     )
 }

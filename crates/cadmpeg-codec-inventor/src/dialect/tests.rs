@@ -285,8 +285,8 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
             case.label
         );
         let source = decoded.ir().source.as_ref().expect("Inventor source meta");
-        assert_eq!(source.format, FORMAT, "{}", case.label);
-        assert_eq!(source.dialect.as_ref(), Some(&matched), "{}", case.label);
+        assert_eq!(source.format(), FORMAT, "{}", case.label);
+        assert_eq!(source.dialect(), Some(&matched), "{}", case.label);
     }
 }
 

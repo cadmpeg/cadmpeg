@@ -24,8 +24,8 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .source
         .as_ref()
         .unwrap()
-        .dialect
-        .clone()
+        .dialect()
+        .cloned()
         .unwrap();
     let plan = IgesEncoder
         .plan(
@@ -54,7 +54,12 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
     let mut unclassified = decoded.ir().clone();
-    unclassified.source.as_mut().unwrap().dialect = None;
+    let source = unclassified.source.take().unwrap();
+    let format = source.format().to_owned();
+    unclassified.source = Some(cadmpeg_ir::SourceMeta::unclassified(
+        format,
+        source.attributes,
+    ));
     let plan = IgesEncoder
         .plan(
             EncodeInput::new(&unclassified, Some(decoded.source_fidelity())),
@@ -88,8 +93,7 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
             .source
             .as_ref()
             .unwrap()
-            .dialect
-            .as_ref()
+            .dialect()
             .map(cadmpeg_core::dialect::DialectMatch::dialect)
     );
 }

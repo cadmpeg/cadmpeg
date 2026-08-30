@@ -1,4 +1,4 @@
-# generated at 621035d48
+# generated at ca4ccc950
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -344,8 +344,17 @@ pub fn cadmpeg_ir::document::Model::finalize(&mut self)
 pub fn cadmpeg_ir::document::Model::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
 pub struct cadmpeg_ir::document::SourceMeta
 pub cadmpeg_ir::document::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_ir::document::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectMatch>
-pub cadmpeg_ir::document::SourceMeta::format: alloc::string::String
+impl cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::DialectMatch, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
+pub fn cadmpeg_ir::document::SourceMeta::dialect(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectMatch>
+pub fn cadmpeg_ir::document::SourceMeta::format(&self) -> &str
+pub fn cadmpeg_ir::document::SourceMeta::unclassified(impl core::convert::Into<alloc::string::String>, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
+impl core::default::Default for cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::default() -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub const cadmpeg_ir::document::IR_VERSION: &str
 pub trait cadmpeg_ir::document::EntityRewrite
 pub type cadmpeg_ir::document::EntityRewrite::Error
@@ -7508,8 +7517,17 @@ impl core::default::Default for cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::default() -> Self
 pub struct cadmpeg_ir::SourceMeta
 pub cadmpeg_ir::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
-pub cadmpeg_ir::SourceMeta::dialect: core::option::Option<cadmpeg_core::dialect::DialectMatch>
-pub cadmpeg_ir::SourceMeta::format: alloc::string::String
+impl cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::DialectMatch, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
+pub fn cadmpeg_ir::document::SourceMeta::dialect(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectMatch>
+pub fn cadmpeg_ir::document::SourceMeta::format(&self) -> &str
+pub fn cadmpeg_ir::document::SourceMeta::unclassified(impl core::convert::Into<alloc::string::String>, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
+impl core::default::Default for cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::default() -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::document::SourceMeta
+pub fn cadmpeg_ir::document::SourceMeta::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::SourceObjectAssociation
 pub cadmpeg_ir::SourceObjectAssociation::color: core::option::Option<cadmpeg_ir::topology::Color>
 pub cadmpeg_ir::SourceObjectAssociation::format: alloc::string::String

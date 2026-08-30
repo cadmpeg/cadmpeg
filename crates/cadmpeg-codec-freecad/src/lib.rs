@@ -1130,11 +1130,7 @@ impl CodecBackend for FcstdCodec {
         // One `classify` call per run feeds `DecodeReport.dialects` and the
         // dialect-unverified loss.
         let primary = dialect::FcstdDialect::classify(&scan.document, scan.schema);
-        ir.source = Some(SourceMeta {
-            format: dialect::FORMAT.into(),
-            attributes,
-            ..Default::default()
-        });
+        ir.source = Some(SourceMeta::unclassified(dialect::FORMAT, attributes));
         if let Some((name, bytes)) = thumbnail {
             ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(

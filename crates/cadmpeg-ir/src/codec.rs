@@ -89,10 +89,14 @@ impl DecodeResult {
                 .map(cadmpeg_core::dialect::DialectLayers::primary)
             {
                 Some(matched) => {
-                    source.dialect = Some(matched.clone());
+                    source
+                        .stamp_dialect(Some(matched.clone()))
+                        .expect("decode report primary format matches source metadata");
                 }
                 None => {
-                    source.dialect = None;
+                    source
+                        .stamp_dialect(None)
+                        .expect("clearing source dialect preserves its format");
                 }
             }
         }

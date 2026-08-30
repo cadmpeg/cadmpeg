@@ -175,11 +175,7 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 
 /// Builds source metadata from non-dialect stream attributes.
 fn source_meta(attributes: BTreeMap<String, String>) -> SourceMeta {
-    SourceMeta {
-        format: FORMAT.to_string(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(FORMAT, attributes)
 }
 
 fn build_result(

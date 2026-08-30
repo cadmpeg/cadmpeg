@@ -451,11 +451,10 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
             == "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot."
     }));
 
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        dialect: None,
-        format: "sldprt".into(),
-        attributes: BTreeMap::from([("sw_configuration_0_needs_update".into(), "YES".into())]),
-    });
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
+        "sldprt",
+        BTreeMap::from([("sw_configuration_0_needs_update".into(), "YES".into())]),
+    ));
     report.losses.clear();
     append_design_losses(&ir, &mut report);
     assert!(!report

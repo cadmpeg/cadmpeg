@@ -85,11 +85,10 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
         )
         .expect("the test source dialect is classified")
     };
-    ir.source = Some(SourceMeta {
-        format: "sldprt".into(),
-        dialect: Some(matched),
-        ..SourceMeta::default()
-    });
+    ir.source = Some(SourceMeta::classified(
+        matched,
+        std::collections::BTreeMap::new(),
+    ));
     ir
 }
 

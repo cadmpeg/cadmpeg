@@ -179,8 +179,8 @@ pub fn same_format_source_dialect<'a>(
 ) -> Option<&'a cadmpeg_core::dialect::DialectMatch> {
     ir.source
         .as_ref()
-        .filter(|source| source.format == format)
-        .and_then(|source| source.dialect.as_ref())
+        .filter(|source| source.format() == format)
+        .and_then(|source| source.dialect())
 }
 
 /// Resolve target syntax and inheritance once, before codec-specific delivery.
@@ -203,7 +203,11 @@ pub fn resolve_write_request<'a>(
             )
         })?,
         TargetRequest::Inherit => {
-            match ir.source.as_ref().filter(|source| source.format == format) {
+            match ir
+                .source
+                .as_ref()
+                .filter(|source| source.format() == format)
+            {
                 None => default_target(targets).ok_or_else(|| {
                     refusal(
                         format,

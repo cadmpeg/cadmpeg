@@ -538,7 +538,7 @@ fn decode_yields_metadata_and_honest_report() {
         .retained_record("f3d:file:source-image#0")
         .is_some());
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.format, "f3d");
+    assert_eq!(source.format(), "f3d");
     assert_eq!(
         source.attributes.get("product_family").map(String::as_str),
         Some("Autodesk Neutron")

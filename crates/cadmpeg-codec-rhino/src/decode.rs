@@ -5754,11 +5754,7 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
             attributes.insert(format!("{prefix}.uuid"), id.to_string());
         }
     }
-    SourceMeta {
-        format: crate::dialect::FORMAT.to_string(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
 #[cfg(test)]

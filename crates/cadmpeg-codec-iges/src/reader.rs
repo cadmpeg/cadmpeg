@@ -37,11 +37,7 @@ fn source_meta(global: &global::ResolvedGlobal, representation: Representation) 
     if let Some(value) = global.native_file_name() {
         attributes.insert("native_file_name".into(), value);
     }
-    SourceMeta {
-        format: crate::dialect::FORMAT.into(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
 fn occurrence_loss(

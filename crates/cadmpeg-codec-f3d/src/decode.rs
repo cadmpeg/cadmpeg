@@ -4763,11 +4763,7 @@ fn source_and_tolerances(
 
 /// Source metadata carrying non-dialect attributes.
 fn source_meta(attributes: std::collections::BTreeMap<String, String>) -> SourceMeta {
-    SourceMeta {
-        format: crate::dialect::FORMAT.to_string(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
 /// Loss report for a successful geometry decode.

@@ -186,7 +186,7 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode parsed STEP document");
 
-    assert_eq!(result.ir().source.as_ref().unwrap().format, "step");
+    assert_eq!(result.ir().source.as_ref().unwrap().format(), "step");
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
     assert_eq!(unknowns[0].id.0, "step:data:example_record#1");

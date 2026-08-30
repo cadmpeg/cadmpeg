@@ -113,7 +113,7 @@ pub(crate) fn sync_configuration_design_state(
     let form_padding = ir
         .source
         .as_ref()
-        .and_then(|source| source.dialect.as_ref())
+        .and_then(|source| source.dialect())
         .and_then(crate::dialect::SldprtDialect::from_match)
         .and_then(crate::dialect::SldprtDialect::form_code_padding);
     let feature_names = ir

@@ -291,15 +291,12 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
 #[test]
 fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta {
-        format: "test".into(),
-        dialect: Some(
-            DialectMatch::new(DialectId::pinned("test:wrong"), Admission::Admitted)
-                .expect("the known test dialect is classified")
-                .with_declared(BTreeMap::from([("wrong".into(), "value".into())])),
-        ),
-        ..Default::default()
-    });
+    ir.source = Some(crate::SourceMeta::classified(
+        DialectMatch::new(DialectId::pinned("test:wrong"), Admission::Admitted)
+            .expect("the known test dialect is classified")
+            .with_declared(BTreeMap::from([("wrong".into(), "value".into())])),
+        BTreeMap::new(),
+    ));
     let primary = dialect_layer("test:only")
         .with_declared(BTreeMap::from([("version".into(), "only".into())]));
     let report = DecodeReport::classified(
@@ -318,7 +315,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         .source
         .as_ref()
         .expect("source metadata remains");
-    assert_eq!(source.dialect, Some(primary));
+    assert_eq!(source.dialect(), Some(&primary));
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {
@@ -379,13 +376,13 @@ const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
 
 fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     let mut ir = CadIr::empty(crate::units::Units::default());
-    ir.source = source.map(|(format, dialect)| crate::document::SourceMeta {
-        format: format.to_owned(),
-        dialect: dialect.map(|id| {
+    ir.source = source.map(|(format, dialect)| match dialect {
+        Some(id) => crate::document::SourceMeta::classified(
             DialectMatch::layer(DialectId::pinned(id), BTreeMap::new(), Admission::Admitted)
-                .expect("the known test dialect is classified")
-        }),
-        ..Default::default()
+                .expect("the known test dialect is classified"),
+            BTreeMap::new(),
+        ),
+        None => crate::document::SourceMeta::unclassified(format, BTreeMap::new()),
     });
     ir
 }

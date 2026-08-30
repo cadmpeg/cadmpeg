@@ -88,8 +88,8 @@ fn source_meta_mirrors_the_primary_layer_on_every_decode_path() {
                 .as_ref()
                 .expect("NX emits source metadata");
 
-            assert_eq!(source.format, "nx");
-            assert_eq!(source.dialect.as_ref(), Some(&matched));
+            assert_eq!(source.format(), "nx");
+            assert_eq!(source.dialect(), Some(&matched));
         }
     }
 }

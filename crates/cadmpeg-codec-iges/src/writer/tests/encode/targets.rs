@@ -94,8 +94,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
             .source
             .as_ref()
             .unwrap()
-            .dialect
-            .as_ref()
+            .dialect()
             .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("iges:1.0-fixed-ascii".to_owned())

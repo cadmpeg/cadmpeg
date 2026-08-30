@@ -132,7 +132,7 @@ fn retained_baseline(ir: &CadIr, source_dialect: &DialectId) -> Option<Resolutio
     let [document] = documents.as_slice() else {
         return None;
     };
-    let classified = ir.source.as_ref()?.dialect.as_ref()?.dialect();
+    let classified = ir.source.as_ref()?.dialect()?.dialect();
     let schema = dialect::FcstdDialect::from_id(classified)?;
     (schema != dialect::FcstdDialect::Unknown && classified == source_dialect).then(|| Resolution {
         schema,

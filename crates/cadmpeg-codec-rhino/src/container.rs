@@ -1149,11 +1149,7 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
         "instance_definition_count".to_string(),
         scan.definitions.definitions.len().to_string(),
     );
-    SourceMeta {
-        format: crate::dialect::FORMAT.to_string(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
 /// Build an empty current-version IR and a container-only report.

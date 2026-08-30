@@ -478,10 +478,9 @@ mod tests {
     /// must keep.
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
-        ir.source = Some(crate::document::SourceMeta {
-            dialect: None,
-            format: "pin".into(),
-            attributes: [
+        ir.source = Some(crate::document::SourceMeta::unclassified(
+            "pin",
+            [
                 (
                     DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
                     "stale".to_owned(),
@@ -490,7 +489,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-        });
+        ));
         ir
     }
 
@@ -562,10 +561,9 @@ mod tests {
         let mut ir = unit_cube();
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
-        ir.source = Some(crate::SourceMeta {
-            dialect: None,
-            format: "synthetic".into(),
-            attributes: [
+        ir.source = Some(crate::SourceMeta::unclassified(
+            "synthetic",
+            [
                 (
                     DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
                     "stale".to_owned(),
@@ -574,7 +572,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-        });
+        ));
         ir.set_native_unknowns_owned(
             "synthetic",
             vec![

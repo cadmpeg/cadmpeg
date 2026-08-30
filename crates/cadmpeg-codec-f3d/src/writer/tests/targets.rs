@@ -49,18 +49,15 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
 
 fn sourced_ir(dialect: &'static str) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.source = Some(SourceMeta {
-        format: "f3d".into(),
-        dialect: Some(
-            cadmpeg_core::dialect::DialectMatch::layer(
-                cadmpeg_core::dialect::DialectId::pinned(dialect),
-                std::collections::BTreeMap::default(),
-                cadmpeg_core::dialect::Admission::Admitted,
-            )
-            .expect("the test source dialect is classified"),
-        ),
-        ..SourceMeta::default()
-    });
+    ir.source = Some(SourceMeta::classified(
+        cadmpeg_core::dialect::DialectMatch::layer(
+            cadmpeg_core::dialect::DialectId::pinned(dialect),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )
+        .expect("the test source dialect is classified"),
+        std::collections::BTreeMap::new(),
+    ));
     ir
 }
 
@@ -102,8 +99,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
 
 #[test]
 fn cross_format_write_has_no_dialect_displacement() {
-    let mut ir = sourced_ir("step:ap242-edition-3");
-    ir.source.as_mut().unwrap().format = "step".into();
+    let ir = sourced_ir("step:ap242-edition-3");
     let fidelity = SourceFidelity::default();
     let plan = Encoder::plan(
         &F3dCodec,
