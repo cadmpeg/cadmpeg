@@ -195,6 +195,7 @@ impl ArchiveVersion {
             declared.insert(DECLARED_OPENNURBS_WRITER_VERSION.into(), stamp.to_string());
         }
         DialectMatch::layer(self.id(), declared, self.admission())
+            .expect("Rhino classifier produced an invalid dialect match")
     }
 
     /// Whether the archive word selects the chunked grammar.

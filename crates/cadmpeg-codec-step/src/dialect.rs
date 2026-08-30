@@ -298,6 +298,7 @@ impl StepDialect {
     fn classify_refused(self) -> DialectMatch {
         debug_assert!(self.alternate_encoding_refusal().is_some());
         DialectMatch::layer(self.id(), BTreeMap::new(), Admission::Refused)
+            .expect("STEP refusal classifier produced an invalid dialect match")
     }
 
     /// Classifies one Part 21 exchange. The single construction path for a
@@ -342,6 +343,7 @@ impl StepDialect {
         }
 
         DialectMatch::layer(dialect.id(), declared, dialect.admission())
+            .expect("STEP classifier produced an invalid dialect match")
     }
 }
 

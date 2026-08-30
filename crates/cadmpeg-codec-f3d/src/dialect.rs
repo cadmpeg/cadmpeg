@@ -185,6 +185,7 @@ impl F3dDialect {
     /// classification bug and the report can never disagree.
     fn matched(self, declared: BTreeMap<String, String>) -> DialectMatch {
         DialectMatch::layer(self.id(), declared, self.admission())
+            .expect("F3D classifier produced an invalid dialect match")
     }
 }
 

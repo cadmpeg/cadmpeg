@@ -656,16 +656,22 @@ mod tests {
     fn a_dialect_or_declared_divergence_is_a_difference() {
         let mut left = with_source(&[]);
         let mut right = left.clone();
-        left.source.as_mut().unwrap().dialect = Some(cadmpeg_core::dialect::DialectMatch::layer(
-            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-            BTreeMap::new(),
-            cadmpeg_core::dialect::Admission::Admitted,
-        ));
-        right.source.as_mut().unwrap().dialect = Some(cadmpeg_core::dialect::DialectMatch::layer(
-            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
-            BTreeMap::new(),
-            cadmpeg_core::dialect::Admission::Admitted,
-        ));
+        left.source.as_mut().unwrap().dialect = Some(
+            cadmpeg_core::dialect::DialectMatch::layer(
+                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                BTreeMap::new(),
+                cadmpeg_core::dialect::Admission::Admitted,
+            )
+            .expect("the known source dialect is classified"),
+        );
+        right.source.as_mut().unwrap().dialect = Some(
+            cadmpeg_core::dialect::DialectMatch::layer(
+                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
+                BTreeMap::new(),
+                cadmpeg_core::dialect::Admission::Admitted,
+            )
+            .expect("the known source dialect is classified"),
+        );
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
@@ -684,6 +690,7 @@ mod tests {
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
                 cadmpeg_core::dialect::Admission::Admitted,
             )
+            .expect("the known source dialect is classified")
             .with_declared(BTreeMap::from([("archive_version".into(), "70".into())])),
         );
         declared_right.source.as_mut().unwrap().dialect = Some(
@@ -691,6 +698,7 @@ mod tests {
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
                 cadmpeg_core::dialect::Admission::Admitted,
             )
+            .expect("the known source dialect is classified")
             .with_declared(BTreeMap::from([("archive_version".into(), "80".into())])),
         );
 
@@ -720,18 +728,19 @@ mod tests {
 
         let mut left = with_source(&[]);
         let mut right = left.clone();
-        left.source.as_mut().unwrap().dialect = Some(DialectMatch::new(
-            DialectId::pinned("rhino:archive-80"),
-            Admission::Admitted,
-        ));
-        right.source.as_mut().unwrap().dialect = Some(DialectMatch::new(
-            DialectId::pinned("rhino:archive-80"),
-            Admission::Refused,
-        ));
+        left.source.as_mut().unwrap().dialect = Some(
+            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
+                .expect("the known source dialect is classified"),
+        );
+        right.source.as_mut().unwrap().dialect = Some(
+            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Refused)
+                .expect("the known source dialect is classified"),
+        );
         assert!(!diff(&left, &right).is_empty());
 
         right.source.as_mut().unwrap().dialect = Some(
             DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
+                .expect("the known source dialect is classified")
                 .with_instance("embedded/model.3dm"),
         );
         assert!(!diff(&left, &right).is_empty());

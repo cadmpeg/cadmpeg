@@ -180,7 +180,8 @@ fn parasolid_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dialec
         (PARASOLID_SCHEMA.to_owned(), schema.to_owned()),
         (PARASOLID_CARRIER.to_owned(), carrier.to_owned()),
     ]);
-    let matched = DialectMatch::layer(id, declared, admission);
+    let matched = DialectMatch::layer(id, declared, admission)
+        .expect("SLDPRT Parasolid classifier produced an invalid dialect match");
     if instance_tagged {
         matched.with_instance(carrier)
     } else {
@@ -264,6 +265,7 @@ impl SldprtDialect {
         }
         let dialect = Self::from_declaration(sw_version);
         DialectMatch::layer(dialect.id(), declared, dialect.admission())
+            .expect("SLDPRT classifier produced an invalid dialect match")
     }
 
     /// Classifies one scanned document, reading the declaration from the scan.

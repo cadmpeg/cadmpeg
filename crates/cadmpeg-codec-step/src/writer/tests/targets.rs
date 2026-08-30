@@ -313,11 +313,14 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
     let mut ir = unit_cube();
     ir.source = Some(SourceMeta {
         format: "rhino".to_owned(),
-        dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
-            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
-            std::collections::BTreeMap::default(),
-            cadmpeg_core::dialect::Admission::Admitted,
-        )),
+        dialect: Some(
+            cadmpeg_core::dialect::DialectMatch::layer(
+                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
+                std::collections::BTreeMap::default(),
+                cadmpeg_core::dialect::Admission::Admitted,
+            )
+            .expect("the foreign source dialect is classified"),
+        ),
         ..SourceMeta::default()
     });
     let plan = encoder
@@ -353,11 +356,14 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
     let mut foreign = unit_cube();
     foreign.source = Some(SourceMeta {
         format: "iges".to_owned(),
-        dialect: Some(cadmpeg_core::dialect::DialectMatch::layer(
-            cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
-            std::collections::BTreeMap::default(),
-            cadmpeg_core::dialect::Admission::Admitted,
-        )),
+        dialect: Some(
+            cadmpeg_core::dialect::DialectMatch::layer(
+                cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
+                std::collections::BTreeMap::default(),
+                cadmpeg_core::dialect::Admission::Admitted,
+            )
+            .expect("the foreign source dialect is classified"),
+        ),
         ..SourceMeta::default()
     });
     let plan = inherit(&encoder, &foreign).expect("a foreign source takes the default");

@@ -144,10 +144,10 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn the_provenance_joins_the_match_the_registry_and_the_catalog() {
-        let dialects = DialectLayers::of(DialectMatch::new(
-            DialectId::pinned("rhino:archive-50"),
-            Admission::Admitted,
-        ));
+        let dialects = DialectLayers::of(
+            DialectMatch::new(DialectId::pinned("rhino:archive-50"), Admission::Admitted)
+                .expect("the provenance dialect is classified"),
+        );
         let provenance = dialect_provenance(Some(&dialects)).expect("a primary layer exists");
         assert_eq!(provenance.id.as_str(), "rhino:archive-50");
         assert!(provenance.read.is_some());

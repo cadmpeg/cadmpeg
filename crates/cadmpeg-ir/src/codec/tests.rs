@@ -295,6 +295,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         format: "test".into(),
         dialect: Some(
             DialectMatch::new(DialectId::pinned("test:wrong"), Admission::Admitted)
+                .expect("the known test dialect is classified")
                 .with_declared(BTreeMap::from([("wrong".into(), "value".into())])),
         ),
         ..Default::default()
@@ -322,6 +323,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
 
 fn dialect_layer(id: &'static str) -> DialectMatch {
     DialectMatch::new(DialectId::pinned(id), Admission::Admitted)
+        .expect("the known test dialect is classified")
 }
 
 /// An explicit target is refused by `plan` itself, with the catalog in the
@@ -381,6 +383,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
         format: format.to_owned(),
         dialect: dialect.map(|id| {
             DialectMatch::layer(DialectId::pinned(id), BTreeMap::new(), Admission::Admitted)
+                .expect("the known test dialect is classified")
         }),
         ..Default::default()
     });

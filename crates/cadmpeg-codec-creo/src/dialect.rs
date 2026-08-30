@@ -133,6 +133,7 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
         }
     }
     DialectMatch::layer(layout.id(), declared, admission)
+        .expect("Creo classifier produced an invalid dialect match")
 }
 
 #[cfg(test)]

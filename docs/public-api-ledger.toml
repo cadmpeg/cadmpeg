@@ -1631,3 +1631,10 @@ crate = "cadmpeg-registry"
 kind = "deletion"
 item = "cadmpeg_registry::Format::ALL"
 reason = "writable format enumeration projects from the compiled descriptor registry through `Format::all`, so capability membership has one author"
+
+[[change]]
+commit = "d0e5cd3ec09841024ee29a2b25bbdd7747dbb433"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::dialect::DialectMatch::{new,layer}"
+reason = "fallible constructors reject a residual `:unknown` identity paired with verified admission before it can enter a report"

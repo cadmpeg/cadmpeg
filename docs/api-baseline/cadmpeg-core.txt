@@ -1,4 +1,4 @@
-# generated at 277829234
+# generated at d0e5cd3ec
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -333,12 +333,16 @@ pub fn cadmpeg_core::dialect::DialectMatch::declared(&self) -> &alloc::collectio
 pub fn cadmpeg_core::dialect::DialectMatch::dialect(&self) -> &cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectMatch::format(&self) -> &str
 pub fn cadmpeg_core::dialect::DialectMatch::instance(&self) -> core::option::Option<&str>
-pub fn cadmpeg_core::dialect::DialectMatch::layer(cadmpeg_core::dialect::DialectId, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>, cadmpeg_core::dialect::Admission) -> Self
-pub fn cadmpeg_core::dialect::DialectMatch::new(cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::Admission) -> Self
+pub fn cadmpeg_core::dialect::DialectMatch::layer(cadmpeg_core::dialect::DialectId, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>, cadmpeg_core::dialect::Admission) -> core::result::Result<Self, cadmpeg_core::dialect::DialectMatchError>
+pub fn cadmpeg_core::dialect::DialectMatch::new(cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::Admission) -> core::result::Result<Self, cadmpeg_core::dialect::DialectMatchError>
 pub fn cadmpeg_core::dialect::DialectMatch::with_declared(self, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
 pub fn cadmpeg_core::dialect::DialectMatch::with_instance(self, impl core::convert::Into<alloc::string::String>) -> Self
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectMatch
 pub fn cadmpeg_core::dialect::DialectMatch::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub struct cadmpeg_core::dialect::DialectMatchError
+impl core::error::Error for cadmpeg_core::dialect::DialectMatchError
+impl core::fmt::Display for cadmpeg_core::dialect::DialectMatchError
+pub fn cadmpeg_core::dialect::DialectMatchError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
 pub cadmpeg_core::error::CodecError::InvalidInput(alloc::string::String)

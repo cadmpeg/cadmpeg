@@ -210,6 +210,7 @@ impl FcstdDialect {
             declared.insert(DECLARED_PROGRAM_VERSION.into(), version.clone());
         }
         DialectMatch::layer(dialect.id(), declared, admission)
+            .expect("FCStd classifier produced an invalid dialect match")
     }
 
     /// The loss charged when the document's schema names no declared row.

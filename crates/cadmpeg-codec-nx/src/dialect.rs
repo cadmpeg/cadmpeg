@@ -122,7 +122,8 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
                 ("schema".to_owned(), schema.to_owned()),
                 ("carrier".to_owned(), carrier.clone()),
             ]);
-            let matched = DialectMatch::layer(id, declared, admission);
+            let matched = DialectMatch::layer(id, declared, admission)
+                .expect("NX Parasolid classifier produced an invalid dialect match");
             if several {
                 matched.with_instance(carrier)
             } else {
@@ -212,6 +213,7 @@ impl NxDialect {
             }
         }
         DialectMatch::layer(dialect.id(), declared, dialect.admission())
+            .expect("NX classifier produced an invalid dialect match")
     }
 }
 
