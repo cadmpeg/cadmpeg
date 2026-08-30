@@ -2,13 +2,15 @@
 //! The write-target request reaching this encoder's `plan`.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
+use std::io::Cursor;
 
-use crate::{loss::SldprtLossCode, SldprtCodec};
+use crate::test_support::{make_block, sldprt_with_body_and_history, triangle_body};
+use crate::{dialect::SldprtDialect, loss::SldprtLossCode, SldprtCodec};
 
 #[test]
 fn first_solidworks_envelope_selects_the_written_dialect() {
@@ -28,6 +30,50 @@ fn first_solidworks_envelope_selects_the_written_dialect() {
     let dialect = crate::dialect::SldprtDialect::from_declaration(declaration.as_deref());
 
     assert_eq!(dialect, crate::dialect::SldprtDialect::SwVersionPre12000);
+}
+
+#[test]
+fn semantic_writer_reclassifies_the_final_retained_envelope() {
+    let mut source = sldprt_with_body_and_history(&triangle_body());
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("versioned part decodes");
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    let attributes = ir
+        .source
+        .take()
+        .expect("decode classifies the source")
+        .attributes;
+    ir.source = Some(SourceMeta::classified(
+        SldprtDialect::classify(None),
+        attributes,
+    ));
+    let records = crate::source_records(&ir, &fidelity).expect("source records join");
+    let mut written = Vec::new();
+    let dialect = crate::writer::write_semantic_with_records(
+        &ir,
+        &fidelity.annotations,
+        &records,
+        &mut written,
+    )
+    .expect("semantic write succeeds");
+    let redecoded = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written part decodes");
+    let redecoded_dialect = redecoded
+        .report()
+        .dialects()
+        .expect("written part classifies")
+        .primary()
+        .dialect();
+
+    assert_eq!(dialect, SldprtDialect::SwVersion12000Plus.id());
+    assert_eq!(&dialect, redecoded_dialect);
 }
 
 /// An explicit target this writer does not produce is refused by `plan` itself,

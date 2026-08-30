@@ -330,9 +330,9 @@ impl IgesDialect {
     /// registry row of its own while its bytes are read with a newer grammar,
     /// which is the whole legacy Fixed ASCII range.
     ///
-    /// `Admission::Admitted` holds exactly when
-    /// [`ResolvedGlobal::dialect_loss`] is `None`, because both read
-    /// `dialect_recovery`. That biconditional is what the decode policy
+    /// `Admission::Admitted` holds exactly when [`dialect_loss`] is `None`,
+    /// because the loss function reads the admission constructed here instead
+    /// of recomputing recovery. That biconditional is what the decode policy
     /// requires, and it is structural here rather than maintained by hand.
     pub(crate) fn classify(
         representation: Representation,

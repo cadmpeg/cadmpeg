@@ -33,10 +33,10 @@ pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
 /// Writes a semantic document and returns the dialect it wrote.
 ///
-/// The returned id is read back out of the `swSolidWorks` envelope this call
-/// emits, whether that envelope survived from the retained blocks or was
-/// generated here, so a re-decode of these bytes classifies exactly what the
-/// caller reports as `ExportReport::target`.
+/// The returned id is classified from the final section payloads through the
+/// same `swSolidWorks` envelope parser that decode uses, so a re-decode of
+/// these bytes classifies exactly what the caller reports as
+/// `ExportReport::target`.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
@@ -268,6 +268,12 @@ pub(crate) fn write_semantic_with_records(
     for (section, payload) in opaque {
         sections.push((section, payload));
     }
+    let written_declaration = crate::container::first_solidworks_envelope(
+        sections.iter().map(|(_, payload)| payload.as_slice()),
+    )
+    .and_then(|envelope| envelope.sw_version);
+    let written_dialect =
+        crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
     let type_ids = section_type_ids(retained_records, &sections)?;
     writer.write_all(&outer_header(retained_records))?;
@@ -280,19 +286,7 @@ pub(crate) fn write_semantic_with_records(
     for entry in section_directory_entries(retained_records, &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
-    // A retained envelope preserves the already-classified source row. A
-    // generated or absent envelope declares no identity and lands on the
-    // totality row.
-    Ok(if has_document_envelope {
-        ir.source
-            .as_ref()
-            .and_then(|source| source.dialect())
-            .and_then(crate::dialect::SldprtDialect::from_match)
-            .unwrap_or(crate::dialect::SldprtDialect::Unknown)
-    } else {
-        crate::dialect::SldprtDialect::Unknown
-    }
-    .id())
+    Ok(written_dialect)
 }
 
 fn assign_configuration_indices(
