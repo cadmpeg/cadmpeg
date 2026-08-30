@@ -1,4 +1,4 @@
-# generated at d0e5cd3ec
+# generated at ca4ccc950
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -35,6 +35,10 @@ pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::diale
 pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
 pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
+impl serde_core::ser::Serialize for cadmpeg_core::container::ContainerSummary
+pub fn cadmpeg_core::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::container::ContainerSummary
+pub fn cadmpeg_core::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub mod cadmpeg_core::decode
 pub enum cadmpeg_core::decode::AddressStepKind
 pub cadmpeg_core::decode::AddressStepKind::ExpandedMember
@@ -424,6 +428,10 @@ pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::diale
 pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
 pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
+impl serde_core::ser::Serialize for cadmpeg_core::container::ContainerSummary
+pub fn cadmpeg_core::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::container::ContainerSummary
+pub fn cadmpeg_core::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_core::TargetToken(_)
 impl cadmpeg_core::error::TargetToken
 pub fn cadmpeg_core::error::TargetToken::as_str(&self) -> &str

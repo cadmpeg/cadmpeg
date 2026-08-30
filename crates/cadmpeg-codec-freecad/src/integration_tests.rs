@@ -388,17 +388,11 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         .iter()
         .all(|loss| loss.code != unverified));
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.dialect.as_ref(), Some(matched));
+    assert_eq!(source.dialect(), Some(matched));
+    assert_eq!(source.dialect().unwrap().declared()["schema_version"], "4");
+    assert_eq!(source.dialect().unwrap().declared()["file_version"], "1");
     assert_eq!(
-        source.dialect.as_ref().unwrap().declared()["schema_version"],
-        "4"
-    );
-    assert_eq!(
-        source.dialect.as_ref().unwrap().declared()["file_version"],
-        "1"
-    );
-    assert_eq!(
-        source.dialect.as_ref().unwrap().declared()["program_version"],
+        source.dialect().unwrap().declared()["program_version"],
         "1.0"
     );
     // The pre-existing attribute keys keep their duties beside the mirror.
@@ -458,13 +452,9 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         1
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(
-        source.dialect.as_ref().unwrap().declared()["schema_version"],
-        "5"
-    );
+    assert_eq!(source.dialect().unwrap().declared()["schema_version"], "5");
     assert!(!source
-        .dialect
-        .as_ref()
+        .dialect()
         .unwrap()
         .declared()
         .contains_key("program_version"));
@@ -483,10 +473,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         1
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(
-        source.dialect.as_ref().unwrap().declared()["schema_version"],
-        "5"
-    );
+    assert_eq!(source.dialect().unwrap().declared()["schema_version"], "5");
 }
 
 /// A document that differs from a schema-4 document only in its declared

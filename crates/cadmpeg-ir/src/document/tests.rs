@@ -219,8 +219,8 @@ fn pre_migration_source_metadata_reads_back_and_gains_the_dialect_keys() {
     let stored = "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"}}";
     let source: SourceMeta = serde_json::from_str(stored).unwrap();
 
-    assert_eq!(source.format, "rhino");
-    assert_eq!(source.dialect, None);
+    assert_eq!(source.format(), "rhino");
+    assert_eq!(source.dialect(), None);
 
     let rewritten = serde_json::to_string(&source).unwrap();
     assert_eq!(
@@ -231,5 +231,40 @@ fn pre_migration_source_metadata_reads_back_and_gains_the_dialect_keys() {
     assert_eq!(
         serde_json::from_str::<SourceMeta>(&rewritten).unwrap(),
         source
+    );
+}
+
+#[test]
+fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() {
+    let matched = cadmpeg_core::dialect::DialectMatch::new(
+        cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
+        cadmpeg_core::dialect::Admission::Admitted,
+    )
+    .unwrap();
+    let source = SourceMeta::classified(
+        matched.clone(),
+        std::collections::BTreeMap::from([("object_count".into(), "3".into())]),
+    );
+
+    assert_eq!(source.format(), "rhino");
+    assert_eq!(source.dialect(), Some(&matched));
+    let rendered = serde_json::to_string(&source).unwrap();
+    assert_eq!(
+        rendered,
+        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\"dialect\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}}"
+    );
+    assert_eq!(
+        serde_json::from_str::<SourceMeta>(&rendered).unwrap(),
+        source
+    );
+
+    let malformed = rendered.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
+    let error = serde_json::from_str::<SourceMeta>(&malformed)
+        .expect_err("a source format must match its dialect format");
+    assert!(
+        error
+            .to_string()
+            .contains("source format \"step\" does not match dialect format \"rhino\""),
+        "{error}"
     );
 }

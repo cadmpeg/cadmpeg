@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 
 use cadmpeg_core::dialect::DialectMatch;
 
@@ -467,30 +468,136 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
 /// source bytes must not use that suffix. See
 /// [`crate::hash::document_local_sha256`] and
 /// [`cadmpeg_ir::compare::is_local_digest_attribute`].
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceMeta {
-    /// Source format id.
-    pub format: String,
+    classification: SourceClassification,
     /// Format-specific attributes.
-    #[serde(default)]
     pub attributes: BTreeMap<String, String>,
-    /// Primary-layer dialect match of the source document.
-    ///
-    /// Mirrors the [`cadmpeg_core::dialect::DialectMatch`] entry whose `format`
-    /// equals [`Self::format`], so the round-trip default survives a CADIR
-    /// intermediate.
-    ///
-    /// `None` on a synthetic document that no decode produced and on an
-    /// unclassified decode. A match contains the classified dialect id, source
-    /// declarations, admission, and optional instance discriminator.
-    /// [`crate::codec::DecodeResult::new`] copies the report's primary match
-    /// into this field when it constructs a decode result.
-    ///
-    /// Always serialized, as `null` when absent. Documents written before the
-    /// field existed omit the key and read back `None`.
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SourceClassification {
+    Classified(DialectMatch),
+    Unclassified { format: String },
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SourceMetaWire {
+    format: String,
     #[serde(default)]
-    pub dialect: Option<DialectMatch>,
+    attributes: BTreeMap<String, String>,
+    #[serde(default)]
+    dialect: Option<DialectMatch>,
+}
+
+impl Default for SourceMeta {
+    fn default() -> Self {
+        Self::unclassified(String::new(), BTreeMap::new())
+    }
+}
+
+impl Serialize for SourceMeta {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("SourceMeta", 3)?;
+        state.serialize_field("format", self.format())?;
+        state.serialize_field("attributes", &self.attributes)?;
+        state.serialize_field("dialect", &self.dialect())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceMeta {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = SourceMetaWire::deserialize(deserializer)?;
+        match wire.dialect {
+            Some(dialect) => {
+                if wire.format != dialect.format() {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "source format {:?} does not match dialect format {:?}",
+                        wire.format,
+                        dialect.format()
+                    )));
+                }
+                Ok(Self::classified(dialect, wire.attributes))
+            }
+            None => Ok(Self::unclassified(wire.format, wire.attributes)),
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SourceMeta {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SourceMeta".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::SourceMeta").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SourceMetaWire::json_schema(generator)
+    }
+}
+
+impl SourceMeta {
+    /// Constructs metadata with a primary dialect whose format is authoritative.
+    #[must_use]
+    pub fn classified(dialect: DialectMatch, attributes: BTreeMap<String, String>) -> Self {
+        Self {
+            classification: SourceClassification::Classified(dialect),
+            attributes,
+        }
+    }
+
+    /// Constructs metadata for a known source format without a dialect match.
+    #[must_use]
+    pub fn unclassified(format: impl Into<String>, attributes: BTreeMap<String, String>) -> Self {
+        Self {
+            classification: SourceClassification::Unclassified {
+                format: format.into(),
+            },
+            attributes,
+        }
+    }
+
+    /// Returns the source format id.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        match &self.classification {
+            SourceClassification::Classified(dialect) => dialect.format(),
+            SourceClassification::Unclassified { format } => format,
+        }
+    }
+
+    /// Returns the primary source dialect match when the source was classified.
+    ///
+    /// The match contains the registry dialect id, source declarations,
+    /// admission, and optional instance discriminator. Its format is also the
+    /// source format returned by [`Self::format`].
+    #[must_use]
+    pub fn dialect(&self) -> Option<&DialectMatch> {
+        match &self.classification {
+            SourceClassification::Classified(dialect) => Some(dialect),
+            SourceClassification::Unclassified { .. } => None,
+        }
+    }
+
+    pub(crate) fn stamp_dialect(&mut self, dialect: Option<DialectMatch>) -> Result<(), String> {
+        let format = self.format().to_owned();
+        self.classification = match dialect {
+            Some(dialect) if dialect.format() != format => {
+                return Err(format!(
+                    "source format {format:?} does not match dialect format {:?}",
+                    dialect.format()
+                ));
+            }
+            Some(dialect) => SourceClassification::Classified(dialect),
+            None => SourceClassification::Unclassified { format },
+        };
+        Ok(())
+    }
 }
 
 #[cfg(test)]

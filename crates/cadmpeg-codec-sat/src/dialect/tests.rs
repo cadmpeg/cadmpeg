@@ -363,9 +363,9 @@ fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source
 
         // Identity survives refusal: the empty-IR result carries the same row.
         let source = result.ir().source.as_ref().expect("source metadata");
-        assert_eq!(source.dialect.as_ref(), Some(matched), "{}", case.label);
+        assert_eq!(source.dialect(), Some(matched), "{}", case.label);
         assert!(
-            !source.dialect.as_ref().unwrap().declared().is_empty(),
+            !source.dialect().unwrap().declared().is_empty(),
             "{}: every stream declares at least its encoding",
             case.label
         );

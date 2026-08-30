@@ -198,13 +198,12 @@ pub fn sldprt_cube() -> cadmpeg_ir::CadIr {
 /// A cube carrying source metadata with the given attributes.
 pub fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
     let mut ir = unit_cube();
-    ir.source = Some(cadmpeg_ir::SourceMeta {
-        dialect: None,
-        format: "synthetic".into(),
-        attributes: attributes
+    ir.source = Some(cadmpeg_ir::SourceMeta::unclassified(
+        "synthetic",
+        attributes
             .iter()
             .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
             .collect(),
-    });
+    ));
     ir
 }

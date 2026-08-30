@@ -316,7 +316,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
     assert!(charges_dialect_unverified(&decoded));
 
     let source = decoded.ir().source.as_ref().unwrap();
-    assert_eq!(source.dialect.as_ref(), Some(matched));
+    assert_eq!(source.dialect(), Some(matched));
 
     let summary = IgesCodec
         .inspect(

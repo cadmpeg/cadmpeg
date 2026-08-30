@@ -97,17 +97,16 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
 #[test]
 fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        attributes: BTreeMap::from([
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
+        "",
+        BTreeMap::from([
             (
                 "active_parasolid_block".into(),
                 "Contents/Config-3-Partition".into(),
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        dialect: None,
-        format: String::new(),
-    });
+    ));
     let body = BodyId("body:active".into());
 
     assign_configuration_bodies(&mut ir, &[(3, vec![body.clone()])]);
@@ -130,17 +129,16 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
 #[test]
 fn active_configuration_name_binds_partition_without_fabricating_body_membership() {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        attributes: BTreeMap::from([
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
+        "",
+        BTreeMap::from([
             (
                 "active_parasolid_block".into(),
                 "Contents/Config-3-Partition".into(),
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        dialect: None,
-        format: String::new(),
-    });
+    ));
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,
@@ -238,14 +236,13 @@ fn incomplete_configuration_names_are_reported() {
 #[test]
 fn active_configuration_partition_disagreement_is_reported() {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        dialect: None,
-        format: "sldprt".into(),
-        attributes: BTreeMap::from([(
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
+        "sldprt",
+        BTreeMap::from([(
             "active_parasolid_block".into(),
             "Contents/Config-3-Partition".into(),
         )]),
-    });
+    ));
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,

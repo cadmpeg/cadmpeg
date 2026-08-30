@@ -126,7 +126,7 @@ fn synthesized_plan<'a>(
             .ir
             .source
             .as_ref()
-            .is_some_and(|source| source.format == dialect::FORMAT);
+            .is_some_and(|source| source.format() == dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))

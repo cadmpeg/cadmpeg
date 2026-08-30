@@ -3097,11 +3097,7 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
 /// Non-identity source metadata stays in the attribute map. `sw_name` and
 /// `sldprt_active_partition_unresolved` gate the writer.
 fn source_meta_with_dialect(attributes: BTreeMap<String, String>) -> SourceMeta {
-    SourceMeta {
-        format: crate::dialect::FORMAT.to_string(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
 fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {

@@ -84,7 +84,7 @@ fn synthesized_plan<'a>(
             .ir
             .source
             .as_ref()
-            .is_some_and(|source| source.format == crate::dialect::FORMAT);
+            .is_some_and(|source| source.format() == crate::dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
@@ -155,7 +155,7 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
     let Some(source) = ir
         .source
         .as_ref()
-        .filter(|source| source.format == crate::dialect::FORMAT)
+        .filter(|source| source.format() == crate::dialect::FORMAT)
     else {
         return Ok(Replay::declined());
     };

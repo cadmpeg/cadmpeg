@@ -1638,3 +1638,10 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::dialect::DialectMatch::{new,layer}"
 reason = "fallible constructors reject a residual `:unknown` identity paired with verified admission before it can enter a report"
+
+[[change]]
+commit = "ca4ccc950f06d151fb577124ebbc0159077a0f79"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::document::SourceMeta::{format,dialect}"
+reason = "classified source metadata stores one format identity, so callers construct classified or unclassified states instead of pairing public fields independently"

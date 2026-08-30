@@ -727,9 +727,9 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .skip(1)
         .any(|matched| matched.format() == "f3d" && matched.instance() == Some("root.f3d")));
     let source = decoded.ir().source.as_ref().unwrap();
-    assert_eq!(source.dialect.as_ref(), Some(&inspected));
+    assert_eq!(source.dialect(), Some(&inspected));
     let primary = decoded.report().dialects().unwrap().primary();
-    assert_eq!(source.dialect.as_ref(), Some(primary));
+    assert_eq!(source.dialect(), Some(primary));
 }
 
 fn unverified_acis_text_member() -> Vec<u8> {
@@ -950,5 +950,5 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
         .unwrap();
     assert_eq!(decoded.report().dialects(), inspected_dialects);
     let source = decoded.ir().source.as_ref().unwrap();
-    assert_eq!(source.dialect.as_ref(), Some(&inspected));
+    assert_eq!(source.dialect(), Some(&inspected));
 }

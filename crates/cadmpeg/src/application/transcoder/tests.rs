@@ -286,10 +286,10 @@ fn a_cross_format_convert_writes_the_catalog_default() {
     use cadmpeg_ir::codec::{resolve_write_request, WriteRequest};
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.source = Some(cadmpeg_ir::SourceMeta {
-        format: "step".into(),
-        ..Default::default()
-    });
+    ir.source = Some(cadmpeg_ir::SourceMeta::unclassified(
+        "step",
+        std::collections::BTreeMap::new(),
+    ));
     let encoder = cadmpeg_codec_iges::IgesEncoder;
     let WriteRequest::Catalog {
         entry, displaced, ..

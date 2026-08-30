@@ -254,7 +254,7 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode STEP ZIP root");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.format, "step");
+    assert_eq!(source.format(), "step");
     assert_eq!(source.attributes["container_kind"], "iso-10303-21-zip");
     assert_eq!(source.attributes["archive_root"], "ISO-10303.p21");
     assert_eq!(source.attributes["archive_entries"], "3");

@@ -134,8 +134,7 @@ fn inherit_synthesizes_the_source_schema_not_the_catalog_default() {
             .source
             .as_ref()
             .unwrap()
-            .dialect
-            .as_ref()
+            .dialect()
             .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("step:ap203-e1".to_owned())
@@ -190,8 +189,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
             .source
             .as_ref()
             .unwrap()
-            .dialect
-            .as_ref()
+            .dialect()
             .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("step:ap242".to_owned())
@@ -220,8 +218,7 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
             .source
             .as_ref()
             .unwrap()
-            .dialect
-            .as_ref()
+            .dialect()
             .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("step:unknown".to_owned())
@@ -244,11 +241,10 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
 #[test]
 fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(SourceMeta {
-        format: crate::dialect::FORMAT.to_owned(),
-        dialect: None,
-        ..SourceMeta::default()
-    });
+    ir.source = Some(SourceMeta::unclassified(
+        crate::dialect::FORMAT,
+        std::collections::BTreeMap::new(),
+    ));
 
     let error = inherit(&StepCodec::default(), &ir)
         .err()
@@ -311,18 +307,15 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
     assert_eq!(default.id, "step:ap214");
 
     let mut ir = unit_cube();
-    ir.source = Some(SourceMeta {
-        format: "rhino".to_owned(),
-        dialect: Some(
-            cadmpeg_core::dialect::DialectMatch::layer(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
-                std::collections::BTreeMap::default(),
-                cadmpeg_core::dialect::Admission::Admitted,
-            )
-            .expect("the foreign source dialect is classified"),
-        ),
-        ..SourceMeta::default()
-    });
+    ir.source = Some(SourceMeta::classified(
+        cadmpeg_core::dialect::DialectMatch::layer(
+            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )
+        .expect("the foreign source dialect is classified"),
+        std::collections::BTreeMap::new(),
+    ));
     let plan = encoder
         .plan(
             EncodeInput::new(&ir, None),
@@ -354,18 +347,15 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
     assert!(written_text(plan).contains("AUTOMOTIVE_DESIGN"));
 
     let mut foreign = unit_cube();
-    foreign.source = Some(SourceMeta {
-        format: "iges".to_owned(),
-        dialect: Some(
-            cadmpeg_core::dialect::DialectMatch::layer(
-                cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
-                std::collections::BTreeMap::default(),
-                cadmpeg_core::dialect::Admission::Admitted,
-            )
-            .expect("the foreign source dialect is classified"),
-        ),
-        ..SourceMeta::default()
-    });
+    foreign.source = Some(SourceMeta::classified(
+        cadmpeg_core::dialect::DialectMatch::layer(
+            cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )
+        .expect("the foreign source dialect is classified"),
+        std::collections::BTreeMap::new(),
+    ));
     let plan = inherit(&encoder, &foreign).expect("a foreign source takes the default");
     assert_eq!(target_of(&plan), Some("step:ap214".to_owned()));
 }

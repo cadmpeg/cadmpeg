@@ -446,11 +446,7 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
             format!("0x{:08x}", segment.type_word),
         );
     }
-    SourceMeta {
-        format: crate::dialect::FORMAT.to_string(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
 pub(crate) fn build_geometry_report(

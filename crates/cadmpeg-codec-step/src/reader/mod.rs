@@ -90,11 +90,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
-        ir.source = Some(SourceMeta {
-            format: crate::dialect::FORMAT.into(),
-            attributes,
-            ..Default::default()
-        });
+        ir.source = Some(SourceMeta::unclassified(crate::dialect::FORMAT, attributes));
 
         let mut report = DecodeReport::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),

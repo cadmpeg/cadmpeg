@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::dialect::DialectLayers;
 
@@ -32,23 +33,90 @@ pub struct ContainerEntry {
 }
 
 /// The result of inspecting a container without decoding its geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerSummary {
-    /// Source format id.
-    format: String,
+    classification: ContainerClassification,
     /// Container kind, for example, `"zip"`.
     pub container_kind: String,
     /// Enumerated entries.
     pub entries: Vec<ContainerEntry>,
     /// Codec-defined informational notes.
     pub notes: Vec<String>,
-    /// Dialect identification, one entry per format layer the inspection read.
-    ///
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ContainerClassification {
+    Classified(DialectLayers),
+    Unclassified { format: String },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ContainerSummaryWire {
+    format: String,
+    container_kind: String,
+    entries: Vec<ContainerEntry>,
+    notes: Vec<String>,
     /// Always serialized. Summaries written before the field existed omit the
     /// key and read back as unclassified.
     #[serde(default)]
     dialects: Option<DialectLayers>,
+}
+
+impl Serialize for ContainerSummary {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ContainerSummary", 5)?;
+        state.serialize_field("format", self.format())?;
+        state.serialize_field("container_kind", &self.container_kind)?;
+        state.serialize_field("entries", &self.entries)?;
+        state.serialize_field("notes", &self.notes)?;
+        state.serialize_field("dialects", &self.dialects())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ContainerSummary {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = ContainerSummaryWire::deserialize(deserializer)?;
+        match wire.dialects {
+            Some(dialects) => {
+                if wire.format != dialects.primary().format() {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "container format {:?} does not match primary dialect format {:?}",
+                        wire.format,
+                        dialects.primary().format()
+                    )));
+                }
+                Ok(Self::classified(
+                    dialects,
+                    wire.container_kind,
+                    wire.entries,
+                    wire.notes,
+                ))
+            }
+            None => Ok(Self::unclassified(
+                wire.format,
+                wire.container_kind,
+                wire.entries,
+                wire.notes,
+            )),
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for ContainerSummary {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ContainerSummary".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::ContainerSummary").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        ContainerSummaryWire::json_schema(generator)
+    }
 }
 
 impl ContainerSummary {
@@ -61,11 +129,10 @@ impl ContainerSummary {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            format: dialects.primary().format().to_owned(),
+            classification: ContainerClassification::Classified(dialects),
             container_kind: container_kind.into(),
             entries,
             notes,
-            dialects: Some(dialects),
         }
     }
 
@@ -78,24 +145,31 @@ impl ContainerSummary {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            format: format.into(),
+            classification: ContainerClassification::Unclassified {
+                format: format.into(),
+            },
             container_kind: container_kind.into(),
             entries,
             notes,
-            dialects: None,
         }
     }
 
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
-        &self.format
+        match &self.classification {
+            ContainerClassification::Classified(dialects) => dialects.primary().format(),
+            ContainerClassification::Unclassified { format } => format,
+        }
     }
 
     /// Returns the classified dialect layers, if inspection classified them.
     #[must_use]
     pub fn dialects(&self) -> Option<&DialectLayers> {
-        self.dialects.as_ref()
+        match &self.classification {
+            ContainerClassification::Classified(dialects) => Some(dialects),
+            ContainerClassification::Unclassified { .. } => None,
+        }
     }
 }
 
@@ -125,7 +199,10 @@ mod tests {
             serde_json::from_str::<ContainerSummary>(legacy).expect("a legacy summary reads"),
             summary
         );
+    }
 
+    #[test]
+    fn classified_summary_wire_uses_and_requires_the_primary_format() {
         let primary = DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
             .expect("the primary dialect is classified");
         let extra = DialectMatch::new(
@@ -145,9 +222,10 @@ mod tests {
             classified["dialects"],
             serde_json::json!({"primary": primary, "extra": [extra]})
         );
+        assert_eq!(classified["format"], "rhino");
 
         let restored: ContainerSummary =
-            serde_json::from_value(classified).expect("classified summary reads");
+            serde_json::from_value(classified.clone()).expect("classified summary reads");
         assert_eq!(
             restored
                 .dialects()
@@ -155,6 +233,17 @@ mod tests {
                 .primary()
                 .format(),
             "rhino"
+        );
+
+        let mut malformed = classified;
+        malformed["format"] = serde_json::json!("step");
+        let error = serde_json::from_value::<ContainerSummary>(malformed)
+            .expect_err("a classified summary must match its primary dialect format");
+        assert!(
+            error.to_string().contains(
+                "container format \"step\" does not match primary dialect format \"rhino\""
+            ),
+            "{error}"
         );
     }
 }

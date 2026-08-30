@@ -49,18 +49,15 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
 /// An empty document that a Rhino decode of `dialect` would have produced.
 fn source_in(dialect: &'static str) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        format: "rhino".into(),
-        dialect: Some(
-            cadmpeg_core::dialect::DialectMatch::layer(
-                cadmpeg_core::dialect::DialectId::pinned(dialect),
-                std::collections::BTreeMap::default(),
-                cadmpeg_core::dialect::Admission::Admitted,
-            )
-            .expect("the test source dialect is classified"),
-        ),
-        ..cadmpeg_ir::document::SourceMeta::default()
-    });
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectMatch::layer(
+            cadmpeg_core::dialect::DialectId::pinned(dialect),
+            std::collections::BTreeMap::default(),
+            cadmpeg_core::dialect::Admission::Admitted,
+        )
+        .expect("the test source dialect is classified"),
+        std::collections::BTreeMap::new(),
+    ));
     ir
 }
 
@@ -147,11 +144,10 @@ fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
 #[test]
 fn inherit_refuses_a_source_that_records_no_dialect() {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        format: "rhino".into(),
-        dialect: None,
-        ..cadmpeg_ir::document::SourceMeta::default()
-    });
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
+        "rhino",
+        std::collections::BTreeMap::new(),
+    ));
     let error = Encoder::plan(
         &RhinoEncoder,
         EncodeInput::new(&ir, None),

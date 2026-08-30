@@ -43,10 +43,10 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     // refuses without pretending schema 4 was requested and then naming it
     // as both requested and available.
     let mut step_source = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    step_source.source = Some(cadmpeg_ir::document::SourceMeta {
-        format: "step".to_owned(),
-        ..cadmpeg_ir::document::SourceMeta::default()
-    });
+    step_source.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
+        "step",
+        std::collections::BTreeMap::new(),
+    ));
     let missing_graph = FcstdCodec
         .plan(EncodeInput::new(&step_source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -183,7 +183,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .ir()
             .source
             .as_ref()
-            .and_then(|source| source.dialect.as_ref())
+            .and_then(|source| source.dialect())
             .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
@@ -210,7 +210,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
             .ir()
             .source
             .as_ref()
-            .and_then(|source| source.dialect.as_ref())
+            .and_then(|source| source.dialect())
             .map(cadmpeg_core::dialect::DialectMatch::dialect)
             .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
@@ -317,10 +317,12 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         )
         .expect("decode source");
     let (mut ir, _, _) = decoded.into_parts();
-    ir.source
-        .as_mut()
-        .expect("the decode records a source")
-        .dialect = None;
+    let source = ir.source.take().expect("the decode records a source");
+    let format = source.format().to_owned();
+    ir.source = Some(cadmpeg_ir::SourceMeta::unclassified(
+        format,
+        source.attributes,
+    ));
 
     let error = inherit(&ir)
         .err()

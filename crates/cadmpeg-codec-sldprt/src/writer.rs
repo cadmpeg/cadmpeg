@@ -286,7 +286,7 @@ pub(crate) fn write_semantic_with_records(
     Ok(if has_document_envelope {
         ir.source
             .as_ref()
-            .and_then(|source| source.dialect.as_ref())
+            .and_then(|source| source.dialect())
             .and_then(crate::dialect::SldprtDialect::from_match)
             .unwrap_or(crate::dialect::SldprtDialect::Unknown)
     } else {
@@ -3711,14 +3711,10 @@ mod nurbs_write_tests {
             },
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
-        ir.source = Some(cadmpeg_ir::document::SourceMeta {
-            dialect: None,
-            format: "sldprt".into(),
-            attributes: std::collections::BTreeMap::from([(
-                PMI_LOCAL_DIGEST_ATTRIBUTE.into(),
-                hash,
-            )]),
-        });
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
+            "sldprt",
+            std::collections::BTreeMap::from([(PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash)]),
+        ));
         assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
 
         let cadmpeg_ir::PmiDefinition::Datum { identification } =

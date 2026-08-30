@@ -1355,11 +1355,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
             );
         }
     }
-    SourceMeta {
-        format: crate::dialect::FORMAT.to_string(),
-        attributes,
-        ..Default::default()
-    }
+    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
 #[cfg(test)]
