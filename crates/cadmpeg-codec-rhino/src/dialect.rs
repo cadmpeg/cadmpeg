@@ -214,11 +214,6 @@ impl ArchiveVersion {
         DialectMatch::layer(self.id(), declared, self.admission())
             .expect("Rhino classifier produced an invalid dialect match")
     }
-
-    /// Whether the archive word selects the chunked grammar.
-    pub(crate) const fn is_chunked(self) -> bool {
-        !matches!(self, Self::V1)
-    }
 }
 
 /// The dialect-unverified loss for a classified layer.

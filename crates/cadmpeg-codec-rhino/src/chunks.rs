@@ -99,6 +99,11 @@ impl ArchiveVersion {
         self.value() >= 50
     }
 
+    /// Returns whether the archive word selects the chunked grammar.
+    pub(crate) const fn is_chunked(self) -> bool {
+        !matches!(self, Self::V1)
+    }
+
     /// Returns whether V1's optional EOF marker is allowed.
     pub(crate) fn allows_optional_eof(self) -> bool {
         matches!(self, Self::V1)

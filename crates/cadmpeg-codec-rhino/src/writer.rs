@@ -100,7 +100,6 @@ pub(crate) fn write_seekable(
     version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
-    let version = version.value();
     let mut plan = prepare_write(ir, version)?;
     write_archive_prefix(ir, version, output)?;
     let table_start = output.stream_position()?;
@@ -235,10 +234,10 @@ pub(crate) fn write_seekable(
 
 fn write_archive_prefix(
     ir: &CadIr,
-    version: u64,
+    version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
-    output.write_all(&header(version)?)?;
+    output.write_all(&header(version))?;
     output.write_all(&long_chunk(1, b"cadmpeg"))?;
     output.write_all(&table(
         TCODE_PROPERTIES_TABLE,
@@ -561,7 +560,10 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
     scoped
 }
 
-fn prepare_write(ir: &CadIr, archive_version: u64) -> Result<WritePlan, CodecError> {
+fn prepare_write(
+    ir: &CadIr,
+    archive_version: RhinoArchiveVersion,
+) -> Result<WritePlan, CodecError> {
     if !ir.tolerances.linear.is_finite() || ir.tolerances.linear <= 0.0 {
         return Err(CodecError::Malformed(
             "Rhino absolute tolerance must be positive and finite".into(),
@@ -918,7 +920,7 @@ fn json_array_empty_or_missing(fields: &NativeFields, name: &str) -> bool {
 
 fn planar_sheet_brep_payload(
     ir: &CadIr,
-    archive_version: u64,
+    archive_version: RhinoArchiveVersion,
 ) -> Result<Option<BrepPayload>, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 
@@ -1181,7 +1183,11 @@ fn planar_sheet_brep_payload(
         )?;
     }
 
-    let brep_version = if archive_version <= 50 { 0x32 } else { 0x33 };
+    let brep_version = if archive_version.uses_extended_brep_layout() {
+        0x33
+    } else {
+        0x32
+    };
     let mut payload = vec![brep_version];
     let mut direct = vec![brep_version];
     let c2 = (0..edge_count)
@@ -1365,7 +1371,7 @@ fn planar_sheet_brep_payload(
     let solid = 0_i32.to_le_bytes();
     payload.extend(solid);
     direct.extend(solid);
-    if archive_version > 50 {
+    if archive_version.uses_extended_brep_layout() {
         payload.extend(empty_region_wrapper());
     }
     Ok(Some(BrepPayload {
@@ -1388,7 +1394,7 @@ enum WritableFaceSurface<'a> {
 fn multi_face_brep_payload(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
-    archive_version: u64,
+    archive_version: RhinoArchiveVersion,
 ) -> Result<BrepPayload, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
     use std::collections::{BTreeMap, BTreeSet};
@@ -1849,7 +1855,11 @@ fn multi_face_brep_payload(
         }
     }
 
-    let brep_version = if archive_version <= 50 { 0x32 } else { 0x33 };
+    let brep_version = if archive_version.uses_extended_brep_layout() {
+        0x33
+    } else {
+        0x32
+    };
     let mut payload = vec![brep_version];
     let mut direct = vec![brep_version];
     let c2 = model
@@ -2050,7 +2060,7 @@ fn multi_face_brep_payload(
     .to_le_bytes();
     payload.extend(solid);
     direct.extend(solid);
-    if archive_version > 50 {
+    if archive_version.uses_extended_brep_layout() {
         payload.extend(empty_region_wrapper());
     }
     Ok(BrepPayload {
@@ -2727,16 +2737,17 @@ fn raw_array(records: &[Vec<u8>]) -> Vec<u8> {
 fn face_array(
     records: &[Vec<u8>],
     faces: &[cadmpeg_ir::topology::Face],
-    archive_version: u64,
+    archive_version: RhinoArchiveVersion,
 ) -> Vec<u8> {
-    let minor = if archive_version >= 70 { 2 } else { 1 };
+    let version_two = archive_version.uses_face_array_v2();
+    let minor = if version_two { 2 } else { 1 };
     let mut body = vec![0x10 | minor];
     body.extend((records.len() as i32).to_le_bytes());
     body.extend(records.concat());
     for face in faces {
         body.extend(&Sha256::digest(face.id.0.as_bytes())[..16]);
     }
-    if minor >= 2 {
+    if version_two {
         body.push(0);
     }
     crc_chunk(0x4000_8000, &body)
@@ -3111,17 +3122,12 @@ fn check_knot_roundtrip(
     Ok(())
 }
 
-fn header(version: u64) -> Result<Vec<u8>, CodecError> {
-    let text = version.to_string();
-    if text.len() > 8 {
-        return Err(CodecError::Malformed(
-            "3DM archive version exceeds header field".into(),
-        ));
-    }
+fn header(version: RhinoArchiveVersion) -> Vec<u8> {
+    let text = version.value().to_string();
     let mut bytes = MAGIC.to_vec();
     bytes.extend(std::iter::repeat_n(b' ', 8 - text.len()));
     bytes.extend(text.bytes());
-    Ok(bytes)
+    bytes
 }
 
 fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
@@ -3370,9 +3376,12 @@ struct MeshPayload {
 
 fn mesh_payload(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
-    archive_version: u64,
+    archive_version: RhinoArchiveVersion,
 ) -> MeshPayload {
-    let minor = if archive_version == 50 { 5_u8 } else { 8_u8 };
+    let minor = match archive_version {
+        RhinoArchiveVersion::V5 => 5_u8,
+        RhinoArchiveVersion::V6 | RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8 => 8_u8,
+    };
     let mut payload = vec![0x30 | minor];
     payload.extend((mesh.vertices.len() as i32).to_le_bytes());
     payload.extend((mesh.triangles.len() as i32).to_le_bytes());
