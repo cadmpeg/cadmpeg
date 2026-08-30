@@ -4,9 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`ArchiveVersion::classify`] is the one construction
-//! path, and the vocabulary is closed. Every variant here has a row in
-//! `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row_and_every_row_has_a_variant`
-//! fails on drift in either direction.
+//! path, and the vocabulary is closed. `docs/dialects.toml` generates the
+//! pinned constants and exhaustive row list in `dialect/generated.rs`.
 //!
 //! # One discriminant, read before the parse strategy is chosen
 //!
@@ -45,6 +44,8 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
+
+mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "rhino";
@@ -140,26 +141,6 @@ impl ArchiveVersion {
         }
     }
 
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 11] = [
-        Self::V1,
-        Self::V2,
-        Self::V3,
-        Self::V4,
-        Self::LegacyV5,
-        Self::V5,
-        Self::V6,
-        Self::V7,
-        Self::V8,
-        Self::V9,
-        Self::Other(0),
-    ];
-
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(self.pinned())
@@ -167,17 +148,17 @@ impl ArchiveVersion {
 
     const fn pinned(self) -> &'static str {
         match self {
-            Self::V1 => "rhino:archive-1",
-            Self::V2 => "rhino:archive-2",
-            Self::V3 => "rhino:archive-3",
-            Self::V4 => "rhino:archive-4",
-            Self::LegacyV5 => "rhino:archive-5",
-            Self::V5 => "rhino:archive-50",
-            Self::V6 => "rhino:archive-60",
-            Self::V7 => "rhino:archive-70",
-            Self::V8 => "rhino:archive-80",
-            Self::V9 => "rhino:archive-90",
-            Self::Other(_) => "rhino:unknown",
+            Self::V1 => generated::ARCHIVE_1_STR,
+            Self::V2 => generated::ARCHIVE_2_STR,
+            Self::V3 => generated::ARCHIVE_3_STR,
+            Self::V4 => generated::ARCHIVE_4_STR,
+            Self::LegacyV5 => generated::ARCHIVE_5_STR,
+            Self::V5 => generated::ARCHIVE_50_STR,
+            Self::V6 => generated::ARCHIVE_60_STR,
+            Self::V7 => generated::ARCHIVE_70_STR,
+            Self::V8 => generated::ARCHIVE_80_STR,
+            Self::V9 => generated::ARCHIVE_90_STR,
+            Self::Other(_) => generated::UNKNOWN_STR,
         }
     }
 

@@ -12,11 +12,6 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed("iges", &IgesDialect::ALL.map(IgesDialect::id));
-}
-
-#[test]
 fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits() {
     // Fixed ASCII enumerates all eleven flags the version table declares.
     for flag in 1..=11 {

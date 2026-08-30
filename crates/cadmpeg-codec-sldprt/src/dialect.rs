@@ -4,9 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`SldprtDialect::classify`] is the one
-//! construction path, and the vocabulary is closed. Every variant here has a
-//! row in `docs/dialects.toml`; `tests::every_pinned_id_has_a_registry_row`
-//! fails on drift in either direction.
+//! construction path, and the vocabulary is closed. `docs/dialects.toml`
+//! generates the pinned constants and exhaustive row list in `dialect/generated.rs`.
 //!
 //! # The axis is `swVersion`, and it is the only one that selects a layout
 //!
@@ -75,6 +74,8 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::LossNote;
 use std::collections::BTreeMap;
+
+mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "sldprt";
@@ -182,18 +183,6 @@ fn parasolid_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dialec
 }
 
 impl SldprtDialect {
-    /// Every dialect this codec can name.
-    ///
-    /// The registry cross-check is its only consumer, and that is the point:
-    /// the list exists so a variant added without a registry row, or a row
-    /// added without a variant, fails a test.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 3] = [
-        Self::SwVersionPre12000,
-        Self::SwVersion12000Plus,
-        Self::Unknown,
-    ];
-
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(self.pinned())
@@ -201,9 +190,9 @@ impl SldprtDialect {
 
     const fn pinned(self) -> &'static str {
         match self {
-            Self::SwVersionPre12000 => "sldprt:sw-version-pre-12000",
-            Self::SwVersion12000Plus => "sldprt:sw-version-12000-plus",
-            Self::Unknown => "sldprt:unknown",
+            Self::SwVersionPre12000 => generated::SW_VERSION_PRE_12000_STR,
+            Self::SwVersion12000Plus => generated::SW_VERSION_12000_PLUS_STR,
+            Self::Unknown => generated::UNKNOWN_STR,
         }
     }
 

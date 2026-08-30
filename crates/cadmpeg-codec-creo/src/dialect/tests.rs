@@ -12,11 +12,6 @@ use super::*;
 use crate::container::scan_bytes;
 use crate::test_support::{build_prt, build_prt_raw};
 
-#[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed("creo", &Layout::ALL.map(Layout::id));
-}
-
 /// A PSB file whose only section carries the `ND:` raw-name decoration.
 fn nd_bytes() -> Vec<u8> {
     build_prt("c", &[("ND:0:VisibGeom", b"payload".to_vec())])

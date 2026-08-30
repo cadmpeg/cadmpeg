@@ -28,6 +28,8 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
+import dialect_codegen
+
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_REL = Path("docs") / "dialects.toml"
 SELF_TEST_REL = Path("scripts") / "test_check_dialects.py"
@@ -311,6 +313,7 @@ def check(root: Path) -> tuple[list[str], str]:
         if body.get("complete") is False and f"{fmt}:unknown" not in seen:
             failures.append(f"format {fmt}: complete = false requires {fmt}:unknown")
     failures.extend(check_codec_emitted_ids(root))
+    failures.extend(dialect_codegen.check(root))
 
     counts = ", ".join(f"{fmt} {n}" for fmt, n in sorted(per_format.items()))
     summary = (

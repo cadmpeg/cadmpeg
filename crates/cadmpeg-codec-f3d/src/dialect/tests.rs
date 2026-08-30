@@ -7,11 +7,6 @@
 use super::*;
 
 #[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed("f3d", &F3dDialect::ALL.map(F3dDialect::id));
-}
-
-#[test]
 fn a_document_match_names_its_row_and_records_the_version_the_parse_read() {
     let matched = F3dDialect::classify_document("3-2-0-0");
 

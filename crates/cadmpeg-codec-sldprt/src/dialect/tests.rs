@@ -36,14 +36,6 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
 }
 
 #[test]
-fn every_pinned_id_has_a_registry_row_and_every_row_has_a_variant() {
-    cadmpeg_test_support::assert_registry_closed(
-        "sldprt",
-        &SldprtDialect::ALL.map(SldprtDialect::id),
-    );
-}
-
-#[test]
 fn parasolid_schema_evidence_emits_a_kernel_layer() {
     let bytes = synthetic_sldprt();
     let scan = scan_bytes(&bytes);
@@ -280,7 +272,13 @@ fn classification_is_total_over_the_padding_rule() {
 
     assert_eq!(
         reached,
-        SldprtDialect::ALL.iter().copied().collect::<BTreeSet<_>>(),
+        [
+            SldprtDialect::SwVersionPre12000,
+            SldprtDialect::SwVersion12000Plus,
+            SldprtDialect::Unknown,
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>(),
         "the case table must exercise every row"
     );
 }

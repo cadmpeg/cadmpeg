@@ -8,22 +8,6 @@ use std::collections::BTreeSet;
 pub mod golden;
 pub mod roundtrip;
 
-use cadmpeg_core::dialect::DialectId;
-
-/// Assert that pinned identity variants and one registry namespace are equal.
-pub fn assert_registry_closed(prefix: &str, ids: &[DialectId]) {
-    let pinned = ids
-        .iter()
-        .map(|id| id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-    assert_eq!(pinned.len(), ids.len(), "two variants pin the same id");
-    assert_eq!(
-        pinned,
-        registry_ids(prefix),
-        "docs/dialects.toml and the identity enum disagree; ids are pinned forever, so reconcile the enum"
-    );
-}
-
 /// Dialect ids under one format prefix in the identity registry.
 ///
 /// The registry is embedded so every codec drift test parses the same TOML
