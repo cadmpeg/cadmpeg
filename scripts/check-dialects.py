@@ -60,6 +60,7 @@ UNKNOWN_KINDS = frozenset({"detect-unreachable", "recovered-residual"})
 FORMAT_ID = re.compile(r"[a-z0-9]+")
 # Dots are legal in a dialect name: `iges:5.3-fixed-ascii`.
 DIALECT_NAME = re.compile(r"[a-z0-9.-]+")
+GENERATED_DIALECT_SUFFIX = ("dialect", "generated.rs")
 
 
 def _is_table(value: object) -> bool:
@@ -341,6 +342,8 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
     crates = root / "crates"
     if crates.is_dir():
         for source in crates.glob("*/src/**/*.rs"):
+            if source.parts[-2:] == GENERATED_DIALECT_SUFFIX:
+                continue
             try:
                 text = source.read_text(encoding="utf-8")
             except OSError:
