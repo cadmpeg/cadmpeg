@@ -177,7 +177,7 @@ enum Command {
         /// Output file; omit to write to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Replace an existing output file.
+        /// Replace an existing output or command-report file.
         #[arg(long)]
         force: bool,
         /// Write a JSON report to this file.
@@ -560,12 +560,12 @@ fn main() -> ExitCode {
                         losses: reject_lossy.into(),
                         admission: application::ValidationAdmission::new(allow_errors, allow_empty),
                         destination: application::DestinationPolicy::new(
-                            output.clone(),
+                            output,
                             force,
                             binary_stdout,
                         ),
                     },
-                    force,
+                    report_overwrite: force,
                     report,
                     forced_input: input_args.forced(),
                 };
@@ -573,7 +573,6 @@ fn main() -> ExitCode {
                     &catalogs,
                     &resolve_input(input, input_flag),
                     format.as_deref(),
-                    output.as_deref(),
                     &conversion_args,
                     &decode,
                 )
