@@ -82,13 +82,15 @@ pub(crate) const FORMAT: &str = "fcstd";
 /// schema this codec reads — schema 2 included — while it regenerates none. The
 /// catalog is what an explicit `--to` may name; [`TargetRequest::Inherit`] asks
 /// for the retained document's own dialect instead, whatever that is.
+/// No row is a cross-format default because this writer cannot synthesize an
+/// `FCStd` document graph from another format.
 ///
 /// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::TargetRequest::Inherit
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: FcstdDialect::Schema4.pinned(),
     label: "FreeCAD Document.xml schema version 4",
     aliases: &["4"],
-    default: true,
+    default: false,
 }];
 
 /// Key of `Document/@SchemaVersion` in [`DialectMatch::declared`].
