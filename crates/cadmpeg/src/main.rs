@@ -20,7 +20,7 @@ use cadmpeg_registry::{ForcedInput, InputCatalog};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
-use crate::application::NativeValidatorCatalog;
+use crate::application::{LossPolicy, NativeValidatorCatalog};
 use crate::commands::AppCatalogs;
 
 /// Which losses `--reject-lossy` refuses on.
@@ -38,15 +38,14 @@ pub(crate) enum LossScope {
     Any,
 }
 
-impl LossScope {
-    /// Whether a decode loss refuses the conversion.
-    const fn covers_decode(self) -> bool {
-        matches!(self, Self::Decode | Self::Any)
-    }
-
-    /// Whether an export loss refuses the conversion.
-    const fn covers_export(self) -> bool {
-        matches!(self, Self::Export | Self::Any)
+impl From<Option<LossScope>> for LossPolicy {
+    fn from(scope: Option<LossScope>) -> Self {
+        match scope {
+            None => Self::Allow,
+            Some(LossScope::Decode) => Self::RejectDecode,
+            Some(LossScope::Export) => Self::RejectExport,
+            Some(LossScope::Any) => Self::RejectAny,
+        }
     }
 }
 
@@ -558,14 +557,15 @@ fn main() -> ExitCode {
             } else {
                 let conversion_args = commands::ConversionArgs {
                     policy: application::ConversionPolicy {
-                        force,
-                        binary_stdout,
-                        allow_errors,
-                        allow_empty,
-                        reject_decode_losses: reject_lossy.is_some_and(LossScope::covers_decode),
-                        reject_export_losses: reject_lossy.is_some_and(LossScope::covers_export),
-                        destination: output.clone(),
+                        losses: reject_lossy.into(),
+                        admission: application::ValidationAdmission::new(allow_errors, allow_empty),
+                        destination: application::DestinationPolicy::new(
+                            output.clone(),
+                            force,
+                            binary_stdout,
+                        ),
                     },
+                    force,
                     report,
                     forced_input: input_args.forced(),
                 };

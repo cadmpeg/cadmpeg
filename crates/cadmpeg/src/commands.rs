@@ -68,6 +68,8 @@ fn print_load_notices(notices: &[LoadNotice]) {
 pub struct ConversionArgs {
     /// Application conversion policy.
     pub policy: ConversionPolicy,
+    /// Replace an existing command report.
+    pub force: bool,
     /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
     /// Explicit input format selected by the user.
@@ -356,7 +358,7 @@ fn execute_conversion(
                 write_command_report(
                     path,
                     conversion.report.as_deref(),
-                    conversion.policy.force,
+                    conversion.force,
                     "convert",
                     CommandReportBody {
                         decode_report: None,
@@ -396,7 +398,7 @@ fn execute_conversion(
             write_command_report(
                 path,
                 conversion.report.as_deref(),
-                conversion.policy.force,
+                conversion.force,
                 "convert",
                 CommandReportBody {
                     decode_report: refusal.decode_report(),
@@ -409,7 +411,7 @@ fn execute_conversion(
         Ok(())
     };
 
-    let prepared = match transcoder.prepare(&source, target, conversion.policy.clone()) {
+    let prepared = match transcoder.prepare(&source, target, &conversion.policy) {
         Ok(prepared) => prepared,
         Err(error) => {
             render_refusal(&error)?;
@@ -443,7 +445,7 @@ fn execute_conversion(
     write_command_report(
         path,
         conversion.report.as_deref(),
-        conversion.policy.force,
+        conversion.force,
         "convert",
         CommandReportBody {
             decode_report: decode_report.as_ref(),

@@ -2,6 +2,75 @@ use super::*;
 use cadmpeg_ir::codec::CadirEncoder;
 use cadmpeg_ir::CadIr;
 
+#[test]
+fn loss_policy_assigns_each_refusal_phase() {
+    assert_eq!(
+        [
+            (LossPolicy::Allow, false, false),
+            (LossPolicy::RejectDecode, true, false),
+            (LossPolicy::RejectExport, false, true),
+            (LossPolicy::RejectAny, true, true),
+        ],
+        [
+            (
+                LossPolicy::Allow,
+                LossPolicy::Allow.rejects_decode(),
+                LossPolicy::Allow.rejects_export(),
+            ),
+            (
+                LossPolicy::RejectDecode,
+                LossPolicy::RejectDecode.rejects_decode(),
+                LossPolicy::RejectDecode.rejects_export(),
+            ),
+            (
+                LossPolicy::RejectExport,
+                LossPolicy::RejectExport.rejects_decode(),
+                LossPolicy::RejectExport.rejects_export(),
+            ),
+            (
+                LossPolicy::RejectAny,
+                LossPolicy::RejectAny.rejects_decode(),
+                LossPolicy::RejectAny.rejects_export(),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn cli_admission_flags_resolve_to_distinct_modes() {
+    assert_eq!(
+        [
+            ValidationAdmission::new(false, false),
+            ValidationAdmission::new(true, false),
+            ValidationAdmission::new(false, true),
+            ValidationAdmission::new(true, true),
+        ],
+        [
+            ValidationAdmission::Strict,
+            ValidationAdmission::AllowErrors,
+            ValidationAdmission::AllowEmpty,
+            ValidationAdmission::AllowErrorsAndEmpty,
+        ]
+    );
+}
+
+#[test]
+fn destination_policy_discards_flags_irrelevant_to_the_destination() {
+    assert_eq!(
+        DestinationPolicy::new(Some(PathBuf::from("part.step")), true, true),
+        DestinationPolicy::File {
+            path: PathBuf::from("part.step"),
+            overwrite: true,
+        }
+    );
+    assert_eq!(
+        DestinationPolicy::new(None, true, false),
+        DestinationPolicy::Stdout {
+            allow_binary: false,
+        }
+    );
+}
+
 fn prepared(
     ir: CadIr,
     format: Format,
@@ -14,8 +83,12 @@ fn prepared(
         validation: None,
         encoder,
         selection: TargetSelection::new(format, None),
-        destination: None,
-        reject_export_losses,
+        destination: ResolvedDestination::Stdout,
+        plan_policy: if reject_export_losses {
+            PlanPolicy::RejectLosses
+        } else {
+            PlanPolicy::PermitLosses
+        },
     }
 }
 

@@ -10,5 +10,8 @@ pub mod validators;
 pub use artifact_store::{ArtifactStore, SidecarPersistOutcome};
 pub use document::{LoadOrigin, LoadedDocument};
 pub use refusal::ConversionRefusal;
-pub use transcoder::{export_target, ConversionPolicy, SourceRequest, Transcoder};
+pub use transcoder::{
+    export_target, ConversionPolicy, DestinationPolicy, LossPolicy, SourceRequest, Transcoder,
+    ValidationAdmission,
+};
 pub use validators::NativeValidatorCatalog;
