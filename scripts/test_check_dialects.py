@@ -211,8 +211,12 @@ class TestRowShape(RegistryCase):
         row = GOOD_ROW.replace('"demo:one"', '"demo:unknown"')
         self.assertFires(
             _registry(row + 'unknown_kind = "ambiguous"\n'),
-            "unknown_kind must be detect-unreachable or recovered-residual",
+            "unknown_kind must be one of detect-unreachable, recovered-residual, refused-residual",
         )
+
+    def test_refused_residual_unknown_kind_is_valid(self):
+        row = GOOD_ROW.replace('"demo:one"', '"demo:unknown"')
+        self.assertClean(_registry(row + 'unknown_kind = "refused-residual"\n'))
 
     def test_unknown_kind_is_unknown_only(self):
         self.assertFires(

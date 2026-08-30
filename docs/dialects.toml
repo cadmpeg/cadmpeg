@@ -26,7 +26,11 @@
 #                                    `detect-unreachable` means classification
 #                                    cannot produce a report for the residual;
 #                                    `recovered-residual` means evidence was
-#                                    read and matched no declared row.
+#                                    read and matched no declared row, and the
+#                                    residual was recovered;
+#                                    `refused-residual` means evidence was read
+#                                    and matched no declared row, and the
+#                                    residual was refused.
 #                      supersedes    predecessor identity rows. Admitted only
 #                                    where the checker consumes the relation;
 #                                    IGES is the only consumer today. The
@@ -1283,7 +1287,7 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 [[dialect]]
 # Mandatory `unknown` row (B4). No magic and no valid four-field header line.
 id = "acis:unknown"
-unknown_kind = "recovered-residual"
+unknown_kind = "refused-residual"
 title = "Kernel stream matching no ACIS or ASM framing"
 discriminants = { magic = "none", header_line_1 = "not four integer fields" }
 witness = "code:crates/cadmpeg-asm/src/dialect.rs"

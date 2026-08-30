@@ -68,6 +68,22 @@ FIXTURE = "crates/cadmpeg-codec-demo/tests/golden/fixtures/one.demo"
 SNAPSHOT = "crates/cadmpeg-codec-demo/tests/golden/decode/one.json"
 GOOD_EVALUATIONS = "evaluation = []\n"
 
+UNKNOWN_IDENTITY = IDENTITY + """
+[[dialect]]
+id = "demo:unknown"
+title = "Demo unknown"
+discriminants = { marker = "other" }
+witness = "spec:Demo specification residual"
+unknown_kind = "recovered-residual"
+"""
+
+UNKNOWN_SUPPORT = GOOD_SUPPORT + """
+[[support]]
+dialect = "demo:unknown"
+read = "unclassified-recovered"
+write = "none"
+"""
+
 
 class SupportCase(unittest.TestCase):
     """Write a synthetic repository into a temporary root and check it."""
@@ -224,6 +240,38 @@ class TestCrossReferences(SupportCase):
             + 'reason = "again"\n',
             "demo:two: 2 support rows; expected one",
         )
+
+    def test_recovered_residual_requires_unclassified_read(self):
+        self.assertFires(
+            UNKNOWN_SUPPORT.replace(
+                'read = "unclassified-recovered"', 'read = "detected"'
+            ),
+            "unknown_kind recovered-residual requires read unclassified-recovered, got detected",
+            identity=UNKNOWN_IDENTITY,
+        )
+
+    def test_recovered_residual_accepts_unclassified_read(self):
+        self.assertClean(UNKNOWN_SUPPORT, identity=UNKNOWN_IDENTITY)
+
+    def test_refused_residual_requires_refused_read(self):
+        identity = UNKNOWN_IDENTITY.replace(
+            'unknown_kind = "recovered-residual"', 'unknown_kind = "refused-residual"'
+        )
+        self.assertFires(
+            UNKNOWN_SUPPORT,
+            "unknown_kind refused-residual requires read refused, got unclassified-recovered",
+            identity=identity,
+        )
+
+    def test_refused_residual_accepts_refused_read(self):
+        identity = UNKNOWN_IDENTITY.replace(
+            'unknown_kind = "recovered-residual"', 'unknown_kind = "refused-residual"'
+        )
+        support = UNKNOWN_SUPPORT.replace(
+            'read = "unclassified-recovered"',
+            'read = "refused"\nreason = "`demo:unknown` matches no framing"',
+        )
+        self.assertClean(support, identity=identity)
 
 
 class TestSnapshotDomainGating(SupportCase):
