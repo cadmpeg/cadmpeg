@@ -258,13 +258,15 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
 }
 
 #[test]
-fn a_future_ap242_edition_word_uses_the_unverified_edition_three_strategy() {
-    let dialect = StepDialect::from_ap242_edition(None);
-    assert_eq!(dialect, StepDialect::Unknown);
-    assert_eq!(
-        dialect.admission(),
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(StepDialect::Ap242Edition3.id(),))
-    );
+fn write_schemas_project_the_identity_owned_file_schema_table() {
+    for schema in StepSchema::ALL {
+        assert_eq!(
+            schema.file_schema(),
+            StepDialect::from_write_schema(schema)
+                .schema_identifier()
+                .expect("every write schema has a Part 21 identity row")
+        );
+    }
 }
 
 #[test]

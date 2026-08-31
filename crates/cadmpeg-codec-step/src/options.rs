@@ -66,9 +66,8 @@ pub enum StepSchema {
 
 impl StepSchema {
     /// Every schema the Part 21 writer can emit, and so every row of the
-    /// synthesis catalog. Resolution maps a dialect id back to a schema through
-    /// this list, and `crate::codec` pins the two sets equal in both
-    /// directions.
+    /// synthesis catalog. Resolution maps a typed dialect identity back to a
+    /// schema through this list.
     pub(crate) const ALL: [Self; 6] = [
         Self::Ap203Edition1,
         Self::Ap203Edition2,
@@ -88,31 +87,10 @@ impl StepSchema {
 
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {
-        match self {
-            Self::Ap203Edition1 => "CONFIG_CONTROL_DESIGN",
-            Self::Ap203Edition2 => "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }",
-            Self::Ap214 => "AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }",
-            Self::Ap242Edition1 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }",
-            Self::Ap242Edition2 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
-            Self::Ap242Edition3 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }",
+        match crate::dialect::StepDialect::from_write_schema(self).schema_identifier() {
+            Some(identifier) => identifier,
+            None => panic!("every StepSchema has a Part 21 identity row"),
         }
-    }
-
-    pub(crate) fn ap242_edition(identifier: &str) -> Option<StepSchema> {
-        let (name, oid) = schema_identifier_arcs(identifier)?;
-        [
-            StepSchema::Ap242Edition1,
-            StepSchema::Ap242Edition2,
-            StepSchema::Ap242Edition3,
-        ]
-        .into_iter()
-        .find(|schema| {
-            schema_identifier_arcs(schema.file_schema()).is_some_and(
-                |(candidate_name, candidate_oid)| {
-                    name.eq_ignore_ascii_case(candidate_name) && oid == candidate_oid
-                },
-            )
-        })
     }
 
     pub(crate) const fn supports_tessellation(self) -> bool {
@@ -160,27 +138,4 @@ impl StepSchema {
             ),
         }
     }
-}
-
-/// The schema name and the object identifier arcs of one schema identifier.
-///
-/// The edition report needs the arcs as numbers, so an object identifier with a
-/// named component, with fewer than two components, or with a component that is
-/// not a plain decimal number has no arcs. `split_schema_identifier` owns the
-/// name and object identifier split.
-fn schema_identifier_arcs(identifier: &str) -> Option<(&str, Option<Vec<u64>>)> {
-    let (name, object_identifier) =
-        crate::parse::schema_identifier::split_schema_identifier(identifier)?;
-    let Some(object_identifier) = object_identifier else {
-        return Some((name, None));
-    };
-    if name.is_empty() {
-        return None;
-    }
-    let arcs = object_identifier
-        .split_whitespace()
-        .map(str::parse::<u64>)
-        .collect::<Result<Vec<u64>, _>>()
-        .ok()?;
-    (arcs.len() >= 2).then_some((name, Some(arcs)))
 }
