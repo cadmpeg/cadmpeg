@@ -58,6 +58,7 @@ UNKNOWN_KINDS = frozenset(
 )
 
 FORMAT_ID = re.compile(r"[a-z0-9]+")
+FORMAT_KEYS = frozenset({"complete", "aliases"})
 # Dots are legal in a dialect name: `iges:5.3-fixed-ascii`.
 DIALECT_NAME = re.compile(r"[a-z0-9.-]+")
 
@@ -75,6 +76,7 @@ def check_formats(formats: object, failures: list[str]) -> dict[str, dict]:
         failures.append("[format] is not a table")
         return {}
     checked: dict[str, dict] = {}
+    names: dict[str, str] = {}
     for name, body in formats.items():
         if not FORMAT_ID.fullmatch(name):
             failures.append(f"format {name}: id must match [a-z0-9]+")
@@ -82,11 +84,31 @@ def check_formats(formats: object, failures: list[str]) -> dict[str, dict]:
         if not _is_table(body):
             failures.append(f"format {name}: not a table")
             continue
+        for key in sorted(set(body) - FORMAT_KEYS):
+            failures.append(f"format {name}: unknown key {key}")
         complete = body.get("complete")
         if complete is None:
             failures.append(f"format {name}: missing complete")
         elif not isinstance(complete, bool):
             failures.append(f"format {name}: complete must be a boolean")
+        aliases = body.get("aliases", [])
+        if not isinstance(aliases, list) or not all(isinstance(alias, str) for alias in aliases):
+            failures.append(f"format {name}: aliases must be a list of strings")
+            aliases = []
+        previous = names.get(name)
+        if previous is not None:
+            failures.append(f"format {name}: canonical id duplicates alias owned by format {previous}")
+        else:
+            names[name] = name
+        for alias in aliases:
+            if not FORMAT_ID.fullmatch(alias):
+                failures.append(f"format {name}: alias {alias!r} must match [a-z0-9]+")
+                continue
+            previous = names.get(alias)
+            if previous is not None:
+                failures.append(f"format {name}: alias {alias!r} duplicates a format name owned by {previous}")
+            else:
+                names[alias] = name
         checked[name] = body
     return checked
 

@@ -5,7 +5,7 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers};
 use cadmpeg_core::target::TargetDescriptor;
 
 use crate::disposition::ReadDisposition;
-use crate::registry::{catalog_of, registries, support, DialectEntry};
+use crate::registry::{canonical_format_name, catalog_of, registries, support, DialectEntry};
 use crate::{Format, InputCatalog};
 
 /// What `cadmpeg inspect` knows about the dialect it matched.
@@ -108,8 +108,11 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Unknow
     let formats = match format {
         None => registries.formats.clone(),
         Some(name) => {
-            let name =
-                Format::from_name(name).map_or_else(|| name.to_owned(), |f| f.name().to_owned());
+            let name = Format::from_name(name)
+                .map(Format::name)
+                .or_else(|| canonical_format_name(name))
+                .unwrap_or(name)
+                .to_owned();
             if !registries.formats.contains(&name) {
                 return Err(UnknownFormat {
                     name,
@@ -139,6 +142,7 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Unknow
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "rhino")]
     use cadmpeg_core::dialect::DialectMatch;
 
     #[cfg(feature = "rhino")]

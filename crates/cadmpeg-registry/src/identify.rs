@@ -146,10 +146,8 @@ fn read_prefix(source: &mut dyn ReadSeek, options: &InspectOptions) -> std::io::
 mod tests {
     use std::io::Cursor;
 
-    use cadmpeg_core::decode::ResourceLimits;
-    use cadmpeg_core::dialect::DialectId;
-
     use super::*;
+    use cadmpeg_core::decode::ResourceLimits;
 
     fn inspection() -> InspectOptions {
         InspectOptions {
@@ -160,13 +158,6 @@ mod tests {
     fn run(bytes: &[u8], options: &InspectOptions) -> Vec<Identification> {
         let mut reader = Cursor::new(bytes.to_vec());
         identify(&mut reader, options).expect("a Cursor neither fails to read nor to seek")
-    }
-
-    fn summary(identification: &Identification) -> Option<&ContainerSummary> {
-        match &identification.inspection {
-            Inspection::Classified(summary) => Some(summary),
-            Inspection::Failed(_) | Inspection::Skipped => None,
-        }
     }
 
     #[cfg(feature = "nx")]
@@ -270,7 +261,16 @@ mod tests {
         feature = "creo",
     ))]
     mod declared {
+        use cadmpeg_core::dialect::DialectId;
+
         use super::*;
+
+        fn summary(identification: &Identification) -> Option<&ContainerSummary> {
+            match &identification.inspection {
+                Inspection::Classified(summary) => Some(summary),
+                Inspection::Failed(_) | Inspection::Skipped => None,
+            }
+        }
 
         /// One fixture and the dialect its codec classifies.
         struct Case {

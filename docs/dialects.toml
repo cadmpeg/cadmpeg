@@ -11,6 +11,8 @@
 #                      enumerable from the format's own documentation.
 #                      complete = false means the rows are grammar classes
 #                      plus a mandatory `unknown` row.
+#                      aliases are other output-format words. The canonical id
+#                      and aliases together own the format-name vocabulary.
 #   [[dialect]]        id            `<format>:<name>`, lowercase-hyphenated,
 #                                    stable forever.
 #                      title         human-facing name.
@@ -76,6 +78,7 @@
 # `iges:unknown`, although the grammar uses the clamped effective version.
 [format.iges]
 complete = true
+aliases = ["igs"]
 
 # Version-flag values 1, 2, 3, 4, 5, and 7 have distinct Fixed ASCII identity
 # rows. Their Global tables recover through the 5.1 through 5.3 field layout,
@@ -486,6 +489,7 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # documents, so the two must not share a string.
 [format.rhino]
 complete = true
+aliases = ["3dm"]
 
 [[dialect]]
 # `ArchiveVersion::V1`. Flat-chunk grammar, optional EOF marker

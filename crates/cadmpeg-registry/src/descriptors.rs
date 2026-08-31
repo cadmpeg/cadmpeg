@@ -2,28 +2,22 @@
 //! The compiled format registry.
 
 use cadmpeg_ir::codec::{CadirEncoder, Codec, Encoder};
-use cadmpeg_ir::{CadIr, Finding};
 
 use crate::{ForcedInput, Format};
 
 pub(crate) type DecoderConstructor = fn() -> Box<dyn Codec>;
 pub(crate) type EncoderConstructor = fn() -> Box<dyn Encoder>;
-type NativeValidator = fn(&CadIr) -> Vec<Finding>;
-
 /// One compiled format and all registration facts owned by the registry.
 pub(crate) struct FormatDescriptor {
     pub id: &'static str,
     pub input_names: &'static [&'static str],
     pub input_extensions: &'static [&'static str],
     pub decoder: Option<DecoderConstructor>,
-    pub native_validator: Option<NativeValidator>,
     pub output: Option<Format>,
     pub output_order: Option<u8>,
     pub output_names: &'static [&'static str],
     pub output_extensions: &'static [&'static str],
     pub encoder: Option<EncoderConstructor>,
-    pub geometry_export: bool,
-    pub binary_container: bool,
 }
 
 #[cfg(any(
@@ -40,42 +34,30 @@ pub(crate) struct FormatDescriptor {
     feature = "sat"
 ))]
 macro_rules! descriptor {
-    (@validator) => {
-        None
-    };
-    (@validator $validator:expr) => {
-        Some($validator)
-    };
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr $(, $validator:expr)?) => {
+    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr) => {
         FormatDescriptor {
             id: $id,
             input_names: $inputs,
             input_extensions: $input_exts,
             decoder: Some($decoder),
-            native_validator: descriptor!(@validator $($validator)?),
             output: None,
             output_order: None,
             output_names: &[],
             output_extensions: &[],
             encoder: None,
-            geometry_export: false,
-            binary_container: false,
         }
     };
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $outputs:expr, $output_exts:expr, $encoder:expr, $binary:expr $(, $validator:expr)?) => {
+    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $outputs:expr, $output_exts:expr, $encoder:expr) => {
         FormatDescriptor {
             id: $id,
             input_names: $inputs,
             input_extensions: $input_exts,
             decoder: Some($decoder),
-            native_validator: descriptor!(@validator $($validator)?),
             output: Some($format),
             output_order: Some($order),
             output_names: $outputs,
             output_extensions: $output_exts,
             encoder: Some($encoder),
-            geometry_export: true,
-            binary_container: $binary,
         }
     };
 }
@@ -91,9 +73,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         2,
         &["fcstd"],
         &["fcstd"],
-        || Box::new(cadmpeg_codec_freecad::FcstdCodec),
-        true,
-        cadmpeg_codec_freecad::validate_native
+        || Box::new(cadmpeg_codec_freecad::FcstdCodec)
     ),
     #[cfg(feature = "f3d")]
     descriptor!(
@@ -105,17 +85,14 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         3,
         &["f3d"],
         &["f3d"],
-        || Box::new(cadmpeg_codec_f3d::F3dCodec),
-        true,
-        cadmpeg_codec_f3d::validate_native
+        || Box::new(cadmpeg_codec_f3d::F3dCodec)
     ),
     #[cfg(feature = "inventor")]
     descriptor!(
         "inventor",
         &["inventor", "ipt", "iam"],
         &["ipt", "iam"],
-        || Box::new(cadmpeg_codec_inventor::InventorCodec),
-        cadmpeg_codec_inventor::validate_native
+        || Box::new(cadmpeg_codec_inventor::InventorCodec)
     ),
     #[cfg(feature = "sldprt")]
     descriptor!(
@@ -127,9 +104,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         4,
         &["sldprt"],
         &["sldprt"],
-        || Box::new(cadmpeg_codec_sldprt::SldprtCodec),
-        true,
-        cadmpeg_codec_sldprt::validate_native
+        || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
     ),
     #[cfg(feature = "catia")]
     descriptor!("catia", &["catpart", "catia"], &["catpart"], || Box::new(
@@ -153,8 +128,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         5,
         &["rhino", "3dm"],
         &["3dm"],
-        || Box::new(cadmpeg_codec_rhino::RhinoEncoder),
-        true
+        || Box::new(cadmpeg_codec_rhino::RhinoEncoder)
     ),
     #[cfg(feature = "step")]
     descriptor!(
@@ -166,8 +140,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         1,
         &["step"],
         &["step", "stp"],
-        || Box::new(cadmpeg_codec_step::StepCodec::default()),
-        false
+        || Box::new(cadmpeg_codec_step::StepCodec::default())
     ),
     #[cfg(feature = "iges")]
     descriptor!(
@@ -179,8 +152,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         6,
         &["iges", "igs"],
         &["iges", "igs"],
-        || Box::new(cadmpeg_codec_iges::IgesEncoder),
-        false
+        || Box::new(cadmpeg_codec_iges::IgesEncoder)
     ),
     #[cfg(feature = "sat")]
     descriptor!(
@@ -194,14 +166,11 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         input_names: &["cadir"],
         input_extensions: &["cadir", "json"],
         decoder: None,
-        native_validator: None,
         output: Some(Format::Cadir),
         output_order: Some(0),
         output_names: &["cadir", "json"],
         output_extensions: &["cadir", "json"],
         encoder: Some(|| Box::new(CadirEncoder)),
-        geometry_export: false,
-        binary_container: false,
     },
 ];
 
@@ -241,15 +210,6 @@ pub fn input_names() -> impl Iterator<Item = &'static str> {
         .flat_map(|descriptor| descriptor.input_names.iter().copied())
 }
 
-/// Codec-owned native validators keyed by the same stable format ids.
-pub fn native_validators() -> impl Iterator<Item = (&'static str, fn(&CadIr) -> Vec<Finding>)> {
-    FORMAT_DESCRIPTORS.iter().filter_map(|descriptor| {
-        descriptor
-            .native_validator
-            .map(|validator| (descriptor.id, validator))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +243,15 @@ mod tests {
                 assert_eq!(format.name(), descriptor.id);
                 assert!(!descriptor.output_names.is_empty());
                 assert!(!descriptor.output_extensions.is_empty());
+                if format != Format::Cadir {
+                    for name in descriptor.output_names {
+                        assert!(
+                            crate::registry::is_format_name(name),
+                            "{} output spelling {name:?} is absent from docs/dialects.toml",
+                            descriptor.id
+                        );
+                    }
+                }
             }
         }
     }

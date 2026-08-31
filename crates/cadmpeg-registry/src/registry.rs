@@ -54,9 +54,15 @@ struct IdentityRow {
 }
 
 #[derive(Debug, Deserialize)]
+struct FormatIdentity {
+    #[serde(default)]
+    aliases: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct Identity {
     #[serde(default)]
-    format: BTreeMap<String, toml::Value>,
+    format: BTreeMap<String, FormatIdentity>,
     #[serde(default)]
     dialect: Vec<IdentityRow>,
 }
@@ -79,6 +85,8 @@ struct Support {
 pub(crate) struct Registries {
     /// Format ids the identity registry declares, in alphabetical order.
     pub(crate) formats: Vec<String>,
+    /// Canonical format ids and aliases mapped to their canonical registry id.
+    format_names: BTreeMap<String, String>,
     /// Joined rows in identity-registry order.
     entries: Vec<DialectEntry>,
     /// Encoder catalogs constructed once per writable format.
@@ -126,6 +134,14 @@ impl Registries {
         let catalogs = Format::all()
             .map(|format| (format.name(), build_encoder(format).targets()))
             .collect::<BTreeMap<_, _>>();
+        let format_names = identity
+            .format
+            .iter()
+            .flat_map(|(id, row)| {
+                std::iter::once((id.clone(), id.clone()))
+                    .chain(row.aliases.iter().cloned().map(|alias| (alias, id.clone())))
+            })
+            .collect();
         let mut dispositions = BTreeMap::new();
         for row in support.support {
             let dialect = row.dialect;
@@ -142,6 +158,7 @@ impl Registries {
         }
         Ok(Self {
             formats: identity.format.keys().cloned().collect(),
+            format_names,
             entries: identity
                 .dialect
                 .into_iter()
@@ -207,6 +224,14 @@ pub(crate) fn catalog_of(format: &str) -> Option<&'static [TargetDescriptor]> {
     registries().catalogs.get(format).copied()
 }
 
+pub(crate) fn is_format_name(name: &str) -> bool {
+    registries().format_names.contains_key(name)
+}
+
+pub(crate) fn canonical_format_name(name: &str) -> Option<&'static str> {
+    registries().format_names.get(name).map(String::as_str)
+}
+
 /// Every dialect the identity registry declares for `format`, in registry
 /// order, joined with its capability row.
 ///
@@ -214,10 +239,11 @@ pub(crate) fn catalog_of(format: &str) -> Option<&'static [TargetDescriptor]> {
 /// tables and reads no file.
 #[must_use]
 pub fn dialects(format: &str) -> Vec<&'static DialectEntry> {
-    match Format::from_name(format) {
-        Some(format) => registries().rows_of(format.name()).collect(),
-        None => registries().rows_of(format).collect(),
-    }
+    let canonical = Format::from_name(format)
+        .map(Format::name)
+        .or_else(|| canonical_format_name(format))
+        .unwrap_or(format);
+    registries().rows_of(canonical).collect()
 }
 
 /// The declared disposition for one dialect id, or `None` when the registry
