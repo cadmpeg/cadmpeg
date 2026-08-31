@@ -304,16 +304,13 @@ pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
 
     // The padding between description and the length-prefixed schema token is not
     // fixed, so the `SCH_` marker is located directly; the preceding byte is the
-    // schema length ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#41-stored-edge-direction)).
+    // schema length ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#31-stream-header)).
     let window_end = (desc_end + 64).min(payload.len());
-    let rel = payload
-        .get(desc_end..window_end)?
-        .windows(4)
-        .position(|w| w == b"SCH_")?;
-    let schema_at = desc_end + rel;
-    let schema_len = *payload.get(schema_at.checked_sub(1)?)? as usize;
-    let schema_end = schema_at + schema_len;
-    let schema = String::from_utf8_lossy(payload.get(schema_at..schema_end)?).into_owned();
+    let token = cadmpeg_parasolid::find_u8_length_prefixed_schema_token(
+        payload.get(desc_end..window_end)?,
+    )?;
+    let schema_end = desc_end + token.end();
+    let schema = token.value().to_owned();
 
     Some(StreamHeader {
         description,

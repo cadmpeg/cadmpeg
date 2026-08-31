@@ -97,7 +97,7 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
         .into_iter()
         .map(|(stream, schema)| {
             let carrier = format!("stream@{}", stream.file_offset);
-            cadmpeg_container::parasolid::classify_layer(schema, &carrier, several)
+            cadmpeg_parasolid::classify_layer(schema, &carrier, several)
         })
         .collect();
     DialectLayers::new(NxDialect::classify(&scan.container), extra)
@@ -114,14 +114,13 @@ pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
         .filter_map(|matched| match matched.admission() {
             Admission::Admitted | Admission::Refused => None,
             Admission::AdmittedUnverified { .. } => {
-                let message = cadmpeg_container::parasolid::unverified_message(matched)
-                    .unwrap_or_else(|| {
-                        format!(
-                            "The `{}` source layer was admitted without a verified declared \
+                let message = cadmpeg_parasolid::unverified_message(matched).unwrap_or_else(|| {
+                    format!(
+                        "The `{}` source layer was admitted without a verified declared \
                              grammar.",
-                            matched.dialect()
-                        )
-                    });
+                        matched.dialect()
+                    )
+                });
                 Some(NxLossCode::SourceDialectUnverified.note(message))
             }
         })

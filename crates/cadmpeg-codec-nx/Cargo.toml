@@ -23,6 +23,7 @@ categories = ["encoding", "parser-implementations", "graphics"]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-container.workspace = true
+cadmpeg-parasolid.workspace = true
 flate2.workspace = true
 roxmltree.workspace = true
 serde.workspace = true

@@ -1430,18 +1430,10 @@ fn classify(inflated: &[u8]) -> (StreamKind, Option<String>) {
     } else {
         StreamKind::Plain
     };
-    (kind, read_schema(window))
-}
-
-/// Read a `SCH_<...>` schema token: the `SCH_` prefix followed by the run of
-/// token characters (alphanumeric and `_`).
-fn read_schema(window: &[u8]) -> Option<String> {
-    let pos = find(window, b"SCH_")?;
-    let mut end = pos;
-    while end < window.len() && (window[end].is_ascii_alphanumeric() || window[end] == b'_') {
-        end += 1;
-    }
-    Some(String::from_utf8_lossy(&window[pos..end]).into_owned())
+    (
+        kind,
+        cadmpeg_parasolid::find_schema_token(window).map(|token| token.value().to_owned()),
+    )
 }
 
 #[cfg(test)]
