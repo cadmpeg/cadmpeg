@@ -1758,3 +1758,10 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::dialect::acis_recovery_message"
 reason = "unverified_message now derives the complete ACIS declaration and substituted grammar from DialectMatch, so host codecs cannot author incomplete recovery prose"
+
+[[change]]
+commit = "e2a1e5bba6565cb45f14fd9d034210fe4a39ebeb"
+crate = "cadmpeg-container"
+kind = "move"
+item = "cadmpeg_container::parasolid -> cadmpeg_parasolid"
+reason = "Parasolid schema grammar and identity belong to the modelling-kernel format owner; the container crate remains limited to archive and compression mechanisms"
