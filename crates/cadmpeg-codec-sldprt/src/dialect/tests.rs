@@ -47,7 +47,7 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
 fn parasolid_schema_evidence_emits_a_kernel_layer() {
     let bytes = synthetic_sldprt();
     let scan = scan_bytes(&bytes);
-    let layers = classify_layers(&scan);
+    let layers = classify_layers(&scan).expect("valid dialect layers");
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -83,6 +83,7 @@ fn several_parasolid_streams_use_their_source_carriers_as_instances() {
     let bytes = sldprt_with_colliding_sites();
     let scan = scan_bytes(&bytes);
     let kernels = classify_layers(&scan)
+        .expect("valid dialect layers")
         .iter()
         .filter(|matched| matched.format() == PARASOLID_FORMAT)
         .cloned()
@@ -315,7 +316,7 @@ fn the_scan_read_and_the_report_classify_the_same_declaration() {
         let scan = scan_bytes(&bytes);
 
         assert_eq!(
-            crate::container::declared_sw_version(&scan).as_deref(),
+            crate::container::declared_sw_version(&scan),
             Some(declaration),
             "swVersion {declaration:?} must survive the scan"
         );

@@ -120,7 +120,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
-    let dialects = crate::dialect::classify_layers(&scan);
+    let dialects = crate::dialect::classify_layers(&scan)?;
     let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
         .and_then(crate::dialect::SldprtDialect::form_code_padding);
     // Charge container cardinality before BREP/IR construction so max_entities
@@ -3175,20 +3175,20 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
     let active_configuration_name = container::active_configuration_name(scan);
     if let Some(envelope) = container::solidworks_envelope(scan) {
         for (key, value) in [
-            ("sw_creation_time_unix", envelope.creation_time),
-            ("sw_path", envelope.path),
-            ("sw_name", envelope.model_name),
+            ("sw_creation_time_unix", envelope.creation_time.as_ref()),
+            ("sw_path", envelope.path.as_ref()),
+            ("sw_name", envelope.model_name.as_ref()),
         ] {
             if let Some(value) = value {
-                attributes.insert(key.into(), value);
+                attributes.insert(key.into(), value.clone());
             }
         }
         if let Some(value) = active_configuration_name.as_deref() {
             attributes.insert("sw_configuration_name".into(), value.into());
-        } else if let Some(value) = envelope.configuration_name {
-            attributes.insert("sw_configuration_name".into(), value);
+        } else if let Some(value) = &envelope.configuration_name {
+            attributes.insert("sw_configuration_name".into(), value.clone());
         }
-        attributes.extend(envelope.configuration_attributes);
+        attributes.extend(envelope.configuration_attributes.clone());
     }
 }
 
