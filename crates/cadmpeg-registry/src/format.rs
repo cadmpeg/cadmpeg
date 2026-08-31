@@ -35,26 +35,10 @@ impl Format {
     /// whether this build can write it.
     #[must_use]
     pub fn is_known_name(name: &str) -> bool {
-        matches!(
-            name,
-            "cadir"
-                | "json"
-                | "step"
-                | "fcstd"
-                | "f3d"
-                | "sldprt"
-                | "rhino"
-                | "3dm"
-                | "iges"
-                | "igs"
-                | "inventor"
-                | "catia"
-                | "creo"
-                | "nx"
-                | "sat"
-                | "acis"
-                | "parasolid"
-        )
+        crate::registry::is_format_name(name)
+            || crate::descriptors::FORMAT_DESCRIPTORS
+                .iter()
+                .any(|descriptor| descriptor.output_names.contains(&name))
     }
 
     /// Every output format this build carries, in registry order.
@@ -89,20 +73,6 @@ impl Format {
         crate::descriptors::writable()
             .find(|descriptor| descriptor.output_extensions.contains(&extension.as_str()))
             .and_then(|descriptor| descriptor.output)
-    }
-
-    /// Whether writing this format transfers geometry rather than the neutral
-    /// document.
-    #[must_use]
-    pub fn is_geometry_export(self) -> bool {
-        crate::descriptors::by_output(self).geometry_export
-    }
-
-    /// Whether this output format is a binary container, which is unsafe to
-    /// stream to a terminal or a JSON-expecting pipe by accident.
-    #[must_use]
-    pub fn is_binary_container(self) -> bool {
-        crate::descriptors::by_output(self).binary_container
     }
 
     /// The stable format id, which is also its canonical `--to` spelling.

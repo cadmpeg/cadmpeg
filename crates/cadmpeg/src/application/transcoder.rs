@@ -249,7 +249,7 @@ impl DestinationPolicy {
         match self {
             Self::Stdout {
                 allow_binary: false,
-            } if format.is_binary_container() => Err(ConversionRefusal::BinaryStdoutRejected {
+            } if is_binary_container(format) => Err(ConversionRefusal::BinaryStdoutRejected {
                 message: format!(
                     "refusing to write binary {name} to standard output; pass -o FILE.{name}, or \
                      --input-format {name} (alias --from) if you meant to force how the INPUT is \
@@ -369,7 +369,7 @@ impl<'a> Transcoder<'a> {
             Some(validation)
         };
 
-        if format.is_geometry_export()
+        if transfers_geometry(format)
             && decode_report
                 .as_ref()
                 .is_some_and(|report| !report.geometry_transferred)
@@ -395,6 +395,24 @@ impl<'a> Transcoder<'a> {
             destination,
             loss_policy: policy.losses,
         })
+    }
+}
+
+const fn transfers_geometry(format: Format) -> bool {
+    !matches!(format, Format::Cadir)
+}
+
+const fn is_binary_container(format: Format) -> bool {
+    match format {
+        #[cfg(feature = "fcstd")]
+        Format::Fcstd => true,
+        #[cfg(feature = "f3d")]
+        Format::F3d => true,
+        #[cfg(feature = "sldprt")]
+        Format::Sldprt => true,
+        #[cfg(feature = "rhino")]
+        Format::Rhino => true,
+        _ => false,
     }
 }
 

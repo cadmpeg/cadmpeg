@@ -104,6 +104,36 @@ class TestFileLevel(RegistryCase):
             "complete must be a boolean",
         )
 
+    def test_format_unknown_key(self):
+        self.assertFires(
+            _registry(GOOD_ROW, formats="[format.demo]\ncomplete = true\nname = 'other'\n"),
+            "format demo: unknown key name",
+        )
+
+    def test_format_aliases_must_be_strings(self):
+        self.assertFires(
+            _registry(GOOD_ROW, formats="[format.demo]\ncomplete = true\naliases = [1]\n"),
+            "aliases must be a list of strings",
+        )
+
+    def test_format_alias_grammar(self):
+        self.assertFires(
+            _registry(GOOD_ROW, formats="[format.demo]\ncomplete = true\naliases = ['Demo-X']\n"),
+            "alias 'Demo-X' must match [a-z0-9]+",
+        )
+
+    def test_format_alias_cannot_duplicate_another_format(self):
+        self.assertFires(
+            _registry(
+                GOOD_ROW,
+                formats=(
+                    "[format.demo]\ncomplete = true\naliases = ['other']\n"
+                    "[format.other]\ncomplete = true\n"
+                ),
+            ),
+            "canonical id duplicates alias owned by format demo",
+        )
+
     def test_incomplete_format_requires_its_unknown_row(self):
         self.assertFires(
             _registry(GOOD_ROW, formats="[format.demo]\ncomplete = false\n"),
