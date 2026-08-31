@@ -18,6 +18,20 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "6103f84b7b0cba617a235830578d8a536b697e5a"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::{SourceRelation,WriteRequest}"
+reason = "write resolution is now an opaque ResolvedWrite proof whose queries cannot expose inconsistent catalog, preservation, and displacement states"
+
+[[change]]
+commit = "6103f84b7b0cba617a235830578d8a536b697e5a"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::resolve_write_request"
+reason = "the resolver returns the opaque ResolvedWrite proof instead of a public enum plus a second public source-relation enum"
+
+[[change]]
 commit = "626815342ecdd3f2bc858c6ecde0ae5ea10e72df"
 crate = "cadmpeg-registry"
 kind = "deletion"

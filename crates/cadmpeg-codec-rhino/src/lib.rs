@@ -12,8 +12,8 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, SourceRelation,
-    TargetDescriptor, TargetRequest,
+    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor,
+    TargetRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
@@ -176,16 +176,13 @@ impl Encoder for RhinoEncoder {
             dialect::FORMAT,
             dialect::TARGETS,
         )?;
-        let (entry, source) = match resolved {
-            cadmpeg_ir::codec::WriteRequest::Catalog { entry, source } => (entry, source),
-            cadmpeg_ir::codec::WriteRequest::OffCatalog { dialect: source } => {
-                return Err(cadmpeg_ir::codec::unsupported_target(
-                    dialect::FORMAT,
-                    source.as_str(),
-                    OFF_CATALOG_SOURCE_REASON,
-                    dialect::TARGETS,
-                ));
-            }
+        let Some(entry) = resolved.catalog_entry() else {
+            return Err(cadmpeg_ir::codec::unsupported_target(
+                dialect::FORMAT,
+                resolved.dialect().as_str(),
+                OFF_CATALOG_SOURCE_REASON,
+                dialect::TARGETS,
+            ));
         };
         let version = dialect::target_version(entry);
         let mut bytes = Vec::new();
@@ -215,7 +212,7 @@ impl Encoder for RhinoEncoder {
             });
         let mut losses = Vec::new();
         let target = cadmpeg_core::dialect::DialectId::pinned(version.target());
-        if let SourceRelation::Displaced(source) = &source {
+        if let Some(source) = resolved.displaced_source() {
             losses.push(loss::RhinoLossCode::SourceDialectDisplaced.note(
                 cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
             ));

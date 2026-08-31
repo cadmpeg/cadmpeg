@@ -1,4 +1,4 @@
-# generated at 92ce62ac7
+# generated at 6103f84b7
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -164,21 +164,9 @@ pub cadmpeg_ir::codec::Confidence::Medium
 pub cadmpeg_ir::codec::Confidence::No
 impl core::fmt::Display for cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::codec::Confidence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub enum cadmpeg_ir::codec::SourceRelation
-pub cadmpeg_ir::codec::SourceRelation::Displaced(cadmpeg_core::dialect::DialectId)
-pub cadmpeg_ir::codec::SourceRelation::None
-pub cadmpeg_ir::codec::SourceRelation::Preserve
 pub enum cadmpeg_ir::codec::TargetRequest<'a>
 pub cadmpeg_ir::codec::TargetRequest::Explicit(&'a str)
 pub cadmpeg_ir::codec::TargetRequest::Inherit
-pub enum cadmpeg_ir::codec::WriteRequest<'a>
-pub cadmpeg_ir::codec::WriteRequest::Catalog
-pub cadmpeg_ir::codec::WriteRequest::Catalog::entry: &'static cadmpeg_ir::codec::TargetDescriptor
-pub cadmpeg_ir::codec::WriteRequest::Catalog::source: cadmpeg_ir::codec::SourceRelation
-pub cadmpeg_ir::codec::WriteRequest::OffCatalog
-pub cadmpeg_ir::codec::WriteRequest::OffCatalog::dialect: &'a cadmpeg_core::dialect::DialectId
-impl cadmpeg_ir::codec::WriteRequest<'_>
-pub fn cadmpeg_ir::codec::WriteRequest<'_>::dialect_id(&self) -> cadmpeg_core::dialect::DialectId
 pub struct cadmpeg_ir::codec::CadirEncoder
 impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
 pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
@@ -212,6 +200,12 @@ pub fn cadmpeg_ir::codec::ExportPlan<'a>::fidelity_resolution(&self) -> &cadmpeg
 pub fn cadmpeg_ir::codec::ExportPlan<'a>::report(&self) -> &cadmpeg_ir::ExportReport
 pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_path(&self) -> cadmpeg_ir::WritePath
 pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_to(self, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::ExportReport, cadmpeg_core::error::CodecError>
+pub struct cadmpeg_ir::codec::ResolvedWrite<'a>
+impl cadmpeg_ir::codec::ResolvedWrite<'_>
+pub const fn cadmpeg_ir::codec::ResolvedWrite<'_>::catalog_entry(&self) -> core::option::Option<&'static cadmpeg_ir::codec::TargetDescriptor>
+pub const fn cadmpeg_ir::codec::ResolvedWrite<'_>::dialect(&self) -> &cadmpeg_core::dialect::DialectId
+pub fn cadmpeg_ir::codec::ResolvedWrite<'_>::displaced_source(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
+pub fn cadmpeg_ir::codec::ResolvedWrite<'_>::preserves_source(&self) -> bool
 pub struct cadmpeg_ir::codec::TargetDescriptor
 pub cadmpeg_ir::codec::TargetDescriptor::aliases: &'static [&'static str]
 pub cadmpeg_ir::codec::TargetDescriptor::default: bool
@@ -239,7 +233,7 @@ pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::
 pub fn cadmpeg_ir::codec::assert_valid_target_catalog(&[cadmpeg_ir::codec::TargetDescriptor])
 pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_ir::codec::TargetDescriptor>
 pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_ir::codec::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_ir::codec::TargetDescriptor>
-pub fn cadmpeg_ir::codec::resolve_write_request<'a>(&'a cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::WriteRequest<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::resolve_write_request<'a>(&'a cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_ir::codec::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::ResolvedWrite<'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::source_dialect_displaced_message(&cadmpeg_core::dialect::DialectId, &cadmpeg_core::dialect::DialectId) -> alloc::string::String
 pub fn cadmpeg_ir::codec::unsupported_target(&str, &str, &str, &[cadmpeg_ir::codec::TargetDescriptor]) -> cadmpeg_core::error::CodecError
 pub mod cadmpeg_ir::compare

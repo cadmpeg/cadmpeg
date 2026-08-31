@@ -6,8 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
     resolve_write_request, unsupported_target, CodecBackend, Confidence, DecodeOptions,
-    DecodeResult, EncodeInput, Encoder, ExportPlan, SourceRelation, TargetDescriptor,
-    TargetRequest, WriteRequest,
+    DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor, TargetRequest,
 };
 use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 
@@ -57,16 +56,13 @@ impl Encoder for StepCodec {
             crate::dialect::FORMAT,
             crate::dialect::TARGETS,
         )?;
-        let (entry, source) = match resolved {
-            WriteRequest::Catalog { entry, source } => (entry, source),
-            WriteRequest::OffCatalog { dialect } => {
-                return Err(unsupported_target(
-                    crate::dialect::FORMAT,
-                    dialect.as_str(),
-                    OFF_CATALOG_SOURCE_REASON,
-                    crate::dialect::TARGETS,
-                ));
-            }
+        let Some(entry) = resolved.catalog_entry() else {
+            return Err(unsupported_target(
+                crate::dialect::FORMAT,
+                resolved.dialect().as_str(),
+                OFF_CATALOG_SOURCE_REASON,
+                crate::dialect::TARGETS,
+            ));
         };
         let schema = crate::dialect::target_schema(entry);
         let mut bytes = Vec::new();
@@ -74,7 +70,7 @@ impl Encoder for StepCodec {
             .map_err(CodecError::from)?;
         let target = cadmpeg_core::dialect::DialectId::pinned(schema.target());
         let mut losses = outcome.losses;
-        if let SourceRelation::Displaced(source) = &source {
+        if let Some(source) = resolved.displaced_source() {
             losses.push(crate::loss::StepLossCode::SourceDialectDisplaced.note(
                 cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
             ));
