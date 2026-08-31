@@ -43,9 +43,9 @@ pub struct ExportTarget {
 ///
 /// `--to` names a dialect outright. A `--to` that names only a format, or no
 /// `--to` at all, leaves `request` unstated so the encoder inherits from the
-/// source. Explicit tokens reach the encoder unchanged. The encoder admits
-/// catalog tokens and resolves aliases and source-dependent preservation
-/// during planning.
+/// source. Explicit tokens are admitted against the selected encoder's static
+/// catalog before input decode. The encoder resolves source-dependent
+/// preservation and delivery during planning.
 #[derive(Debug, Clone)]
 pub struct TargetSelection {
     /// Selected output format.
@@ -61,8 +61,8 @@ impl TargetSelection {
         Self { format, request }
     }
 
-    /// Resolves the `--to` grammar against the output path. The selected
-    /// encoder admits an explicit dialect during export planning.
+    /// Resolves the `--to` grammar against the output path. [`export_target`]
+    /// admits an explicit dialect before input decode.
     pub fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
         let inferred = format_from_path(out);
         Ok(match to {
