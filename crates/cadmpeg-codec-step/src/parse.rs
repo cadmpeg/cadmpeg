@@ -231,6 +231,34 @@ impl PartialEq for EntityIndex {
 }
 
 impl Exchange {
+    /// Decoded `FILE_SCHEMA` identifiers in source order.
+    ///
+    /// Header validation guarantees that the record contains a non-empty list
+    /// of decodable strings. This accessor stays total for manually assembled
+    /// test values and returns only the strings it can recover.
+    pub(crate) fn schema_identifiers(&self) -> Vec<String> {
+        let Some(record) = self
+            .header
+            .iter()
+            .find(|record| record.name == "FILE_SCHEMA")
+        else {
+            return Vec::new();
+        };
+        let Some(Value::List(identifiers)) = record.parameters.first() else {
+            return Vec::new();
+        };
+        identifiers
+            .iter()
+            .filter_map(|value| match value {
+                Value::String(bytes) => Some(
+                    crate::strings::decode(bytes)
+                        .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned()),
+                ),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Release semantic source structures before retained opaque bytes are copied.
     pub(crate) fn release_source_graph(&mut self) {
         self.header.clear();

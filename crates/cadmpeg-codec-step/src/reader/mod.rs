@@ -1080,31 +1080,8 @@ fn claim_trivia(input: &[u8], range: std::ops::Range<usize>, classes: &mut [Byte
     }
 }
 
-pub(super) fn schema_identifiers(exchange: &Exchange) -> Vec<String> {
-    let Some(record) = exchange
-        .header
-        .iter()
-        .find(|record| record.name == "FILE_SCHEMA")
-    else {
-        return Vec::new();
-    };
-    let Some(Value::List(identifiers)) = record.parameters.first() else {
-        return Vec::new();
-    };
-    identifiers
-        .iter()
-        .filter_map(|value| match value {
-            Value::String(bytes) => Some(
-                crate::strings::decode(bytes)
-                    .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned()),
-            ),
-            _ => None,
-        })
-        .collect()
-}
-
 fn schema_name(exchange: &Exchange) -> String {
-    schema_identifiers(exchange).join(",")
+    exchange.schema_identifiers().join(",")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

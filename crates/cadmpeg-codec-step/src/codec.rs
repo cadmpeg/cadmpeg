@@ -246,7 +246,7 @@ impl CodecBackend for StepCodec {
                 attributes: BTreeMap::default(),
             });
         }
-        let identifiers = reader::schema_identifiers(&exchange);
+        let identifiers = exchange.schema_identifiers();
         let schema = if identifiers.is_empty() {
             "unspecified".into()
         } else {
