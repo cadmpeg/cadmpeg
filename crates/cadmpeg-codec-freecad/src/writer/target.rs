@@ -31,8 +31,6 @@ use crate::native::DocumentFacts;
 pub(crate) struct Resolution {
     schema: crate::dialect::FcstdDialect,
     target: DialectId,
-    schema_version: String,
-    file_version: String,
 }
 
 impl Resolution {
@@ -42,14 +40,6 @@ impl Resolution {
 
     pub(super) fn target(&self) -> &DialectId {
         &self.target
-    }
-
-    pub(super) fn schema_version(&self) -> &str {
-        &self.schema_version
-    }
-
-    pub(super) fn file_version(&self) -> &str {
-        &self.file_version
     }
 }
 
@@ -138,15 +128,13 @@ pub(in crate::writer) fn resolve(
 fn retained_baseline(ir: &CadIr, source_dialect: &DialectId) -> Option<Resolution> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
-    let [document] = documents.as_slice() else {
+    if documents.len() != 1 {
         return None;
-    };
+    }
     let classified = ir.source.as_ref()?.dialect()?.dialect();
     let schema = dialect::FcstdDialect::from_id(classified)?;
     (schema != dialect::FcstdDialect::Unknown && classified == source_dialect).then(|| Resolution {
         schema,
         target: source_dialect.clone(),
-        schema_version: document.schema_version.clone(),
-        file_version: document.file_version.clone(),
     })
 }
