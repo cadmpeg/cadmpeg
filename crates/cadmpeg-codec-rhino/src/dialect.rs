@@ -41,69 +41,16 @@
 use crate::chunks::ArchiveVersion;
 use crate::RhinoArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "rhino";
 
-/// The synthesis catalog: the archive versions this writer can produce for any
-/// input, one row per [`RhinoArchiveVersion`] variant.
-///
-/// The chunked band this codec *reads* is wider than the band it writes:
-/// archives 1, 2, 3, 4, 5 and 90 decode but have no writer, and only the
-/// totality row decodes as admitted-unverified. None of them is a target,
-/// and — unlike IGES — there is no preservation path that could write them
-/// anyway (see [`crate::OFF_CATALOG_SOURCE_REASON`]).
-///
-/// Each row has its bare archive word as an alias. Archives 60 through 80 also
-/// accept the corresponding Rhino major. Archive word 5 is a distinct,
-/// read-only dialect and is not an alias for archive 50.
-pub(crate) const TARGETS: &[TargetDescriptor] = &[
-    TargetDescriptor {
-        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V5).id(),
-        label: "Rhino 5 archive (50)",
-        aliases: &["50"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V6).id(),
-        label: "Rhino 6 archive (60)",
-        aliases: &["6", "60"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V7).id(),
-        label: "Rhino 7 archive (70)",
-        aliases: &["7", "70"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V8).id(),
-        label: "Rhino 8 archive (80)",
-        aliases: &["8", "80"],
-        default: true,
-    },
-];
-
 impl RhinoArchiveVersion {
     pub(crate) const fn pinned(self) -> &'static str {
         ArchiveVersion::from_write_version(self).pinned()
     }
-}
-
-/// The archive version represented by a canonical catalog entry.
-pub(crate) fn target_version(target: &TargetDescriptor) -> RhinoArchiveVersion {
-    [
-        RhinoArchiveVersion::V5,
-        RhinoArchiveVersion::V6,
-        RhinoArchiveVersion::V7,
-        RhinoArchiveVersion::V8,
-    ]
-    .into_iter()
-    .find(|version| ArchiveVersion::from_write_version(*version).id() == target.id)
-    .expect("Rhino TARGETS entries map to RhinoArchiveVersion")
 }
 
 /// Key of the archive-version word in [`DialectMatch::declared`].

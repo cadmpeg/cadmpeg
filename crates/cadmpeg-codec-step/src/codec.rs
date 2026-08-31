@@ -14,7 +14,7 @@ use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
 use crate::export::write_step_outcome;
-use crate::options::StepWriteOptions;
+use crate::options::{StepSchema, StepWriteOptions};
 use crate::parse;
 use crate::reader;
 
@@ -25,7 +25,8 @@ pub struct StepCodec {
     pub options: StepWriteOptions,
 }
 
-/// Why this writer cannot reproduce a source schema outside [`TARGETS`].
+/// Why this writer cannot reproduce a source schema outside
+/// [`StepSchema::TARGETS`].
 ///
 /// The one per-codec sentence of the shared catalog-write resolution: STEP has
 /// no retained-image path, and every schema this writer emits stamps
@@ -41,7 +42,7 @@ impl Encoder for StepCodec {
     }
 
     fn targets(&self) -> &'static [TargetDescriptor] {
-        crate::dialect::TARGETS
+        StepSchema::TARGETS
     }
 
     /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
@@ -55,12 +56,17 @@ impl Encoder for StepCodec {
             input.ir,
             request,
             crate::dialect::FORMAT,
-            crate::dialect::TARGETS,
+            StepSchema::TARGETS,
         )?;
         let Some(entry) = resolved.catalog_entry() else {
             return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
         };
-        let schema = crate::dialect::target_schema(entry);
+        let schema = StepSchema::from_target(entry).ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "STEP target catalog entry {} has no typed write schema",
+                entry.id
+            ))
+        })?;
         let mut bytes = Vec::new();
         let outcome = write_step_outcome(input.ir, &mut bytes, schema, &self.options)
             .map_err(CodecError::from)?;

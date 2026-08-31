@@ -13,9 +13,9 @@
 //! case of the gap. The codec has exactly one Part 21 read grammar:
 //! nothing in the reader branches on the declared schema. The schema identifier
 //! is read after the parse, recorded, and used for DATA-section name matching.
-//! It is nonetheless the identity axis. [`StepDialect::schema_identifier`]
-//! owns the declarations for the Part 21 rows, and write schemas project from
-//! that table.
+//! It is nonetheless the identity axis. [`StepSchema::file_schema`] owns the
+//! declarations for writable Part 21 rows; [`StepDialect::schema_identifier`]
+//! delegates those rows to it and adds the edition-unspecified AP242 row.
 //!
 //! The `FILE_DESCRIPTION` implementation level is the axis the parser does
 //! branch on, and it is deliberately **not** an identity axis here: it is
@@ -50,74 +50,12 @@ use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::{Exchange, Value};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "step";
-
-/// The synthesis catalog: the schemas this writer can put in `FILE_SCHEMA`, one
-/// per [`StepSchema`] variant.
-///
-/// The rows this codec *reads* are wider than the rows it writes: `step:ap242`
-/// and `step:unknown` classify documents that no write target reproduces, and
-/// the Part 28 XML, AP242 BO-Model XML, and Part 26 HDF5 rows are structural
-/// refusals below decode. None of them is a target, and — unlike IGES — there
-/// is no preservation path that could write them anyway.
-pub(crate) const TARGETS: &[TargetDescriptor] = &[
-    TargetDescriptor {
-        id: StepDialect::from_write_schema(StepSchema::Ap203Edition1).id(),
-        label: "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
-        aliases: &["ap203e1"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: StepDialect::from_write_schema(StepSchema::Ap203Edition2).id(),
-        label: "STEP AP203 edition 2 modular long form",
-        aliases: &["ap203e2"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: StepDialect::from_write_schema(StepSchema::Ap214).id(),
-        label: "STEP AP214 AUTOMOTIVE_DESIGN",
-        aliases: &["ap214"],
-        default: true,
-    },
-    TargetDescriptor {
-        id: StepDialect::from_write_schema(StepSchema::Ap242Edition1).id(),
-        label: "STEP AP242 edition 1 modular long form",
-        aliases: &["ap242e1"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: StepDialect::from_write_schema(StepSchema::Ap242Edition2).id(),
-        label: "STEP AP242 edition 2 modular long form",
-        aliases: &["ap242e2"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: StepDialect::from_write_schema(StepSchema::Ap242Edition3).id(),
-        label: "STEP AP242 edition 3 modular long form",
-        aliases: &["ap242e3"],
-        default: false,
-    },
-];
-
-impl StepSchema {
-    pub(crate) const fn pinned(self) -> &'static str {
-        StepDialect::from_write_schema(self).pinned()
-    }
-}
-
-/// The schema represented by a canonical catalog entry.
-pub(crate) fn target_schema(target: &TargetDescriptor) -> StepSchema {
-    StepSchema::ALL
-        .into_iter()
-        .find(|schema| StepDialect::from_write_schema(*schema).id() == target.id)
-        .expect("STEP TARGETS entries map to StepSchema::ALL")
-}
 
 /// Key of the `FILE_SCHEMA` identifier the row keys on, in
 /// [`DialectMatch::declared`].
@@ -149,13 +87,8 @@ pub(crate) const DECLARED_IMPLEMENTATION_LEVEL: &str = "implementation_level";
 /// One row of `docs/dialects.toml` under the `step` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum StepDialect {
-    Ap203Edition1,
-    Ap203Edition2,
-    Ap214,
+    Schema(StepSchema),
     Ap242,
-    Ap242Edition1,
-    Ap242Edition2,
-    Ap242Edition3,
     Part28Xml,
     Ap242BoModelXml,
     Part26Hdf5,
@@ -170,35 +103,24 @@ pub(crate) enum StepDialect {
 /// decoded from any exchange, and no reader stage consults `FILE_SCHEMA`.
 /// Edition 3 is the newest of the AP242 rows and the one the reader's other
 /// defaults follow, so it names the strategy used.
-const NEAREST_STRATEGY: StepDialect = StepDialect::Ap242Edition3;
+const NEAREST_STRATEGY: StepDialect = StepDialect::Schema(StepSchema::Ap242Edition3);
 
 impl StepDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
     pub(crate) const ALL: [Self; 11] = [
-        Self::Ap203Edition1,
-        Self::Ap203Edition2,
-        Self::Ap214,
+        Self::Schema(StepSchema::Ap203Edition1),
+        Self::Schema(StepSchema::Ap203Edition2),
+        Self::Schema(StepSchema::Ap214),
         Self::Ap242,
-        Self::Ap242Edition1,
-        Self::Ap242Edition2,
-        Self::Ap242Edition3,
+        Self::Schema(StepSchema::Ap242Edition1),
+        Self::Schema(StepSchema::Ap242Edition2),
+        Self::Schema(StepSchema::Ap242Edition3),
         Self::Part28Xml,
         Self::Ap242BoModelXml,
         Self::Part26Hdf5,
         Self::Unknown,
     ];
-
-    pub(crate) const fn from_write_schema(schema: StepSchema) -> Self {
-        match schema {
-            StepSchema::Ap203Edition1 => Self::Ap203Edition1,
-            StepSchema::Ap203Edition2 => Self::Ap203Edition2,
-            StepSchema::Ap214 => Self::Ap214,
-            StepSchema::Ap242Edition1 => Self::Ap242Edition1,
-            StepSchema::Ap242Edition2 => Self::Ap242Edition2,
-            StepSchema::Ap242Edition3 => Self::Ap242Edition3,
-        }
-    }
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
@@ -207,13 +129,8 @@ impl StepDialect {
 
     const fn pinned(self) -> &'static str {
         match self {
-            Self::Ap203Edition1 => "step:ap203-e1",
-            Self::Ap203Edition2 => "step:ap203-e2",
-            Self::Ap214 => "step:ap214",
+            Self::Schema(schema) => schema.target(),
             Self::Ap242 => "step:ap242",
-            Self::Ap242Edition1 => "step:ap242-e1",
-            Self::Ap242Edition2 => "step:ap242-e2",
-            Self::Ap242Edition3 => "step:ap242-e3",
             Self::Part28Xml => "step:part28-xml",
             Self::Ap242BoModelXml => "step:ap242-bo-model-xml",
             Self::Part26Hdf5 => "step:part26-hdf5",
@@ -227,13 +144,8 @@ impl StepDialect {
     /// alternate encodings and totality row have no Part 21 declaration.
     pub(crate) const fn schema_identifier(self) -> Option<&'static str> {
         match self {
-            Self::Ap203Edition1 => Some("CONFIG_CONTROL_DESIGN"),
-            Self::Ap203Edition2 => Some("AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }"),
-            Self::Ap214 => Some("AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }"),
+            Self::Schema(schema) => Some(schema.file_schema()),
             Self::Ap242 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"),
-            Self::Ap242Edition1 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }"),
-            Self::Ap242Edition2 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"),
-            Self::Ap242Edition3 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"),
             Self::Part28Xml | Self::Ap242BoModelXml | Self::Part26Hdf5 | Self::Unknown => None,
         }
     }
@@ -271,17 +183,21 @@ impl StepDialect {
             }
             return Self::from_ap242_identifier(identifier).unwrap_or(Self::Unknown);
         }
-        [Self::Ap203Edition1, Self::Ap203Edition2, Self::Ap214]
-            .into_iter()
-            .find(|dialect| {
-                split_schema_identifier(
-                    dialect
-                        .schema_identifier()
-                        .expect("Part 21 discriminants have identifiers"),
-                )
-                .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
-            })
-            .unwrap_or(Self::Unknown)
+        [
+            Self::Schema(StepSchema::Ap203Edition1),
+            Self::Schema(StepSchema::Ap203Edition2),
+            Self::Schema(StepSchema::Ap214),
+        ]
+        .into_iter()
+        .find(|dialect| {
+            split_schema_identifier(
+                dialect
+                    .schema_identifier()
+                    .expect("Part 21 discriminants have identifiers"),
+            )
+            .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
+        })
+        .unwrap_or(Self::Unknown)
     }
 
     /// The AP242 edition row whose canonical object identifier the declaration
@@ -289,9 +205,9 @@ impl StepDialect {
     fn from_ap242_identifier(identifier: &str) -> Option<Self> {
         let (name, arcs) = schema_identifier_arcs(identifier)?;
         [
-            Self::Ap242Edition1,
-            Self::Ap242Edition2,
-            Self::Ap242Edition3,
+            Self::Schema(StepSchema::Ap242Edition1),
+            Self::Schema(StepSchema::Ap242Edition2),
+            Self::Schema(StepSchema::Ap242Edition3),
         ]
         .into_iter()
         .find(|dialect| {
@@ -317,14 +233,7 @@ impl StepDialect {
             Self::Part26Hdf5 => Some("STEP Part 26 binary/HDF5 encoding"),
             Self::Part28Xml => Some("STEP Part 28 XML encoding"),
             Self::Ap242BoModelXml => Some("AP242 BO-Model XML sidecar"),
-            Self::Ap203Edition1
-            | Self::Ap203Edition2
-            | Self::Ap214
-            | Self::Ap242
-            | Self::Ap242Edition1
-            | Self::Ap242Edition2
-            | Self::Ap242Edition3
-            | Self::Unknown => None,
+            Self::Schema(_) | Self::Ap242 | Self::Unknown => None,
         }
     }
 

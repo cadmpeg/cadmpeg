@@ -5,6 +5,9 @@
 //! export request's answer, resolved against the source: `StepCodec::plan`
 //! takes it from `TargetRequest`.
 
+use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::target::TargetDescriptor;
+
 /// Metadata written to the STEP `FILE_NAME` header record.
 ///
 /// Default values produce deterministic output. They identify the file as
@@ -47,7 +50,7 @@ impl Default for StepWriteOptions {
 ///
 /// The AP242 edition number and the long-form schema revision are distinct:
 /// editions 1, 2, and 3 use long-form revisions 1, 3, and 4 respectively.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StepSchema {
     /// AP203 edition 1 `CONFIG_CONTROL_DESIGN`.
     Ap203Edition1,
@@ -77,6 +80,18 @@ impl StepSchema {
         Self::Ap242Edition3,
     ];
 
+    /// The generic encoder view, projected from this typed write vocabulary.
+    /// Every row names the exact `FILE_SCHEMA` declaration this enum writes;
+    /// AP214 is the cross-format default.
+    pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+        Self::Ap203Edition1.descriptor(),
+        Self::Ap203Edition2.descriptor(),
+        Self::Ap214.descriptor(),
+        Self::Ap242Edition1.descriptor(),
+        Self::Ap242Edition2.descriptor(),
+        Self::Ap242Edition3.descriptor(),
+    ];
+
     /// The registry dialect id this schema writes.
     ///
     /// The spelling a caller passes as `TargetRequest::Explicit`.
@@ -87,9 +102,67 @@ impl StepSchema {
 
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {
-        match crate::dialect::StepDialect::from_write_schema(self).schema_identifier() {
-            Some(identifier) => identifier,
-            None => panic!("every StepSchema has a Part 21 identity row"),
+        match self {
+            Self::Ap203Edition1 => "CONFIG_CONTROL_DESIGN",
+            Self::Ap203Edition2 => "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }",
+            Self::Ap214 => "AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }",
+            Self::Ap242Edition1 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }",
+            Self::Ap242Edition2 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
+            Self::Ap242Edition3 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }",
+        }
+    }
+
+    pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|schema| schema.target() == target.id.as_str())
+    }
+
+    const fn pinned(self) -> &'static str {
+        match self {
+            Self::Ap203Edition1 => "step:ap203-e1",
+            Self::Ap203Edition2 => "step:ap203-e2",
+            Self::Ap214 => "step:ap214",
+            Self::Ap242Edition1 => "step:ap242-e1",
+            Self::Ap242Edition2 => "step:ap242-e2",
+            Self::Ap242Edition3 => "step:ap242-e3",
+        }
+    }
+
+    const fn descriptor(self) -> TargetDescriptor {
+        let (label, aliases, default) = match self {
+            Self::Ap203Edition1 => (
+                "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
+                &["ap203e1"].as_slice(),
+                false,
+            ),
+            Self::Ap203Edition2 => (
+                "STEP AP203 edition 2 modular long form",
+                &["ap203e2"].as_slice(),
+                false,
+            ),
+            Self::Ap214 => ("STEP AP214 AUTOMOTIVE_DESIGN", &["ap214"].as_slice(), true),
+            Self::Ap242Edition1 => (
+                "STEP AP242 edition 1 modular long form",
+                &["ap242e1"].as_slice(),
+                false,
+            ),
+            Self::Ap242Edition2 => (
+                "STEP AP242 edition 2 modular long form",
+                &["ap242e2"].as_slice(),
+                false,
+            ),
+            Self::Ap242Edition3 => (
+                "STEP AP242 edition 3 modular long form",
+                &["ap242e3"].as_slice(),
+                false,
+            ),
+        };
+        TargetDescriptor {
+            id: DialectId::pinned(self.pinned()),
+            label,
+            aliases,
+            default,
         }
     }
 
