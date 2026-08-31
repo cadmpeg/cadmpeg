@@ -3,8 +3,9 @@
 //! preservation path, and the two refusals.
 
 use super::*;
+use cadmpeg_core::target::find_target;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{find_target, TargetRequest};
+use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::report::FidelityResolution;
 
 /// The global of [`point_file`] with field 23 set to `flag`.
@@ -193,7 +194,7 @@ fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
     assert!(find_target(targets, "iges:5.3-compressed-ascii").is_none());
     assert!(find_target(targets, "iges:5.3-binary").is_none());
     assert_eq!(
-        cadmpeg_ir::codec::default_target(targets).map(|target| target.id.as_str()),
+        cadmpeg_core::target::default_target(targets).map(|target| target.id.as_str()),
         Some(IgesVersion::V5_3.target())
     );
 }

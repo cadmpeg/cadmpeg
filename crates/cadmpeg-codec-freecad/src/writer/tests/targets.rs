@@ -7,7 +7,7 @@ use super::super::*;
 use crate::native::DocumentFacts;
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_core::target::{DefaultSource, TargetRefusal};
+use cadmpeg_core::target::{find_target, DefaultSource, TargetRefusalKind};
 use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
 use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 use std::io::Cursor;
@@ -50,8 +50,8 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert!(matches!(
-        refusal.as_ref(),
-        TargetRefusal::NoDefault {
+        refusal.kind(),
+        TargetRefusalKind::NoDefault {
             format,
             source: DefaultSource::ForeignFormat(source_format),
             ..
@@ -150,7 +150,7 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
         Some("fcstd:schema-2".to_owned())
     );
     assert!(
-        cadmpeg_ir::codec::find_target(Encoder::targets(&FcstdCodec), "fcstd:schema-2").is_none(),
+        find_target(Encoder::targets(&FcstdCodec), "fcstd:schema-2").is_none(),
         "schema 2 is preserved, never synthesized"
     );
 
@@ -208,8 +208,8 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(refusal.requested(), Some("fcstd:schema-2"));
     assert!(matches!(
-        refusal.as_ref(),
-        TargetRefusal::InheritedUnavailable { .. }
+        refusal.kind(),
+        TargetRefusalKind::InheritedUnavailable { .. }
     ));
     assert!(
         refusal
@@ -258,8 +258,8 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(refusal.requested(), Some("fcstd:schema-4"));
     assert!(matches!(
-        refusal.as_ref(),
-        TargetRefusal::ExplicitUnavailable { .. }
+        refusal.kind(),
+        TargetRefusalKind::ExplicitUnavailable { .. }
     ));
     assert!(
         refusal
@@ -298,8 +298,8 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(refusal.requested(), None);
     assert!(matches!(
-        refusal.as_ref(),
-        TargetRefusal::UnrecordedSource { .. }
+        refusal.kind(),
+        TargetRefusalKind::UnrecordedSource { .. }
     ));
     assert!(
         refusal

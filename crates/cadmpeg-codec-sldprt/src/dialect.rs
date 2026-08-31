@@ -88,7 +88,6 @@ const PARASOLID_FORMAT: &str = "parasolid";
 /// reachable only by preserving a retained part.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: SldprtDialect::Unknown.id(),
-    label: "SolidWorks part with no swVersion declaration",
     aliases: &[],
     default: true,
 }];

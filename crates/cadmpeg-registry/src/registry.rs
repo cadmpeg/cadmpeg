@@ -5,8 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_ir::codec::find_target;
+use cadmpeg_core::target::{find_target, TargetDescriptor};
 use serde::Deserialize;
 
 use crate::disposition::{Disposition, ReadDisposition, WriteDisposition};
@@ -426,7 +425,7 @@ mod tests {
 
         for format in Format::all() {
             let targets = build_encoder(format).targets();
-            cadmpeg_ir::codec::assert_valid_target_catalog(targets);
+            cadmpeg_core::target::assert_valid_target_catalog(targets);
             let prefix = format!("{}:", format.name());
             for target in targets {
                 assert!(

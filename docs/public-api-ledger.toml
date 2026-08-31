@@ -1800,3 +1800,24 @@ crate = "cadmpeg-registry"
 kind = "trait_impl"
 item = "cadmpeg_registry::Identification::{Clone,PartialEq,Eq}"
 reason = "Identification owns a typed Inspection failure and therefore no longer promises cloning or structural equality"
+
+[[change]]
+commit = "455d8a18d7a49e5be4351888d8249294cc1c097b"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::target::TargetDescriptor::label"
+reason = "human-readable dialect titles come from the identity registry; encoder catalogs own only accepted target tokens and default selection"
+
+[[change]]
+commit = "455d8a18d7a49e5be4351888d8249294cc1c097b"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::target::TargetRefusal"
+reason = "one refusal struct now owns the available catalog once beside a TargetRefusalKind, eliminating six copies of the same catalog field"
+
+[[change]]
+commit = "455d8a18d7a49e5be4351888d8249294cc1c097b"
+crate = "cadmpeg-ir"
+kind = "move"
+item = "cadmpeg_ir::codec::{assert_valid_target_catalog,default_target,find_target} -> cadmpeg_core::target"
+reason = "static catalog validation and lookup depend only on the core-owned TargetDescriptor and do not read CADIR state"

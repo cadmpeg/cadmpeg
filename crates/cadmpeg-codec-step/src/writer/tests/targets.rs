@@ -6,11 +6,9 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::target::{default_target, find_target};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    default_target, find_target, Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan,
-    TargetRequest,
-};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::units::Units;

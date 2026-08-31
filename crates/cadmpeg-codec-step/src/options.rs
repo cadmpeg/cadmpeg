@@ -130,37 +130,16 @@ impl StepSchema {
     }
 
     const fn descriptor(self) -> TargetDescriptor {
-        let (label, aliases, default) = match self {
-            Self::Ap203Edition1 => (
-                "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
-                &["ap203e1"].as_slice(),
-                false,
-            ),
-            Self::Ap203Edition2 => (
-                "STEP AP203 edition 2 modular long form",
-                &["ap203e2"].as_slice(),
-                false,
-            ),
-            Self::Ap214 => ("STEP AP214 AUTOMOTIVE_DESIGN", &["ap214"].as_slice(), true),
-            Self::Ap242Edition1 => (
-                "STEP AP242 edition 1 modular long form",
-                &["ap242e1"].as_slice(),
-                false,
-            ),
-            Self::Ap242Edition2 => (
-                "STEP AP242 edition 2 modular long form",
-                &["ap242e2"].as_slice(),
-                false,
-            ),
-            Self::Ap242Edition3 => (
-                "STEP AP242 edition 3 modular long form",
-                &["ap242e3"].as_slice(),
-                false,
-            ),
+        let (aliases, default) = match self {
+            Self::Ap203Edition1 => (&["ap203e1"].as_slice(), false),
+            Self::Ap203Edition2 => (&["ap203e2"].as_slice(), false),
+            Self::Ap214 => (&["ap214"].as_slice(), true),
+            Self::Ap242Edition1 => (&["ap242e1"].as_slice(), false),
+            Self::Ap242Edition2 => (&["ap242e2"].as_slice(), false),
+            Self::Ap242Edition3 => (&["ap242e3"].as_slice(), false),
         };
         TargetDescriptor {
             id: DialectId::pinned(self.pinned()),
-            label,
             aliases,
             default,
         }
