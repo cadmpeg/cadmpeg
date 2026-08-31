@@ -1779,3 +1779,24 @@ crate = "cadmpeg-registry"
 kind = "deletion"
 item = "cadmpeg_registry::native_validators"
 reason = "native-document validation is owned and registered by the check application rather than the embeddable format registry"
+
+[[change]]
+commit = "490794a09620f2d0a03a947b68663380d6ce27f4"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::Inspection::Failed"
+reason = "inspection retains CodecError so resource, I/O, malformed-container, and identified-dialect failures remain distinguishable instead of becoming display text"
+
+[[change]]
+commit = "490794a09620f2d0a03a947b68663380d6ce27f4"
+crate = "cadmpeg-registry"
+kind = "trait_impl"
+item = "cadmpeg_registry::Inspection::{Clone,PartialEq,Eq}"
+reason = "typed CodecError failures are intentionally neither clonable nor comparable; callers inspect the error variant and its structured payload"
+
+[[change]]
+commit = "490794a09620f2d0a03a947b68663380d6ce27f4"
+crate = "cadmpeg-registry"
+kind = "trait_impl"
+item = "cadmpeg_registry::Identification::{Clone,PartialEq,Eq}"
+reason = "Identification owns a typed Inspection failure and therefore no longer promises cloning or structural equality"
