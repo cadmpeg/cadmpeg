@@ -174,7 +174,9 @@ impl<'a> ResolvedWrite<'a> {
             target: ResolvedTarget::Preserved(dialect),
         }
     }
+}
 
+impl ResolvedWrite<'_> {
     /// Returns the resolved catalog row, or `None` when inheritance requires
     /// preservation of an off-catalog source dialect.
     #[must_use]
