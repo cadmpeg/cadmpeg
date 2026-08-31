@@ -31,63 +31,11 @@ use crate::global::{DialectRecovery, ResolvedGlobal, VersionFlag};
 use crate::representation::Representation;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "iges";
-
-/// The synthesis catalog: what the semantic writer can produce for any input.
-///
-/// The writer emits Fixed ASCII only, so the five verified Fixed ASCII rows are
-/// the whole of it. Compressed ASCII and Binary are absent by construction, and
-/// so are the seven unverified Fixed ASCII rows: no input makes the writer emit
-/// them. Those dialects are still writable, by preserving a retained source
-/// image under `TargetRequest::Inherit` — preservation, not synthesis.
-///
-/// The alias of each row is its bare version, so `--to 5.3` and
-/// `--to iges:5.3-fixed-ascii` name the same row.
-pub(crate) const TARGETS: &[TargetDescriptor] = &[
-    TargetDescriptor {
-        id: IgesDialect::V4_0FixedAscii.id(),
-        label: "IGES 4.0 Fixed ASCII",
-        aliases: &["4.0"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: IgesDialect::V5_0FixedAscii.id(),
-        label: "IGES 5.0 Fixed ASCII",
-        aliases: &["5.0"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: IgesDialect::V5_1FixedAscii.id(),
-        label: "IGES 5.1 Fixed ASCII",
-        aliases: &["5.1"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: IgesDialect::V5_2FixedAscii.id(),
-        label: "IGES 5.2 Fixed ASCII",
-        aliases: &["5.2"],
-        default: false,
-    },
-    TargetDescriptor {
-        id: IgesDialect::V5_3FixedAscii.id(),
-        label: "IGES 5.3 Fixed ASCII",
-        aliases: &["5.3"],
-        default: true,
-    },
-];
-
-/// The write version represented by a canonical catalog entry.
-pub(crate) fn target_version(target: &TargetDescriptor) -> IgesVersion {
-    IgesVersion::ALL
-        .into_iter()
-        .find(|version| IgesDialect::fixed_ascii(*version).id() == target.id)
-        .expect("IGES TARGETS entries map to IgesVersion::ALL")
-}
 
 /// The dialect-unverified loss required by a classified Global declaration.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {

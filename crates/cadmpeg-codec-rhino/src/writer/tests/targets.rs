@@ -104,7 +104,7 @@ fn an_explicit_target_wins_over_the_source_archive_version() {
 #[test]
 fn a_cross_format_request_resolves_to_the_catalog_default() {
     let ir = CadIr::empty(Units::default());
-    let default = cadmpeg_ir::codec::default_target(crate::dialect::TARGETS)
+    let default = cadmpeg_ir::codec::default_target(crate::RhinoArchiveVersion::TARGETS)
         .expect("the Rhino catalog has a default");
     assert_eq!(
         resolved(

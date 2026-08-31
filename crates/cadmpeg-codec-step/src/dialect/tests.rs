@@ -18,13 +18,13 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
 #[test]
 fn exactly_the_alternate_encoding_rows_carry_a_refusal_message() {
     let refused = [
-        StepDialect::Ap203Edition1,
-        StepDialect::Ap203Edition2,
-        StepDialect::Ap214,
+        StepDialect::Schema(StepSchema::Ap203Edition1),
+        StepDialect::Schema(StepSchema::Ap203Edition2),
+        StepDialect::Schema(StepSchema::Ap214),
         StepDialect::Ap242,
-        StepDialect::Ap242Edition1,
-        StepDialect::Ap242Edition2,
-        StepDialect::Ap242Edition3,
+        StepDialect::Schema(StepSchema::Ap242Edition1),
+        StepDialect::Schema(StepSchema::Ap242Edition2),
+        StepDialect::Schema(StepSchema::Ap242Edition3),
         StepDialect::Part28Xml,
         StepDialect::Ap242BoModelXml,
         StepDialect::Part26Hdf5,
@@ -260,14 +260,10 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
 }
 
 #[test]
-fn write_schemas_project_the_identity_owned_file_schema_table() {
+fn written_schema_declarations_classify_to_their_target_identity() {
     for schema in StepSchema::ALL {
-        assert_eq!(
-            schema.file_schema(),
-            StepDialect::from_write_schema(schema)
-                .schema_identifier()
-                .expect("every write schema has a Part 21 identity row")
-        );
+        let matched = StepDialect::classify(&exchange(&[schema.file_schema()], "2;1"));
+        assert_eq!(matched.dialect().as_str(), schema.target());
     }
 }
 

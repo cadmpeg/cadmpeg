@@ -34,6 +34,7 @@ mod writer;
 pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
@@ -66,6 +67,17 @@ impl IgesVersion {
     /// Every version this writer can emit, in registry order.
     pub(crate) const ALL: [Self; 5] = [Self::V4_0, Self::V5_0, Self::V5_1, Self::V5_2, Self::V5_3];
 
+    /// The generic encoder view, projected from this typed write vocabulary.
+    /// The writer emits only the five verified Fixed ASCII rows. Each bare
+    /// version is an alias, and 5.3 is the cross-format default.
+    pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+        Self::V4_0.descriptor(),
+        Self::V5_0.descriptor(),
+        Self::V5_1.descriptor(),
+        Self::V5_2.descriptor(),
+        Self::V5_3.descriptor(),
+    ];
+
     /// The registry dialect id this version writes.
     ///
     /// The spelling a caller passes as `TargetRequest::Explicit`, and the
@@ -73,6 +85,28 @@ impl IgesVersion {
     #[must_use]
     pub const fn target(self) -> &'static str {
         dialect::IgesDialect::fixed_ascii(self).pinned()
+    }
+
+    pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|version| version.target() == target.id.as_str())
+    }
+
+    const fn descriptor(self) -> TargetDescriptor {
+        let (label, aliases, default) = match self {
+            Self::V4_0 => ("IGES 4.0 Fixed ASCII", &["4.0"].as_slice(), false),
+            Self::V5_0 => ("IGES 5.0 Fixed ASCII", &["5.0"].as_slice(), false),
+            Self::V5_1 => ("IGES 5.1 Fixed ASCII", &["5.1"].as_slice(), false),
+            Self::V5_2 => ("IGES 5.2 Fixed ASCII", &["5.2"].as_slice(), false),
+            Self::V5_3 => ("IGES 5.3 Fixed ASCII", &["5.3"].as_slice(), true),
+        };
+        TargetDescriptor {
+            id: DialectId::pinned(self.target()),
+            label,
+            aliases,
+            default,
+        }
     }
 
     pub(crate) const fn name(self) -> &'static str {
@@ -172,7 +206,7 @@ impl Encoder for IgesEncoder {
     }
 
     fn targets(&self) -> &'static [TargetDescriptor] {
-        dialect::TARGETS
+        IgesVersion::TARGETS
     }
 
     fn plan(

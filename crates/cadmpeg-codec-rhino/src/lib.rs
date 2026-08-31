@@ -10,6 +10,7 @@
 //! explicitly versioned native writing from neutral IR.
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
@@ -76,12 +77,46 @@ pub enum RhinoArchiveVersion {
 }
 
 impl RhinoArchiveVersion {
+    /// Every archive version this writer can emit, in registry order.
+    pub(crate) const ALL: [Self; 4] = [Self::V5, Self::V6, Self::V7, Self::V8];
+
+    /// The generic encoder view, projected from this typed write vocabulary.
+    /// Archive words and Rhino majors are aliases; archive 80 is the
+    /// cross-format default.
+    pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+        Self::V5.descriptor(),
+        Self::V6.descriptor(),
+        Self::V7.descriptor(),
+        Self::V8.descriptor(),
+    ];
+
     /// The registry dialect id this version writes.
     ///
     /// The spelling a caller passes as `TargetRequest::Explicit`.
     #[must_use]
     pub const fn target(self) -> &'static str {
         self.pinned()
+    }
+
+    pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|version| version.target() == target.id.as_str())
+    }
+
+    const fn descriptor(self) -> TargetDescriptor {
+        let (label, aliases, default) = match self {
+            Self::V5 => ("Rhino 5 archive (50)", &["50"].as_slice(), false),
+            Self::V6 => ("Rhino 6 archive (60)", &["6", "60"].as_slice(), false),
+            Self::V7 => ("Rhino 7 archive (70)", &["7", "70"].as_slice(), false),
+            Self::V8 => ("Rhino 8 archive (80)", &["8", "80"].as_slice(), true),
+        };
+        TargetDescriptor {
+            id: DialectId::pinned(self.pinned()),
+            label,
+            aliases,
+            default,
+        }
     }
 
     const fn value(self) -> u64 {
@@ -144,7 +179,7 @@ impl CodecBackend for RhinoCodec {
 }
 
 /// Why this writer cannot reproduce a source archive version outside
-/// [`dialect::TARGETS`].
+/// [`RhinoArchiveVersion::TARGETS`].
 ///
 /// The one per-codec sentence of the shared catalog-write resolution. The band
 /// is real — archives 1, 2, 3, 4, 5 and 90 decode without a writer, archive 5
@@ -160,7 +195,7 @@ impl Encoder for RhinoEncoder {
     }
 
     fn targets(&self) -> &'static [TargetDescriptor] {
-        dialect::TARGETS
+        RhinoArchiveVersion::TARGETS
     }
 
     /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
@@ -174,12 +209,17 @@ impl Encoder for RhinoEncoder {
             input.ir,
             request,
             dialect::FORMAT,
-            dialect::TARGETS,
+            RhinoArchiveVersion::TARGETS,
         )?;
         let Some(entry) = resolved.catalog_entry() else {
             return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
         };
-        let version = dialect::target_version(entry);
+        let version = RhinoArchiveVersion::from_target(entry).ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "Rhino target catalog entry {} has no typed archive version",
+                entry.id
+            ))
+        })?;
         let mut bytes = Vec::new();
         writer::write(input.ir, version, &mut bytes)?;
         let vertex_quantization = version == RhinoArchiveVersion::V5

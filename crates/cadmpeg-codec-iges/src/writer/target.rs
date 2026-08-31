@@ -2,6 +2,7 @@
 //! IGES target resolution and retained-image replay.
 
 use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, ExportPlan, TargetRequest};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
@@ -18,7 +19,7 @@ pub(crate) fn plan(
         input.ir,
         request,
         crate::dialect::FORMAT,
-        crate::dialect::TARGETS,
+        crate::IgesVersion::TARGETS,
     )?;
     let Some(entry) = resolved.catalog_entry() else {
         return match replay_bytes(input.ir, input.fidelity)? {
@@ -38,20 +39,24 @@ pub(crate) fn plan(
             }
             Replay::Declined { reason } => reason,
         };
-        synthesized_plan(
-            input,
-            crate::dialect::target_version(entry),
-            None,
-            replay_failure,
-        )
+        synthesized_plan(input, target_version(entry)?, None, replay_failure)
     } else {
         synthesized_plan(
             input,
-            crate::dialect::target_version(entry),
+            target_version(entry)?,
             resolved.displaced_source(),
             None,
         )
     }
+}
+
+fn target_version(target: &TargetDescriptor) -> Result<crate::IgesVersion, CodecError> {
+    crate::IgesVersion::from_target(target).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "IGES target catalog entry {} has no typed write version",
+            target.id
+        ))
+    })
 }
 
 fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan {
