@@ -1562,3 +1562,17 @@ crate = "cadmpeg-registry"
 kind = "variant"
 item = "cadmpeg_registry::UnknownDialectKind::RefusedResidual"
 reason = "the registry now distinguishes a classified residual that is refused from one that is recovered; exhaustive downstream matches must add the refusal case"
+
+[[change]]
+commit = "52a23bf00558b4d19ec2da248844d5b4ede42d6d"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::dialect::Admission::AdmittedUnverified::{0 -> using}"
+reason = "the admission variant stores its optional substituted grammar directly, preserving the wire shape while removing an inverse wrapper from every producer and consumer"
+
+[[change]]
+commit = "52a23bf00558b4d19ec2da248844d5b4ede42d6d"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::dialect::UnverifiedAdmission"
+reason = "Admission::AdmittedUnverified now represents the same optional substituted grammar without a second option-shaped enum or a handwritten wire adapter"
