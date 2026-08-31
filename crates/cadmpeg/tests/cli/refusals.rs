@@ -296,8 +296,27 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .stderr(predicate::str::contains("iges cannot write 9.9"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "unsupported_target");
-    assert!(value["decode_report"].is_object());
-    assert!(value["check_report"].is_object());
+    assert!(value["decode_report"].is_null());
+    assert!(value["check_report"].is_null());
+
+    // Static target admission wins even when the source path cannot be read.
+    let missing_input = dir.path().join("missing.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            missing_input.to_str().unwrap(),
+            "-o",
+            refused_output.to_str().unwrap(),
+            "--to",
+            "9.9",
+        ])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("iges cannot write 9.9")
+                .and(predicate::str::contains("No such file or directory").not()),
+        );
 
     // A format-qualified token outside the catalog is the same refusal. The
     // encoder receives the token after the colon unchanged.

@@ -73,6 +73,57 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
 }
 
 #[test]
+fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let output = dir.path().join("collision.step");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            output.to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "CAD output and command report resolve to the same path",
+        ));
+
+    assert!(!output.exists());
+}
+
+#[test]
+fn report_write_failure_does_not_replace_a_typed_refusal() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "--to",
+            "step:ap999",
+            "--report",
+            dir.path().to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("step cannot write ap999").and(predicate::str::contains(
+                "could not write convert refusal report",
+            )),
+        );
+}
+
+#[test]
 fn f3d_export_report_identifies_regenerated_output() {
     let dir = tempdir().unwrap();
     let cube = fixture(dir.path(), "cube.json", &unit_cube());

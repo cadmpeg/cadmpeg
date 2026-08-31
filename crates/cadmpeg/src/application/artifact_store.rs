@@ -101,19 +101,7 @@ impl ArtifactStore {
     pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
         let input = std::fs::canonicalize(input)
             .with_context(|| format!("canonicalizing {}", input.display()))?;
-        let parent = output
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let output_absolute = if output.exists() {
-            std::fs::canonicalize(output)?
-        } else {
-            std::fs::canonicalize(parent)?.join(
-                output
-                    .file_name()
-                    .ok_or_else(|| anyhow!("output path has no filename"))?,
-            )
-        };
+        let output_absolute = Self::absolute_output_path(output)?;
         if input == output_absolute {
             bail!("refusing to overwrite input {}", input.display());
         }
@@ -121,6 +109,38 @@ impl ArtifactStore {
             bail!("{} exists; pass --force to overwrite", output.display());
         }
         Ok(())
+    }
+
+    /// Refuse two independently written outputs that resolve to one path.
+    pub fn check_distinct_output_paths(
+        first: &Path,
+        first_label: &str,
+        second: &Path,
+        second_label: &str,
+    ) -> Result<()> {
+        if Self::absolute_output_path(first)? == Self::absolute_output_path(second)? {
+            bail!(
+                "{first_label} and {second_label} resolve to the same path {}; choose distinct output paths",
+                first.display()
+            );
+        }
+        Ok(())
+    }
+
+    fn absolute_output_path(output: &Path) -> Result<PathBuf> {
+        let parent = output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        if output.exists() {
+            Ok(std::fs::canonicalize(output)?)
+        } else {
+            Ok(std::fs::canonicalize(parent)?.join(
+                output
+                    .file_name()
+                    .ok_or_else(|| anyhow!("output path has no filename"))?,
+            ))
+        }
     }
 
     /// Stage bytes then atomically replace `output`.

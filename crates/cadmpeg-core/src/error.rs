@@ -108,6 +108,12 @@ impl CodecError {
     }
 }
 
+impl From<TargetRefusal> for CodecError {
+    fn from(refusal: TargetRefusal) -> Self {
+        Self::UnsupportedTarget(Box::new(refusal))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;

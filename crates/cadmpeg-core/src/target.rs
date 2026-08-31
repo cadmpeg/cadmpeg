@@ -128,6 +128,20 @@ pub enum DefaultSource {
 }
 
 impl TargetRefusal {
+    /// Builds the refusal for an explicit token outside an encoder catalog.
+    #[must_use]
+    pub fn unknown_explicit(
+        format: impl Into<String>,
+        requested: impl Into<String>,
+        available: &'static [TargetDescriptor],
+    ) -> Self {
+        Self::UnknownExplicit {
+            format: format.into(),
+            requested: TargetToken::new(requested),
+            available,
+        }
+    }
+
     /// Returns the refusing encoder format.
     #[must_use]
     pub fn format(&self) -> &str {
