@@ -93,7 +93,6 @@ fn report(
 ) -> ExportReport {
     ExportReport::native(
         target,
-        crate::dialect::FORMAT.into(),
         EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts,

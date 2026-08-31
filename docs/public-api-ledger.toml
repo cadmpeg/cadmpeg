@@ -18,6 +18,20 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "38fe598789b2b55823a6fed5369aa29e0dd2e3de"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::report::ExportReport::format"
+reason = "the report stores a closed CADIR, classified-native, or unclassified-native identity and exposes its derived format through an accessor instead of a contradictory public field"
+
+[[change]]
+commit = "38fe598789b2b55823a6fed5369aa29e0dd2e3de"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::report::ExportReport::native"
+reason = "a native report derives its format namespace from its required DialectId target, so callers can no longer pair a target with a foreign format"
+
+[[change]]
 commit = "acc3d7ecd531d7fb8413c34032832e7f1894c279"
 crate = "cadmpeg-core"
 kind = "variant"

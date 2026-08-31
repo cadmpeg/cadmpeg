@@ -74,7 +74,6 @@ fn finish<'a>(
     // A plan constructs its report once, after every report input is final.
     let report = ExportReport::native(
         outcome.target,
-        dialect::FORMAT.into(),
         outcome.census,
         if input.fidelity.is_some() {
             FidelityResolution::NotConsumed

@@ -235,7 +235,6 @@ impl Encoder for RhinoEncoder {
         }
         let report = ExportReport::native(
             target,
-            "rhino".into(),
             cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: input.ir.census(),

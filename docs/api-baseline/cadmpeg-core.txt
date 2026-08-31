@@ -1,4 +1,4 @@
-# generated at acc3d7ecd
+# generated at 38fe59878
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -309,6 +309,7 @@ pub cadmpeg_core::dialect::UnverifiedAdmission::Using(cadmpeg_core::dialect::Dia
 pub struct cadmpeg_core::dialect::DialectId(_)
 impl cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectId::as_str(&self) -> &str
+pub fn cadmpeg_core::dialect::DialectId::namespace(&self) -> &str
 pub fn cadmpeg_core::dialect::DialectId::parse(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_core::dialect::DialectIdError>
 pub const fn cadmpeg_core::dialect::DialectId::pinned(&'static str) -> Self
 impl core::fmt::Debug for cadmpeg_core::dialect::DialectId

@@ -1,4 +1,4 @@
-# generated at c3715792f
+# generated at 38fe59878
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4378,15 +4378,19 @@ pub fn cadmpeg_ir::EntityCensus::total(&self) -> usize
 pub struct cadmpeg_ir::report::ExportReport
 pub cadmpeg_ir::report::ExportReport::census: cadmpeg_ir::EntityCensus
 pub cadmpeg_ir::report::ExportReport::fidelity: cadmpeg_ir::FidelityResolution
-pub cadmpeg_ir::report::ExportReport::format: alloc::string::String
 pub cadmpeg_ir::report::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::report::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::report::ExportReport::write_path: cadmpeg_ir::WritePath
 impl cadmpeg_ir::ExportReport
 pub fn cadmpeg_ir::ExportReport::cadir(cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::ExportReport::format(&self) -> &str
+pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
+impl serde_core::ser::Serialize for cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::ExportReport::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::ExportReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::report::Finding
 pub cadmpeg_ir::report::Finding::check: cadmpeg_ir::Check
 pub cadmpeg_ir::report::Finding::entity: core::option::Option<alloc::string::String>
@@ -7152,15 +7156,19 @@ pub fn cadmpeg_ir::annotations::ExactnessNote::default() -> Self
 pub struct cadmpeg_ir::ExportReport
 pub cadmpeg_ir::ExportReport::census: cadmpeg_ir::EntityCensus
 pub cadmpeg_ir::ExportReport::fidelity: cadmpeg_ir::FidelityResolution
-pub cadmpeg_ir::ExportReport::format: alloc::string::String
 pub cadmpeg_ir::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::ExportReport::write_path: cadmpeg_ir::WritePath
 impl cadmpeg_ir::ExportReport
 pub fn cadmpeg_ir::ExportReport::cadir(cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, alloc::string::String, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::ExportReport::format(&self) -> &str
+pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
+impl serde_core::ser::Serialize for cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::ExportReport::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::ExportReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::ExternalDocumentReference
 pub cadmpeg_ir::ExternalDocumentReference::document_id: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::ExternalDocumentReference::path: core::option::Option<alloc::string::String>

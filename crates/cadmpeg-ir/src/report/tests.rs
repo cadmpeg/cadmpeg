@@ -204,6 +204,98 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
 }
 
 #[test]
+fn native_export_report_derives_its_format_from_the_target() {
+    let report = ExportReport::native(
+        DialectId::pinned("step:ap242-e3"),
+        EntityCensus {
+            basis: CensusBasis::TargetRecords,
+            counts: BTreeMap::new(),
+        },
+        FidelityResolution::NotProvided,
+        WritePath::Synthesized,
+        Vec::new(),
+        Vec::new(),
+    );
+
+    assert_eq!(report.format(), "step");
+    assert_eq!(
+        report.target().map(DialectId::as_str),
+        Some("step:ap242-e3")
+    );
+    let rendered = serde_json::to_value(&report).unwrap();
+    assert_eq!(rendered["format"], "step");
+    assert_eq!(rendered["target"], "step:ap242-e3");
+}
+
+#[test]
+fn export_report_wire_rejects_a_foreign_target_namespace() {
+    let malformed = serde_json::json!({
+        "format": "rhino",
+        "census": { "basis": "target_records", "counts": {} },
+        "fidelity": { "status": "not_provided" },
+        "write_path": "synthesized",
+        "losses": [],
+        "notes": [],
+        "target": "step:ap242-e3",
+    });
+
+    let error = serde_json::from_value::<ExportReport>(malformed)
+        .expect_err("a native target must belong to the report format");
+    assert!(
+        error
+            .to_string()
+            .contains("export target \"step:ap242-e3\" is not in format namespace \"rhino\""),
+        "{error}"
+    );
+}
+
+#[test]
+fn legacy_native_export_without_a_target_stays_unclassified() {
+    let legacy = serde_json::json!({
+        "format": "rhino",
+        "census": { "basis": "target_records", "counts": {} },
+        "fidelity": { "status": "not_provided" },
+        "write_path": "synthesized",
+        "losses": [],
+        "notes": [],
+    });
+
+    let report = serde_json::from_value::<ExportReport>(legacy)
+        .expect("a report written before target existed remains readable");
+    assert_eq!(report.format(), "rhino");
+    assert_eq!(report.target(), None);
+    let migrated = serde_json::to_value(&report).unwrap();
+    assert_eq!(migrated["format"], "rhino");
+    assert!(migrated["target"].is_null());
+    assert_eq!(
+        serde_json::from_value::<ExportReport>(migrated).unwrap(),
+        report
+    );
+}
+
+#[test]
+fn cadir_export_wire_rejects_a_native_target() {
+    let malformed = serde_json::json!({
+        "format": "cadir",
+        "census": { "basis": "ir_arenas", "counts": {} },
+        "fidelity": { "status": "not_provided" },
+        "write_path": "synthesized",
+        "losses": [],
+        "notes": [],
+        "target": "step:ap242-e3",
+    });
+
+    let error = serde_json::from_value::<ExportReport>(malformed)
+        .expect_err("CADIR has no native dialect target");
+    assert!(
+        error
+            .to_string()
+            .contains("CADIR export report cannot name native dialect \"step:ap242-e3\""),
+        "{error}"
+    );
+}
+
+#[test]
 fn classified_report_wire_requires_its_primary_format() {
     let report = DecodeReport::classified(
         DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
