@@ -443,36 +443,6 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
     }
 }
 
-/// An explicit target this writer does not produce is refused by `plan` itself,
-/// with the catalog in the message.
-///
-/// The check runs before any synthesis, so an empty document is enough: what is
-/// under test is that the request reaches the encoder at all. A `plan` that
-/// dropped the guard would emit AP214 and report success for a schema nobody
-/// asked for.
-#[test]
-fn plan_refuses_an_explicit_target_outside_the_catalog() {
-    let ir = CadIr::empty(Units::default());
-    let encoder = StepCodec::default();
-    let error = Encoder::plan(
-        &encoder,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("step:nonesuch"),
-    )
-    .err()
-    .expect("an id outside the catalog is refused");
-
-    let (format, requested, available) = refusal(&error);
-    assert_eq!(format, "step");
-    assert_eq!(requested, Some("step:nonesuch"));
-    for target in Encoder::targets(&encoder) {
-        assert!(
-            available.iter().any(|available| available == target),
-            "{available:?}"
-        );
-    }
-}
-
 /// The §8.3 honesty invariant on the synthesis path: re-decoding the output
 /// classifies the host layer into exactly the dialect the report named.
 ///

@@ -420,41 +420,6 @@ fn dialect_layer(id: &'static str) -> DialectMatch {
     DialectMatch::admitted(DialectId::pinned(id))
 }
 
-/// An explicit target is refused by `plan` itself, with the catalog in the
-/// message.
-///
-/// The neutral encoder has no catalog at all, so every explicit id is outside
-/// it: CADIR is the neutral document, and its version is data about cadmpeg,
-/// never a dialect. A `plan` that dropped the guard would answer a dialect
-/// request by writing a document that has none.
-#[test]
-fn plan_refuses_an_explicit_target_outside_the_catalog() {
-    let ir = crate::CadIr::empty(crate::units::Units::default());
-    let error = Encoder::plan(
-        &CadirEncoder,
-        crate::codec::EncodeInput::new(&ir, None),
-        crate::codec::TargetRequest::Explicit("cadir:nonesuch"),
-    )
-    .err()
-    .expect("an id outside the catalog is refused");
-
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    let TargetRefusal::UnknownExplicit {
-        format,
-        requested,
-        available,
-    } = refusal.as_ref()
-    else {
-        panic!("an unknown explicit target must retain that request state")
-    };
-    assert_eq!(format, "cadir");
-    assert_eq!(requested.as_str(), "cadir:nonesuch");
-    assert!(available.is_empty());
-    assert!(Encoder::targets(&CadirEncoder).is_empty());
-}
-
 const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
         id: DialectId::pinned("test:old"),

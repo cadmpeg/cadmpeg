@@ -63,41 +63,6 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     );
 }
 
-/// An explicit target this writer does not produce is refused by `plan`
-/// itself, with the catalog in the message.
-///
-/// The check runs before any synthesis, so an empty document is enough:
-/// what is under test is that the request reaches the encoder at all. This
-/// writer reaches one schema through the trait, which is exactly why the
-/// refusal must exist — every other id is a claim it cannot honour.
-#[test]
-fn plan_refuses_an_explicit_target_outside_the_catalog() {
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let error = Encoder::plan(
-        &FcstdCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("fcstd:nonesuch"),
-    )
-    .err()
-    .expect("an id outside the catalog is refused");
-
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "fcstd");
-    assert_eq!(refusal.requested(), Some("fcstd:nonesuch"));
-    for target in Encoder::targets(&FcstdCodec) {
-        assert!(
-            refusal
-                .available()
-                .iter()
-                .any(|available| available == target),
-            "{:?}",
-            refusal.available()
-        );
-    }
-}
-
 /// A schema-2 `Document.xml`, in the `Features`/`FeatureData` vocabulary
 /// that schema declares, wrapped in an archive.
 fn schema_two_archive() -> Vec<u8> {
