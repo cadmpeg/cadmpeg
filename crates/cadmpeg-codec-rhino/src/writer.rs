@@ -3378,11 +3378,11 @@ fn mesh_payload(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     archive_version: RhinoArchiveVersion,
 ) -> MeshPayload {
-    let minor = match archive_version {
-        RhinoArchiveVersion::V5 => 5_u8,
-        RhinoArchiveVersion::V6 | RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8 => 8_u8,
+    let (payload_version, writes_modern_fields) = match archive_version {
+        RhinoArchiveVersion::V5 => (0x35, false),
+        RhinoArchiveVersion::V6 | RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8 => (0x38, true),
     };
-    let mut payload = vec![0x30 | minor];
+    let mut payload = vec![payload_version];
     payload.extend((mesh.vertices.len() as i32).to_le_bytes());
     payload.extend((mesh.triangles.len() as i32).to_le_bytes());
     for _ in 0..4 {
@@ -3447,11 +3447,9 @@ fn mesh_payload(
     payload.extend(mesh_mapping_tag());
     payload.extend([0_u8; 3]);
     direct.extend([0_u8; 3]);
-    if minor >= 6 {
+    if writes_modern_fields {
         payload.push(0);
         direct.push(0);
-    }
-    if minor >= 7 {
         payload.push(1);
         direct.push(1);
         let doubles = mesh
@@ -3468,8 +3466,6 @@ fn mesh_payload(
         body.extend((mesh.vertices.len() as u32).to_le_bytes());
         body.extend(mesh_buffer(&doubles));
         payload.extend(crc_chunk(0x4000_8000, &body));
-    }
-    if minor >= 8 {
         let min = mesh.vertices.iter().fold([f64::INFINITY; 3], |a, point| {
             [a[0].min(point.x), a[1].min(point.y), a[2].min(point.z)]
         });

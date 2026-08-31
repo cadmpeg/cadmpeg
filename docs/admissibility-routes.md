@@ -62,9 +62,10 @@ is uneven:
   `-50`, `-60`, `-70`, and `-80`; `rhino:archive-1`'s single fixture is a
   reject case (`reject_v1.3dm`), so it exercises detection, not the gates.
   `rhino:archive-2`, `rhino:archive-5`, and `rhino:archive-90` have none.
-  `rhino:archive-5` and `rhino:unknown` run the full chunked route under
-  `Admission::AdmittedUnverified`, so the gates apply to them, but no fixture
-  measures them there.
+  `rhino:archive-5` is admitted under its declared four-byte chunk grammar.
+  `rhino:unknown` runs the full chunked route under
+  `Admission::AdmittedUnverified`, so the gates apply to it, but no fixture
+  measures either route.
 - **CATIA admission.** Every declared `catia:` row carries a fixture, so this
   is the one route measured across its format's whole declared space.
 - **SLDPRT export precondition and postcondition.** All twenty fixtures land
