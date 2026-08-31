@@ -45,7 +45,7 @@ pub(crate) fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution,
 ) -> Result<WriteOutcome, CodecError> {
-    let target = resolution.target.clone();
+    let target = resolution.target().clone();
     let namespace = ir
         .native
         .namespace("fcstd")
@@ -82,7 +82,7 @@ pub(crate) fn write_seekable(
     let document_xml = patch_document(&source_document.data, &properties)?;
     drop(source_document);
     let written_graph =
-        crate::persistence::parse_with_context(&document_xml, resolution.schema, None)?;
+        crate::persistence::parse_with_context(&document_xml, resolution.schema(), None)?;
     validate_declarations(
         &objects,
         &extensions,
@@ -136,7 +136,8 @@ pub(crate) fn write_seekable(
         notes: vec![
             format!(
                 "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-                resolution.schema_version, resolution.file_version
+                resolution.schema_version(),
+                resolution.file_version()
             ),
             "unsupported retained entries and unedited XML records were preserved".into(),
         ],

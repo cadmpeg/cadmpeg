@@ -19,20 +19,38 @@ use crate::native::DocumentFacts;
 
 /// What resolving a [`TargetRequest`] against the source decided.
 ///
-/// One field, because this writer has one capability. It patches the retained
+/// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
 /// the one the retained document already declares. Every other resolution is a
 /// refusal, not a degraded write: there is no synthesis path to degrade to.
-/// Only [`resolve`] builds one: the field is private, so a `Resolution` in hand
-/// is a proof that the retained document graph delivers the options it carries.
+/// Only [`resolve`] builds one: its fields are private, so a `Resolution` in
+/// hand proves that the retained document graph delivers the options it carries.
 /// [`write_seekable`] takes that proof instead of raw options, which is why it
 /// needs no target gate of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Resolution {
-    pub(crate) schema: crate::dialect::FcstdDialect,
-    pub(crate) target: DialectId,
-    pub(crate) schema_version: String,
-    pub(crate) file_version: String,
+    schema: crate::dialect::FcstdDialect,
+    target: DialectId,
+    schema_version: String,
+    file_version: String,
+}
+
+impl Resolution {
+    pub(super) const fn schema(&self) -> crate::dialect::FcstdDialect {
+        self.schema
+    }
+
+    pub(super) fn target(&self) -> &DialectId {
+        &self.target
+    }
+
+    pub(super) fn schema_version(&self) -> &str {
+        &self.schema_version
+    }
+
+    pub(super) fn file_version(&self) -> &str {
+        &self.file_version
+    }
 }
 
 /// Resolve the request against the source, then plan the export it names.

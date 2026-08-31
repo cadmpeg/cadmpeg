@@ -16,12 +16,37 @@ use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
-use crate::dialect::{classify_gui_schema, GuiSchemaAdmission};
 use crate::loss::FreecadLossCode;
 use crate::native::{
     ElementMapGroup, ElementMapRecord, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
+
+/// Admission result for the independent `GuiDocument.xml` schema layer.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum GuiSchemaAdmission {
+    /// Schema 1 uses the verified GUI vocabulary.
+    Schema1,
+    /// Any other declaration is read with the schema-1 vocabulary without a
+    /// verified declaration match.
+    Unverified { declaration: String },
+}
+
+/// Selects the `GuiDocument.xml` parser admission path.
+///
+/// GUI schema is not an `FCStd` host identity row. The declaration is matched
+/// verbatim because `"01"` does not declare the verified schema-1 vocabulary.
+pub(crate) fn classify_gui_schema(schema_version: Option<&str>) -> GuiSchemaAdmission {
+    match schema_version {
+        Some("1") => GuiSchemaAdmission::Schema1,
+        Some(value) => GuiSchemaAdmission::Unverified {
+            declaration: value.to_owned(),
+        },
+        None => GuiSchemaAdmission::Unverified {
+            declaration: "missing".into(),
+        },
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct Graph {
