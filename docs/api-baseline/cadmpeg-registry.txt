@@ -1,4 +1,4 @@
-# generated at c3715792f
+# generated at 626815342
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -25,6 +25,7 @@ pub fn cadmpeg_registry::Format::from_extension(&str) -> core::option::Option<Se
 pub fn cadmpeg_registry::Format::from_name(&str) -> core::option::Option<Self>
 pub fn cadmpeg_registry::Format::is_binary_container(self) -> bool
 pub fn cadmpeg_registry::Format::is_geometry_export(self) -> bool
+pub fn cadmpeg_registry::Format::is_known_name(&str) -> bool
 pub fn cadmpeg_registry::Format::name(self) -> &'static str
 pub fn cadmpeg_registry::Format::vocabulary() -> alloc::string::String
 pub enum cadmpeg_registry::Inspection
@@ -53,10 +54,6 @@ pub cadmpeg_registry::ResolvedSource::Native::codec: &'a dyn cadmpeg_ir::codec::
 pub cadmpeg_registry::ResolvedSource::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
 pub cadmpeg_registry::ResolvedSource::Native::format_id: &'static str
 pub cadmpeg_registry::ResolvedSource::Unrecognized
-pub enum cadmpeg_registry::UnknownDialectKind
-pub cadmpeg_registry::UnknownDialectKind::DetectUnreachable
-pub cadmpeg_registry::UnknownDialectKind::RecoveredResidual
-pub cadmpeg_registry::UnknownDialectKind::RefusedResidual
 pub enum cadmpeg_registry::WriteDisposition
 pub cadmpeg_registry::WriteDisposition::Emitted
 pub cadmpeg_registry::WriteDisposition::None
@@ -72,7 +69,6 @@ pub cadmpeg_registry::DialectEntry::disposition: cadmpeg_registry::Disposition
 pub cadmpeg_registry::DialectEntry::id: cadmpeg_core::dialect::DialectId
 pub cadmpeg_registry::DialectEntry::target: bool
 pub cadmpeg_registry::DialectEntry::title: alloc::string::String
-pub cadmpeg_registry::DialectEntry::unknown_kind: core::option::Option<cadmpeg_registry::UnknownDialectKind>
 pub struct cadmpeg_registry::DialectProvenance
 pub cadmpeg_registry::DialectProvenance::id: cadmpeg_core::dialect::DialectId
 pub cadmpeg_registry::DialectProvenance::read: core::option::Option<cadmpeg_registry::ReadDisposition>

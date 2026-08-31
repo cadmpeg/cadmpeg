@@ -8,6 +8,7 @@ use crate::{ForcedInput, Format};
 
 pub(crate) type DecoderConstructor = fn() -> Box<dyn Codec>;
 pub(crate) type EncoderConstructor = fn() -> Box<dyn Encoder>;
+type NativeValidator = fn(&CadIr) -> Vec<Finding>;
 
 /// One compiled format and all registration facts owned by the registry.
 pub(crate) struct FormatDescriptor {
@@ -15,6 +16,7 @@ pub(crate) struct FormatDescriptor {
     pub input_names: &'static [&'static str],
     pub input_extensions: &'static [&'static str],
     pub decoder: Option<DecoderConstructor>,
+    pub native_validator: Option<NativeValidator>,
     pub output: Option<Format>,
     pub output_order: Option<u8>,
     pub output_names: &'static [&'static str],
@@ -38,12 +40,19 @@ pub(crate) struct FormatDescriptor {
     feature = "sat"
 ))]
 macro_rules! descriptor {
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr) => {
+    (@validator) => {
+        None
+    };
+    (@validator $validator:expr) => {
+        Some($validator)
+    };
+    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr $(, $validator:expr)?) => {
         FormatDescriptor {
             id: $id,
             input_names: $inputs,
             input_extensions: $input_exts,
             decoder: Some($decoder),
+            native_validator: descriptor!(@validator $($validator)?),
             output: None,
             output_order: None,
             output_names: &[],
@@ -53,12 +62,13 @@ macro_rules! descriptor {
             binary_container: false,
         }
     };
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $outputs:expr, $output_exts:expr, $encoder:expr, $binary:expr) => {
+    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $outputs:expr, $output_exts:expr, $encoder:expr, $binary:expr $(, $validator:expr)?) => {
         FormatDescriptor {
             id: $id,
             input_names: $inputs,
             input_extensions: $input_exts,
             decoder: Some($decoder),
+            native_validator: descriptor!(@validator $($validator)?),
             output: Some($format),
             output_order: Some($order),
             output_names: $outputs,
@@ -82,7 +92,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         &["fcstd"],
         &["fcstd"],
         || Box::new(cadmpeg_codec_freecad::FcstdCodec),
-        true
+        true,
+        cadmpeg_codec_freecad::validate_native
     ),
     #[cfg(feature = "f3d")]
     descriptor!(
@@ -95,14 +106,16 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         &["f3d"],
         &["f3d"],
         || Box::new(cadmpeg_codec_f3d::F3dCodec),
-        true
+        true,
+        cadmpeg_codec_f3d::validate_native
     ),
     #[cfg(feature = "inventor")]
     descriptor!(
         "inventor",
         &["inventor", "ipt", "iam"],
         &["ipt", "iam"],
-        || Box::new(cadmpeg_codec_inventor::InventorCodec)
+        || Box::new(cadmpeg_codec_inventor::InventorCodec),
+        cadmpeg_codec_inventor::validate_native
     ),
     #[cfg(feature = "sldprt")]
     descriptor!(
@@ -115,7 +128,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         &["sldprt"],
         &["sldprt"],
         || Box::new(cadmpeg_codec_sldprt::SldprtCodec),
-        true
+        true,
+        cadmpeg_codec_sldprt::validate_native
     ),
     #[cfg(feature = "catia")]
     descriptor!("catia", &["catpart", "catia"], &["catpart"], || Box::new(
@@ -180,6 +194,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         input_names: &["cadir"],
         input_extensions: &["cadir", "json"],
         decoder: None,
+        native_validator: None,
         output: Some(Format::Cadir),
         output_order: Some(0),
         output_names: &["cadir", "json"],
@@ -228,18 +243,11 @@ pub fn input_names() -> impl Iterator<Item = &'static str> {
 
 /// Codec-owned native validators keyed by the same stable format ids.
 pub fn native_validators() -> impl Iterator<Item = (&'static str, fn(&CadIr) -> Vec<Finding>)> {
-    #[allow(clippy::type_complexity)]
-    static VALIDATORS: &[(&str, fn(&CadIr) -> Vec<Finding>)] = &[
-        #[cfg(feature = "fcstd")]
-        ("fcstd", cadmpeg_codec_freecad::validate_native),
-        #[cfg(feature = "f3d")]
-        ("f3d", cadmpeg_codec_f3d::validate_native),
-        #[cfg(feature = "inventor")]
-        ("inventor", cadmpeg_codec_inventor::validate_native),
-        #[cfg(feature = "sldprt")]
-        ("sldprt", cadmpeg_codec_sldprt::validate_native),
-    ];
-    VALIDATORS.iter().copied()
+    FORMAT_DESCRIPTORS.iter().filter_map(|descriptor| {
+        descriptor
+            .native_validator
+            .map(|validator| (descriptor.id, validator))
+    })
 }
 
 #[cfg(test)]

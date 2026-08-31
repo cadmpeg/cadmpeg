@@ -18,6 +18,20 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "626815342ecdd3f2bc858c6ecde0ae5ea10e72df"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::DialectEntry::unknown_kind"
+reason = "unknown_kind validates the identity registry's reserved unknown rows but is checker metadata, not a property consumed by the joined product view"
+
+[[change]]
+commit = "626815342ecdd3f2bc858c6ecde0ae5ea10e72df"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::UnknownDialectKind"
+reason = "the enum remains private to embedded-registry validation after checker-only unknown row metadata was removed from DialectEntry"
+
+[[change]]
 commit = "92ce62ac75d5a001951bbcb28d9f020f0f4bea6a"
 crate = "cadmpeg-ir"
 kind = "field"

@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetR
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 
-use cadmpeg_registry::{dialect_table, ForcedInput, Format, InputCatalog};
+use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::refusal::classify_decode_failure;
 use crate::application::validators::validate_ir;
@@ -93,10 +93,7 @@ impl TargetSelection {
             warn_on_extension_disagreement(format, inferred);
             return Ok(Self::new(format, None));
         }
-        if dialect_table(None)?
-            .iter()
-            .any(|entry| entry.format == value)
-        {
+        if Format::is_known_name(value) {
             bail!(
                 "--to {value}: {value} is not an output format of this build; available: {}",
                 Format::vocabulary()
