@@ -346,11 +346,75 @@ impl std::error::Error for TargetRefusal {}
 mod tests {
     use super::*;
 
+    const NO_ALIASES: &[&str] = &[];
+
     const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
         id: DialectId::pinned("fcstd:schema-4"),
         aliases: &["4"],
         default: false,
     }];
+
+    fn target(
+        id: &'static str,
+        aliases: &'static [&'static str],
+        default: bool,
+    ) -> TargetDescriptor {
+        TargetDescriptor {
+            id: DialectId::pinned(id),
+            aliases,
+            default,
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "at most one entry may be the default")]
+    fn a_target_catalog_rejects_multiple_defaults() {
+        let targets = [
+            target("test:first", NO_ALIASES, true),
+            target("test:second", NO_ALIASES, true),
+        ];
+        assert_valid_target_catalog(&targets);
+    }
+
+    #[test]
+    #[should_panic(expected = "token \"test:same\" selects both")]
+    fn a_target_catalog_rejects_duplicate_ids() {
+        let targets = [
+            target("test:same", NO_ALIASES, false),
+            target("test:same", NO_ALIASES, false),
+        ];
+        assert_valid_target_catalog(&targets);
+    }
+
+    #[test]
+    #[should_panic(expected = "token \"same\" selects both")]
+    fn a_target_catalog_rejects_duplicate_aliases() {
+        let targets = [
+            target("test:first", &["same"], false),
+            target("test:second", &["same"], false),
+        ];
+        assert_valid_target_catalog(&targets);
+    }
+
+    #[test]
+    #[should_panic(expected = "token \"test:second\" selects both")]
+    fn a_target_catalog_rejects_an_alias_that_is_an_id() {
+        let targets = [
+            target("test:first", &["test:second"], false),
+            target("test:second", NO_ALIASES, false),
+        ];
+        assert_valid_target_catalog(&targets);
+    }
+
+    #[test]
+    #[should_panic(expected = "token \"second\" selects both")]
+    fn a_target_catalog_rejects_an_alias_that_is_another_rows_local_id() {
+        let targets = [
+            target("test:first", &["second"], false),
+            target("test:second", NO_ALIASES, false),
+        ];
+        assert_valid_target_catalog(&targets);
+    }
 
     #[test]
     fn missing_default_names_a_foreign_source_without_inventing_a_dialect() {

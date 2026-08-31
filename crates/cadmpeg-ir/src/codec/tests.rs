@@ -5,9 +5,7 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
-use cadmpeg_core::target::{
-    assert_valid_target_catalog, DefaultSource, TargetDescriptor, TargetRefusalKind, TargetToken,
-};
+use cadmpeg_core::target::{DefaultSource, TargetDescriptor, TargetRefusalKind, TargetToken};
 
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
@@ -17,66 +15,6 @@ use crate::validate::validate_neutral;
 use crate::CadIr;
 
 use super::*;
-
-const NO_ALIASES: &[&str] = &[];
-
-fn target(id: &'static str, aliases: &'static [&'static str], default: bool) -> TargetDescriptor {
-    TargetDescriptor {
-        id: DialectId::pinned(id),
-        aliases,
-        default,
-    }
-}
-
-#[test]
-#[should_panic(expected = "at most one entry may be the default")]
-fn a_target_catalog_rejects_multiple_defaults() {
-    let targets = [
-        target("test:first", NO_ALIASES, true),
-        target("test:second", NO_ALIASES, true),
-    ];
-    assert_valid_target_catalog(&targets);
-}
-
-#[test]
-#[should_panic(expected = "token \"test:same\" selects both")]
-fn a_target_catalog_rejects_duplicate_ids() {
-    let targets = [
-        target("test:same", NO_ALIASES, false),
-        target("test:same", NO_ALIASES, false),
-    ];
-    assert_valid_target_catalog(&targets);
-}
-
-#[test]
-#[should_panic(expected = "token \"same\" selects both")]
-fn a_target_catalog_rejects_duplicate_aliases() {
-    let targets = [
-        target("test:first", &["same"], false),
-        target("test:second", &["same"], false),
-    ];
-    assert_valid_target_catalog(&targets);
-}
-
-#[test]
-#[should_panic(expected = "token \"test:second\" selects both")]
-fn a_target_catalog_rejects_an_alias_that_is_an_id() {
-    let targets = [
-        target("test:first", &["test:second"], false),
-        target("test:second", NO_ALIASES, false),
-    ];
-    assert_valid_target_catalog(&targets);
-}
-
-#[test]
-#[should_panic(expected = "token \"second\" selects both")]
-fn a_target_catalog_rejects_an_alias_that_is_another_rows_local_id() {
-    let targets = [
-        target("test:first", &["second"], false),
-        target("test:second", NO_ALIASES, false),
-    ];
-    assert_valid_target_catalog(&targets);
-}
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
