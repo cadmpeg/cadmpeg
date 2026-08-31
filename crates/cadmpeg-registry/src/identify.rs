@@ -6,10 +6,10 @@ use std::io::SeekFrom;
 use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_core::container::ContainerSummary;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::ReadSeek;
+use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
 
-use crate::{DetectionOutcome, InputCatalog};
+use crate::{DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource};
 
 /// Leading byte window offered to prefix detection.
 ///
@@ -19,7 +19,7 @@ use crate::{DetectionOutcome, InputCatalog};
 pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
 
 /// Result of opening an identification candidate at inspection depth.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 // The public result exposes a successful summary directly; boxing only to keep
 // enum stack size below a lint threshold would break that API without reducing
 // the summary data an identification owns.
@@ -28,14 +28,14 @@ pub enum Inspection {
     /// The codec classified the container and returned its complete summary.
     Classified(ContainerSummary),
     /// The codec recognized the prefix but inspection failed.
-    Failed(String),
+    Failed(CodecError),
     /// Inspection was not applicable or no single codec won resolution.
     Skipped,
 }
 
 /// What cadmpeg makes of one file, before any semantic decode.
 ///
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Identification {
     /// The stable format id of the candidate codec, for example `"f3d"`.
     pub format: &'static str,
@@ -45,31 +45,64 @@ pub struct Identification {
     /// still accompany a failed or skipped inspection.
     pub confidence: Confidence,
     /// Inspection outcome, including the complete successful summary or the
-    /// display message of the error that prevented classification.
+    /// typed error that prevented classification.
     pub inspection: Inspection,
 }
 
-/// Resolves `source` with the same winner selection as
-/// [`InputCatalog::resolve_source`], then inspects that winner.
+/// Inspection of the single source selected by [`InputCatalog::resolve_source`].
+#[derive(Debug)]
+// A resolved inspection is returned once per input. Boxing its native result
+// would add an allocation and obscure direct ownership without reducing the
+// summary or error data the caller must retain.
+#[allow(clippy::large_enum_variant)]
+pub enum ResolvedInspection {
+    /// A native codec was selected and its inspection was attempted.
+    Native {
+        /// Stable format id of the selected codec.
+        format: &'static str,
+        /// Detection confidence, or `None` when the caller forced the codec.
+        confidence: Option<Confidence>,
+        /// Complete summary or the codec error that prevented classification.
+        inspection: Result<ContainerSummary, CodecError>,
+    },
+    /// The source begins as CADIR JSON, which has no native container to inspect.
+    Cadir,
+    /// No registered codec recognized the source.
+    Unrecognized,
+}
+
+/// Failure before a selected codec could inspect the source.
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveInspectionError {
+    /// Reading or repositioning the source failed.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    /// The source could not be resolved to one input.
+    #[error(transparent)]
+    Resolve(#[from] ResolveSourceError),
+}
+
+/// Detects `source`, retains equal-confidence candidates, and inspects a sole
+/// winner.
 ///
 /// Inspection depth, not prefix depth. Dialect classification for the
 /// container formats needs the container back: F3D walks and inflates ZIP
 /// entries, `FreeCAD` parses the decompressed `Document.xml`, CATIA needs the
-/// rebuilt compound container plus a record census. So a candidate at or above
-/// selected by the shared resolver is run through `Codec::inspect`, under the
+/// rebuilt compound container plus a record census. So the sole strongest
+/// candidate is run through `Codec::inspect`, under the
 /// same resource limits an inspection gets and with no *semantic* decode: no
 /// geometry is read and no [`cadmpeg_ir::CadIr`] is built.
 ///
 /// CADIR JSON is one skipped-inspection candidate. Empty when no codec
 /// recognized the prefix and it does not begin as CADIR; more than one entry
-/// when the shared resolver reports an equal-confidence ambiguity. An entry
-/// whose inspection ran out of budget
-/// or failed keeps its format, confidence, and failure message: the prefix
+/// when detection reports an equal-confidence ambiguity. An entry whose
+/// inspection ran out of budget or failed keeps its format, confidence, and
+/// typed failure: the prefix
 /// evidence and the cause both survive a failed reconstruction.
 ///
 /// The `Err` is I/O on `source` itself — reading the prefix, or seeking back
-/// to the start before each inspection. A codec's own failure is not an error
-/// here; it is recorded in [`Inspection::Failed`].
+/// to the start before inspection. A codec's own failure is not an error here;
+/// it is recorded in [`Inspection::Failed`] without erasing its variant.
 pub fn identify(
     source: &mut dyn ReadSeek,
     options: &InspectOptions,
@@ -105,10 +138,9 @@ pub fn identify_with(
                 .codec
                 .as_deref()
                 .expect("a detected descriptor has a codec");
-            source.seek(SeekFrom::Start(0))?;
-            let inspection = match codec.inspect(source, options) {
+            let inspection = match inspect_codec(codec, source, options)? {
                 Ok(summary) => Inspection::Classified(summary),
-                Err(error) => Inspection::Failed(error.to_string()),
+                Err(error) => Inspection::Failed(error),
             };
             Ok(vec![Identification {
                 format: descriptor.format_id(),
@@ -128,6 +160,43 @@ pub fn identify_with(
             })
             .collect()),
     }
+}
+
+/// Resolves and inspects exactly one source against a caller-held catalog.
+///
+/// Unlike [`identify_with`], equal-confidence ambiguity is a resolution error,
+/// and an explicit [`ForcedInput`] is accepted. Prefix and seek failures are
+/// returned as [`ResolveInspectionError`]; a selected codec's error remains in
+/// [`ResolvedInspection::Native`] beside the format identity it established.
+pub fn resolve_and_inspect_with(
+    catalog: &InputCatalog,
+    source: &mut dyn ReadSeek,
+    forced: Option<ForcedInput>,
+    options: &InspectOptions,
+) -> Result<ResolvedInspection, ResolveInspectionError> {
+    let prefix = read_prefix(source, options)?;
+    match catalog.resolve_source(&prefix, forced)? {
+        ResolvedSource::Native {
+            codec,
+            format_id,
+            confidence,
+        } => Ok(ResolvedInspection::Native {
+            format: format_id,
+            confidence,
+            inspection: inspect_codec(codec, source, options)?,
+        }),
+        ResolvedSource::Cadir => Ok(ResolvedInspection::Cadir),
+        ResolvedSource::Unrecognized => Ok(ResolvedInspection::Unrecognized),
+    }
+}
+
+fn inspect_codec(
+    codec: &dyn cadmpeg_ir::codec::Codec,
+    source: &mut dyn ReadSeek,
+    options: &InspectOptions,
+) -> std::io::Result<Result<ContainerSummary, CodecError>> {
+    source.seek(SeekFrom::Start(0))?;
+    Ok(codec.inspect(source, options))
 }
 
 /// Reads the detection window and leaves `source` at the start.
@@ -401,8 +470,8 @@ mod tests {
     /// A ZIP with no format marker is several formats at once, and the answer
     /// says so instead of picking one.
     ///
-    /// Every ZIP-based codec reports [`Confidence::Low`] for it. The shared
-    /// resolver returns the equal-confidence ambiguity, so no container is
+    /// Every ZIP-based codec reports [`Confidence::Low`] for it. Candidate
+    /// detection retains the equal-confidence ambiguity, so no container is
     /// opened and no dialect is claimed.
     #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]
@@ -411,7 +480,7 @@ mod tests {
         assert!(found.len() > 1, "{found:?}");
         for identification in &found {
             assert_eq!(identification.confidence, Confidence::Low);
-            assert_eq!(identification.inspection, Inspection::Skipped);
+            assert!(matches!(identification.inspection, Inspection::Skipped));
         }
         let formats = found
             .iter()
@@ -447,15 +516,29 @@ mod tests {
         let winner = found.first().expect("the prefix still names rhino");
         assert_eq!(winner.format, "rhino");
         assert_eq!(winner.confidence, Confidence::High);
-        let Inspection::Failed(message) = &winner.inspection else {
+        let Inspection::Failed(error) = &winner.inspection else {
             panic!("expected a typed inspection failure: {winner:?}");
         };
-        assert!(message.contains("resource limit"), "{message}");
+        assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
+
+        let catalog = InputCatalog::with_builtins();
+        let mut source = Cursor::new(bytes);
+        let ResolvedInspection::Native {
+            format,
+            confidence,
+            inspection: Err(error),
+        } = resolve_and_inspect_with(&catalog, &mut source, None, &starved).unwrap()
+        else {
+            panic!("resolved inspection must retain the selected codec failure");
+        };
+        assert_eq!(format, "rhino");
+        assert_eq!(confidence, Some(Confidence::High));
+        assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
 
         // The same bytes under the default budget do settle the dialect, so
         // the difference above is the budget and not the fixture.
         assert!(matches!(
-            run(bytes, &inspection())[0].inspection,
+            &run(bytes, &inspection())[0].inspection,
             Inspection::Classified(_)
         ));
     }
@@ -470,7 +553,7 @@ mod tests {
             assert_eq!(found.len(), 1);
             assert_eq!(found[0].format, "cadir");
             assert_eq!(found[0].confidence, Confidence::High);
-            assert_eq!(found[0].inspection, Inspection::Skipped);
+            assert!(matches!(found[0].inspection, Inspection::Skipped));
         }
     }
 

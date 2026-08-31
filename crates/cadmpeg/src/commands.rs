@@ -19,7 +19,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 
 use cadmpeg_registry::{
-    build_encoder, ForcedInput, Format, InputCatalog, ResolvedSource, DETECTION_PREFIX_LEN,
+    build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog,
+    ResolveInspectionError, ResolvedInspection,
 };
 
 use crate::application::refusal::classify_decode_failure;
@@ -130,22 +131,29 @@ pub fn inspect(
     if matches!(forced, Some(ForcedInput::Cadir)) {
         bail!("inspect requires a container input, not cadir");
     }
-    let prefix =
-        ArtifactStore::read_detection_input(path, DETECTION_PREFIX_LEN, limits.max_input_bytes)?;
-    let resolved = catalogs
-        .inputs
-        .resolve_source(&prefix, forced)
-        .map_err(|error| loader::detection_failure(&error))?;
-    let ResolvedSource::Native {
-        codec, confidence, ..
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let resolved = resolve_and_inspect_with(
+        &catalogs.inputs,
+        &mut file,
+        forced,
+        &InspectOptions { limits },
+    )
+    .map_err(|error| match error {
+        ResolveInspectionError::Io(error) => inspect_io_error(path, limits.max_input_bytes, error),
+        ResolveInspectionError::Resolve(error) => loader::detection_failure(&error),
+    })?;
+    let ResolvedInspection::Native {
+        format,
+        confidence,
+        inspection,
     } = resolved
     else {
         return Err(inspect_unrecognized(path));
     };
-    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let summary = codec
-        .inspect(&mut file, &InspectOptions { limits })
+    let summary = inspection
+        .map_err(anyhow::Error::new)
         .with_context(|| format!("inspecting {}", path.display()))?;
+    debug_assert_eq!(summary.format(), format);
     write_json_report(
         path,
         report_path,
@@ -210,7 +218,6 @@ fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     )
 }
 
-#[cfg(test)]
 fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyhow::Error {
     if error.kind() == io::ErrorKind::FileTooLarge {
         anyhow!(

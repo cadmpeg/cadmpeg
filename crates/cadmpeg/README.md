@@ -63,9 +63,9 @@ target format's default. `cadmpeg dialects FORMAT` lists every id, and
 `cadmpeg inspect FILE` prints the id of the file in front of you — the same
 string you would pass to `--to`.
 
-The CLI inspect path calls `InputCatalog::resolve_source` and then the winning
-codec's `inspect`; `cadmpeg_registry::identify` is the embedder entry point over
-the same resolver.
+The CLI inspect path calls `cadmpeg_registry::resolve_and_inspect_with`.
+`cadmpeg_registry::identify` is the candidate-reporting entry point: it retains
+equal-confidence candidates instead of resolving them to one source.
 
 A dialect the writer cannot produce is refused by name, with the whole catalog
 of what it can produce, rather than silently rewritten. For IGES this covers
