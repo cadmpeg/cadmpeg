@@ -348,7 +348,7 @@ fn a_same_format_rhino_convert_keeps_the_source_archive_version() {
         )
         .expect("the archive decodes");
 
-    let target = export_target(TargetSelection::new(Format::Rhino, None));
+    let target = export_target(TargetSelection::new(Format::Rhino, None)).unwrap();
     let request = target.selection.request();
     assert_eq!(request, TargetRequest::Inherit);
 
@@ -369,7 +369,7 @@ fn a_same_format_rhino_convert_keeps_the_source_archive_version() {
 #[cfg(feature = "step")]
 #[test]
 fn rejecting_export_losses_does_not_name_a_target() {
-    let target = export_target(TargetSelection::new(Format::Step, None));
+    let target = export_target(TargetSelection::new(Format::Step, None)).unwrap();
 
     assert!(target.selection.request.is_none(), "{:?}", target.selection);
     assert_eq!(target.selection.request(), TargetRequest::Inherit);
@@ -377,7 +377,8 @@ fn rejecting_export_losses_does_not_name_a_target() {
     let named = export_target(TargetSelection::new(
         Format::Step,
         Some("step:ap242-e3".to_owned()),
-    ));
+    ))
+    .unwrap();
     assert_eq!(
         named.selection.request(),
         TargetRequest::Explicit("step:ap242-e3")
@@ -400,7 +401,8 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
         let target = export_target(TargetSelection::new(
             Format::Rhino,
             Some(spelling.to_owned()),
-        ));
+        ))
+        .unwrap();
         assert_eq!(
             target.selection.request(),
             TargetRequest::Explicit(spelling)
@@ -419,22 +421,20 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
     }
 }
 
-/// A dialect outside the catalog is refused by the encoder, with the
-/// catalog in the message. The CLI writes no vocabulary of its own.
+/// A dialect outside the catalog is refused before any input is decoded.
 #[cfg(feature = "iges")]
 #[test]
-fn an_unknown_dialect_is_refused_by_the_encoder_with_its_catalog() {
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let target = export_target(TargetSelection::new(
+fn an_unknown_dialect_is_refused_before_decode_with_its_catalog() {
+    let error = export_target(TargetSelection::new(
         Format::Iges,
         Some("ap242e3".to_owned()),
-    ));
-    let Err(error) = target.encoder.plan(
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("ap242e3"),
-    ) else {
-        panic!("a STEP alias is not an IGES target");
-    };
+    ))
+    .err()
+    .expect("a STEP alias is not an IGES target");
+    let refusal = error
+        .downcast_ref::<ConversionRefusal>()
+        .expect("target admission is a typed refusal");
+    assert!(refusal.decode_report().is_none());
     let message = error.to_string();
     assert!(message.contains("ap242e3"), "{message}");
     assert!(message.contains("iges:5.3-fixed-ascii"), "{message}");

@@ -285,11 +285,7 @@ pub fn resolve_write_request(
     match request {
         TargetRequest::Explicit(id) => Ok(ResolvedWrite::explicit(
             find_target(targets, id).ok_or_else(|| {
-                CodecError::UnsupportedTarget(Box::new(TargetRefusal::UnknownExplicit {
-                    format: format.to_owned(),
-                    requested: TargetToken::new(id),
-                    available: targets,
-                }))
+                CodecError::from(TargetRefusal::unknown_explicit(format, id, targets))
             })?,
             source.recorded(),
             TargetToken::new(id),
@@ -459,13 +455,7 @@ impl Encoder for CadirEncoder {
         match request {
             TargetRequest::Inherit => {}
             TargetRequest::Explicit(id) => {
-                return Err(CodecError::UnsupportedTarget(Box::new(
-                    TargetRefusal::UnknownExplicit {
-                        format: self.id().to_owned(),
-                        requested: TargetToken::new(id),
-                        available: self.targets(),
-                    },
-                )));
+                return Err(TargetRefusal::unknown_explicit(self.id(), id, self.targets()).into());
             }
         }
         let report = ExportReport::cadir(

@@ -1,4 +1,4 @@
-# generated at af2b7480e
+# generated at e96d66b6b
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -372,6 +372,8 @@ pub fn cadmpeg_core::error::CodecError::malformed(impl core::fmt::Display) -> Se
 pub const fn cadmpeg_core::error::CodecError::truncated(cadmpeg_core::decode::SourceLocation, &'static str) -> Self
 impl core::convert::From<cadmpeg_core::decode::ParseError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::decode::ParseError) -> Self
+impl core::convert::From<cadmpeg_core::target::TargetRefusal> for cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal) -> Self
 pub mod cadmpeg_core::io
 pub trait cadmpeg_core::io::ReadSeek: std::io::Read + core::io::seek::Seek
 impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
@@ -410,6 +412,9 @@ pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [
 pub fn cadmpeg_core::target::TargetRefusal::format(&self) -> &str
 pub fn cadmpeg_core::target::TargetRefusal::reason(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::target::TargetRefusal::requested(&self) -> core::option::Option<&str>
+pub fn cadmpeg_core::target::TargetRefusal::unknown_explicit(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
+impl core::convert::From<cadmpeg_core::target::TargetRefusal> for cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal) -> Self
 impl core::error::Error for cadmpeg_core::target::TargetRefusal
 impl core::fmt::Display for cadmpeg_core::target::TargetRefusal
 pub fn cadmpeg_core::target::TargetRefusal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -446,6 +451,8 @@ pub fn cadmpeg_core::error::CodecError::malformed(impl core::fmt::Display) -> Se
 pub const fn cadmpeg_core::error::CodecError::truncated(cadmpeg_core::decode::SourceLocation, &'static str) -> Self
 impl core::convert::From<cadmpeg_core::decode::ParseError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::decode::ParseError) -> Self
+impl core::convert::From<cadmpeg_core::target::TargetRefusal> for cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal) -> Self
 pub struct cadmpeg_core::ContainerEntry
 pub cadmpeg_core::ContainerEntry::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub cadmpeg_core::ContainerEntry::compressed_size: u64

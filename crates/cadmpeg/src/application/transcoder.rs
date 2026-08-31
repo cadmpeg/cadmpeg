@@ -5,7 +5,10 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
-use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_core::target::TargetRefusal;
+use cadmpeg_ir::codec::{
+    find_target, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest,
+};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 
@@ -574,20 +577,31 @@ pub(crate) fn emit_export_plan(
 
 /// Builds an [`ExportTarget`] from the command-line selection.
 ///
-/// [`TargetSelection::resolve`] checks the format grammar only. The encoder's
-/// `plan` admits explicit request tokens and resolves source-dependent inherit
-/// requests.
+/// Explicit tokens are admitted against the encoder's static catalog here,
+/// before input decode. The encoder's `plan` resolves source-dependent inherit
+/// requests and input-conditioned delivery.
 ///
 /// `losses` is a policy, never a target: reading it as one would turn
 /// `convert a.step -o b.step --reject-lossy=export` into an explicit AP214
 /// request, silently rewriting the schema of a file the caller only asked to
 /// check for losses.
-#[must_use]
-pub fn export_target(selection: TargetSelection) -> ExportTarget {
-    ExportTarget {
-        encoder: cadmpeg_registry::build_encoder(selection.format),
-        selection,
+pub fn export_target(selection: TargetSelection) -> Result<ExportTarget> {
+    let encoder = cadmpeg_registry::build_encoder(selection.format);
+    if let Some(requested) = selection.request.as_deref() {
+        if find_target(encoder.targets(), requested).is_none() {
+            return Err(ConversionRefusal::UnsupportedTarget {
+                refusal: Box::new(TargetRefusal::unknown_explicit(
+                    encoder.id(),
+                    requested,
+                    encoder.targets(),
+                )),
+                decode_report: None,
+                validation: None,
+            }
+            .into());
+        }
     }
+    Ok(ExportTarget { encoder, selection })
 }
 
 #[cfg(test)]

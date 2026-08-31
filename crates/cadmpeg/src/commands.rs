@@ -85,6 +85,29 @@ fn refusal_report_body(refusal: &ConversionRefusal) -> CommandReportBody<'_> {
     }
 }
 
+/// Attempt to persist a semantic refusal without replacing it with a report
+/// I/O failure. The original refusal controls the process exit status; report
+/// persistence failure remains visible on stderr.
+fn write_refusal_command_report(
+    input: &Path,
+    output: Option<&Path>,
+    force: bool,
+    command: &'static str,
+    refusal: &ConversionRefusal,
+) {
+    if !refusal.may_write_report() {
+        return;
+    }
+    if let Err(error) =
+        write_command_report(input, output, force, command, refusal_report_body(refusal))
+    {
+        eprintln!(
+            "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
+            refusal.code()
+        );
+    }
+}
+
 /// One input to a structural diff and its optional format override.
 #[derive(Clone, Copy)]
 pub(crate) struct DiffInput<'a> {
@@ -213,6 +236,17 @@ pub fn dump(
     if let Some(out) = out {
         ArtifactStore::check_output_path(path, out, force)?;
     }
+    if let Some(report_path) = report_path {
+        ArtifactStore::check_output_path(path, report_path, force)?;
+        if let Some(out) = out {
+            ArtifactStore::check_distinct_output_paths(
+                out,
+                "CADIR output",
+                report_path,
+                "command report",
+            )?;
+        }
+    }
     let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -223,13 +257,7 @@ pub fn dump(
             let Some(refusal) = error.downcast_ref::<ConversionRefusal>() else {
                 return Err(error);
             };
-            write_command_report(
-                path,
-                Some(report_path),
-                force,
-                "dump",
-                refusal_report_body(refusal),
-            )?;
+            write_refusal_command_report(path, Some(report_path), force, "dump", refusal);
             return Err(error);
         }
     };
@@ -347,18 +375,43 @@ pub fn convert(
         Ok(selection) => selection,
         Err(error) => {
             if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
-                write_command_report(
+                write_refusal_command_report(
                     path,
                     conversion.report.as_deref(),
                     conversion.report_overwrite,
                     "convert",
-                    refusal_report_body(refusal),
-                )?;
+                    refusal,
+                );
             }
             return Err(error);
         }
     };
-    let target = export_target(selection);
+    if let Some(report_path) = conversion.report.as_deref() {
+        ArtifactStore::check_output_path(path, report_path, conversion.report_overwrite)?;
+        if let Some(destination) = conversion.policy.destination.path() {
+            ArtifactStore::check_distinct_output_paths(
+                destination,
+                "CAD output",
+                report_path,
+                "command report",
+            )?;
+        }
+    }
+    let target = match export_target(selection) {
+        Ok(target) => target,
+        Err(error) => {
+            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
+                write_refusal_command_report(
+                    path,
+                    conversion.report.as_deref(),
+                    conversion.report_overwrite,
+                    "convert",
+                    refusal,
+                );
+            }
+            return Err(error);
+        }
+    };
 
     let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
     let source = SourceRequest {
@@ -381,15 +434,13 @@ pub fn convert(
         if let Some(validation) = refusal.check_report() {
             print_check_report(&mut stderr, validation)?;
         }
-        if refusal.may_write_report() {
-            write_command_report(
-                path,
-                conversion.report.as_deref(),
-                conversion.report_overwrite,
-                "convert",
-                refusal_report_body(refusal),
-            )?;
-        }
+        write_refusal_command_report(
+            path,
+            conversion.report.as_deref(),
+            conversion.report_overwrite,
+            "convert",
+            refusal,
+        );
         Ok(())
     };
 
