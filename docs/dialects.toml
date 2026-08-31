@@ -613,11 +613,13 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # the `SourceMeta.dialect` match mirror all carry. Its declared keys are
 # `schema_version`, `file_version`, and `program_version`, recorded verbatim.
 #
-# `FileVersion` is read (container.rs:216-217, defaulting to "0") and is a
-# write-target component -- `FcstdWriteOptions { schema_version, file_version }`
-# with `Default` (4, 1) (lib.rs:66-81) and a hard writer gate on exactly (4, 1)
-# (writer.rs:37-42) -- but no decode path branches on it, so it is not a read
-# discriminant. It travels in `declared` as evidence.
+# `FileVersion` is read (container.rs:216-217, defaulting to "0"), but no
+# decode path branches on it, so it is not a read discriminant. The patch-only
+# writer preserves the retained document's `SchemaVersion` and `FileVersion`;
+# it has no option type or synthesis path that selects either value. An
+# explicit target may name the schema-4 catalog row, while inheritance may
+# preserve any retained dialect that the document graph can deliver.
+# `FileVersion` travels in `declared` as evidence.
 [format.fcstd]
 complete = false
 
