@@ -418,11 +418,12 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();
     decoded.stats.ambiguous_pcurve_parameters = 2;
 
-    let dialects = crate::dialect::classify_layers(&scan);
+    let dialects = crate::dialect::classify_layers(&scan).expect("valid dialect layers");
     let report = super::super::build_geometry_report(&scan, &decoded, &dialects);
     assert!(report.losses.iter().any(|loss| {
         loss.code == crate::loss::SldprtLossCode::GeometryPcurveAmbiguous.kind()

@@ -189,6 +189,8 @@ pub struct ContainerScan<'a> {
     pub cache_cells: Vec<CacheCell>,
     /// Named streams when the source uses the Compound File Binary envelope.
     pub compound_streams: Vec<CompoundStream>,
+    /// `swSolidWorks` XML facts parsed once from the retained sections.
+    pub(crate) solidworks: SolidWorksEnvelopeScan,
 }
 
 #[derive(Clone, Copy)]
@@ -305,14 +307,14 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
             .ok()
             .and_then(|(ctx, root)| compound_streams(&ctx, root).ok())
             .unwrap_or_default();
-        return ContainerScan {
-            source_image: bytes,
-            version: 0,
-            blocks: Vec::new(),
-            directory: Vec::new(),
-            cache_cells: Vec::new(),
+        return completed_scan(
+            bytes,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
             compound_streams,
-        };
+        );
     }
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) = match walk_native_markers(bytes, |off| {
@@ -322,13 +324,34 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
         Err(never) => match never {},
     };
 
+    completed_scan(bytes, version, blocks, directory, cache_cells, Vec::new())
+}
+
+fn completed_scan(
+    source_image: &[u8],
+    version: u32,
+    blocks: Vec<Block>,
+    directory: Vec<DirectoryEntry>,
+    cache_cells: Vec<CacheCell>,
+    compound_streams: Vec<CompoundStream>,
+) -> ContainerScan<'_> {
+    let solidworks =
+        scan_solidworks_envelopes(blocks.iter().map(|block| block.payload.as_slice()).chain(
+            compound_streams.iter().map(|stream| {
+                stream
+                    .decoded_payload
+                    .as_deref()
+                    .unwrap_or(stream.payload.as_slice())
+            }),
+        ));
     ContainerScan {
-        source_image: bytes,
+        source_image,
         version,
         blocks,
         directory,
         cache_cells,
-        compound_streams: Vec::new(),
+        compound_streams,
+        solidworks,
     }
 }
 
@@ -399,27 +422,27 @@ fn compound_stream(
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = compound_streams(ctx, root)?;
-        return Ok(ContainerScan {
-            source_image: root.window(),
-            version: 0,
-            blocks: Vec::new(),
-            directory: Vec::new(),
-            cache_cells: Vec::new(),
+        return Ok(completed_scan(
+            root.window(),
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
             compound_streams,
-        });
+        ));
     }
     let bytes = root.window();
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) =
         walk_native_markers(bytes, |off| try_block_budgeted(ctx, root, off))?;
-    Ok(ContainerScan {
-        source_image: bytes,
+    Ok(completed_scan(
+        bytes,
         version,
         blocks,
         directory,
         cache_cells,
-        compound_streams: Vec::new(),
-    })
+        Vec::new(),
+    ))
 }
 
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
@@ -1154,27 +1177,8 @@ pub(crate) fn active_configuration_name(scan: &ContainerScan<'_>) -> Option<Stri
     manifest_active_configuration(scan)
         .and_then(|(_, name)| name)
         .or_else(|| {
-            let mut names = BTreeSet::new();
-            for section in scan.sections() {
-                let Some(text) = xml_text(section.payload()) else {
-                    continue;
-                };
-                let Ok(document) = roxmltree::Document::parse(&text) else {
-                    continue;
-                };
-                if document.root_element().tag_name().name() != "swSolidWorks" {
-                    continue;
-                }
-                names.extend(
-                    document
-                        .descendants()
-                        .filter(|node| node.tag_name().name() == "swModel")
-                        .filter_map(|node| node.attribute("swConfigurationName"))
-                        .map(str::to_string),
-                );
-            }
-            (names.len() == 1)
-                .then(|| names.into_iter().next())
+            (scan.solidworks.configuration_names.len() == 1)
+                .then(|| scan.solidworks.configuration_names.iter().next().cloned())
                 .flatten()
         })
 }
@@ -1204,14 +1208,18 @@ pub(crate) struct SolidWorksEnvelope {
     pub(crate) configuration_attributes: BTreeMap<String, String>,
 }
 
-/// Parses the first `swSolidWorks` envelope and stops even if an attribute is absent.
-pub(crate) fn first_solidworks_envelope<'a>(
+/// Cached facts from all parsed `swSolidWorks` envelopes in one scan.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SolidWorksEnvelopeScan {
+    first: Option<SolidWorksEnvelope>,
+    configuration_names: BTreeSet<String>,
+}
+
+fn scan_solidworks_envelopes<'a>(
     payloads: impl IntoIterator<Item = &'a [u8]>,
-) -> Option<SolidWorksEnvelope> {
+) -> SolidWorksEnvelopeScan {
+    let mut scan = SolidWorksEnvelopeScan::default();
     for payload in payloads {
-        if payload_family(payload) != "xml" {
-            continue;
-        }
         let Some(text) = xml_text(payload) else {
             continue;
         };
@@ -1220,6 +1228,15 @@ pub(crate) fn first_solidworks_envelope<'a>(
         };
         let root = document.root_element();
         if root.tag_name().name() != "swSolidWorks" {
+            continue;
+        }
+        scan.configuration_names.extend(
+            root.descendants()
+                .filter(|node| node.has_tag_name("swModel"))
+                .filter_map(|node| node.attribute("swConfigurationName"))
+                .map(str::to_owned),
+        );
+        if scan.first.is_some() {
             continue;
         }
         let model = root.descendants().find(|node| node.has_tag_name("swModel"));
@@ -1248,7 +1265,7 @@ pub(crate) fn first_solidworks_envelope<'a>(
                 }
             }
         }
-        return Some(SolidWorksEnvelope {
+        scan.first = Some(SolidWorksEnvelope {
             sw_version: root.attribute("swVersion").map(str::to_owned),
             creation_time: root.attribute("swCreationTime").map(str::to_owned),
             path: root.attribute("swPath").map(str::to_owned),
@@ -1261,16 +1278,25 @@ pub(crate) fn first_solidworks_envelope<'a>(
             configuration_attributes,
         });
     }
-    None
+    scan
 }
 
-pub(crate) fn solidworks_envelope(scan: &ContainerScan<'_>) -> Option<SolidWorksEnvelope> {
-    first_solidworks_envelope(scan.sections().map(Section::payload))
+/// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
+pub(crate) fn first_solidworks_envelope<'a>(
+    payloads: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<SolidWorksEnvelope> {
+    scan_solidworks_envelopes(payloads).first
+}
+
+pub(crate) fn solidworks_envelope<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Option<&'a SolidWorksEnvelope> {
+    scan.solidworks.first.as_ref()
 }
 
 /// Returns the first envelope's `swVersion` declaration verbatim.
-pub(crate) fn declared_sw_version(scan: &ContainerScan<'_>) -> Option<String> {
-    solidworks_envelope(scan).and_then(|envelope| envelope.sw_version)
+pub(crate) fn declared_sw_version<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
+    solidworks_envelope(scan).and_then(|envelope| envelope.sw_version.as_deref())
 }
 
 #[cfg(test)]
