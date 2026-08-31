@@ -80,15 +80,39 @@ pub struct DecodeResult {
     source_fidelity: SourceFidelity,
 }
 
-/// A decoded document and its report disagree about the primary source format.
+/// A decoded document and its report disagree about source identity.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error(
-    "decode source format {source_format:?} does not match report primary format {report_format:?}"
-)]
+#[error("{kind}")]
 #[non_exhaustive]
 pub struct DecodeResultError {
-    source_format: String,
-    report_format: String,
+    kind: DecodeResultErrorKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+enum DecodeResultErrorKind {
+    #[error("classified decode report for {report_format:?} requires source metadata")]
+    ClassifiedReportWithoutSource { report_format: String },
+    #[error(
+        "decode source format {source_format:?} does not match report primary format {report_format:?}"
+    )]
+    SourceFormatMismatch {
+        source_format: String,
+        report_format: String,
+    },
+    #[error(
+        "decode source dialect metadata for {source_dialect:?} disagrees with report primary dialect metadata for {report_dialect:?}"
+    )]
+    SourceDialectMismatch {
+        source_dialect: String,
+        report_dialect: String,
+    },
+    #[error(
+        "decode source dialect {source_dialect:?} is classified but report for {report_format:?} is unclassified"
+    )]
+    ClassifiedSourceWithUnclassifiedReport {
+        source_dialect: String,
+        report_format: String,
+    },
 }
 
 impl From<DecodeResultError> for CodecError {
@@ -102,37 +126,69 @@ impl DecodeResult {
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeResultError`] when source metadata and the report primary
-    /// dialect name different formats.
+    /// Returns [`DecodeResultError`] when a classified report has no source
+    /// metadata, or when source metadata and report classification disagree.
     pub fn new(
         mut ir: CadIr,
         report: DecodeReport,
         mut source_fidelity: SourceFidelity,
     ) -> Result<Self, DecodeResultError> {
-        if let Some(source) = ir.source.as_mut() {
-            match report
+        match (
+            ir.source.as_mut(),
+            report
                 .dialects()
-                .map(cadmpeg_core::dialect::DialectLayers::primary)
-            {
-                Some(matched) => {
-                    if source.format() != matched.format() {
-                        return Err(DecodeResultError {
+                .map(cadmpeg_core::dialect::DialectLayers::primary),
+        ) {
+            (None, Some(matched)) => {
+                return Err(DecodeResultError {
+                    kind: DecodeResultErrorKind::ClassifiedReportWithoutSource {
+                        report_format: matched.format().to_owned(),
+                    },
+                });
+            }
+            (Some(source), Some(matched)) => {
+                if source.format() != matched.format() {
+                    return Err(DecodeResultError {
+                        kind: DecodeResultErrorKind::SourceFormatMismatch {
                             source_format: source.format().to_owned(),
                             report_format: matched.format().to_owned(),
+                        },
+                    });
+                }
+                if let Some(source_dialect) = source.dialect() {
+                    if source_dialect != matched {
+                        return Err(DecodeResultError {
+                            kind: DecodeResultErrorKind::SourceDialectMismatch {
+                                source_dialect: source_dialect.dialect().to_string(),
+                                report_dialect: matched.dialect().to_string(),
+                            },
                         });
                     }
-                    *source = crate::document::SourceMeta::classified(
-                        matched.clone(),
-                        std::mem::take(&mut source.attributes),
-                    );
                 }
-                None => {
-                    *source = crate::document::SourceMeta::unclassified(
-                        source.format().to_owned(),
-                        std::mem::take(&mut source.attributes),
-                    );
+                *source = crate::document::SourceMeta::classified(
+                    matched.clone(),
+                    std::mem::take(&mut source.attributes),
+                );
+            }
+            (Some(source), None) => {
+                if source.format() != report.format() {
+                    return Err(DecodeResultError {
+                        kind: DecodeResultErrorKind::SourceFormatMismatch {
+                            source_format: source.format().to_owned(),
+                            report_format: report.format().to_owned(),
+                        },
+                    });
+                }
+                if let Some(source_dialect) = source.dialect() {
+                    return Err(DecodeResultError {
+                        kind: DecodeResultErrorKind::ClassifiedSourceWithUnclassifiedReport {
+                            source_dialect: source_dialect.dialect().to_string(),
+                            report_format: report.format().to_owned(),
+                        },
+                    });
                 }
             }
+            (None, None) => {}
         }
         ir.finalize();
         source_fidelity.finalize();

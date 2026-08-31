@@ -206,10 +206,21 @@ fn classify_outer_report(
 }
 
 fn finalize_result(
-    ir: cadmpeg_ir::CadIr,
+    mut ir: cadmpeg_ir::CadIr,
     report: cadmpeg_ir::DecodeReport,
     fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<DecodeResult, CodecError> {
+    // The decoded model root entered as a standalone F3D member. The final
+    // document is the containing F3Z archive, whose report primary is the sole
+    // authority for source identity. Preserve member-derived attributes but
+    // remove the superseded member classification before DecodeResult mirrors
+    // the archive primary.
+    if let Some(source) = ir.source.as_mut() {
+        *source = cadmpeg_ir::SourceMeta::unclassified(
+            report.format(),
+            std::mem::take(&mut source.attributes),
+        );
+    }
     let mut result = DecodeResult::new(ir, report, fidelity)?;
     let hash = crate::decode::document_local_sha256(result.ir());
     if let Some(source) = &mut result.ir_mut().source {
