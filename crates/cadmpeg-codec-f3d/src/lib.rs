@@ -223,8 +223,7 @@ impl CodecBackend for F3dCodec {
         if f3z::is_f3z(&scan) {
             return f3z::inspect(ctx, &scan);
         }
-        let kernel_layers = dialect::kernel_layers(&scan);
-        Ok(container::summarize(&scan, &kernel_layers.matches))
+        Ok(dialect::build_inspection_summary(&scan))
     }
 
     fn decode_impl(

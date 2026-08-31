@@ -97,8 +97,15 @@ pub(crate) fn inspect(
         ))
     })?;
     let classified = classify_archive_layers(ctx, scan)?;
-    let mut summary = crate::container::summarize(scan, &[]);
-    summary.notes.extend(
+    let member_count = scan
+        .entries
+        .iter()
+        .filter(|entry| is_f3d_member(&entry.name))
+        .count();
+    let mut notes = vec![format!(
+        "f3z archive: {member_count} document member(s); model root {model_root}"
+    )];
+    notes.extend(
         classified
             .losses
             .iter()
@@ -106,9 +113,9 @@ pub(crate) fn inspect(
     );
     Ok(ContainerSummary::classified(
         classified.layers,
-        summary.container_kind,
-        summary.entries,
-        summary.notes,
+        "zip",
+        scan.entries.clone(),
+        notes,
     ))
 }
 
@@ -128,7 +135,7 @@ pub fn decode(
         ))
     })?;
     let (mut ir, mut report, mut fidelity) =
-        crate::decode::decode_member(ctx, root_view)?.into_parts();
+        crate::decode::decode_archive_member(ctx, root_view)?.into_parts();
     let outer = classify_archive_layers(ctx, scan)?;
     fidelity
         .retained_records
@@ -184,15 +191,8 @@ fn classify_outer_report(
     mut report: cadmpeg_ir::DecodeReport,
     outer: ArchiveClassification,
 ) -> cadmpeg_ir::DecodeReport {
-    // Member decodes charge losses against their document-local layers. The
-    // archive report has a different, complete layer set, including members
-    // that no XREF traversal reaches. Remove only classification-owned loss
-    // codes and rebuild them from that final set.
-    report.losses.retain(|loss| {
-        loss.code != F3dLossCode::SourceDialectUnverified.kind()
-            && loss.code != F3dLossCode::KernelDialectUnverified.kind()
-            && loss.code != F3dLossCode::KernelCarrierUnparseable.kind()
-    });
+    // Archive-member decodes defer dialect losses. Derive them once from the
+    // archive's final layer set, including members no XREF traversal reached.
     report.losses.extend(outer.losses);
     cadmpeg_ir::DecodeReport::classified(
         outer.layers,
@@ -245,12 +245,8 @@ fn classify_archive_layers(
             ))
         })?;
         let member_scan = crate::container::scan(ctx, member_view)?;
-        let mut kernel_layers = crate::dialect::kernel_layers(&member_scan);
-        for loss in &mut kernel_layers.losses {
-            loss.message = format!("archive member {member_path}: {}", loss.message);
-        }
-        losses.extend(kernel_layers.losses);
-        let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers.matches)
+        let kernel_layers = crate::dialect::kernel_layers(&member_scan);
+        let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers)
             .expect("an F3D member's kernel layers have unique identities");
         losses.extend(merge_member_layers(
             &mut layers,
@@ -433,7 +429,7 @@ fn merge_references(
                 )));
             continue;
         };
-        let component = match crate::decode::decode_member(ctx, member_view) {
+        let component = match crate::decode::decode_archive_member(ctx, member_view) {
             Ok(component) => component,
             Err(error) => {
                 parent_report

@@ -220,15 +220,9 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     }
 }
 
-/// Kernel dialect layers and visibility losses from the binary B-rep streams.
-pub(crate) struct KernelLayers {
-    pub(crate) matches: Vec<DialectMatch>,
-    pub(crate) losses: Vec<LossNote>,
-}
-
-pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> KernelLayers {
+/// Kernel dialect layers from the binary and text B-rep streams.
+pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
     let mut matches = Vec::new();
-    let mut losses = Vec::new();
     for brep in &scan.breps {
         let parsed = brep
             .header
@@ -247,11 +241,6 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
             let matched =
                 cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
             matches.push(with_carrier(matched, &brep.name));
-            losses.push(F3dLossCode::KernelCarrierUnparseable.note(format!(
-                "kernel carrier {} could not be framed for dialect inspection; its retained \
-                 source bytes remain available",
-                brep.name
-            )));
         }
     }
     for name in crate::container::text_brep_names(scan) {
@@ -275,12 +264,6 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
             None => cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown),
         };
         matches.push(with_carrier(matched, name));
-        if parsed.is_none() {
-            losses.push(F3dLossCode::KernelCarrierUnparseable.note(format!(
-                "kernel carrier {name} could not be framed for dialect inspection; its retained \
-                 source bytes remain available"
-            )));
-        }
     }
     let format_counts = matches.iter().fold(BTreeMap::new(), |mut counts, matched| {
         *counts.entry(matched.format().to_owned()).or_insert(0usize) += 1;
@@ -292,7 +275,7 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Kerne
             *matched = matched.clone().with_instance(carrier);
         }
     }
-    KernelLayers { matches, losses }
+    matches
 }
 
 fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
@@ -306,7 +289,24 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let using = match matched.admission() {
         Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
         Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
-        Admission::Admitted | Admission::Refused => return None,
+        Admission::Refused => {
+            let carrier = matched
+                .declared()
+                .get(DECLARED_KERNEL_CARRIER)
+                .map_or("an unnamed carrier", String::as_str);
+            let message = format!(
+                "kernel carrier {carrier} could not be framed for dialect inspection; its retained \
+                 source bytes remain available"
+            );
+            let message = matched
+                .declared()
+                .get(DECLARED_ARCHIVE_MEMBER)
+                .map_or(message.clone(), |member| {
+                    format!("archive member {member}: {message}")
+                });
+            return Some(F3dLossCode::KernelCarrierUnparseable.note(message));
+        }
+        Admission::Admitted => return None,
     };
     let carrier = matched
         .declared()
@@ -340,6 +340,16 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     Some(F3dLossCode::KernelDialectUnverified.note(message))
 }
 
+/// Whether document-local dialect losses are emitted immediately or deferred
+/// until an F3Z archive has assembled its final layer set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DialectLossProjection {
+    /// Emit losses from this document's classified layers.
+    Document,
+    /// Keep the layers but let the containing archive emit losses once.
+    ArchiveMember,
+}
+
 /// Dialect-derived losses implied by a report's final classified layers.
 pub(crate) fn report_dialect_losses(
     layers: &cadmpeg_core::dialect::DialectLayers,
@@ -364,15 +374,17 @@ pub(crate) fn build_report(
     container_only: bool,
     geometry_transferred: bool,
     mut losses: Vec<LossNote>,
+    projection: DialectLossProjection,
 ) -> DecodeReport {
     let kernel_layers = kernel_layers(scan);
-    let summary = crate::container::summarize(scan, &kernel_layers.matches);
+    let summary = crate::container::summarize(scan, &kernel_layers);
     let dialects = summary
         .dialects()
         .expect("F3D summary is classified")
         .clone();
-    losses.extend(kernel_layers.losses);
-    losses.extend(report_dialect_losses(&dialects));
+    if projection == DialectLossProjection::Document {
+        losses.extend(report_dialect_losses(&dialects));
+    }
     DecodeReport::classified(
         dialects,
         container_only,
@@ -386,6 +398,23 @@ pub(crate) fn build_report(
             .collect(),
         cadmpeg_ir::report::TransferLedger::default(),
     )
+}
+
+/// Build a single-document inspection summary with the same dialect facts that
+/// decode projects into losses.
+pub(crate) fn build_inspection_summary(
+    scan: &crate::container::ContainerScan<'_>,
+) -> cadmpeg_core::ContainerSummary {
+    let kernel_layers = kernel_layers(scan);
+    let mut summary = crate::container::summarize(scan, &kernel_layers);
+    let classification_notes = summary
+        .dialects()
+        .into_iter()
+        .flat_map(report_dialect_losses)
+        .map(|loss| format!("dialect classification loss: {}", loss.message))
+        .collect::<Vec<_>>();
+    summary.notes.extend(classification_notes);
+    summary
 }
 
 #[cfg(test)]
