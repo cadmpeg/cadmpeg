@@ -286,19 +286,20 @@ impl<'de> Deserialize<'de> for DialectMatch {
                 wire.format
             )));
         }
-        let admission = match wire.admission {
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(using))
-                if wire.dialect.as_str().ends_with(":unknown") && using == wire.dialect =>
-            {
-                Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+        if let Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) = &wire.admission {
+            if wire.dialect.namespace() != using.namespace() {
+                return Err(serde::de::Error::custom(format_args!(
+                    "unverified dialect {:?} cannot use grammar from foreign namespace {:?}",
+                    wire.dialect.as_str(),
+                    using.as_str()
+                )));
             }
-            admission => admission,
-        };
+        }
         Ok(Self {
             dialect: wire.dialect,
             declared: wire.declared,
             instance: wire.instance,
-            admission,
+            admission: wire.admission,
         })
     }
 }
@@ -465,6 +466,11 @@ impl DialectMatch {
     /// Constructs a layer parsed unverified with another declared grammar.
     #[must_use]
     pub fn unverified(dialect: DialectId, using: DialectId) -> Self {
+        assert_eq!(
+            dialect.namespace(),
+            using.namespace(),
+            "an unverified dialect cannot use grammar from another format layer"
+        );
         Self::identified(
             dialect,
             Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)),
@@ -625,25 +631,58 @@ mod tests {
     }
 
     #[test]
-    fn residual_unverified_admission_omits_using_and_normalizes_legacy_self_naming_wire() {
+    fn residual_unverified_admission_omits_using() {
         let residual = DialectMatch::residual(DialectId::pinned("rhino:unknown"));
         assert_eq!(
             serde_json::to_string(&residual.admission()).unwrap(),
             "{\"admitted_unverified\":{}}"
         );
+    }
 
-        let legacy = serde_json::json!({
+    #[test]
+    fn a_self_named_unverified_grammar_remains_opaque() {
+        let self_named = serde_json::json!({
             "format": "rhino",
             "dialect": "rhino:unknown",
             "admission": {
                 "admitted_unverified": { "using": "rhino:unknown" }
             },
         });
-        let normalized = serde_json::from_value::<DialectMatch>(legacy)
-            .expect("legacy self-naming residual data remains readable");
+        let matched = serde_json::from_value::<DialectMatch>(self_named)
+            .expect("core does not infer grammar semantics from an opaque dialect name");
         assert_eq!(
-            normalized.admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            matched.admission(),
+            Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
+                "rhino:unknown"
+            )))
+        );
+    }
+
+    #[test]
+    fn dialect_match_deserialization_rejects_a_foreign_grammar_namespace() {
+        let malformed = serde_json::json!({
+            "format": "rhino",
+            "dialect": "rhino:unknown",
+            "admission": {
+                "admitted_unverified": { "using": "step:ap242-e3" }
+            },
+        });
+        let error = serde_json::from_value::<DialectMatch>(malformed)
+            .expect_err("a grammar substitute belongs to the classified format layer");
+        assert!(
+            error.to_string().contains(
+                "unverified dialect \"rhino:unknown\" cannot use grammar from foreign namespace \"step:ap242-e3\""
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot use grammar from another format layer")]
+    fn unverified_constructor_rejects_a_foreign_grammar_namespace() {
+        let _ = DialectMatch::unverified(
+            DialectId::pinned("rhino:unknown"),
+            DialectId::pinned("step:ap242-e3"),
         );
     }
 
