@@ -28,7 +28,7 @@ pub(crate) fn plan<'a>(
             SourceRelation::Preserve => {
                 let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
                     Replay::Replayed { bytes } => {
-                        return Ok(replayed_plan(input.ir, DialectId::pinned(entry.id), bytes));
+                        return Ok(replayed_plan(input.ir, entry.id.clone(), bytes));
                     }
                     Replay::Declined { reason } => reason,
                 };

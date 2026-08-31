@@ -68,37 +68,37 @@ pub(crate) const FORMAT: &str = "step";
 /// is no preservation path that could write them anyway.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: StepSchema::Ap203Edition1.pinned(),
+        id: StepDialect::from_write_schema(StepSchema::Ap203Edition1).id(),
         label: "STEP AP203 edition 1 CONFIG_CONTROL_DESIGN",
         aliases: &["ap203e1"],
         default: false,
     },
     TargetDescriptor {
-        id: StepSchema::Ap203Edition2.pinned(),
+        id: StepDialect::from_write_schema(StepSchema::Ap203Edition2).id(),
         label: "STEP AP203 edition 2 modular long form",
         aliases: &["ap203e2"],
         default: false,
     },
     TargetDescriptor {
-        id: StepSchema::Ap214.pinned(),
+        id: StepDialect::from_write_schema(StepSchema::Ap214).id(),
         label: "STEP AP214 AUTOMOTIVE_DESIGN",
         aliases: &["ap214"],
         default: true,
     },
     TargetDescriptor {
-        id: StepSchema::Ap242Edition1.pinned(),
+        id: StepDialect::from_write_schema(StepSchema::Ap242Edition1).id(),
         label: "STEP AP242 edition 1 modular long form",
         aliases: &["ap242e1"],
         default: false,
     },
     TargetDescriptor {
-        id: StepSchema::Ap242Edition2.pinned(),
+        id: StepDialect::from_write_schema(StepSchema::Ap242Edition2).id(),
         label: "STEP AP242 edition 2 modular long form",
         aliases: &["ap242e2"],
         default: false,
     },
     TargetDescriptor {
-        id: StepSchema::Ap242Edition3.pinned(),
+        id: StepDialect::from_write_schema(StepSchema::Ap242Edition3).id(),
         label: "STEP AP242 edition 3 modular long form",
         aliases: &["ap242e3"],
         default: false,
@@ -115,7 +115,7 @@ impl StepSchema {
 pub(crate) fn target_schema(target: &TargetDescriptor) -> StepSchema {
     StepSchema::ALL
         .into_iter()
-        .find(|schema| schema.target() == target.id)
+        .find(|schema| StepDialect::from_write_schema(*schema).id() == target.id)
         .expect("STEP TARGETS entries map to StepSchema::ALL")
 }
 

@@ -19,7 +19,7 @@ const NO_ALIASES: &[&str] = &[];
 
 fn target(id: &'static str, aliases: &'static [&'static str], default: bool) -> TargetDescriptor {
     TargetDescriptor {
-        id,
+        id: DialectId::pinned(id),
         label: id,
         aliases,
         default,
@@ -409,13 +409,13 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
 
 const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: "test:old",
+        id: DialectId::pinned("test:old"),
         label: "Old test dialect",
         aliases: &["old"],
         default: false,
     },
     TargetDescriptor {
-        id: "test:new",
+        id: DialectId::pinned("test:new"),
         label: "New test dialect",
         aliases: &["new"],
         default: true,
@@ -449,7 +449,7 @@ fn write_request_resolves_an_explicit_on_catalog_target() {
         WriteRequest::Catalog {
             entry,
             source: SourceRelation::None,
-        } if entry.id == "test:old"
+        } if entry.id.as_str() == "test:old"
     ));
 }
 
@@ -479,7 +479,7 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
         WriteRequest::Catalog {
             entry,
             source: SourceRelation::None,
-        } if entry.id == "test:new"
+        } if entry.id.as_str() == "test:new"
     ));
 }
 
@@ -511,7 +511,7 @@ fn write_request_explicit_over_an_unrecorded_source_has_no_recorded_relation() {
         WriteRequest::Catalog {
             entry,
             source: SourceRelation::None,
-        } if entry.id == "test:old"
+        } if entry.id.as_str() == "test:old"
     ));
 }
 
@@ -525,7 +525,7 @@ fn write_request_inherit_preserves_a_same_format_catalog_source() {
         WriteRequest::Catalog {
             entry,
             source: SourceRelation::Preserve,
-        } if entry.id == "test:old"
+        } if entry.id.as_str() == "test:old"
     ));
 }
 
@@ -557,12 +557,12 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
     else {
         panic!("expected a catalog target");
     };
-    assert_eq!(entry.id, "test:new");
+    assert_eq!(entry.id.as_str(), "test:new");
     assert_eq!(displaced, DialectId::pinned("test:old"));
     assert_eq!(
         source_dialect_displaced_message(
             &displaced,
-            &DialectId::pinned(entry.id),
+            &entry.id,
         ),
         "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved"
     );

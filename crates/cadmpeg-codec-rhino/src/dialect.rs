@@ -62,25 +62,25 @@ pub(crate) const FORMAT: &str = "rhino";
 /// read-only dialect and is not an alias for archive 50.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: RhinoArchiveVersion::V5.pinned(),
+        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V5).id(),
         label: "Rhino 5 archive (50)",
         aliases: &["50"],
         default: false,
     },
     TargetDescriptor {
-        id: RhinoArchiveVersion::V6.pinned(),
+        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V6).id(),
         label: "Rhino 6 archive (60)",
         aliases: &["6", "60"],
         default: false,
     },
     TargetDescriptor {
-        id: RhinoArchiveVersion::V7.pinned(),
+        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V7).id(),
         label: "Rhino 7 archive (70)",
         aliases: &["7", "70"],
         default: false,
     },
     TargetDescriptor {
-        id: RhinoArchiveVersion::V8.pinned(),
+        id: ArchiveVersion::from_write_version(RhinoArchiveVersion::V8).id(),
         label: "Rhino 8 archive (80)",
         aliases: &["8", "80"],
         default: true,
@@ -102,7 +102,7 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> RhinoArchiveVersion {
         RhinoArchiveVersion::V8,
     ]
     .into_iter()
-    .find(|version| version.target() == target.id)
+    .find(|version| ArchiveVersion::from_write_version(*version).id() == target.id)
     .expect("Rhino TARGETS entries map to RhinoArchiveVersion")
 }
 

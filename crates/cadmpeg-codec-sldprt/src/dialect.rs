@@ -86,7 +86,7 @@ const PARASOLID_FORMAT: &str = "parasolid";
 /// and classifies into the registry's totality row. Every versioned row is
 /// reachable only by preserving a retained part.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: SldprtDialect::Unknown.pinned(),
+    id: SldprtDialect::Unknown.id(),
     label: "SolidWorks part with no swVersion declaration",
     aliases: &[],
     default: true,

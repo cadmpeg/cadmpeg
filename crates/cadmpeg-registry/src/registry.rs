@@ -314,13 +314,13 @@ mod tests {
             let prefix = format!("{}:", format.name());
             for target in targets {
                 assert!(
-                    target.id.starts_with(&prefix),
+                    target.id.as_str().starts_with(&prefix),
                     "{}: compiled target belongs to the {} catalog but does not use its registry prefix {prefix:?}",
                     target.id,
                     format.name()
                 );
                 let disposition = dispositions
-                    .get(target.id)
+                    .get(target.id.as_str())
                     .unwrap_or_else(|| panic!("{}: not a registry row", target.id));
                 assert!(
                     matches!(
@@ -355,7 +355,7 @@ mod tests {
                     )
                 {
                     assert!(
-                        targets.iter().any(|target| target.id == *id),
+                        targets.iter().any(|target| target.id.as_str() == *id),
                         "{id}: synthesis write is absent from the {} catalog",
                         format.name()
                     );

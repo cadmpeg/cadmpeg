@@ -18,6 +18,20 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "92ce62ac75d5a001951bbcb28d9f020f0f4bea6a"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::codec::TargetDescriptor::id"
+reason = "catalog rows carry a validated DialectId authored by the codec dialect enum, so resolution does not reconstruct identity from a second raw string boundary"
+
+[[change]]
+commit = "92ce62ac75d5a001951bbcb28d9f020f0f4bea6a"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "Copy for cadmpeg_ir::codec::TargetDescriptor"
+reason = "TargetDescriptor owns its validated DialectId, whose deserialized representation can own storage and is therefore cloneable but not copyable"
+
+[[change]]
 commit = "38fe598789b2b55823a6fed5369aa29e0dd2e3de"
 crate = "cadmpeg-ir"
 kind = "visibility"

@@ -56,7 +56,10 @@ mod tests {
             }
             for target in targets {
                 assert!(
-                    target.id.starts_with(&format!("{}:", encoder.id())),
+                    target
+                        .id
+                        .as_str()
+                        .starts_with(&format!("{}:", encoder.id())),
                     "{}: target {} is outside this encoder's own namespace",
                     encoder.id(),
                     target.id
@@ -98,7 +101,7 @@ mod tests {
             );
             for target in encoder.targets() {
                 assert!(
-                    available.contains(target.id),
+                    available.contains(target.id.as_str()),
                     "{}: the refusal omits {}",
                     encoder.id(),
                     target.id

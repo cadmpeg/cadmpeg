@@ -85,7 +85,7 @@ pub(crate) const FORMAT: &str = "fcstd";
 ///
 /// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::TargetRequest::Inherit
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: FcstdDialect::Schema4.pinned(),
+    id: FcstdDialect::Schema4.id(),
     label: "FreeCAD Document.xml schema version 4",
     aliases: &["4"],
     default: false,

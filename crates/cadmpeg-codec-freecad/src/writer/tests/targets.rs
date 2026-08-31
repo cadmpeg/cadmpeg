@@ -98,7 +98,7 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         Some("fcstd:nonesuch")
     );
     for target in Encoder::targets(&FcstdCodec) {
-        assert!(available.contains(target.id), "{available}");
+        assert!(available.contains(target.id.as_str()), "{available}");
     }
 }
 

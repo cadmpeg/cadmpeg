@@ -7,6 +7,7 @@ use std::io::Write;
 use crate::document::CadIr;
 use crate::report::{CensusBasis, EntityCensus, ExportReport, FidelityResolution, WritePath};
 use crate::source_fidelity::SourceFidelity;
+use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 
 /// What the caller asked an encoder to write, before resolution picks it.
@@ -31,10 +32,10 @@ pub enum TargetRequest<'a> {
 /// guarantee that every input can reach every row. [`Encoder::plan`] applies
 /// the resolved request to the input and refuses a row that the writer cannot
 /// deliver, such as a patch-only target without a matching retained source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetDescriptor {
     /// Registry dialect id, e.g. `step:ap242-e3`.
-    pub id: &'static str,
+    pub id: DialectId,
     /// Human-readable name, e.g. `STEP AP242 edition 3`.
     pub label: &'static str,
     /// Short spellings accepted for `id`, e.g. `["6"]` for `rhino:archive-60`.
@@ -57,7 +58,7 @@ pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
     let mut ids = BTreeSet::new();
     for target in targets {
         assert!(
-            ids.insert(target.id),
+            ids.insert(target.id.as_str()),
             "target catalog invariant failed: duplicate id {:?}",
             target.id
         );
@@ -86,9 +87,10 @@ pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
 #[must_use]
 pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a TargetDescriptor> {
     targets.iter().find(|target| {
-        target.id == id
+        target.id.as_str() == id
             || target
                 .id
+                .as_str()
                 .split_once(':')
                 .is_some_and(|(_, local)| local == id)
             || target.aliases.contains(&id)
@@ -172,7 +174,7 @@ impl WriteRequest<'_> {
     #[must_use]
     pub fn dialect_id(&self) -> cadmpeg_core::dialect::DialectId {
         match self {
-            Self::Catalog { entry, .. } => cadmpeg_core::dialect::DialectId::pinned(entry.id),
+            Self::Catalog { entry, .. } => entry.id.clone(),
             Self::OffCatalog { dialect } => (*dialect).clone(),
         }
     }
@@ -241,9 +243,7 @@ pub fn resolve_write_request<'a>(
         },
     };
     let source = match source {
-        SourceIdentity::Recorded(dialect) if dialect.as_str() == entry.id => {
-            SourceRelation::Preserve
-        }
+        SourceIdentity::Recorded(dialect) if dialect == &entry.id => SourceRelation::Preserve,
         SourceIdentity::Recorded(dialect) => SourceRelation::Displaced(dialect.clone()),
         SourceIdentity::Other | SourceIdentity::Unrecorded => SourceRelation::None,
     };
@@ -269,7 +269,7 @@ fn refusal(
 ) -> CodecError {
     let available = targets
         .iter()
-        .map(|target| target.id)
+        .map(|target| target.id.as_str())
         .collect::<Vec<_>>()
         .join(", ");
     CodecError::UnsupportedTarget {

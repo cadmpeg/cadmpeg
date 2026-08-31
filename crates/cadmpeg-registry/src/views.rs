@@ -39,7 +39,7 @@ pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectPro
         write_targets: catalog_of(entry.format())
             .unwrap_or(&[])
             .iter()
-            .map(|target| target.id)
+            .map(|target| target.id.as_str())
             .collect(),
     })
 }
@@ -128,7 +128,7 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Unknow
                 catalog,
                 default_target: catalog
                     .and_then(|targets| targets.iter().find(|target| target.default))
-                    .map(|target| target.id),
+                    .map(|target| target.id.as_str()),
                 rows: registries.rows_of(&name).cloned().collect(),
                 format: name,
             }
