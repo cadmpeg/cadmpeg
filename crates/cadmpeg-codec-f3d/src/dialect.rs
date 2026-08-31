@@ -172,7 +172,8 @@ impl F3dDialect {
     fn matched(self, declared: BTreeMap<String, String>) -> DialectMatch {
         match self {
             Self::Manifest3200 | Self::F3zMultiDocument => DialectMatch::admitted(self.id()),
-            Self::Unknown => DialectMatch::unverified(self.id(), Self::Manifest3200.id()),
+            Self::Unknown => DialectMatch::unverified(self.id(), Self::Manifest3200.id())
+                .expect("F3D dialect and grammar ids share one format namespace"),
         }
         .with_declared(declared)
     }

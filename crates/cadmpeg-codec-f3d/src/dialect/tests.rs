@@ -105,7 +105,8 @@ fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
         DialectMatch::unverified(
             cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
             cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
-        ),
+        )
+        .expect("F3D test dialect and grammar ids share one format namespace"),
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat",
     )
     .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");

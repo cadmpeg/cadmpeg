@@ -176,6 +176,7 @@ impl FcstdDialect {
         }
         if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), Self::NEAREST_VERIFIED.id())
+                .expect("FCStd dialect and grammar ids share one format namespace")
         } else {
             DialectMatch::admitted(dialect.id())
         }

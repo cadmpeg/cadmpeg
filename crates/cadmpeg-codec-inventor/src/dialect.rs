@@ -262,6 +262,7 @@ impl DialectRecovery {
                 DialectMatch::admitted(dialect.id())
             } else {
                 DialectMatch::unverified(dialect.id(), InventorDialect::Cfb3Rse31Meta8.id())
+                    .expect("Inventor dialect and grammar ids share one format namespace")
             }
             .with_declared(declared),
             loss,
