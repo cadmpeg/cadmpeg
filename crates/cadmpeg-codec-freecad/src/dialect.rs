@@ -40,35 +40,6 @@ use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
-/// Admission result for the independent `GuiDocument.xml` schema layer.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum GuiSchemaAdmission {
-    /// Schema 1 uses the verified GUI vocabulary.
-    Schema1,
-    /// Any other declaration is read with the schema-1 vocabulary without a
-    /// verified declaration match.
-    Unverified { declaration: String },
-}
-
-/// Classifies the `GuiDocument.xml` schema before GUI parsing selects its
-/// admission path.
-///
-/// The declaration is matched verbatim, as it is by
-/// [`FcstdDialect::from_schema_version`]. Parsing an integer first would make
-/// declarations such as `"01"` appear verified even though no row declares
-/// that spelling.
-pub(crate) fn classify_gui_schema(schema_version: Option<&str>) -> GuiSchemaAdmission {
-    match schema_version {
-        Some("1") => GuiSchemaAdmission::Schema1,
-        Some(value) => GuiSchemaAdmission::Unverified {
-            declaration: value.to_owned(),
-        },
-        None => GuiSchemaAdmission::Unverified {
-            declaration: "missing".into(),
-        },
-    }
-}
-
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "fcstd";
 

@@ -5,6 +5,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::gui::{classify_gui_schema, GuiSchemaAdmission};
 use cadmpeg_core::dialect::UnverifiedAdmission;
 
 #[test]
