@@ -5,7 +5,6 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use crate::gui::{classify_gui_schema, GuiSchemaAdmission};
 use cadmpeg_core::dialect::UnverifiedAdmission;
 
 #[test]
@@ -84,25 +83,6 @@ const CASES: &[Case] = &[
         admitted: false,
     },
 ];
-
-#[test]
-fn gui_schema_admission_matches_the_verbatim_declaration() {
-    assert_eq!(classify_gui_schema(Some("1")), GuiSchemaAdmission::Schema1);
-    for declaration in ["01", "2", "not-an-integer"] {
-        assert_eq!(
-            classify_gui_schema(Some(declaration)),
-            GuiSchemaAdmission::Unverified {
-                declaration: declaration.to_owned(),
-            }
-        );
-    }
-    assert_eq!(
-        classify_gui_schema(None),
-        GuiSchemaAdmission::Unverified {
-            declaration: "missing".to_string(),
-        }
-    );
-}
 
 #[test]
 fn each_declaration_classifies_into_the_row_its_discriminant_matches() {

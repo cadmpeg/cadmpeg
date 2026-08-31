@@ -3,10 +3,30 @@
 
 #![allow(clippy::doc_markdown)]
 
+use super::{classify_gui_schema, GuiSchemaAdmission};
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
+
+#[test]
+fn gui_schema_admission_matches_the_verbatim_declaration() {
+    assert_eq!(classify_gui_schema(Some("1")), GuiSchemaAdmission::Schema1);
+    for declaration in ["01", "2", "not-an-integer"] {
+        assert_eq!(
+            classify_gui_schema(Some(declaration)),
+            GuiSchemaAdmission::Unverified {
+                declaration: declaration.to_owned(),
+            }
+        );
+    }
+    assert_eq!(
+        classify_gui_schema(None),
+        GuiSchemaAdmission::Unverified {
+            declaration: "missing".to_string(),
+        }
+    );
+}
 
 #[test]
 pub(crate) fn retains_ordered_document_level_gui_state() {
