@@ -43,7 +43,7 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         Some("f3d:nonesuch")
     );
     for target in Encoder::targets(&F3dCodec) {
-        assert!(available.contains(target.id), "{available}");
+        assert!(available.contains(target.id.as_str()), "{available}");
     }
 }
 

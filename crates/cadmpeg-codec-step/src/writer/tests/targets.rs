@@ -142,7 +142,7 @@ fn inherit_synthesizes_the_source_schema_not_the_catalog_default() {
 
     let encoder = StepCodec::default();
     assert_eq!(
-        default_target(Encoder::targets(&encoder)).map(|target| target.id),
+        default_target(Encoder::targets(&encoder)).map(|target| target.id.as_str()),
         Some("step:ap214")
     );
     let plan = inherit(&encoder, decoded.ir()).expect("an AP203 edition 1 source is a catalog row");
@@ -304,7 +304,7 @@ fn an_explicit_target_overrides_the_source_schema() {
 fn a_cross_format_conversion_writes_the_catalog_default() {
     let encoder = StepCodec::default();
     let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
-    assert_eq!(default.id, "step:ap214");
+    assert_eq!(default.id.as_str(), "step:ap214");
 
     let mut ir = unit_cube();
     ir.source = Some(SourceMeta::classified(
@@ -316,7 +316,7 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
     let plan = encoder
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(default.id),
+            TargetRequest::Explicit(default.id.as_str()),
         )
         .expect("the catalog default writes");
 
@@ -336,7 +336,7 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
 fn nothing_to_inherit_falls_to_the_catalog_default() {
     let encoder = StepCodec::default();
     let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
-    assert_eq!(default.id, "step:ap214");
+    assert_eq!(default.id.as_str(), "step:ap214");
 
     let sourceless = unit_cube();
     let plan = inherit(&encoder, &sourceless).expect("a sourceless document takes the default");
@@ -410,8 +410,8 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
         assert!(!target.aliases.is_empty(), "{schema:?}");
         for alias in target.aliases {
             assert_eq!(
-                find_target(targets, alias).map(|row| row.id),
-                Some(target.id)
+                find_target(targets, alias).map(|row| &row.id),
+                Some(&target.id)
             );
         }
     }
@@ -419,7 +419,7 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
         assert!(
             StepSchema::ALL
                 .into_iter()
-                .any(|schema| schema.target() == target.id),
+                .any(|schema| schema.target() == target.id.as_str()),
             "catalog row {} names no schema",
             target.id
         );
@@ -458,7 +458,7 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     assert_eq!(format, "step");
     assert_eq!(requested, Some("step:nonesuch"));
     for target in Encoder::targets(&encoder) {
-        assert!(available.contains(target.id), "{available}");
+        assert!(available.contains(target.id.as_str()), "{available}");
     }
 }
 

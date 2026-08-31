@@ -50,31 +50,31 @@ pub(crate) const FORMAT: &str = "iges";
 /// `--to iges:5.3-fixed-ascii` name the same row.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: IgesDialect::V4_0FixedAscii.pinned(),
+        id: IgesDialect::V4_0FixedAscii.id(),
         label: "IGES 4.0 Fixed ASCII",
         aliases: &["4.0"],
         default: false,
     },
     TargetDescriptor {
-        id: IgesDialect::V5_0FixedAscii.pinned(),
+        id: IgesDialect::V5_0FixedAscii.id(),
         label: "IGES 5.0 Fixed ASCII",
         aliases: &["5.0"],
         default: false,
     },
     TargetDescriptor {
-        id: IgesDialect::V5_1FixedAscii.pinned(),
+        id: IgesDialect::V5_1FixedAscii.id(),
         label: "IGES 5.1 Fixed ASCII",
         aliases: &["5.1"],
         default: false,
     },
     TargetDescriptor {
-        id: IgesDialect::V5_2FixedAscii.pinned(),
+        id: IgesDialect::V5_2FixedAscii.id(),
         label: "IGES 5.2 Fixed ASCII",
         aliases: &["5.2"],
         default: false,
     },
     TargetDescriptor {
-        id: IgesDialect::V5_3FixedAscii.pinned(),
+        id: IgesDialect::V5_3FixedAscii.id(),
         label: "IGES 5.3 Fixed ASCII",
         aliases: &["5.3"],
         default: true,
@@ -85,7 +85,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[
 pub(crate) fn target_version(target: &TargetDescriptor) -> IgesVersion {
     IgesVersion::ALL
         .into_iter()
-        .find(|version| IgesDialect::fixed_ascii(*version).pinned() == target.id)
+        .find(|version| IgesDialect::fixed_ascii(*version).id() == target.id)
         .expect("IGES TARGETS entries map to IgesVersion::ALL")
 }
 

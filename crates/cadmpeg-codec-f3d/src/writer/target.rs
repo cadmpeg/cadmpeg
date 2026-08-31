@@ -38,7 +38,7 @@ pub(crate) fn plan<'a>(
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     match resolved {
         WriteRequest::Catalog { entry, source } => {
-            let target = DialectId::pinned(entry.id);
+            let target = entry.id.clone();
             match source {
                 SourceRelation::Preserve => {
                     if let Preservation::Written { bytes, write_path } = preserve(input)? {

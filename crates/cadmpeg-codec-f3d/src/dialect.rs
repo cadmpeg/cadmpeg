@@ -51,7 +51,7 @@ pub(crate) const FORMAT: &str = "f3d";
 /// The multi-document F3Z row is reachable only by replaying a retained
 /// archive, which is preservation, not synthesis.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: F3dDialect::Manifest3200.pinned(),
+    id: F3dDialect::Manifest3200.id(),
     label: "Fusion 360 archive with top-level manifest 3-2-0-0",
     aliases: &["3-2-0-0"],
     default: true,

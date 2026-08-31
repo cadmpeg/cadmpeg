@@ -1,4 +1,4 @@
-# generated at 38fe59878
+# generated at 92ce62ac7
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -215,7 +215,7 @@ pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_to(self, &mut dyn core::io::writ
 pub struct cadmpeg_ir::codec::TargetDescriptor
 pub cadmpeg_ir::codec::TargetDescriptor::aliases: &'static [&'static str]
 pub cadmpeg_ir::codec::TargetDescriptor::default: bool
-pub cadmpeg_ir::codec::TargetDescriptor::id: &'static str
+pub cadmpeg_ir::codec::TargetDescriptor::id: cadmpeg_core::dialect::DialectId
 pub cadmpeg_ir::codec::TargetDescriptor::label: &'static str
 pub trait cadmpeg_ir::codec::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>

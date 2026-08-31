@@ -109,7 +109,7 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         Some("sldprt:nonesuch")
     );
     for target in Encoder::targets(&SldprtCodec) {
-        assert!(available.contains(target.id), "{available}");
+        assert!(available.contains(target.id.as_str()), "{available}");
     }
 }
 

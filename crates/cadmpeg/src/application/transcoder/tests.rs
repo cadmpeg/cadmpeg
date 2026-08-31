@@ -299,7 +299,7 @@ fn a_cross_format_convert_writes_the_catalog_default() {
     else {
         panic!("a cross-format request resolves to the catalog")
     };
-    assert_eq!(entry.id, "iges:5.3-fixed-ascii");
+    assert_eq!(entry.id.as_str(), "iges:5.3-fixed-ascii");
 }
 
 /// CADIR has no native dialect catalog, so it handles `Inherit` locally.

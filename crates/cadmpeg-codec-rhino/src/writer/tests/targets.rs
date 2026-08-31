@@ -42,7 +42,7 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
         Some("rhino:nonesuch")
     );
     for target in Encoder::targets(&encoder) {
-        assert!(available.contains(target.id), "{available}");
+        assert!(available.contains(target.id.as_str()), "{available}");
     }
 }
 
@@ -109,7 +109,11 @@ fn a_cross_format_request_resolves_to_the_catalog_default() {
     let default = cadmpeg_ir::codec::default_target(crate::dialect::TARGETS)
         .expect("the Rhino catalog has a default");
     assert_eq!(
-        resolved(&ir, RhinoEncoder, TargetRequest::Explicit(default.id),),
+        resolved(
+            &ir,
+            RhinoEncoder,
+            TargetRequest::Explicit(default.id.as_str()),
+        ),
         "rhino:archive-80"
     );
 }
@@ -242,7 +246,7 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
         Some("rhino:archive-3")
     );
     for target in Encoder::targets(&encoder) {
-        assert!(available.contains(target.id), "{available}");
+        assert!(available.contains(target.id.as_str()), "{available}");
     }
 }
 
