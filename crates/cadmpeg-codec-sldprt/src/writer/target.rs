@@ -30,10 +30,10 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SldprtCodec, Writte
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
-pub(crate) fn plan<'a>(
-    input: EncodeInput<'a>,
+pub(crate) fn plan(
+    input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<ExportPlan<'a>, CodecError> {
+) -> Result<ExportPlan, CodecError> {
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let target = resolved.dialect().clone();
     let (written, bytes) = write(input, resolved.preserves_source())?;
@@ -101,13 +101,13 @@ fn check_honesty(resolved: &ResolvedWrite, written: &Written) -> Result<(), Code
     )))
 }
 
-fn finish<'a>(
-    input: EncodeInput<'a>,
+fn finish(
+    input: EncodeInput<'_>,
     target: DialectId,
     displaced: Option<&DialectId>,
     written: &Written,
     bytes: Vec<u8>,
-) -> ExportPlan<'a> {
+) -> ExportPlan {
     let write_path = written.path();
     let fidelity = written.fidelity();
     let mut losses: Vec<_> = (written.replay_skipped() == Some(ReplaySkipped::ImageMissing))

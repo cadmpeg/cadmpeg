@@ -170,7 +170,7 @@ impl ArtifactStore {
     /// Stage an export plan, optionally hashing CADIR bytes for the sidecar.
     pub fn write_plan_atomic(
         output: &Path,
-        plan: ExportPlan<'_>,
+        plan: ExportPlan,
         with_digest: bool,
     ) -> Result<(ExportReport, Option<String>)> {
         let parent = output

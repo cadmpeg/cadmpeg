@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::report::FidelityResolution;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
-fn degraded_reason(plan: &cadmpeg_ir::codec::ExportPlan<'_>, context: &str) -> String {
+fn degraded_reason(plan: &cadmpeg_ir::codec::ExportPlan, context: &str) -> String {
     match plan.fidelity_resolution() {
         FidelityResolution::Degraded { reason } => reason.clone(),
         other => panic!("{context}: {other:?}"),

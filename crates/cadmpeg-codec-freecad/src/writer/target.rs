@@ -74,19 +74,16 @@ impl Resolution {
 /// preserve, and no identity to default to. A source of another format is also
 /// refused because this catalog intentionally has no cross-format default: the
 /// writer cannot synthesize the retained `FCStd` graph that its only row needs.
-pub(crate) fn plan<'a>(
-    input: EncodeInput<'a>,
+pub(crate) fn plan(
+    input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<ExportPlan<'a>, CodecError> {
+) -> Result<ExportPlan, CodecError> {
     let resolution = resolve(input.ir, request)?;
     finish(input, &resolution)
 }
 
 /// Write the resolved export and state what the fidelity sidecar did.
-fn finish<'a>(
-    input: EncodeInput<'a>,
-    resolution: &Resolution,
-) -> Result<ExportPlan<'a>, CodecError> {
+fn finish(input: EncodeInput<'_>, resolution: &Resolution) -> Result<ExportPlan, CodecError> {
     let mut bytes = Vec::new();
     let outcome = write(input.ir, &mut bytes, resolution)?;
     // A plan constructs its report once, after every report input is final.
