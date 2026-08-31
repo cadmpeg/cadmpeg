@@ -80,17 +80,19 @@ mod tests {
         let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         for format in Format::all() {
             let encoder = build_encoder(format);
+            let requested = format!("{}:nonesuch", encoder.id());
             let error = encoder
                 .plan(
                     cadmpeg_ir::codec::EncodeInput::new(&ir, None),
-                    TargetRequest::Explicit("nonesuch:dialect"),
+                    TargetRequest::Explicit(&requested),
                 )
                 .err()
                 .expect("an id outside the catalog is refused");
             let CodecError::UnsupportedTarget(refusal) = &error else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
-            assert_eq!(refusal.requested(), Some("nonesuch:dialect"));
+            assert_eq!(refusal.format(), encoder.id());
+            assert_eq!(refusal.requested(), Some(requested.as_str()));
             for target in encoder.targets() {
                 assert!(
                     refusal

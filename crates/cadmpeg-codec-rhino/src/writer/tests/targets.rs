@@ -8,42 +8,6 @@ use cadmpeg_ir::units::Units;
 
 use crate::RhinoEncoder;
 
-/// An explicit target this writer does not produce is refused by `plan` itself,
-/// with the catalog in the message.
-///
-/// The check runs before any synthesis, so an empty document is enough: what is
-/// under test is that the request reaches the encoder at all. A `plan` that
-/// dropped the guard would write a Rhino archive and report success for a
-/// dialect nobody asked for.
-#[test]
-fn plan_refuses_an_explicit_target_outside_the_catalog() {
-    let ir = CadIr::empty(Units::default());
-    let encoder = RhinoEncoder;
-    let error = Encoder::plan(
-        &encoder,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("rhino:nonesuch"),
-    )
-    .err()
-    .expect("an id outside the catalog is refused");
-
-    let CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "rhino");
-    assert_eq!(refusal.requested(), Some("rhino:nonesuch"));
-    for target in Encoder::targets(&encoder) {
-        assert!(
-            refusal
-                .available()
-                .iter()
-                .any(|available| available == target),
-            "{:?}",
-            refusal.available()
-        );
-    }
-}
-
 /// An empty document that a Rhino decode of `dialect` would have produced.
 fn source_in(dialect: &'static str) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
