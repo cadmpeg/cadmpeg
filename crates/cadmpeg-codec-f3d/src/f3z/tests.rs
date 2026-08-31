@@ -835,7 +835,7 @@ fn f3z_decode_retains_member_identity_and_unverified_loss() {
 }
 
 #[test]
-fn f3z_xref_kernel_row_uses_member_path_and_actual_xref_label() {
+fn f3z_kernel_loss_is_derived_from_its_archive_member_layer() {
     let stream = unverified_acis_text_member();
     let component = f3d_with_text_brep_stream(
         &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
@@ -893,8 +893,67 @@ fn f3z_xref_kernel_row_uses_member_path_and_actual_xref_label() {
     assert_eq!(loss.severity, bare_loss.severity);
     assert_eq!(
         loss.message,
-        format!("xref component0 (member comp.f3d): {}", bare_loss.message)
+        format!("archive member comp.f3d: {}", bare_loss.message)
     );
+}
+
+#[test]
+fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
+    let root = f3d_with_smbh(&synthetic_smbh());
+    let unreferenced = f3d_with_smbh_and_manifest_version(&synthetic_smbh(), "9-9-9-9");
+    let unparseable_carrier = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
+        b"not an SAT stream",
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("unreferenced.f3d", unreferenced.as_slice()),
+            ("unparseable.f3d", unparseable_carrier.as_slice()),
+        ],
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let member = decoded
+        .report()
+        .dialects()
+        .expect("the F3Z report is classified")
+        .iter()
+        .find(|matched| {
+            matched.format() == crate::dialect::FORMAT
+                && matched.instance() == Some("unreferenced.f3d")
+        })
+        .expect("the unreferenced member remains in the final layer set");
+    assert_eq!(member.dialect().as_str(), "f3d:unknown");
+    assert!(matches!(
+        member.admission(),
+        cadmpeg_core::dialect::Admission::AdmittedUnverified(_)
+    ));
+
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::SourceDialectUnverified.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("archive member unreferenced.f3d"));
+
+    let carrier_losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::KernelCarrierUnparseable.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(carrier_losses.len(), 1);
+    assert!(carrier_losses[0]
+        .message
+        .contains("archive member unparseable.f3d"));
 }
 
 #[test]
