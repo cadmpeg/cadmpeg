@@ -106,7 +106,7 @@ fn residual_parasolid_layer_is_present_in_decode_losses() {
         .expect("fixture carries one Parasolid layer");
     assert!(matches!(
         kernel.admission(),
-        Admission::AdmittedUnverified(_)
+        Admission::AdmittedUnverified { .. }
     ));
     assert!(result.report().losses.iter().any(|note| {
         note.code == crate::loss::NxLossCode::SourceDialectUnverified.kind()

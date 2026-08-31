@@ -11,7 +11,6 @@
 use super::*;
 use crate::container::scan_bytes;
 use crate::test_support::{build_prt, build_prt_raw};
-use cadmpeg_core::dialect::UnverifiedAdmission;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() {
@@ -170,7 +169,7 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
-            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            Admission::AdmittedUnverified { using: None }
         };
         assert_eq!(matched.admission(), expected_admission, "{}", case.label);
     }

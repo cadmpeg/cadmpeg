@@ -79,7 +79,9 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
         let matched = classify_word(word);
         assert_eq!(
             matched.admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(nearest.id())),
+            Admission::AdmittedUnverified {
+                using: Some(nearest.id()),
+            },
             "archive word {word}"
         );
         let note = admission_loss(&matched).expect("an unverified admission charges its loss");

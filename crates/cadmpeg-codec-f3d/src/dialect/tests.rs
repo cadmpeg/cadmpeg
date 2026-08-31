@@ -38,9 +38,9 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
     assert_eq!(matched.dialect().as_str(), "f3d:unknown");
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
-            "f3d:manifest-3-2-0-0",
-        )))
+        Admission::AdmittedUnverified {
+            using: Some(DialectId::pinned("f3d:manifest-3-2-0-0")),
+        }
     );
 
     let loss = dialect_loss(&matched).expect("the recovery is charged");

@@ -76,9 +76,9 @@ fn only_the_acis_kernel_branches_are_banded() {
         } else {
             assert_eq!(
                 matched.admission(),
-                Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
-                    nearest
-                ),)),
+                Admission::AdmittedUnverified {
+                    using: Some(DialectId::pinned(nearest)),
+                },
                 "{version:?}"
             );
             let loss = dialect_loss(&matched).expect("the recovery is charged");
@@ -97,7 +97,7 @@ fn only_the_acis_kernel_branches_are_banded() {
         } else {
             assert_eq!(
                 matched.admission(),
-                Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
+                Admission::AdmittedUnverified { using: None },
                 "{version:?}"
             );
             let loss = dialect_loss(&matched).expect("the recovery is charged");
@@ -160,7 +160,7 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
     ] {
         let (_, matched) = layers(&evidence);
         assert_eq!(
-            matches!(matched.admission(), Admission::AdmittedUnverified(_)),
+            matches!(matched.admission(), Admission::AdmittedUnverified { .. }),
             dialect_loss(&matched).is_some(),
             "{:?}",
             matched.admission()
@@ -261,23 +261,23 @@ fn cases() -> Vec<Case> {
             bytes: acis_text(700),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            kernel_admission: Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
+            kernel_admission: Admission::AdmittedUnverified { using: None },
         },
         Case {
             label: "acis text sphere outside the verified band",
             bytes: acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            kernel_admission: Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
+            kernel_admission: Admission::AdmittedUnverified { using: None },
         },
         Case {
             label: "acis binary sphere outside the verified band",
             bytes: binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand),
             id: "sat:acis-binary",
             kernel_id: "acis:save-format-binary-other",
-            kernel_admission: Admission::AdmittedUnverified(UnverifiedAdmission::Using(
-                DialectId::pinned("acis:save-format-218"),
-            )),
+            kernel_admission: Admission::AdmittedUnverified {
+                using: Some(DialectId::pinned("acis:save-format-218")),
+            },
         },
         Case {
             label: "acis text at 218",
@@ -323,7 +323,7 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .expect("SAT reports its ACIS layer");
         assert_eq!(kernel.admission(), case.kernel_admission, "{}", case.label);
         assert_eq!(
-            matches!(kernel.admission(), Admission::AdmittedUnverified(_)),
+            matches!(kernel.admission(), Admission::AdmittedUnverified { .. }),
             charged,
             "{}: admission and the recovery mark must agree",
             case.label

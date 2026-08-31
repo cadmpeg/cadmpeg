@@ -5,9 +5,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 
-#[cfg(test)]
-use cadmpeg_core::dialect::UnverifiedAdmission;
-
 /// Dialect namespace owned by the Parasolid stream classifier.
 pub const FORMAT: &str = "parasolid";
 
@@ -60,7 +57,7 @@ pub fn classify_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dia
 #[must_use]
 pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
     if matched.format() != FORMAT
-        || !matches!(matched.admission(), Admission::AdmittedUnverified(_))
+        || !matches!(matched.admission(), Admission::AdmittedUnverified { .. })
     {
         return None;
     }
@@ -108,7 +105,7 @@ mod tests {
         assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
         assert_eq!(
             matched.admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            Admission::AdmittedUnverified { using: None }
         );
         assert_eq!(matched.declared()[DECLARED_SCHEMA], "SCH_TEST_1_9999");
         assert_eq!(matched.declared()[DECLARED_CARRIER], "block@7:body+3");

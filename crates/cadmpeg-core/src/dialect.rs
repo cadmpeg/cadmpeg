@@ -155,7 +155,9 @@ impl<'de> Deserialize<'de> for DialectId {
 }
 
 /// How one format layer admitted, or refused, one document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
 pub enum Admission {
     /// Parsed with the strategy declared for the identified dialect.
     Admitted,
@@ -165,78 +167,14 @@ pub enum Admission {
     /// retain its identity while applying that row's grammar unverified.
     ///
     /// The codec must charge its dialect-unverified loss.
-    AdmittedUnverified(UnverifiedAdmission),
-    /// Structurally identified; semantic decode refused.
-    Refused,
-}
-
-/// Grammar used by an unverified admission.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UnverifiedAdmission {
-    /// The parser applied this declared dialect's grammar.
-    Using(DialectId),
-    /// The parser applied no declared dialect grammar.
-    NoDeclaredGrammar,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum AdmissionWire {
-    Admitted,
     AdmittedUnverified {
+        /// Declared dialect grammar the parser applied, or `None` when the
+        /// residual path applied no declared grammar.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         using: Option<DialectId>,
     },
+    /// Structurally identified; semantic decode refused.
     Refused,
-}
-
-impl Serialize for Admission {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let wire = match self {
-            Self::Admitted => AdmissionWire::Admitted,
-            Self::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
-                AdmissionWire::AdmittedUnverified {
-                    using: Some(using.clone()),
-                }
-            }
-            Self::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
-                AdmissionWire::AdmittedUnverified { using: None }
-            }
-            Self::Refused => AdmissionWire::Refused,
-        };
-        wire.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Admission {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(match AdmissionWire::deserialize(deserializer)? {
-            AdmissionWire::Admitted => Self::Admitted,
-            AdmissionWire::AdmittedUnverified { using: Some(using) } => {
-                Self::AdmittedUnverified(UnverifiedAdmission::Using(using))
-            }
-            AdmissionWire::AdmittedUnverified { using: None } => {
-                Self::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
-            }
-            AdmissionWire::Refused => Self::Refused,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for Admission {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "Admission".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::Admission").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        AdmissionWire::json_schema(generator)
-    }
 }
 
 /// One format layer's identification of one document.
@@ -286,7 +224,7 @@ impl<'de> Deserialize<'de> for DialectMatch {
                 wire.format
             )));
         }
-        if let Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) = &wire.admission {
+        if let Admission::AdmittedUnverified { using: Some(using) } = &wire.admission {
             if wire.dialect.namespace() != using.namespace() {
                 return Err(serde::de::Error::custom(format_args!(
                     "unverified dialect {:?} cannot use grammar from foreign namespace {:?}",
@@ -448,7 +386,20 @@ impl fmt::Display for DialectLayersError {
 impl Error for DialectLayersError {}
 
 impl DialectMatch {
-    fn identified(dialect: DialectId, admission: Admission) -> Self {
+    /// Constructs a classified layer from its identity and admission result.
+    ///
+    /// A substituted grammar belongs to the same format layer as the
+    /// identified dialect. Named constructors below remain as route-specific
+    /// sugar for callers that do not already have an [`Admission`].
+    #[must_use]
+    pub fn from_admission(dialect: DialectId, admission: Admission) -> Self {
+        if let Admission::AdmittedUnverified { using: Some(using) } = &admission {
+            assert_eq!(
+                dialect.namespace(),
+                using.namespace(),
+                "an unverified dialect cannot use grammar from another format layer"
+            );
+        }
         Self {
             dialect,
             declared: BTreeMap::new(),
@@ -460,36 +411,28 @@ impl DialectMatch {
     /// Constructs a layer parsed with its identified dialect's grammar.
     #[must_use]
     pub fn admitted(dialect: DialectId) -> Self {
-        Self::identified(dialect, Admission::Admitted)
+        Self::from_admission(dialect, Admission::Admitted)
     }
 
     /// Constructs a layer parsed unverified with another declared grammar.
     #[must_use]
     pub fn unverified(dialect: DialectId, using: DialectId) -> Self {
-        assert_eq!(
-            dialect.namespace(),
-            using.namespace(),
-            "an unverified dialect cannot use grammar from another format layer"
-        );
-        Self::identified(
+        Self::from_admission(
             dialect,
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)),
+            Admission::AdmittedUnverified { using: Some(using) },
         )
     }
 
     /// Constructs a layer parsed unverified without a declared grammar.
     #[must_use]
     pub fn residual(dialect: DialectId) -> Self {
-        Self::identified(
-            dialect,
-            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
-        )
+        Self::from_admission(dialect, Admission::AdmittedUnverified { using: None })
     }
 
     /// Constructs a structurally identified layer whose decode was refused.
     #[must_use]
     pub fn refused(dialect: DialectId) -> Self {
-        Self::identified(dialect, Admission::Refused)
+        Self::from_admission(dialect, Admission::Refused)
     }
 
     /// Attaches source-declared version fields before the match enters a report.
@@ -614,15 +557,15 @@ mod tests {
 
         assert_eq!(
             residual.admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            Admission::AdmittedUnverified { using: None }
         );
     }
 
     #[test]
     fn an_unverified_admission_names_the_dialect_in_use() {
-        let unverified = Admission::AdmittedUnverified(UnverifiedAdmission::Using(
-            DialectId::pinned("acis:save-format-217"),
-        ));
+        let unverified = Admission::AdmittedUnverified {
+            using: Some(DialectId::pinned("acis:save-format-217")),
+        };
 
         assert_eq!(
             serde_json::to_string(&unverified).unwrap(),
@@ -652,9 +595,9 @@ mod tests {
             .expect("core does not infer grammar semantics from an opaque dialect name");
         assert_eq!(
             matched.admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
-                "rhino:unknown"
-            )))
+            Admission::AdmittedUnverified {
+                using: Some(DialectId::pinned("rhino:unknown")),
+            }
         );
     }
 
@@ -692,15 +635,15 @@ mod tests {
         let without_grammar = DialectMatch::residual(dialect.clone());
         assert_eq!(
             without_grammar.admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            Admission::AdmittedUnverified { using: None }
         );
 
         let self_named = DialectMatch::unverified(dialect.clone(), dialect);
         assert_eq!(
             self_named.admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
-                "rhino:archive-80"
-            )))
+            Admission::AdmittedUnverified {
+                using: Some(DialectId::pinned("rhino:archive-80")),
+            }
         );
     }
 

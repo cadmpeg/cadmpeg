@@ -188,7 +188,7 @@ impl FcstdDialect {
     /// `None` exactly when the completed match reports
     /// [`Admission::Admitted`].
     pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-        let Admission::AdmittedUnverified(_) = matched.admission() else {
+        let Admission::AdmittedUnverified { .. } = matched.admission() else {
             return None;
         };
         let schema_version = matched

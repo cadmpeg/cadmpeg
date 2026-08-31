@@ -40,7 +40,7 @@
 use crate::detect::StreamKind;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -156,8 +156,7 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
 /// available. The message is not the contract; the code is.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let using = match matched.admission() {
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::AdmittedUnverified { using } => using,
         Admission::Admitted | Admission::Refused => return None,
     };
     let declared = match (
@@ -223,17 +222,7 @@ fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
         .kind()
         .reportable_id()
         .expect("stream evidence is constructed only for reportable kinds");
-    match admission(evidence) {
-        Admission::Admitted => DialectMatch::admitted(dialect),
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
-            DialectMatch::unverified(dialect, using)
-        }
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
-            DialectMatch::residual(dialect)
-        }
-        Admission::Refused => DialectMatch::refused(dialect),
-    }
-    .with_declared(declared(evidence))
+    DialectMatch::from_admission(dialect, admission(evidence)).with_declared(declared(evidence))
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.
