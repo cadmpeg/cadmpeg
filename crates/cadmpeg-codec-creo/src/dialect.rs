@@ -29,7 +29,8 @@
 //! of them. That is a real recovery strategy and it is charged as one:
 //! [`Admission::AdmittedUnverified`] plus
 //! [`CreoLossCode::SourceDialectUnverified`]. The loss reads the completed
-//! [`DialectMatch::admission`] so the two facts cannot disagree.
+//! [`DialectMatch::admission`] and the scan that selected the fallback, so the
+//! admission and its explanation cannot disagree.
 
 use crate::container::{ContainerScan, Layout};
 use crate::loss::CreoLossCode;
@@ -61,16 +62,28 @@ const DECLARED_LEGACY_ASCII_PRODUCT_RELEASE: &str = "legacy_ascii_product_releas
 /// The loss charged when no layout discriminant matched.
 ///
 /// `None` exactly when the completed match reports [`Admission::Admitted`].
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn dialect_loss(matched: &DialectMatch, scan: &ContainerScan) -> Option<LossNote> {
     let Admission::AdmittedUnverified { .. } = matched.admission() else {
         return None;
     };
-    Some(CreoLossCode::SourceDialectUnverified.note(
+    let cause = if scan
+        .framing
+        .sections
+        .iter()
+        .any(|section| section.name == "DEPDB_DATA")
+    {
+        "the PSB section table contains DEPDB_DATA, but its payload does not begin with the \
+         p_dep_db root record. DEPDB_DATA is the exclusive layout discriminator when present, \
+         so no other family was substituted"
+    } else {
         "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the \
          p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII \
-         #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, \
-         and legacy ASCII decode gate was skipped",
-    ))
+         #P_OBJECT frame"
+    };
+    Some(CreoLossCode::SourceDialectUnverified.note(format!(
+        "{cause}. This decode ran the layout-independent path only, so every ND, DEPDB, and \
+         legacy ASCII decode gate was skipped"
+    )))
 }
 
 impl Layout {
