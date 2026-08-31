@@ -109,13 +109,9 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        let kernel = crate::dialect::kernel_layer_for_state(&self.rse.active_carrier);
+        let primary = crate::dialect::DialectRecovery::of(self).classify().matched;
         ContainerSummary::classified(
-            cadmpeg_core::dialect::DialectLayers::new(
-                crate::dialect::DialectRecovery::of(self).classify().matched,
-                kernel.into_iter().collect(),
-            )
-            .expect("the kernel layer has a distinct format"),
+            crate::dialect::layers(primary, &self.rse.active_carrier),
             "cfb",
             entries,
             vec![format!(

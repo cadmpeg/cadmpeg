@@ -63,6 +63,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 
@@ -382,6 +383,16 @@ pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<D
         | ActiveCarrierState::NotExpanded
         | ActiveCarrierState::Unavailable(_) => None,
     }
+}
+
+/// The complete host and optional kernel identity reported by both inspection
+/// and decode.
+pub(crate) fn layers(primary: DialectMatch, carrier: &ActiveCarrierState<'_>) -> DialectLayers {
+    DialectLayers::new(
+        primary,
+        kernel_layer_for_state(carrier).into_iter().collect(),
+    )
+    .expect("Inventor and ACIS are distinct registry formats")
 }
 
 /// The recovery loss the kernel layer charges, if it recovered.
