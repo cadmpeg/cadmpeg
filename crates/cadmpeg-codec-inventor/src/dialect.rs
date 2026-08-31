@@ -357,10 +357,15 @@ fn unknown_kernel_layer() -> DialectMatch {
     cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown)
 }
 
-/// Classifies the kernel layer represented by the active-carrier state.
+/// Classifies a kernel layer only when the active carrier provides kernel
+/// evidence.
 ///
-/// Inspection and decode both call this function, so a carrier that was not
-/// expanded or could not be selected cannot disappear from one report path.
+/// A selected carrier has an ASM or ACIS signature. Failure to parse its
+/// header therefore maps to the total kernel row. `NotExpanded` and
+/// `Unavailable` are host-selection states: neither proves that a kernel
+/// stream exists, so manufacturing `acis:unknown` for them would turn missing
+/// carrier evidence into a false kernel identity. Inspection and decode both
+/// call this function and therefore make the same distinction.
 pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch> {
     match state {
         ActiveCarrierState::Selected(carrier) => {
@@ -369,10 +374,9 @@ pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<D
                 |header| kernel_layer(carrier.family, &header),
             ))
         }
-        ActiveCarrierState::NotExpanded | ActiveCarrierState::Unavailable(_) => {
-            Some(unknown_kernel_layer())
-        }
-        ActiveCarrierState::NotApplicable => None,
+        ActiveCarrierState::NotApplicable
+        | ActiveCarrierState::NotExpanded
+        | ActiveCarrierState::Unavailable(_) => None,
     }
 }
 
