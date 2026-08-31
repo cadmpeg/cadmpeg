@@ -150,9 +150,7 @@
       "dialect": {
         "admission": "admitted",
         "declared": {
-          "encoding": "binary",
-          "save_format_major": "232",
-          "save_format_minor": "0"
+          "encoding": "binary"
         },
         "dialect": "sat:asm-binary",
         "format": "sat"
@@ -189,9 +187,7 @@
       "primary": {
         "admission": "admitted",
         "declared": {
-          "encoding": "binary",
-          "save_format_major": "232",
-          "save_format_minor": "0"
+          "encoding": "binary"
         },
         "dialect": "sat:asm-binary",
         "format": "sat"

@@ -322,8 +322,8 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let message = using.map_or_else(
         || {
             format!(
-                "the kernel carrier {carrier} declares {declared}; its residual path substituted \
-                 no declared ACIS grammar"
+                "the kernel carrier {carrier} declares {declared}; its recovery names no \
+                 declared save-band grammar as a substitute"
             )
         },
         |using| {

@@ -1181,7 +1181,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere, using the nearer verified ACIS row and charging source.kernel-dialect-unverified"
+seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere without naming a binary grammar as using, charging source.kernel-dialect-unverified"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 
 [[dialect]]
@@ -1204,7 +1204,8 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
 # never targets of a host encoder. Decode reports carry them as non-primary
 # `DialectMatch` entries beside the host dialect.
 #
-# Rows are disjoint on the leading magic, then on the save-format major.
+# Rows are disjoint on binary magic and save-format major, or on the text
+# terminator.
 # `save_format_version` is `major * 100 + minor` and is read at four sites,
 # all as a little-endian u32 at offset 15 for the binary branches
 # (asm_header.rs:80, :85; acis_header.rs:30) and as the first header field on
@@ -1279,11 +1280,13 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 # layouts by token shape rather than by comparing 700
 # (`vertex_point_ref` / `coedge_pcurve_ref`,
 # crates/cadmpeg-asm/src/brep/geometry.rs:189-203), so 700 is not a separate
-# admission row here.
+# identity row here. Outside the verified decoder band, the text row is
+# AdmittedUnverified without `using`: no declared text-band grammar exists, and
+# a binary save-format row is not a text grammar.
 id = "acis:text-acis"
 title = "ACIS text stream terminated End-of-ACIS-data"
 discriminants = { header_line_1 = "four integer fields", terminator = "End-of-ACIS-data" }
-seam = "the legacy subtype spellings and the save-format-700 record layouts travel with this terminator"
+seam = "the legacy subtype spellings and the save-format-700 record layouts travel with this terminator; majors 217 and 218 are Admitted, while other majors are AdmittedUnverified without using because no declared text-band grammar exists"
 witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 
 [[dialect]]

@@ -68,30 +68,48 @@ fn only_the_acis_kernel_branches_are_banded() {
             assert_eq!(kernel.admission(), Admission::Admitted, "{version:?}");
         }
 
-        for acis in [
-            StreamEvidence::AcisBinary(Some(&kernel)),
-            StreamEvidence::Text(Some(TextEvidence {
-                branch: sat::Terminator::Acis,
-                header: &kernel,
-            })),
-        ] {
-            let (host, matched) = layers(&acis);
-            assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
-            if verified {
-                assert_eq!(matched.admission(), Admission::Admitted, "{version:?}");
-                assert!(dialect_loss(&matched).is_none(), "{version:?}");
-            } else {
-                assert_eq!(
-                    matched.admission(),
-                    Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
-                        nearest
-                    ),)),
-                    "{version:?}"
-                );
-                let loss = dialect_loss(&matched).expect("the recovery is charged");
-                assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
-                assert!(loss.message.contains(nearest), "{}", loss.message);
-            }
+        let (host, matched) = layers(&StreamEvidence::AcisBinary(Some(&kernel)));
+        assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
+        if verified {
+            assert_eq!(matched.admission(), Admission::Admitted, "{version:?}");
+            assert!(dialect_loss(&matched).is_none(), "{version:?}");
+        } else {
+            assert_eq!(
+                matched.admission(),
+                Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
+                    nearest
+                ),)),
+                "{version:?}"
+            );
+            let loss = dialect_loss(&matched).expect("the recovery is charged");
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
+            assert!(loss.message.contains(nearest), "{}", loss.message);
+        }
+
+        let (host, matched) = layers(&StreamEvidence::Text(Some(TextEvidence {
+            branch: sat::Terminator::Acis,
+            header: &kernel,
+        })));
+        assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
+        if verified {
+            assert_eq!(matched.admission(), Admission::Admitted, "{version:?}");
+            assert!(dialect_loss(&matched).is_none(), "{version:?}");
+        } else {
+            assert_eq!(
+                matched.admission(),
+                Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
+                "{version:?}"
+            );
+            let loss = dialect_loss(&matched).expect("the recovery is charged");
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
+            assert!(
+                !loss.message.contains("acis:save-format"),
+                "{}",
+                loss.message
+            );
+            assert!(loss
+                .message
+                .contains("no declared save-band grammar as a substitute"));
         }
     }
 }
@@ -158,8 +176,8 @@ fn the_declared_keys_are_pinned() {
         .declared()
         .clone();
     assert_eq!(binary[DECLARED_ENCODING], "binary");
-    assert_eq!(binary[DECLARED_SAVE_FORMAT_MAJOR], "218");
-    assert_eq!(binary[DECLARED_SAVE_FORMAT_MINOR], "4");
+    assert!(!binary.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
+    assert!(!binary.contains_key(DECLARED_SAVE_FORMAT_MINOR));
     assert!(!binary.contains_key(DECLARED_TERMINATOR));
 
     let text = classify(&StreamEvidence::Text(Some(TextEvidence {
@@ -170,8 +188,8 @@ fn the_declared_keys_are_pinned() {
     .clone();
     assert_eq!(text[DECLARED_ENCODING], "text");
     assert_eq!(text[DECLARED_TERMINATOR], "End-of-ACIS-data");
-    assert_eq!(text[DECLARED_SAVE_FORMAT_MAJOR], "218");
-    assert_eq!(text[DECLARED_SAVE_FORMAT_MINOR], "4");
+    assert!(!text.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
+    assert!(!text.contains_key(DECLARED_SAVE_FORMAT_MINOR));
 
     let asm_text = classify(&StreamEvidence::Text(Some(TextEvidence {
         branch: sat::Terminator::Asm,
@@ -243,18 +261,14 @@ fn cases() -> Vec<Case> {
             bytes: acis_text(700),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            kernel_admission: Admission::AdmittedUnverified(UnverifiedAdmission::Using(
-                DialectId::pinned("acis:save-format-217"),
-            )),
+            kernel_admission: Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
         },
         Case {
             label: "acis text sphere outside the verified band",
             bytes: acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            kernel_admission: Admission::AdmittedUnverified(UnverifiedAdmission::Using(
-                DialectId::pinned("acis:save-format-218"),
-            )),
+            kernel_admission: Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
         },
         Case {
             label: "acis binary sphere outside the verified band",
