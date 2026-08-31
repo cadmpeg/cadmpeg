@@ -38,32 +38,41 @@ use std::collections::BTreeMap;
 pub(crate) const FORMAT: &str = "iges";
 
 /// The dialect-unverified loss required by a classified Global declaration.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn dialect_loss(matched: &DialectMatch, global: &ResolvedGlobal) -> Option<LossNote> {
     let Admission::AdmittedUnverified { .. } = matched.admission() else {
         return None;
     };
-    let declared = matched
-        .declared()
-        .get(DECLARED_VERSION_FLAG)
-        .map_or("absent", String::as_str);
-    let version = matched
-        .declared()
-        .get(DECLARED_EFFECTIVE_VERSION)
-        .map_or("unknown", String::as_str);
-    let declaration = match matched.declared().get(DECLARED_VERSION_FLAG_DECLARATION) {
-        Some(text) => format!(
-            "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
-        ),
-        None => format!("IGES Global version flag {declared}"),
-    };
-    let clamp = matched
-        .declared()
-        .get(DECLARED_EFFECTIVE_VERSION_FLAG)
-        .map_or_else(String::new, |effective| {
+    let declared = global.declared_version_flag();
+    let version = global.version_name();
+    let recovery = global.dialect_recovery();
+    debug_assert_ne!(
+        recovery,
+        DialectRecovery::Verified,
+        "a verified Global declaration cannot produce an unverified admission"
+    );
+    let (declaration, clamp) = match recovery {
+        DialectRecovery::UnreadableDeclaration(declaration) => (
             format!(
-                " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
-            )
-        });
+                "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared}",
+            ),
+            String::new(),
+        ),
+        DialectRecovery::Clamped => (
+            format!("IGES Global version flag {declared}"),
+            format!(
+                " after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor",
+                global.effective_version_flag()
+            ),
+        ),
+        DialectRecovery::UnverifiedVersion => (
+            format!("IGES Global version flag {declared}"),
+            String::new(),
+        ),
+        DialectRecovery::Verified => (
+            format!("IGES Global version flag {declared}"),
+            String::new(),
+        ),
+    };
     Some(crate::loss::IgesLossCode::SourceDialectUnverified.note(format!(
         "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
         IgesVersion::ALL
