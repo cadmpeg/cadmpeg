@@ -49,20 +49,17 @@ fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
         .expect("decode the re-declared exchange")
 }
 
-fn inherit<'a>(
-    encoder: &StepCodec,
-    ir: &'a CadIr,
-) -> Result<ExportPlan<'a>, cadmpeg_core::CodecError> {
+fn inherit(encoder: &StepCodec, ir: &CadIr) -> Result<ExportPlan, cadmpeg_core::CodecError> {
     encoder.plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
 }
 
-fn written_text(plan: ExportPlan<'_>) -> String {
+fn written_text(plan: ExportPlan) -> String {
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write the planned export");
     String::from_utf8(bytes).expect("the writer emits 7-bit output")
 }
 
-fn target_of(plan: &ExportPlan<'_>) -> Option<String> {
+fn target_of(plan: &ExportPlan) -> Option<String> {
     plan.report().target().map(ToString::to_string)
 }
 

@@ -23,11 +23,11 @@ pub(crate) use test_tabulated_surfaces::*;
 ///
 /// The tests here assert what the writer produces at a version, not how the
 /// request that names it is spelled, so the spelling lives in one place.
-pub(crate) fn plan_at<'a>(
+pub(crate) fn plan_at(
     version: crate::IgesVersion,
-    ir: &'a cadmpeg_ir::CadIr,
-    fidelity: Option<&'a cadmpeg_ir::SourceFidelity>,
-) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::CodecError> {
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::CodecError> {
     use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
 
     crate::IgesEncoder.plan(

@@ -10,10 +10,10 @@ use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
 use crate::dialect::IgesDialect;
 use crate::loss::IgesLossCode;
 
-pub(crate) fn plan<'a>(
-    input: EncodeInput<'a>,
+pub(crate) fn plan(
+    input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<ExportPlan<'a>, CodecError> {
+) -> Result<ExportPlan, CodecError> {
     let resolved = resolve_write_request(
         input.ir,
         request,
@@ -54,7 +54,7 @@ pub(crate) fn plan<'a>(
     }
 }
 
-fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'_> {
+fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan {
     ExportPlan::buffered(
         super::report(
             dialect,
@@ -68,12 +68,12 @@ fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan<'
     )
 }
 
-fn synthesized_plan<'a>(
-    input: EncodeInput<'a>,
+fn synthesized_plan(
+    input: EncodeInput<'_>,
     version: crate::IgesVersion,
     displaced: Option<&DialectId>,
     replay_failure: Option<String>,
-) -> Result<ExportPlan<'a>, CodecError> {
+) -> Result<ExportPlan, CodecError> {
     let target = IgesDialect::fixed_ascii(version).id();
     let preservation_eligible = displaced.is_none()
         && input

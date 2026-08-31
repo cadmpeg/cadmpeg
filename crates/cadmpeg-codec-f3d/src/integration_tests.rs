@@ -262,18 +262,18 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
 // on every write path.
 // --------------------------------------------------------------------------
 
-fn plan<'a>(
-    result: &'a cadmpeg_ir::codec::DecodeResult,
+fn plan(
+    result: &cadmpeg_ir::codec::DecodeResult,
     fidelity: bool,
-    request: TargetRequest<'a>,
-) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::CodecError> {
+    request: TargetRequest<'_>,
+) -> Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::CodecError> {
     F3dCodec.plan(
         EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
         request,
     )
 }
 
-fn named_target(plan: &cadmpeg_ir::codec::ExportPlan<'_>) -> String {
+fn named_target(plan: &cadmpeg_ir::codec::ExportPlan) -> String {
     plan.report()
         .target()
         .expect("an F3D write always names its dialect")

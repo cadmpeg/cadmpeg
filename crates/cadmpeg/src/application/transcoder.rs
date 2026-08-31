@@ -400,12 +400,7 @@ impl<'a> Transcoder<'a> {
 
 impl PreparedConversion {
     /// Plans the export and applies the plan-time refusals.
-    ///
-    /// The plan borrows the loaded document, so it cannot be stored beside it
-    /// in one owned value; it lives in the caller's scope instead, between
-    /// this call and [`PlannedConversion::write`]. That is what makes one plan
-    /// serve both the refusal checks and the write.
-    pub fn plan(&self) -> Result<PlannedConversion<'_>> {
+    pub fn plan(self) -> Result<PlannedConversion> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
@@ -449,22 +444,27 @@ impl PreparedConversion {
     }
 }
 
-/// One planned export, borrowed from the document it was planned against.
-pub struct PlannedConversion<'a> {
-    plan: ExportPlan<'a>,
-    prepared: &'a PreparedConversion,
+/// One planned export and the source state from which it was produced.
+pub struct PlannedConversion {
+    plan: ExportPlan,
+    prepared: PreparedConversion,
 }
 
-impl PlannedConversion<'_> {
+impl PlannedConversion {
+    /// Returns the loaded source state retained for reporting.
+    #[must_use]
+    pub const fn prepared(&self) -> &PreparedConversion {
+        &self.prepared
+    }
+
     /// Writes the destination artifact and optional CADIR sidecar.
     pub fn write(self) -> Result<ExportReport> {
-        let prepared = self.prepared;
         emit_export_plan(
             self.plan,
-            prepared.selection.format,
-            prepared.destination.path(),
-            prepared.document.decode_report(),
-            prepared.document.fidelity(),
+            self.prepared.selection.format,
+            self.prepared.destination.path(),
+            self.prepared.document.decode_report(),
+            self.prepared.document.fidelity(),
         )
     }
 }
@@ -518,7 +518,7 @@ fn decode_lossy_refusal(
 
 /// Emits one built plan to its destination and maintains CADIR sidecars.
 pub(crate) fn emit_export_plan(
-    plan: ExportPlan<'_>,
+    plan: ExportPlan,
     format: Format,
     out: Option<&Path>,
     decode_report: Option<&DecodeReport>,

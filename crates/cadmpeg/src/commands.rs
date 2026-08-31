@@ -452,9 +452,6 @@ pub fn convert(
         }
     };
 
-    // The plan is made once, here, and the same plan is written below. It
-    // borrows `prepared`, so it stays in this scope rather than travelling
-    // inside an owned value beside the document it borrows.
     let planned = match prepared.plan() {
         Ok(planned) => planned,
         Err(error) => {
@@ -463,17 +460,22 @@ pub fn convert(
         }
     };
 
-    print_load_notices(&prepared.notices);
-    let mut stderr = io::stderr();
-    if let Some(report) = prepared.document.decode_report() {
-        print_decode_report(&mut stderr, report)?;
-        writeln!(stderr)?;
-    }
-    if let Some(validation) = &prepared.validation {
-        print_check_report(&mut stderr, validation)?;
-    }
-    let decode_report = prepared.document.decode_report().cloned();
-    let validation = prepared.validation.clone();
+    let (decode_report, validation) = {
+        let prepared = planned.prepared();
+        print_load_notices(&prepared.notices);
+        let mut stderr = io::stderr();
+        if let Some(report) = prepared.document.decode_report() {
+            print_decode_report(&mut stderr, report)?;
+            writeln!(stderr)?;
+        }
+        if let Some(validation) = &prepared.validation {
+            print_check_report(&mut stderr, validation)?;
+        }
+        (
+            prepared.document.decode_report().cloned(),
+            prepared.validation.clone(),
+        )
+    };
     let report = planned.write()?;
     write_command_report(
         path,

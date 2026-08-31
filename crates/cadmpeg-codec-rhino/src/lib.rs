@@ -165,11 +165,11 @@ impl Encoder for RhinoEncoder {
 
     /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
     /// because 3DM has no retained-image path.
-    fn plan<'a>(
+    fn plan(
         &self,
-        input: EncodeInput<'a>,
+        input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan<'a>, CodecError> {
+    ) -> Result<ExportPlan, CodecError> {
         let resolved = cadmpeg_ir::codec::resolve_write_request(
             input.ir,
             request,

@@ -110,7 +110,7 @@ fn schema_two_archive() -> Vec<u8> {
     )
 }
 
-fn inherit(ir: &CadIr) -> Result<cadmpeg_ir::codec::ExportPlan<'_>, CodecError> {
+fn inherit(ir: &CadIr) -> Result<cadmpeg_ir::codec::ExportPlan, CodecError> {
     Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(ir, None),

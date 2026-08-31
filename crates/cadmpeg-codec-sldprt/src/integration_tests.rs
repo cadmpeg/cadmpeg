@@ -251,11 +251,11 @@ fn versioned_part() -> Vec<u8> {
     bytes
 }
 
-fn plan<'a>(
-    result: &'a cadmpeg_ir::codec::DecodeResult,
+fn plan(
+    result: &cadmpeg_ir::codec::DecodeResult,
     fidelity: bool,
-    request: cadmpeg_ir::codec::TargetRequest<'a>,
-) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::CodecError> {
+    request: cadmpeg_ir::codec::TargetRequest<'_>,
+) -> Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::CodecError> {
     SldprtCodec.plan(
         cadmpeg_ir::codec::EncodeInput::new(
             result.ir(),
@@ -265,7 +265,7 @@ fn plan<'a>(
     )
 }
 
-fn named_target(plan: &cadmpeg_ir::codec::ExportPlan<'_>) -> String {
+fn named_target(plan: &cadmpeg_ir::codec::ExportPlan) -> String {
     plan.report()
         .target()
         .expect("a SLDPRT write always names its dialect")

@@ -28,10 +28,10 @@ use crate::{ids, F3dCodec};
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
-pub(crate) fn plan<'a>(
-    input: EncodeInput<'a>,
+pub(crate) fn plan(
+    input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<ExportPlan<'a>, CodecError> {
+) -> Result<ExportPlan, CodecError> {
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let Some(entry) = resolved.catalog_entry() else {
         return match preserve(input)? {
@@ -93,7 +93,7 @@ fn preserved_plan(
     target: DialectId,
     write_path: WritePath,
     bytes: Vec<u8>,
-) -> ExportPlan<'_> {
+) -> ExportPlan {
     ExportPlan::buffered(
         report(
             ir,
@@ -106,11 +106,11 @@ fn preserved_plan(
     )
 }
 
-fn synthesized_plan<'a>(
-    input: EncodeInput<'a>,
+fn synthesized_plan(
+    input: EncodeInput<'_>,
     target: &DialectId,
     displaced: Option<&DialectId>,
-) -> Result<ExportPlan<'a>, CodecError> {
+) -> Result<ExportPlan, CodecError> {
     let mut bytes = Vec::new();
     super::generate::write_new(input.ir, &mut bytes)?;
     let preservation_eligible = displaced.is_none()

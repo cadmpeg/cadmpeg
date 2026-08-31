@@ -16,10 +16,10 @@ fn point_file_at_version_flag(flag: u8) -> Vec<u8> {
     point_file_with_global(global.as_bytes())
 }
 
-fn inherit<'a>(
-    ir: &'a CadIr,
-    fidelity: Option<&'a cadmpeg_ir::SourceFidelity>,
-) -> Result<cadmpeg_ir::codec::ExportPlan<'a>, CodecError> {
+fn inherit(
+    ir: &CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> Result<cadmpeg_ir::codec::ExportPlan, CodecError> {
     IgesEncoder.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
 }
 

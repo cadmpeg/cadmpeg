@@ -344,11 +344,11 @@ pub trait Encoder {
     fn targets(&self) -> &'static [TargetDescriptor];
 
     /// Plans one export without writing to the destination.
-    fn plan<'a>(
+    fn plan(
         &self,
-        input: EncodeInput<'a>,
+        input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan<'a>, CodecError>;
+    ) -> Result<ExportPlan, CodecError>;
 }
 
 /// Borrowed inputs used to plan an export.
@@ -368,41 +368,18 @@ impl<'a> EncodeInput<'a> {
     }
 }
 
-type DeferredExport<'a> = Box<dyn FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a>;
-
-enum ExportPayload<'a> {
-    Buffered(Vec<u8>),
-    Deferred(DeferredExport<'a>),
-}
-
 /// A fully reported export awaiting its atomic destination write.
-pub struct ExportPlan<'a> {
+pub struct ExportPlan {
     report: ExportReport,
-    payload: ExportPayload<'a>,
+    bytes: Vec<u8>,
 }
 
-impl<'a> ExportPlan<'a> {
+impl ExportPlan {
     /// Creates a plan whose bytes have already been materialized.
     ///
     /// The plan reports exactly the report it is given, including fidelity.
     pub fn buffered(report: ExportReport, bytes: Vec<u8>) -> Self {
-        Self {
-            report,
-            payload: ExportPayload::Buffered(bytes),
-        }
-    }
-
-    /// Creates a plan that writes through a deferred, report-invariant operation.
-    ///
-    /// The report is reported verbatim.
-    pub fn deferred(
-        report: ExportReport,
-        write: impl FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a,
-    ) -> Self {
-        Self {
-            report,
-            payload: ExportPayload::Deferred(Box::new(write)),
-        }
+        Self { report, bytes }
     }
 
     /// Returns the complete plan-time export report.
@@ -422,10 +399,7 @@ impl<'a> ExportPlan<'a> {
 
     /// Writes the planned payload and returns the unchanged plan-time report.
     pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        match self.payload {
-            ExportPayload::Buffered(bytes) => writer.write_all(&bytes)?,
-            ExportPayload::Deferred(write) => write(writer)?,
-        }
+        writer.write_all(&self.bytes)?;
         Ok(self.report)
     }
 }
@@ -447,11 +421,11 @@ impl Encoder for CadirEncoder {
         &[]
     }
 
-    fn plan<'a>(
+    fn plan(
         &self,
-        input: EncodeInput<'a>,
+        input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan<'a>, CodecError> {
+    ) -> Result<ExportPlan, CodecError> {
         match request {
             TargetRequest::Inherit => {}
             TargetRequest::Explicit(id) => {
@@ -474,11 +448,9 @@ impl Encoder for CadirEncoder {
             Vec::new(),
             Vec::new(),
         );
-        Ok(ExportPlan::deferred(report, move |writer| {
-            serde_json::to_writer_pretty(&mut *writer, input.ir)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?;
-            writer.write_all(b"\n")?;
-            Ok(())
-        }))
+        let mut bytes = serde_json::to_vec_pretty(input.ir)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        bytes.push(b'\n');
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }

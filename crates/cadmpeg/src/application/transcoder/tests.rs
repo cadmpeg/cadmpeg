@@ -200,11 +200,11 @@ impl Encoder for NotImplementedEncoder {
         &[]
     }
 
-    fn plan<'a>(
+    fn plan(
         &self,
-        _input: EncodeInput<'a>,
+        _input: EncodeInput<'_>,
         _request: TargetRequest<'_>,
-    ) -> Result<ExportPlan<'a>, cadmpeg_core::CodecError> {
+    ) -> Result<ExportPlan, cadmpeg_core::CodecError> {
         Err(cadmpeg_core::CodecError::NotImplemented(
             "writer path is not implemented".into(),
         ))

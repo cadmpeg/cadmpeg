@@ -46,11 +46,11 @@ impl Encoder for StepCodec {
 
     /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
     /// because every emitted schema stamps object-identifier arcs.
-    fn plan<'a>(
+    fn plan(
         &self,
-        input: EncodeInput<'a>,
+        input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan<'a>, CodecError> {
+    ) -> Result<ExportPlan, CodecError> {
         let resolved = resolve_write_request(
             input.ir,
             request,

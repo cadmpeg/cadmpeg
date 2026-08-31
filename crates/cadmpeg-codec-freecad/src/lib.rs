@@ -1420,11 +1420,11 @@ impl Encoder for FcstdCodec {
         dialect::TARGETS
     }
 
-    fn plan<'a>(
+    fn plan(
         &self,
-        input: EncodeInput<'a>,
+        input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan<'a>, CodecError> {
+    ) -> Result<ExportPlan, CodecError> {
         writer::target::plan(input, request)
     }
 }
