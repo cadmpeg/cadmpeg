@@ -97,13 +97,14 @@ pub(in super::super) fn build_report(
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. The loss reads the completed primary
-    // match, so the report cannot claim a verified admission while charging it.
+    // match and its framing scan, so admission and the stated cause share one
+    // classification.
     let dialects = summary
         .dialects()
         .expect("every Creo summary classifies its dialect")
         .clone();
     let primary = dialects.primary();
-    losses.extend(crate::dialect::dialect_loss(primary));
+    losses.extend(crate::dialect::dialect_loss(primary, scan));
 
     if container_only {
         losses.push(

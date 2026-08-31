@@ -35,6 +35,20 @@ fn depdb_without_root_bytes() -> Vec<u8> {
     build_prt_raw("c", &[("DEPDB_DATA", b"not the root record".to_vec())])
 }
 
+/// A malformed DEPDB discriminator alongside an ND-decorated section.
+///
+/// DEPDB presence is exclusive, so the invalid root keeps this in the unknown
+/// row even though an ND decoration exists.
+fn depdb_without_root_and_nd_bytes() -> Vec<u8> {
+    build_prt_raw(
+        "c",
+        &[
+            ("DEPDB_DATA", b"not the root record".to_vec()),
+            ("ND:0:VisibGeom", b"payload".to_vec()),
+        ],
+    )
+}
+
 /// A PSB file matching none of the three signatures.
 fn unknown_bytes() -> Vec<u8> {
     build_prt("c", &[("VisibGeom", b"payload".to_vec())])
@@ -121,6 +135,15 @@ const CASES: &[Case] = &[
         legacy_release: None,
     },
     Case {
+        label: "DEPDB_DATA without the root record plus ND decoration",
+        bytes: depdb_without_root_and_nd_bytes,
+        layout: Layout::Unknown,
+        id: "creo:unknown",
+        admitted: false,
+        legacy_schema: None,
+        legacy_release: None,
+    },
+    Case {
         label: "no layout signature at all",
         bytes: unknown_bytes,
         layout: Layout::Unknown,
@@ -191,8 +214,9 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             Layout::LegacyAscii => legacy_ascii_bytes(),
             Layout::Unknown => unknown_bytes(),
         };
-        let matched = classify(&scan_bytes(bytes.as_slice()));
-        let charged = dialect_loss(&matched).is_some();
+        let scan = scan_bytes(bytes.as_slice());
+        let matched = classify(&scan);
+        let charged = dialect_loss(&matched, &scan).is_some();
         assert_eq!(matched.admission() == Admission::Admitted, !charged);
     }
 
@@ -200,7 +224,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
-        let charged = dialect_loss(&matched).is_some();
+        let charged = dialect_loss(&matched, &scan).is_some();
         assert_eq!(
             matched.admission() == Admission::Admitted,
             !charged,
@@ -214,7 +238,8 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
     let bytes = unknown_bytes();
     let scan = scan_bytes(bytes.as_slice());
-    let note = dialect_loss(&classify(&scan)).expect("an unclassified layout charges the loss");
+    let note =
+        dialect_loss(&classify(&scan), &scan).expect("an unclassified layout charges the loss");
     assert_eq!(note.code.as_str(), "creo/source.dialect-unverified");
     assert_eq!(
         note.code.taxonomy(),
@@ -226,6 +251,16 @@ fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
         note.code.strict_floor(),
         Some(cadmpeg_ir::report::Severity::Warning)
     );
+}
+
+#[test]
+fn malformed_depdb_loss_does_not_deny_present_nd_evidence() {
+    let bytes = depdb_without_root_and_nd_bytes();
+    let scan = scan_bytes(bytes.as_slice());
+    let note = dialect_loss(&classify(&scan), &scan).expect("unknown layout loss");
+
+    assert!(note.message.contains("DEPDB_DATA is the exclusive"));
+    assert!(!note.message.contains("no ND:"));
 }
 
 #[test]
