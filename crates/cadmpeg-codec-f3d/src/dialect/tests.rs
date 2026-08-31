@@ -41,9 +41,9 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
     assert_eq!(matched.dialect().as_str(), "f3d:unknown");
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("f3d:manifest-3-2-0-0")),
-        }
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
+            "f3d:manifest-3-2-0-0",
+        )))
     );
 
     let loss = dialect_loss(&matched).expect("the recovery is charged");
@@ -105,13 +105,10 @@ fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
 #[test]
 fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
     let matched = with_carrier(
-        DialectMatch::new(
+        DialectMatch::unverified(
             cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
-            Admission::AdmittedUnverified {
-                using: Some(cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
-            },
-        )
-        .expect("the residual ACIS dialect is admitted unverified"),
+            cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+        ),
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat",
     )
     .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");

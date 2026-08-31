@@ -666,21 +666,15 @@ mod tests {
         let mut right = left.clone();
         classify_source(
             &mut left,
-            cadmpeg_core::dialect::DialectMatch::layer(
+            cadmpeg_core::dialect::DialectMatch::admitted(
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-                BTreeMap::new(),
-                cadmpeg_core::dialect::Admission::Admitted,
-            )
-            .expect("the known source dialect is classified"),
+            ),
         );
         classify_source(
             &mut right,
-            cadmpeg_core::dialect::DialectMatch::layer(
+            cadmpeg_core::dialect::DialectMatch::admitted(
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
-                BTreeMap::new(),
-                cadmpeg_core::dialect::Admission::Admitted,
-            )
-            .expect("the known source dialect is classified"),
+            ),
         );
 
         let result = diff(&left, &right);
@@ -697,20 +691,16 @@ mod tests {
         let mut declared_right = declared_left.clone();
         classify_source(
             &mut declared_left,
-            cadmpeg_core::dialect::DialectMatch::new(
+            cadmpeg_core::dialect::DialectMatch::admitted(
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-                cadmpeg_core::dialect::Admission::Admitted,
             )
-            .expect("the known source dialect is classified")
             .with_declared(BTreeMap::from([("archive_version".into(), "70".into())])),
         );
         classify_source(
             &mut declared_right,
-            cadmpeg_core::dialect::DialectMatch::new(
+            cadmpeg_core::dialect::DialectMatch::admitted(
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-                cadmpeg_core::dialect::Admission::Admitted,
             )
-            .expect("the known source dialect is classified")
             .with_declared(BTreeMap::from([("archive_version".into(), "80".into())])),
         );
 
@@ -736,26 +726,23 @@ mod tests {
 
     #[test]
     fn admission_and_instance_divergence_are_differences() {
-        use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+        use cadmpeg_core::dialect::{DialectId, DialectMatch};
 
         let mut left = with_source(&[]);
         let mut right = left.clone();
         classify_source(
             &mut left,
-            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
-                .expect("the known source dialect is classified"),
+            DialectMatch::admitted(DialectId::pinned("rhino:archive-80")),
         );
         classify_source(
             &mut right,
-            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Refused)
-                .expect("the known source dialect is classified"),
+            DialectMatch::refused(DialectId::pinned("rhino:archive-80")),
         );
         assert!(!diff(&left, &right).is_empty());
 
         classify_source(
             &mut right,
-            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
-                .expect("the known source dialect is classified")
+            DialectMatch::admitted(DialectId::pinned("rhino:archive-80"))
                 .with_instance("embedded/model.3dm"),
         );
         assert!(!diff(&left, &right).is_empty());

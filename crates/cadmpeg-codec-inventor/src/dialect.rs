@@ -63,7 +63,7 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 mod generated;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
@@ -225,13 +225,7 @@ impl DialectRecovery {
         } else {
             InventorDialect::Unknown
         };
-        let admission = if identity_verified && framing_verified {
-            Admission::Admitted
-        } else {
-            Admission::AdmittedUnverified {
-                using: Some(InventorDialect::Cfb3Rse31Meta8.id()),
-            }
-        };
+        let admitted = identity_verified && framing_verified;
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_CFB_MAJOR_VERSION.into(),
@@ -261,10 +255,14 @@ impl DialectRecovery {
                 ),
             );
         }
-        let loss = (!matches!(admission, Admission::Admitted)).then(|| self.unverified_loss());
+        let loss = (!admitted).then(|| self.unverified_loss());
         DialectClassification {
-            matched: DialectMatch::layer(dialect.id(), declared, admission)
-                .expect("Inventor classifier produced an invalid dialect match"),
+            matched: if admitted {
+                DialectMatch::admitted(dialect.id())
+            } else {
+                DialectMatch::unverified(dialect.id(), InventorDialect::Cfb3Rse31Meta8.id())
+            }
+            .with_declared(declared),
             loss,
         }
     }
@@ -364,14 +362,16 @@ pub(crate) fn unknown_kernel_layer() -> DialectMatch {
 
 /// The recovery loss the kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { using } = matched.admission() else {
-        return None;
+    let using = match matched.admission() {
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::Admitted | Admission::Refused => return None,
     };
     let declared = matched.declared().get("save_format_major").map_or_else(
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
-    let message = using.as_ref().map_or_else(
+    let message = using.map_or_else(
         || {
             format!(
                 "the active kernel carrier declares {declared}; its residual path substituted no \
@@ -382,7 +382,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             cadmpeg_asm::dialect::acis_recovery_message(
                 "the active kernel carrier",
                 &declared,
-                using,
+                &using,
             )
         },
     );

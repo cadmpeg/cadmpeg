@@ -131,12 +131,11 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn the_provenance_line_joins_the_match_the_registry_and_the_catalog() {
-        use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+        use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
-        let dialects = DialectLayers::of(
-            DialectMatch::new(DialectId::pinned("rhino:archive-50"), Admission::Admitted)
-                .expect("the provenance dialect is classified"),
-        );
+        let dialects = DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
+            "rhino:archive-50",
+        )));
         let lines = dialect_lines(Some(&dialects));
         let line = &lines[0];
         assert!(line.starts_with("dialect: rhino:archive-50 — "), "{line}");
@@ -153,15 +152,11 @@ mod tests {
 
     #[test]
     fn every_classified_layer_gets_a_human_line() {
-        use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+        use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
         let dialects = DialectLayers::new(
-            DialectMatch::new(DialectId::pinned("sldprt:2024"), Admission::Admitted)
-                .expect("the primary dialect is classified"),
-            vec![
-                DialectMatch::new(DialectId::pinned("acis:sat-32"), Admission::Admitted)
-                    .expect("the extra dialect is classified"),
-            ],
+            DialectMatch::admitted(DialectId::pinned("sldprt:2024")),
+            vec![DialectMatch::admitted(DialectId::pinned("acis:sat-32"))],
         )
         .expect("formats are unique");
         assert_eq!(dialect_lines(Some(&dialects)).len(), 2);

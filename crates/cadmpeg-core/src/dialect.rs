@@ -33,6 +33,7 @@ use std::fmt;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A registry dialect id, for example `"rhino:archive-80"`.
@@ -152,9 +153,7 @@ impl<'de> Deserialize<'de> for DialectId {
 }
 
 /// How one format layer admitted, or refused, one document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Admission {
     /// Parsed with the strategy declared for the identified dialect.
     Admitted,
@@ -163,20 +162,79 @@ pub enum Admission {
     /// while its bytes are read with a newer grammar, and a damaged frame can
     /// retain its identity while applying that row's grammar unverified.
     ///
-    /// A format's residual `unknown` row is never [`Admission::Admitted`]:
-    /// admission verifies a declared identity, and the residual row is the
-    /// absence of one. `using` is absent when the residual path applies no
-    /// declared dialect grammar.
-    ///
     /// The codec must charge its dialect-unverified loss.
+    AdmittedUnverified(UnverifiedAdmission),
+    /// Structurally identified; semantic decode refused.
+    Refused,
+}
+
+/// Grammar used by an unverified admission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnverifiedAdmission {
+    /// The parser applied this declared dialect's grammar.
+    Using(DialectId),
+    /// The parser applied no declared dialect grammar.
+    NoDeclaredGrammar,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum AdmissionWire {
+    Admitted,
     AdmittedUnverified {
-        /// Dialect whose declared grammar was applied to the unverified parse,
-        /// or `None` when a residual path applied no declared dialect grammar.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         using: Option<DialectId>,
     },
-    /// Structurally identified; semantic decode refused.
     Refused,
+}
+
+impl Serialize for Admission {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let wire = match self {
+            Self::Admitted => AdmissionWire::Admitted,
+            Self::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
+                AdmissionWire::AdmittedUnverified {
+                    using: Some(using.clone()),
+                }
+            }
+            Self::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
+                AdmissionWire::AdmittedUnverified { using: None }
+            }
+            Self::Refused => AdmissionWire::Refused,
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Admission {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match AdmissionWire::deserialize(deserializer)? {
+            AdmissionWire::Admitted => Self::Admitted,
+            AdmissionWire::AdmittedUnverified { using: Some(using) } => {
+                Self::AdmittedUnverified(UnverifiedAdmission::Using(using))
+            }
+            AdmissionWire::AdmittedUnverified { using: None } => {
+                Self::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            }
+            AdmissionWire::Refused => Self::Refused,
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for Admission {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Admission".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::Admission").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        AdmissionWire::json_schema(generator)
+    }
 }
 
 /// One format layer's identification of one document.
@@ -184,11 +242,8 @@ pub enum Admission {
 /// A document carries several format layers: `.sldprt` contains Parasolid;
 /// `.f3d`, `.ipt`, and SAT contain ACIS; NX contains Parasolid and JT. One
 /// match describes one layer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectMatch {
-    /// Format layer this classifies: `"rhino"`, `"acis"`, `"parasolid"`.
-    format: String,
     /// Registry dialect id, for example `"rhino:archive-80"`.
     dialect: DialectId,
     /// Version fields the source declared, verbatim, under keys pinned per
@@ -196,20 +251,19 @@ pub struct DialectMatch {
     ///
     /// Declarations are evidence, never a control input: the dialect is what
     /// the bytes obey, not what they declare.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     declared: BTreeMap<String, String>,
     /// Instance of this format layer inside the containing document.
     ///
     /// `None` when the layer occurs once or has no report-local identity. This
     /// is not source-declared evidence and therefore does not belong in
     /// [`Self::declared`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     instance: Option<String>,
     /// How this layer was admitted.
     admission: Admission,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DialectMatchWire {
     format: String,
     dialect: DialectId,
@@ -230,10 +284,51 @@ impl<'de> Deserialize<'de> for DialectMatch {
                 wire.format
             )));
         }
-        let mut matched = Self::layer(wire.dialect, wire.declared, wire.admission)
-            .map_err(serde::de::Error::custom)?;
-        matched.instance = wire.instance;
-        Ok(matched)
+        let admission = match wire.admission {
+            Admission::AdmittedUnverified(UnverifiedAdmission::Using(using))
+                if wire.dialect.as_str().ends_with(":unknown") && using == wire.dialect =>
+            {
+                Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            }
+            admission => admission,
+        };
+        Ok(Self {
+            dialect: wire.dialect,
+            declared: wire.declared,
+            instance: wire.instance,
+            admission,
+        })
+    }
+}
+
+impl Serialize for DialectMatch {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("DialectMatch", 5)?;
+        state.serialize_field("format", self.format())?;
+        state.serialize_field("dialect", &self.dialect)?;
+        if !self.declared.is_empty() {
+            state.serialize_field("declared", &self.declared)?;
+        }
+        if let Some(instance) = &self.instance {
+            state.serialize_field("instance", instance)?;
+        }
+        state.serialize_field("admission", &self.admission)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for DialectMatch {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "DialectMatch".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::DialectMatch").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        DialectMatchWire::json_schema(generator)
     }
 }
 
@@ -280,16 +375,16 @@ impl DialectLayers {
     ) -> Result<Self, DialectLayersError> {
         let mut keys = BTreeSet::new();
         for layer in &extra {
-            if layer.format == primary.format && layer.instance.is_none() {
+            if layer.format() == primary.format() && layer.instance.is_none() {
                 return Err(DialectLayersError {
-                    format: layer.format.clone(),
+                    format: layer.format().to_owned(),
                     instance: None,
                     reason: DialectLayersErrorReason::UnidentifiedPrimaryFormatExtra,
                 });
             }
-            if !keys.insert((&layer.format, &layer.instance)) {
+            if !keys.insert((layer.format(), &layer.instance)) {
                 return Err(DialectLayersError {
-                    format: layer.format.clone(),
+                    format: layer.format().to_owned(),
                     instance: layer.instance.clone(),
                     reason: DialectLayersErrorReason::DuplicateExtra,
                 });
@@ -349,79 +444,44 @@ impl fmt::Display for DialectLayersError {
 
 impl Error for DialectLayersError {}
 
-/// A dialect match paired identity and admission inconsistently.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DialectMatchError {
-    dialect: DialectId,
-    reason: DialectMatchErrorReason,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DialectMatchErrorReason {
-    ResidualAdmitted,
-    MissingStrategy,
-}
-
-impl fmt::Display for DialectMatchError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.reason {
-            DialectMatchErrorReason::ResidualAdmitted => write!(
-                f,
-                "residual dialect {:?} cannot use admitted admission",
-                self.dialect.as_str()
-            ),
-            DialectMatchErrorReason::MissingStrategy => write!(
-                f,
-                "non-residual dialect {:?} requires an applied dialect grammar for unverified admission",
-                self.dialect.as_str()
-            ),
-        }
-    }
-}
-
-impl Error for DialectMatchError {}
-
 impl DialectMatch {
-    /// Constructs one identified dialect layer without declarations or an instance.
-    pub fn new(dialect: DialectId, mut admission: Admission) -> Result<Self, DialectMatchError> {
-        let residual = dialect.as_str().ends_with(":unknown");
-        if residual && admission == Admission::Admitted {
-            return Err(DialectMatchError {
-                dialect,
-                reason: DialectMatchErrorReason::ResidualAdmitted,
-            });
-        }
-        if let Admission::AdmittedUnverified { using } = &mut admission {
-            match using {
-                None if !residual => {
-                    return Err(DialectMatchError {
-                        dialect,
-                        reason: DialectMatchErrorReason::MissingStrategy,
-                    });
-                }
-                Some(substitute) if residual && substitute == &dialect => {
-                    *using = None;
-                }
-                None | Some(_) => {}
-            }
-        }
-        let format = dialect.namespace().to_owned();
-        Ok(Self {
-            format,
+    fn identified(dialect: DialectId, admission: Admission) -> Self {
+        Self {
             dialect,
             declared: BTreeMap::new(),
             instance: None,
             admission,
-        })
+        }
     }
 
-    /// Construct one identified dialect layer.
-    pub fn layer(
-        dialect: DialectId,
-        declared: BTreeMap<String, String>,
-        admission: Admission,
-    ) -> Result<Self, DialectMatchError> {
-        Ok(Self::new(dialect, admission)?.with_declared(declared))
+    /// Constructs a layer parsed with its identified dialect's grammar.
+    #[must_use]
+    pub fn admitted(dialect: DialectId) -> Self {
+        Self::identified(dialect, Admission::Admitted)
+    }
+
+    /// Constructs a layer parsed unverified with another declared grammar.
+    #[must_use]
+    pub fn unverified(dialect: DialectId, using: DialectId) -> Self {
+        Self::identified(
+            dialect,
+            Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)),
+        )
+    }
+
+    /// Constructs a layer parsed unverified without a declared grammar.
+    #[must_use]
+    pub fn residual(dialect: DialectId) -> Self {
+        Self::identified(
+            dialect,
+            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
+        )
+    }
+
+    /// Constructs a structurally identified layer whose decode was refused.
+    #[must_use]
+    pub fn refused(dialect: DialectId) -> Self {
+        Self::identified(dialect, Admission::Refused)
     }
 
     /// Attaches source-declared version fields before the match enters a report.
@@ -441,7 +501,7 @@ impl DialectMatch {
     /// Returns the classified format layer.
     #[must_use]
     pub fn format(&self) -> &str {
-        &self.format
+        self.dialect.namespace()
     }
 
     /// Returns the registry dialect identity.
@@ -476,11 +536,7 @@ mod tests {
     use super::*;
 
     fn layer(format: &str) -> DialectMatch {
-        DialectMatch::new(
-            DialectId::parse(format!("{format}:known")).unwrap(),
-            Admission::Admitted,
-        )
-        .unwrap()
+        DialectMatch::admitted(DialectId::parse(format!("{format}:known")).unwrap())
     }
 
     #[test]
@@ -514,7 +570,6 @@ mod tests {
     #[test]
     fn an_admitted_match_serializes_its_identity() {
         let admitted = DialectMatch {
-            format: "rhino".into(),
             dialect: DialectId::pinned("rhino:archive-80"),
             declared: BTreeMap::new(),
             instance: None,
@@ -546,37 +601,20 @@ mod tests {
     }
 
     #[test]
-    fn residual_admitted_pair_is_rejected_by_constructors_and_wire() {
-        let dialect = DialectId::pinned("rhino:unknown");
-        let error = DialectMatch::new(dialect.clone(), Admission::Admitted)
-            .expect_err("a residual identity cannot be admitted as verified");
-        assert_eq!(
-            error.to_string(),
-            "residual dialect \"rhino:unknown\" cannot use admitted admission"
-        );
-        DialectMatch::layer(dialect, BTreeMap::new(), Admission::Admitted)
-            .expect_err("the declaration-bearing constructor must enforce the same law");
+    fn residual_constructor_records_the_absence_of_a_declared_grammar() {
+        let residual = DialectMatch::residual(DialectId::pinned("rhino:unknown"));
 
-        let malformed = serde_json::json!({
-            "format": "rhino",
-            "dialect": "rhino:unknown",
-            "admission": "admitted",
-        });
-        let error = serde_json::from_value::<DialectMatch>(malformed)
-            .expect_err("wire input must use the checked constructor");
-        assert!(
-            error
-                .to_string()
-                .contains("residual dialect \"rhino:unknown\" cannot use admitted admission"),
-            "{error}"
+        assert_eq!(
+            residual.admission(),
+            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
         );
     }
 
     #[test]
     fn an_unverified_admission_names_the_dialect_in_use() {
-        let unverified = Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("acis:save-format-217")),
-        };
+        let unverified = Admission::AdmittedUnverified(UnverifiedAdmission::Using(
+            DialectId::pinned("acis:save-format-217"),
+        ));
 
         assert_eq!(
             serde_json::to_string(&unverified).unwrap(),
@@ -586,11 +624,7 @@ mod tests {
 
     #[test]
     fn residual_unverified_admission_omits_using_and_normalizes_legacy_self_naming_wire() {
-        let residual = DialectMatch::new(
-            DialectId::pinned("rhino:unknown"),
-            Admission::AdmittedUnverified { using: None },
-        )
-        .expect("a residual path may apply no declared dialect grammar");
+        let residual = DialectMatch::residual(DialectId::pinned("rhino:unknown"));
         assert_eq!(
             serde_json::to_string(&residual.admission()).unwrap(),
             "{\"admitted_unverified\":{}}"
@@ -607,35 +641,25 @@ mod tests {
             .expect("legacy self-naming residual data remains readable");
         assert_eq!(
             normalized.admission(),
-            Admission::AdmittedUnverified { using: None }
+            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
         );
     }
 
     #[test]
-    fn a_known_unverified_identity_requires_an_applied_grammar() {
+    fn identity_does_not_encode_whether_an_unverified_path_used_a_grammar() {
         let dialect = DialectId::pinned("rhino:archive-80");
-        let missing = DialectMatch::new(
-            dialect.clone(),
-            Admission::AdmittedUnverified { using: None },
-        )
-        .expect_err("absence means a residual path, not a known identity");
+        let without_grammar = DialectMatch::residual(dialect.clone());
         assert_eq!(
-            missing.to_string(),
-            "non-residual dialect \"rhino:archive-80\" requires an applied dialect grammar for unverified admission"
+            without_grammar.admission(),
+            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
         );
 
-        let self_named = DialectMatch::new(
-            dialect.clone(),
-            Admission::AdmittedUnverified {
-                using: Some(dialect),
-            },
-        )
-        .expect("a known identity can apply its own grammar to an unverified frame");
+        let self_named = DialectMatch::unverified(dialect.clone(), dialect);
         assert_eq!(
             self_named.admission(),
-            Admission::AdmittedUnverified {
-                using: Some(DialectId::pinned("rhino:archive-80"))
-            }
+            Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
+                "rhino:archive-80"
+            )))
         );
     }
 
@@ -720,10 +744,7 @@ mod tests {
             layers
         );
         assert_eq!(
-            layers
-                .iter()
-                .map(|layer| layer.format.as_str())
-                .collect::<Vec<_>>(),
+            layers.iter().map(DialectMatch::format).collect::<Vec<_>>(),
             ["rhino", "acis"]
         );
     }

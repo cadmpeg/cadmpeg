@@ -218,19 +218,6 @@ impl SldprtDialect {
         .find(|dialect| dialect.id() == *id)
     }
 
-    /// How a document on this row was admitted.
-    ///
-    /// The one predicate behind both the report's [`Admission`] and
-    /// [`dialect_loss`]: a versioned row carries a declared identity that the
-    /// parse verified, and the residual row carries no declared identity at
-    /// all or substituted grammar. Neither answer is recomputed anywhere else.
-    fn admission(self) -> Admission {
-        match self {
-            Self::SwVersionPre12000 | Self::SwVersion12000Plus => Admission::Admitted,
-            Self::Unknown => Admission::AdmittedUnverified { using: None },
-        }
-    }
-
     /// Classifies one document from its `swVersion` declaration. The single
     /// construction path for a [`DialectMatch`] in this codec, so a
     /// classification bug and the report can never disagree.
@@ -240,8 +227,13 @@ impl SldprtDialect {
             declared.insert(DECLARED_SW_VERSION.into(), value.to_owned());
         }
         let dialect = Self::from_declaration(sw_version);
-        DialectMatch::layer(dialect.id(), declared, dialect.admission())
-            .expect("SLDPRT classifier produced an invalid dialect match")
+        match dialect {
+            Self::SwVersionPre12000 | Self::SwVersion12000Plus => {
+                DialectMatch::admitted(dialect.id())
+            }
+            Self::Unknown => DialectMatch::residual(dialect.id()),
+        }
+        .with_declared(declared)
     }
 
     /// Classifies one scanned document, reading the declaration from the scan.
@@ -262,7 +254,7 @@ impl SldprtDialect {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted => None,
-        Admission::AdmittedUnverified { .. } => {
+        Admission::AdmittedUnverified(_) => {
             let declaration = match matched.declared().get(DECLARED_SW_VERSION) {
                 Some(value) => format!(
                     "the swSolidWorks swVersion declaration {value:?} does not read as a version \

@@ -94,7 +94,7 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> IgesVersion {
 
 /// The dialect-unverified loss required by a classified Global declaration.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { .. } = matched.admission() else {
+    let Admission::AdmittedUnverified(_) = matched.admission() else {
         return None;
     };
     let declared = matched
@@ -346,13 +346,7 @@ impl IgesDialect {
     ) -> DialectMatch {
         let dialect =
             Self::from_representation_and_version(representation, global.declared_version());
-        let admission = if global.dialect_recovery() == DialectRecovery::Verified {
-            Admission::Admitted
-        } else {
-            Admission::AdmittedUnverified {
-                using: Some(Self::nearest_verified(representation).id()),
-            }
-        };
+        let verified = global.dialect_recovery() == DialectRecovery::Verified;
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_REPRESENTATION.into(),
@@ -375,8 +369,12 @@ impl IgesDialect {
         if let Some(text) = global.unreadable_version_declaration() {
             declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());
         }
-        DialectMatch::layer(dialect.id(), declared, admission)
-            .expect("IGES classifier produced an invalid dialect match")
+        if verified {
+            DialectMatch::admitted(dialect.id())
+        } else {
+            DialectMatch::unverified(dialect.id(), Self::nearest_verified(representation).id())
+        }
+        .with_declared(declared)
     }
 }
 

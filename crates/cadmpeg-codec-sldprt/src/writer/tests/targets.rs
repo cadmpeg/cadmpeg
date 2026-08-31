@@ -124,12 +124,9 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
     let matched = if dialect == "sldprt:unknown" {
         crate::dialect::SldprtDialect::classify(None)
     } else {
-        cadmpeg_core::dialect::DialectMatch::layer(
-            cadmpeg_core::dialect::DialectId::pinned(dialect),
-            std::collections::BTreeMap::default(),
-            cadmpeg_core::dialect::Admission::Admitted,
-        )
-        .expect("the test source dialect is classified")
+        cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect::DialectId::pinned(
+            dialect,
+        ))
     };
     ir.source = Some(SourceMeta::classified(
         matched,

@@ -198,13 +198,6 @@ impl FcstdDialect {
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
     pub(crate) fn classify(document: &DocumentFacts, dialect: Self) -> DialectMatch {
-        let admission = if dialect == Self::Unknown {
-            Admission::AdmittedUnverified {
-                using: Some(Self::NEAREST_VERIFIED.id()),
-            }
-        } else {
-            Admission::Admitted
-        };
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_SCHEMA_VERSION.into(),
@@ -214,8 +207,12 @@ impl FcstdDialect {
         if let Some(version) = &document.program_version {
             declared.insert(DECLARED_PROGRAM_VERSION.into(), version.clone());
         }
-        DialectMatch::layer(dialect.id(), declared, admission)
-            .expect("FCStd classifier produced an invalid dialect match")
+        if dialect == Self::Unknown {
+            DialectMatch::unverified(dialect.id(), Self::NEAREST_VERIFIED.id())
+        } else {
+            DialectMatch::admitted(dialect.id())
+        }
+        .with_declared(declared)
     }
 
     /// The loss charged when the document's schema names no declared row.
@@ -223,7 +220,7 @@ impl FcstdDialect {
     /// `None` exactly when the completed match reports
     /// [`Admission::Admitted`].
     pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-        let Admission::AdmittedUnverified { .. } = matched.admission() else {
+        let Admission::AdmittedUnverified(_) = matched.admission() else {
             return None;
         };
         let schema_version = matched

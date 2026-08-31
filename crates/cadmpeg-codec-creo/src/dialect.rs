@@ -65,7 +65,7 @@ const DECLARED_LEGACY_ASCII_PRODUCT_RELEASE: &str = "legacy_ascii_product_releas
 ///
 /// `None` exactly when the completed match reports [`Admission::Admitted`].
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { .. } = matched.admission() else {
+    let Admission::AdmittedUnverified(_) = matched.admission() else {
         return None;
     };
     Some(CreoLossCode::SourceDialectUnverified.note(
@@ -113,11 +113,6 @@ impl Layout {
 /// did not happen.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
     let layout = scan.framing.layout;
-    let admission = if layout == Layout::Unknown {
-        Admission::AdmittedUnverified { using: None }
-    } else {
-        Admission::Admitted
-    };
     let mut declared = BTreeMap::new();
     declared.insert(
         DECLARED_VERSION_LINE.into(),
@@ -132,8 +127,12 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
             );
         }
     }
-    DialectMatch::layer(layout.id(), declared, admission)
-        .expect("Creo classifier produced an invalid dialect match")
+    if layout == Layout::Unknown {
+        DialectMatch::residual(layout.id())
+    } else {
+        DialectMatch::admitted(layout.id())
+    }
+    .with_declared(declared)
 }
 
 #[cfg(test)]

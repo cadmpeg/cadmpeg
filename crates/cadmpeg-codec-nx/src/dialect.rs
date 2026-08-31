@@ -47,7 +47,10 @@
 //! names it.
 
 use crate::container::Container;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+
+#[cfg(test)]
+use cadmpeg_core::dialect::{Admission, UnverifiedAdmission};
 use std::collections::BTreeMap;
 
 #[cfg(test)]
@@ -165,8 +168,7 @@ impl NxDialect {
                 }
             }
         }
-        DialectMatch::layer(dialect.id(), declared, Admission::Admitted)
-            .expect("NX classifier produced an invalid dialect match")
+        DialectMatch::admitted(dialect.id()).with_declared(declared)
     }
 }
 

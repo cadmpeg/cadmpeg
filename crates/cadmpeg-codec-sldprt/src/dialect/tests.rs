@@ -16,6 +16,7 @@ use crate::container::scan_bytes;
 use crate::test_support::{
     make_block, outer_header, sldprt_with_colliding_sites, synthetic_sldprt,
 };
+use cadmpeg_core::dialect::UnverifiedAdmission;
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
@@ -225,7 +226,7 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
         let residual = matched.dialect().as_str() == SldprtDialect::Unknown.id().as_str();
 
         let expected = if residual {
-            Admission::AdmittedUnverified { using: None }
+            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
         } else {
             Admission::Admitted
         };
@@ -318,7 +319,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     assert!(matched.declared().is_empty());
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified { using: None }
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
     );
     assert!(dialect_loss(&matched).is_some());
 }

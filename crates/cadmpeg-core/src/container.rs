@@ -176,7 +176,7 @@ impl ContainerSummary {
 #[cfg(test)]
 mod tests {
     use super::ContainerSummary;
-    use crate::dialect::{Admission, DialectId};
+    use crate::dialect::DialectId;
     use crate::dialect::{DialectLayers, DialectMatch};
 
     /// The field is part of the wire format: a summary that named no layer says
@@ -203,13 +203,8 @@ mod tests {
 
     #[test]
     fn classified_summary_wire_uses_and_requires_the_primary_format() {
-        let primary = DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
-            .expect("the primary dialect is classified");
-        let extra = DialectMatch::new(
-            DialectId::pinned("acis:save-format-217"),
-            Admission::Admitted,
-        )
-        .expect("the extra dialect is classified");
+        let primary = DialectMatch::admitted(DialectId::pinned("rhino:archive-80"));
+        let extra = DialectMatch::admitted(DialectId::pinned("acis:save-format-217"));
         let summary = ContainerSummary::classified(
             DialectLayers::new(primary.clone(), vec![extra.clone()])
                 .expect("the extra uses another format"),

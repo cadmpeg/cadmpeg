@@ -30,7 +30,7 @@
 use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
 use crate::variant::Variant;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -106,7 +106,7 @@ pub(crate) fn admission(variant: Variant) -> Admission {
         | Variant::FloatPackedInnerNoFbb
         | Variant::E5Stream
         | Variant::InnerNoDirectory => Admission::Admitted,
-        Variant::Unknown => Admission::AdmittedUnverified { using: None },
+        Variant::Unknown => Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
     }
 }
 
@@ -125,7 +125,7 @@ pub(crate) fn admission(variant: Variant) -> Admission {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified { .. } => {
+        Admission::AdmittedUnverified(_) => {
             Some(CatiaLossCode::SourceDialectUnverified.note(format!(
                 "This container matched no CATIA V5 storage family's structural invariants, so it \
 is `{}`. No decode route declares a grammar for that row, and no declared \
@@ -168,8 +168,17 @@ fn declared(scan: &ContainerScan) -> BTreeMap<String, String> {
 /// Identity is [`ContainerScan::variant`], the structural family the scan
 /// resolved; admission is [`admission`]. Neither is computed from the other.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
-    DialectMatch::layer(scan.variant.id(), declared(scan), admission(scan.variant))
-        .expect("CATIA classifier produced an invalid dialect match")
+    match admission(scan.variant) {
+        Admission::Admitted => DialectMatch::admitted(scan.variant.id()),
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
+            DialectMatch::unverified(scan.variant.id(), using)
+        }
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
+            DialectMatch::residual(scan.variant.id())
+        }
+        Admission::Refused => DialectMatch::refused(scan.variant.id()),
+    }
+    .with_declared(declared(scan))
 }
 
 #[cfg(test)]
