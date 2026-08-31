@@ -315,8 +315,8 @@ fn schema_identifier_arcs(identifier: &str) -> Option<(&str, Vec<u64>)> {
 ///
 /// `None` when the header declares no `FILE_DESCRIPTION`, when its second
 /// parameter is not a string, or when that string does not decode. The parse
-/// admits only the five levels `crate::parse::ImplementationLevel` enumerates,
-/// so nothing else reaches a report; this function stays total regardless.
+/// substitutes its edition-3 class-3 grammar for an unfamiliar declaration
+/// and emits a parser loss, so the original string still reaches this report.
 fn implementation_level(exchange: &Exchange) -> Option<String> {
     let record = exchange
         .header

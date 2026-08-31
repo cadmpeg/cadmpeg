@@ -387,10 +387,6 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==ENDSEC;",
             "3;1 forbids SIGNATURE sections",
         ),
-        (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "FILE_DESCRIPTION has an unsupported implementation level",
-        ),
     ];
 
     for (source, message) in cases {
@@ -400,6 +396,19 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
             "expected {message:?}, got {error}"
         );
     }
+}
+
+#[test]
+fn parser_recovers_an_unknown_implementation_level_with_a_diagnostic() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (_, diagnostics) = crate::parse::parse(source).expect("the declaration is framed");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified
+    );
+    assert!(diagnostics[0].message.contains("1;1"));
+    assert!(diagnostics[0].message.contains("4;3 grammar"));
 }
 
 #[test]

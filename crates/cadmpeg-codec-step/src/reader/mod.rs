@@ -118,6 +118,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     StepLossCode::SchemaObjectIdentifierOutOfRange,
                     "schema_identifier",
                 ),
+                crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified => (
+                    StepLossCode::ImplementationLevelUnverified,
+                    "implementation_level",
+                ),
             };
             code.note(diagnostic.message.clone())
                 .with_provenance(cadmpeg_ir::SourceProvenance {
