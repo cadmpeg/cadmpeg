@@ -48,10 +48,6 @@ use crate::loss::SatLossCode;
 
 /// Key of the stream encoding in [`DialectMatch::declared`].
 const DECLARED_ENCODING: &str = "encoding";
-/// Key of the kernel layer's save format major component.
-const DECLARED_SAVE_FORMAT_MAJOR: &str = "save_format_major";
-/// Key of the kernel layer's save format minor component.
-const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 /// Key of the text stream's terminator line in [`DialectMatch::declared`].
 /// Absent on the binary branches, which carry no terminator.
 const DECLARED_TERMINATOR: &str = "terminator";
@@ -155,28 +151,8 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
 /// binary row. A text recovery states that no declared text-band grammar was
 /// available. The message is not the contract; the code is.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let using = match matched.admission() {
-        Admission::AdmittedUnverified { using } => using,
-        Admission::Admitted | Admission::Refused => return None,
-    };
-    let declared = match (
-        matched.declared().get(DECLARED_SAVE_FORMAT_MAJOR),
-        matched.declared().get(DECLARED_SAVE_FORMAT_MINOR),
-    ) {
-        (Some(major), Some(minor)) => format!("save format {major}.{minor}"),
-        (Some(major), None) => format!("save format major {major}"),
-        (None, _) => "no save format".to_owned(),
-    };
-    let message = using.map_or_else(
-        || {
-            format!(
-                "the stream declares {declared}; its recovery names no declared save-band \
-                 grammar as a substitute"
-            )
-        },
-        |using| cadmpeg_asm::dialect::acis_recovery_message("the stream", &declared, &using),
-    );
-    Some(SatLossCode::SourceDialectUnverified.note(message))
+    cadmpeg_asm::dialect::unverified_message("the stream", matched)
+        .map(|message| SatLossCode::SourceDialectUnverified.note(message))
 }
 
 /// Host-framing declarations, verbatim, under keys pinned above.

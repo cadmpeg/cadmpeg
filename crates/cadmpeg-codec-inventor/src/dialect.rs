@@ -14,18 +14,21 @@
 //! every declared stream to frame under the selected grammars. A stream that
 //! declares schema 31 and metadata version 8 therefore keeps
 //! `inventor:cfb3-rse31-meta8` when its body is malformed, with
-//! [`Admission::AdmittedUnverified`]. [`DialectClassification::loss`] is
-//! `None` exactly when admission is [`Admission::Admitted`].
+//! [`Admission::AdmittedUnverified`](cadmpeg_core::dialect::Admission::AdmittedUnverified).
+//! [`DialectClassification::loss`] is `None` exactly when admission is
+//! [`Admission::Admitted`](cadmpeg_core::dialect::Admission::Admitted).
 //!
 //! # The row absorbs what the codec does not gate
 //!
 //! Neither gate refuses. A schema other than 31 leaves the `RSeDb` stream and
 //! the segment registry unavailable, and a Meta Stream other than version 8
 //! leaves that segment's metadata unread; decode continues in both cases and
-//! degrades. That is [`Admission::AdmittedUnverified`] exactly, and `using`
-//! names `inventor:cfb3-rse31-meta8` because the schema-31 registry grammar and
-//! the version-8 metadata grammar are the only ones this codec implements —
-//! they are the strategy it applied, in the parts it could apply.
+//! degrades. That is
+//! [`Admission::AdmittedUnverified`](cadmpeg_core::dialect::Admission::AdmittedUnverified)
+//! exactly, and `using` names `inventor:cfb3-rse31-meta8` because the schema-31
+//! registry grammar and the version-8 metadata grammar are the only ones this
+//! codec implements — they are the strategy it applied, in the parts it could
+//! apply.
 //!
 //! The pinned id says `cfb3`, and the codec never tests the CFB major version:
 //! the shared compound parser accepts major 3 and major 4, and neither row
@@ -60,7 +63,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
@@ -267,7 +270,8 @@ impl DialectRecovery {
     /// The loss charged when the document's declarations do not select the
     /// grammar this codec read it with.
     ///
-    /// `None` exactly when `matched.admission` is [`Admission::Admitted`].
+    /// `None` exactly when `matched.admission` is
+    /// [`Admission::Admitted`](cadmpeg_core::dialect::Admission::Admitted).
     /// [`Self::classify`] reports the same admission value.
     fn unverified_loss(&self) -> LossNote {
         let mut reasons = Vec::new();
@@ -382,30 +386,8 @@ pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<D
 
 /// The recovery loss the kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let using = match matched.admission() {
-        Admission::AdmittedUnverified { using } => using,
-        Admission::Admitted | Admission::Refused => return None,
-    };
-    let declared = matched.declared().get("save_format_major").map_or_else(
-        || "no save format".to_owned(),
-        |major| format!("save format major {major}"),
-    );
-    let message = using.map_or_else(
-        || {
-            format!(
-                "the active kernel carrier declares {declared}; its recovery names no declared \
-                 save-band grammar as a substitute"
-            )
-        },
-        |using| {
-            cadmpeg_asm::dialect::acis_recovery_message(
-                "the active kernel carrier",
-                &declared,
-                &using,
-            )
-        },
-    );
-    Some(InventorLossCode::KernelDialectUnverified.note(message))
+    cadmpeg_asm::dialect::unverified_message("the active kernel carrier", matched)
+        .map(|message| InventorLossCode::KernelDialectUnverified.note(message))
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::dialect::Admission;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossNote;
 

@@ -12,6 +12,7 @@ use crate::test_support::{
 };
 use crate::SatCodec;
 use crate::FORMAT;
+use cadmpeg_asm::dialect::{DECLARED_SAVE_FORMAT_MAJOR, DECLARED_SAVE_FORMAT_MINOR};
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;

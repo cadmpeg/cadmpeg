@@ -29,6 +29,15 @@ use crate::kernel_header::KernelHeader;
 /// Registry format id for the embedded ACIS/ASM kernel layer.
 pub const FORMAT: &str = "acis";
 
+/// Key of the kernel save-format major component in
+/// [`DialectMatch::declared`].
+pub const DECLARED_SAVE_FORMAT_MAJOR: &str = "save_format_major";
+/// Key of the kernel save-format minor component in
+/// [`DialectMatch::declared`].
+pub const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
+/// Key of the binary kernel reference width in [`DialectMatch::declared`].
+pub const DECLARED_REFERENCE_WIDTH: &str = "reference_width";
+
 /// Parsed kernel-header family used to select the canonical `acis:` row.
 #[derive(Debug, Clone, Copy)]
 pub enum KernelHeaderRef<'a> {
@@ -57,21 +66,27 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
     };
     if let Some(parsed) = parsed {
         if let Some(major) = parsed.save_format_major() {
-            declared.insert("save_format_major".to_owned(), major.to_string());
+            declared.insert(DECLARED_SAVE_FORMAT_MAJOR.to_owned(), major.to_string());
         }
         if let Some(minor) = parsed.save_format_minor() {
-            declared.insert("save_format_minor".to_owned(), minor.to_string());
+            declared.insert(DECLARED_SAVE_FORMAT_MINOR.to_owned(), minor.to_string());
         }
     }
 
     let (dialect, admission) = match header {
         KernelHeaderRef::Acis(header) => {
-            declared.insert("reference_width".to_owned(), header.width.to_string());
+            declared.insert(
+                DECLARED_REFERENCE_WIDTH.to_owned(),
+                header.width.to_string(),
+            );
             let major = header.save_format_major();
             (acis_binary_row(major), acis_admission(major))
         }
         KernelHeaderRef::Asm(header) => {
-            declared.insert("reference_width".to_owned(), header.width.to_string());
+            declared.insert(
+                DECLARED_REFERENCE_WIDTH.to_owned(),
+                header.width.to_string(),
+            );
             (asm_binary_row(header.width), Admission::Admitted)
         }
         KernelHeaderRef::TextAsm(_) => (ACIS_TEXT_ASM, Admission::Admitted),
@@ -135,12 +150,42 @@ pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
     }
 }
 
-/// Describe recovery through the nearest verified Spatial ACIS binary grammar.
+/// Describe the recovery reported by an unverified `acis:` layer.
+///
+/// Returns `Some` exactly for [`Admission::AdmittedUnverified`]. The message
+/// names both save-format components when the stream declares them and names
+/// the substituted registry row when classification selected one.
 #[must_use]
-pub fn acis_recovery_message(subject: &str, declared: &str, using: &DialectId) -> String {
-    format!(
-        "{subject} declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"
-    )
+pub fn unverified_message(subject: &str, matched: &DialectMatch) -> Option<String> {
+    assert_eq!(
+        matched.format(),
+        FORMAT,
+        "ACIS recovery reporting requires an acis: dialect layer"
+    );
+    let using = match matched.admission() {
+        Admission::AdmittedUnverified { using } => using,
+        Admission::Admitted | Admission::Refused => return None,
+    };
+    let declared = match (
+        matched.declared().get(DECLARED_SAVE_FORMAT_MAJOR),
+        matched.declared().get(DECLARED_SAVE_FORMAT_MINOR),
+    ) {
+        (Some(major), Some(minor)) => format!("save format {major}.{minor}"),
+        (Some(major), None) => format!("save format major {major}"),
+        (None, _) => "no save format".to_owned(),
+    };
+    Some(using.as_ref().map_or_else(
+        || {
+            format!(
+                "{subject} declares {declared}; its recovery names no declared save-band grammar as a substitute"
+            )
+        },
+        |using| {
+            format!(
+                "{subject} declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"
+            )
+        },
+    ))
 }
 
 /// The `acis:` binary row one save format satisfies.
@@ -181,8 +226,9 @@ pub fn asm_binary_row(width: u8) -> DialectId {
 mod tests {
     use super::{
         acis_admission, acis_band_verified, acis_binary_row, classify, nearest_verified_acis,
-        KernelHeaderRef, ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218,
-        ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM, ACIS_UNKNOWN, FORMAT,
+        unverified_message, KernelHeaderRef, ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217,
+        ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM,
+        ACIS_UNKNOWN, FORMAT,
     };
     use crate::kernel_header::KernelHeader;
     use cadmpeg_core::dialect::{Admission, DialectMatch};
@@ -239,6 +285,30 @@ mod tests {
             classify(KernelHeaderRef::TextAcis(&header(4, Some(70_000)))).admission(),
             Admission::AdmittedUnverified { using: None }
         );
+    }
+
+    #[test]
+    fn unverified_message_projects_the_complete_kernel_declaration() {
+        let binary = classify(KernelHeaderRef::Acis(&header(4, Some(70_001))));
+        assert_eq!(
+            unverified_message("the carrier", &binary).as_deref(),
+            Some(
+                "the carrier declares save format 700.1, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-218` declares, and what they decoded is reported as it decoded"
+            )
+        );
+
+        let text = classify(KernelHeaderRef::TextAcis(&header(4, None)));
+        assert_eq!(
+            unverified_message("the stream", &text).as_deref(),
+            Some(
+                "the stream declares no save format; its recovery names no declared save-band grammar as a substitute"
+            )
+        );
+        assert!(unverified_message(
+            "the carrier",
+            &classify(KernelHeaderRef::Acis(&header(4, Some(21_703))))
+        )
+        .is_none());
     }
 
     #[test]
