@@ -353,7 +353,7 @@ mod write;
 pub use write::{
     assert_valid_target_catalog, default_target, find_target, resolve_write_request,
     source_dialect_displaced_message, unsupported_target, CadirEncoder, EncodeInput, Encoder,
-    ExportPlan, SourceRelation, TargetDescriptor, TargetRequest, WriteRequest,
+    ExportPlan, ResolvedWrite, TargetDescriptor, TargetRequest,
 };
 
 #[cfg(test)]

@@ -444,13 +444,9 @@ fn write_request_resolves_an_explicit_on_catalog_target() {
         CATALOG_WRITE_TARGETS,
     )
     .unwrap();
-    assert!(matches!(
-        resolved,
-        WriteRequest::Catalog {
-            entry,
-            source: SourceRelation::None,
-        } if entry.id.as_str() == "test:old"
-    ));
+    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
+    assert!(!resolved.preserves_source());
+    assert_eq!(resolved.displaced_source(), None);
 }
 
 #[test]
@@ -474,13 +470,9 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
     let ir = catalog_write_ir(Some(("other", Some("other:only"))));
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
-    assert!(matches!(
-        resolved,
-        WriteRequest::Catalog {
-            entry,
-            source: SourceRelation::None,
-        } if entry.id.as_str() == "test:new"
-    ));
+    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:new");
+    assert!(!resolved.preserves_source());
+    assert_eq!(resolved.displaced_source(), None);
 }
 
 #[test]
@@ -506,13 +498,9 @@ fn write_request_explicit_over_an_unrecorded_source_has_no_recorded_relation() {
     )
     .unwrap();
 
-    assert!(matches!(
-        resolved,
-        WriteRequest::Catalog {
-            entry,
-            source: SourceRelation::None,
-        } if entry.id.as_str() == "test:old"
-    ));
+    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
+    assert!(!resolved.preserves_source());
+    assert_eq!(resolved.displaced_source(), None);
 }
 
 #[test]
@@ -520,13 +508,9 @@ fn write_request_inherit_preserves_a_same_format_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
-    assert!(matches!(
-        resolved,
-        WriteRequest::Catalog {
-            entry,
-            source: SourceRelation::Preserve,
-        } if entry.id.as_str() == "test:old"
-    ));
+    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
+    assert!(resolved.preserves_source());
+    assert_eq!(resolved.displaced_source(), None);
 }
 
 #[test]
@@ -534,10 +518,10 @@ fn write_request_inherit_preserves_a_same_format_off_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
-    assert!(matches!(
-        resolved,
-        WriteRequest::OffCatalog { dialect } if dialect.as_str() == "test:future"
-    ));
+    assert_eq!(resolved.catalog_entry(), None);
+    assert_eq!(resolved.dialect().as_str(), "test:future");
+    assert!(resolved.preserves_source());
+    assert_eq!(resolved.displaced_source(), None);
 }
 
 #[test]
@@ -550,18 +534,15 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
         CATALOG_WRITE_TARGETS,
     )
     .unwrap();
-    let WriteRequest::Catalog {
-        entry,
-        source: SourceRelation::Displaced(displaced),
-    } = resolved
-    else {
-        panic!("expected a catalog target");
-    };
+    let entry = resolved.catalog_entry().expect("expected a catalog target");
+    let displaced = resolved
+        .displaced_source()
+        .expect("the explicit target displaces the recorded source");
     assert_eq!(entry.id.as_str(), "test:new");
-    assert_eq!(displaced, DialectId::pinned("test:old"));
+    assert_eq!(displaced, &DialectId::pinned("test:old"));
     assert_eq!(
         source_dialect_displaced_message(
-            &displaced,
+            displaced,
             &entry.id,
         ),
         "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved"

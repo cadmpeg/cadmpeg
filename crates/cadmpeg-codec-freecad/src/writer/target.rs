@@ -113,7 +113,7 @@ pub(in crate::writer) fn resolve(
     // This writer has no synthesize fallback, so it flattens the request locally.
     let resolved =
         cadmpeg_ir::codec::resolve_write_request(ir, request, dialect::FORMAT, dialect::TARGETS)?;
-    let target = resolved.dialect_id();
+    let target = resolved.dialect().clone();
     // Deliverability, not preference. This writer patches the retained
     // `Document.xml` and regenerates none, so the resolved target is reachable
     // exactly when the retained graph already declares it — §8.1's "a
