@@ -73,6 +73,18 @@ struct SupportRow {
     dialect: String,
     read: ReadDisposition,
     write: WriteDisposition,
+    #[serde(default)]
+    refusal: Option<RefusalCause>,
+}
+
+/// Structural reason a read capability is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RefusalCause {
+    /// A recognized alternate encoding has no parser grammar.
+    AlternateEncodingNoGrammar,
+    /// The evidence does not select any framing grammar.
+    NoFramingGrammar,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,6 +117,10 @@ enum RegistryLoadError {
     SupportWithoutIdentity(String),
     #[error("identity row for dialect {0} has no support row")]
     IdentityWithoutSupport(DialectId),
+    #[error("refused support row for dialect {0} has no structural refusal cause")]
+    RefusalCauseMissing(String),
+    #[error("non-refused support row for dialect {0} has a refusal cause")]
+    RefusalCauseUnexpected(String),
     #[error("unknown dialect row {0} has no unknown_kind")]
     UnknownKindMissing(DialectId),
     #[error("named dialect row {0} has checker-only unknown_kind")]
@@ -145,6 +161,15 @@ impl Registries {
         let mut dispositions = BTreeMap::new();
         for row in support.support {
             let dialect = row.dialect;
+            match (row.read, row.refusal) {
+                (ReadDisposition::Refused, None) => {
+                    return Err(RegistryLoadError::RefusalCauseMissing(dialect));
+                }
+                (ReadDisposition::Refused, Some(_)) | (_, None) => {}
+                (_, Some(_)) => {
+                    return Err(RegistryLoadError::RefusalCauseUnexpected(dialect));
+                }
+            }
             let disposition = Disposition {
                 read: row.read,
                 write: row.write,
@@ -362,6 +387,30 @@ mod tests {
         .err()
         .expect("the duplicate support row is rejected");
         assert!(matches!(error, RegistryLoadError::DuplicateSupport(id) if id == "step:ap203"));
+    }
+
+    #[test]
+    fn the_registry_join_requires_refusal_causes_exactly_on_refused_rows() {
+        let identity = "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n";
+        let missing = Registries::load_from(
+            identity,
+            "[[support]]\ndialect = \"step:ap203\"\nread = \"refused\"\nwrite = \"none\"\n",
+        )
+        .err()
+        .expect("a refused row must carry its structural cause");
+        assert!(
+            matches!(missing, RegistryLoadError::RefusalCauseMissing(id) if id == "step:ap203")
+        );
+
+        let unexpected = Registries::load_from(
+            identity,
+            "[[support]]\ndialect = \"step:ap203\"\nread = \"detected\"\nwrite = \"none\"\nrefusal = \"no-framing-grammar\"\n",
+        )
+        .err()
+        .expect("a non-refused row cannot carry a refusal cause");
+        assert!(
+            matches!(unexpected, RegistryLoadError::RefusalCauseUnexpected(id) if id == "step:ap203")
+        );
     }
 
     /// Compiled catalogs and write-policy rows describe the same synthesis

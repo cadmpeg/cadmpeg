@@ -6,35 +6,35 @@ dialect = "iges:4.0-fixed-ascii"
 date = 2026-08-28
 level = 9
 files = 1
-result = "decode, validation clean, write-back re-identifies as the same dialect"
+result = "decode and validation clean"
 
 [[evaluation]]
 dialect = "iges:5.1-fixed-ascii"
 date = 2026-08-28
 level = 9
 files = 8
-result = "decode, validation clean, write-back re-identifies as the same dialect"
+result = "decode and validation clean"
 
 [[evaluation]]
 dialect = "iges:5.2-fixed-ascii"
 date = 2026-08-28
 level = 9
 files = 4
-result = "decode, validation clean, write-back re-identifies as the same dialect"
+result = "decode and validation clean"
 
 [[evaluation]]
 dialect = "step:ap203-e2"
 date = 2026-08-28
 level = 9
 files = 8
-result = "decode, validation clean, write-back re-identifies as the same dialect"
+result = "decode and validation clean"
 
 [[evaluation]]
 dialect = "step:ap242-e1"
 date = 2026-08-28
 level = 9
 files = 5
-result = "decode, validation clean, write-back re-identifies as the same dialect"
+result = "decode and validation clean"
 
 [[evaluation]]
 dialect = "rhino:archive-2"
