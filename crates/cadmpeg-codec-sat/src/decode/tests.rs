@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode and transfer tests for text and binary ASM streams.
 
+use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeResult};
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -158,14 +159,16 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
     );
     assert_eq!(layers.iter().count(), 2, "inspect retains both layers");
     assert_eq!(inspected.declared()["encoding"], "binary");
-    assert!(!inspected.declared().contains_key("save_format_major"));
+    assert!(!inspected
+        .declared()
+        .contains_key(DECLARED_SAVE_FORMAT_MAJOR));
     let kernel = layers
         .iter()
         .nth(1)
         .expect("inspect retains the kernel layer");
     assert_eq!(kernel.dialect().as_str(), "acis:save-format-binary-other");
     assert_eq!(
-        kernel.declared()["save_format_major"],
+        kernel.declared()[DECLARED_SAVE_FORMAT_MAJOR],
         (UNVERIFIED_SAVE_FORMAT / 100).to_string()
     );
 

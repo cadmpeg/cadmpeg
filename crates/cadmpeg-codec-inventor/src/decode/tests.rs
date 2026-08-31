@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
@@ -247,7 +248,7 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
             )),
         }
     );
-    assert_eq!(layer.declared()["save_format_major"], "700");
+    assert_eq!(layer.declared()[DECLARED_SAVE_FORMAT_MAJOR], "700");
     assert!(
         codes
             .iter()
