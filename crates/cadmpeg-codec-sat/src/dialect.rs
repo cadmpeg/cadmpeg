@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. `docs/dialects.toml` generates the exhaustive
-//! reportable row list in `dialect/generated.rs`.
+//! vocabulary is closed. Tests close it directly against the reportable rows
+//! in `docs/dialects.toml`.
 //!
 //! This module owns the primary `sat:` host layer. Each classified stream also
 //! emits the non-primary `acis:` kernel layer owned by `cadmpeg-asm`.
@@ -43,9 +43,6 @@ use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 use crate::loss::SatLossCode;
 

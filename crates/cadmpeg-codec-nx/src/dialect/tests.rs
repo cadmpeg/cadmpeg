@@ -10,11 +10,8 @@ use crate::test_support::{extract_streams, single_part_prt};
 use std::sync::OnceLock;
 
 #[test]
-fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(
-        &NxDialect::ALL.map(NxDialect::id),
-        &super::generated::ROWS,
-    );
+fn enum_and_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(&NxDialect::ALL.map(NxDialect::id), FORMAT);
 }
 
 /// A container carrying nothing but the dispatch flag and the version byte.

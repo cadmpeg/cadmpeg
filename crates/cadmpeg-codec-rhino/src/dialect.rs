@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`ArchiveVersion::classify`] is the one construction
-//! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! exhaustive row list in `dialect/generated.rs`.
+//! path, and the vocabulary is closed. Tests close it directly against
+//! `docs/dialects.toml`.
 //!
 //! # One discriminant, read before the parse strategy is chosen
 //!
@@ -44,9 +44,6 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmiss
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "rhino";

@@ -17,12 +17,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() {
     let reportable = StreamKind::ALL.map(|kind| {
         kind.reportable_id()
             .expect("the reportable kind list excludes Unknown")
     });
-    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, &super::generated::ROWS);
+    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, FORMAT);
 }
 
 /// A kernel header declaring `save_format_version` and nothing else that

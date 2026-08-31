@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`FcstdDialect::classify`] is the one construction
-//! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! exhaustive row list in `dialect/generated.rs`.
+//! path, and the vocabulary is closed. Tests close it directly against
+//! `docs/dialects.toml`.
 //!
 //! The discriminant is `Document.xml`'s `SchemaVersion`, read by
 //! [`crate::container::parse_document`] before any element vocabulary is
@@ -39,9 +39,6 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// Admission result for the independent `GuiDocument.xml` schema layer.
 #[derive(Debug, PartialEq, Eq)]

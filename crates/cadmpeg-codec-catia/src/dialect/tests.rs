@@ -12,11 +12,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 #[test]
-fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(
-        &Variant::ALL.map(Variant::id),
-        &super::generated::ROWS,
-    );
+fn enum_and_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(&Variant::ALL.map(Variant::id), FORMAT);
 }
 
 /// One registry row: the witness fixture it cites and the id it must classify

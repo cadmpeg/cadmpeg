@@ -17,7 +17,6 @@ import re
 import sys
 import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("check-dialects.py")
@@ -59,13 +58,7 @@ class RegistryCase(unittest.TestCase):
                 target = root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("fixture", encoding="utf-8")
-            allowed = checker.dialect_codegen.INTENTIONALLY_UNOWNED_FORMATS | {"demo"}
-            with mock.patch.object(
-                checker.dialect_codegen,
-                "INTENTIONALLY_UNOWNED_FORMATS",
-                allowed,
-            ):
-                return checker.check(root)
+            return checker.check(root)
 
     def assertFires(self, text: str | None, needle: str, *, files: list[str] | None = None):
         failures, _ = self.run_check(text, files=files)
@@ -218,12 +211,9 @@ class TestRowShape(RegistryCase):
         row = GOOD_ROW.replace('"demo:one"', '"demo:unknown"')
         self.assertClean(_registry(row + 'unknown_kind = "refused-residual"\n'))
 
-    def test_detect_unreachable_is_limited_to_verified_rows(self):
+    def test_detect_unreachable_is_valid_on_an_unknown_row(self):
         row = GOOD_ROW.replace('"demo:one"', '"demo:unknown"')
-        self.assertFires(
-            _registry(row + 'unknown_kind = "detect-unreachable"\n'),
-            "detect-unreachable is admitted only for nx:unknown, sat:unknown",
-        )
+        self.assertClean(_registry(row + 'unknown_kind = "detect-unreachable"\n'))
 
     def test_unknown_kind_is_unknown_only(self):
         self.assertFires(
@@ -378,7 +368,6 @@ class TestExtensionPoints(unittest.TestCase):
         self,
         row: str,
         source: str = "",
-        source_rel: str = "crates/demo/src/dialect.rs",
     ):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -386,7 +375,7 @@ class TestExtensionPoints(unittest.TestCase):
             (root / "docs" / "dialects.toml").write_text(
                 _registry(row), encoding="utf-8"
             )
-            source_path = root / source_rel
+            source_path = root / "crates" / "demo" / "src" / "dialect.rs"
             source_path.parent.mkdir(parents=True)
             source_path.write_text(source, encoding="utf-8")
             return checker.check_codec_emitted_ids(root)
@@ -400,66 +389,10 @@ class TestExtensionPoints(unittest.TestCase):
             ["demo:fabricated: no string literal under crates/*/src"],
         )
 
-    def test_id_present_only_in_generated_dialect_module_fails(self):
-        self.assertEqual(
-            self.emitted_id_failures(
-                GOOD_ROW,
-                'const ID: &str = "demo:one";',
-                "crates/demo/src/dialect/generated.rs",
-            ),
-            ["demo:one: no string literal under crates/*/src"],
-        )
-
-    def test_generated_registry_addition_without_an_enum_owner_fails(self):
-        bogus_row = GOOD_ROW.replace("demo:one", "demo:bogus-closure-proof")
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "docs").mkdir()
-            (root / "docs" / "dialects.toml").write_text(
-                _registry(GOOD_ROW + bogus_row), encoding="utf-8"
-            )
-            source = root / "crates" / "demo" / "src" / "dialect.rs"
-            source.parent.mkdir(parents=True)
-            source.write_text('const ID: &str = "demo:one";', encoding="utf-8")
-            generated = source.parent / "dialect" / "generated.rs"
-            generated.parent.mkdir()
-            generated.write_text(
-                'const ROWS: &[&str] = &["demo:one", "demo:bogus-closure-proof"];',
-                encoding="utf-8",
-            )
-
-            self.assertEqual(
-                checker.check_codec_emitted_ids(root),
-                ["demo:bogus-closure-proof: no string literal under crates/*/src"],
-            )
-
     def test_detect_unreachable_id_needs_no_code_anchor(self):
         row = GOOD_ROW.replace("demo:one", "nx:unknown")
         row += 'unknown_kind = "detect-unreachable"\n'
         self.assertEqual(self.emitted_id_failures(row), [])
-
-    def test_codegen_excludes_detect_unreachable_rows_from_enum_closure(self):
-        rows = GOOD_ROW.replace("demo:one", "nx:splmsstr")
-        rows += (
-            GOOD_ROW.replace("demo:one", "nx:unknown")
-            + 'unknown_kind = "detect-unreachable"\n'
-        )
-        formats = "[format.nx]\ncomplete = false\n"
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "docs").mkdir()
-            (root / "docs" / "dialects.toml").write_text(
-                _registry(rows, formats=formats), encoding="utf-8"
-            )
-            (root / "crates" / "cadmpeg-codec-nx").mkdir(parents=True)
-
-            outputs = checker.dialect_codegen.outputs(root)
-            rendered = outputs[
-                root / "crates" / "cadmpeg-codec-nx" / "src" / "dialect" / "generated.rs"
-            ]
-
-        self.assertIn('DialectId::pinned("nx:splmsstr")', rendered)
-        self.assertNotIn("nx:unknown", rendered)
 
     def test_id_present_only_in_line_comment_fails(self):
         for source in ('// "demo:one"', '/// "demo:one"'):
@@ -479,36 +412,6 @@ class TestExtensionPoints(unittest.TestCase):
 
     def test_explicitly_unpinned_row_is_exempt(self):
         self.assertEqual(self.emitted_id_failures(GOOD_ROW + "pinned = false\n"), [])
-
-    def test_codegen_rejects_an_unmapped_format_namespace(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "docs").mkdir()
-            (root / "docs" / "dialects.toml").write_text(
-                _registry(GOOD_ROW), encoding="utf-8"
-            )
-
-            self.assertEqual(
-                checker.dialect_codegen.check(root),
-                [
-                    "unmapped dialect format namespace(s): demo; add an OWNERS mapping or an "
-                    "INTENTIONALLY_UNOWNED_FORMATS justification"
-                ],
-            )
-
-    def test_codegen_accepts_only_the_justified_shared_namespaces(self):
-        rows = GOOD_ROW.replace("demo:one", "acis:one") + GOOD_ROW.replace(
-            "demo:one", "parasolid:one"
-        )
-        formats = "[format.acis]\ncomplete = true\n[format.parasolid]\ncomplete = true\n"
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "docs").mkdir()
-            (root / "docs" / "dialects.toml").write_text(
-                _registry(rows, formats=formats), encoding="utf-8"
-            )
-
-            self.assertEqual(checker.dialect_codegen.check(root), [])
 
     def test_support_tables_moved_to_the_renderer(self):
         """The stub is gone because the rule is enforced, not deferred."""

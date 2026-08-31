@@ -6,8 +6,8 @@
 //! strings are the boundary, [`classify`] is the one construction path, and the
 //! vocabulary is closed. The enum is [`Variant`] itself, so this module gives
 //! that existing enum a pinned-id surface instead of standing up a second enum
-//! that would have to be kept in step with it by hand. `docs/dialects.toml`
-//! generates the exhaustive row list in `dialect/generated.rs`.
+//! that would have to be kept in step with it by hand. Tests close that enum
+//! directly against `docs/dialects.toml`.
 //!
 //! # Identity is structural here, and there is no declaration to disagree with
 //!
@@ -33,9 +33,6 @@ use crate::variant::Variant;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "catia";

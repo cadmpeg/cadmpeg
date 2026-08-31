@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`classify`] is the one construction
-//! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! exhaustive row list in `dialect/generated.rs`.
+//! path, and the vocabulary is closed. Tests close it directly against
+//! `docs/dialects.toml`.
 //!
 //! # The discriminant is the layout classification
 //!
@@ -36,9 +36,6 @@ use crate::loss::CreoLossCode;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "creo";

@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`] strings
 //! are the boundary, `F3dDialect::matched` is the one construction path, and
-//! the vocabulary is closed. `docs/dialects.toml` generates the exhaustive row
-//! list in `dialect/generated.rs`.
+//! the vocabulary is closed. Tests close it directly against
+//! `docs/dialects.toml`.
 //!
 //! # Two grammars, one enum, and one recovery row
 //!
@@ -37,9 +37,6 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmiss
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 use crate::loss::F3dLossCode;
 use crate::manifest::TOP_LEVEL_MANIFEST_VERSION;

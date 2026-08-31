@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`SldprtDialect::classify`] is the one
-//! construction path, and the vocabulary is closed. `docs/dialects.toml`
-//! generates the exhaustive row list in `dialect/generated.rs`.
+//! construction path, and the vocabulary is closed. Tests close it directly
+//! against `docs/dialects.toml`.
 //!
 //! # The axis is `swVersion`, and it is the only one that selects a layout
 //!
@@ -73,9 +73,6 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "sldprt";
