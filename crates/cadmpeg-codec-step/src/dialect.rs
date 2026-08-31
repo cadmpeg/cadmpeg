@@ -49,7 +49,7 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::{Exchange, Value};
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
@@ -429,10 +429,10 @@ fn implementation_level(exchange: &Exchange) -> Option<String> {
 /// anyway, which is a recovery, not a verified read.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let strategy = match matched.admission() {
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
+        Admission::AdmittedUnverified { using: Some(using) } => {
             format!("with the entity vocabulary verified for {using}")
         }
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
+        Admission::AdmittedUnverified { using: None } => {
             "without substituting a declared STEP entity vocabulary".to_owned()
         }
         Admission::Admitted | Admission::Refused => return None,

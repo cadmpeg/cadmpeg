@@ -40,7 +40,7 @@
 
 use crate::chunks::ArchiveVersion;
 use crate::RhinoArchiveVersion;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -213,8 +213,7 @@ impl ArchiveVersion {
 /// not from two authors agreeing.
 pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
     let using = match matched.admission() {
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::AdmittedUnverified { using } => using,
         Admission::Admitted | Admission::Refused => return None,
     };
     let word = matched

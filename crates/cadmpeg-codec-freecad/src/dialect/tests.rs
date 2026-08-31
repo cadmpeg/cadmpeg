@@ -5,7 +5,6 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use cadmpeg_core::dialect::UnverifiedAdmission;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() {
@@ -98,9 +97,9 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
-                "fcstd:schema-4",
-            )))
+            Admission::AdmittedUnverified {
+                using: Some(DialectId::pinned("fcstd:schema-4")),
+            }
         };
         assert_eq!(matched.admission(), expected_admission, "{context}");
     }

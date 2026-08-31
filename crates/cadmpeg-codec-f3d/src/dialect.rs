@@ -33,7 +33,7 @@
 //! structural: a manifest whose bytes do not fit the anchors is refused by
 //! `crate::manifest::parse_top_level`, and no version is on an allowlist.
 //!
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::BTreeMap;
@@ -188,17 +188,15 @@ impl F3dDialect {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified(strategy) => {
+        Admission::AdmittedUnverified { using } => {
             let version = matched
                 .declared()
                 .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
                 .map_or("(none)", String::as_str);
-            let strategy = match strategy {
-                UnverifiedAdmission::NoDeclaredGrammar => {
-                    "No declared manifest grammar was substituted; only the residual path ran."
-                        .to_owned()
-                }
-                UnverifiedAdmission::Using(using) => {
+            let strategy = match using {
+                None => "No declared manifest grammar was substituted; only the residual path ran."
+                    .to_owned(),
+                Some(using) => {
                     format!(
                         "The document is read on {using}: every field after the version was parsed \
                          with that layout. The layout fitting is consistency, not a declaration."
@@ -287,8 +285,7 @@ fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
 /// The recovery loss a kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let using = match matched.admission() {
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::AdmittedUnverified { using } => using,
         Admission::Refused => {
             let carrier = matched
                 .declared()

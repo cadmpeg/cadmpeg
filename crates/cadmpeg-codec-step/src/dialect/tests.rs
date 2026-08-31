@@ -232,7 +232,9 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         if !admitted {
             assert_eq!(
                 matched.admission(),
-                Admission::AdmittedUnverified(UnverifiedAdmission::Using(NEAREST_STRATEGY.id(),)),
+                Admission::AdmittedUnverified {
+                    using: Some(NEAREST_STRATEGY.id()),
+                },
                 "FILE_SCHEMA {:?}: `using` names the strategy actually applied",
                 case.identifiers
             );

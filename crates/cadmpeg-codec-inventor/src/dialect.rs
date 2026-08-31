@@ -60,7 +60,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
@@ -383,8 +383,7 @@ pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<D
 /// The recovery loss the kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let using = match matched.admission() {
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::AdmittedUnverified { using } => using,
         Admission::Admitted | Admission::Refused => return None,
     };
     let declared = matched.declared().get("save_format_major").map_or_else(

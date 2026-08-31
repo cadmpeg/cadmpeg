@@ -91,7 +91,7 @@ pub(crate) fn target_version(target: &TargetDescriptor) -> IgesVersion {
 
 /// The dialect-unverified loss required by a classified Global declaration.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified(_) = matched.admission() else {
+    let Admission::AdmittedUnverified { .. } = matched.admission() else {
         return None;
     };
     let declared = matched

@@ -54,7 +54,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     assert_eq!(kernel.instance(), None);
     assert_eq!(
         kernel.admission(),
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+        Admission::AdmittedUnverified { using: None }
     );
 
     let losses = dialect_losses(&layers);

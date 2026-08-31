@@ -241,11 +241,11 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     assert_eq!(layer.dialect().as_str(), "acis:save-format-binary-other");
     assert_eq!(
         layer.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified(
-            cadmpeg_core::dialect::UnverifiedAdmission::Using(
-                cadmpeg_core::dialect::DialectId::pinned("acis:save-format-218"),
-            ),
-        )
+        cadmpeg_core::dialect::Admission::AdmittedUnverified {
+            using: Some(cadmpeg_core::dialect::DialectId::pinned(
+                "acis:save-format-218",
+            )),
+        }
     );
     assert_eq!(layer.declared()["save_format_major"], "700");
     assert!(

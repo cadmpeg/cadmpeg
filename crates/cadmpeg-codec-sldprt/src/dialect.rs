@@ -251,7 +251,7 @@ impl SldprtDialect {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted => None,
-        Admission::AdmittedUnverified(_) => {
+        Admission::AdmittedUnverified { .. } => {
             if let Some(message) = cadmpeg_container::parasolid::unverified_message(matched) {
                 return Some(SldprtLossCode::SourceDialectUnverified.note(message));
             }

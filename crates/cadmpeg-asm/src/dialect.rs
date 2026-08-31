@@ -22,7 +22,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 
 use crate::kernel_header::KernelHeader;
 
@@ -80,22 +80,12 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
             if acis_band_verified(header.save_format_major()) {
                 Admission::Admitted
             } else {
-                Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+                Admission::AdmittedUnverified { using: None }
             },
         ),
         KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
     };
-    match admission {
-        Admission::Admitted => DialectMatch::admitted(dialect),
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
-            DialectMatch::unverified(dialect, using)
-        }
-        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
-            DialectMatch::residual(dialect)
-        }
-        Admission::Refused => DialectMatch::refused(dialect),
-    }
-    .with_declared(declared)
+    DialectMatch::from_admission(dialect, admission).with_declared(declared)
 }
 
 /// Save-format majors the Spatial ACIS record decoders are verified against.
@@ -139,9 +129,9 @@ pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
     if acis_band_verified(save_format_major) {
         Admission::Admitted
     } else {
-        Admission::AdmittedUnverified(UnverifiedAdmission::Using(nearest_verified_acis(
-            save_format_major,
-        )))
+        Admission::AdmittedUnverified {
+            using: Some(nearest_verified_acis(save_format_major)),
+        }
     }
 }
 
@@ -195,7 +185,7 @@ mod tests {
         ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM, ACIS_UNKNOWN, FORMAT,
     };
     use crate::kernel_header::KernelHeader;
-    use cadmpeg_core::dialect::{Admission, DialectMatch, UnverifiedAdmission};
+    use cadmpeg_core::dialect::{Admission, DialectMatch};
     use std::collections::BTreeSet;
 
     fn header(width: u8, save_format_version: Option<u32>) -> KernelHeader {
@@ -241,11 +231,13 @@ mod tests {
         assert_eq!(acis_admission(Some(217)), Admission::Admitted);
         assert_eq!(
             acis_admission(Some(700)),
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(ACIS_SAVE_FORMAT_218))
+            Admission::AdmittedUnverified {
+                using: Some(ACIS_SAVE_FORMAT_218),
+            }
         );
         assert_eq!(
             classify(KernelHeaderRef::TextAcis(&header(4, Some(70_000)))).admission(),
-            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            Admission::AdmittedUnverified { using: None }
         );
     }
 

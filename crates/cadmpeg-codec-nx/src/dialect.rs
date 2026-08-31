@@ -51,8 +51,6 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::LossNote;
 
-#[cfg(test)]
-use cadmpeg_core::dialect::UnverifiedAdmission;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
@@ -115,7 +113,7 @@ pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
         .iter()
         .filter_map(|matched| match matched.admission() {
             Admission::Admitted | Admission::Refused => None,
-            Admission::AdmittedUnverified(_) => {
+            Admission::AdmittedUnverified { .. } => {
                 let message = cadmpeg_container::parasolid::unverified_message(matched)
                     .unwrap_or_else(|| {
                         format!(

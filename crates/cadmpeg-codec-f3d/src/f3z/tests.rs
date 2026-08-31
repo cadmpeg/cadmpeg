@@ -938,7 +938,7 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
     assert_eq!(member.dialect().as_str(), "f3d:unknown");
     assert!(matches!(
         member.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified(_)
+        cadmpeg_core::dialect::Admission::AdmittedUnverified { .. }
     ));
     let refused_kernel = decoded
         .report()
