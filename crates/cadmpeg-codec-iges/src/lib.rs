@@ -75,23 +75,11 @@ impl IgesVersion {
     }
 
     pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::V4_0 => "4.0",
-            Self::V5_0 => "5.0",
-            Self::V5_1 => "5.1",
-            Self::V5_2 => "5.2",
-            Self::V5_3 => "5.3",
-        }
+        global::VersionFlag::from_write_version(self).name()
     }
 
     pub(crate) const fn global_flag(self) -> u8 {
-        match self {
-            Self::V4_0 => 6,
-            Self::V5_0 => 8,
-            Self::V5_1 => 9,
-            Self::V5_2 => 10,
-            Self::V5_3 => 11,
-        }
+        global::VersionFlag::from_write_version(self).value() as u8
     }
 }
 

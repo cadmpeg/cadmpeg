@@ -401,4 +401,9 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
         )
         .unwrap();
     assert_eq!(only_match(summary.dialects()), matched);
+    assert!(summary.notes.contains(&"iges_version=unverified".into()));
+    assert!(summary
+        .notes
+        .contains(&"iges_declared_version_flag=4".into()));
+    assert!(summary.notes.contains(&"iges_effective_version=3.0".into()));
 }
