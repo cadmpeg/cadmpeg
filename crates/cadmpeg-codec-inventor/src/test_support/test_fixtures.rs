@@ -150,9 +150,34 @@ pub(crate) fn primary_envelope_fixture_with_kernel(
     primary_envelope_fixture_with_kernel_and_failures(declarations, kernel, false, false)
 }
 
+/// A part envelope whose typed kernel-carrier record is too short to select.
+pub(crate) fn primary_envelope_fixture_with_unavailable_carrier() -> Vec<u8> {
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &[0_u8; 8],
+        false,
+        false,
+    )
+}
+
 fn primary_envelope_fixture_with_kernel_and_failures(
     declarations: EnvelopeDeclarations,
     kernel: &[u8],
+    break_database_body: bool,
+    break_metadata_body: bool,
+) -> Vec<u8> {
+    let carrier = kernel_carrier_fixture(kernel);
+    primary_envelope_fixture_with_carrier_and_failures(
+        declarations,
+        &carrier,
+        break_database_body,
+        break_metadata_body,
+    )
+}
+
+fn primary_envelope_fixture_with_carrier_and_failures(
+    declarations: EnvelopeDeclarations,
+    carrier: &[u8],
     break_database_body: bool,
     break_metadata_body: bool,
 ) -> Vec<u8> {
@@ -171,12 +196,11 @@ fn primary_envelope_fixture_with_kernel_and_failures(
     const FREE_SECTOR: u32 = 0xffff_ffff;
     const FAT_SECTOR: u32 = 0xffff_fffd;
 
-    let carrier = kernel_carrier_fixture(kernel);
     let mut meta = meta_stream_fixture(carrier.len(), declarations);
     if break_metadata_body {
         meta.push(0xff);
     }
-    let bulk = bulk_stream_fixture(&carrier);
+    let bulk = bulk_stream_fixture(carrier);
     let mut database = database_fixture(declarations.schema);
     if break_database_body {
         database.truncate(20);

@@ -68,7 +68,7 @@ use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
 use crate::database::RseSchema;
-use crate::kernel::KernelFamily;
+use crate::kernel::{ActiveCarrierState, KernelFamily};
 use crate::loss::InventorLossCode;
 use crate::rse::{MetaStreamDeclaration, ParsedState};
 
@@ -344,7 +344,7 @@ impl DialectRecovery {
 }
 
 /// The `acis:` kernel-layer match for one parsed active carrier.
-pub(crate) fn kernel_layer(
+fn kernel_layer(
     family: KernelFamily,
     header: &cadmpeg_asm::kernel_header::KernelHeader,
 ) -> DialectMatch {
@@ -356,8 +356,27 @@ pub(crate) fn kernel_layer(
 }
 
 /// The total kernel-layer row when the active carrier header does not parse.
-pub(crate) fn unknown_kernel_layer() -> DialectMatch {
+fn unknown_kernel_layer() -> DialectMatch {
     cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown)
+}
+
+/// Classifies the kernel layer represented by the active-carrier state.
+///
+/// Inspection and decode both call this function, so a carrier that was not
+/// expanded or could not be selected cannot disappear from one report path.
+pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch> {
+    match state {
+        ActiveCarrierState::Selected(carrier) => {
+            Some(crate::kernel::parse_kernel_header(carrier).map_or_else(
+                |_| unknown_kernel_layer(),
+                |header| kernel_layer(carrier.family, &header),
+            ))
+        }
+        ActiveCarrierState::NotExpanded | ActiveCarrierState::Unavailable(_) => {
+            Some(unknown_kernel_layer())
+        }
+        ActiveCarrierState::NotApplicable => None,
+    }
 }
 
 /// The recovery loss the kernel layer charges, if it recovered.

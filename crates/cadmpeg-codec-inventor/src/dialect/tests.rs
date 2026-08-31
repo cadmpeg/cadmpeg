@@ -15,7 +15,8 @@ use cadmpeg_ir::report::LossNote;
 use super::*;
 use crate::test_support::{
     fixture, primary_envelope_fixture_with, primary_envelope_fixture_with_broken_database,
-    primary_envelope_fixture_with_broken_metadata, EnvelopeDeclarations,
+    primary_envelope_fixture_with_broken_metadata,
+    primary_envelope_fixture_with_unavailable_carrier, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
 
@@ -296,6 +297,32 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
         assert_eq!(source.format(), FORMAT, "{}", case.label);
         assert_eq!(source.dialect(), Some(&matched), "{}", case.label);
     }
+}
+
+#[test]
+fn inspect_and_decode_keep_the_unavailable_kernel_layer() {
+    let bytes = primary_envelope_fixture_with_unavailable_carrier();
+    let summary = InventorCodec
+        .inspect(
+            &mut std::io::Cursor::new(&bytes),
+            &InspectOptions::default(),
+        )
+        .expect("the malformed carrier envelope still inspects");
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("an unavailable carrier degrades instead of refusing");
+
+    assert_eq!(summary.dialects(), decoded.report().dialects());
+    let dialects = decoded.report().dialects();
+    let layers = dialects
+        .as_ref()
+        .expect("Inventor reports its dialect layers");
+    let kernel = layers
+        .iter()
+        .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        .expect("the unavailable carrier remains an explicit kernel layer");
+    assert_eq!(kernel.dialect().as_str(), "acis:unknown");
+    assert_eq!(kernel.admission(), Admission::Refused);
 }
 
 /// The loss names what diverged, so a reader does not have to re-derive it.
