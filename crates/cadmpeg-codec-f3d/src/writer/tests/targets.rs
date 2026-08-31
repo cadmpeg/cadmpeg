@@ -28,22 +28,20 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     .err()
     .expect("an id outside the catalog is refused");
 
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "f3d");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("f3d:nonesuch")
-    );
+    assert_eq!(refusal.format(), "f3d");
+    assert_eq!(refusal.requested(), Some("f3d:nonesuch"));
     for target in Encoder::targets(&F3dCodec) {
-        assert!(available.contains(target.id.as_str()), "{available}");
+        assert!(
+            refusal
+                .available()
+                .iter()
+                .any(|available| available == target),
+            "{:?}",
+            refusal.available()
+        );
     }
 }
 

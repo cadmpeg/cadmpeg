@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed conversion refusals.
 //!
-//! Report envelope `schema_version` 6 serializes [`RefusalCode`] under
+//! Report envelope `schema_version` 7 serializes [`RefusalCode`] under
 //! `refusal.code` with `status: "refused"`. Presentation messages stay on the
 //! variant for stderr and `refusal.message`.
 
+use std::borrow::Cow;
 use std::fmt;
 
+use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::target::TargetRefusal;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use serde_json::{json, Value};
 
@@ -18,17 +21,32 @@ pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
     if matches!(codec_error, cadmpeg_core::CodecError::Io(_)) {
         return error;
     }
-    ConversionRefusal::DecodeFailed {
-        message: format!("decode failed: {error:#}"),
+    let fallback_message = format!("decode failed: {error:#}");
+    let Ok(codec_error) = error.downcast::<cadmpeg_core::CodecError>() else {
+        unreachable!("downcast_ref established the codec error type");
+    };
+    match codec_error {
+        cadmpeg_core::CodecError::UnsupportedDialect {
+            dialect_match,
+            message,
+        } => ConversionRefusal::UnsupportedDialect {
+            dialect_match,
+            reason: message,
+        },
+        _ => ConversionRefusal::DecodeFailed {
+            message: fallback_message,
+        },
     }
     .into()
 }
 
-/// Stable refusal code written into v6 command reports and used by tests.
+/// Stable refusal code written into v7 command reports and used by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefusalCode {
     /// Native input decoding failed with a classified codec error.
     DecodeFailed,
+    /// The input was identified but its dialect has no decode grammar.
+    UnsupportedDialect,
     /// The check found errors and `--allow-errors` was not set.
     CheckFailed,
     /// Decode reported losses under `--reject-lossy`.
@@ -49,6 +67,7 @@ impl RefusalCode {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::DecodeFailed => "decode_failed",
+            Self::UnsupportedDialect => "unsupported_dialect",
             Self::CheckFailed => "check_failed",
             Self::DecodeLossRejected => "decode_loss_rejected",
             Self::ExportLossRejected => "export_loss_rejected",
@@ -99,7 +118,7 @@ impl fmt::Display for RefusalStage {
 
 /// Typed refusal from the conversion workflow.
 ///
-/// Presentation messages stay on the variant; codes and stages reach the v6
+/// Presentation messages stay on the variant; codes and stages reach the v7
 /// report envelope through [`ConversionRefusal::report_fields`].
 #[derive(Debug)]
 pub enum ConversionRefusal {
@@ -107,6 +126,13 @@ pub enum ConversionRefusal {
     DecodeFailed {
         /// Human-readable message.
         message: String,
+    },
+    /// Input identity was recovered before the codec refused its dialect.
+    UnsupportedDialect {
+        /// Identification made before refusal.
+        dialect_match: Box<DialectMatch>,
+        /// Codec-owned reason no decode grammar can admit it.
+        reason: String,
     },
     /// The check found errors and `--allow-errors` was not set.
     CheckFailed {
@@ -144,11 +170,10 @@ pub enum ConversionRefusal {
         /// Validation report available for an optional `--report`.
         validation: Option<ValidationReport>,
     },
-    /// The encoder cannot write the dialect `--to` named. The message is the
-    /// encoder's own, and carries its catalog.
+    /// The encoder could not resolve or deliver the requested target.
     UnsupportedTarget {
-        /// Human-readable message.
-        message: String,
+        /// Typed request state and the encoder's structured catalog.
+        refusal: Box<TargetRefusal>,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
@@ -162,11 +187,12 @@ pub enum ConversionRefusal {
 }
 
 impl ConversionRefusal {
-    /// Stable code for tests and the v6 report envelope.
+    /// Stable code for tests and the v7 report envelope.
     #[must_use]
     pub const fn code(&self) -> RefusalCode {
         match self {
             Self::DecodeFailed { .. } => RefusalCode::DecodeFailed,
+            Self::UnsupportedDialect { .. } => RefusalCode::UnsupportedDialect,
             Self::CheckFailed { .. } => RefusalCode::CheckFailed,
             Self::DecodeLossRejected { .. } => RefusalCode::DecodeLossRejected,
             Self::ExportLossRejected { .. } => RefusalCode::ExportLossRejected,
@@ -176,11 +202,11 @@ impl ConversionRefusal {
         }
     }
 
-    /// Workflow stage for the v6 report envelope.
+    /// Workflow stage for the v7 report envelope.
     #[must_use]
     pub const fn stage(&self) -> RefusalStage {
         match self {
-            Self::DecodeFailed { .. } => RefusalStage::Decode,
+            Self::DecodeFailed { .. } | Self::UnsupportedDialect { .. } => RefusalStage::Decode,
             Self::UnsupportedTarget { .. } | Self::BinaryStdoutRejected { .. } => {
                 RefusalStage::Plan
             }
@@ -192,27 +218,36 @@ impl ConversionRefusal {
 
     /// Presentation message shown to the user and written to `refusal.message`.
     #[must_use]
-    pub fn message(&self) -> &str {
+    pub fn message(&self) -> Cow<'_, str> {
         match self {
             Self::DecodeFailed { message }
             | Self::CheckFailed { message, .. }
             | Self::DecodeLossRejected { message, .. }
             | Self::ExportLossRejected { message, .. }
             | Self::EmptyGeometry { message, .. }
-            | Self::UnsupportedTarget { message, .. }
-            | Self::BinaryStdoutRejected { message } => message,
+            | Self::BinaryStdoutRejected { message } => Cow::Borrowed(message),
+            Self::UnsupportedDialect {
+                dialect_match,
+                reason,
+            } => Cow::Owned(format!(
+                "unsupported {} dialect {}: {reason}",
+                dialect_match.format(),
+                dialect_match.dialect()
+            )),
+            Self::UnsupportedTarget { refusal, .. } => Cow::Owned(refusal.to_string()),
         }
     }
 
-    /// `status` / `refusal` object fields for a v6 command report.
+    /// `status` / `refusal` object fields for a v7 command report.
     #[must_use]
     pub fn report_fields(&self) -> Value {
+        let message = self.message();
         json!({
             "status": "refused",
             "refusal": {
                 "stage": self.stage().as_str(),
                 "code": self.code().as_str(),
-                "message": self.message(),
+                "message": message.as_ref(),
             },
         })
     }
@@ -225,6 +260,7 @@ impl ConversionRefusal {
     pub const fn may_write_report(&self) -> bool {
         match self {
             Self::DecodeFailed { .. }
+            | Self::UnsupportedDialect { .. }
             | Self::CheckFailed { .. }
             | Self::DecodeLossRejected { .. }
             | Self::ExportLossRejected { .. }
@@ -238,7 +274,7 @@ impl ConversionRefusal {
     #[must_use]
     pub fn decode_report(&self) -> Option<&DecodeReport> {
         match self {
-            Self::DecodeFailed { .. } => None,
+            Self::DecodeFailed { .. } | Self::UnsupportedDialect { .. } => None,
             Self::CheckFailed { decode_report, .. } => decode_report.as_ref(),
             Self::DecodeLossRejected { decode_report, .. } => Some(decode_report),
             Self::ExportLossRejected { decode_report, .. }
@@ -252,7 +288,7 @@ impl ConversionRefusal {
     #[must_use]
     pub fn check_report(&self) -> Option<&ValidationReport> {
         match self {
-            Self::DecodeFailed { .. } => None,
+            Self::DecodeFailed { .. } | Self::UnsupportedDialect { .. } => None,
             Self::CheckFailed { validation, .. } => Some(validation),
             Self::ExportLossRejected { validation, .. }
             | Self::EmptyGeometry { validation, .. }
@@ -285,7 +321,7 @@ impl ConversionRefusal {
 
 impl fmt::Display for ConversionRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message())
+        f.write_str(self.message().as_ref())
     }
 }
 
@@ -295,12 +331,26 @@ impl std::error::Error for ConversionRefusal {}
 mod tests {
     use std::collections::BTreeMap;
 
+    use cadmpeg_core::dialect::{DialectId, DialectMatch};
+    use cadmpeg_core::target::{TargetDescriptor, TargetToken};
+
     use super::*;
+
+    const IGES_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
+        id: DialectId::pinned("iges:5.3-fixed-ascii"),
+        label: "IGES 5.3",
+        aliases: &[],
+        default: true,
+    }];
 
     #[test]
     fn refusal_codes_are_stable_for_tests_and_absent_from_display() {
         let refusal = ConversionRefusal::UnsupportedTarget {
-            message: "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii".into(),
+            refusal: Box::new(TargetRefusal::UnknownExplicit {
+                format: "iges".into(),
+                requested: TargetToken::new("iges:9.9"),
+                available: IGES_TARGETS,
+            }),
             decode_report: None,
             validation: None,
         };
@@ -313,6 +363,47 @@ mod tests {
         assert_eq!(fields["status"], "refused");
         assert_eq!(fields["refusal"]["code"], "unsupported_target");
         assert_eq!(fields["refusal"]["stage"], "plan");
+    }
+
+    #[test]
+    fn unsupported_decode_keeps_the_identification() {
+        let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
+        let refusal = ConversionRefusal::UnsupportedDialect {
+            dialect_match: Box::new(matched.clone()),
+            reason: "the XML encoding has no decode grammar".into(),
+        };
+
+        let ConversionRefusal::UnsupportedDialect { dialect_match, .. } = &refusal else {
+            panic!("the variant just constructed is preserved");
+        };
+        assert_eq!(dialect_match.as_ref(), &matched);
+        assert_eq!(refusal.code(), RefusalCode::UnsupportedDialect);
+        assert_eq!(refusal.stage(), RefusalStage::Decode);
+        assert_eq!(refusal.exit_code(), 1);
+        assert_eq!(
+            refusal.report_fields()["refusal"]["code"],
+            "unsupported_dialect"
+        );
+    }
+
+    #[test]
+    fn decode_classifier_preserves_an_unsupported_dialect_variant() {
+        let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
+        let classified = classify_decode_failure(
+            cadmpeg_core::CodecError::UnsupportedDialect {
+                dialect_match: Box::new(matched.clone()),
+                message: "the XML encoding has no decode grammar".into(),
+            }
+            .into(),
+        );
+        let refusal = classified
+            .downcast_ref::<ConversionRefusal>()
+            .expect("codec refusal becomes an application refusal");
+
+        let ConversionRefusal::UnsupportedDialect { dialect_match, .. } = refusal else {
+            panic!("unsupported identity must not be flattened to DecodeFailed");
+        };
+        assert_eq!(dialect_match.as_ref(), &matched);
     }
 
     #[test]

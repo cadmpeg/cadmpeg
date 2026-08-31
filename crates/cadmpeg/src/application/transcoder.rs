@@ -476,9 +476,9 @@ fn plan_refusal(
     validation: Option<ValidationReport>,
 ) -> anyhow::Error {
     match error {
-        cadmpeg_core::CodecError::UnsupportedTarget { .. } => {
+        cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
             ConversionRefusal::UnsupportedTarget {
-                message: error.to_string(),
+                refusal,
                 decode_report,
                 validation,
             }

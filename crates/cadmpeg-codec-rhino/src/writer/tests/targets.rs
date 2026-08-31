@@ -27,22 +27,20 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     .err()
     .expect("an id outside the catalog is refused");
 
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "rhino");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("rhino:nonesuch")
-    );
+    assert_eq!(refusal.format(), "rhino");
+    assert_eq!(refusal.requested(), Some("rhino:nonesuch"));
     for target in Encoder::targets(&encoder) {
-        assert!(available.contains(target.id.as_str()), "{available}");
+        assert!(
+            refusal
+                .available()
+                .iter()
+                .any(|available| available == target),
+            "{:?}",
+            refusal.available()
+        );
     }
 }
 
@@ -157,18 +155,19 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     .err()
     .expect("a source with no recorded dialect is refused");
 
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "rhino");
-    assert_eq!(*requested, None);
-    assert!(available.contains("rhino:archive-80"), "{available}");
+    assert_eq!(refusal.format(), "rhino");
+    assert_eq!(refusal.requested(), None);
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "rhino:archive-80"),
+        "{:?}",
+        refusal.available()
+    );
 }
 
 /// An explicit target that is not the source archive version charges a loss.
@@ -231,22 +230,20 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
     .err()
     .expect("a source dialect outside the catalog is refused");
 
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "rhino");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("rhino:archive-3")
-    );
+    assert_eq!(refusal.format(), "rhino");
+    assert_eq!(refusal.requested(), Some("rhino:archive-3"));
     for target in Encoder::targets(&encoder) {
-        assert!(available.contains(target.id.as_str()), "{available}");
+        assert!(
+            refusal
+                .available()
+                .iter()
+                .any(|available| available == target),
+            "{:?}",
+            refusal.available()
+        );
     }
 }
 

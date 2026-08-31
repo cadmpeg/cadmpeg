@@ -131,9 +131,9 @@ use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use std::io::Write;
 
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor,
-    TargetRequest,
+    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetRequest,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};

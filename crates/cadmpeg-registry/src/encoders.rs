@@ -87,21 +87,16 @@ mod tests {
                 )
                 .err()
                 .expect("an id outside the catalog is refused");
-            let CodecError::UnsupportedTarget {
-                requested,
-                available,
-                ..
-            } = &error
-            else {
+            let CodecError::UnsupportedTarget(refusal) = &error else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
-            assert_eq!(
-                requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-                Some("nonesuch:dialect")
-            );
+            assert_eq!(refusal.requested(), Some("nonesuch:dialect"));
             for target in encoder.targets() {
                 assert!(
-                    available.contains(target.id.as_str()),
+                    refusal
+                        .available()
+                        .iter()
+                        .any(|available| available == target),
                     "{}: the refusal omits {}",
                     encoder.id(),
                     target.id

@@ -9,7 +9,7 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{unsupported_target, EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{EncodeInput, ExportPlan, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{ExportReport, FidelityResolution};
 
@@ -122,12 +122,9 @@ pub(in crate::writer) fn resolve(
     // refusal is typed and carries the catalog, like every other write refusal;
     // it used to surface as a bare message string from deep inside `write`.
     retained_baseline(ir, &target).ok_or_else(|| {
-        unsupported_target(
-            dialect::FORMAT,
-            target.as_str(),
+        resolved.unavailable(
             "the retained FCStd document graph does not declare it, and this writer \
                  regenerates no Document.xml, so it cannot be written",
-            dialect::TARGETS,
         )
     })
 }

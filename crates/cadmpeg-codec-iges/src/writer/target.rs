@@ -3,9 +3,7 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest,
-};
+use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, ExportPlan, TargetRequest};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
 
@@ -27,12 +25,9 @@ pub(crate) fn plan<'a>(
             Replay::Replayed { bytes } => {
                 Ok(replayed_plan(input.ir, resolved.dialect().clone(), bytes))
             }
-            Replay::Declined { .. } => Err(unsupported_target(
-                crate::dialect::FORMAT,
-                resolved.dialect().as_str(),
+            Replay::Declined { .. } => Err(resolved.unavailable(
                 "its retained source image is unavailable for byte replay and the semantic \
                      writer cannot synthesize it",
-                crate::dialect::TARGETS,
             )),
         };
     };

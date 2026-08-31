@@ -103,21 +103,19 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
     let error = inherit(decoded.ir(), None)
         .err()
         .expect("1.0 is not a synthesis target");
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "iges");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("iges:1.0-fixed-ascii")
+    assert_eq!(refusal.format(), "iges");
+    assert_eq!(refusal.requested(), Some("iges:1.0-fixed-ascii"));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "iges:5.3-fixed-ascii"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("iges:5.3-fixed-ascii"), "{available}");
 }
 
 /// The same source is writable the moment the caller names a target the writer
@@ -164,20 +162,19 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
         )
         .err()
         .expect("a STEP schema is not an IGES target");
-    let CodecError::UnsupportedTarget {
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("step:ap242-e3")
-    );
+    assert_eq!(refusal.requested(), Some("step:ap242-e3"));
     for version in IgesVersion::ALL {
-        assert!(available.contains(version.target()), "{available}");
+        assert!(
+            refusal
+                .available()
+                .iter()
+                .any(|target| target.id.as_str() == version.target()),
+            "{:?}",
+            refusal.available()
+        );
     }
 }
 

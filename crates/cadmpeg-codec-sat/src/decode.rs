@@ -167,7 +167,6 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
 fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String>) -> CodecError {
     let (matched, _) = layers(evidence);
     CodecError::UnsupportedDialect {
-        format: FORMAT.into(),
         dialect_match: Box::new(matched),
         message: message.into(),
     }

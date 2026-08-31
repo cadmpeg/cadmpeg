@@ -10,10 +10,10 @@
 //! explicitly versioned native writing from neutral IR.
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor,
-    TargetRequest,
+    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
@@ -177,12 +177,7 @@ impl Encoder for RhinoEncoder {
             dialect::TARGETS,
         )?;
         let Some(entry) = resolved.catalog_entry() else {
-            return Err(cadmpeg_ir::codec::unsupported_target(
-                dialect::FORMAT,
-                resolved.dialect().as_str(),
-                OFF_CATALOG_SOURCE_REASON,
-                dialect::TARGETS,
-            ));
+            return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
         };
         let version = dialect::target_version(entry);
         let mut bytes = Vec::new();

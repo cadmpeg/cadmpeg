@@ -1,4 +1,4 @@
-# generated at c3715792f
+# generated at af2b7480e
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
@@ -20,7 +20,7 @@ pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode:
 impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_step::StepCodec
 pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_step::StepCodec::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
+pub fn cadmpeg_codec_step::StepCodec::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub struct cadmpeg_codec_step::StepWriteOptions
 pub cadmpeg_codec_step::StepWriteOptions::author: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String

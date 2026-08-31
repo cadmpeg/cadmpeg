@@ -2,7 +2,7 @@
 //! Runtime projections of the joined dialect registries.
 
 use cadmpeg_core::dialect::{DialectId, DialectLayers};
-use cadmpeg_ir::codec::TargetDescriptor;
+use cadmpeg_core::target::TargetDescriptor;
 
 use crate::disposition::ReadDisposition;
 use crate::registry::{catalog_of, registries, support, DialectEntry};

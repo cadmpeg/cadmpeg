@@ -1,4 +1,4 @@
-# generated at c3715792f
+# generated at af2b7480e
 pub mod cadmpeg_codec_rhino
 pub enum cadmpeg_codec_rhino::RhinoArchiveVersion
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V5
@@ -17,4 +17,4 @@ pub struct cadmpeg_codec_rhino::RhinoEncoder
 impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_rhino::RhinoEncoder
 pub fn cadmpeg_codec_rhino::RhinoEncoder::id(&self) -> &'static str
 pub fn cadmpeg_codec_rhino::RhinoEncoder::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_rhino::RhinoEncoder::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
+pub fn cadmpeg_codec_rhino::RhinoEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]

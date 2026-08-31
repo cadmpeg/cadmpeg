@@ -3,9 +3,7 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest,
-};
+use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, ExportPlan, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
@@ -43,12 +41,9 @@ pub(crate) fn plan<'a>(
                 write_path,
                 bytes,
             )),
-            Preservation::Declined => Err(unsupported_target(
-                dialect::FORMAT,
-                resolved.dialect().as_str(),
+            Preservation::Declined => Err(resolved.unavailable(
                 "its retained source image is unavailable for preservation and the generator \
                  cannot synthesize it",
-                dialect::TARGETS,
             )),
         };
     };

@@ -40,10 +40,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
-    TargetDescriptor, TargetRequest,
+    TargetRequest,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;

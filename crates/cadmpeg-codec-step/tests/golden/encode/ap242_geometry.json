@@ -194,6 +194,6 @@
     }
   },
   "inherit": {
-    "encode_error": "step cannot write step:ap242: the semantic writer cannot synthesize it, and writing another schema would change what the file declares; name a target to choose one; available targets: step:ap203-e1, step:ap203-e2, step:ap214, step:ap242-e1, step:ap242-e2, step:ap242-e3"
+    "encode_error": "step cannot preserve source dialect step:ap242: the semantic writer cannot synthesize it, and writing another schema would change what the file declares; name a target to choose one; available targets: step:ap203-e1, step:ap203-e2, step:ap214, step:ap242-e1, step:ap242-e2, step:ap242-e3"
   }
 }

@@ -7,6 +7,7 @@ use super::super::*;
 use crate::native::DocumentFacts;
 use crate::test_support::*;
 use crate::FcstdCodec;
+use cadmpeg_core::target::{DefaultSource, TargetRefusal};
 use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
 use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 use std::io::Cursor;
@@ -26,17 +27,11 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         )
         .err()
         .expect("unsupported target must fail");
-    let CodecError::UnsupportedTarget {
-        format, requested, ..
-    } = &unsupported
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &unsupported else {
         panic!("expected a target refusal, got {unsupported}");
     };
-    assert_eq!(format, "fcstd");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("fcstd:schema-3")
-    );
+    assert_eq!(refusal.format(), "fcstd");
+    assert_eq!(refusal.requested(), Some("fcstd:schema-3"));
 
     // A STEP document has no retained FCStd graph this writer can patch.
     // The catalog intentionally has no cross-format default, so `plan`
@@ -51,17 +46,20 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         .plan(EncodeInput::new(&step_source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
-    let CodecError::UnsupportedTarget {
-        format, requested, ..
-    } = &missing_graph
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &missing_graph else {
         panic!("expected a target refusal, got {missing_graph}");
     };
-    assert_eq!(format, "fcstd");
-    assert_eq!(*requested, None);
+    assert!(matches!(
+        refusal.as_ref(),
+        TargetRefusal::NoDefault {
+            format,
+            source: DefaultSource::ForeignFormat(source_format),
+            ..
+        } if format == "fcstd" && source_format == "step"
+    ));
     assert_eq!(
         missing_graph.to_string(),
-        "fcstd cannot write an unrecorded source dialect: there is nothing to inherit and this encoder has no synthesis catalog; available targets: fcstd:schema-4"
+        "fcstd cannot inherit a write target from source format step: this encoder declares no cross-format default; available targets: fcstd:schema-4"
     );
 }
 
@@ -83,22 +81,20 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     .err()
     .expect("an id outside the catalog is refused");
 
-    let cadmpeg_core::CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "fcstd");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("fcstd:nonesuch")
-    );
+    assert_eq!(refusal.format(), "fcstd");
+    assert_eq!(refusal.requested(), Some("fcstd:nonesuch"));
     for target in Encoder::targets(&FcstdCodec) {
-        assert!(available.contains(target.id.as_str()), "{available}");
+        assert!(
+            refusal
+                .available()
+                .iter()
+                .any(|available| available == target),
+            "{:?}",
+            refusal.available()
+        );
     }
 }
 
@@ -241,21 +237,23 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     let error = inherit(&ir)
         .err()
         .expect("a schema-2 source with no baseline is refused");
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "fcstd");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("fcstd:schema-2")
+    assert_eq!(refusal.format(), "fcstd");
+    assert_eq!(refusal.requested(), Some("fcstd:schema-2"));
+    assert!(matches!(
+        refusal.as_ref(),
+        TargetRefusal::InheritedUnavailable { .. }
+    ));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "fcstd:schema-4"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("fcstd:schema-4"), "{available}");
 }
 
 /// An explicit `--to` is the escape from the inherit refusal only where the
@@ -289,21 +287,23 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
     )
     .err()
     .expect("this writer regenerates no Document.xml");
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "fcstd");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("fcstd:schema-4")
+    assert_eq!(refusal.format(), "fcstd");
+    assert_eq!(refusal.requested(), Some("fcstd:schema-4"));
+    assert!(matches!(
+        refusal.as_ref(),
+        TargetRefusal::ExplicitUnavailable { .. }
+    ));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "fcstd:schema-4"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("fcstd:schema-4"), "{available}");
 }
 
 /// An `FCStd` source that records no dialect refuses `Inherit`, uniformly
@@ -327,18 +327,23 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     let error = inherit(&ir)
         .err()
         .expect("a source with no recorded dialect is refused");
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "fcstd");
-    assert_eq!(*requested, None);
-    assert!(available.contains("fcstd:schema-4"), "{available}");
+    assert_eq!(refusal.format(), "fcstd");
+    assert_eq!(refusal.requested(), None);
+    assert!(matches!(
+        refusal.as_ref(),
+        TargetRefusal::UnrecordedSource { .. }
+    ));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "fcstd:schema-4"),
+        "{:?}",
+        refusal.available()
+    );
 }
 
 /// The §8.3 honesty invariant on this codec's only write path: re-decoding

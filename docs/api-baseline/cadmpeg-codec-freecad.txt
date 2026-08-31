@@ -1,4 +1,4 @@
-# generated at c3715792f
+# generated at af2b7480e
 pub mod cadmpeg_codec_freecad
 pub enum cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Document
@@ -16,7 +16,7 @@ pub fn cadmpeg_codec_freecad::FcstdCodec::inspect_impl(&self, &cadmpeg_core::dec
 impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_freecad::FcstdCodec
 pub fn cadmpeg_codec_freecad::FcstdCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_freecad::FcstdCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_freecad::FcstdCodec::targets(&self) -> &'static [cadmpeg_ir::codec::write::TargetDescriptor]
+pub fn cadmpeg_codec_freecad::FcstdCodec::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub struct cadmpeg_codec_freecad::FcstdDocumentBuilder
 impl cadmpeg_codec_freecad::FcstdDocumentBuilder
 pub fn cadmpeg_codec_freecad::FcstdDocumentBuilder::add_dependency(&mut self, &str, &str) -> core::result::Result<&mut Self, cadmpeg_core::error::CodecError>
