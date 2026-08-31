@@ -13,6 +13,7 @@ use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSn
 use cadmpeg_container::compression::{inflate_bounded_probe, inflate_deflate, inflate_zlib_member};
 use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
@@ -722,7 +723,7 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
 
 /// Convert a scan into the generic container inventory returned by
 /// [`cadmpeg_ir::Codec::inspect`].
-pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSummary {
     let mut entries = Vec::new();
 
     for b in &scan.blocks {
@@ -821,7 +822,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     );
 
     ContainerSummary::classified(
-        crate::dialect::classify_layers(scan),
+        dialects,
         if scan.compound_streams.is_empty() {
             "sldprt-blocks"
         } else {

@@ -17,6 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -119,6 +120,9 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
+    let dialects = crate::dialect::classify_layers(&scan);
+    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
+        .and_then(crate::dialect::SldprtDialect::form_code_padding);
     // Charge container cardinality before BREP/IR construction so max_entities
     // can refuse the expensive path rather than only the finalizer.
     let container_entities =
@@ -128,8 +132,8 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     if ctx.container_only() {
         let (ir, annotations, unknowns, mut pmi_losses) =
-            build_metadata_ir(ctx, &scan, &mut admitted_entities)?;
-        let mut report = build_container_report(&scan, true);
+            build_metadata_ir(ctx, &scan, form_padding, &mut admitted_entities)?;
+        let mut report = build_container_report(&scan, &dialects, true);
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
     }
@@ -137,7 +141,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
+        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &dialects) {
             let source_header = decoded
                 .metadata_stream
                 .and_then(|index| streams.get(index).map(|stream| &stream.header));
@@ -147,6 +151,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 source_header,
                 decoded.brep,
                 &decoded.configuration_bodies,
+                form_padding,
                 &mut admitted_entities,
             )?;
             report.losses.append(&mut pmi_losses);
@@ -157,8 +162,8 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     }
 
     let (ir, annotations, unknowns, mut pmi_losses) =
-        build_metadata_ir(ctx, &scan, &mut admitted_entities)?;
-    let mut report = build_container_report(&scan, false);
+        build_metadata_ir(ctx, &scan, form_padding, &mut admitted_entities)?;
+    let mut report = build_container_report(&scan, &dialects, false);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
     decode_result(ir, report, annotations, unknowns)
@@ -2007,6 +2012,7 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
 fn try_decode_brep(
     scan: &ContainerScan,
     streams: &[BodyStream<'_>],
+    dialects: &DialectLayers,
 ) -> Option<(DecodedBrep, DecodeReport)> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
@@ -2126,7 +2132,7 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate);
     }
-    let report = build_geometry_report(scan, &decoded);
+    let report = build_geometry_report(scan, &decoded, dialects);
     Some((
         DecodedBrep {
             metadata_stream,
@@ -2250,6 +2256,7 @@ fn build_geometry_ir(
     header: Option<&StreamHeader>,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
     (
@@ -2268,9 +2275,6 @@ fn build_geometry_ir(
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
-    let dialects = report_dialects(scan);
-    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
-        .and_then(crate::dialect::SldprtDialect::form_code_padding);
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -2279,7 +2283,14 @@ fn build_geometry_ir(
     );
     let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
-    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
+    project_design_history(
+        &mut ir,
+        &histories,
+        &lanes,
+        &pmi_dimensions,
+        scan,
+        form_padding,
+    );
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
@@ -3181,7 +3192,11 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
     }
 }
 
-fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
+fn build_geometry_report(
+    scan: &ContainerScan,
+    decoded: &Brep,
+    dialects: &DialectLayers,
+) -> DecodeReport {
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -3253,15 +3268,14 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    let dialects = report_dialects(scan);
-    append_dialect_losses(&dialects, &mut losses);
+    append_dialect_losses(dialects, &mut losses);
     DecodeReport::classified(
-        dialects,
+        dialects.clone(),
         false,
         true,
         std::collections::BTreeMap::new(),
         losses,
-        container::summarize(scan).notes,
+        container::summarize(scan, dialects.clone()).notes,
         cadmpeg_ir::report::TransferLedger::default(),
     )
 }
@@ -3269,6 +3283,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
     (
@@ -3344,10 +3359,14 @@ fn build_metadata_ir(
     }
 
     ir.source = Some(source_meta_with_dialect(attributes));
-    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let dialects = report_dialects(scan);
-    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
-        .and_then(crate::dialect::SldprtDialect::form_code_padding);
+    project_design_history(
+        &mut ir,
+        &histories,
+        &lanes,
+        &pmi_dimensions,
+        scan,
+        form_padding,
+    );
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
@@ -3643,6 +3662,7 @@ fn project_design_history(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     scan: &ContainerScan,
+    form_padding: Option<usize>,
 ) {
     let mut semantic_projection = histories.to_vec();
     crate::history::enrich_scene_classes(
@@ -3681,9 +3701,6 @@ fn project_design_history(
         );
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
-    let dialects = report_dialects(scan);
-    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
-        .and_then(crate::dialect::SldprtDialect::form_code_padding);
     crate::history::project_configuration_design_states(
         ir,
         histories,
@@ -4527,10 +4544,6 @@ fn preserve_source_image(
     });
 }
 
-fn report_dialects(scan: &ContainerScan) -> cadmpeg_core::dialect::DialectLayers {
-    crate::dialect::classify_layers(scan)
-}
-
 /// Appends the dialect-unverified loss the primary layer's admission charges.
 ///
 /// Takes the same `dialects` the report carries, so the note and the reported
@@ -4542,8 +4555,12 @@ fn append_dialect_losses(
     losses.extend(crate::dialect::dialect_loss(dialects.primary()));
 }
 
-fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
-    let summary = container::summarize(scan);
+fn build_container_report(
+    scan: &ContainerScan,
+    dialects: &DialectLayers,
+    container_only: bool,
+) -> DecodeReport {
+    let summary = container::summarize(scan, dialects.clone());
     let parasolid_sources = scan
         .blocks
         .iter()
@@ -4582,14 +4599,10 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    let dialects = summary
-        .dialects()
-        .expect("SLDPRT summary reports its primary dialect layer")
-        .clone();
-    append_dialect_losses(&dialects, &mut losses);
+    append_dialect_losses(dialects, &mut losses);
 
     DecodeReport::classified(
-        dialects,
+        dialects.clone(),
         container_only,
         false,
         std::collections::BTreeMap::new(),
