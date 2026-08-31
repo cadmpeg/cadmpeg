@@ -284,8 +284,7 @@ fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
 
 /// The recovery loss a kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let using = match matched.admission() {
-        Admission::AdmittedUnverified { using } => using,
+    match matched.admission() {
         Admission::Refused => {
             let carrier = matched
                 .declared()
@@ -303,31 +302,16 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
                 });
             return Some(F3dLossCode::KernelCarrierUnparseable.note(message));
         }
-        Admission::Admitted => return None,
-    };
+        Admission::Admitted | Admission::AdmittedUnverified { .. } => {}
+    }
     let carrier = matched
         .declared()
         .get(DECLARED_KERNEL_CARRIER)
         .map_or("an unnamed carrier", String::as_str);
-    let declared = matched.declared().get("save_format_major").map_or_else(
-        || "no save format".to_owned(),
-        |major| format!("save format major {major}"),
-    );
-    let message = using.map_or_else(
-        || {
-            format!(
-                "the kernel carrier {carrier} declares {declared}; its recovery names no \
-                 declared save-band grammar as a substitute"
-            )
-        },
-        |using| {
-            cadmpeg_asm::dialect::acis_recovery_message(
-                &format!("the kernel carrier {carrier}"),
-                &declared,
-                &using,
-            )
-        },
-    );
+    let message = cadmpeg_asm::dialect::unverified_message(
+        &format!("the kernel carrier {carrier}"),
+        matched,
+    )?;
     let message = matched
         .declared()
         .get(DECLARED_ARCHIVE_MEMBER)
