@@ -26,14 +26,18 @@ fn decode_zero_entity_falls_back_to_metadata() {
     assert!(!result.report().geometry_transferred);
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(
-        source.attributes.get("variant").map(String::as_str),
-        Some("zero_entity")
+        source
+            .dialect()
+            .expect("classified source")
+            .dialect()
+            .as_str(),
+        "catia:zero-entity"
     );
     assert!(result
         .report()
         .losses
         .iter()
-        .any(|l| l.message.contains("zero_entity")));
+        .any(|l| l.message.contains("catia:zero-entity")));
 }
 
 #[test]

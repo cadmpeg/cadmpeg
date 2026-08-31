@@ -148,8 +148,7 @@
         "file_size": "76",
         "finjpl_segment_count": "0",
         "outer_dir_offset": "0",
-        "preview_count": "0",
-        "variant": "zero_entity"
+        "preview_count": "0"
       },
       "dialect": {
         "admission": "admitted",
@@ -519,7 +518,7 @@
           "kind": "geometry_not_transferred",
           "namespace": "catia"
         },
-        "message": "No B-rep geometry was transferred. This file's storage variant is `zero_entity` (zero-entity a9 03 (no nested container): analytic carriers decoded); the applicable decoded record families transfer geometry in this codec.",
+        "message": "No B-rep geometry was transferred. This file's storage variant is `catia:zero-entity` (zero-entity a9 03 (no nested container): analytic carriers decoded); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
       },
       {

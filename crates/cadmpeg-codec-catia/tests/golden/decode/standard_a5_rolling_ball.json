@@ -502,7 +502,6 @@
         "outer_dir_offset": "1095",
         "preview_count": "0",
         "stream_count": "2",
-        "variant": "standard_nested",
         "vertex_records": "3"
       },
       "dialect": {
@@ -1020,7 +1019,7 @@
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
           "stream": 0,
-          "tag": "standard_nested"
+          "tag": "catia:standard-nested"
         },
         "catia:rolling-ball:construction#0": {
           "offset": 16,

@@ -401,8 +401,7 @@
         "file_size": "1359",
         "finjpl_segment_count": "0",
         "outer_dir_offset": "0",
-        "preview_count": "0",
-        "variant": "zero_entity"
+        "preview_count": "0"
       },
       "dialect": {
         "admission": "admitted",
@@ -805,7 +804,7 @@
         "catia:payload:unknown#zero-entity": {
           "offset": 0,
           "stream": 0,
-          "tag": "zero_entity"
+          "tag": "catia:zero-entity"
         },
         "catia:zero-entity:surf#0": {
           "offset": 16,

@@ -186,8 +186,7 @@
         "inner_offset": "16",
         "outer_dir_offset": "539",
         "preview_count": "0",
-        "stream_count": "2",
-        "variant": "inner_no_directory"
+        "stream_count": "2"
       },
       "dialect": {
         "admission": "admitted",
@@ -594,7 +593,7 @@
         "catia:payload:unknown#freeform": {
           "offset": 0,
           "stream": 0,
-          "tag": "inner_no_directory"
+          "tag": "catia:inner-no-directory"
         }
       },
       "streams": [

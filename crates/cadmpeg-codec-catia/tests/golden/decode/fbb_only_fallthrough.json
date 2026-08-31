@@ -192,7 +192,6 @@
         "outer_dir_offset": "587",
         "preview_count": "0",
         "stream_count": "2",
-        "variant": "fbb_only",
         "vertex_records": "3"
       },
       "dialect": {
@@ -674,7 +673,7 @@
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
           "stream": 0,
-          "tag": "fbb_only"
+          "tag": "catia:fbb-only"
         },
         "catia:standard:circle#0": {
           "offset": 297,

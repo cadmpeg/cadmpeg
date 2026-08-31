@@ -210,7 +210,6 @@
         "outer_dir_offset": "543",
         "preview_count": "0",
         "stream_count": "2",
-        "variant": "e5_stream",
         "vertex_records": "2"
       },
       "dialect": {
@@ -673,7 +672,7 @@
         "catia:payload:unknown#e5": {
           "offset": 0,
           "stream": 0,
-          "tag": "e5_stream"
+          "tag": "catia:e5-stream"
         }
       },
       "streams": [
