@@ -41,7 +41,7 @@ impl Format {
     /// Total over the `--to` format vocabulary, and the reason a bare `--to`
     /// value is unambiguous: a value this returns `Some` for is a format, and
     /// every other bare value is a dialect of the inferred output format.
-    /// `support::tests::compiled_write_catalogs_match_registry_policy` proves
+    /// `registry::tests::compiled_write_catalogs_match_registry_policy` proves
     /// no compiled target alias lands here.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
