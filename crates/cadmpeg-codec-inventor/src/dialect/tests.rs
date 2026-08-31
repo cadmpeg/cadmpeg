@@ -300,7 +300,7 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
 }
 
 #[test]
-fn inspect_and_decode_keep_the_unavailable_kernel_layer() {
+fn inspect_and_decode_do_not_invent_a_kernel_layer_without_kernel_evidence() {
     let bytes = primary_envelope_fixture_with_unavailable_carrier();
     let summary = InventorCodec
         .inspect(
@@ -317,12 +317,14 @@ fn inspect_and_decode_keep_the_unavailable_kernel_layer() {
     let layers = dialects
         .as_ref()
         .expect("Inventor reports its dialect layers");
-    let kernel = layers
+    assert!(layers
         .iter()
-        .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-        .expect("the unavailable carrier remains an explicit kernel layer");
-    assert_eq!(kernel.dialect().as_str(), "acis:unknown");
-    assert_eq!(kernel.admission(), Admission::Refused);
+        .all(|matched| matched.format() != cadmpeg_asm::dialect::FORMAT));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| { loss.code != InventorLossCode::KernelDialectUnverified.kind() }));
 }
 
 /// The loss names what diverged, so a reader does not have to re-derive it.
