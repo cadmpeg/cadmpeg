@@ -19,7 +19,7 @@ use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, Unknown
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
-use crate::dialect::{kernel_dialect_loss, kernel_layer, unknown_kernel_layer, DialectRecovery};
+use crate::dialect::{kernel_dialect_loss, kernel_layer_for_state, DialectRecovery};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
@@ -1306,27 +1306,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
 
     // The kernel layer, classified from the carrier's own header. Non-primary:
     // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
-    let mut kernel_match = None;
+    let kernel_match = kernel_layer_for_state(&container.rse.active_carrier);
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => {
             match crate::kernel::parse_kernel_header(carrier) {
-                Ok(header) => {
-                    kernel_match = Some(kernel_layer(carrier.family, &header));
-                    match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
-                        Ok(decoded) => {
-                            apply_kernel_header(&mut ir, carrier.family, &decoded.header);
-                            Some(decoded.brep)
-                        }
-                        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                        Err(error) => {
-                            geometry_failure = Some(error.to_string());
-                            None
-                        }
+                Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
+                    Ok(decoded) => {
+                        apply_kernel_header(&mut ir, carrier.family, &decoded.header);
+                        Some(decoded.brep)
                     }
-                }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error) => {
+                        geometry_failure = Some(error.to_string());
+                        None
+                    }
+                },
                 Err(error) => {
-                    kernel_match = Some(unknown_kernel_layer());
                     geometry_failure = Some(error.to_string());
                     None
                 }
