@@ -1,4 +1,4 @@
-# generated at e96d66b6b
+# generated at 455d8a18d
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -381,35 +381,36 @@ pub mod cadmpeg_core::target
 pub enum cadmpeg_core::target::DefaultSource
 pub cadmpeg_core::target::DefaultSource::ForeignFormat(alloc::string::String)
 pub cadmpeg_core::target::DefaultSource::NoSource
-#[non_exhaustive] pub enum cadmpeg_core::target::TargetRefusal
-pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable
-pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::available: &'static [cadmpeg_core::target::TargetDescriptor]
-pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::reason: alloc::string::String
-pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::source: cadmpeg_core::target::DefaultSource
-pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::target: cadmpeg_core::dialect::DialectId
-pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable
-pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::available: &'static [cadmpeg_core::target::TargetDescriptor]
-pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::reason: alloc::string::String
-pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::requested: cadmpeg_core::target::TargetToken
-pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::target: cadmpeg_core::dialect::DialectId
-pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable
-pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable::available: &'static [cadmpeg_core::target::TargetDescriptor]
-pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable::reason: alloc::string::String
-pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable::source: cadmpeg_core::dialect::DialectId
-pub cadmpeg_core::target::TargetRefusal::NoDefault
-pub cadmpeg_core::target::TargetRefusal::NoDefault::available: &'static [cadmpeg_core::target::TargetDescriptor]
-pub cadmpeg_core::target::TargetRefusal::NoDefault::format: alloc::string::String
-pub cadmpeg_core::target::TargetRefusal::NoDefault::source: cadmpeg_core::target::DefaultSource
-pub cadmpeg_core::target::TargetRefusal::UnknownExplicit
-pub cadmpeg_core::target::TargetRefusal::UnknownExplicit::available: &'static [cadmpeg_core::target::TargetDescriptor]
-pub cadmpeg_core::target::TargetRefusal::UnknownExplicit::format: alloc::string::String
-pub cadmpeg_core::target::TargetRefusal::UnknownExplicit::requested: cadmpeg_core::target::TargetToken
-pub cadmpeg_core::target::TargetRefusal::UnrecordedSource
-pub cadmpeg_core::target::TargetRefusal::UnrecordedSource::available: &'static [cadmpeg_core::target::TargetDescriptor]
-pub cadmpeg_core::target::TargetRefusal::UnrecordedSource::format: alloc::string::String
+#[non_exhaustive] pub enum cadmpeg_core::target::TargetRefusalKind
+pub cadmpeg_core::target::TargetRefusalKind::DefaultUnavailable
+pub cadmpeg_core::target::TargetRefusalKind::DefaultUnavailable::reason: alloc::string::String
+pub cadmpeg_core::target::TargetRefusalKind::DefaultUnavailable::source: cadmpeg_core::target::DefaultSource
+pub cadmpeg_core::target::TargetRefusalKind::DefaultUnavailable::target: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::target::TargetRefusalKind::ExplicitUnavailable
+pub cadmpeg_core::target::TargetRefusalKind::ExplicitUnavailable::reason: alloc::string::String
+pub cadmpeg_core::target::TargetRefusalKind::ExplicitUnavailable::requested: cadmpeg_core::target::TargetToken
+pub cadmpeg_core::target::TargetRefusalKind::ExplicitUnavailable::target: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::target::TargetRefusalKind::InheritedUnavailable
+pub cadmpeg_core::target::TargetRefusalKind::InheritedUnavailable::reason: alloc::string::String
+pub cadmpeg_core::target::TargetRefusalKind::InheritedUnavailable::source: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::target::TargetRefusalKind::NoDefault
+pub cadmpeg_core::target::TargetRefusalKind::NoDefault::format: alloc::string::String
+pub cadmpeg_core::target::TargetRefusalKind::NoDefault::source: cadmpeg_core::target::DefaultSource
+pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit
+pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit::format: alloc::string::String
+pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit::requested: cadmpeg_core::target::TargetToken
+pub cadmpeg_core::target::TargetRefusalKind::UnrecordedSource
+pub cadmpeg_core::target::TargetRefusalKind::UnrecordedSource::format: alloc::string::String
+pub struct cadmpeg_core::target::TargetDescriptor
+pub cadmpeg_core::target::TargetDescriptor::aliases: &'static [&'static str]
+pub cadmpeg_core::target::TargetDescriptor::default: bool
+pub cadmpeg_core::target::TargetDescriptor::id: cadmpeg_core::dialect::DialectId
+#[non_exhaustive] pub struct cadmpeg_core::target::TargetRefusal
 impl cadmpeg_core::target::TargetRefusal
 pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_core::target::TargetRefusal::format(&self) -> &str
+pub const fn cadmpeg_core::target::TargetRefusal::kind(&self) -> &cadmpeg_core::target::TargetRefusalKind
+pub const fn cadmpeg_core::target::TargetRefusal::new(cadmpeg_core::target::TargetRefusalKind, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
 pub fn cadmpeg_core::target::TargetRefusal::reason(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::target::TargetRefusal::requested(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::target::TargetRefusal::unknown_explicit(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
@@ -418,17 +419,15 @@ pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal
 impl core::error::Error for cadmpeg_core::target::TargetRefusal
 impl core::fmt::Display for cadmpeg_core::target::TargetRefusal
 pub fn cadmpeg_core::target::TargetRefusal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct cadmpeg_core::target::TargetDescriptor
-pub cadmpeg_core::target::TargetDescriptor::aliases: &'static [&'static str]
-pub cadmpeg_core::target::TargetDescriptor::default: bool
-pub cadmpeg_core::target::TargetDescriptor::id: cadmpeg_core::dialect::DialectId
-pub cadmpeg_core::target::TargetDescriptor::label: &'static str
 pub struct cadmpeg_core::target::TargetToken(_)
 impl cadmpeg_core::target::TargetToken
 pub fn cadmpeg_core::target::TargetToken::as_str(&self) -> &str
 pub fn cadmpeg_core::target::TargetToken::new(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::fmt::Display for cadmpeg_core::target::TargetToken
 pub fn cadmpeg_core::target::TargetToken::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn cadmpeg_core::target::assert_valid_target_catalog(&[cadmpeg_core::target::TargetDescriptor])
+pub fn cadmpeg_core::target::default_target(&'static [cadmpeg_core::target::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_core::target::TargetDescriptor>
+pub fn cadmpeg_core::target::find_target<'a>(&'a [cadmpeg_core::target::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_core::target::TargetDescriptor>
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
 pub cadmpeg_core::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::CodecError::Io(core::io::error::Error)

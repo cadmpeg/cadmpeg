@@ -5,10 +5,8 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
-use cadmpeg_core::target::TargetRefusal;
-use cadmpeg_ir::codec::{
-    find_target, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest,
-};
+use cadmpeg_core::target::{find_target, TargetRefusal};
+use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 

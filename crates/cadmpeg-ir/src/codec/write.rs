@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Write target resolution and encoder interfaces.
 
-use std::collections::BTreeSet;
 use std::io::Write;
 
 use crate::document::CadIr;
 use crate::report::{CensusBasis, EntityCensus, ExportReport, FidelityResolution, WritePath};
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_core::target::{DefaultSource, TargetDescriptor, TargetRefusal, TargetToken};
+use cadmpeg_core::target::{
+    default_target, find_target, DefaultSource, TargetDescriptor, TargetRefusal, TargetRefusalKind,
+    TargetToken,
+};
 use cadmpeg_core::CodecError;
 
 /// What the caller asked an encoder to write, before resolution picks it.
@@ -27,78 +29,19 @@ pub enum TargetRequest<'a> {
     Explicit(&'a str),
 }
 
-/// Panics when a static encoder target catalog violates its uniqueness rules.
-pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
-    let defaults = targets.iter().filter(|target| target.default).count();
-    assert!(
-        defaults <= 1,
-        "target catalog invariant failed: at most one entry may be the default"
-    );
-
-    let mut ids = BTreeSet::new();
-    for target in targets {
-        assert!(
-            ids.insert(target.id.as_str()),
-            "target catalog invariant failed: duplicate id {:?}",
-            target.id
-        );
-    }
-
-    let mut aliases = BTreeSet::new();
-    for target in targets {
-        for alias in target.aliases {
-            assert!(
-                !ids.contains(alias),
-                "target catalog invariant failed: alias {alias:?} is also an id"
-            );
-            assert!(
-                aliases.insert(*alias),
-                "target catalog invariant failed: duplicate alias {alias:?}"
-            );
-        }
-    }
-}
-
-/// The catalog entry `id` names, by full id, format-local id, or alias.
-///
-/// A format-local id is the part after the first colon. The caller has already
-/// selected an encoder, so `archive-60` is unambiguous within the Rhino
-/// catalog and lets `--to rhino:archive-60` pass its right half unchanged.
-#[must_use]
-pub fn find_target<'a>(targets: &'a [TargetDescriptor], id: &str) -> Option<&'a TargetDescriptor> {
-    targets.iter().find(|target| {
-        target.id.as_str() == id
-            || target
-                .id
-                .as_str()
-                .split_once(':')
-                .is_some_and(|(_, local)| local == id)
-            || target.aliases.contains(&id)
-    })
-}
-
-/// The catalog's cross-format default, or `None` when none is declared.
-#[must_use]
-pub fn default_target(targets: &'static [TargetDescriptor]) -> Option<&'static TargetDescriptor> {
-    targets.iter().find(|target| target.default)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ResolvedTarget {
     Explicit {
         entry: &'static TargetDescriptor,
-        source: Option<DialectId>,
         requested: TargetToken,
     },
     Inherited {
         entry: &'static TargetDescriptor,
-        source: DialectId,
     },
     Default {
         entry: &'static TargetDescriptor,
-        source: DefaultSource,
     },
-    Preserved(DialectId),
+    Preserved,
 }
 
 /// A native write resolved against the encoder catalog and source identity.
@@ -109,51 +52,52 @@ enum ResolvedTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWrite {
     target: ResolvedTarget,
+    source: SourceIdentity,
     available: &'static [TargetDescriptor],
 }
 
 impl ResolvedWrite {
     fn explicit(
         entry: &'static TargetDescriptor,
-        source: Option<DialectId>,
+        source: SourceIdentity,
         requested: TargetToken,
         available: &'static [TargetDescriptor],
     ) -> Self {
         Self {
-            target: ResolvedTarget::Explicit {
-                entry,
-                source,
-                requested,
-            },
+            target: ResolvedTarget::Explicit { entry, requested },
+            source,
             available,
         }
     }
 
     fn inherited(
         entry: &'static TargetDescriptor,
-        source: DialectId,
+        source: SourceIdentity,
         available: &'static [TargetDescriptor],
     ) -> Self {
         Self {
-            target: ResolvedTarget::Inherited { entry, source },
+            target: ResolvedTarget::Inherited { entry },
+            source,
             available,
         }
     }
 
     fn default(
         entry: &'static TargetDescriptor,
-        source: DefaultSource,
+        source: SourceIdentity,
         available: &'static [TargetDescriptor],
     ) -> Self {
         Self {
-            target: ResolvedTarget::Default { entry, source },
+            target: ResolvedTarget::Default { entry },
+            source,
             available,
         }
     }
 
-    fn preserved(dialect: DialectId, available: &'static [TargetDescriptor]) -> Self {
+    fn preserved(source: SourceIdentity, available: &'static [TargetDescriptor]) -> Self {
         ResolvedWrite {
-            target: ResolvedTarget::Preserved(dialect),
+            target: ResolvedTarget::Preserved,
+            source,
             available,
         }
     }
@@ -166,7 +110,7 @@ impl ResolvedWrite {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
             | ResolvedTarget::Default { entry, .. } => Some(entry),
-            ResolvedTarget::Preserved(_) => None,
+            ResolvedTarget::Preserved => None,
         }
     }
 
@@ -177,7 +121,10 @@ impl ResolvedWrite {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
             | ResolvedTarget::Default { entry, .. } => &entry.id,
-            ResolvedTarget::Preserved(dialect) => dialect,
+            ResolvedTarget::Preserved => self
+                .source
+                .recorded()
+                .expect("preserved writes carry a recorded same-format source"),
         }
     }
 
@@ -186,12 +133,10 @@ impl ResolvedWrite {
     #[must_use]
     pub fn preserves_source(&self) -> bool {
         match &self.target {
-            ResolvedTarget::Explicit { entry, source, .. } => {
-                source.as_ref().is_some_and(|source| source == &entry.id)
-            }
+            ResolvedTarget::Explicit { entry, .. } => self.source.recorded() == Some(&entry.id),
             ResolvedTarget::Inherited { .. } => true,
             ResolvedTarget::Default { .. } => false,
-            ResolvedTarget::Preserved(_) => true,
+            ResolvedTarget::Preserved => true,
         }
     }
 
@@ -200,13 +145,35 @@ impl ResolvedWrite {
     #[must_use]
     pub fn displaced_source(&self) -> Option<&DialectId> {
         match &self.target {
-            ResolvedTarget::Explicit { entry, source, .. } => {
-                source.as_ref().filter(|source| *source != &entry.id)
+            ResolvedTarget::Explicit { entry, .. } => {
+                self.source.recorded().filter(|source| *source != &entry.id)
             }
             ResolvedTarget::Inherited { .. }
             | ResolvedTarget::Default { .. }
-            | ResolvedTarget::Preserved(_) => None,
+            | ResolvedTarget::Preserved => None,
         }
+    }
+
+    /// Whether the document records source metadata for this encoder format.
+    ///
+    /// This includes a same-format source whose dialect was not classified.
+    #[must_use]
+    pub const fn has_same_format_source(&self) -> bool {
+        matches!(
+            self.source,
+            SourceIdentity::Unrecorded | SourceIdentity::Recorded(_)
+        )
+    }
+
+    /// Whether preservation was eligible before codec-specific retained-image
+    /// checks.
+    ///
+    /// An unclassified same-format source is eligible because no contradictory
+    /// dialect is recorded. An explicit target that displaces a recorded
+    /// source dialect is not.
+    #[must_use]
+    pub fn source_preservation_eligible(&self) -> bool {
+        self.has_same_format_source() && self.displaced_source().is_none()
     }
 
     /// Builds a typed refusal when codec-specific delivery cannot realize the
@@ -217,31 +184,43 @@ impl ResolvedWrite {
         let refusal = match &self.target {
             ResolvedTarget::Explicit {
                 entry, requested, ..
-            } => TargetRefusal::ExplicitUnavailable {
-                target: entry.id.clone(),
-                requested: requested.clone(),
-                reason,
-                available: self.available,
-            },
-            ResolvedTarget::Inherited { source, .. } | ResolvedTarget::Preserved(source) => {
-                TargetRefusal::InheritedUnavailable {
-                    source: source.clone(),
+            } => TargetRefusal::new(
+                TargetRefusalKind::ExplicitUnavailable {
+                    target: entry.id.clone(),
+                    requested: requested.clone(),
                     reason,
-                    available: self.available,
-                }
-            }
-            ResolvedTarget::Default { entry, source } => TargetRefusal::DefaultUnavailable {
-                target: entry.id.clone(),
-                source: source.clone(),
-                reason,
-                available: self.available,
-            },
+                },
+                self.available,
+            ),
+            ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved => TargetRefusal::new(
+                TargetRefusalKind::InheritedUnavailable {
+                    source: self
+                        .source
+                        .recorded()
+                        .expect("inherited writes carry a recorded same-format source")
+                        .clone(),
+                    reason,
+                },
+                self.available,
+            ),
+            ResolvedTarget::Default { entry } => TargetRefusal::new(
+                TargetRefusalKind::DefaultUnavailable {
+                    target: entry.id.clone(),
+                    source: self
+                        .source
+                        .default_source()
+                        .expect("default writes carry an absent or foreign source")
+                        .clone(),
+                    reason,
+                },
+                self.available,
+            ),
         };
         CodecError::UnsupportedTarget(Box::new(refusal))
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum SourceIdentity {
     Other(DefaultSource),
     Unrecorded,
@@ -249,10 +228,17 @@ enum SourceIdentity {
 }
 
 impl SourceIdentity {
-    fn recorded(&self) -> Option<DialectId> {
+    const fn recorded(&self) -> Option<&DialectId> {
         match self {
-            Self::Recorded(dialect) => Some(dialect.clone()),
+            Self::Recorded(dialect) => Some(dialect),
             Self::Other(_) | Self::Unrecorded => None,
+        }
+    }
+
+    const fn default_source(&self) -> Option<&DefaultSource> {
+        match self {
+            Self::Other(source) => Some(source),
+            Self::Unrecorded | Self::Recorded(_) => None,
         }
     }
 }
@@ -287,31 +273,38 @@ pub fn resolve_write_request(
             find_target(targets, id).ok_or_else(|| {
                 CodecError::from(TargetRefusal::unknown_explicit(format, id, targets))
             })?,
-            source.recorded(),
+            source,
             TargetToken::new(id),
             targets,
         )),
         TargetRequest::Inherit => match source {
-            SourceIdentity::Other(source) => Ok(ResolvedWrite::default(
+            SourceIdentity::Other(_) => Ok(ResolvedWrite::default(
                 default_target(targets).ok_or_else(|| {
-                    CodecError::UnsupportedTarget(Box::new(TargetRefusal::NoDefault {
-                        format: format.to_owned(),
-                        source: source.clone(),
-                        available: targets,
-                    }))
+                    CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(
+                        TargetRefusalKind::NoDefault {
+                            format: format.to_owned(),
+                            source: source
+                                .default_source()
+                                .expect("the matched source identity is absent or foreign")
+                                .clone(),
+                        },
+                        targets,
+                    )))
                 })?,
                 source,
                 targets,
             )),
-            SourceIdentity::Unrecorded => Err(CodecError::UnsupportedTarget(Box::new(
-                TargetRefusal::UnrecordedSource {
-                    format: format.to_owned(),
-                    available: targets,
-                },
-            ))),
-            SourceIdentity::Recorded(dialect) => match find_target(targets, dialect.as_str()) {
-                Some(entry) => Ok(ResolvedWrite::inherited(entry, dialect, targets)),
-                None => Ok(ResolvedWrite::preserved(dialect, targets)),
+            SourceIdentity::Unrecorded => {
+                Err(CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(
+                    TargetRefusalKind::UnrecordedSource {
+                        format: format.to_owned(),
+                    },
+                    targets,
+                ))))
+            }
+            SourceIdentity::Recorded(ref dialect) => match find_target(targets, dialect.as_str()) {
+                Some(entry) => Ok(ResolvedWrite::inherited(entry, source, targets)),
+                None => Ok(ResolvedWrite::preserved(source, targets)),
             },
         },
     }

@@ -52,7 +52,6 @@ pub(crate) const FORMAT: &str = "f3d";
 /// archive, which is preservation, not synthesis.
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: F3dDialect::Manifest3200.id(),
-    label: "Fusion 360 archive with top-level manifest 3-2-0-0",
     aliases: &["3-2-0-0"],
     default: true,
 }];

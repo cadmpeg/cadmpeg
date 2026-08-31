@@ -7,9 +7,7 @@
 //! over the completed plan, not an encoder-construction option.
 
 #[cfg(test)]
-use cadmpeg_core::CodecError;
-#[cfg(test)]
-use cadmpeg_ir::codec::assert_valid_target_catalog;
+use cadmpeg_core::{target::assert_valid_target_catalog, CodecError};
 use cadmpeg_ir::codec::Encoder;
 #[cfg(test)]
 use cadmpeg_ir::codec::TargetRequest;

@@ -333,13 +333,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     use cadmpeg_core::dialect::{DialectId, DialectMatch};
-    use cadmpeg_core::target::{TargetDescriptor, TargetToken};
+    use cadmpeg_core::target::TargetDescriptor;
 
     use super::*;
 
     const IGES_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
         id: DialectId::pinned("iges:5.3-fixed-ascii"),
-        label: "IGES 5.3",
         aliases: &[],
         default: true,
     }];
@@ -347,11 +346,11 @@ mod tests {
     #[test]
     fn refusal_codes_are_stable_for_tests_and_absent_from_display() {
         let refusal = ConversionRefusal::UnsupportedTarget {
-            refusal: Box::new(TargetRefusal::UnknownExplicit {
-                format: "iges".into(),
-                requested: TargetToken::new("iges:9.9"),
-                available: IGES_TARGETS,
-            }),
+            refusal: Box::new(TargetRefusal::unknown_explicit(
+                "iges",
+                "iges:9.9",
+                IGES_TARGETS,
+            )),
             decode_report: None,
             validation: None,
         };

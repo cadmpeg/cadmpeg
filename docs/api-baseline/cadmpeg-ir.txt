@@ -1,4 +1,4 @@
-# generated at c5a524805
+# generated at 455d8a18d
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -204,7 +204,9 @@ impl cadmpeg_ir::codec::ResolvedWrite
 pub const fn cadmpeg_ir::codec::ResolvedWrite::catalog_entry(&self) -> core::option::Option<&'static cadmpeg_core::target::TargetDescriptor>
 pub const fn cadmpeg_ir::codec::ResolvedWrite::dialect(&self) -> &cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_ir::codec::ResolvedWrite::displaced_source(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
+pub const fn cadmpeg_ir::codec::ResolvedWrite::has_same_format_source(&self) -> bool
 pub fn cadmpeg_ir::codec::ResolvedWrite::preserves_source(&self) -> bool
+pub fn cadmpeg_ir::codec::ResolvedWrite::source_preservation_eligible(&self) -> bool
 pub fn cadmpeg_ir::codec::ResolvedWrite::unavailable(&self, impl core::convert::Into<alloc::string::String>) -> cadmpeg_core::error::CodecError
 pub trait cadmpeg_ir::codec::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
@@ -225,9 +227,6 @@ impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
 pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::CadirEncoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
-pub fn cadmpeg_ir::codec::assert_valid_target_catalog(&[cadmpeg_core::target::TargetDescriptor])
-pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_core::target::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_core::target::TargetDescriptor>
-pub fn cadmpeg_ir::codec::find_target<'a>(&'a [cadmpeg_core::target::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_core::target::TargetDescriptor>
 pub fn cadmpeg_ir::codec::resolve_write_request(&cadmpeg_ir::document::CadIr, cadmpeg_ir::codec::TargetRequest<'_>, &str, &'static [cadmpeg_core::target::TargetDescriptor]) -> core::result::Result<cadmpeg_ir::codec::ResolvedWrite, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::source_dialect_displaced_message(&cadmpeg_core::dialect::DialectId, &cadmpeg_core::dialect::DialectId) -> alloc::string::String
 pub mod cadmpeg_ir::compare

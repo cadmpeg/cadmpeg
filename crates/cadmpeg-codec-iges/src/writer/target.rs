@@ -32,6 +32,7 @@ pub(crate) fn plan(
             )),
         };
     };
+    let preservation_eligible = resolved.source_preservation_eligible();
     if resolved.preserves_source() {
         let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
             Replay::Replayed { bytes } => {
@@ -39,13 +40,20 @@ pub(crate) fn plan(
             }
             Replay::Declined { reason } => reason,
         };
-        synthesized_plan(input, target_version(entry)?, None, replay_failure)
+        synthesized_plan(
+            input,
+            target_version(entry)?,
+            None,
+            replay_failure,
+            preservation_eligible,
+        )
     } else {
         synthesized_plan(
             input,
             target_version(entry)?,
             resolved.displaced_source(),
             None,
+            preservation_eligible,
         )
     }
 }
@@ -78,14 +86,9 @@ fn synthesized_plan(
     version: crate::IgesVersion,
     displaced: Option<&DialectId>,
     replay_failure: Option<String>,
+    preservation_eligible: bool,
 ) -> Result<ExportPlan, CodecError> {
     let target = IgesDialect::fixed_ascii(version).id();
-    let preservation_eligible = displaced.is_none()
-        && input
-            .ir
-            .source
-            .as_ref()
-            .is_some_and(|source| source.format() == crate::dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))

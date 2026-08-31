@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
+use cadmpeg_core::target::default_target;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::CadIr;
@@ -68,7 +69,7 @@ fn an_explicit_target_wins_over_the_source_archive_version() {
 #[test]
 fn a_cross_format_request_resolves_to_the_catalog_default() {
     let ir = CadIr::empty(Units::default());
-    let default = cadmpeg_ir::codec::default_target(crate::RhinoArchiveVersion::TARGETS)
+    let default = default_target(crate::RhinoArchiveVersion::TARGETS)
         .expect("the Rhino catalog has a default");
     assert_eq!(
         resolved(

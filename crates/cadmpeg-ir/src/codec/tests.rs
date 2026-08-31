@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
-use cadmpeg_core::target::{DefaultSource, TargetDescriptor, TargetRefusal, TargetToken};
+use cadmpeg_core::target::{
+    assert_valid_target_catalog, DefaultSource, TargetDescriptor, TargetRefusalKind, TargetToken,
+};
 
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
@@ -21,7 +23,6 @@ const NO_ALIASES: &[&str] = &[];
 fn target(id: &'static str, aliases: &'static [&'static str], default: bool) -> TargetDescriptor {
     TargetDescriptor {
         id: DialectId::pinned(id),
-        label: id,
         aliases,
         default,
     }
@@ -38,7 +39,7 @@ fn a_target_catalog_rejects_multiple_defaults() {
 }
 
 #[test]
-#[should_panic(expected = "duplicate id")]
+#[should_panic(expected = "token \"test:same\" selects both")]
 fn a_target_catalog_rejects_duplicate_ids() {
     let targets = [
         target("test:same", NO_ALIASES, false),
@@ -48,7 +49,7 @@ fn a_target_catalog_rejects_duplicate_ids() {
 }
 
 #[test]
-#[should_panic(expected = "duplicate alias")]
+#[should_panic(expected = "token \"same\" selects both")]
 fn a_target_catalog_rejects_duplicate_aliases() {
     let targets = [
         target("test:first", &["same"], false),
@@ -58,10 +59,20 @@ fn a_target_catalog_rejects_duplicate_aliases() {
 }
 
 #[test]
-#[should_panic(expected = "is also an id")]
+#[should_panic(expected = "token \"test:second\" selects both")]
 fn a_target_catalog_rejects_an_alias_that_is_an_id() {
     let targets = [
         target("test:first", &["test:second"], false),
+        target("test:second", NO_ALIASES, false),
+    ];
+    assert_valid_target_catalog(&targets);
+}
+
+#[test]
+#[should_panic(expected = "token \"second\" selects both")]
+fn a_target_catalog_rejects_an_alias_that_is_another_rows_local_id() {
+    let targets = [
+        target("test:first", &["second"], false),
         target("test:second", NO_ALIASES, false),
     ];
     assert_valid_target_catalog(&targets);
@@ -106,14 +117,11 @@ fn an_empty_native_catalog_has_no_format_identity_request() {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("an empty native catalog must refuse without inventing an identity request")
     };
-    let TargetRefusal::NoDefault {
-        source, available, ..
-    } = refusal.as_ref()
-    else {
+    let TargetRefusalKind::NoDefault { source, .. } = refusal.kind() else {
         panic!("a source-free inherit request must report a missing default")
     };
     assert_eq!(source, &DefaultSource::NoSource);
-    assert!(available.is_empty());
+    assert!(refusal.available().is_empty());
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
@@ -423,13 +431,11 @@ fn dialect_layer(id: &'static str) -> DialectMatch {
 const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
         id: DialectId::pinned("test:old"),
-        label: "Old test dialect",
         aliases: &["old"],
         default: false,
     },
     TargetDescriptor {
         id: DialectId::pinned("test:new"),
-        label: "New test dialect",
         aliases: &["new"],
         default: true,
     },
@@ -459,6 +465,8 @@ fn write_request_resolves_an_explicit_on_catalog_target() {
     .unwrap();
     assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
     assert!(!resolved.preserves_source());
+    assert!(!resolved.has_same_format_source());
+    assert!(!resolved.source_preservation_eligible());
     assert_eq!(resolved.displaced_source(), None);
 }
 
@@ -475,17 +483,13 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("expected an unsupported target");
     };
-    let TargetRefusal::UnknownExplicit {
-        requested,
-        available,
-        ..
-    } = refusal.as_ref()
-    else {
+    let TargetRefusalKind::UnknownExplicit { requested, .. } = refusal.kind() else {
         panic!("the explicit token is outside the catalog")
     };
     assert_eq!(requested, &TargetToken::new("test:missing"));
     assert_eq!(
-        available
+        refusal
+            .available()
             .iter()
             .map(|target| target.id.as_str())
             .collect::<Vec<_>>(),
@@ -500,6 +504,8 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
     assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:new");
     assert!(!resolved.preserves_source());
+    assert!(!resolved.has_same_format_source());
+    assert!(!resolved.source_preservation_eligible());
     assert_eq!(resolved.displaced_source(), None);
 }
 
@@ -513,8 +519,8 @@ fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
         panic!("an unrecorded same-format source must produce a target refusal")
     };
     assert!(matches!(
-        refusal.as_ref(),
-        TargetRefusal::UnrecordedSource { format, .. } if format == "test"
+        refusal.kind(),
+        TargetRefusalKind::UnrecordedSource { format } if format == "test"
     ));
 }
 
@@ -531,6 +537,8 @@ fn write_request_explicit_over_an_unrecorded_source_has_no_recorded_relation() {
 
     assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
     assert!(!resolved.preserves_source());
+    assert!(resolved.has_same_format_source());
+    assert!(resolved.source_preservation_eligible());
     assert_eq!(resolved.displaced_source(), None);
 }
 
@@ -541,6 +549,8 @@ fn write_request_inherit_preserves_a_same_format_catalog_source() {
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
     assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
     assert!(resolved.preserves_source());
+    assert!(resolved.has_same_format_source());
+    assert!(resolved.source_preservation_eligible());
     assert_eq!(resolved.displaced_source(), None);
 }
 
@@ -552,6 +562,8 @@ fn write_request_inherit_preserves_a_same_format_off_catalog_source() {
     assert_eq!(resolved.catalog_entry(), None);
     assert_eq!(resolved.dialect().as_str(), "test:future");
     assert!(resolved.preserves_source());
+    assert!(resolved.has_same_format_source());
+    assert!(resolved.source_preservation_eligible());
     assert_eq!(resolved.displaced_source(), None);
 }
 
@@ -571,6 +583,7 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
         .expect("the explicit target displaces the recorded source");
     assert_eq!(entry.id.as_str(), "test:new");
     assert_eq!(displaced, &DialectId::pinned("test:old"));
+    assert!(!resolved.source_preservation_eligible());
     assert_eq!(
         source_dialect_displaced_message(
             displaced,

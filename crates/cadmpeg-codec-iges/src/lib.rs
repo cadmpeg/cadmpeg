@@ -94,16 +94,15 @@ impl IgesVersion {
     }
 
     const fn descriptor(self) -> TargetDescriptor {
-        let (label, aliases, default) = match self {
-            Self::V4_0 => ("IGES 4.0 Fixed ASCII", &["4.0"].as_slice(), false),
-            Self::V5_0 => ("IGES 5.0 Fixed ASCII", &["5.0"].as_slice(), false),
-            Self::V5_1 => ("IGES 5.1 Fixed ASCII", &["5.1"].as_slice(), false),
-            Self::V5_2 => ("IGES 5.2 Fixed ASCII", &["5.2"].as_slice(), false),
-            Self::V5_3 => ("IGES 5.3 Fixed ASCII", &["5.3"].as_slice(), true),
+        let (aliases, default) = match self {
+            Self::V4_0 => (&["4.0"].as_slice(), false),
+            Self::V5_0 => (&["5.0"].as_slice(), false),
+            Self::V5_1 => (&["5.1"].as_slice(), false),
+            Self::V5_2 => (&["5.2"].as_slice(), false),
+            Self::V5_3 => (&["5.3"].as_slice(), true),
         };
         TargetDescriptor {
             id: DialectId::pinned(self.target()),
-            label,
             aliases,
             default,
         }

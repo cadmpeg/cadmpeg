@@ -105,15 +105,14 @@ impl RhinoArchiveVersion {
     }
 
     const fn descriptor(self) -> TargetDescriptor {
-        let (label, aliases, default) = match self {
-            Self::V5 => ("Rhino 5 archive (50)", &["50"].as_slice(), false),
-            Self::V6 => ("Rhino 6 archive (60)", &["6", "60"].as_slice(), false),
-            Self::V7 => ("Rhino 7 archive (70)", &["7", "70"].as_slice(), false),
-            Self::V8 => ("Rhino 8 archive (80)", &["8", "80"].as_slice(), true),
+        let (aliases, default) = match self {
+            Self::V5 => (&["50"].as_slice(), false),
+            Self::V6 => (&["6", "60"].as_slice(), false),
+            Self::V7 => (&["7", "70"].as_slice(), false),
+            Self::V8 => (&["8", "80"].as_slice(), true),
         };
         TargetDescriptor {
             id: DialectId::pinned(self.pinned()),
-            label,
             aliases,
             default,
         }

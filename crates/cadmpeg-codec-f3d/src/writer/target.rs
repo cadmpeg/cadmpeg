@@ -48,13 +48,19 @@ pub(crate) fn plan(
         };
     };
     let target = entry.id.clone();
+    let preservation_eligible = resolved.source_preservation_eligible();
     if resolved.preserves_source() {
         if let Preservation::Written { bytes, write_path } = preserve(input)? {
             return Ok(preserved_plan(input.ir, target, write_path, bytes));
         }
-        return synthesized_plan(input, &target, None);
+        return synthesized_plan(input, &target, None, preservation_eligible);
     }
-    synthesized_plan(input, &target, resolved.displaced_source())
+    synthesized_plan(
+        input,
+        &target,
+        resolved.displaced_source(),
+        preservation_eligible,
+    )
 }
 
 enum Preservation {
@@ -110,15 +116,10 @@ fn synthesized_plan(
     input: EncodeInput<'_>,
     target: &DialectId,
     displaced: Option<&DialectId>,
+    preservation_eligible: bool,
 ) -> Result<ExportPlan, CodecError> {
     let mut bytes = Vec::new();
     super::generate::write_new(input.ir, &mut bytes)?;
-    let preservation_eligible = displaced.is_none()
-        && input
-            .ir
-            .source
-            .as_ref()
-            .is_some_and(|source| source.format() == dialect::FORMAT);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
