@@ -1,4 +1,4 @@
-# generated at af2b7480e
+# generated at c5a524805
 pub mod cadmpeg_codec_iges
 pub enum cadmpeg_codec_iges::IgesVersion
 pub cadmpeg_codec_iges::IgesVersion::V4_0
@@ -17,5 +17,5 @@ pub fn cadmpeg_codec_iges::IgesCodec::inspect_impl(&self, &cadmpeg_core::decode:
 pub struct cadmpeg_codec_iges::IgesEncoder
 impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_iges::IgesEncoder
 pub fn cadmpeg_codec_iges::IgesEncoder::id(&self) -> &'static str
-pub fn cadmpeg_codec_iges::IgesEncoder::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_iges::IgesEncoder::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_iges::IgesEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]

@@ -1688,3 +1688,66 @@ crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::dialect::UnverifiedAdmission"
 reason = "Admission::AdmittedUnverified now represents the same optional substituted grammar without a second option-shaped enum or a handwritten wire adapter"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::ExportPlan"
+reason = "an export plan owns its materialized bytes, so it can be stored with the prepared document without borrowing the encoder input"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::ExportPlan::deferred"
+reason = "planning completes serialization before destination mutation; no writer closure or input borrow survives into the write phase"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::{Encoder,CadirEncoder}::plan"
+reason = "planning borrows EncodeInput only for the call and returns an owned ExportPlan instead of tying the plan lifetime to the source document"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-codec-f3d"
+kind = "signature"
+item = "cadmpeg_codec_f3d::F3dCodec::plan"
+reason = "the Encoder implementation returns an owned ExportPlan independent of its EncodeInput borrow"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-codec-freecad"
+kind = "signature"
+item = "cadmpeg_codec_freecad::FcstdCodec::plan"
+reason = "the Encoder implementation returns an owned ExportPlan independent of its EncodeInput borrow"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-codec-iges"
+kind = "signature"
+item = "cadmpeg_codec_iges::IgesEncoder::plan"
+reason = "the Encoder implementation returns an owned ExportPlan independent of its EncodeInput borrow"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-codec-rhino"
+kind = "signature"
+item = "cadmpeg_codec_rhino::RhinoEncoder::plan"
+reason = "the Encoder implementation returns an owned ExportPlan independent of its EncodeInput borrow"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-codec-sldprt"
+kind = "signature"
+item = "cadmpeg_codec_sldprt::SldprtCodec::plan"
+reason = "the Encoder implementation returns an owned ExportPlan independent of its EncodeInput borrow"
+
+[[change]]
+commit = "c5a52480564afa54a1c9cdf7cc8138233478198a"
+crate = "cadmpeg-codec-step"
+kind = "signature"
+item = "cadmpeg_codec_step::StepCodec::plan"
+reason = "the Encoder implementation returns an owned ExportPlan independent of its EncodeInput borrow"

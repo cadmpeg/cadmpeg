@@ -1,4 +1,4 @@
-# generated at af2b7480e
+# generated at c5a524805
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -170,7 +170,7 @@ pub cadmpeg_ir::codec::TargetRequest::Inherit
 pub struct cadmpeg_ir::codec::CadirEncoder
 impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
 pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub struct cadmpeg_ir::codec::DecodeOptions
 pub cadmpeg_ir::codec::DecodeOptions::container_only: bool
@@ -192,14 +192,13 @@ pub cadmpeg_ir::codec::EncodeInput::fidelity: core::option::Option<&'a cadmpeg_i
 pub cadmpeg_ir::codec::EncodeInput::ir: &'a cadmpeg_ir::document::CadIr
 impl<'a> cadmpeg_ir::codec::EncodeInput<'a>
 pub const fn cadmpeg_ir::codec::EncodeInput<'a>::new(&'a cadmpeg_ir::document::CadIr, core::option::Option<&'a cadmpeg_ir::source_fidelity::SourceFidelity>) -> Self
-pub struct cadmpeg_ir::codec::ExportPlan<'a>
-impl<'a> cadmpeg_ir::codec::ExportPlan<'a>
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::buffered(cadmpeg_ir::ExportReport, alloc::vec::Vec<u8>) -> Self
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::deferred(cadmpeg_ir::ExportReport, impl core::ops::function::FnOnce(&mut dyn core::io::write::Write) -> core::result::Result<(), cadmpeg_core::error::CodecError> + 'a) -> Self
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::fidelity_resolution(&self) -> &cadmpeg_ir::FidelityResolution
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::report(&self) -> &cadmpeg_ir::ExportReport
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_path(&self) -> cadmpeg_ir::WritePath
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_to(self, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::ExportReport, cadmpeg_core::error::CodecError>
+pub struct cadmpeg_ir::codec::ExportPlan
+impl cadmpeg_ir::codec::ExportPlan
+pub fn cadmpeg_ir::codec::ExportPlan::buffered(cadmpeg_ir::ExportReport, alloc::vec::Vec<u8>) -> Self
+pub fn cadmpeg_ir::codec::ExportPlan::fidelity_resolution(&self) -> &cadmpeg_ir::FidelityResolution
+pub fn cadmpeg_ir::codec::ExportPlan::report(&self) -> &cadmpeg_ir::ExportReport
+pub fn cadmpeg_ir::codec::ExportPlan::write_path(&self) -> cadmpeg_ir::WritePath
+pub fn cadmpeg_ir::codec::ExportPlan::write_to(self, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::ExportReport, cadmpeg_core::error::CodecError>
 pub struct cadmpeg_ir::codec::ResolvedWrite
 impl cadmpeg_ir::codec::ResolvedWrite
 pub const fn cadmpeg_ir::codec::ResolvedWrite::catalog_entry(&self) -> core::option::Option<&'static cadmpeg_core::target::TargetDescriptor>
@@ -220,11 +219,11 @@ pub fn cadmpeg_ir::codec::CodecBackend::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::codec::Encoder
 pub fn cadmpeg_ir::codec::Encoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::Encoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::Encoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
 pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_ir::codec::assert_valid_target_catalog(&[cadmpeg_core::target::TargetDescriptor])
 pub fn cadmpeg_ir::codec::default_target(&'static [cadmpeg_core::target::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_core::target::TargetDescriptor>
@@ -7031,7 +7030,7 @@ pub fn cadmpeg_ir::document::CadIr::to_canonical_json(&self) -> core::result::Re
 pub struct cadmpeg_ir::CadirEncoder
 impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
 pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub struct cadmpeg_ir::CameraState
 pub cadmpeg_ir::CameraState::orientation: core::option::Option<[f64; 4]>
@@ -7730,11 +7729,11 @@ pub fn cadmpeg_ir::CodecBackend::id(&self) -> &'static str
 pub fn cadmpeg_ir::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::Encoder
 pub fn cadmpeg_ir::Encoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::Encoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::Encoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 impl cadmpeg_ir::Encoder for cadmpeg_ir::CadirEncoder
 pub fn cadmpeg_ir::CadirEncoder::id(&self) -> &'static str
-pub fn cadmpeg_ir::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CadirEncoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::CadirEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_ir::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
