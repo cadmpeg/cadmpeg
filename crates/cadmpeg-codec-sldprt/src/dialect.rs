@@ -252,6 +252,9 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted => None,
         Admission::AdmittedUnverified(_) => {
+            if let Some(message) = cadmpeg_container::parasolid::unverified_message(matched) {
+                return Some(SldprtLossCode::SourceDialectUnverified.note(message));
+            }
             let declaration = match matched.declared().get(DECLARED_SW_VERSION) {
                 Some(value) => format!(
                     "the swSolidWorks swVersion declaration {value:?} does not read as a version \
@@ -270,6 +273,11 @@ the `{}` residual path without substituting a declared dialect grammar: the \
         }
         Admission::Refused => None,
     }
+}
+
+/// Losses charged by every unverified layer in a classified document.
+pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
+    layers.iter().filter_map(dialect_loss).collect()
 }
 
 #[cfg(test)]

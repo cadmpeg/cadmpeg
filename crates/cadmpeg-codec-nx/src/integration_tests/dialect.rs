@@ -95,6 +95,26 @@ fn source_meta_mirrors_the_primary_layer_on_every_decode_path() {
 }
 
 #[test]
+fn residual_parasolid_layer_is_present_in_decode_losses() {
+    let result = decode(single_part_prt());
+    let kernel = result
+        .report()
+        .dialects()
+        .expect("NX reports dialect layers")
+        .iter()
+        .find(|matched| matched.format() == cadmpeg_container::parasolid::FORMAT)
+        .expect("fixture carries one Parasolid layer");
+    assert!(matches!(
+        kernel.admission(),
+        Admission::AdmittedUnverified(_)
+    ));
+    assert!(result.report().losses.iter().any(|note| {
+        note.code == crate::loss::NxLossCode::SourceDialectUnverified.kind()
+            && note.message.contains("SCH_TEST_1_9999")
+    }));
+}
+
+#[test]
 fn a_file_matching_neither_container_never_reaches_a_dialect_match() {
     // `nx:unknown` is declared in the registry and refused here: the scan
     // returns an error, so no summary and no report exist to carry the row.

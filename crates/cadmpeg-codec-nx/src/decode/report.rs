@@ -276,6 +276,7 @@ pub(crate) fn build_geometry_report(
     }
 
     let (dialects, notes) = summarize(scan);
+    losses.extend(crate::dialect::dialect_losses(&dialects));
     DecodeReport::classified(
         dialects,
         false,

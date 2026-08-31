@@ -7,7 +7,7 @@
 //! path, and the vocabulary is closed. Tests close it directly against the
 //! reportable rows in `docs/dialects.toml`.
 //!
-//! # Classification is structural, so every admitted document is `Admitted`
+//! # Host classification is structural
 //!
 //! NX has two container grammars and one dispatch, at [`crate::decode::scan`]:
 //! a file whose bytes start with `SPLMSSTR` is parsed by
@@ -18,10 +18,11 @@
 //! ran is recorded on `Container::legacy_cfb`, and that flag — not a second
 //! reading of the magic — is what this module classifies on.
 //!
-//! Each of the two rows therefore names the grammar that actually parsed the
-//! document, so admission is [`Admission::Admitted`] on both. There is no
-//! unverified path to invent: the container version byte is never compared to
-//! anything, and this codec charges no dialect-unverified loss.
+//! Each of the two host rows therefore names the grammar that actually parsed
+//! the document, so admission is [`Admission::Admitted`] on both. Embedded
+//! Parasolid streams form separate layers. A schema without a named grammar is
+//! admitted as residual and charges `source.dialect-unverified`; host admission
+//! does not launder the kernel layer.
 //!
 //! # The version byte is provenance, not a discriminant
 //!
@@ -46,10 +47,12 @@
 //! closure. No codec enum variant or report construction path names it.
 
 use crate::container::Container;
-use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+use crate::loss::NxLossCode;
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_ir::LossNote;
 
 #[cfg(test)]
-use cadmpeg_core::dialect::{Admission, UnverifiedAdmission};
+use cadmpeg_core::dialect::UnverifiedAdmission;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
@@ -101,6 +104,30 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
         .collect();
     DialectLayers::new(NxDialect::classify(&scan.container), extra)
         .expect("Parasolid stream offsets have unique instances")
+}
+
+/// Losses charged by every unverified layer in a classified document.
+///
+/// This walks the complete layer set rather than assuming the host primary is
+/// the only identity that can affect decode policy.
+pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
+    layers
+        .iter()
+        .filter_map(|matched| match matched.admission() {
+            Admission::Admitted | Admission::Refused => None,
+            Admission::AdmittedUnverified(_) => {
+                let message = cadmpeg_container::parasolid::unverified_message(matched)
+                    .unwrap_or_else(|| {
+                        format!(
+                            "The `{}` source layer was admitted without a verified declared \
+                             grammar.",
+                            matched.dialect()
+                        )
+                    });
+                Some(NxLossCode::SourceDialectUnverified.note(message))
+            }
+        })
+        .collect()
 }
 
 impl NxDialect {
