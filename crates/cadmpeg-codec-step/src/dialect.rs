@@ -13,9 +13,9 @@
 //! case of the gap. The codec has exactly one Part 21 read grammar:
 //! nothing in the reader branches on the declared schema. The schema identifier
 //! is read after the parse, recorded, and used for DATA-section name matching.
-//! It is nonetheless the identity axis, because it is what the write targets
-//! name ([`StepSchema::file_schema`]) and what the design pins as
-//! `step:ap242-e3`.
+//! It is nonetheless the identity axis. [`StepDialect::schema_identifier`]
+//! owns the declarations for the Part 21 rows, and write schemas project from
+//! that table.
 //!
 //! The `FILE_DESCRIPTION` implementation level is the axis the parser does
 //! branch on, and it is deliberately **not** an identity axis here: it is
@@ -189,7 +189,7 @@ impl StepDialect {
         Self::Unknown,
     ];
 
-    const fn from_write_schema(schema: StepSchema) -> Self {
+    pub(crate) const fn from_write_schema(schema: StepSchema) -> Self {
         match schema {
             StepSchema::Ap203Edition1 => Self::Ap203Edition1,
             StepSchema::Ap203Edition2 => Self::Ap203Edition2,
@@ -221,6 +221,23 @@ impl StepDialect {
         }
     }
 
+    /// The canonical `FILE_SCHEMA` identifier for a Part 21 identity row.
+    ///
+    /// The edition-unspecified AP242 row has its legal bare schema name. The
+    /// alternate encodings and totality row have no Part 21 declaration.
+    pub(crate) const fn schema_identifier(self) -> Option<&'static str> {
+        match self {
+            Self::Ap203Edition1 => Some("CONFIG_CONTROL_DESIGN"),
+            Self::Ap203Edition2 => Some("AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }"),
+            Self::Ap214 => Some("AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }"),
+            Self::Ap242 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"),
+            Self::Ap242Edition1 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }"),
+            Self::Ap242Edition2 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"),
+            Self::Ap242Edition3 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"),
+            Self::Part28Xml | Self::Ap242BoModelXml | Self::Part26Hdf5 | Self::Unknown => None,
+        }
+    }
+
     /// The row for one `FILE_SCHEMA` identifier, or [`Self::Unknown`] where the
     /// registry declares no such row.
     ///
@@ -235,8 +252,8 @@ impl StepDialect {
     /// - absent — a complete declaration naming no edition, [`Self::Ap242`].
     ///   The object identifier is optional in Part 21; leaving it out is legal
     ///   and says the edition is unspecified, not that the file is unrecognized.
-    /// - present and naming an edition — that edition's row, decided by
-    ///   [`StepSchema::ap242_edition`], the codec's own edition recognizer.
+    /// - present and naming an edition — that edition's row, decided against
+    ///   this enum's own canonical identifiers.
     /// - present and naming no edition — [`Self::Unknown`]. An edition claim
     ///   that matches nothing this codec declares is an unrecognized
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
@@ -245,44 +262,48 @@ impl StepDialect {
         let Some((name, object_identifier)) = split_schema_identifier(identifier) else {
             return Self::Unknown;
         };
-        let ap242_name = split_schema_identifier(StepSchema::Ap242Edition1.file_schema())
-            .expect("writer schemas are valid identifiers")
-            .0;
+        let ap242_name = Self::Ap242
+            .schema_identifier()
+            .expect("the AP242 row has a Part 21 identifier");
         if name.eq_ignore_ascii_case(ap242_name) {
             if object_identifier.is_none() {
                 return Self::Ap242;
             }
-            return Self::from_ap242_edition(StepSchema::ap242_edition(identifier));
+            return Self::from_ap242_identifier(identifier).unwrap_or(Self::Unknown);
         }
-        StepSchema::ALL
+        [Self::Ap203Edition1, Self::Ap203Edition2, Self::Ap214]
             .into_iter()
-            .find(|schema| {
-                split_schema_identifier(schema.file_schema())
-                    .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
+            .find(|dialect| {
+                split_schema_identifier(
+                    dialect
+                        .schema_identifier()
+                        .expect("Part 21 discriminants have identifiers"),
+                )
+                .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
             })
-            .map_or(Self::Unknown, Self::from_write_schema)
+            .unwrap_or(Self::Unknown)
     }
 
-    /// Maps the edition recognizer's result without treating a future word as
-    /// a verified edition-3 declaration. The reader still uses edition 3 as
-    /// the nearest recovery strategy for [`Self::Unknown`].
-    fn from_ap242_edition(edition: Option<StepSchema>) -> Self {
-        match edition {
-            Some(StepSchema::Ap242Edition1) => Self::Ap242Edition1,
-            Some(StepSchema::Ap242Edition2) => Self::Ap242Edition2,
-            Some(StepSchema::Ap242Edition3) => Self::Ap242Edition3,
-            Some(StepSchema::Ap203Edition1 | StepSchema::Ap203Edition2 | StepSchema::Ap214)
-            | None => Self::Unknown,
-        }
-    }
-
-    #[cfg(test)]
-    const fn admission(self) -> Admission {
-        if matches!(self, Self::Unknown) {
-            Admission::AdmittedUnverified(UnverifiedAdmission::Using(NEAREST_STRATEGY.id()))
-        } else {
-            Admission::Admitted
-        }
+    /// The AP242 edition row whose canonical object identifier the declaration
+    /// names. A future or malformed object identifier names no verified row.
+    fn from_ap242_identifier(identifier: &str) -> Option<Self> {
+        let (name, arcs) = schema_identifier_arcs(identifier)?;
+        [
+            Self::Ap242Edition1,
+            Self::Ap242Edition2,
+            Self::Ap242Edition3,
+        ]
+        .into_iter()
+        .find(|dialect| {
+            schema_identifier_arcs(
+                dialect
+                    .schema_identifier()
+                    .expect("AP242 edition rows have identifiers"),
+            )
+            .is_some_and(|(candidate_name, candidate_arcs)| {
+                name.eq_ignore_ascii_case(candidate_name) && arcs == candidate_arcs
+            })
+        })
     }
 
     /// The refusal message this codec returns for an alternate encoding, or
@@ -361,6 +382,24 @@ impl StepDialect {
         }
         .with_declared(declared)
     }
+}
+
+/// The schema name and numeric object-identifier arcs of one declaration.
+///
+/// Named components, fewer than two components, and non-decimal components do
+/// not form an object identifier that can match a declared edition row.
+fn schema_identifier_arcs(identifier: &str) -> Option<(&str, Vec<u64>)> {
+    let (name, object_identifier) = split_schema_identifier(identifier)?;
+    let object_identifier = object_identifier?;
+    if name.is_empty() {
+        return None;
+    }
+    let arcs = object_identifier
+        .split_whitespace()
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (arcs.len() >= 2).then_some((name, arcs))
 }
 
 /// The `FILE_DESCRIPTION` implementation level, verbatim as read.
