@@ -175,7 +175,6 @@ fn report(
 ) -> ExportReport {
     ExportReport::native(
         target,
-        dialect::FORMAT.into(),
         cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: ir.census(),

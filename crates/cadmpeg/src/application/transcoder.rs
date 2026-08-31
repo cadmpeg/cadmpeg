@@ -562,7 +562,7 @@ pub(crate) fn emit_export_plan(
         report
     };
     if !report.losses.is_empty() {
-        eprintln!("{} export losses:", report.format);
+        eprintln!("{} export losses:", report.format());
         for loss in &report.losses {
             eprintln!(
                 "  [{}/{}] {}",

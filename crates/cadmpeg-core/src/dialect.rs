@@ -76,7 +76,9 @@ impl DialectId {
         &self.0
     }
 
-    fn namespace(&self) -> &str {
+    /// Returns the format namespace before the id's validated separator.
+    #[must_use]
+    pub fn namespace(&self) -> &str {
         self.as_str()
             .split_once(':')
             .expect("DialectId validation guarantees a namespace")

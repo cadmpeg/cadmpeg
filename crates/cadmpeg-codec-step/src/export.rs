@@ -57,7 +57,6 @@ pub(crate) fn write_step(
     let outcome = write_step_outcome(ir, w, schema, opts)?;
     Ok(ExportReport::native(
         DialectId::pinned(schema.target()),
-        crate::dialect::FORMAT.into(),
         outcome.census,
         FidelityResolution::NotProvided,
         WritePath::Synthesized,

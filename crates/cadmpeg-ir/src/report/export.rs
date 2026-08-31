@@ -7,16 +7,15 @@ use std::fmt;
 use cadmpeg_core::dialect::DialectId;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{LossNote, Severity};
 
 /// Entity census and fidelity details from a successful export.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExportReport {
-    /// Target format id.
-    pub format: String,
+    identity: ExportIdentity,
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
     /// How decode-time source fidelity was handled.
@@ -27,19 +26,89 @@ pub struct ExportReport {
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
     pub notes: Vec<String>,
-    /// The concrete dialect written, including on replay and patch paths, where
-    /// the encoder states what the preserved dialect was.
-    ///
-    /// `None` on exactly one write path, and it stays `Option` for that one:
-    /// [`crate::codec::CadirEncoder`] writes the neutral document itself, whose
-    /// version is data about cadmpeg and never a dialect, so there is no id to
-    /// name. Every native encoder names one on every path, replay and patch
-    /// included.
-    ///
-    /// Always serialized, as `null` when absent. Reports written before the
-    /// field existed omit the key and read back `None`.
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ExportIdentity {
+    Cadir,
+    ClassifiedNative(DialectId),
+    UnclassifiedNative(String),
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ExportReportWire {
+    format: String,
+    census: EntityCensus,
+    fidelity: FidelityResolution,
+    write_path: WritePath,
+    losses: Vec<LossNote>,
+    notes: Vec<String>,
     #[serde(default)]
     target: Option<DialectId>,
+}
+
+impl Serialize for ExportReport {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ExportReport", 7)?;
+        state.serialize_field("format", self.format())?;
+        state.serialize_field("census", &self.census)?;
+        state.serialize_field("fidelity", &self.fidelity)?;
+        state.serialize_field("write_path", &self.write_path)?;
+        state.serialize_field("losses", &self.losses)?;
+        state.serialize_field("notes", &self.notes)?;
+        state.serialize_field("target", &self.target())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ExportReport {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = ExportReportWire::deserialize(deserializer)?;
+        let identity = match (wire.format.as_str(), wire.target) {
+            ("cadir", None) => ExportIdentity::Cadir,
+            ("cadir", Some(target)) => {
+                return Err(serde::de::Error::custom(format_args!(
+                    "CADIR export report cannot name native dialect {:?}",
+                    target.as_str()
+                )))
+            }
+            (_, Some(target)) if target.namespace() == wire.format => {
+                ExportIdentity::ClassifiedNative(target)
+            }
+            (_, Some(target)) => {
+                return Err(serde::de::Error::custom(format_args!(
+                    "export target {:?} is not in format namespace {:?}",
+                    target.as_str(),
+                    wire.format
+                )))
+            }
+            (_, None) => ExportIdentity::UnclassifiedNative(wire.format),
+        };
+        Ok(Self {
+            identity,
+            census: wire.census,
+            fidelity: wire.fidelity,
+            write_path: wire.write_path,
+            losses: wire.losses,
+            notes: wire.notes,
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for ExportReport {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ExportReport".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::ExportReport").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        ExportReportWire::json_schema(generator)
+    }
 }
 
 /// Which of an encoder's write paths produced the exported bytes.
@@ -125,10 +194,27 @@ impl EntityCensus {
 }
 
 impl ExportReport {
-    /// The concrete native dialect written, or `None` for neutral CADIR.
+    /// Returns the native format namespace, or `"cadir"` for neutral CADIR.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        match &self.identity {
+            ExportIdentity::Cadir => "cadir",
+            ExportIdentity::ClassifiedNative(target) => target.namespace(),
+            ExportIdentity::UnclassifiedNative(format) => format,
+        }
+    }
+
+    /// The concrete native dialect written.
+    ///
+    /// `None` identifies neutral CADIR or a migrated native report written
+    /// before export targets entered the wire format. New native reports always
+    /// name a target.
     #[must_use]
     pub fn target(&self) -> Option<&DialectId> {
-        self.target.as_ref()
+        match &self.identity {
+            ExportIdentity::ClassifiedNative(target) => Some(target),
+            ExportIdentity::Cadir | ExportIdentity::UnclassifiedNative(_) => None,
+        }
     }
 
     /// Constructs a report for the neutral CADIR document, which has no native
@@ -142,35 +228,42 @@ impl ExportReport {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            format: "cadir".into(),
+            identity: ExportIdentity::Cadir,
             census,
             fidelity,
             write_path,
             losses,
             notes,
-            target: None,
         }
     }
 
     /// Constructs a native-format report with its required dialect target.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `target` uses the reserved `cadir` namespace. CADIR is the
+    /// neutral document and has no dialect target.
     #[must_use]
     pub fn native(
         target: DialectId,
-        format: String,
         census: EntityCensus,
         fidelity: FidelityResolution,
         write_path: WritePath,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
+        assert_ne!(
+            target.namespace(),
+            "cadir",
+            "a native export target cannot use the reserved CADIR namespace"
+        );
         Self {
-            format,
+            identity: ExportIdentity::ClassifiedNative(target),
             census,
             fidelity,
             write_path,
             losses,
             notes,
-            target: Some(target),
         }
     }
 

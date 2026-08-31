@@ -82,7 +82,6 @@ impl Encoder for StepCodec {
         // A plan constructs its report once, after every report input is final.
         let report = ExportReport::native(
             target,
-            crate::dialect::FORMAT.into(),
             outcome.census,
             if input.fidelity.is_some() {
                 FidelityResolution::NotConsumed

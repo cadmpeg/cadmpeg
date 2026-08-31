@@ -145,7 +145,6 @@ fn finish<'a>(
     ExportPlan::buffered(
         ExportReport::native(
             target,
-            dialect::FORMAT.into(),
             cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: input.ir.census(),
