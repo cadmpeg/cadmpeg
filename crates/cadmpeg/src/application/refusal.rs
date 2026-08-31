@@ -254,8 +254,9 @@ impl ConversionRefusal {
 
     /// Whether an explicitly requested `--report` may still be written.
     ///
-    /// Refusals that have read a document may write the report. The
-    /// binary-stdout refusal happens before the input is read and does not.
+    /// Every refusal except the binary-stdout guard may write a report. An
+    /// early target refusal writes its typed refusal without decode or check
+    /// reports; later refusals serialize every report they hold.
     #[must_use]
     pub const fn may_write_report(&self) -> bool {
         match self {

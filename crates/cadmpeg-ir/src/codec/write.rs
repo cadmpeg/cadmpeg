@@ -368,7 +368,10 @@ impl<'a> EncodeInput<'a> {
     }
 }
 
-/// A fully reported export awaiting its atomic destination write.
+/// A fully reported export awaiting its destination write.
+///
+/// The plan owns the complete payload. Atomic file staging belongs to the
+/// artifact store; [`Self::write_to`] also supports non-file sinks.
 pub struct ExportPlan {
     report: ExportReport,
     bytes: Vec<u8>,
