@@ -307,7 +307,7 @@ fn extrusion_form_codes_are_scoped_to_their_native_classes() {
 }
 
 #[test]
-fn ambiguous_direct_form_code_padding_does_not_shift_the_code() {
+fn ambiguous_form_code_padding_does_not_shift_the_code() {
     let direct_lane = |code: u32, preceding: u32, padding: usize| {
         let class_offset = 32usize;
         let class_name = "moICE_c";
@@ -386,6 +386,44 @@ fn ambiguous_direct_form_code_padding_does_not_shift_the_code() {
     let (lane, name) = direct_lane(11, 0, 8);
     assert_eq!(
         feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
+        Some(11)
+    );
+
+    let name_offset = 32usize;
+    let mut payload = vec![0; 64];
+    payload[name_offset - 14..name_offset - 10].copy_from_slice(&11_u32.to_le_bytes());
+    payload[name_offset - 2..name_offset].copy_from_slice(&0x8d9a_u16.to_le_bytes());
+    let compact_lane = FeatureInputLane {
+        id: "compact-lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let compact_name = FeatureInputName {
+        id: "compact-name".into(),
+        parent: "compact-lane".into(),
+        ordinal: 0,
+        offset: name_offset as u64,
+        value: "Feature".into(),
+        object_id: Some(1),
+    };
+
+    assert_eq!(
+        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), None),
+        None
+    );
+    assert_eq!(
+        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), Some(8),),
         Some(11)
     );
 }

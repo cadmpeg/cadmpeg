@@ -18,6 +18,22 @@ pub(super) fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option
     View::u16_le_at(payload, start)
 }
 
+/// Selects one operation code from byte-valid layout candidates.
+///
+/// A declared padding selects at most one versioned candidate. Without a
+/// declaration, all byte-valid candidates must agree; their order is not
+/// evidence and cannot choose the operation.
+fn consistent_operation_code(
+    mut candidates: impl Iterator<Item = u32>,
+    padding_declared: bool,
+) -> Option<u32> {
+    let first = candidates.next()?;
+    if !padding_declared && candidates.any(|candidate| candidate != first) {
+        return None;
+    }
+    Some(first)
+}
+
 pub(super) fn feature_operation_code(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
@@ -29,7 +45,7 @@ pub(super) fn feature_operation_code(
         .classes
         .iter()
         .find(|class| class.offset + 6 + class.name.len() as u64 == name.offset);
-    let code_offset = if let Some(class) = direct_class {
+    if let Some(class) = direct_class {
         let class_offset = usize::try_from(class.offset).ok()?;
         if lane
             .native_payload
@@ -51,52 +67,43 @@ pub(super) fn feature_operation_code(
                 {
                     return None;
                 }
-                let code = View::u32_le_at(&lane.native_payload, code_offset)?;
-                Some((code_offset, code))
-            })
-            .collect::<Vec<_>>();
-        if form_padding.is_none() {
-            // A zero form code makes four- and eight-byte padding both match. A
-            // different candidate code is not a byte-level discriminator.
-            match candidates.as_slice() {
-                [(code_offset, _)] => *code_offset,
-                [(first_offset, first_code), (_, second_code)] if first_code == second_code => {
-                    *first_offset
-                }
-                _ => return None,
-            }
-        } else {
-            candidates.first().map(|(code_offset, _)| *code_offset)?
-        }
+                View::u32_le_at(&lane.native_payload, code_offset)
+            });
+        return consistent_operation_code(candidates, form_padding.is_some());
+    }
+
+    let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
+    if !is_class_token(repeated_token) {
+        return None;
+    }
+    if let Some(code_offset) = name_offset.checked_sub(14).filter(|code_offset| {
+        repeated_token == 0x8000
+            && lane.native_payload.get(code_offset + 4..code_offset + 8) == Some(&[0; 4])
+    }) {
+        return View::u32_le_at(&lane.native_payload, code_offset);
+    }
+
+    let paddings: &[usize] = if class == Some("moICE_c") {
+        &[8, 4, 0]
     } else {
-        let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
-        if !is_class_token(repeated_token) {
+        &[8, 4]
+    };
+    let candidates = paddings.iter().copied().filter_map(|padding| {
+        if padding != 0 && form_padding.is_some_and(|expected| expected != padding) {
             return None;
         }
-        let compact_instance = name_offset.checked_sub(14).filter(|code_offset| {
-            repeated_token == 0x8000
-                && lane.native_payload.get(code_offset + 4..code_offset + 8) == Some(&[0; 4])
-        });
-        compact_instance.or_else(|| {
-            let paddings: &[usize] = if class == Some("moICE_c") {
-                &[8, 4, 0]
-            } else {
-                &[8, 4]
-            };
-            paddings.iter().copied().find_map(|padding| {
-                if padding != 0 && form_padding.is_some_and(|expected| expected != padding) {
-                    return None;
-                }
-                let code_offset = name_offset.checked_sub(6 + padding)?;
-                lane.native_payload
-                    .get(code_offset + 4..name_offset - 2)?
-                    .iter()
-                    .all(|byte| *byte == 0)
-                    .then_some(code_offset)
-            })
-        })?
-    };
-    View::u32_le_at(&lane.native_payload, code_offset)
+        let code_offset = name_offset.checked_sub(6 + padding)?;
+        if !lane
+            .native_payload
+            .get(code_offset + 4..name_offset - 2)?
+            .iter()
+            .all(|byte| *byte == 0)
+        {
+            return None;
+        }
+        View::u32_le_at(&lane.native_payload, code_offset)
+    });
+    consistent_operation_code(candidates, form_padding.is_some())
 }
 
 pub(super) fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
