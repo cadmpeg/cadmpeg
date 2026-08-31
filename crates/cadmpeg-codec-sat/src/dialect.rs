@@ -198,7 +198,9 @@ fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
         .kind()
         .reportable_id()
         .expect("stream evidence is constructed only for reportable kinds");
-    DialectMatch::from_admission(dialect, admission(evidence)).with_declared(declared(evidence))
+    DialectMatch::from_admission(dialect, admission(evidence))
+        .expect("SAT dialect admissions use only SAT grammar ids")
+        .with_declared(declared(evidence))
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.

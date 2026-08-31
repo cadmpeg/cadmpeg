@@ -1821,3 +1821,10 @@ crate = "cadmpeg-ir"
 kind = "move"
 item = "cadmpeg_ir::codec::{assert_valid_target_catalog,default_target,find_target} -> cadmpeg_core::target"
 reason = "static catalog validation and lookup depend only on the core-owned TargetDescriptor and do not read CADIR state"
+
+[[change]]
+commit = "c3ce43fbcc490ad37f8ae4fda6fce1b3087ef719"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::dialect::DialectMatch::{from_admission,unverified}"
+reason = "caller-supplied substituted grammar ids now return DialectMatchError for a foreign namespace through the same validation path as deserialization instead of panicking"

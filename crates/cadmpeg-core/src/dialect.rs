@@ -224,21 +224,11 @@ impl<'de> Deserialize<'de> for DialectMatch {
                 wire.format
             )));
         }
-        if let Admission::AdmittedUnverified { using: Some(using) } = &wire.admission {
-            if wire.dialect.namespace() != using.namespace() {
-                return Err(serde::de::Error::custom(format_args!(
-                    "unverified dialect {:?} cannot use grammar from foreign namespace {:?}",
-                    wire.dialect.as_str(),
-                    using.as_str()
-                )));
-            }
-        }
-        Ok(Self {
-            dialect: wire.dialect,
-            declared: wire.declared,
-            instance: wire.instance,
-            admission: wire.admission,
-        })
+        let mut matched =
+            Self::from_admission(wire.dialect, wire.admission).map_err(serde::de::Error::custom)?;
+        matched.declared = wire.declared;
+        matched.instance = wire.instance;
+        Ok(matched)
     }
 }
 
@@ -314,7 +304,7 @@ impl DialectLayers {
         primary: DialectMatch,
         extra: Vec<DialectMatch>,
     ) -> Result<Self, DialectLayersError> {
-        let mut keys = BTreeSet::new();
+        let mut keys = BTreeSet::from([(primary.format(), &primary.instance)]);
         for layer in &extra {
             if layer.format() == primary.format() && layer.instance.is_none() {
                 return Err(DialectLayersError {
@@ -327,7 +317,7 @@ impl DialectLayers {
                 return Err(DialectLayersError {
                     format: layer.format().to_owned(),
                     instance: layer.instance.clone(),
-                    reason: DialectLayersErrorReason::DuplicateExtra,
+                    reason: DialectLayersErrorReason::DuplicateLayer,
                 });
             }
         }
@@ -363,7 +353,7 @@ pub struct DialectLayersError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DialectLayersErrorReason {
     UnidentifiedPrimaryFormatExtra,
-    DuplicateExtra,
+    DuplicateLayer,
 }
 
 impl fmt::Display for DialectLayersError {
@@ -374,9 +364,9 @@ impl fmt::Display for DialectLayersError {
                 "extra dialect layer for primary format {:?} requires an instance",
                 self.format
             ),
-            DialectLayersErrorReason::DuplicateExtra => write!(
+            DialectLayersErrorReason::DuplicateLayer => write!(
                 f,
-                "duplicate extra dialect layer for format {:?} and instance {:?}",
+                "duplicate dialect layer for format {:?} and instance {:?}",
                 self.format, self.instance
             ),
         }
@@ -385,38 +375,65 @@ impl fmt::Display for DialectLayersError {
 
 impl Error for DialectLayersError {}
 
+/// A dialect admission named a parser grammar from another format layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectMatchError {
+    dialect: DialectId,
+    using: DialectId,
+}
+
+impl fmt::Display for DialectMatchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "unverified dialect {:?} cannot use grammar from foreign namespace {:?}",
+            self.dialect.as_str(),
+            self.using.as_str()
+        )
+    }
+}
+
+impl Error for DialectMatchError {}
+
 impl DialectMatch {
     /// Constructs a classified layer from its identity and admission result.
     ///
     /// A substituted grammar belongs to the same format layer as the
     /// identified dialect. Named constructors below remain as route-specific
     /// sugar for callers that do not already have an [`Admission`].
-    #[must_use]
-    pub fn from_admission(dialect: DialectId, admission: Admission) -> Self {
+    pub fn from_admission(
+        dialect: DialectId,
+        admission: Admission,
+    ) -> Result<Self, DialectMatchError> {
         if let Admission::AdmittedUnverified { using: Some(using) } = &admission {
-            assert_eq!(
-                dialect.namespace(),
-                using.namespace(),
-                "an unverified dialect cannot use grammar from another format layer"
-            );
+            if dialect.namespace() != using.namespace() {
+                return Err(DialectMatchError {
+                    dialect,
+                    using: using.clone(),
+                });
+            }
         }
-        Self {
+        Ok(Self {
             dialect,
             declared: BTreeMap::new(),
             instance: None,
             admission,
-        }
+        })
     }
 
     /// Constructs a layer parsed with its identified dialect's grammar.
     #[must_use]
     pub fn admitted(dialect: DialectId) -> Self {
-        Self::from_admission(dialect, Admission::Admitted)
+        Self {
+            dialect,
+            declared: BTreeMap::new(),
+            instance: None,
+            admission: Admission::Admitted,
+        }
     }
 
     /// Constructs a layer parsed unverified with another declared grammar.
-    #[must_use]
-    pub fn unverified(dialect: DialectId, using: DialectId) -> Self {
+    pub fn unverified(dialect: DialectId, using: DialectId) -> Result<Self, DialectMatchError> {
         Self::from_admission(
             dialect,
             Admission::AdmittedUnverified { using: Some(using) },
@@ -426,13 +443,23 @@ impl DialectMatch {
     /// Constructs a layer parsed unverified without a declared grammar.
     #[must_use]
     pub fn residual(dialect: DialectId) -> Self {
-        Self::from_admission(dialect, Admission::AdmittedUnverified { using: None })
+        Self {
+            dialect,
+            declared: BTreeMap::new(),
+            instance: None,
+            admission: Admission::AdmittedUnverified { using: None },
+        }
     }
 
     /// Constructs a structurally identified layer whose decode was refused.
     #[must_use]
     pub fn refused(dialect: DialectId) -> Self {
-        Self::from_admission(dialect, Admission::Refused)
+        Self {
+            dialect,
+            declared: BTreeMap::new(),
+            instance: None,
+            admission: Admission::Refused,
+        }
     }
 
     /// Attaches source-declared version fields before the match enters a report.
@@ -621,11 +648,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "cannot use grammar from another format layer")]
     fn unverified_constructor_rejects_a_foreign_grammar_namespace() {
-        let _ = DialectMatch::unverified(
+        let error = DialectMatch::unverified(
             DialectId::pinned("rhino:unknown"),
             DialectId::pinned("step:ap242-e3"),
+        )
+        .expect_err("a grammar substitute belongs to the classified format layer");
+        assert_eq!(
+            error.to_string(),
+            "unverified dialect \"rhino:unknown\" cannot use grammar from foreign namespace \"step:ap242-e3\""
         );
     }
 
@@ -638,7 +669,8 @@ mod tests {
             Admission::AdmittedUnverified { using: None }
         );
 
-        let self_named = DialectMatch::unverified(dialect.clone(), dialect);
+        let self_named = DialectMatch::unverified(dialect.clone(), dialect)
+            .expect("the dialect and grammar share one namespace");
         assert_eq!(
             self_named.admission(),
             Admission::AdmittedUnverified {
@@ -697,7 +729,20 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "duplicate extra dialect layer for format \"acis\" and instance Some(\"body\")"
+            "duplicate dialect layer for format \"acis\" and instance Some(\"body\")"
+        );
+    }
+
+    #[test]
+    fn dialect_layers_reject_an_extra_that_reuses_the_primary_key() {
+        let primary = layer("rhino").with_instance("document");
+        let duplicate = layer("rhino").with_instance("document");
+        let error = DialectLayers::new(primary, vec![duplicate])
+            .expect_err("the primary key participates in layer uniqueness");
+
+        assert_eq!(
+            error.to_string(),
+            "duplicate dialect layer for format \"rhino\" and instance Some(\"document\")"
         );
     }
 

@@ -286,6 +286,7 @@ impl StepDialect {
 
         if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), NEAREST_STRATEGY.id())
+                .expect("STEP dialect and grammar ids share one format namespace")
         } else {
             DialectMatch::admitted(dialect.id())
         }

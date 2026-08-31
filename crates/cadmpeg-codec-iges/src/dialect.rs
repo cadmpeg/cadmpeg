@@ -327,6 +327,7 @@ impl IgesDialect {
             DialectMatch::admitted(dialect.id())
         } else {
             DialectMatch::unverified(dialect.id(), Self::nearest_verified(representation).id())
+                .expect("IGES dialect and grammar ids share one format namespace")
         }
         .with_declared(declared)
     }

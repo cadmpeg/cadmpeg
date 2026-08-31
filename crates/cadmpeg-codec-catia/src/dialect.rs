@@ -163,6 +163,7 @@ fn declared(scan: &ContainerScan) -> BTreeMap<String, String> {
 /// resolved; admission is [`admission`]. Neither is computed from the other.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
     DialectMatch::from_admission(scan.variant.id(), admission(scan.variant))
+        .expect("CATIA dialect admissions use only CATIA grammar ids")
         .with_declared(declared(scan))
 }
 

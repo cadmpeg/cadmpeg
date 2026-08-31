@@ -144,6 +144,7 @@ impl ArchiveVersion {
                     Self::V4.id()
                 },
             )
+            .expect("Rhino dialect and grammar ids share one format namespace")
         } else {
             DialectMatch::admitted(self.id())
         }

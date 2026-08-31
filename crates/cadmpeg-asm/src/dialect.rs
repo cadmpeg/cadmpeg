@@ -100,7 +100,9 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
         ),
         KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
     };
-    DialectMatch::from_admission(dialect, admission).with_declared(declared)
+    DialectMatch::from_admission(dialect, admission)
+        .expect("ASM dialect admissions use only ACIS grammar ids")
+        .with_declared(declared)
 }
 
 /// Save-format majors the Spatial ACIS record decoders are verified against.
