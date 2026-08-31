@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_ir::codec::{find_target, TargetDescriptor};
+use cadmpeg_core::target::TargetDescriptor;
+use cadmpeg_ir::codec::find_target;
 use serde::Deserialize;
 
 use crate::disposition::{Disposition, ReadDisposition, WriteDisposition};

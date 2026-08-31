@@ -18,6 +18,118 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::CodecError::UnsupportedDialect::format"
+reason = "the refusing format is projected from the carried DialectMatch, so a contradictory second format string is no longer representable"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::CodecError::UnsupportedTarget"
+reason = "write-target refusal carries a typed request-state enum and the structured static target catalog instead of an ambiguous optional token and joined strings"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-core"
+kind = "move"
+item = "cadmpeg_core::{TargetToken,error::TargetToken} -> cadmpeg_core::target::TargetToken"
+reason = "caller target tokens belong with target catalogs and target refusals, not decode and container errors"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::error::UNRECORDED_SOURCE_DIALECT"
+reason = "UnrecordedSource and NoDefault are distinct refusal variants, so no display sentinel stands in for both missing-token states"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-ir"
+kind = "move"
+item = "cadmpeg_ir::codec::TargetDescriptor -> cadmpeg_core::target::TargetDescriptor"
+reason = "the catalog descriptor is shared target identity metadata used by CodecError and registry views, independent of the CADIR document model"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::ResolvedWrite"
+reason = "resolved writes own cloned source and request identity, eliminating the source-borrow lifetime and allowing plans to retain typed refusal provenance"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::resolve_write_request"
+reason = "resolution returns the owned ResolvedWrite proof and consumes the core-owned target catalog type"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::unsupported_target"
+reason = "ResolvedWrite::unavailable derives explicit, inherited, and default delivery refusals from retained request provenance instead of accepting an untyped target string"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{Encoder,CadirEncoder}::targets"
+reason = "encoder catalogs return the descriptor from its new core target owner"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::FormatDialects::catalog"
+reason = "registry target views expose the descriptor from its new core target owner"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-codec-f3d"
+kind = "signature"
+item = "cadmpeg_codec_f3d::F3dCodec::targets"
+reason = "the Encoder implementation returns the descriptor from its new core target owner"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-codec-freecad"
+kind = "signature"
+item = "cadmpeg_codec_freecad::FcstdCodec::targets"
+reason = "the Encoder implementation returns the descriptor from its new core target owner"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-codec-iges"
+kind = "signature"
+item = "cadmpeg_codec_iges::IgesEncoder::targets"
+reason = "the Encoder implementation returns the descriptor from its new core target owner"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-codec-rhino"
+kind = "signature"
+item = "cadmpeg_codec_rhino::RhinoEncoder::targets"
+reason = "the Encoder implementation returns the descriptor from its new core target owner"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-codec-sldprt"
+kind = "signature"
+item = "cadmpeg_codec_sldprt::SldprtCodec::targets"
+reason = "the Encoder implementation returns the descriptor from its new core target owner"
+
+[[change]]
+commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
+crate = "cadmpeg-codec-step"
+kind = "signature"
+item = "cadmpeg_codec_step::StepCodec::targets"
+reason = "the Encoder implementation returns the descriptor from its new core target owner"
+
+[[change]]
 commit = "6103f84b7b0cba617a235830578d8a536b697e5a"
 crate = "cadmpeg-ir"
 kind = "deletion"

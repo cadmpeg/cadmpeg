@@ -3,10 +3,11 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, CodecBackend, Confidence, DecodeOptions,
-    DecodeResult, EncodeInput, Encoder, ExportPlan, TargetDescriptor, TargetRequest,
+    resolve_write_request, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
+    Encoder, ExportPlan, TargetRequest,
 };
 use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 
@@ -57,12 +58,7 @@ impl Encoder for StepCodec {
             crate::dialect::TARGETS,
         )?;
         let Some(entry) = resolved.catalog_entry() else {
-            return Err(unsupported_target(
-                crate::dialect::FORMAT,
-                resolved.dialect().as_str(),
-                OFF_CATALOG_SOURCE_REASON,
-                crate::dialect::TARGETS,
-            ));
+            return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
         };
         let schema = crate::dialect::target_schema(entry);
         let mut bytes = Vec::new();

@@ -31,7 +31,7 @@ use crate::global::{DialectRecovery, ResolvedGlobal, VersionFlag};
 use crate::representation::Representation;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_ir::codec::TargetDescriptor;
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 

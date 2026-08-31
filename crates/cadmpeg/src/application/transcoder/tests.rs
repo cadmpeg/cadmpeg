@@ -196,7 +196,7 @@ impl Encoder for NotImplementedEncoder {
         "not-implemented-test"
     }
 
-    fn targets(&self) -> &'static [cadmpeg_ir::codec::TargetDescriptor] {
+    fn targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor] {
         &[]
     }
 

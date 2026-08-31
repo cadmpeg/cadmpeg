@@ -1,4 +1,4 @@
-# generated at 626815342
+# generated at af2b7480e
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -77,7 +77,7 @@ pub struct cadmpeg_registry::Disposition
 pub cadmpeg_registry::Disposition::read: cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::Disposition::write: cadmpeg_registry::WriteDisposition
 pub struct cadmpeg_registry::FormatDialects
-pub cadmpeg_registry::FormatDialects::catalog: core::option::Option<&'static [cadmpeg_ir::codec::write::TargetDescriptor]>
+pub cadmpeg_registry::FormatDialects::catalog: core::option::Option<&'static [cadmpeg_core::target::TargetDescriptor]>
 pub cadmpeg_registry::FormatDialects::default_target: core::option::Option<&'static str>
 pub cadmpeg_registry::FormatDialects::format: alloc::string::String
 pub cadmpeg_registry::FormatDialects::rows: alloc::vec::Vec<cadmpeg_registry::DialectEntry>

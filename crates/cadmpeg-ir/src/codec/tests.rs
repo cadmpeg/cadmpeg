@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::target::{DefaultSource, TargetDescriptor, TargetRefusal, TargetToken};
 
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
@@ -102,16 +103,17 @@ fn an_empty_native_catalog_has_no_format_identity_request() {
     let ir = CadIr::empty(crate::units::Units::default());
     let error = resolve_write_request(&ir, TargetRequest::Inherit, "cadir", &[]).unwrap_err();
 
-    let CodecError::UnsupportedTarget {
-        requested,
-        available,
-        ..
-    } = error
-    else {
+    let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("an empty native catalog must refuse without inventing an identity request")
     };
-    assert_eq!(requested, None);
-    assert_eq!(available, "none");
+    let TargetRefusal::NoDefault {
+        source, available, ..
+    } = refusal.as_ref()
+    else {
+        panic!("a source-free inherit request must report a missing default")
+    };
+    assert_eq!(source, &DefaultSource::NoSource);
+    assert!(available.is_empty());
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
@@ -436,21 +438,20 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     .err()
     .expect("an id outside the catalog is refused");
 
-    let cadmpeg_core::CodecError::UnsupportedTarget {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
+        panic!("expected a target refusal, got {error}");
+    };
+    let TargetRefusal::UnknownExplicit {
         format,
         requested,
         available,
-        ..
-    } = &error
+    } = refusal.as_ref()
     else {
-        panic!("expected a target refusal, got {error}");
+        panic!("an unknown explicit target must retain that request state")
     };
     assert_eq!(format, "cadir");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("cadir:nonesuch")
-    );
-    assert_eq!(available, "none");
+    assert_eq!(requested.as_str(), "cadir:nonesuch");
+    assert!(available.is_empty());
     assert!(Encoder::targets(&CadirEncoder).is_empty());
 }
 
@@ -506,10 +507,25 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
         CATALOG_WRITE_TARGETS,
     )
     .unwrap_err();
-    let CodecError::UnsupportedTarget { available, .. } = error else {
+    let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("expected an unsupported target");
     };
-    assert_eq!(available, "test:old, test:new");
+    let TargetRefusal::UnknownExplicit {
+        requested,
+        available,
+        ..
+    } = refusal.as_ref()
+    else {
+        panic!("the explicit token is outside the catalog")
+    };
+    assert_eq!(requested, &TargetToken::new("test:missing"));
+    assert_eq!(
+        available
+            .iter()
+            .map(|target| target.id.as_str())
+            .collect::<Vec<_>>(),
+        ["test:old", "test:new"]
+    );
 }
 
 #[test]
@@ -528,10 +544,13 @@ fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
     let error = resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS)
         .unwrap_err();
 
-    let CodecError::UnsupportedTarget { requested, .. } = error else {
+    let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("an unrecorded same-format source must produce a target refusal")
     };
-    assert_eq!(requested, None);
+    assert!(matches!(
+        refusal.as_ref(),
+        TargetRefusal::UnrecordedSource { format, .. } if format == "test"
+    ));
 }
 
 #[test]

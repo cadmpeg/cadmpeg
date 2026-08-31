@@ -363,19 +363,18 @@ fn f3z_archive_merges_identity_occurrences() {
         )
         .err()
         .expect("the F3Z row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget {
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("f3d:f3z-multi-document")
+    assert_eq!(refusal.requested(), Some("f3d:f3z-multi-document"));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("f3d:manifest-3-2-0-0"), "{available}");
 
     // Naming the row is the escape, and it still regenerates the merged model
     // as a single-document archive — now with the report saying so.

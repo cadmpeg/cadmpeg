@@ -98,21 +98,17 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     );
 }
 
-fn refusal(error: &CodecError) -> (&str, Option<&str>, &str) {
-    let CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = error
-    else {
+fn refusal(
+    error: &CodecError,
+) -> (
+    &str,
+    Option<&str>,
+    &'static [cadmpeg_core::target::TargetDescriptor],
+) {
+    let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("expected a target refusal, got {error}");
     };
-    (
-        format,
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        available,
-    )
+    (refusal.format(), refusal.requested(), refusal.available())
 }
 
 /// The flagship case: `convert in.step -o out.step` on a file that is not the
@@ -202,7 +198,12 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
     assert_eq!(format, "step");
     assert_eq!(requested, Some("step:ap242"));
     for schema in StepSchema::ALL {
-        assert!(available.contains(schema.target()), "{available}");
+        assert!(
+            available
+                .iter()
+                .any(|target| target.id.as_str() == schema.target()),
+            "{available:?}"
+        );
     }
 }
 
@@ -229,7 +230,12 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
         .expect("step:unknown has no write target");
     let (_, requested, available) = refusal(&error);
     assert_eq!(requested, Some("step:unknown"));
-    assert!(available.contains("step:ap214"), "{available}");
+    assert!(
+        available
+            .iter()
+            .any(|target| target.id.as_str() == "step:ap214"),
+        "{available:?}"
+    );
 }
 
 /// A STEP source that records no dialect refuses as well. Nothing names an
@@ -252,7 +258,12 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
     assert_eq!(requested, None);
-    assert!(available.contains("step:ap214"), "{available}");
+    assert!(
+        available
+            .iter()
+            .any(|target| target.id.as_str() == "step:ap214"),
+        "{available:?}"
+    );
     let message = error.to_string();
     assert!(message.contains("records no dialect"), "{message}");
     assert!(
@@ -458,7 +469,10 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
     assert_eq!(format, "step");
     assert_eq!(requested, Some("step:nonesuch"));
     for target in Encoder::targets(&encoder) {
-        assert!(available.contains(target.id.as_str()), "{available}");
+        assert!(
+            available.iter().any(|available| available == target),
+            "{available:?}"
+        );
     }
 }
 

@@ -36,7 +36,7 @@
 use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_ir::codec::TargetDescriptor;
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 

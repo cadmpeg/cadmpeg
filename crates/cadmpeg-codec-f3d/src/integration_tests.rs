@@ -313,21 +313,19 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
     let error = plan(&result, false, TargetRequest::Inherit)
         .err()
         .expect("f3d:unknown is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "f3d");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("f3d:unknown")
+    assert_eq!(refusal.format(), "f3d");
+    assert_eq!(refusal.requested(), Some("f3d:unknown"));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("f3d:manifest-3-2-0-0"), "{available}");
 }
 
 /// The replay law's compare, not the presence of an image: an explicit catalog
@@ -380,19 +378,18 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     let error = plan(&result, true, TargetRequest::Explicit("step:ap242-e3"))
         .err()
         .expect("a STEP schema is not an F3D target");
-    let cadmpeg_core::CodecError::UnsupportedTarget {
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("step:ap242-e3")
+    assert_eq!(refusal.requested(), Some("step:ap242-e3"));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("f3d:manifest-3-2-0-0"), "{available}");
 }
 
 /// The patch path names a dialect too, and it is the source's: patching

@@ -50,8 +50,8 @@ use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::{Exchange, Value};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -481,7 +481,6 @@ pub(crate) fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> 
     };
     match dialect.alternate_encoding_refusal() {
         Some(message) => Err(CodecError::UnsupportedDialect {
-            format: FORMAT.into(),
             dialect_match: Box::new(dialect.classify_refused()),
             message: message.into(),
         }),

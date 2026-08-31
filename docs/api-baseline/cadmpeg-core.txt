@@ -1,4 +1,4 @@
-# generated at 52a23bf00
+# generated at af2b7480e
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -364,29 +364,66 @@ pub cadmpeg_core::error::CodecError::Truncated::context: cadmpeg_core::decode::E
 pub cadmpeg_core::error::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation
 pub cadmpeg_core::error::CodecError::UnsupportedDialect
 pub cadmpeg_core::error::CodecError::UnsupportedDialect::dialect_match: alloc::boxed::Box<cadmpeg_core::dialect::DialectMatch>
-pub cadmpeg_core::error::CodecError::UnsupportedDialect::format: alloc::string::String
 pub cadmpeg_core::error::CodecError::UnsupportedDialect::message: alloc::string::String
-pub cadmpeg_core::error::CodecError::UnsupportedTarget
-pub cadmpeg_core::error::CodecError::UnsupportedTarget::available: alloc::string::String
-pub cadmpeg_core::error::CodecError::UnsupportedTarget::format: alloc::string::String
-pub cadmpeg_core::error::CodecError::UnsupportedTarget::reason: alloc::string::String
-pub cadmpeg_core::error::CodecError::UnsupportedTarget::requested: core::option::Option<cadmpeg_core::error::TargetToken>
+pub cadmpeg_core::error::CodecError::UnsupportedTarget(alloc::boxed::Box<cadmpeg_core::target::TargetRefusal>)
 pub cadmpeg_core::error::CodecError::WrongFormat(alloc::string::String)
 impl cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::malformed(impl core::fmt::Display) -> Self
 pub const fn cadmpeg_core::error::CodecError::truncated(cadmpeg_core::decode::SourceLocation, &'static str) -> Self
 impl core::convert::From<cadmpeg_core::decode::ParseError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::decode::ParseError) -> Self
-pub struct cadmpeg_core::error::TargetToken(_)
-impl cadmpeg_core::error::TargetToken
-pub fn cadmpeg_core::error::TargetToken::as_str(&self) -> &str
-pub fn cadmpeg_core::error::TargetToken::new(impl core::convert::Into<alloc::string::String>) -> Self
-impl core::fmt::Display for cadmpeg_core::error::TargetToken
-pub fn cadmpeg_core::error::TargetToken::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub const cadmpeg_core::error::UNRECORDED_SOURCE_DIALECT: &str
 pub mod cadmpeg_core::io
 pub trait cadmpeg_core::io::ReadSeek: std::io::Read + core::io::seek::Seek
 impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
+pub mod cadmpeg_core::target
+pub enum cadmpeg_core::target::DefaultSource
+pub cadmpeg_core::target::DefaultSource::ForeignFormat(alloc::string::String)
+pub cadmpeg_core::target::DefaultSource::NoSource
+#[non_exhaustive] pub enum cadmpeg_core::target::TargetRefusal
+pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable
+pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::available: &'static [cadmpeg_core::target::TargetDescriptor]
+pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::reason: alloc::string::String
+pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::source: cadmpeg_core::target::DefaultSource
+pub cadmpeg_core::target::TargetRefusal::DefaultUnavailable::target: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable
+pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::available: &'static [cadmpeg_core::target::TargetDescriptor]
+pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::reason: alloc::string::String
+pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::requested: cadmpeg_core::target::TargetToken
+pub cadmpeg_core::target::TargetRefusal::ExplicitUnavailable::target: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable
+pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable::available: &'static [cadmpeg_core::target::TargetDescriptor]
+pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable::reason: alloc::string::String
+pub cadmpeg_core::target::TargetRefusal::InheritedUnavailable::source: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::target::TargetRefusal::NoDefault
+pub cadmpeg_core::target::TargetRefusal::NoDefault::available: &'static [cadmpeg_core::target::TargetDescriptor]
+pub cadmpeg_core::target::TargetRefusal::NoDefault::format: alloc::string::String
+pub cadmpeg_core::target::TargetRefusal::NoDefault::source: cadmpeg_core::target::DefaultSource
+pub cadmpeg_core::target::TargetRefusal::UnknownExplicit
+pub cadmpeg_core::target::TargetRefusal::UnknownExplicit::available: &'static [cadmpeg_core::target::TargetDescriptor]
+pub cadmpeg_core::target::TargetRefusal::UnknownExplicit::format: alloc::string::String
+pub cadmpeg_core::target::TargetRefusal::UnknownExplicit::requested: cadmpeg_core::target::TargetToken
+pub cadmpeg_core::target::TargetRefusal::UnrecordedSource
+pub cadmpeg_core::target::TargetRefusal::UnrecordedSource::available: &'static [cadmpeg_core::target::TargetDescriptor]
+pub cadmpeg_core::target::TargetRefusal::UnrecordedSource::format: alloc::string::String
+impl cadmpeg_core::target::TargetRefusal
+pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn cadmpeg_core::target::TargetRefusal::format(&self) -> &str
+pub fn cadmpeg_core::target::TargetRefusal::reason(&self) -> core::option::Option<&str>
+pub fn cadmpeg_core::target::TargetRefusal::requested(&self) -> core::option::Option<&str>
+impl core::error::Error for cadmpeg_core::target::TargetRefusal
+impl core::fmt::Display for cadmpeg_core::target::TargetRefusal
+pub fn cadmpeg_core::target::TargetRefusal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct cadmpeg_core::target::TargetDescriptor
+pub cadmpeg_core::target::TargetDescriptor::aliases: &'static [&'static str]
+pub cadmpeg_core::target::TargetDescriptor::default: bool
+pub cadmpeg_core::target::TargetDescriptor::id: cadmpeg_core::dialect::DialectId
+pub cadmpeg_core::target::TargetDescriptor::label: &'static str
+pub struct cadmpeg_core::target::TargetToken(_)
+impl cadmpeg_core::target::TargetToken
+pub fn cadmpeg_core::target::TargetToken::as_str(&self) -> &str
+pub fn cadmpeg_core::target::TargetToken::new(impl core::convert::Into<alloc::string::String>) -> Self
+impl core::fmt::Display for cadmpeg_core::target::TargetToken
+pub fn cadmpeg_core::target::TargetToken::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
 pub cadmpeg_core::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::CodecError::Io(core::io::error::Error)
@@ -401,13 +438,8 @@ pub cadmpeg_core::CodecError::Truncated::context: cadmpeg_core::decode::ErrorCon
 pub cadmpeg_core::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation
 pub cadmpeg_core::CodecError::UnsupportedDialect
 pub cadmpeg_core::CodecError::UnsupportedDialect::dialect_match: alloc::boxed::Box<cadmpeg_core::dialect::DialectMatch>
-pub cadmpeg_core::CodecError::UnsupportedDialect::format: alloc::string::String
 pub cadmpeg_core::CodecError::UnsupportedDialect::message: alloc::string::String
-pub cadmpeg_core::CodecError::UnsupportedTarget
-pub cadmpeg_core::CodecError::UnsupportedTarget::available: alloc::string::String
-pub cadmpeg_core::CodecError::UnsupportedTarget::format: alloc::string::String
-pub cadmpeg_core::CodecError::UnsupportedTarget::reason: alloc::string::String
-pub cadmpeg_core::CodecError::UnsupportedTarget::requested: core::option::Option<cadmpeg_core::error::TargetToken>
+pub cadmpeg_core::CodecError::UnsupportedTarget(alloc::boxed::Box<cadmpeg_core::target::TargetRefusal>)
 pub cadmpeg_core::CodecError::WrongFormat(alloc::string::String)
 impl cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::malformed(impl core::fmt::Display) -> Self
@@ -434,11 +466,5 @@ impl serde_core::ser::Serialize for cadmpeg_core::container::ContainerSummary
 pub fn cadmpeg_core::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::container::ContainerSummary
 pub fn cadmpeg_core::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
-pub struct cadmpeg_core::TargetToken(_)
-impl cadmpeg_core::error::TargetToken
-pub fn cadmpeg_core::error::TargetToken::as_str(&self) -> &str
-pub fn cadmpeg_core::error::TargetToken::new(impl core::convert::Into<alloc::string::String>) -> Self
-impl core::fmt::Display for cadmpeg_core::error::TargetToken
-pub fn cadmpeg_core::error::TargetToken::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait cadmpeg_core::ReadSeek: std::io::Read + core::io::seek::Seek
 impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T

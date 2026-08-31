@@ -4,7 +4,7 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
-    resolve_write_request, unsupported_target, EncodeInput, ExportPlan, TargetRequest,
+    resolve_write_request, EncodeInput, ExportPlan, ResolvedWrite, TargetRequest,
 };
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
@@ -37,7 +37,7 @@ pub(crate) fn plan<'a>(
     let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let target = resolved.dialect().clone();
     let (written, bytes) = write(input, resolved.preserves_source())?;
-    check_honesty(&target, &written)?;
+    check_honesty(&resolved, &written)?;
     Ok(finish(
         input,
         target,
@@ -88,22 +88,17 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
 
 /// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land
 /// on the resolved target.
-fn check_honesty(target: &DialectId, written: &Written) -> Result<(), CodecError> {
+fn check_honesty(resolved: &ResolvedWrite, written: &Written) -> Result<(), CodecError> {
     let Written::Semantic { dialect: got, .. } = written else {
         return Ok(());
     };
-    if got == target {
+    if got == resolved.dialect() {
         return Ok(());
     }
-    Err(unsupported_target(
-        dialect::FORMAT,
-        target.as_str(),
-        &format!(
-            "the retained document blocks decide the swSolidWorks envelope this writer emits, \
+    Err(resolved.unavailable(format!(
+        "the retained document blocks decide the swSolidWorks envelope this writer emits, \
              and from this input that envelope is {got}"
-        ),
-        dialect::TARGETS,
-    ))
+    )))
 }
 
 fn finish<'a>(

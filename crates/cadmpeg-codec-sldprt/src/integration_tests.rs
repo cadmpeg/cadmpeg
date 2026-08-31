@@ -322,24 +322,22 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
     let error = plan(&result, false, cadmpeg_ir::codec::TargetRequest::Inherit)
         .err()
         .expect("a versioned row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget {
-        format,
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(format, "sldprt");
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("sldprt:sw-version-12000-plus")
+    assert_eq!(refusal.format(), "sldprt");
+    assert_eq!(refusal.requested(), Some("sldprt:sw-version-12000-plus"));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "sldprt:unknown"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("sldprt:unknown"), "{available}");
-    let cadmpeg_core::CodecError::UnsupportedTarget { reason, .. } = &error else {
-        unreachable!()
-    };
+    let reason = refusal
+        .reason()
+        .expect("delivery refusal carries its reason");
     assert!(
         reason.contains("sldprt:unknown"),
         "the refusal must name what the write would have been: {reason}"
@@ -361,16 +359,13 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     )
     .err()
     .expect("the version-less row is not deliverable from a versioned part");
-    let cadmpeg_core::CodecError::UnsupportedTarget {
-        requested, reason, ..
-    } = &error
-    else {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("sldprt:unknown")
-    );
+    assert_eq!(refusal.requested(), Some("sldprt:unknown"));
+    let reason = refusal
+        .reason()
+        .expect("delivery refusal carries its reason");
     assert!(
         reason.contains("sldprt:sw-version-12000-plus"),
         "the refusal must name what the write would have been: {reason}"
@@ -389,19 +384,18 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     )
     .err()
     .expect("a STEP schema is not a SLDPRT target");
-    let cadmpeg_core::CodecError::UnsupportedTarget {
-        requested,
-        available,
-        ..
-    } = &error
-    else {
+    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
-    assert_eq!(
-        requested.as_ref().map(cadmpeg_core::TargetToken::as_str),
-        Some("step:ap242-e3")
+    assert_eq!(refusal.requested(), Some("step:ap242-e3"));
+    assert!(
+        refusal
+            .available()
+            .iter()
+            .any(|target| target.id.as_str() == "sldprt:unknown"),
+        "{:?}",
+        refusal.available()
     );
-    assert!(available.contains("sldprt:unknown"), "{available}");
 }
 
 /// The §8.3 honesty invariant on the patch path: an edited part still writes
