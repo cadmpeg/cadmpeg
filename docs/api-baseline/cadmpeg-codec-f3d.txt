@@ -1,4 +1,4 @@
-# generated at af2b7480e
+# generated at c5a524805
 pub mod cadmpeg_codec_f3d
 pub struct cadmpeg_codec_f3d::F3dCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_f3d::F3dCodec
@@ -8,6 +8,6 @@ pub fn cadmpeg_codec_f3d::F3dCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_f3d::F3dCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_f3d::F3dCodec
 pub fn cadmpeg_codec_f3d::F3dCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_f3d::F3dCodec::plan<'a>(&self, cadmpeg_ir::codec::write::EncodeInput<'a>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_f3d::F3dCodec::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_f3d::F3dCodec::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_codec_f3d::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::check::Finding>
