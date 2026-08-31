@@ -63,10 +63,9 @@ impl Variant {
 
     /// The pinned registry id. The only string boundary this enum has.
     ///
-    /// Distinct from [`Variant::token`], which is the report and container
-    /// attribute spelling and predates the registry. The two are kept separate
-    /// because the token is a bare word inside a `catia`-scoped report while
-    /// the id is a workspace-wide namespaced identity that is stable forever.
+    /// This is the sole serialized spelling of the storage family. Human
+    /// descriptions remain prose; source metadata and annotations do not carry
+    /// a second bare variant token.
     pub(crate) const fn id(self) -> DialectId {
         DialectId::pinned(match self {
             Self::StandardNested => "catia:standard-nested",
@@ -120,19 +119,17 @@ pub(crate) fn admission(variant: Variant) -> Admission {
 /// transferred out of an identified layout. This one states that the layout was
 /// never identified.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    match matched.admission() {
-        Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified { .. } => {
-            Some(CatiaLossCode::SourceDialectUnverified.note(format!(
-                "This container matched no CATIA V5 storage family's structural invariants, so it \
+    let Admission::AdmittedUnverified { .. } = matched.admission() else {
+        return None;
+    };
+    Some(CatiaLossCode::SourceDialectUnverified.note(format!(
+        "This container matched no CATIA V5 storage family's structural invariants, so it \
 is `{}`. No decode route declares a grammar for that row, and no declared \
                  dialect grammar was substituted; the file was \
                  admitted under the metadata-IR fallback, which enumerates the container and \
                  retains the source bytes without applying any family's record grammar.",
-                matched.dialect()
-            )))
-        }
-    }
+        matched.dialect()
+    )))
 }
 
 /// The `LastSaveVersion` tuple the summary-information record declared.

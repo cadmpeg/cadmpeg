@@ -385,7 +385,6 @@ pub(crate) struct GeometryReportCounts {
 
 pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    attributes.insert("variant".to_string(), scan.variant.token().to_string());
     attributes.insert("file_size".to_string(), scan.data.len().to_string());
     attributes.insert(
         "outer_dir_offset".to_string(),
@@ -568,7 +567,7 @@ pub(crate) fn build_metadata_ir(
             &id,
             "MainDataStream+SurfacicReps",
             0,
-            scan.variant.token(),
+            scan.variant.id().to_string(),
             Exactness::Unknown,
         );
         unknowns.push(UnknownRecord {
@@ -601,7 +600,7 @@ pub(crate) fn preserve_raw_payload(
         &id,
         stream,
         0,
-        scan.variant.token(),
+        scan.variant.id().to_string(),
         Exactness::Unknown,
     );
     unknowns.push(UnknownRecord {
@@ -643,7 +642,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     let mut losses = vec![CatiaLossCode::GeometryBrepNotTransferred.note(format!(
         "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
          applicable decoded record families transfer geometry in this codec.",
-        scan.variant.token(),
+        scan.variant.id(),
         scan.variant.description()
     ))];
 

@@ -191,7 +191,6 @@
         "outer_dir_offset": "539",
         "preview_count": "0",
         "stream_count": "2",
-        "variant": "float_packed_inner_no_fbb",
         "vertex_records": "0"
       },
       "dialect": {
@@ -600,7 +599,7 @@
         "catia:payload:unknown#freeform": {
           "offset": 0,
           "stream": 0,
-          "tag": "float_packed_inner_no_fbb"
+          "tag": "catia:float-packed-inner-no-fbb"
         }
       },
       "streams": [

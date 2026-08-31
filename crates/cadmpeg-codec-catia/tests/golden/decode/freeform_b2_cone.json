@@ -108,7 +108,6 @@
         "outer_dir_offset": "453",
         "preview_count": "0",
         "stream_count": "2",
-        "variant": "float_packed_inner_no_fbb",
         "vertex_records": "0"
       },
       "dialect": {
@@ -479,7 +478,7 @@
           "kind": "geometry_not_transferred",
           "namespace": "catia"
         },
-        "message": "No B-rep geometry was transferred. This file's storage variant is `float_packed_inner_no_fbb` (float-packed inner-no-FBB (object-stream b5 03 topology): freeform carrier decode supported); the applicable decoded record families transfer geometry in this codec.",
+        "message": "No B-rep geometry was transferred. This file's storage variant is `catia:float-packed-inner-no-fbb` (float-packed inner-no-FBB (object-stream b5 03 topology): freeform carrier decode supported); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
       },
       {
@@ -510,7 +509,7 @@
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
           "stream": 0,
-          "tag": "float_packed_inner_no_fbb"
+          "tag": "catia:float-packed-inner-no-fbb"
         }
       },
       "streams": [

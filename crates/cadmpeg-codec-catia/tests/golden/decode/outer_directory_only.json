@@ -97,8 +97,7 @@
         "file_size": "163",
         "finjpl_segment_count": "0",
         "outer_dir_offset": "36",
-        "preview_count": "0",
-        "variant": "unknown"
+        "preview_count": "0"
       },
       "dialect": {
         "admission": {
@@ -472,7 +471,7 @@
           "kind": "geometry_not_transferred",
           "namespace": "catia"
         },
-        "message": "No B-rep geometry was transferred. This file's storage variant is `unknown` (unrecognized storage layout); the applicable decoded record families transfer geometry in this codec.",
+        "message": "No B-rep geometry was transferred. This file's storage variant is `catia:unknown` (unrecognized storage layout); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
       },
       {

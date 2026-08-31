@@ -33,19 +33,6 @@ pub enum Variant {
 }
 
 impl Variant {
-    /// A short, stable token for reports and container attributes.
-    pub fn token(self) -> &'static str {
-        match self {
-            Variant::StandardNested => "standard_nested",
-            Variant::FbbOnly => "fbb_only",
-            Variant::ZeroEntity => "zero_entity",
-            Variant::FloatPackedInnerNoFbb => "float_packed_inner_no_fbb",
-            Variant::E5Stream => "e5_stream",
-            Variant::InnerNoDirectory => "inner_no_directory",
-            Variant::Unknown => "unknown",
-        }
-    }
-
     /// A one-line human description for container notes.
     pub fn description(self) -> &'static str {
         match self {

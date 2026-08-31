@@ -741,7 +741,6 @@
         "outer_dir_offset": "1120",
         "preview_count": "0",
         "stream_count": "2",
-        "variant": "standard_nested",
         "vertex_records": "3"
       },
       "dialect": {
@@ -1275,7 +1274,7 @@
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
           "stream": 0,
-          "tag": "standard_nested"
+          "tag": "catia:standard-nested"
         },
         "catia:standard:body#unbound-points": {
           "offset": 0,
