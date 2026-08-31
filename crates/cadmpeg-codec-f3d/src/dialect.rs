@@ -208,10 +208,17 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
                     )
                 }
             };
-            Some(F3dLossCode::SourceDialectUnverified.note(format!(
+            let message = format!(
                 "the top-level manifest declares version {version:?}, which no dialect row of \
                  this codec names, so no declared identity was verified. {strategy}"
-            )))
+            );
+            let message = matched
+                .declared()
+                .get(DECLARED_ARCHIVE_MEMBER)
+                .map_or(message.clone(), |member| {
+                    format!("archive member {member}: {message}")
+                });
+            Some(F3dLossCode::SourceDialectUnverified.note(message))
         }
     }
 }
@@ -340,8 +347,10 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 pub(crate) fn report_dialect_losses(
     layers: &cadmpeg_core::dialect::DialectLayers,
 ) -> Vec<LossNote> {
-    let mut losses = dialect_loss(layers.primary())
-        .into_iter()
+    let mut losses = layers
+        .iter()
+        .filter(|matched| matched.format() == FORMAT)
+        .filter_map(dialect_loss)
         .collect::<Vec<_>>();
     losses.extend(
         layers

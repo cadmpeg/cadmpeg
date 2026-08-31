@@ -130,7 +130,6 @@ pub fn decode(
     let (mut ir, mut report, mut fidelity) =
         crate::decode::decode_member(ctx, root_view)?.into_parts();
     let outer = classify_archive_layers(ctx, scan)?;
-    report.losses.extend(outer.losses);
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -151,7 +150,7 @@ pub fn decode(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
-        return finalize_result(ir, classify_outer_report(report, outer.layers), fidelity);
+        return finalize_result(ir, classify_outer_report(report, outer), fidelity);
     }
 
     let table = xref_table_from_ir(&ir)?;
@@ -178,15 +177,25 @@ pub fn decode(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     make_sibling_ordinals_unique(&mut ir.model.occurrences);
-    finalize_result(ir, classify_outer_report(report, outer.layers), fidelity)
+    finalize_result(ir, classify_outer_report(report, outer), fidelity)
 }
 
 fn classify_outer_report(
-    report: cadmpeg_ir::DecodeReport,
-    dialects: DialectLayers,
+    mut report: cadmpeg_ir::DecodeReport,
+    outer: ArchiveClassification,
 ) -> cadmpeg_ir::DecodeReport {
+    // Member decodes charge losses against their document-local layers. The
+    // archive report has a different, complete layer set, including members
+    // that no XREF traversal reaches. Remove only classification-owned loss
+    // codes and rebuild them from that final set.
+    report.losses.retain(|loss| {
+        loss.code != F3dLossCode::SourceDialectUnverified.kind()
+            && loss.code != F3dLossCode::KernelDialectUnverified.kind()
+            && loss.code != F3dLossCode::KernelCarrierUnparseable.kind()
+    });
+    report.losses.extend(outer.losses);
     cadmpeg_ir::DecodeReport::classified(
-        dialects,
+        outer.layers,
         report.container_only,
         report.geometry_transferred,
         report.coverage,
@@ -236,7 +245,11 @@ fn classify_archive_layers(
             ))
         })?;
         let member_scan = crate::container::scan(ctx, member_view)?;
-        let kernel_layers = crate::dialect::kernel_layers(&member_scan);
+        let mut kernel_layers = crate::dialect::kernel_layers(&member_scan);
+        for loss in &mut kernel_layers.losses {
+            loss.message = format!("archive member {member_path}: {}", loss.message);
+        }
+        losses.extend(kernel_layers.losses);
         let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers.matches)
             .expect("an F3D member's kernel layers have unique identities");
         losses.extend(merge_member_layers(
@@ -245,6 +258,7 @@ fn classify_archive_layers(
             member_path,
         ));
     }
+    losses.extend(crate::dialect::report_dialect_losses(&layers));
     Ok(ArchiveClassification { layers, losses })
 }
 
@@ -444,11 +458,6 @@ fn merge_references(
         let child_table = xref_table_from_ir(component.ir())?;
         let (mut component_ir, mut component_report, mut component_fidelity) =
             component.into_parts();
-        label_xref_kernel_losses(
-            &mut component_report.losses,
-            &label,
-            &reference.relative_path,
-        );
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(
             ctx,
@@ -491,17 +500,6 @@ fn merge_references(
         ));
     }
     Ok(merged)
-}
-
-/// Add an XREF presentation label only where the design graph proved that the
-/// decoded document is an external reference.
-fn label_xref_kernel_losses(losses: &mut [LossNote], label: &str, member_path: &str) {
-    for loss in losses
-        .iter_mut()
-        .filter(|loss| loss.code == F3dLossCode::KernelDialectUnverified.kind())
-    {
-        loss.message = format!("xref {label} (member {member_path}): {}", loss.message);
-    }
 }
 
 /// Places one component's feature history after every feature already merged.
