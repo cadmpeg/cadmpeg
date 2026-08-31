@@ -1751,3 +1751,10 @@ crate = "cadmpeg-codec-step"
 kind = "signature"
 item = "cadmpeg_codec_step::StepCodec::plan"
 reason = "the Encoder implementation returns an owned ExportPlan independent of its EncodeInput borrow"
+
+[[change]]
+commit = "03db4d0a34a71b793f6e95ba0c68136658ba7fc1"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::dialect::acis_recovery_message"
+reason = "unverified_message now derives the complete ACIS declaration and substituted grammar from DialectMatch, so host codecs cannot author incomplete recovery prose"
