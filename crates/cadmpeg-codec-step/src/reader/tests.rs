@@ -665,6 +665,30 @@ fn decode_does_not_charge_a_loss_for_a_valid_schema_object_identifier() {
 }
 
 #[test]
+fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("the framed implementation-level declaration is recoverable");
+
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::ImplementationLevelUnverified.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1;1"));
+    assert!(losses[0].message.contains("4;3 grammar"));
+    let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(
+        provenance.offset,
+        source.find("FILE_DESCRIPTION").unwrap() as u64
+    );
+    assert_eq!(provenance.tag.as_deref(), Some("implementation_level"));
+}
+
+#[test]
 fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     let bytes = include_bytes!("../../tests/fixtures/noncanonical_solid_angle.p21");
     let result = StepCodec::default()

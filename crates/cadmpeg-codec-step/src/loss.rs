@@ -34,6 +34,8 @@ pub enum StepLossCode {
     MetadataStringInvalid,
     /// A `FILE_SCHEMA` object identifier component is out of range.
     SchemaObjectIdentifierOutOfRange,
+    /// The declared Part 21 implementation level has no implemented grammar.
+    ImplementationLevelUnverified,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
@@ -308,6 +310,7 @@ impl StepLossCode {
         Self::OpaqueRecordPreserved,
         Self::MetadataStringInvalid,
         Self::SchemaObjectIdentifierOutOfRange,
+        Self::ImplementationLevelUnverified,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
         Self::AttributeStringInvalid,
@@ -453,6 +456,7 @@ impl StepLossCode {
             Self::SchemaObjectIdentifierOutOfRange => {
                 "metadata.schema-object-identifier-out-of-range"
             }
+            Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::AttributeStringInvalid => "attribute.string-invalid",
@@ -666,6 +670,7 @@ impl StepLossCode {
             }
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
+            | Self::ImplementationLevelUnverified
             | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
@@ -843,6 +848,7 @@ mod tests {
                 "decode.opaque-record-preserved",
                 "metadata.string-invalid",
                 "metadata.schema-object-identifier-out-of-range",
+                "parse.implementation-level-unverified",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
                 "attribute.string-invalid",

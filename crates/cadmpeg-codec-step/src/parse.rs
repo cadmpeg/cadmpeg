@@ -368,6 +368,9 @@ pub enum ParseDiagnosticKind {
     /// A `FILE_SCHEMA` object identifier has a component outside the range
     /// that its position permits.
     SchemaObjectIdentifierOutOfRange,
+    /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
+    /// not implemented; parsing continued with the edition-3 class-3 grammar.
+    ImplementationLevelUnverified,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -612,10 +615,12 @@ impl Parser<'_, '_, '_> {
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let (implementation_level, admitted_schema_identifiers) = match validate_header(&header) {
-            Ok(admitted) => admitted,
-            Err(message) => return self.err(message),
-        };
+        let (implementation_level, admitted_schema_identifiers, header_diagnostic) =
+            match validate_header(&header) {
+                Ok(admitted) => admitted,
+                Err(message) => return self.err(message),
+            };
+        self.diagnostics.extend(header_diagnostic);
         self.diagnostics
             .extend(schema_object_identifier_diagnostics(
                 &admitted_schema_identifiers,
@@ -1383,7 +1388,14 @@ fn value_storage_bytes(value: &Value) -> u64 {
 /// identifier list.
 fn validate_header(
     header: &[HeaderRecord],
-) -> Result<(ImplementationLevel, Vec<AdmittedSchemaIdentifier>), &'static str> {
+) -> Result<
+    (
+        ImplementationLevel,
+        Vec<AdmittedSchemaIdentifier>,
+        Option<ParseDiagnostic>,
+    ),
+    &'static str,
+> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if header.len() < REQUIRED.len()
         || header
@@ -1407,18 +1419,31 @@ fn validate_header(
     {
         return Err("FILE_DESCRIPTION has invalid parameters");
     }
-    let implementation_level = match description.get(1) {
+    let (implementation_level, implementation_diagnostic) = match description.get(1) {
         Some(Value::String(value)) => {
             let Ok(level) = crate::strings::decode(value) else {
                 return Err("FILE_DESCRIPTION has an unsupported implementation level");
             };
-            match level.as_str() {
-                "1" | "2" | "2;1" | "2;2" => ImplementationLevel::LegacyEdition1,
-                "3;1" | "3;2" => ImplementationLevel::LegacyEdition2,
-                "4;1" => ImplementationLevel::Edition3Class1,
-                "4;2" => ImplementationLevel::Edition3Class2,
-                "4;3" => ImplementationLevel::Edition3Class3,
-                _ => return Err("FILE_DESCRIPTION has an unsupported implementation level"),
+            let known = match level.as_str() {
+                "1" | "2" | "2;1" | "2;2" => Some(ImplementationLevel::LegacyEdition1),
+                "3;1" | "3;2" => Some(ImplementationLevel::LegacyEdition2),
+                "4;1" => Some(ImplementationLevel::Edition3Class1),
+                "4;2" => Some(ImplementationLevel::Edition3Class2),
+                "4;3" => Some(ImplementationLevel::Edition3Class3),
+                _ => None,
+            };
+            match known {
+                Some(known) => (known, None),
+                None => (
+                    ImplementationLevel::Edition3Class3,
+                    Some(ParseDiagnostic {
+                        offset: header[0].offset,
+                        kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+                        message: format!(
+                            "FILE_DESCRIPTION implementation level {level:?} has no implemented grammar; parsed with the 4;3 grammar"
+                        ),
+                    }),
+                ),
             }
         }
         _ => return Err("FILE_DESCRIPTION has invalid parameters"),
@@ -1538,7 +1563,7 @@ fn validate_header(
         };
         admitted.push(identifier);
     }
-    Ok((implementation_level, admitted))
+    Ok((implementation_level, admitted, implementation_diagnostic))
 }
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
