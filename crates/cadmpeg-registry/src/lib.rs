@@ -45,7 +45,7 @@ pub use disposition::{Disposition, ReadDisposition, UnknownDisposition, WriteDis
 pub use encoders::build_encoder;
 pub use format::Format;
 pub use identify::{identify, identify_with, Identification, Inspection, DETECTION_PREFIX_LEN};
-pub use registry::{dialects, support, DialectEntry, UnknownDialectKind};
+pub use registry::{dialects, support, DialectEntry};
 pub use views::{
     dialect_provenance, dialect_table, format_rows, DialectProvenance, FormatDialects, FormatRow,
     UnknownFormat,

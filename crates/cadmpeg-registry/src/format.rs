@@ -31,6 +31,32 @@ pub enum Format {
 }
 
 impl Format {
+    /// Whether `name` is a format word in the output grammar, independent of
+    /// whether this build can write it.
+    #[must_use]
+    pub fn is_known_name(name: &str) -> bool {
+        matches!(
+            name,
+            "cadir"
+                | "json"
+                | "step"
+                | "fcstd"
+                | "f3d"
+                | "sldprt"
+                | "rhino"
+                | "3dm"
+                | "iges"
+                | "igs"
+                | "inventor"
+                | "catia"
+                | "creo"
+                | "nx"
+                | "sat"
+                | "acis"
+                | "parasolid"
+        )
+    }
+
     /// Every output format this build carries, in registry order.
     pub fn all() -> impl Iterator<Item = Self> {
         crate::descriptors::writable().filter_map(|descriptor| descriptor.output)
@@ -83,5 +109,36 @@ impl Format {
     #[must_use]
     pub fn name(self) -> &'static str {
         crate::descriptors::by_output(self).id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Format;
+
+    #[test]
+    fn known_format_vocabulary_includes_canonical_names_and_output_aliases() {
+        for name in [
+            "cadir",
+            "json",
+            "step",
+            "fcstd",
+            "f3d",
+            "sldprt",
+            "rhino",
+            "3dm",
+            "iges",
+            "igs",
+            "inventor",
+            "catia",
+            "creo",
+            "nx",
+            "sat",
+            "acis",
+            "parasolid",
+        ] {
+            assert!(Format::is_known_name(name), "{name}");
+        }
+        assert!(!Format::is_known_name("5.1"));
     }
 }

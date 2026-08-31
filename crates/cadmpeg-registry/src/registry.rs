@@ -14,10 +14,10 @@ use crate::{build_encoder, Format};
 const IDENTITY_TOML: &str = include_str!("../../../docs/dialects.toml");
 const SUPPORT_TOML: &str = include_str!("../../../docs/dialect-support.toml");
 
-/// Why an identity registry row uses the reserved `unknown` name.
+/// Checker metadata explaining why an identity row uses the reserved `unknown` name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum UnknownDialectKind {
+enum UnknownDialectKind {
     /// Detection cannot obtain enough format evidence to produce a report.
     DetectUnreachable,
     /// Classification read the evidence and no declared dialect row matched it.
@@ -37,8 +37,6 @@ pub struct DialectEntry {
     pub disposition: Disposition,
     /// Whether this build's encoder carries the dialect as a target.
     pub target: bool,
-    /// The meaning of an `unknown` row; `None` for every named dialect row.
-    pub unknown_kind: Option<UnknownDialectKind>,
 }
 
 /// One `[[dialect]]` row of the identity registry.
@@ -98,6 +96,10 @@ enum RegistryLoadError {
     SupportWithoutIdentity(String),
     #[error("identity row for dialect {0} has no support row")]
     IdentityWithoutSupport(DialectId),
+    #[error("unknown dialect row {0} has no unknown_kind")]
+    UnknownKindMissing(DialectId),
+    #[error("named dialect row {0} has checker-only unknown_kind")]
+    UnknownKindOnNamed(DialectId),
 }
 
 impl Registries {
@@ -143,6 +145,20 @@ impl Registries {
                 .dialect
                 .into_iter()
                 .map(|row| {
+                    let is_unknown = row
+                        .id
+                        .as_str()
+                        .split_once(':')
+                        .is_some_and(|(_, name)| name == "unknown");
+                    match (is_unknown, row.unknown_kind) {
+                        (true, None) => {
+                            return Err(RegistryLoadError::UnknownKindMissing(row.id));
+                        }
+                        (false, Some(_)) => {
+                            return Err(RegistryLoadError::UnknownKindOnNamed(row.id));
+                        }
+                        (true, Some(_)) | (false, None) => {}
+                    }
                     let disposition = dispositions
                         .remove(row.id.as_str())
                         .ok_or_else(|| RegistryLoadError::IdentityWithoutSupport(row.id.clone()))?;
@@ -157,7 +173,6 @@ impl Registries {
                             .is_some(),
                         id: row.id,
                         title: row.title,
-                        unknown_kind: row.unknown_kind,
                     })
                 })
                 .collect::<Result<_, RegistryLoadError>>()?,
@@ -235,9 +250,11 @@ mod tests {
 
     #[test]
     fn unknown_rows_report_detection_recovery_or_refusal() {
-        let registries = Registries::load().expect("the embedded registries parse");
-        let kinds = registries
-            .rows_all()
+        let identity: Identity =
+            toml::from_str(IDENTITY_TOML).expect("the identity registry parses");
+        let kinds = identity
+            .dialect
+            .iter()
             .filter_map(|row| row.unknown_kind.map(|kind| (row.id.as_str(), kind)))
             .collect::<BTreeMap<_, _>>();
 
@@ -257,6 +274,29 @@ mod tests {
             kinds.len(),
             13,
             "every unknown registry row states its kind"
+        );
+    }
+
+    #[test]
+    fn the_registry_join_requires_checker_metadata_only_on_unknown_rows() {
+        let missing = Registries::load_from(
+            "[format.step]\n[[dialect]]\nid = \"step:unknown\"\ntitle = \"Unknown\"\n",
+            "[[support]]\ndialect = \"step:unknown\"\nread = \"detected\"\nwrite = \"none\"\n",
+        )
+        .err()
+        .expect("an unknown row must state its checker kind");
+        assert!(
+            matches!(missing, RegistryLoadError::UnknownKindMissing(id) if id.as_str() == "step:unknown")
+        );
+
+        let named = Registries::load_from(
+            "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\nunknown_kind = \"recovered-residual\"\n",
+            "[[support]]\ndialect = \"step:ap203\"\nread = \"detected\"\nwrite = \"none\"\n",
+        )
+        .err()
+        .expect("a named row cannot carry unknown checker metadata");
+        assert!(
+            matches!(named, RegistryLoadError::UnknownKindOnNamed(id) if id.as_str() == "step:ap203")
         );
     }
 
