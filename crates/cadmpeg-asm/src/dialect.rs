@@ -14,10 +14,11 @@
 //! decoders were built and witnessed against. A stream outside them is framed
 //! and decoded exactly as one inside them: the record grammar is applied, and
 //! whatever it reads is reported as it read. What the band decides is how the
-//! host labels the result — [`acis_admission`] returns either
-//! `Admission::Admitted` or `Admission::AdmittedUnverified` with
-//! [`nearest_verified_acis`] as `using`, and the host charges its kernel-layer
-//! recovery loss.
+//! host labels the result. A binary ACIS stream outside the band uses the
+//! nearest verified binary row as its substituted grammar. A text ACIS stream
+//! outside the band has no declared text-band grammar to name, so it is
+//! unverified without a `using` row. The host charges either recovery from the
+//! kernel layer.
 
 use std::collections::BTreeMap;
 
@@ -74,9 +75,14 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
             (asm_binary_row(header.width), Admission::Admitted)
         }
         KernelHeaderRef::TextAsm(_) => (ACIS_TEXT_ASM, Admission::Admitted),
-        KernelHeaderRef::TextAcis(header) => {
-            (ACIS_TEXT_ACIS, acis_admission(header.save_format_major()))
-        }
+        KernelHeaderRef::TextAcis(header) => (
+            ACIS_TEXT_ACIS,
+            if acis_band_verified(header.save_format_major()) {
+                Admission::Admitted
+            } else {
+                Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
+            },
+        ),
         KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
     };
     match admission {
@@ -113,8 +119,8 @@ pub fn acis_band_verified(save_format_major: Option<u32>) -> bool {
     save_format_major.is_some_and(|major| VERIFIED_ACIS_MAJORS.contains(&major))
 }
 
-/// The verified band row whose record grammar an unverified stream is read
-/// with: the nearer of the two, by declared major.
+/// The verified binary row whose record grammar an unverified binary stream is
+/// read with: the nearer of the two, by declared major.
 ///
 /// A stream declaring no band at all, or one below the lower verified major,
 /// takes [`ACIS_SAVE_FORMAT_217`].
@@ -127,7 +133,7 @@ pub fn nearest_verified_acis(save_format_major: Option<u32>) -> DialectId {
     }
 }
 
-/// Admission of a Spatial ACIS save format under the verified decoder band.
+/// Admission of a Spatial ACIS binary stream under the verified decoder band.
 #[must_use]
 pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
     if acis_band_verified(save_format_major) {
@@ -139,7 +145,7 @@ pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
     }
 }
 
-/// Describe recovery through the nearest verified Spatial ACIS grammar.
+/// Describe recovery through the nearest verified Spatial ACIS binary grammar.
 #[must_use]
 pub fn acis_recovery_message(subject: &str, declared: &str, using: &DialectId) -> String {
     format!(
@@ -236,6 +242,10 @@ mod tests {
         assert_eq!(
             acis_admission(Some(700)),
             Admission::AdmittedUnverified(UnverifiedAdmission::Using(ACIS_SAVE_FORMAT_218))
+        );
+        assert_eq!(
+            classify(KernelHeaderRef::TextAcis(&header(4, Some(70_000)))).admission(),
+            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
         );
     }
 

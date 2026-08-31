@@ -158,10 +158,7 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
     );
     assert_eq!(layers.iter().count(), 2, "inspect retains both layers");
     assert_eq!(inspected.declared()["encoding"], "binary");
-    assert_eq!(
-        inspected.declared()["save_format_major"],
-        (UNVERIFIED_SAVE_FORMAT / 100).to_string()
-    );
+    assert!(!inspected.declared().contains_key("save_format_major"));
     let kernel = layers
         .iter()
         .nth(1)

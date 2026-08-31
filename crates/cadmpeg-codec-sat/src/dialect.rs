@@ -25,8 +25,10 @@
 //! decoders compare no save format at all. A stream outside the verified band
 //! is not refused: its records are read with the verified band's grammar, which
 //! is [`Admission::AdmittedUnverified`] on that layer, and `using` names the
-//! verified `acis:` row whose grammar was substituted. The recovery is charged
-//! as [`SatLossCode::SourceDialectUnverified`] by [`dialect_loss`], on a result
+//! verified binary `acis:` row whose grammar was substituted. An ACIS text
+//! stream outside that band has no declared text-band grammar to name and is
+//! admitted unverified without `using`. The recovery is charged as
+//! [`SatLossCode::SourceDialectUnverified`] by [`dialect_loss`], on a result
 //! that carries whatever those records decoded.
 //!
 //! [`layers`] classifies both layers once, so the report and result share the
@@ -49,13 +51,9 @@ use crate::loss::SatLossCode;
 
 /// Key of the stream encoding in [`DialectMatch::declared`].
 const DECLARED_ENCODING: &str = "encoding";
-/// Key of the kernel save format's major component in
-/// [`DialectMatch::declared`]. Absent when the header carries no save-format
-/// word.
+/// Key of the kernel layer's save format major component.
 const DECLARED_SAVE_FORMAT_MAJOR: &str = "save_format_major";
-/// Key of the kernel save format's minor component in
-/// [`DialectMatch::declared`]. Absent when the header carries no save-format
-/// word.
+/// Key of the kernel layer's save format minor component.
 const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 /// Key of the text stream's terminator line in [`DialectMatch::declared`].
 /// Absent on the binary branches, which carry no terminator.
@@ -92,8 +90,8 @@ impl StreamKind {
 ///
 /// The terminator line selects the branch, and the header carries the save
 /// format the ACIS branch is banded on. The band keys on the terminator, not on
-/// the product family the header names, so an ASM product string under an ACIS
-/// terminator recovers outside the band, symmetrically with binary.
+/// the product family the header names. Outside the verified band, an ACIS
+/// terminator has no declared text-band grammar to name as `using`.
 pub(crate) struct TextEvidence<'a> {
     /// Branch the terminator line selected.
     pub(crate) branch: sat::Terminator,
@@ -135,14 +133,11 @@ impl StreamEvidence<'_> {
     }
 }
 
-/// How this stream was admitted.
+/// How the host stream was admitted.
 ///
-/// The one construction path for the admission, and so for the
-/// `source.kernel-dialect-unverified` recovery mark [`dialect_loss`] charges from it.
-/// [`Admission::Refused`] here is structural and nothing else: the discriminant
-/// matched but the stream did not frame. Both ACIS branches take the same band
-/// comparison, and both recover outside it; the ASM binary and ASM text
-/// branches compare no save format, so they are admitted at any band.
+/// [`Admission::Refused`] here is structural and nothing else: the host
+/// discriminant matched but the stream did not frame. Kernel-band admission is
+/// owned by `cadmpeg_asm::dialect::classify` and cannot change this host state.
 fn admission(evidence: &StreamEvidence<'_>) -> Admission {
     match evidence {
         StreamEvidence::AsmBinary(Some(_))
@@ -158,10 +153,10 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
 
 /// The recovery loss a match charges, if it recovered.
 ///
-/// `Some` exactly when [`classify`] reported [`Admission::AdmittedUnverified`],
-/// which is exactly when the Spatial ACIS record grammar of a verified band was
-/// substituted for the band the stream declared. The message states the
-/// declaration and the substitution; it is not the contract, the code is.
+/// `Some` exactly when the kernel match reports
+/// [`Admission::AdmittedUnverified`]. A binary recovery names the substituted
+/// binary row. A text recovery states that no declared text-band grammar was
+/// available. The message is not the contract; the code is.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let using = match matched.admission() {
         Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
@@ -179,8 +174,8 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let message = using.map_or_else(
         || {
             format!(
-                "the stream declares {declared}; its residual path substituted no declared ACIS \
-                 grammar"
+                "the stream declares {declared}; its recovery names no declared save-band \
+                 grammar as a substitute"
             )
         },
         |using| cadmpeg_asm::dialect::acis_recovery_message("the stream", &declared, &using),
@@ -188,20 +183,17 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     Some(SatLossCode::SourceDialectUnverified.note(message))
 }
 
-/// The declarations the stream made, verbatim, under keys pinned above.
+/// Host-framing declarations, verbatim, under keys pinned above.
 ///
-/// Evidence, never a control input. A key is absent when the stream carried no
-/// such declaration, which is a different statement from a declaration of zero.
+/// Kernel save format belongs only to the separate `acis:` match.
 fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
     let mut declared = BTreeMap::new();
-    let header = match evidence {
-        StreamEvidence::AsmBinary(header) | StreamEvidence::AcisBinary(header) => {
+    match evidence {
+        StreamEvidence::AsmBinary(_)
+        | StreamEvidence::UnframedAsmBinary(_)
+        | StreamEvidence::AcisBinary(_)
+        | StreamEvidence::UnframedAcisBinary(_) => {
             declared.insert(DECLARED_ENCODING.into(), "binary".into());
-            *header
-        }
-        StreamEvidence::UnframedAsmBinary(header) | StreamEvidence::UnframedAcisBinary(header) => {
-            declared.insert(DECLARED_ENCODING.into(), "binary".into());
-            Some(*header)
         }
         StreamEvidence::Text(text) => {
             declared.insert(DECLARED_ENCODING.into(), "text".into());
@@ -210,15 +202,6 @@ fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
                 DECLARED_TERMINATOR.into(),
                 terminator_line(text.branch).into(),
             );
-            Some(text.header)
-        }
-    };
-    if let Some(header) = header {
-        if let Some(major) = header.save_format_major() {
-            declared.insert(DECLARED_SAVE_FORMAT_MAJOR.into(), major.to_string());
-        }
-        if let Some(minor) = header.save_format_minor() {
-            declared.insert(DECLARED_SAVE_FORMAT_MINOR.into(), minor.to_string());
         }
     }
     declared
@@ -236,9 +219,8 @@ pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
 /// in this codec, so a classification bug and the report can never disagree.
 ///
 /// Identity is the row the leading discriminant satisfies; admission is
-/// [`admission`]. The two are computed independently and never from each other:
-/// an ACIS stream outside the verified band keeps its own registry row while
-/// its records are read with a verified band's grammar.
+/// [`admission`]. Kernel save-format identity and admission are not copied into
+/// this host match.
 fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
     let dialect = evidence
         .kind()

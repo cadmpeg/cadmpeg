@@ -16,8 +16,6 @@
       "admission": "admitted",
       "declared": {
         "encoding": "text",
-        "save_format_major": "232",
-        "save_format_minor": "0",
         "terminator": "End-of-ASM-data"
       },
       "dialect": "sat:text",

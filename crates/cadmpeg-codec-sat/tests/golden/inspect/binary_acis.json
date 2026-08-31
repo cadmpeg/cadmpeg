@@ -16,9 +16,7 @@
     "primary": {
       "admission": "admitted",
       "declared": {
-        "encoding": "binary",
-        "save_format_major": "218",
-        "save_format_minor": "0"
+        "encoding": "binary"
       },
       "dialect": "sat:acis-binary",
       "format": "sat"
