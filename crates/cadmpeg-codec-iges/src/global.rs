@@ -91,29 +91,121 @@ pub(crate) enum DialectRecovery {
     UnverifiedVersion,
 }
 
-impl GlobalTable {
-    const fn from_effective_flag(flag: i64) -> Self {
-        match flag {
-            6 => Self::V4_0,
-            8 => Self::V5_0,
-            9 => Self::V5_1,
-            10 => Self::V5_2,
-            11 => Self::V5_3,
-            _ => Self::Legacy,
+/// One entry in the eleven-value version table selected by Global field 23.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i64)]
+pub(crate) enum VersionFlag {
+    V1_0 = 1,
+    AnsiY1426M1981 = 2,
+    V2_0 = 3,
+    V3_0 = 4,
+    AsmeAnsiY1426M1987 = 5,
+    V4_0 = 6,
+    AsmeY1426M1989 = 7,
+    V5_0 = 8,
+    V5_1 = 9,
+    V5_2 = 10,
+    V5_3 = 11,
+}
+
+impl VersionFlag {
+    const ALL: [Self; 11] = [
+        Self::V1_0,
+        Self::AnsiY1426M1981,
+        Self::V2_0,
+        Self::V3_0,
+        Self::AsmeAnsiY1426M1987,
+        Self::V4_0,
+        Self::AsmeY1426M1989,
+        Self::V5_0,
+        Self::V5_1,
+        Self::V5_2,
+        Self::V5_3,
+    ];
+    const MIN: i64 = Self::V1_0 as i64;
+    const MAX: i64 = Self::V5_3 as i64;
+
+    /// Returns the exact table entry, without applying postprocessor recovery.
+    pub(crate) const fn exact(value: i64) -> Option<Self> {
+        if value < Self::MIN || value > Self::MAX {
+            return None;
+        }
+        Some(Self::ALL[(value - Self::MIN) as usize])
+    }
+
+    /// Applies the IGES 5.3 postprocessor clamp to a declared value.
+    const fn effective(declared: i64) -> Self {
+        match Self::exact(declared) {
+            Some(flag) => flag,
+            None if declared < Self::MIN => Self::V2_0,
+            None => Self::V5_3,
         }
     }
 
-    const fn version(self) -> Option<IgesVersion> {
+    pub(crate) const fn value(self) -> i64 {
+        self as i64
+    }
+
+    pub(crate) const fn name(self) -> &'static str {
         match self {
-            Self::Legacy => None,
+            Self::V1_0 => "1.0",
+            Self::AnsiY1426M1981 => "ANSI-Y14.26M-1981",
+            Self::V2_0 => "2.0",
+            Self::V3_0 => "3.0",
+            Self::AsmeAnsiY1426M1987 => "ASME-ANSI-Y14.26M-1987",
+            Self::V4_0 => "4.0",
+            Self::AsmeY1426M1989 => "ASME-Y14.26M-1989",
+            Self::V5_0 => "5.0",
+            Self::V5_1 => "5.1",
+            Self::V5_2 => "5.2",
+            Self::V5_3 => "5.3",
+        }
+    }
+
+    const fn global_table(self) -> GlobalTable {
+        match self {
+            Self::V4_0 => GlobalTable::V4_0,
+            Self::V5_0 => GlobalTable::V5_0,
+            Self::V5_1 => GlobalTable::V5_1,
+            Self::V5_2 => GlobalTable::V5_2,
+            Self::V5_3 => GlobalTable::V5_3,
+            Self::V1_0
+            | Self::AnsiY1426M1981
+            | Self::V2_0
+            | Self::V3_0
+            | Self::AsmeAnsiY1426M1987
+            | Self::AsmeY1426M1989 => GlobalTable::Legacy,
+        }
+    }
+
+    const fn verified_version(self) -> Option<IgesVersion> {
+        match self {
             Self::V4_0 => Some(IgesVersion::V4_0),
             Self::V5_0 => Some(IgesVersion::V5_0),
             Self::V5_1 => Some(IgesVersion::V5_1),
             Self::V5_2 => Some(IgesVersion::V5_2),
             Self::V5_3 => Some(IgesVersion::V5_3),
+            Self::V1_0
+            | Self::AnsiY1426M1981
+            | Self::V2_0
+            | Self::V3_0
+            | Self::AsmeAnsiY1426M1987
+            | Self::AsmeY1426M1989 => None,
         }
     }
 
+    pub(crate) const fn from_write_version(version: IgesVersion) -> Self {
+        match version {
+            IgesVersion::V4_0 => Self::V4_0,
+            IgesVersion::V5_0 => Self::V5_0,
+            IgesVersion::V5_1 => Self::V5_1,
+            IgesVersion::V5_2 => Self::V5_2,
+            IgesVersion::V5_3 => Self::V5_3,
+        }
+    }
+}
+
+impl GlobalTable {
     const fn global_field_count(self) -> usize {
         match self {
             Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3 => 26,
@@ -215,8 +307,8 @@ pub(crate) struct ResolvedGlobal {
     double_magnitude_absent: bool,
     double_significance_absent: bool,
     declared_version_flag: i64,
+    effective_version: VersionFlag,
     unreadable_version_declaration: Option<String>,
-    global_table: GlobalTable,
 }
 
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
@@ -731,37 +823,6 @@ fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
         && number(hour_start, hour_start + 2).is_some_and(|hour| hour < 24)
         && number(minute_start, minute_start + 2).is_some_and(|minute| minute < 60)
         && number(second_start, second_start + 2).is_some_and(|second| second < 60)
-}
-
-// The resolver uses the newest version table for declarations outside its
-// numeric range. This is decoder recovery policy, not an extension of the
-// IGES 4.0 version table: preserve the declaration and report a dialect loss
-// whenever the recovery changes it.
-const fn effective_version_flag(declared: i64) -> i64 {
-    match declared {
-        1 => 1,
-        2 => 2,
-        4 => 4,
-        5 => 5,
-        6 => 6,
-        7 => 7,
-        8 => 8,
-        9 => 9,
-        10 => 10,
-        value if value >= 11 => 11,
-        _ => 3,
-    }
-}
-
-const fn unverified_version_name(effective_flag: i64) -> &'static str {
-    match effective_flag {
-        1 => "1.0",
-        2 => "ANSI-Y14.26M-1981",
-        4 => "3.0",
-        5 => "ASME-ANSI-Y14.26M-1987",
-        7 => "ASME-Y14.26M-1989",
-        _ => "2.0",
-    }
 }
 
 fn delegated_unit_factor_mm(name: &str) -> Option<f64> {
@@ -1292,8 +1353,8 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             Supplied::Value(value) => (value, None),
             Supplied::Malformed => (3, Some(resolution.declaration_text(FIELD_VERSION_FLAG))),
         };
-    let effective_flag = effective_version_flag(declared_version_flag);
-    let global_table = GlobalTable::from_effective_flag(effective_flag);
+    let effective_version = VersionFlag::effective(declared_version_flag);
+    let global_table = effective_version.global_table();
     resolution.apply_string_policy(global_table);
     let global_field_count = global_table.global_field_count();
 
@@ -1302,9 +1363,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             .losses
             .push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
                 "IGES Global record has {field_count} fields; IGES {} Table 1 defines {global_field_count} and the decoder ignored the rest",
-                global_table
-                    .version()
-                    .map_or_else(|| unverified_version_name(effective_flag), IgesVersion::name),
+                effective_version.name(),
             )));
     }
 
@@ -1408,8 +1467,8 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         double_magnitude_absent,
         double_significance_absent,
         declared_version_flag,
+        effective_version,
         unreadable_version_declaration,
-        global_table,
     };
     (resolved, resolution.losses)
 }
@@ -1423,7 +1482,7 @@ impl ResolvedGlobal {
             minimum_resolution_mm: self.minimum_resolution * length_factor_mm,
             precision: self.precision,
             line_weight_scale: self.line_weight_scale,
-            global_table: self.global_table,
+            global_table: self.global_table(),
         })
     }
 
@@ -1466,6 +1525,11 @@ impl ResolvedGlobal {
         self.declared_version_flag
     }
 
+    /// The exact field-23 table entry, before postprocessor recovery.
+    pub(crate) fn declared_version(&self) -> Option<VersionFlag> {
+        VersionFlag::exact(self.declared_version_flag)
+    }
+
     /// The declaration text of a field 23 that does not read as an integer.
     pub(crate) fn unreadable_version_declaration(&self) -> Option<&str> {
         self.unreadable_version_declaration.as_deref()
@@ -1473,7 +1537,7 @@ impl ResolvedGlobal {
 
     /// The declared version flag after the specification's postprocessor clamp.
     pub(crate) fn effective_version_flag(&self) -> i64 {
-        effective_version_flag(self.declared_version_flag)
+        self.effective_version.value()
     }
 
     /// Why this decode did not read the file with a Global table verified for
@@ -1492,7 +1556,7 @@ impl ResolvedGlobal {
             // A malformed field 23 is replaced by the specification default, so
             // it never also reads as clamped; the arms stay disjoint.
             DialectRecovery::UnreadableDeclaration
-        } else if self.declared_version_flag != self.effective_version_flag() {
+        } else if self.declared_version().is_none() {
             DialectRecovery::Clamped
         } else if self.version().is_some() {
             DialectRecovery::Verified
@@ -1502,25 +1566,22 @@ impl ResolvedGlobal {
     }
 
     pub(crate) const fn version(&self) -> Option<IgesVersion> {
-        self.global_table.version()
+        self.effective_version.verified_version()
     }
 
     pub(crate) fn version_name(&self) -> &'static str {
-        self.version().map_or_else(
-            || unverified_version_name(self.effective_version_flag()),
-            IgesVersion::name,
-        )
+        self.effective_version.name()
     }
 
     pub(crate) fn global_table(&self) -> GlobalTable {
-        self.global_table
+        self.effective_version.global_table()
     }
 
     pub(crate) fn conditional_double_precision_losses(
         &self,
         uses_double_precision: bool,
     ) -> Vec<LossNote> {
-        if self.global_table != GlobalTable::V5_0 || !uses_double_precision {
+        if self.global_table() != GlobalTable::V5_0 || !uses_double_precision {
             return Vec::new();
         }
         let mut losses = Vec::new();
@@ -1543,7 +1604,12 @@ impl ResolvedGlobal {
         losses
     }
 
-    pub(crate) fn summary_notes(&self) -> Vec<String> {
+    /// Inspection notes for this Global section.
+    ///
+    /// A residual identity does not verify the effective version. In that
+    /// case, retain the declared flag and label the recovered version instead
+    /// of presenting the recovery as the document's version.
+    pub(crate) fn summary_notes(&self, identity_is_residual: bool) -> Vec<String> {
         let mut notes = vec![
             format!(
                 "parameter_delimiter={}",
@@ -1554,7 +1620,7 @@ impl ResolvedGlobal {
         if let Some(product) = self.sender_product() {
             notes.push(format!("sender_product={product}"));
         }
-        if self.global_table == GlobalTable::V5_0 {
+        if self.global_table() == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
                 notes.push(format!("receiver_product={product}"));
             }
@@ -1562,9 +1628,15 @@ impl ResolvedGlobal {
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
         }
-        notes.push(format!("iges_version={}", self.version_name()));
-        if self.declared_version_flag != self.effective_version_flag() {
-            notes.push(format!("iges_version_flag={}", self.declared_version_flag));
+        if identity_is_residual {
+            notes.push("iges_version=unverified".into());
+            notes.push(format!(
+                "iges_declared_version_flag={}",
+                self.declared_version_flag
+            ));
+            notes.push(format!("iges_effective_version={}", self.version_name()));
+        } else {
+            notes.push(format!("iges_version={}", self.version_name()));
         }
         notes
     }

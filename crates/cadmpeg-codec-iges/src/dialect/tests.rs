@@ -24,7 +24,10 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
     // Fixed ASCII enumerates all eleven flags the version table declares.
     for flag in 1..=11 {
         assert_ne!(
-            IgesDialect::from_representation_and_flag(Representation::FixedAscii, flag),
+            IgesDialect::from_representation_and_version(
+                Representation::FixedAscii,
+                VersionFlag::exact(flag),
+            ),
             IgesDialect::Unknown,
             "fixed ASCII flag {flag} must name its own row"
         );
@@ -33,14 +36,20 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
     for representation in [Representation::CompressedAscii, Representation::Binary] {
         for flag in [6, 8, 9, 10, 11] {
             assert_ne!(
-                IgesDialect::from_representation_and_flag(representation, flag),
+                IgesDialect::from_representation_and_version(
+                    representation,
+                    VersionFlag::exact(flag),
+                ),
                 IgesDialect::Unknown,
                 "{representation:?} flag {flag} must name its own row"
             );
         }
         for flag in [1, 2, 3, 4, 5, 7] {
             assert_eq!(
-                IgesDialect::from_representation_and_flag(representation, flag),
+                IgesDialect::from_representation_and_version(
+                    representation,
+                    VersionFlag::exact(flag),
+                ),
                 IgesDialect::Unknown,
                 "{representation:?} flag {flag} has no declared row"
             );

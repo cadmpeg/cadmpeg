@@ -27,7 +27,7 @@
 //! expect an id to agree with the `version_flag` beside it, and the answer is
 //! wrong for exactly the files whose declarations are wrong.
 
-use crate::global::{DialectRecovery, ResolvedGlobal};
+use crate::global::{DialectRecovery, ResolvedGlobal, VersionFlag};
 use crate::representation::Representation;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
@@ -255,13 +255,10 @@ impl IgesDialect {
     /// catalog: [`IgesVersion`] and the Fixed ASCII rows are the same five
     /// versions.
     pub(crate) const fn fixed_ascii(version: IgesVersion) -> Self {
-        match version {
-            IgesVersion::V4_0 => Self::V4_0FixedAscii,
-            IgesVersion::V5_0 => Self::V5_0FixedAscii,
-            IgesVersion::V5_1 => Self::V5_1FixedAscii,
-            IgesVersion::V5_2 => Self::V5_2FixedAscii,
-            IgesVersion::V5_3 => Self::V5_3FixedAscii,
-        }
+        Self::from_representation_and_version(
+            Representation::FixedAscii,
+            Some(VersionFlag::from_write_version(version)),
+        )
     }
 
     /// The row for a representation at a declared version flag, or
@@ -275,29 +272,38 @@ impl IgesDialect {
     /// residual discriminant is exactly "matches no row above". Keying identity
     /// on the clamped flag instead would file such a document under a row whose
     /// own discriminant contradicts what the file declares.
-    const fn from_representation_and_flag(representation: Representation, flag: i64) -> Self {
-        match (representation, flag) {
-            (Representation::FixedAscii, 1) => Self::V1_0FixedAscii,
-            (Representation::FixedAscii, 2) => Self::AnsiY1426M1981FixedAscii,
-            (Representation::FixedAscii, 3) => Self::V2_0FixedAscii,
-            (Representation::FixedAscii, 4) => Self::V3_0FixedAscii,
-            (Representation::FixedAscii, 5) => Self::AsmeAnsiY1426M1987FixedAscii,
-            (Representation::FixedAscii, 6) => Self::V4_0FixedAscii,
-            (Representation::FixedAscii, 7) => Self::AsmeY1426M1989FixedAscii,
-            (Representation::FixedAscii, 8) => Self::V5_0FixedAscii,
-            (Representation::FixedAscii, 9) => Self::V5_1FixedAscii,
-            (Representation::FixedAscii, 10) => Self::V5_2FixedAscii,
-            (Representation::FixedAscii, 11) => Self::V5_3FixedAscii,
-            (Representation::CompressedAscii, 6) => Self::V4_0CompressedAscii,
-            (Representation::CompressedAscii, 8) => Self::V5_0CompressedAscii,
-            (Representation::CompressedAscii, 9) => Self::V5_1CompressedAscii,
-            (Representation::CompressedAscii, 10) => Self::V5_2CompressedAscii,
-            (Representation::CompressedAscii, 11) => Self::V5_3CompressedAscii,
-            (Representation::Binary, 6) => Self::V4_0Binary,
-            (Representation::Binary, 8) => Self::V5_0Binary,
-            (Representation::Binary, 9) => Self::V5_1Binary,
-            (Representation::Binary, 10) => Self::V5_2Binary,
-            (Representation::Binary, 11) => Self::V5_3Binary,
+    const fn from_representation_and_version(
+        representation: Representation,
+        version: Option<VersionFlag>,
+    ) -> Self {
+        match (representation, version) {
+            (Representation::FixedAscii, Some(VersionFlag::V1_0)) => Self::V1_0FixedAscii,
+            (Representation::FixedAscii, Some(VersionFlag::AnsiY1426M1981)) => {
+                Self::AnsiY1426M1981FixedAscii
+            }
+            (Representation::FixedAscii, Some(VersionFlag::V2_0)) => Self::V2_0FixedAscii,
+            (Representation::FixedAscii, Some(VersionFlag::V3_0)) => Self::V3_0FixedAscii,
+            (Representation::FixedAscii, Some(VersionFlag::AsmeAnsiY1426M1987)) => {
+                Self::AsmeAnsiY1426M1987FixedAscii
+            }
+            (Representation::FixedAscii, Some(VersionFlag::V4_0)) => Self::V4_0FixedAscii,
+            (Representation::FixedAscii, Some(VersionFlag::AsmeY1426M1989)) => {
+                Self::AsmeY1426M1989FixedAscii
+            }
+            (Representation::FixedAscii, Some(VersionFlag::V5_0)) => Self::V5_0FixedAscii,
+            (Representation::FixedAscii, Some(VersionFlag::V5_1)) => Self::V5_1FixedAscii,
+            (Representation::FixedAscii, Some(VersionFlag::V5_2)) => Self::V5_2FixedAscii,
+            (Representation::FixedAscii, Some(VersionFlag::V5_3)) => Self::V5_3FixedAscii,
+            (Representation::CompressedAscii, Some(VersionFlag::V4_0)) => Self::V4_0CompressedAscii,
+            (Representation::CompressedAscii, Some(VersionFlag::V5_0)) => Self::V5_0CompressedAscii,
+            (Representation::CompressedAscii, Some(VersionFlag::V5_1)) => Self::V5_1CompressedAscii,
+            (Representation::CompressedAscii, Some(VersionFlag::V5_2)) => Self::V5_2CompressedAscii,
+            (Representation::CompressedAscii, Some(VersionFlag::V5_3)) => Self::V5_3CompressedAscii,
+            (Representation::Binary, Some(VersionFlag::V4_0)) => Self::V4_0Binary,
+            (Representation::Binary, Some(VersionFlag::V5_0)) => Self::V5_0Binary,
+            (Representation::Binary, Some(VersionFlag::V5_1)) => Self::V5_1Binary,
+            (Representation::Binary, Some(VersionFlag::V5_2)) => Self::V5_2Binary,
+            (Representation::Binary, Some(VersionFlag::V5_3)) => Self::V5_3Binary,
             _ => Self::Unknown,
         }
     }
@@ -339,7 +345,7 @@ impl IgesDialect {
         global: &ResolvedGlobal,
     ) -> DialectMatch {
         let dialect =
-            Self::from_representation_and_flag(representation, global.declared_version_flag());
+            Self::from_representation_and_version(representation, global.declared_version());
         let admission = if global.dialect_recovery() == DialectRecovery::Verified {
             Admission::Admitted
         } else {

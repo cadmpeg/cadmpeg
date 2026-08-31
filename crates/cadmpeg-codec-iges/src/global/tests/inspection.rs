@@ -36,7 +36,7 @@ fn inspect_reports_the_resolution_losses_it_charges_as_census_notes() {
 }
 
 #[test]
-fn inspect_reports_the_declared_version_flag_only_when_the_clamp_changes_it() {
+fn inspect_distinguishes_an_unknown_declaration_from_its_effective_version() {
     for (flag, version) in [("12", "5.3"), ("0", "2.0")] {
         let summary = IgesCodec
             .inspect(
@@ -45,14 +45,32 @@ fn inspect_reports_the_declared_version_flag_only_when_the_clamp_changes_it() {
             )
             .unwrap();
         assert!(
-            summary.notes.contains(&format!("iges_version={version}")),
+            summary.notes.contains(&"iges_version=unverified".into()),
             "{flag}: {:#?}",
             summary.notes
         );
         assert!(
-            summary.notes.contains(&format!("iges_version_flag={flag}")),
+            summary
+                .notes
+                .contains(&format!("iges_declared_version_flag={flag}")),
             "{flag}: {:#?}",
             summary.notes
+        );
+        assert!(
+            summary
+                .notes
+                .contains(&format!("iges_effective_version={version}")),
+            "{flag}: {:#?}",
+            summary.notes
+        );
+        assert_eq!(
+            summary
+                .dialects()
+                .expect("inspection classifies the document")
+                .primary()
+                .dialect()
+                .as_str(),
+            "iges:unknown"
         );
     }
 
@@ -67,7 +85,8 @@ fn inspect_reports_the_declared_version_flag_only_when_the_clamp_changes_it() {
         !summary
             .notes
             .iter()
-            .any(|note| note.starts_with("iges_version_flag=")),
+            .any(|note| note.starts_with("iges_declared_version_flag=")
+                || note.starts_with("iges_effective_version=")),
         "{:#?}",
         summary.notes
     );
