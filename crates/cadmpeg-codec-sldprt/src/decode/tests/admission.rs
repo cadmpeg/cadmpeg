@@ -166,6 +166,37 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
 }
 
+#[test]
+fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
+    use crate::loss::SldprtLossCode;
+
+    let mut fixture = outer_header();
+    fixture.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_TEST_1_9999", &triangle_body()),
+    ));
+    add_solidworks_version(&mut fixture, 13100);
+
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("salvage decode admits the residual kernel layer");
+    assert!(salvaged.report().geometry_transferred);
+    assert!(salvaged.report().losses.iter().any(|note| {
+        note.code == SldprtLossCode::SourceDialectUnverified.kind()
+            && note.message.contains("SCH_TEST_1_9999")
+    }));
+
+    let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
+    match strict {
+        Err(cadmpeg_core::CodecError::StrictRefusal { loss_code, .. }) => assert_eq!(
+            loss_code,
+            SldprtLossCode::SourceDialectUnverified.kind().to_string()
+        ),
+        other => panic!("strict decode must reject the residual kernel layer, got {other:?}"),
+    }
+}
+
 /// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.
 #[test]
 fn phase5_freeze_export_precondition_admissibility_fixtures() {

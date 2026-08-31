@@ -277,6 +277,15 @@
           },
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 2 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [

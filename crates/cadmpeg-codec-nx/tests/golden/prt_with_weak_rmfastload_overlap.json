@@ -4064,6 +4064,24 @@
           },
           "message": "This part is composed of 2 sub-body partition(s); its decoded feature-history Booleans do not resolve every intermediate body object to a partition image. Carriers from all sub-bodies are emitted without the unresolved composition that would remove interior/construction faces.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@121 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@1658 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [

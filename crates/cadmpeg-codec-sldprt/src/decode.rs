@@ -4544,7 +4544,7 @@ fn preserve_source_image(
     });
 }
 
-/// Appends the dialect-unverified loss the primary layer's admission charges.
+/// Appends the dialect-unverified loss each classified layer charges.
 ///
 /// Takes the same `dialects` the report carries, so the note and the reported
 /// admission cannot describe different classifications.
@@ -4552,7 +4552,7 @@ fn append_dialect_losses(
     dialects: &cadmpeg_core::dialect::DialectLayers,
     losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) {
-    losses.extend(crate::dialect::dialect_loss(dialects.primary()));
+    losses.extend(crate::dialect::dialect_losses(dialects));
 }
 
 fn build_container_report(

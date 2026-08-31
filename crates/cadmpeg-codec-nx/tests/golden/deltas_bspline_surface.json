@@ -267,6 +267,24 @@
           },
           "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key within each current body-sequence interval. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Complete ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native attribute extraction. Every completely bounded full record, compact tombstone, and BODY revision envelope was retained as an individually identified native event with its source bounds and decoded identities; BODY state tails retain exact bounded bytes and digests. Complete transmit headers retain their description, schema, consecutive identities, and exact bytes. Terminal two- and four-null-reference trailers retain their exact stream boundary and bytes. Count-selected numeric tails after term-use endpoints were retained with their ordered finite binary64 values. Maximal event gaps containing only typed stream-local references, framed reference/type maps, and complete four-reference state packets, reference-marker packets, and inline schema declarations were retained in order. Spans outside those events were retained with exact inflated-stream bounds and digests. Semantic intersection and NURBS records were retained in the semantic lane. Every terminal tombstone resolved to an exact current or earlier-added key.",
           "severity": "info"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@350 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [

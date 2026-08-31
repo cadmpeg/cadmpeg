@@ -323,6 +323,15 @@
           },
           "message": "Activation, complete body membership, evaluated feature state, or evaluated parameter state remains unresolved for 1 NX design configuration(s).",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@155 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [

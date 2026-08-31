@@ -60,6 +60,27 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 }
 
 #[test]
+fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
+    let host = SldprtDialect::classify(Some("13100"));
+    let kernel =
+        cadmpeg_container::parasolid::classify_layer("SCH_TEST_1_9999", "block@7:body+3", false);
+    let layers = DialectLayers::new(host, vec![kernel]).unwrap();
+    let losses = dialect_losses(&layers);
+
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        SldprtLossCode::SourceDialectUnverified.kind()
+    );
+    assert_eq!(
+        losses[0].strict_consequence(),
+        cadmpeg_ir::report::StrictConsequence::Reject
+    );
+    assert!(losses[0].message.contains("SCH_TEST_1_9999"));
+    assert!(losses[0].message.contains("block@7:body+3"));
+}
+
+#[test]
 fn several_parasolid_streams_use_their_source_carriers_as_instances() {
     let bytes = sldprt_with_colliding_sites();
     let scan = scan_bytes(&bytes);

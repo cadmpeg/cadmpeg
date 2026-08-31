@@ -56,6 +56,15 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
         kernel.admission(),
         Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
     );
+
+    let losses = dialect_losses(&layers);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, NxLossCode::SourceDialectUnverified.kind());
+    assert_eq!(
+        losses[0].strict_consequence(),
+        cadmpeg_ir::report::StrictConsequence::Reject
+    );
+    assert!(losses[0].message.contains("SCH_TEST_1_9999"));
 }
 
 #[test]

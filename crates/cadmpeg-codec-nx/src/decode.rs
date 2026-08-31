@@ -487,6 +487,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     }
 
     let (dialects, notes) = summarize(scan);
+    losses.extend(crate::dialect::dialect_losses(&dialects));
     DecodeReport::classified(
         dialects,
         container_only,

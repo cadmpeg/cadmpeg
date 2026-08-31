@@ -163,6 +163,15 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@116 declares schema \"SCH_test\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [

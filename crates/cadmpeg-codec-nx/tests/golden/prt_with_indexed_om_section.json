@@ -432,6 +432,15 @@
           },
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@357 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [

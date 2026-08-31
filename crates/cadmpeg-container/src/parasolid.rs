@@ -3,13 +3,18 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 
 #[cfg(test)]
-use cadmpeg_core::dialect::{Admission, UnverifiedAdmission};
+use cadmpeg_core::dialect::UnverifiedAdmission;
 
-const DECLARED_SCHEMA: &str = "schema";
-const DECLARED_CARRIER: &str = "carrier";
+/// Dialect namespace owned by the Parasolid stream classifier.
+pub const FORMAT: &str = "parasolid";
+
+/// Declared-key name for the source schema token.
+pub const DECLARED_SCHEMA: &str = "schema";
+/// Declared-key name for the host location carrying the stream.
+pub const DECLARED_CARRIER: &str = "carrier";
 
 /// Classify one schema-bearing Parasolid stream and record its host carrier.
 ///
@@ -47,6 +52,35 @@ pub fn classify_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dia
     }
 }
 
+/// Explain why a residual Parasolid layer is admitted without verification.
+///
+/// Host codecs own their loss vocabulary. This helper owns the interpretation
+/// of the declarations produced by [`classify_layer`], so every host can wrap
+/// the same kernel fact in its codec-specific loss code.
+#[must_use]
+pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
+    if matched.format() != FORMAT
+        || !matches!(matched.admission(), Admission::AdmittedUnverified(_))
+    {
+        return None;
+    }
+
+    let schema = matched
+        .declared()
+        .get(DECLARED_SCHEMA)
+        .map_or("<unrecorded>", String::as_str);
+    let carrier = matched
+        .declared()
+        .get(DECLARED_CARRIER)
+        .map_or("<unrecorded>", String::as_str);
+    Some(format!(
+        "The Parasolid stream at {carrier} declares schema {schema:?}, which has no declared \
+         grammar. It was admitted as the `{}` residual layer without substituting another \
+         schema grammar; bounded structural recovery retains the source stream.",
+        matched.dialect()
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +113,14 @@ mod tests {
         assert_eq!(matched.declared()[DECLARED_SCHEMA], "SCH_TEST_1_9999");
         assert_eq!(matched.declared()[DECLARED_CARRIER], "block@7:body+3");
         assert_eq!(matched.instance(), Some("block@7:body+3"));
+        let message = unverified_message(&matched).expect("residual layer explains its recovery");
+        assert!(message.contains("SCH_TEST_1_9999"));
+        assert!(message.contains("block@7:body+3"));
+    }
+
+    #[test]
+    fn admitted_schemas_do_not_claim_unverified_recovery() {
+        let matched = classify_layer("SCH_SW_33103_11000", "stream@12", false);
+        assert_eq!(unverified_message(&matched), None);
     }
 }

@@ -27,6 +27,8 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NxLossCode {
+    /// A source dialect layer had no declared grammar and was recovered as residual.
+    SourceDialectUnverified,
     /// Census of decoded Parasolid POINT and analytic curve/surface carriers.
     CarrierAnalyticCensus,
     /// Census of decoded embedded JT display tessellations.
@@ -83,6 +85,7 @@ pub enum NxLossCode {
 impl NxLossCode {
     /// Every code, in declaration order.
     pub const ALL: &'static [NxLossCode] = &[
+        Self::SourceDialectUnverified,
         Self::CarrierAnalyticCensus,
         Self::CarrierTessellationCensus,
         Self::TopologyGraphNotReconstructed,
@@ -114,6 +117,7 @@ impl NxLossCode {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::CarrierAnalyticCensus => "carrier.analytic-census",
             Self::CarrierTessellationCensus => "carrier.tessellation-census",
             Self::TopologyGraphNotReconstructed => "topology.graph-not-reconstructed",
@@ -155,7 +159,8 @@ impl NxLossCode {
             Self::TopologyGraphNotReconstructed
             | Self::AssemblyComponentsExternal
             | Self::GeometryNotTransferred => Severity::Blocking,
-            Self::IntersectionRecordsOpaque
+            Self::SourceDialectUnverified
+            | Self::IntersectionRecordsOpaque
             | Self::IntersectionPcurveCompletionBounded
             | Self::GeometryAdaptiveWorkBounded
             | Self::DeltasUnmatchedTombstones
@@ -177,6 +182,7 @@ impl NxLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::CarrierAnalyticCensus | Self::CarrierTessellationCensus => {
                 LossTaxonomy::CarrierSummary
             }
@@ -234,6 +240,7 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "source.dialect-unverified",
                 "carrier.analytic-census",
                 "carrier.tessellation-census",
                 "topology.graph-not-reconstructed",
