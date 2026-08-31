@@ -15,13 +15,13 @@
 //! rows and the grammar has two classes. Schemas 3 and 4 are one grammar class
 //! and two rows, and both are `Admitted` because a strategy is declared for each.
 //!
-//! # `FileVersion` is provenance, not evidence
+//! # `FileVersion` is not dialect identity
 //!
-//! `FileVersion` is read and reported and it is half of the writer's target
-//! gate, but no decode path branches on it, so no row's discriminants mention
-//! it. `ProgramVersion` is metadata throughout. Both travel in
-//! [`DialectMatch::declared`] as evidence and nothing reads them to choose a
-//! parse.
+//! `FileVersion` selects the retained legacy `ElementMap` carrier, but it does
+//! not select the document element vocabulary and therefore does not identify
+//! an `FCStd` dialect row. `ProgramVersion` is metadata throughout. Both travel
+//! in [`DialectMatch::declared`] as declarations without becoming dialect
+//! discriminants.
 //!
 //! # The declaration is evidence; the id is identity
 //!

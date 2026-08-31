@@ -16,7 +16,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use zip::write::SimpleFileOptions;
 
-use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{
+    DocumentFacts, EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord,
+};
 use target::Resolution;
 
 pub(crate) trait WriteSeek: Write + Seek {}
@@ -38,8 +40,8 @@ pub(crate) fn write(
 ///
 /// The replay law is already settled when this runs. A [`Resolution`] comes only
 /// from [`resolve`], which takes its options from [`retained_baseline`], so the
-/// dialect and the `FileVersion` written here are the ones the retained document
-/// already declares. This function states them; it does not gate them.
+/// dialect written here is the one the retained document already declares.
+/// This function carries out that decision; it does not gate it.
 pub(crate) fn write_seekable(
     ir: &CadIr,
     output: &mut dyn WriteSeek,
@@ -70,6 +72,12 @@ pub(crate) fn write_seekable(
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
+    let documents = namespace.arena_as::<DocumentFacts>("document")?;
+    let [document] = documents.as_slice() else {
+        return Err(CodecError::Malformed(
+            "FCStd native graph does not have exactly one document record".into(),
+        ));
+    };
     validate_entry_names(&entries)?;
     let source_document_slot = entries
         .iter()
@@ -136,8 +144,7 @@ pub(crate) fn write_seekable(
         notes: vec![
             format!(
                 "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-                resolution.schema_version(),
-                resolution.file_version()
+                document.schema_version, document.file_version
             ),
             "unsupported retained entries and unedited XML records were preserved".into(),
         ],
