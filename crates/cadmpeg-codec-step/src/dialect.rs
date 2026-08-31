@@ -262,7 +262,7 @@ impl StepDialect {
     /// note the codec reports, and the whole list is recorded under
     /// [`DECLARED_FILE_SCHEMA_IDENTIFIERS`].
     pub(crate) fn classify(exchange: &Exchange) -> DialectMatch {
-        let identifiers = crate::reader::schema_identifiers(exchange);
+        let identifiers = exchange.schema_identifiers();
         let dialect = identifiers.first().map_or(Self::Unknown, |identifier| {
             Self::from_schema_identifier(identifier)
         });

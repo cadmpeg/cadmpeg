@@ -357,8 +357,8 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         crate::parse::Value::Resource("parts/ce02_composition_subsidiary.p21#remote_point".into())
     );
     assert_eq!(
-        crate::reader::schema_identifiers(&root_exchange),
-        crate::reader::schema_identifiers(&subsidiary_exchange)
+        root_exchange.schema_identifiers(),
+        subsidiary_exchange.schema_identifiers()
     );
 
     let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors[0].value else {
