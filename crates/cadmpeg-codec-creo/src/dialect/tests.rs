@@ -14,11 +14,8 @@ use crate::test_support::{build_prt, build_prt_raw};
 use cadmpeg_core::dialect::UnverifiedAdmission;
 
 #[test]
-fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(
-        &Layout::ALL.map(Layout::id),
-        &super::generated::ROWS,
-    );
+fn enum_and_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(&Layout::ALL.map(Layout::id), FORMAT);
 }
 
 /// A PSB file whose only section carries the `ND:` raw-name decoration.

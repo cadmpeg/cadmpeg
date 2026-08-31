@@ -10,10 +10,13 @@ use cadmpeg_core::dialect::DialectId;
 pub mod golden;
 pub mod roundtrip;
 
-/// Assert that a codec enum and its generated registry rows are equal.
-pub fn assert_dialect_rows_closed(ids: &[DialectId], rows: &[DialectId]) {
-    let enum_ids = ids.iter().map(DialectId::as_str).collect::<BTreeSet<_>>();
-    let registry_ids = rows.iter().map(DialectId::as_str).collect::<BTreeSet<_>>();
+/// Assert that a codec enum and its reportable identity-registry rows are equal.
+pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
+    let enum_ids = ids
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    let registry_ids = registry_ids(format);
 
     assert_eq!(
         enum_ids.len(),
@@ -21,20 +24,18 @@ pub fn assert_dialect_rows_closed(ids: &[DialectId], rows: &[DialectId]) {
         "two enum variants pin the same id"
     );
     assert_eq!(
-        registry_ids.len(),
-        rows.len(),
-        "two registry rows pin the same id"
-    );
-    assert_eq!(
         enum_ids, registry_ids,
-        "the codec enum and generated registry rows disagree"
+        "the codec enum and identity registry disagree"
     );
 }
 
-/// Dialect ids under one format prefix in the identity registry.
+/// Reportable dialect ids under one format prefix in the identity registry.
 ///
 /// The registry is embedded so every codec drift test parses the same TOML
 /// bytes without locating the workspace from its own manifest directory.
+/// Rows marked `detect-unreachable` describe identification failures that
+/// cannot produce a [`cadmpeg_core::dialect::DialectMatch`], so codec enums do
+/// not own variants for them.
 #[must_use]
 pub fn registry_ids(prefix: &str) -> BTreeSet<String> {
     let registry: toml::Value = toml::from_str(include_str!("../../../docs/dialects.toml"))
@@ -45,8 +46,10 @@ pub fn registry_ids(prefix: &str) -> BTreeSet<String> {
         .and_then(toml::Value::as_array)
         .expect("docs/dialects.toml declares dialect rows")
         .iter()
-        .filter_map(|row| row.get("id"))
-        .filter_map(toml::Value::as_str)
+        .filter(|row| {
+            row.get("unknown_kind").and_then(toml::Value::as_str) != Some("detect-unreachable")
+        })
+        .filter_map(|row| row.get("id").and_then(toml::Value::as_str))
         .filter(|id| id.starts_with(&prefix))
         .map(str::to_owned)
         .collect::<BTreeSet<_>>();

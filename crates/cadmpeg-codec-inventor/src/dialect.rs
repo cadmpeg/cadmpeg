@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
 //! are the boundary, [`DialectRecovery::classify`] is the one
-//! construction path, and the vocabulary is closed. `docs/dialects.toml`
-//! generates the exhaustive row list in `dialect/generated.rs`.
+//! construction path, and the vocabulary is closed. Tests close it directly
+//! against `docs/dialects.toml`.
 //!
 //! # Declarations select identity; framing selects admission
 //!
@@ -59,9 +59,6 @@
 //! [`SegmentMetaState::declaration`]: crate::rse::SegmentMetaState::declaration
 
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::report::LossNote;

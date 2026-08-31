@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
 //! strings are the boundary, [`NxDialect::classify`] is the one construction
-//! path, and the vocabulary is closed. `docs/dialects.toml` generates the
-//! exhaustive reportable row list in `dialect/generated.rs`.
+//! path, and the vocabulary is closed. Tests close it directly against the
+//! reportable rows in `docs/dialects.toml`.
 //!
 //! # Classification is structural, so every admitted document is `Admitted`
 //!
@@ -42,9 +42,8 @@
 //! boundary — `NxCodec::detect` reports
 //! [`cadmpeg_ir::codec::Confidence::No`], and a forced scan returns
 //! `WrongFormat` — so no run ever produces a report to carry the row. The
-//! `unknown_kind = "detect-unreachable"` excludes it from the generated
-//! reportable-row closure. No codec enum variant or report construction path
-//! names it.
+//! `unknown_kind = "detect-unreachable"` excludes it from reportable-row
+//! closure. No codec enum variant or report construction path names it.
 
 use crate::container::Container;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
@@ -52,9 +51,6 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 #[cfg(test)]
 use cadmpeg_core::dialect::{Admission, UnverifiedAdmission};
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "nx";

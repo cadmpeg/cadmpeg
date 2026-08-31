@@ -7,11 +7,8 @@
 use super::*;
 
 #[test]
-fn enum_and_generated_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(
-        &F3dDialect::ALL.map(F3dDialect::id),
-        &super::generated::ROWS,
-    );
+fn enum_and_registry_rows_are_closed_bidirectionally() {
+    cadmpeg_test_support::assert_dialect_rows_closed(&F3dDialect::ALL.map(F3dDialect::id), FORMAT);
 }
 
 #[test]

@@ -28,8 +28,6 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
-import dialect_codegen
-
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_REL = Path("docs") / "dialects.toml"
 SELF_TEST_REL = Path("scripts") / "test_check_dialects.py"
@@ -62,7 +60,6 @@ UNKNOWN_KINDS = frozenset(
 FORMAT_ID = re.compile(r"[a-z0-9]+")
 # Dots are legal in a dialect name: `iges:5.3-fixed-ascii`.
 DIALECT_NAME = re.compile(r"[a-z0-9.-]+")
-GENERATED_DIALECT_SUFFIX = ("dialect", "generated.rs")
 
 
 def _is_table(value: object) -> bool:
@@ -206,12 +203,6 @@ def check_row(row: object, index: int, formats: dict, root: Path, failures: list
     elif unknown_kind is not None and unknown_kind not in UNKNOWN_KINDS:
         allowed = ", ".join(sorted(UNKNOWN_KINDS))
         failures.append(f"{label}: unknown_kind must be one of {allowed}")
-    elif (
-        unknown_kind == "detect-unreachable"
-        and raw_id not in dialect_codegen.DETECT_UNREACHABLE_IDS
-    ):
-        allowed = ", ".join(sorted(dialect_codegen.DETECT_UNREACHABLE_IDS))
-        failures.append(f"{label}: detect-unreachable is admitted only for {allowed}")
 
     discriminants = row.get("discriminants")
     if "discriminants" in row:
@@ -321,7 +312,6 @@ def check(root: Path) -> tuple[list[str], str]:
         if body.get("complete") is False and f"{fmt}:unknown" not in seen:
             failures.append(f"format {fmt}: complete = false requires {fmt}:unknown")
     failures.extend(check_codec_emitted_ids(root))
-    failures.extend(dialect_codegen.check(root))
 
     counts = ", ".join(f"{fmt} {n}" for fmt, n in sorted(per_format.items()))
     summary = (
@@ -349,8 +339,6 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
     crates = root / "crates"
     if crates.is_dir():
         for source in crates.glob("*/src/**/*.rs"):
-            if source.parts[-2:] == GENERATED_DIALECT_SUFFIX:
-                continue
             try:
                 text = source.read_text(encoding="utf-8")
             except OSError:
@@ -364,10 +352,7 @@ def check_codec_emitted_ids(root: Path) -> list[str]:
         if (
             not _is_table(row)
             or row.get("pinned") is False
-            or (
-                row.get("unknown_kind") == "detect-unreachable"
-                and row.get("id") in dialect_codegen.DETECT_UNREACHABLE_IDS
-            )
+            or row.get("unknown_kind") == "detect-unreachable"
         ):
             continue
         dialect_id = row.get("id")

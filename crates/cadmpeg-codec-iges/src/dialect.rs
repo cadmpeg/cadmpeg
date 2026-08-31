@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
 //! are the boundary, [`IgesDialect::classify`] is the one construction path,
-//! and the vocabulary is closed. `docs/dialects.toml` generates the exhaustive
-//! row list in `dialect/generated.rs`.
+//! and the vocabulary is closed. Tests close it directly against
+//! `docs/dialects.toml`.
 //!
 //! Identity rows and parser grammars are independent, and IGES shows the gap
 //! plainly. The registry enumerates eleven Fixed ASCII versions
@@ -34,9 +34,6 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "iges";

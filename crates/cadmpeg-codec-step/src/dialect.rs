@@ -4,8 +4,8 @@
 //!
 //! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
 //! are the boundary, [`StepDialect::classify`] is the one construction path for
-//! a [`DialectMatch`], and the vocabulary is closed. `docs/dialects.toml`
-//! generates the exhaustive row list in `dialect/generated.rs`.
+//! a [`DialectMatch`], and the vocabulary is closed. Tests close it directly
+//! against `docs/dialects.toml`.
 //!
 //! # The identity axis is the `FILE_SCHEMA` identifier
 //!
@@ -54,9 +54,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
-
-#[cfg(test)]
-mod generated;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "step";
