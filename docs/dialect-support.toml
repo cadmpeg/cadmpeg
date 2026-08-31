@@ -13,9 +13,11 @@
 #                read      `L0`..`L9`, `detected`, `refused`, or
 #                          `unclassified-recovered`.
 #                write     `verified`, `emitted`, `preserved`, or `none`.
-#                reason    required when `read = "refused"` and references a
-#                          registry id or names an `evidence gap`. Optional
-#                          otherwise.
+#                refusal   required when `read = "refused"`: either
+#                          `alternate-encoding-no-grammar` or
+#                          `no-framing-grammar`. Forbidden otherwise.
+#                reason    required when `read = "refused"` and references
+#                          that row's dialect id. Optional otherwise.
 #
 # Snapshot-domain gating. A row whose dialect id appears in no checked-in
 # golden snapshot cannot claim a read score: the floor for an unwitnessed
@@ -64,8 +66,9 @@
 # format that has a catalog must appear in it. It also proves each exported
 # id is a subset of that format's identity rows and is not `write = "none"`.
 #
-# `parasolid:` has no owning crate. The sldprt and nx hosts classify its schema
-# tokens as extra layers from the same parsed stream headers used by decode.
+# `parasolid:` is owned by `cadmpeg-parasolid`. The sldprt and nx hosts classify
+# its schema tokens as extra layers from the same parsed stream headers used by
+# decode.
 # Two of them are written even so: the sldprt writer stamps a Parasolid schema
 # token on every stream it generates, which is synthesis at the kernel layer,
 # and an embedded-kernel dialect is never its host's `targets()` row.
@@ -527,6 +530,7 @@ from four different source rows"""
 dialect = "step:part28-xml"
 read = "refused"
 write = "none"
+refusal = "alternate-encoding-no-grammar"
 reason = """
 `step:part28-xml` is recognized from its XML namespace and root element, but
 the codec implements no Part 28 exchange grammar; `refuse_alternate_encoding`
@@ -536,6 +540,7 @@ returns UnsupportedDialect with that classified row"""
 dialect = "step:ap242-bo-model-xml"
 read = "refused"
 write = "none"
+refusal = "alternate-encoding-no-grammar"
 reason = """
 `step:ap242-bo-model-xml` is recognized from its BO-Model namespace and root,
 but the codec implements no BO-Model graph grammar; `refuse_alternate_encoding`
@@ -545,6 +550,7 @@ returns UnsupportedDialect with that classified row"""
 dialect = "step:part26-hdf5"
 read = "refused"
 write = "none"
+refusal = "alternate-encoding-no-grammar"
 reason = """
 `step:part26-hdf5` is recognized from its HDF5 signature and STEP marker, but
 the codec implements no Part 26 resource mapping; `refuse_alternate_encoding`
@@ -796,6 +802,7 @@ basename, and this input is code-built like every other NX golden"""
 dialect = "nx:unknown"
 read = "refused"
 write = "none"
+refusal = "no-framing-grammar"
 reason = """
 `nx:unknown` means neither NX container framing matched. The forced codec path
 returns WrongFormat before a report exists"""
@@ -917,6 +924,7 @@ pins the host row is code-built"""
 dialect = "sat:unknown"
 read = "refused"
 write = "none"
+refusal = "no-framing-grammar"
 reason = """
 `sat:unknown` means no ASM, ACIS, or text stream framing matched. Detection
 returns Confidence::No and the forced codec path returns WrongFormat"""
@@ -995,6 +1003,7 @@ stream file on disk backs the profile's L3"""
 dialect = "acis:unknown"
 read = "refused"
 write = "none"
+refusal = "no-framing-grammar"
 reason = """
 `acis:unknown` is a kernel stream whose framing markers match no declared row: no header,
 terminator, or width selects a record grammar, so there is no strategy

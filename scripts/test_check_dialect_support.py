@@ -213,9 +213,12 @@ class TestVocabulary(SupportCase):
                 support = GOOD_SUPPORT.replace(
                     'scored = ["demo:one", "demo:two"]', 'scored = ["demo:two"]'
                 )
+                read = f'read = "{word}"'
+                if word == "refused":
+                    read += '\nrefusal = "no-framing-grammar"'
                 self.assertClean(
                     support.replace(
-                        'read = "L2"', f'read = "{word}"\nreason = "`demo:one` has a stated reason"'
+                        'read = "L2"', f'{read}\nreason = "`demo:one` has a stated reason"'
                     )
                 )
 
@@ -269,7 +272,8 @@ class TestCrossReferences(SupportCase):
         )
         support = UNKNOWN_SUPPORT.replace(
             'read = "unclassified-recovered"',
-            'read = "refused"\nreason = "`demo:unknown` matches no framing"',
+            'read = "refused"\nrefusal = "no-framing-grammar"\n'
+            'reason = "`demo:unknown` matches no framing"',
         )
         self.assertClean(support, identity=identity)
 
@@ -289,7 +293,8 @@ class TestCrossReferences(SupportCase):
         )
         support = UNKNOWN_SUPPORT.replace(
             'read = "unclassified-recovered"',
-            'read = "refused"\nreason = "`demo:unknown` cannot reach classification"',
+            'read = "refused"\nrefusal = "no-framing-grammar"\n'
+            'reason = "`demo:unknown` cannot reach classification"',
         )
         self.assertClean(support, identity=identity)
 
@@ -348,37 +353,56 @@ class TestSnapshotDomainGating(SupportCase):
 
 class TestReasons(SupportCase):
     def test_refused_requires_a_reason(self):
+        support = GOOD_SUPPORT.replace(
+            'read = "detected"',
+            'read = "refused"\nrefusal = "no-framing-grammar"',
+        ).replace('reason = "no demo two file exists"', "")
         self.assertFires(
-            GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
-                'reason = "no demo two file exists"', ""
-            ),
+            support,
             "read refused requires a reason",
         )
 
-    def test_refusal_reason_requires_registry_id_or_named_evidence_gap(self):
+    def test_refusal_reason_requires_its_own_registry_id(self):
         support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
-            'reason = "no demo two file exists"', 'reason = "parser unavailable"'
+            'reason = "no demo two file exists"',
+            'refusal = "no-framing-grammar"\nreason = "`demo:one` has no parser"',
         )
-        self.assertFires(support, "must reference a registry id or a named evidence gap")
+        self.assertFires(support, "must reference its own dialect id demo:two")
 
     def test_refusal_reason_rejects_unknown_registry_id(self):
         support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
-            'reason = "no demo two file exists"', 'reason = "`demo:missing` has no parser"'
+            'reason = "no demo two file exists"',
+            'refusal = "no-framing-grammar"\nreason = "`demo:missing` has no parser"',
         )
         self.assertFires(support, "references unknown registry id demo:missing")
 
     def test_refusal_reason_accepts_its_registry_id(self):
         support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
-            'reason = "no demo two file exists"', 'reason = "`demo:two` has no parser"'
+            'reason = "no demo two file exists"',
+            'refusal = "no-framing-grammar"\nreason = "`demo:two` has no parser"',
         ).replace('scored = ["demo:one", "demo:two"]', 'scored = ["demo:one"]')
         self.assertClean(support)
 
-    def test_refusal_reason_accepts_a_named_evidence_gap(self):
+    def test_refused_requires_a_structural_cause(self):
         support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
             'reason = "no demo two file exists"',
-            'reason = "evidence gap `missing-container-marker` prevents classification"',
-        ).replace('scored = ["demo:one", "demo:two"]', 'scored = ["demo:one"]')
-        self.assertClean(support)
+            'reason = "`demo:two` has no parser"',
+        )
+        self.assertFires(support, "requires a structural refusal cause")
+
+    def test_refusal_cause_uses_the_closed_vocabulary(self):
+        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"').replace(
+            'reason = "no demo two file exists"',
+            'refusal = "unsupported-version"\nreason = "`demo:two` is new"',
+        )
+        self.assertFires(support, "refusal must be one of")
+
+    def test_non_refused_row_rejects_a_refusal_cause(self):
+        support = GOOD_SUPPORT.replace(
+            'reason = "no demo two file exists"',
+            'refusal = "no-framing-grammar"\nreason = "no demo two file exists"',
+        )
+        self.assertFires(support, "refusal is only valid when read is refused")
 
 
 class TestFormatBlocks(SupportCase):
@@ -505,7 +529,13 @@ class TestDeclaredLevelComparisons(SupportCase):
         self.assertClean(GOOD_SUPPORT.replace('read = "L2"', 'read = "L9"'))
 
     def test_refused_scored_row_fails(self):
-        support = GOOD_SUPPORT.replace('read = "detected"', 'read = "refused"')
+        support = GOOD_SUPPORT.replace(
+            'read = "detected"',
+            'read = "refused"\nrefusal = "no-framing-grammar"',
+        ).replace(
+            'reason = "no demo two file exists"',
+            'reason = "`demo:two` has no framing grammar"',
+        )
         self.assertFires(support, "scored dialect demo:two is refused")
 
     def test_unclassified_scored_row_without_evaluation_fails(self):
@@ -518,7 +548,10 @@ class TestDeclaredLevelComparisons(SupportCase):
 
     def test_a_refused_row_still_requires_a_reason(self):
         self.assertFires(
-            GOOD_SUPPORT.replace('read = "L2"', 'read = "refused"'),
+            GOOD_SUPPORT.replace(
+                'read = "L2"',
+                'read = "refused"\nrefusal = "no-framing-grammar"',
+            ),
             "read refused requires a reason",
         )
 
