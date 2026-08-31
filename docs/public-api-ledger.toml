@@ -1765,3 +1765,17 @@ crate = "cadmpeg-container"
 kind = "move"
 item = "cadmpeg_container::parasolid -> cadmpeg_parasolid"
 reason = "Parasolid schema grammar and identity belong to the modelling-kernel format owner; the container crate remains limited to archive and compression mechanisms"
+
+[[change]]
+commit = "7aedb6a501b3a5dabf217cb928a66c87160ccff1"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::Format::{is_geometry_export,is_binary_container}"
+reason = "geometry-transfer admission and binary-standard-output safety are conversion-application policies with no registry consumer"
+
+[[change]]
+commit = "7aedb6a501b3a5dabf217cb928a66c87160ccff1"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::native_validators"
+reason = "native-document validation is owned and registered by the check application rather than the embeddable format registry"
