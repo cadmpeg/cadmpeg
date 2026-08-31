@@ -272,7 +272,7 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
 #[test]
 fn a_decode_result_accepts_dialects_with_one_primary_layer() {
     let mut ir = unit_cube();
-    ir.source = None;
+    ir.source = Some(crate::SourceMeta::unclassified("test", BTreeMap::new()));
     let report = DecodeReport::classified(
         DialectLayers::new(
             dialect_layer("test:only"),
@@ -311,10 +311,9 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
 #[test]
 fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta::classified(
-        DialectMatch::admitted(DialectId::pinned("test:wrong"))
-            .with_declared(BTreeMap::from([("wrong".into(), "value".into())])),
-        BTreeMap::new(),
+    ir.source = Some(crate::SourceMeta::unclassified(
+        "test",
+        BTreeMap::from([("attribute".into(), "retained".into())]),
     ));
     let primary = dialect_layer("test:only")
         .with_declared(BTreeMap::from([("version".into(), "only".into())]));
@@ -336,6 +335,54 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         .as_ref()
         .expect("source metadata remains");
     assert_eq!(source.dialect(), Some(&primary));
+    assert_eq!(source.attributes["attribute"], "retained");
+}
+
+#[test]
+fn a_decode_result_rejects_a_classified_report_without_source_metadata() {
+    let mut ir = unit_cube();
+    ir.source = None;
+    let report = DecodeReport::classified(
+        DialectLayers::of(dialect_layer("test:only")),
+        false,
+        true,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+
+    let error = DecodeResult::new(ir, report, SourceFidelity::default())
+        .expect_err("classified reports require a source block for write inheritance");
+    assert_eq!(
+        error.to_string(),
+        "classified decode report for \"test\" requires source metadata"
+    );
+}
+
+#[test]
+fn a_decode_result_rejects_same_format_dialect_disagreement() {
+    let mut ir = unit_cube();
+    ir.source = Some(crate::SourceMeta::classified(
+        dialect_layer("test:wrong"),
+        BTreeMap::new(),
+    ));
+    let report = DecodeReport::classified(
+        DialectLayers::of(dialect_layer("test:only")),
+        false,
+        true,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+
+    let error = DecodeResult::new(ir, report, SourceFidelity::default())
+        .expect_err("same-format dialect disagreement must not be overwritten");
+    assert_eq!(
+        error.to_string(),
+        "decode source dialect metadata for \"test:wrong\" disagrees with report primary dialect metadata for \"test:only\""
+    );
 }
 
 #[test]

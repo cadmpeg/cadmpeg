@@ -12,74 +12,118 @@ use super::{LossNote, Severity};
 
 /// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(into = "DecodeReportWire")]
 pub struct DecodeReport {
-    /// Source format id.
-    format: String,
+    classification: DecodeClassification,
     /// Whether the decode stopped at the container layer (no entity decode).
     /// The shared codec wrapper stamps this from the decode request.
     pub container_only: bool,
     /// Whether the decoder transferred B-rep geometry into the IR.
     pub geometry_transferred: bool,
     /// Decode coverage counts keyed by measure name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub coverage: BTreeMap<String, usize>,
     /// Explicit loss notes.
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
     /// Per-source disposition ledger for decoded records and entities.
-    #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
     pub transfer_ledger: TransferLedger,
-    /// Dialect identification, one entry per format layer the decode read.
-    ///
-    /// When classified, the primary layer is mirrored into
-    /// [`crate::document::SourceMeta::dialect`]. [`crate::codec::DecodeResult::new`]
-    /// performs that projection.
-    ///
-    /// Always serialized. Reports written before the field existed omit the key
-    /// and read back as unclassified.
-    #[serde(default)]
-    dialects: Option<DialectLayers>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+enum DecodeClassification {
+    Classified(DialectLayers),
+    Unclassified { format: String },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DecodeReportWire {
     format: String,
     container_only: bool,
     geometry_transferred: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     coverage: BTreeMap<String, usize>,
     losses: Vec<LossNote>,
     notes: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
     transfer_ledger: TransferLedger,
     #[serde(default)]
     dialects: Option<DialectLayers>,
 }
 
+impl From<DecodeReport> for DecodeReportWire {
+    fn from(report: DecodeReport) -> Self {
+        let DecodeReport {
+            classification,
+            container_only,
+            geometry_transferred,
+            coverage,
+            losses,
+            notes,
+            transfer_ledger,
+        } = report;
+        let (format, dialects) = match classification {
+            DecodeClassification::Classified(dialects) => {
+                (dialects.primary().format().to_owned(), Some(dialects))
+            }
+            DecodeClassification::Unclassified { format } => (format, None),
+        };
+        Self {
+            format,
+            container_only,
+            geometry_transferred,
+            coverage,
+            losses,
+            notes,
+            transfer_ledger,
+            dialects,
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for DecodeReport {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = DecodeReportWire::deserialize(deserializer)?;
-        if let Some(dialects) = &wire.dialects {
-            let primary_format = dialects.primary().format();
-            if wire.format != primary_format {
-                return Err(serde::de::Error::custom(format_args!(
-                    "decode report format {:?} differs from primary dialect format {:?}",
-                    wire.format, primary_format
-                )));
+        let classification = match wire.dialects {
+            Some(dialects) => {
+                let primary_format = dialects.primary().format();
+                if wire.format != primary_format {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "decode report format {:?} differs from primary dialect format {:?}",
+                        wire.format, primary_format
+                    )));
+                }
+                DecodeClassification::Classified(dialects)
             }
-        }
+            None => DecodeClassification::Unclassified {
+                format: wire.format,
+            },
+        };
         Ok(Self {
-            format: wire.format,
+            classification,
             container_only: wire.container_only,
             geometry_transferred: wire.geometry_transferred,
             coverage: wire.coverage,
             losses: wire.losses,
             notes: wire.notes,
             transfer_ledger: wire.transfer_ledger,
-            dialects: wire.dialects,
         })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for DecodeReport {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "DecodeReport".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::DecodeReport").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        DecodeReportWire::json_schema(generator)
     }
 }
 
@@ -196,14 +240,13 @@ impl DecodeReport {
         transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
-            format: dialects.primary().format().to_owned(),
+            classification: DecodeClassification::Classified(dialects),
             container_only,
             geometry_transferred,
             coverage,
             losses,
             notes,
             transfer_ledger,
-            dialects: Some(dialects),
         }
     }
 
@@ -219,27 +262,34 @@ impl DecodeReport {
         transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
-            format: format.into(),
+            classification: DecodeClassification::Unclassified {
+                format: format.into(),
+            },
             container_only,
             geometry_transferred,
             coverage,
             losses,
             notes,
             transfer_ledger,
-            dialects: None,
         }
     }
 
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
-        &self.format
+        match &self.classification {
+            DecodeClassification::Classified(dialects) => dialects.primary().format(),
+            DecodeClassification::Unclassified { format } => format,
+        }
     }
 
     /// Returns the classified dialect layers, if decoding classified them.
     #[must_use]
     pub fn dialects(&self) -> Option<&DialectLayers> {
-        self.dialects.as_ref()
+        match &self.classification {
+            DecodeClassification::Classified(dialects) => Some(dialects),
+            DecodeClassification::Unclassified { .. } => None,
+        }
     }
 
     /// Records a coverage measure count for a statically declared key.
