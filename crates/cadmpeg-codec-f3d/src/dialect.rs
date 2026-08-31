@@ -33,7 +33,7 @@
 //! structural: a manifest whose bytes do not fit the anchors is refused by
 //! `crate::manifest::parse_top_level`, and no version is on an allowlist.
 //!
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::BTreeMap;
@@ -156,21 +156,6 @@ impl F3dDialect {
         dialect.matched(declared)
     }
 
-    /// How a document on this row was admitted.
-    ///
-    /// The one predicate behind both the report's [`Admission`] and
-    /// [`dialect_loss`]: an identity row was parsed with the strategy it
-    /// declares, and the recovery row was parsed with the `3-2-0-0` strategy
-    /// its own declaration does not name.
-    fn admission(self) -> Admission {
-        match self {
-            Self::Manifest3200 | Self::F3zMultiDocument => Admission::Admitted,
-            Self::Unknown => Admission::AdmittedUnverified {
-                using: Some(Self::Manifest3200.id()),
-            },
-        }
-    }
-
     /// Classifies a multi-document F3Z archive from its root-level `*.f3d`
     /// member names, sorted by archive path.
     ///
@@ -189,8 +174,11 @@ impl F3dDialect {
     /// The one [`DialectMatch`] construction path in this codec, so a
     /// classification bug and the report can never disagree.
     fn matched(self, declared: BTreeMap<String, String>) -> DialectMatch {
-        DialectMatch::layer(self.id(), declared, self.admission())
-            .expect("F3D classifier produced an invalid dialect match")
+        match self {
+            Self::Manifest3200 | Self::F3zMultiDocument => DialectMatch::admitted(self.id()),
+            Self::Unknown => DialectMatch::unverified(self.id(), Self::Manifest3200.id()),
+        }
+        .with_declared(declared)
     }
 }
 
@@ -203,23 +191,23 @@ impl F3dDialect {
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified { using } => {
+        Admission::AdmittedUnverified(strategy) => {
             let version = matched
                 .declared()
                 .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
                 .map_or("(none)", String::as_str);
-            let strategy = using.as_ref().map_or_else(
-                || {
+            let strategy = match strategy {
+                UnverifiedAdmission::NoDeclaredGrammar => {
                     "No declared manifest grammar was substituted; only the residual path ran."
                         .to_owned()
-                },
-                |using| {
+                }
+                UnverifiedAdmission::Using(using) => {
                     format!(
                         "The document is read on {using}: every field after the version was parsed \
                          with that layout. The layout fitting is consistency, not a declaration."
                     )
-                },
-            );
+                }
+            };
             Some(F3dLossCode::SourceDialectUnverified.note(format!(
                 "the top-level manifest declares version {version:?}, which no dialect row of \
                  this codec names, so no declared identity was verified. {strategy}"
@@ -311,8 +299,10 @@ fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
 
 /// The recovery loss a kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { using } = matched.admission() else {
-        return None;
+    let using = match matched.admission() {
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::Admitted | Admission::Refused => return None,
     };
     let carrier = matched
         .declared()
@@ -322,7 +312,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         || "no save format".to_owned(),
         |major| format!("save format major {major}"),
     );
-    let message = using.as_ref().map_or_else(
+    let message = using.map_or_else(
         || {
             format!(
                 "the kernel carrier {carrier} declares {declared}; its residual path substituted \
@@ -333,7 +323,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             cadmpeg_asm::dialect::acis_recovery_message(
                 &format!("the kernel carrier {carrier}"),
                 &declared,
-                using,
+                &using,
             )
         },
     );

@@ -163,7 +163,7 @@ fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
     assert_eq!(matched.declared()[DECLARED_RSE_DB_SCHEMA], "31");
     assert!(matches!(
         matched.admission(),
-        Admission::AdmittedUnverified { .. }
+        Admission::AdmittedUnverified(_)
     ));
     assert_eq!(matched.dialect().as_str(), "inventor:cfb3-rse31-meta8");
     let loss = losses
@@ -187,7 +187,7 @@ fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
     assert_eq!(matched.dialect().as_str(), "inventor:cfb3-rse31-meta8");
     assert!(matches!(
         matched.admission(),
-        Admission::AdmittedUnverified { .. }
+        Admission::AdmittedUnverified(_)
     ));
     let loss = losses
         .iter()
@@ -210,9 +210,9 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
-            Admission::AdmittedUnverified {
-                using: Some(InventorDialect::Cfb3Rse31Meta8.id()),
-            }
+            Admission::AdmittedUnverified(UnverifiedAdmission::Using(
+                InventorDialect::Cfb3Rse31Meta8.id(),
+            ))
         };
         assert_eq!(matched.admission(), expected_admission, "{}", case.label);
 

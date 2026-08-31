@@ -427,9 +427,11 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             .expect("FCStd inspection reports dialect layers")
             .primary()
             .admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4")),
-        }
+        cadmpeg_core::dialect::Admission::AdmittedUnverified(
+            cadmpeg_core::dialect::UnverifiedAdmission::Using(
+                cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
+            ),
+        )
     );
 
     let result = FcstdCodec
@@ -511,9 +513,11 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
             .expect("FCStd decode reports dialect layers")
             .primary()
             .admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4")),
-        }
+        cadmpeg_core::dialect::Admission::AdmittedUnverified(
+            cadmpeg_core::dialect::UnverifiedAdmission::Using(
+                cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4"),
+            ),
+        )
     );
 
     let unverified = crate::loss::FreecadLossCode::SourceDialectUnverified

@@ -232,9 +232,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         if !admitted {
             assert_eq!(
                 matched.admission(),
-                Admission::AdmittedUnverified {
-                    using: Some(NEAREST_STRATEGY.id()),
-                },
+                Admission::AdmittedUnverified(UnverifiedAdmission::Using(NEAREST_STRATEGY.id(),)),
                 "FILE_SCHEMA {:?}: `using` names the strategy actually applied",
                 case.identifiers
             );
@@ -265,9 +263,7 @@ fn a_future_ap242_edition_word_uses_the_unverified_edition_three_strategy() {
     assert_eq!(dialect, StepDialect::Unknown);
     assert_eq!(
         dialect.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(StepDialect::Ap242Edition3.id()),
-        }
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(StepDialect::Ap242Edition3.id(),))
     );
 }
 

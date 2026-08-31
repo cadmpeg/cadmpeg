@@ -127,7 +127,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 fn the_totality_row_is_admitted_unverified_without_a_substituted_grammar() {
     assert_eq!(
         admission(Variant::Unknown),
-        Admission::AdmittedUnverified { using: None },
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar),
         "no CATIA family's grammar is substituted for an unrecognized layout"
     );
     for variant in [
@@ -169,7 +169,7 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     assert_eq!(matched.dialect().as_str(), "catia:unknown");
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified { using: None }
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
     );
 }
 

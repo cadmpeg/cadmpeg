@@ -3,7 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectMatch};
+
+#[cfg(test)]
+use cadmpeg_core::dialect::{Admission, UnverifiedAdmission};
 
 const DECLARED_SCHEMA: &str = "schema";
 const DECLARED_CARRIER: &str = "carrier";
@@ -15,27 +18,28 @@ const DECLARED_CARRIER: &str = "carrier";
 /// declarations, independent of whether the schema has a named registry row.
 #[must_use]
 pub fn classify_layer(schema: &str, carrier: &str, instance_tagged: bool) -> DialectMatch {
-    let (id, admission) = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
-        ("parasolid:sch-sw-33103", Admission::Admitted)
+    let (id, admitted) = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
+        ("parasolid:sch-sw-33103", true)
     } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
-        ("parasolid:sch-sw-32001", Admission::Admitted)
+        ("parasolid:sch-sw-32001", true)
     } else if schema
         .rsplit_once('_')
         .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("13006"))
     {
-        ("parasolid:format-13006", Admission::Admitted)
+        ("parasolid:format-13006", true)
     } else {
-        (
-            "parasolid:unknown",
-            Admission::AdmittedUnverified { using: None },
-        )
+        ("parasolid:unknown", false)
     };
     let declared = BTreeMap::from([
         (DECLARED_SCHEMA.to_owned(), schema.to_owned()),
         (DECLARED_CARRIER.to_owned(), carrier.to_owned()),
     ]);
-    let matched = DialectMatch::layer(DialectId::pinned(id), declared, admission)
-        .expect("Parasolid classifier produced an invalid dialect match");
+    let matched = if admitted {
+        DialectMatch::admitted(DialectId::pinned(id))
+    } else {
+        DialectMatch::residual(DialectId::pinned(id))
+    }
+    .with_declared(declared);
     if instance_tagged {
         matched.with_instance(carrier)
     } else {
@@ -70,7 +74,7 @@ mod tests {
         assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
         assert_eq!(
             matched.admission(),
-            Admission::AdmittedUnverified { using: None }
+            Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar)
         );
         assert_eq!(matched.declared()[DECLARED_SCHEMA], "SCH_TEST_1_9999");
         assert_eq!(matched.declared()[DECLARED_CARRIER], "block@7:body+3");

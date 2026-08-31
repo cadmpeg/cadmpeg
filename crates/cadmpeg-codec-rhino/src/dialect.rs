@@ -40,7 +40,7 @@
 
 use crate::chunks::ArchiveVersion;
 use crate::RhinoArchiveVersion;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -179,26 +179,6 @@ impl ArchiveVersion {
         }
     }
 
-    /// How a run admitted a document on this row.
-    ///
-    /// The one predicate behind both the report's [`Admission`] and
-    /// [`admission_loss`]. A declared row that this codec reads carries a
-    /// verified identity; the totality row carries no declared identity at all,
-    /// so it names the row whose strategy was substituted for it.
-    fn admission(self) -> Admission {
-        if matches!(self, Self::Other(_)) {
-            Admission::AdmittedUnverified {
-                using: Some(if self.uses_eight_byte_values() {
-                    Self::V9.id()
-                } else {
-                    Self::V4.id()
-                }),
-            }
-        } else {
-            Admission::Admitted
-        }
-    }
-
     /// Classifies one document. The single construction path for a
     /// [`DialectMatch`] in this codec, so a classification and the report can
     /// never disagree.
@@ -211,8 +191,19 @@ impl ArchiveVersion {
         if let Some(stamp) = writer_version {
             declared.insert(DECLARED_OPENNURBS_WRITER_VERSION.into(), stamp.to_string());
         }
-        DialectMatch::layer(self.id(), declared, self.admission())
-            .expect("Rhino classifier produced an invalid dialect match")
+        if matches!(self, Self::Other(_)) {
+            DialectMatch::unverified(
+                self.id(),
+                if self.uses_eight_byte_values() {
+                    Self::V9.id()
+                } else {
+                    Self::V4.id()
+                },
+            )
+        } else {
+            DialectMatch::admitted(self.id())
+        }
+        .with_declared(declared)
     }
 }
 
@@ -224,14 +215,16 @@ impl ArchiveVersion {
 /// structural: the note charged and the admission reported come from one value,
 /// not from two authors agreeing.
 pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { using } = matched.admission() else {
-        return None;
+    let using = match matched.admission() {
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::Admitted | Admission::Refused => return None,
     };
     let word = matched
         .declared()
         .get(DECLARED_ARCHIVE_VERSION)
         .map_or("absent", String::as_str);
-    let message = using.as_ref().map_or_else(
+    let message = using.map_or_else(
         || {
             format!(
                 "archive version word {word} has no declared row, so no declared identity was \

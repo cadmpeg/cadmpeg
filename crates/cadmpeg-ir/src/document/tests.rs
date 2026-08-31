@@ -236,11 +236,9 @@ fn pre_migration_source_metadata_reads_back_and_gains_the_dialect_keys() {
 
 #[test]
 fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() {
-    let matched = cadmpeg_core::dialect::DialectMatch::new(
+    let matched = cadmpeg_core::dialect::DialectMatch::admitted(
         cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
-        cadmpeg_core::dialect::Admission::Admitted,
-    )
-    .unwrap();
+    );
     let source = SourceMeta::classified(
         matched.clone(),
         std::collections::BTreeMap::from([("object_count".into(), "3".into())]),

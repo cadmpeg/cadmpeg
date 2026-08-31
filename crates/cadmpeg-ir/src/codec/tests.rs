@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
@@ -312,8 +312,7 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
 fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     let mut ir = unit_cube();
     ir.source = Some(crate::SourceMeta::classified(
-        DialectMatch::new(DialectId::pinned("test:wrong"), Admission::Admitted)
-            .expect("the known test dialect is classified")
+        DialectMatch::admitted(DialectId::pinned("test:wrong"))
             .with_declared(BTreeMap::from([("wrong".into(), "value".into())])),
         BTreeMap::new(),
     ));
@@ -342,17 +341,15 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
 #[test]
 fn a_decode_result_rejects_a_source_and_report_format_mismatch_before_stamping() {
     let mut ir = unit_cube();
-    let original = DialectMatch::new(DialectId::pinned("step:ap242e3"), Admission::Admitted)
-        .expect("the known STEP dialect is classified");
+    let original = DialectMatch::admitted(DialectId::pinned("step:ap242e3"));
     ir.source = Some(crate::SourceMeta::classified(
         original.clone(),
         BTreeMap::new(),
     ));
     let report = DecodeReport::classified(
-        DialectLayers::of(
-            DialectMatch::new(DialectId::pinned("rhino:archive-80"), Admission::Admitted)
-                .expect("the known Rhino dialect is classified"),
-        ),
+        DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
+            "rhino:archive-80",
+        ))),
         false,
         true,
         BTreeMap::new(),
@@ -371,8 +368,7 @@ fn a_decode_result_rejects_a_source_and_report_format_mismatch_before_stamping()
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {
-    DialectMatch::new(DialectId::pinned(id), Admission::Admitted)
-        .expect("the known test dialect is classified")
+    DialectMatch::admitted(DialectId::pinned(id))
 }
 
 /// An explicit target is refused by `plan` itself, with the catalog in the
@@ -430,8 +426,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.source = source.map(|(format, dialect)| match dialect {
         Some(id) => crate::document::SourceMeta::classified(
-            DialectMatch::layer(DialectId::pinned(id), BTreeMap::new(), Admission::Admitted)
-                .expect("the known test dialect is classified"),
+            DialectMatch::admitted(DialectId::pinned(id)),
             BTreeMap::new(),
         ),
         None => crate::document::SourceMeta::unclassified(format, BTreeMap::new()),

@@ -49,7 +49,7 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::{Exchange, Value};
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
@@ -279,11 +279,10 @@ impl StepDialect {
         }
     }
 
+    #[cfg(test)]
     const fn admission(self) -> Admission {
         if matches!(self, Self::Unknown) {
-            Admission::AdmittedUnverified {
-                using: Some(NEAREST_STRATEGY.id()),
-            }
+            Admission::AdmittedUnverified(UnverifiedAdmission::Using(NEAREST_STRATEGY.id()))
         } else {
             Admission::Admitted
         }
@@ -314,8 +313,7 @@ impl StepDialect {
     /// Classifies one structurally identified alternate encoding at refusal.
     fn classify_refused(self) -> DialectMatch {
         debug_assert!(self.alternate_encoding_refusal().is_some());
-        DialectMatch::layer(self.id(), BTreeMap::new(), Admission::Refused)
-            .expect("STEP refusal classifier produced an invalid dialect match")
+        DialectMatch::refused(self.id())
     }
 
     /// Classifies one Part 21 exchange. The single construction path for a
@@ -359,8 +357,12 @@ impl StepDialect {
             declared.insert(DECLARED_IMPLEMENTATION_LEVEL.into(), level);
         }
 
-        DialectMatch::layer(dialect.id(), declared, dialect.admission())
-            .expect("STEP classifier produced an invalid dialect match")
+        if dialect == Self::Unknown {
+            DialectMatch::unverified(dialect.id(), NEAREST_STRATEGY.id())
+        } else {
+            DialectMatch::admitted(dialect.id())
+        }
+        .with_declared(declared)
     }
 }
 
@@ -390,8 +392,14 @@ fn implementation_level(exchange: &Exchange) -> Option<String> {
 /// the string and reading the exchange with the AP242 entity vocabulary
 /// anyway, which is a recovery, not a verified read.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { using } = matched.admission() else {
-        return None;
+    let strategy = match matched.admission() {
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
+            format!("with the entity vocabulary verified for {using}")
+        }
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
+            "without substituting a declared STEP entity vocabulary".to_owned()
+        }
+        Admission::Admitted | Admission::Refused => return None,
     };
     let declaration = matched
         .declared()
@@ -400,10 +408,6 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             || "The exchange declares no FILE_SCHEMA identifier".to_owned(),
             |identifier| format!("FILE_SCHEMA identifier {identifier}"),
         );
-    let strategy = using.as_ref().map_or_else(
-        || "without substituting a declared STEP entity vocabulary".to_owned(),
-        |using| format!("with the entity vocabulary verified for {using}"),
-    );
     Some(StepLossCode::SourceDialectUnverified.note(format!(
         "{declaration}; it satisfies no declared STEP dialect, so this decode read the exchange \
 {strategy}"

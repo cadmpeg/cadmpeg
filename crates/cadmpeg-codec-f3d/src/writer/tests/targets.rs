@@ -50,12 +50,9 @@ fn plan_refuses_an_explicit_target_outside_the_catalog() {
 fn sourced_ir(dialect: &'static str) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     ir.source = Some(SourceMeta::classified(
-        cadmpeg_core::dialect::DialectMatch::layer(
-            cadmpeg_core::dialect::DialectId::pinned(dialect),
-            std::collections::BTreeMap::default(),
-            cadmpeg_core::dialect::Admission::Admitted,
-        )
-        .expect("the test source dialect is classified"),
+        cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect::DialectId::pinned(
+            dialect,
+        )),
         std::collections::BTreeMap::new(),
     ));
     ir

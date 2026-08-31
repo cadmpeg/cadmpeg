@@ -8,6 +8,7 @@ use super::*;
 use crate::loss::IgesLossCode;
 use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
 use crate::IgesCodec;
+use cadmpeg_core::dialect::UnverifiedAdmission;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use std::io::Cursor;
 
@@ -263,9 +264,9 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
             let expected_admission = if case.admitted {
                 Admission::Admitted
             } else {
-                Admission::AdmittedUnverified {
-                    using: Some(DialectId::pinned(nearest_id)),
-                }
+                Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
+                    nearest_id,
+                )))
             };
             assert_eq!(matched.admission(), expected_admission, "{context}");
         }
@@ -324,9 +325,9 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
     );
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("iges:5.3-fixed-ascii")),
-        }
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
+            "iges:5.3-fixed-ascii",
+        )))
     );
     assert_eq!(matched.declared()["version_flag"], "2");
     assert_eq!(matched.declared()["effective_version"], "ANSI-Y14.26M-1981");
@@ -357,9 +358,9 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
         matched.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("iges:5.3-fixed-ascii")),
-        }
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(DialectId::pinned(
+            "iges:5.3-fixed-ascii",
+        )))
     );
     assert_eq!(matched.declared()["version_flag"], "99");
     assert_eq!(matched.declared()["effective_version"], "5.3");

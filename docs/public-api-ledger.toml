@@ -18,6 +18,27 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "acc3d7ecd531d7fb8413c34032832e7f1894c279"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::dialect::Admission::AdmittedUnverified::using"
+reason = "an exact UnverifiedAdmission sum separates a declared grammar from no declared grammar without encoding three states in Option"
+
+[[change]]
+commit = "acc3d7ecd531d7fb8413c34032832e7f1894c279"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::dialect::DialectMatch::{new,layer}"
+reason = "infallible admitted, unverified, residual, and refused constructors state the admission route directly instead of rediscovering residual identity from an opaque id suffix"
+
+[[change]]
+commit = "acc3d7ecd531d7fb8413c34032832e7f1894c279"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::dialect::DialectMatchError"
+reason = "named DialectMatch constructors make codec-owned identity and admission construction infallible, so the suffix-derived constructor error has no state to represent"
+
+[[change]]
 commit = "dba146f22442ab245a1100defbfd22b1cb98e40a"
 crate = "cadmpeg-core"
 kind = "variant"

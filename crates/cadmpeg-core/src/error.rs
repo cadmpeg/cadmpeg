@@ -177,7 +177,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::CodecError;
-    use crate::dialect::{Admission, DialectId, DialectMatch};
+    use crate::dialect::{DialectId, DialectMatch};
 
     #[test]
     fn malformed_constructor_formats_the_message_once() {
@@ -205,12 +205,11 @@ mod tests {
         let error = CodecError::UnsupportedDialect {
             format: "acis".into(),
             dialect_match: Box::new(
-                DialectMatch::layer(
-                    DialectId::pinned("acis:save-format-binary-other"),
-                    BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
-                    Admission::Refused,
-                )
-                .expect("the refused dialect is classified"),
+                DialectMatch::refused(DialectId::pinned("acis:save-format-binary-other"))
+                    .with_declared(BTreeMap::from([(
+                        "save_format".to_owned(),
+                        "700".to_owned(),
+                    )])),
             ),
             message: "save format 700 has no read grammar".into(),
         };

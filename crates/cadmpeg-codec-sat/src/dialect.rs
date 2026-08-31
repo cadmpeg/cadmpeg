@@ -38,7 +38,7 @@
 use crate::detect::StreamKind;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, UnverifiedAdmission};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -163,8 +163,10 @@ fn admission(evidence: &StreamEvidence<'_>) -> Admission {
 /// substituted for the band the stream declared. The message states the
 /// declaration and the substitution; it is not the contract, the code is.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { using } = matched.admission() else {
-        return None;
+    let using = match matched.admission() {
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => Some(using),
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => None,
+        Admission::Admitted | Admission::Refused => return None,
     };
     let declared = match (
         matched.declared().get(DECLARED_SAVE_FORMAT_MAJOR),
@@ -174,14 +176,14 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         (Some(major), None) => format!("save format major {major}"),
         (None, _) => "no save format".to_owned(),
     };
-    let message = using.as_ref().map_or_else(
+    let message = using.map_or_else(
         || {
             format!(
                 "the stream declares {declared}; its residual path substituted no declared ACIS \
                  grammar"
             )
         },
-        |using| cadmpeg_asm::dialect::acis_recovery_message("the stream", &declared, using),
+        |using| cadmpeg_asm::dialect::acis_recovery_message("the stream", &declared, &using),
     );
     Some(SatLossCode::SourceDialectUnverified.note(message))
 }
@@ -242,8 +244,17 @@ fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
         .kind()
         .reportable_id()
         .expect("stream evidence is constructed only for reportable kinds");
-    DialectMatch::layer(dialect, declared(evidence), admission(evidence))
-        .expect("SAT classifier produced an invalid dialect match")
+    match admission(evidence) {
+        Admission::Admitted => DialectMatch::admitted(dialect),
+        Admission::AdmittedUnverified(UnverifiedAdmission::Using(using)) => {
+            DialectMatch::unverified(dialect, using)
+        }
+        Admission::AdmittedUnverified(UnverifiedAdmission::NoDeclaredGrammar) => {
+            DialectMatch::residual(dialect)
+        }
+        Admission::Refused => DialectMatch::refused(dialect),
+    }
+    .with_declared(declared(evidence))
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.
