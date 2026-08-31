@@ -756,6 +756,14 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
+    assert!(inspected
+        .notes
+        .iter()
+        .any(|note| note.contains("f3z archive: 1 document member(s); model root root.f3d")));
+    assert!(inspected
+        .notes
+        .iter()
+        .all(|note| !note.contains("0 ASM BREP stream")));
 
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
@@ -932,6 +940,20 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
         member.admission(),
         cadmpeg_core::dialect::Admission::AdmittedUnverified(_)
     ));
+    let refused_kernel = decoded
+        .report()
+        .dialects()
+        .expect("the F3Z report is classified")
+        .iter()
+        .find(|matched| {
+            matched.format() == cadmpeg_asm::dialect::FORMAT
+                && matched.instance() == Some("unparseable.f3d")
+        })
+        .expect("the unparseable member remains a refused kernel layer");
+    assert_eq!(
+        refused_kernel.admission(),
+        cadmpeg_core::dialect::Admission::Refused
+    );
 
     let losses = decoded
         .report()

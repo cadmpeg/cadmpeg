@@ -2129,7 +2129,7 @@ fn finish_model_decode<'a>(
     brep: Brep,
     body_visibilities: Vec<crate::records::BodyVisibility>,
     undecoded_candidates: usize,
-    admitted_entities: u64,
+    session_state: DecodeSessionState,
 ) -> Result<DecodeResult, CodecError> {
     F3dDecodeSession::from_geometry(
         ctx,
@@ -2138,7 +2138,7 @@ fn finish_model_decode<'a>(
         brep,
         body_visibilities,
         undecoded_candidates,
-        admitted_entities,
+        session_state,
     )?
     .into_result()
 }
@@ -2151,6 +2151,13 @@ struct GeometryIndex {
     primary_model_brep_name: String,
     annotation_records: Vec<cadmpeg_asm::brep::AnnotationRecord>,
     mesh_projection: MeshProjection,
+}
+
+/// State shared by every finalization path for one decoded F3D member.
+#[derive(Debug, Clone, Copy)]
+struct DecodeSessionState {
+    admitted_entities: u64,
+    dialect_losses: crate::dialect::DialectLossProjection,
 }
 
 /// Private decode accumulator for one `.f3d` document.
@@ -2184,9 +2191,14 @@ impl<'a> F3dDecodeSession<'a> {
         brep: Brep,
         body_visibilities: Vec<crate::records::BodyVisibility>,
         undecoded_candidates: usize,
-        mut admitted_entities: u64,
+        session_state: DecodeSessionState,
     ) -> Result<Self, CodecError> {
-        let mut report = crate::dialect::build_report(scan, false, true, geometry_losses(&brep));
+        let DecodeSessionState {
+            mut admitted_entities,
+            dialect_losses,
+        } = session_state;
+        let mut report =
+            crate::dialect::build_report(scan, false, true, geometry_losses(&brep), dialect_losses);
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2247,8 +2259,12 @@ impl<'a> F3dDecodeSession<'a> {
     fn from_metadata(
         ctx: &'a DecodeContext<'a>,
         scan: &'a ContainerScan<'a>,
-        admitted_entities: u64,
+        session_state: DecodeSessionState,
     ) -> Self {
+        let DecodeSessionState {
+            admitted_entities,
+            dialect_losses,
+        } = session_state;
         let (ir, unknowns) = build_metadata_ir(scan);
         Self {
             ctx,
@@ -2257,7 +2273,13 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_materials: None,
             native: F3dNative::default(),
             ir,
-            report: crate::dialect::build_report(scan, false, false, container_losses(scan)),
+            report: crate::dialect::build_report(
+                scan,
+                false,
+                false,
+                container_losses(scan),
+                dialect_losses,
+            ),
             unknowns,
             deferred_xref: None,
             deferred_non_root_act: None,
@@ -2960,6 +2982,26 @@ pub(crate) fn decode_member<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<DecodeResult, CodecError> {
+    decode_document(ctx, root, crate::dialect::DialectLossProjection::Document)
+}
+
+/// Decode one F3Z member while deferring dialect losses to the archive layer.
+pub(crate) fn decode_archive_member<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<DecodeResult, CodecError> {
+    decode_document(
+        ctx,
+        root,
+        crate::dialect::DialectLossProjection::ArchiveMember,
+    )
+}
+
+fn decode_document<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    dialect_losses: crate::dialect::DialectLossProjection,
+) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
@@ -2977,7 +3019,13 @@ pub(crate) fn decode_member<'a>(
         annotate_docstruct(&mut ir, &scan);
         let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(&scan);
-        let mut report = crate::dialect::build_report(&scan, true, false, container_losses(&scan));
+        let mut report = crate::dialect::build_report(
+            &scan,
+            true,
+            false,
+            container_losses(&scan),
+            dialect_losses,
+        );
         if let Ok(Some(table)) = crate::xref::decode(&scan) {
             apply_assembly_classification(&mut report, &scan, &table);
         }
@@ -3082,7 +3130,10 @@ pub(crate) fn decode_member<'a>(
                 brep,
                 body_visibilities,
                 model_breps.len() - decoded_brep_count,
-                admitted_entities,
+                DecodeSessionState {
+                    admitted_entities,
+                    dialect_losses,
+                },
             );
         }
     }
@@ -3097,12 +3148,23 @@ pub(crate) fn decode_member<'a>(
             text_brep,
             Vec::new(),
             0,
-            admitted_entities,
+            DecodeSessionState {
+                admitted_entities,
+                dialect_losses,
+            },
         );
     }
 
     // No decodable SAB stream: use container metadata through the shared session.
-    F3dDecodeSession::from_metadata(ctx, &scan, admitted_entities).into_result()
+    F3dDecodeSession::from_metadata(
+        ctx,
+        &scan,
+        DecodeSessionState {
+            admitted_entities,
+            dialect_losses,
+        },
+    )
+    .into_result()
 }
 
 /// Projected mesh geometry and the Design records that own it.

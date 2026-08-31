@@ -243,6 +243,16 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
     zip.write_all(b"not an ACIS kernel stream").unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
+    let inspected = F3dCodec
+        .inspect(
+            &mut Cursor::new(archive.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert!(inspected.notes.iter().any(|note| {
+        note.contains("dialect classification loss") && note.contains(corrupt_path)
+    }));
+
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(archive),
