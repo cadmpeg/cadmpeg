@@ -149,9 +149,7 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> DialectLayers {
     let several = kernels.len() > 1;
     let extra = kernels
         .drain(..)
-        .map(|(schema, carrier)| {
-            cadmpeg_container::parasolid::classify_layer(&schema, &carrier, several)
-        })
+        .map(|(schema, carrier)| cadmpeg_parasolid::classify_layer(&schema, &carrier, several))
         .collect();
     DialectLayers::new(SldprtDialect::classify_scan(scan), extra)
         .expect("Parasolid stream carriers have unique instances")
@@ -252,7 +250,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted => None,
         Admission::AdmittedUnverified { .. } => {
-            if let Some(message) = cadmpeg_container::parasolid::unverified_message(matched) {
+            if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
                 return Some(SldprtLossCode::SourceDialectUnverified.note(message));
             }
             let declaration = match matched.declared().get(DECLARED_SW_VERSION) {

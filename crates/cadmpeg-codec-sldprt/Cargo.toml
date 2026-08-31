@@ -23,6 +23,7 @@ categories = ["encoding", "parser-implementations", "graphics"]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir.workspace = true
+cadmpeg-parasolid.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 flate2.workspace = true

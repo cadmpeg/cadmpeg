@@ -61,8 +61,7 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 #[test]
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
-    let kernel =
-        cadmpeg_container::parasolid::classify_layer("SCH_TEST_1_9999", "block@7:body+3", false);
+    let kernel = cadmpeg_parasolid::classify_layer("SCH_TEST_1_9999", "block@7:body+3", false);
     let layers = DialectLayers::new(host, vec![kernel]).unwrap();
     let losses = dialect_losses(&layers);
 

@@ -1300,17 +1300,16 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 # --------------------------------------------------------------------------
 # Parasolid kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
-# SLDPRT and NX emit these layers from their host-local Parasolid readers. Each
-# layer records the complete schema token and its source carrier. A host with
-# several Parasolid streams uses the carrier as the layer instance.
+# `cadmpeg-parasolid` owns these rows. SLDPRT and NX emit them from their
+# host-local Parasolid carrier readers. Each layer records the complete schema
+# token and its source carrier. A host with several Parasolid streams uses the
+# carrier as the layer instance.
 #
 # The discriminant is the schema token in the transmit-stream header, of the
-# form `SCH_<modeller>_<schema>_<format>`. `stream_header`
-# (crates/cadmpeg-codec-sldprt/src/parasolid.rs:295-322) requires the `PS\0\0`
-# signature, a big-endian u16 length-prefixed description, then the literal
-# `SCH_` within a 64-byte window after the description, with the token length
-# in the byte immediately preceding it. Absence of `SCH_` fails the whole
-# header parse (parasolid.rs:276-278); no token VALUE ever causes rejection.
+# form `SCH_<modeller>_<schema>_<format>`. `find_schema_token` applies one
+# exact ASCII token grammar. Each host supplies the prologue span defined by
+# its carrier: SLDPRT uses the 64-byte region after its u16-length description;
+# NX uses the first 512 inflated bytes. No complete token value causes refusal.
 #
 # There is no Parasolid transmit-file (.x_t/.x_b) support anywhere in the
 # workspace: Parasolid is reached only as an embedded stream.
@@ -1374,4 +1373,4 @@ unknown_kind = "recovered-residual"
 pinned = false
 title = "Parasolid stream with an unrecognized schema token"
 discriminants = { schema = "any other SCH_ token" }
-witness = "code:crates/cadmpeg-codec-sldprt/src/parasolid.rs:313"
+witness = "code:crates/cadmpeg-parasolid/src/lib.rs"

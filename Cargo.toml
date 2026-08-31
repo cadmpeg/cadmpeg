@@ -7,6 +7,7 @@ members = [
   "crates/cadmpeg-core",
   "crates/cadmpeg-container",
   "crates/cadmpeg-ir",
+  "crates/cadmpeg-parasolid",
   "crates/cadmpeg-registry",
   "crates/cadmpeg-test-support",
   "crates/cadmpeg-protein",
@@ -41,6 +42,7 @@ cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.5.5" }
 cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.5.5" }
 cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.5.5" }
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.5.5" }
+cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.5.5" }
 cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.5.5", default-features = false }
 cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
 cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.5.5" }

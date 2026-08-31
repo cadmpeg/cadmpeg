@@ -102,7 +102,7 @@ fn residual_parasolid_layer_is_present_in_decode_losses() {
         .dialects()
         .expect("NX reports dialect layers")
         .iter()
-        .find(|matched| matched.format() == cadmpeg_container::parasolid::FORMAT)
+        .find(|matched| matched.format() == cadmpeg_parasolid::FORMAT)
         .expect("fixture carries one Parasolid layer");
     assert!(matches!(
         kernel.admission(),

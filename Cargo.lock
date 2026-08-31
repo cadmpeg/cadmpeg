@@ -306,6 +306,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "flate2",
  "roxmltree",
@@ -350,6 +351,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "crc32fast",
  "flate2",
@@ -413,6 +415,14 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "cadmpeg-parasolid"
+version = "0.5.5"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-test-support",
 ]
 
 [[package]]

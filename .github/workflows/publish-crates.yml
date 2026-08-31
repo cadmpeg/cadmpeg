@@ -37,6 +37,7 @@ jobs:
           crates=(
             cadmpeg-core
             cadmpeg-container
+            cadmpeg-parasolid
             cadmpeg-protein
             cadmpeg-ir
             cadmpeg-asm
