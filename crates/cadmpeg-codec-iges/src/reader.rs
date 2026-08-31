@@ -176,7 +176,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
 
     fn admission_losses(&self, primary: &DialectMatch) -> Vec<LossNote> {
         let mut losses = Vec::new();
-        losses.extend(crate::dialect::dialect_loss(primary));
+        losses.extend(crate::dialect::dialect_loss(primary, &self.global));
         losses.extend(self.global_losses.iter().cloned());
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
@@ -213,13 +213,10 @@ pub(crate) fn inspect(
 ) -> Result<ContainerSummary, CodecError> {
     let parse = PhysicalParse::run(window, Some(ctx), ParseMode::Inspect)?;
     let primary = IgesDialect::classify(representation, &parse.global);
-    let identity_is_residual = primary.dialect() == &IgesDialect::Unknown.id();
     let mut losses = parse.admission_losses(&primary);
     losses.extend(parse.record_losses());
     let mut summary = card::summarize(&parse.scan, primary);
-    summary
-        .notes
-        .extend(parse.global.summary_notes(identity_is_residual));
+    summary.notes.extend(parse.global.summary_notes());
     summary
         .notes
         .extend(directory::summary_notes(&parse.directory));

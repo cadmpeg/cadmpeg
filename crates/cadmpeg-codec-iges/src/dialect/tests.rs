@@ -100,7 +100,7 @@ fn global_charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> 
         .note(String::new())
         .code;
     let matched = IgesDialect::classify(Representation::FixedAscii, global);
-    dialect_loss(&matched).is_some_and(|note| note.code == expected)
+    dialect_loss(&matched, global).is_some_and(|note| note.code == expected)
 }
 
 /// One matrix row: a field-23 declaration and what each representation must
@@ -342,6 +342,13 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
         )
         .unwrap();
     assert_eq!(only_match(summary.dialects()), matched);
+    assert!(summary.notes.contains(&"iges_version=unverified".into()));
+    assert!(summary
+        .notes
+        .contains(&"iges_effective_version=ANSI-Y14.26M-1981".into()));
+    assert!(!summary
+        .notes
+        .contains(&"iges_version=ANSI-Y14.26M-1981".into()));
 }
 
 #[test]

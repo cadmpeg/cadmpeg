@@ -77,12 +77,12 @@ pub(crate) enum GlobalTable {
 /// unreadable, or because field 23 named a value the version table does not
 /// contain at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DialectRecovery {
+pub(crate) enum DialectRecovery<'a> {
     /// Field 23 names a version whose Global table this codec verified against
     /// that version's own specification. The only state that charges no loss.
     Verified,
     /// Field 23 does not read as an integer; the specification default stood in.
-    UnreadableDeclaration,
+    UnreadableDeclaration(&'a str),
     /// Field 23 names a value outside the version table, moved by the
     /// postprocessor clamp of IGES 5.3 section 2.2.4.3.23.
     Clamped,
@@ -1551,11 +1551,11 @@ impl ResolvedGlobal {
     /// only state admitted as `Admission::Admitted`, so the biconditional the
     /// decode policy requires holds by construction rather than by two authors
     /// agreeing.
-    pub(crate) fn dialect_recovery(&self) -> DialectRecovery {
-        if self.unreadable_version_declaration.is_some() {
+    pub(crate) fn dialect_recovery(&self) -> DialectRecovery<'_> {
+        if let Some(declaration) = self.unreadable_version_declaration() {
             // A malformed field 23 is replaced by the specification default, so
             // it never also reads as clamped; the arms stay disjoint.
-            DialectRecovery::UnreadableDeclaration
+            DialectRecovery::UnreadableDeclaration(declaration)
         } else if self.declared_version().is_none() {
             DialectRecovery::Clamped
         } else if self.version().is_some() {
@@ -1606,10 +1606,11 @@ impl ResolvedGlobal {
 
     /// Inspection notes for this Global section.
     ///
-    /// A residual identity does not verify the effective version. In that
-    /// case, retain the declared flag and label the recovered version instead
-    /// of presenting the recovery as the document's version.
-    pub(crate) fn summary_notes(&self, identity_is_residual: bool) -> Vec<String> {
+    /// Any recovery other than [`DialectRecovery::Verified`] means the
+    /// effective Global table was not verified for the source declaration. In
+    /// that case, retain the declared flag and label the effective version as
+    /// recovery rather than presenting it as the document's verified version.
+    pub(crate) fn summary_notes(&self) -> Vec<String> {
         let mut notes = vec![
             format!(
                 "parameter_delimiter={}",
@@ -1628,15 +1629,15 @@ impl ResolvedGlobal {
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
         }
-        if identity_is_residual {
+        if self.dialect_recovery() == DialectRecovery::Verified {
+            notes.push(format!("iges_version={}", self.version_name()));
+        } else {
             notes.push("iges_version=unverified".into());
             notes.push(format!(
                 "iges_declared_version_flag={}",
                 self.declared_version_flag
             ));
             notes.push(format!("iges_effective_version={}", self.version_name()));
-        } else {
-            notes.push(format!("iges_version={}", self.version_name()));
         }
         notes
     }
