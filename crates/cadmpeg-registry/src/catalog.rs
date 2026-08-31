@@ -119,10 +119,10 @@ impl InputCatalog {
     /// Every descriptor whose codec gives `prefix` more than
     /// [`Confidence::No`], strongest first and in catalog order within a tier.
     ///
-    /// The whole candidate set, not the winner. `detect` collapses it to a
-    /// selection because loading one file needs one codec; [`crate::identify`]
-    /// keeps every candidate because reporting what a file might be is the
-    /// question it answers.
+    /// The whole candidate set, not the winner. `detect` keeps only the
+    /// strongest candidate or tied candidates because loading and inspection
+    /// need one resolution tier; [`crate::identify`] exposes that detected
+    /// outcome without discarding a strongest-tier ambiguity.
     pub fn candidates(&self, prefix: &[u8]) -> Vec<(&InputDescriptor, Confidence)> {
         let mut matches = self
             .descriptors
