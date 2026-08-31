@@ -1,22 +1,23 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD through format codecs into `CadIr` version 5. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [format-support.md](format-support.md) records per-envelope capability.
+cadmpeg routes native CAD through format codecs into `CadIr` version 5. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
 
 ## Pipeline
 
 ```text
 native CAD ── detect + inspect ──> container summary
-     │
-     └── detect + decode ──> CadIr ── check ──> check report
-                                │
-                                └── dump ──> .cadir.json | .step/.stp | .f3d | .sldprt | .3dm | .FCStd
+
+native CAD or CADIR ── load + decode/parse ──> CadIr
+                                                ├── dump ──> .cadir.json
+                                                ├── check ──> check report
+                                                └── convert ── check + plan + write ──> output artifact
 ```
 
 - `convert` loads or decodes, checks, then writes another format. `--allow-errors` writes after check errors.
 - `inspect` detects a codec and reports container structure without decoding geometry.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source metadata, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity. A source attribute whose key ends in `_local_sha256` holds a machine-local content digest, which no two platforms reproduce; `diff` reports a difference in one under a separate informational section and keeps status 0.
 - `check` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).
-- `dump` runs the selected codec and serializes `CadIr`, normally as `.cadir.json`.
+- `dump` runs the selected codec and serializes `CadIr` as CADIR JSON.
 
 CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
@@ -45,9 +46,9 @@ Source decoders return `DecodeReport`, including `geometry_transferred`, a decod
 
 Each codec owns a `*LossCode` enum in `src/loss.rs`. Every reported drop goes through `code.note(message)`, which pins the namespaced local code, `LossTaxonomy`, severity, and strict floor. Shared taxonomy is the category used for subsystem reporting; the stable machine-readable identifier is the codec-local `family.detail` string.
 
-Every encoder returns an `ExportReport` with its format id, entity census, loss notes, informational notes, and a `write_path`. STEP reports reductions and omitted IR data. CADIR export carries no losses. F3D, SLDPRT, Rhino, and FreeCAD report replay versus regeneration and reject unsupported input atomically. Decode losses remain in the command report when convert started from native CAD.
+Every encoder returns an `ExportReport` with its format id, entity census, loss notes, informational notes, and a `write_path`. STEP reports reductions and omitted IR data. CADIR export carries no losses. IGES, F3D, and SLDPRT select among preservation and semantic generation according to their own delivery laws. FreeCAD patches a retained document. Rhino and STEP synthesize from neutral IR. Unsupported delivery is refused atomically. Decode losses remain in the command report when convert started from native CAD.
 
-`write_path` names which of an encoder's write paths produced the bytes: `verbatim_replay` copies retained source bytes out unchanged, `patched` runs the writer over retained source content, and `synthesized` runs the writer over neutral IR content alone. The encoder sets it at the branch it takes. The distinction is not recoverable from the output, because a patch that changes nothing observable reproduces its input byte for byte. F3D takes all three paths, SLDPRT takes all three, FreeCAD is always `patched`, and CADIR, STEP, and Rhino are always `synthesized`.
+`write_path` names which of an encoder's write paths produced the bytes: `verbatim_replay` copies retained source bytes out unchanged, `patched` runs the writer over retained source content, and `synthesized` runs the writer over neutral IR content alone. The encoder sets it at the branch it takes. The distinction is not recoverable from the output, because a patch that changes nothing observable reproduces its input byte for byte. F3D and SLDPRT take all three paths. IGES takes `verbatim_replay` and `synthesized`. FreeCAD is always `patched`. CADIR, STEP, and Rhino are always `synthesized`.
 
 Export-side refusal is not owned by the `Encoder` trait. The conversion layer owns `--reject-lossy`: the application transcoder refuses to plan when the decode report carries any loss and refuses to write when the planned `ExportReport` carries any loss. Both are policy stops distinct from a planning failure, and neither consults per-loss strict floors — any loss note refuses. The STEP writer always emits the representable subset and records reductions in its report; `--reject-lossy` after `plan` is the remaining owner of refusal for those losses. Other writers can reject unsupported input during planning. A format specification's "strict export rejects" sentence names the owning writer policy where one exists and the conversion stop otherwise.
 
@@ -87,17 +88,17 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
 | `cadmpeg-protein`        | Shared schema and paged instance-property decoding for Protein asset packages.                                                         |
-| `cadmpeg-codec-freecad`  | FreeCAD `.FCStd` read and semantic write for the schema-4/file-1 envelope.                                                             |
-| `cadmpeg-codec-f3d`      | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |
+| `cadmpeg-codec-freecad`  | FreeCAD `.FCStd` inspection, decode, retained-document patching, and repacking.                                                         |
+| `cadmpeg-codec-f3d`      | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, selected native edits, and semantic generation.           |
 | `cadmpeg-codec-inventor` | Inventor `.ipt`/`.iam` compound, RSe, part geometry, external occurrences, properties, appearances, and design-record decode.          |
-| `cadmpeg-codec-sldprt`   | SolidWorks `.sldprt` container, Parasolid B-rep, features, retained replay, and semantic writing.                                      |
-| `cadmpeg-codec-rhino`    | Rhino `.3dm` read for archives 1/2/3/4/5/50/60/70/80/90 and semantic write for archives 50/60/70/80.                                    |
-| `cadmpeg-codec-catia`    | CATIA V5 `.CATPart` layout inspection and carrier decode; conditional topology on the standard-nested band.                            |
-| `cadmpeg-codec-nx`       | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and conditional topology.                                                         |
-| `cadmpeg-codec-creo`     | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
+| `cadmpeg-codec-sldprt`   | SolidWorks `.sldprt` container, Parasolid B-rep, features, retained replay, retained-record patching, and semantic generation.          |
+| `cadmpeg-codec-rhino`    | Rhino `.3dm` inspection, decode, and semantic writing.                                                                                  |
+| `cadmpeg-codec-catia`    | CATIA V5 `.CATPart` layout inspection, carrier decode, and neutral projection.                                                         |
+| `cadmpeg-codec-nx`       | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and neutral projection.                                                           |
+| `cadmpeg-codec-creo`     | Creo `.prt` section decode, placed geometry, and neutral projection.                                                                   |
 | `cadmpeg-codec-sat`      | Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` stream inspection and B-rep transfer outside any container.                                  |
-| `cadmpeg-codec-iges`     | IGES Fixed ASCII read for versions 1.0 through 5.3, Compressed ASCII and Binary read for versions 4.0 through 5.3, and bounded Fixed ASCII semantic write. |
-| `cadmpeg-codec-step`     | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
+| `cadmpeg-codec-iges`     | IGES Fixed ASCII, Compressed ASCII, and Binary decode; retained replay; and bounded Fixed ASCII semantic writing.                       |
+| `cadmpeg-codec-step`     | STEP Part 21 inspection, decode, semantic writing, and export loss accounting.                                                         |
 | `cadmpeg-fuzz`           | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
 ## Codec interface
