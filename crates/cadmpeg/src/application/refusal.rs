@@ -10,18 +10,53 @@ use std::fmt;
 
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use serde_json::{json, Value};
 
 /// Classifies codec decode failures while preserving operational I/O errors.
 pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
+    let fallback_message = format!("decode failed: {error:#}");
+    if let Some(failure) = error.downcast_ref::<DecodeFailure>() {
+        if matches!(
+            failure,
+            DecodeFailure::Codec(cadmpeg_core::CodecError::Io(_))
+        ) {
+            return error;
+        }
+        let Ok(failure) = error.downcast::<DecodeFailure>() else {
+            unreachable!("downcast_ref established the decode failure type");
+        };
+        return match failure {
+            DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
+                dialects,
+                message,
+            }) => ConversionRefusal::UnsupportedDialect {
+                dialects,
+                reason: message,
+            },
+            DecodeFailure::StrictRejected {
+                loss_code,
+                message,
+                report,
+            } => ConversionRefusal::StrictDecodeRejected {
+                loss_code,
+                loss_message: message,
+                decode_report: *report,
+            },
+            _ => ConversionRefusal::DecodeFailed {
+                message: fallback_message,
+            },
+        }
+        .into();
+    }
+
     let Some(codec_error) = error.downcast_ref::<cadmpeg_core::CodecError>() else {
         return error;
     };
     if matches!(codec_error, cadmpeg_core::CodecError::Io(_)) {
         return error;
     }
-    let fallback_message = format!("decode failed: {error:#}");
     let Ok(codec_error) = error.downcast::<cadmpeg_core::CodecError>() else {
         unreachable!("downcast_ref established the codec error type");
     };
@@ -46,6 +81,8 @@ pub enum RefusalCode {
     DecodeFailed,
     /// The input was identified but its dialect has no decode grammar.
     UnsupportedDialect,
+    /// Strict decode policy rejected a reported loss.
+    StrictDecodeRejected,
     /// The check found errors and `--allow-errors` was not set.
     CheckFailed,
     /// Decode reported losses under `--reject-lossy`.
@@ -67,6 +104,7 @@ impl RefusalCode {
         match self {
             Self::DecodeFailed => "decode_failed",
             Self::UnsupportedDialect => "unsupported_dialect",
+            Self::StrictDecodeRejected => "strict_decode_rejected",
             Self::CheckFailed => "check_failed",
             Self::DecodeLossRejected => "decode_loss_rejected",
             Self::ExportLossRejected => "export_loss_rejected",
@@ -133,6 +171,15 @@ pub enum ConversionRefusal {
         /// Codec-owned reason no decode grammar can admit it.
         reason: String,
     },
+    /// Decode completed, but strict mode rejected a loss in its report.
+    StrictDecodeRejected {
+        /// Stable loss code that triggered the strict floor.
+        loss_code: String,
+        /// The refusing loss's message.
+        loss_message: String,
+        /// Completed decode report containing all recovered evidence.
+        decode_report: DecodeReport,
+    },
     /// The check found errors and `--allow-errors` was not set.
     CheckFailed {
         /// Human-readable message.
@@ -192,6 +239,7 @@ impl ConversionRefusal {
         match self {
             Self::DecodeFailed { .. } => RefusalCode::DecodeFailed,
             Self::UnsupportedDialect { .. } => RefusalCode::UnsupportedDialect,
+            Self::StrictDecodeRejected { .. } => RefusalCode::StrictDecodeRejected,
             Self::CheckFailed { .. } => RefusalCode::CheckFailed,
             Self::DecodeLossRejected { .. } => RefusalCode::DecodeLossRejected,
             Self::ExportLossRejected { .. } => RefusalCode::ExportLossRejected,
@@ -205,7 +253,9 @@ impl ConversionRefusal {
     #[must_use]
     pub const fn stage(&self) -> RefusalStage {
         match self {
-            Self::DecodeFailed { .. } | Self::UnsupportedDialect { .. } => RefusalStage::Decode,
+            Self::DecodeFailed { .. }
+            | Self::UnsupportedDialect { .. }
+            | Self::StrictDecodeRejected { .. } => RefusalStage::Decode,
             Self::UnsupportedTarget { .. } | Self::BinaryStdoutRejected { .. } => {
                 RefusalStage::Plan
             }
@@ -225,6 +275,11 @@ impl ConversionRefusal {
             | Self::ExportLossRejected { message, .. }
             | Self::EmptyGeometry { message, .. }
             | Self::BinaryStdoutRejected { message } => Cow::Borrowed(message),
+            Self::StrictDecodeRejected {
+                loss_code,
+                loss_message,
+                ..
+            } => Cow::Owned(format!("strict mode rejects {loss_code}: {loss_message}")),
             Self::UnsupportedDialect { dialects, reason } => Cow::Owned(format!(
                 "unsupported {} dialect {}: {reason}",
                 dialects.primary().format(),
@@ -258,6 +313,7 @@ impl ConversionRefusal {
         match self {
             Self::DecodeFailed { .. }
             | Self::UnsupportedDialect { .. }
+            | Self::StrictDecodeRejected { .. }
             | Self::CheckFailed { .. }
             | Self::DecodeLossRejected { .. }
             | Self::ExportLossRejected { .. }
@@ -272,6 +328,7 @@ impl ConversionRefusal {
     pub fn decode_report(&self) -> Option<&DecodeReport> {
         match self {
             Self::DecodeFailed { .. } | Self::UnsupportedDialect { .. } => None,
+            Self::StrictDecodeRejected { decode_report, .. } => Some(decode_report),
             Self::CheckFailed { decode_report, .. } => decode_report.as_ref(),
             Self::DecodeLossRejected { decode_report, .. } => Some(decode_report),
             Self::ExportLossRejected { decode_report, .. }
@@ -285,7 +342,9 @@ impl ConversionRefusal {
     #[must_use]
     pub fn check_report(&self) -> Option<&ValidationReport> {
         match self {
-            Self::DecodeFailed { .. } | Self::UnsupportedDialect { .. } => None,
+            Self::DecodeFailed { .. }
+            | Self::UnsupportedDialect { .. }
+            | Self::StrictDecodeRejected { .. } => None,
             Self::CheckFailed { validation, .. } => Some(validation),
             Self::ExportLossRejected { validation, .. }
             | Self::EmptyGeometry { validation, .. }
@@ -330,6 +389,7 @@ mod tests {
 
     use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
     use cadmpeg_core::target::TargetDescriptor;
+    use cadmpeg_ir::report::TransferLedger;
 
     use super::*;
 
@@ -400,6 +460,42 @@ mod tests {
             panic!("unsupported identity must not be flattened to DecodeFailed");
         };
         assert_eq!(dialects.primary(), &matched);
+    }
+
+    #[test]
+    fn decode_classifier_preserves_a_strict_refusal_and_its_completed_report() {
+        let report = DecodeReport::unclassified(
+            "test",
+            false,
+            false,
+            BTreeMap::new(),
+            Vec::new(),
+            vec!["decode completed".into()],
+            TransferLedger::default(),
+        );
+        let classified = classify_decode_failure(
+            DecodeFailure::StrictRejected {
+                loss_code: "test/source.dialect-unverified".into(),
+                message: "the dialect was recovered provisionally".into(),
+                report: Box::new(report),
+            }
+            .into(),
+        );
+        let refusal = classified
+            .downcast_ref::<ConversionRefusal>()
+            .expect("strict policy failure becomes an application refusal");
+
+        assert_eq!(refusal.code(), RefusalCode::StrictDecodeRejected);
+        assert_eq!(refusal.stage(), RefusalStage::Decode);
+        assert_eq!(refusal.exit_code(), 1);
+        assert_eq!(
+            refusal.report_fields()["refusal"]["code"],
+            "strict_decode_rejected"
+        );
+        assert_eq!(
+            refusal.decode_report().expect("completed report").notes,
+            ["decode completed"]
+        );
     }
 
     #[test]

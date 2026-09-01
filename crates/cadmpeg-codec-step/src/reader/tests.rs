@@ -729,7 +729,7 @@ fn strict_decode_rejects_noncanonical_complex_partial_order() {
 
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::StrictRefusal { .. }
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
     ));
 }
 
@@ -747,7 +747,7 @@ fn strict_decode_rejects_omitted_entity_name_recovery() {
 
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::StrictRefusal { .. }
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
     ));
     assert!(error.to_string().contains("parse.noncanonical-syntax"));
 }

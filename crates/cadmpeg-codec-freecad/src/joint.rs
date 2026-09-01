@@ -723,7 +723,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -751,7 +753,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -784,7 +788,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -812,7 +818,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -851,7 +859,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }

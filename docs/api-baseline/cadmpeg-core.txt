@@ -1,4 +1,4 @@
-# generated at f5852b431
+# generated at 511ae8368
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -360,9 +360,6 @@ pub cadmpeg_core::error::CodecError::Io(core::io::error::Error)
 pub cadmpeg_core::error::CodecError::Malformed(alloc::string::String)
 pub cadmpeg_core::error::CodecError::NotImplemented(alloc::string::String)
 pub cadmpeg_core::error::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit)
-pub cadmpeg_core::error::CodecError::StrictRefusal
-pub cadmpeg_core::error::CodecError::StrictRefusal::loss_code: alloc::string::String
-pub cadmpeg_core::error::CodecError::StrictRefusal::message: alloc::string::String
 pub cadmpeg_core::error::CodecError::Truncated
 pub cadmpeg_core::error::CodecError::Truncated::context: cadmpeg_core::decode::ErrorContext
 pub cadmpeg_core::error::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation
@@ -438,9 +435,6 @@ pub cadmpeg_core::CodecError::Io(core::io::error::Error)
 pub cadmpeg_core::CodecError::Malformed(alloc::string::String)
 pub cadmpeg_core::CodecError::NotImplemented(alloc::string::String)
 pub cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit)
-pub cadmpeg_core::CodecError::StrictRefusal
-pub cadmpeg_core::CodecError::StrictRefusal::loss_code: alloc::string::String
-pub cadmpeg_core::CodecError::StrictRefusal::message: alloc::string::String
 pub cadmpeg_core::CodecError::Truncated
 pub cadmpeg_core::CodecError::Truncated::context: cadmpeg_core::decode::ErrorContext
 pub cadmpeg_core::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation

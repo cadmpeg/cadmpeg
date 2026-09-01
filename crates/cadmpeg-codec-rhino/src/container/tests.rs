@@ -320,7 +320,10 @@ fn an_undeclared_word_over_broken_framing_fails_structurally() {
         .decode(&mut Cursor::new(header("100")), &DecodeOptions::default())
         .expect_err("a header with no chunk sequence cannot be framed");
     assert!(
-        !matches!(error, CodecError::NotImplemented(_)),
+        !matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))
+        ),
         "the residual row is attempted, so its failure is structural: {error}"
     );
 }

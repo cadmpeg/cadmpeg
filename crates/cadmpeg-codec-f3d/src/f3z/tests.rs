@@ -440,7 +440,9 @@ fn f3z_drawing_root_rejects_ambiguous_derived_models() {
 
     assert!(matches!(
         result,
-        Err(cadmpeg_core::CodecError::Malformed(_))
+        Err(cadmpeg_ir::DecodeFailure::Codec(
+            cadmpeg_core::CodecError::Malformed(_)
+        ))
     ));
 }
 

@@ -483,7 +483,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit F3D archive entries"
         ),
@@ -503,7 +503,7 @@ fn decode_refuses_when_max_entities_is_below_archive_entry_cardinality() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
         ),
         "{error:?}"

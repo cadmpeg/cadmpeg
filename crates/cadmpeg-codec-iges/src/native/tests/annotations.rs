@@ -4,7 +4,6 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::code_count;
@@ -402,7 +401,7 @@ fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_lo
         .decode(&mut Cursor::new(bytes), &strict)
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
             loss_code,
             IgesLossCode::ParameterCountOverdeclared.kind().as_str()
         ),

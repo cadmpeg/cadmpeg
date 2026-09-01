@@ -5,7 +5,6 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
@@ -155,7 +154,7 @@ fn strict_decode_refuses_recovered_framing_that_salvage_admits() {
             .decode(&mut Cursor::new(bytes.clone()), &strict_options())
             .unwrap_err();
         match error {
-            CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
                 loss_code,
                 IgesLossCode::CardFramingRecovered.kind().as_str()
             ),

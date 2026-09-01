@@ -269,11 +269,11 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
     }
 }
 
-fn assert_entity_resource_limit(error: &cadmpeg_core::CodecError) {
+fn assert_entity_resource_limit(error: &cadmpeg_ir::DecodeFailure) {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
         ),
         "{error:?}"

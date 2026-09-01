@@ -1680,7 +1680,10 @@ Co 1001000 +2 0 *
             )
             .expect_err("interleaved string table must fail");
 
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 
     #[test]

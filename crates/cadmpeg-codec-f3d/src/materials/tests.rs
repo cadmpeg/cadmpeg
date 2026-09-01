@@ -1154,7 +1154,10 @@ fn decode_rejects_invalid_instance_property_page_framing() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .expect_err("invalid Protein page framing must reject material decode");
 
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]

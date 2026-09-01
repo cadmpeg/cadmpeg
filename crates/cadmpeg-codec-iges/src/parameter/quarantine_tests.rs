@@ -5,7 +5,6 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::{DecodeReport, TransferDisposition};
 
@@ -428,7 +427,7 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         .decode(&mut Cursor::new(bytes), &strict_options())
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
             loss_code,
             IgesLossCode::ParameterDataQuarantined.kind().as_str()
         ),

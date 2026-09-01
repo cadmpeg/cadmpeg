@@ -493,7 +493,7 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 error,
-                cadmpeg_core::CodecError::Malformed(message)
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                     if message.contains("references more than one side entry")
             ));
         }
@@ -533,7 +533,7 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 error,
-                cadmpeg_core::CodecError::Malformed(message)
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                     if message.contains("unowned side-entry reference")
             ));
         }
@@ -573,7 +573,7 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 error,
-                cadmpeg_core::CodecError::Malformed(message)
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                     if message.contains("must contain exactly one")
             ));
         }

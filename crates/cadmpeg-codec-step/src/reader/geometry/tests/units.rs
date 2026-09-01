@@ -594,7 +594,7 @@ fn strict_decode_rejects_a_substituted_length_uncertainty() {
 
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::StrictRefusal { .. }
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
     ));
 }
 

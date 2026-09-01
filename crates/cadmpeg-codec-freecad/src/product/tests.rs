@@ -545,7 +545,10 @@ fn rejects_ambiguous_link_placement_without_policy() {
             &DecodeOptions::default(),
         )
         .expect_err("ambiguous placement carriers");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -569,7 +572,10 @@ fn rejects_ambiguous_link_prototype_carriers() {
             &DecodeOptions::default(),
         )
         .expect_err("multiple linked-object carriers");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -622,7 +628,10 @@ fn rejects_duplicate_product_carriers() {
                 &DecodeOptions::default(),
             )
             .expect_err("duplicate product carrier");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -648,7 +657,9 @@ fn rejects_invalid_product_placement_values() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -668,7 +679,10 @@ fn rejects_overlapping_product_membership_for_neutral_projection() {
             &DecodeOptions::default(),
         )
         .expect_err("overlapping product membership");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -712,7 +726,10 @@ fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
             &DecodeOptions::default(),
         )
         .expect_err("wrong copy-on-change carrier type");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -739,7 +756,10 @@ fn rejects_wrong_runtime_types_for_named_product_carriers() {
                 &DecodeOptions::default(),
             )
             .expect_err("wrong named product carrier type");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -803,7 +823,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
     for (array_property, entry) in cases {
         assert!(matches!(
             decode(array_property, entry),
-            Err(cadmpeg_core::CodecError::Malformed(message))
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)))
                 if message.contains("inconsistent link-array counts")
         ));
     }
@@ -967,7 +987,7 @@ fn rejects_non_schema_link_carrier_aliases() {
         .expect_err("unsupported XLink document alias");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("unsupported link carrier document")
     ));
 }
@@ -1014,7 +1034,7 @@ fn rejects_conflicting_xlink_subelement_carriers() {
         .expect_err("conflicting XLink subelement carriers");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("both sub and count carriers")
     ));
 }

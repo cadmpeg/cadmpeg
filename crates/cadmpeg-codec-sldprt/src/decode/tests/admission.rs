@@ -22,7 +22,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit SLDPRT container entities"
         ),
@@ -42,7 +42,7 @@ fn decode_refuses_when_max_entities_is_below_container_cardinality() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
         ),
         "{error:?}"
@@ -74,7 +74,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit SLDPRT entities"
         ),
@@ -131,7 +131,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     // is that unrepresentable *geometry* is what refuses.
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_core::CodecError::StrictRefusal { loss_code, .. }) => {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. }) => {
             assert_eq!(
                 loss_code,
                 SldprtLossCode::GeometryParasolidNotTransferred
@@ -189,7 +189,7 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_core::CodecError::StrictRefusal { loss_code, .. }) => assert_eq!(
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. }) => assert_eq!(
             loss_code,
             SldprtLossCode::SourceDialectUnverified.kind().to_string()
         ),

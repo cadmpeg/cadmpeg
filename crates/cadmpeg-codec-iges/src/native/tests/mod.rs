@@ -4,7 +4,6 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
@@ -92,7 +91,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         .decode(&mut Cursor::new(bytes.to_vec()), &strict)
         .unwrap_err()
     {
-        CodecError::StrictRefusal { loss_code, .. } => {
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => {
             assert_eq!(loss_code, overdeclared.as_str());
         }
         other => panic!("expected a strict refusal, got {other:?}"),

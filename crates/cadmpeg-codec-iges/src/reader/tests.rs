@@ -28,7 +28,7 @@ fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
     assert!(
         matches!(
             &error,
-            CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
                     && limit.limit == 64
                     && limit.used == 64
@@ -209,7 +209,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         assert!(
             matches!(
                 error,
-                CodecError::ResourceLimit(limit)
+                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
                     if limit.dimension == expected && limit.context.operation == operation
             ),
             "{error:#?}"
@@ -246,7 +246,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         .unwrap_err();
     assert!(matches!(
         error,
-        CodecError::ResourceLimit(limit)
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.context.operation == "iges_native_entities"
     ));

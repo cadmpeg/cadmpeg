@@ -327,7 +327,7 @@ fn strict_decode_rejects_an_oriented_shell_missing_its_derived_slot() {
 
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::StrictRefusal { .. }
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
     ));
 }
 
@@ -715,7 +715,7 @@ fn strict_decode_rejects_a_destroyed_solid() {
         .expect_err("strict mode rejects a destroyed solid");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::StrictRefusal { .. }
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
     ));
 }
 

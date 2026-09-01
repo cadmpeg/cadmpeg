@@ -92,7 +92,10 @@ fn rejects_malformed_sketch_record_counts() {
             &DecodeOptions::default(),
         )
         .expect_err("count mismatch");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -116,7 +119,10 @@ fn rejects_external_geo_without_its_reserved_axis_prefix() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid ExternalGeo prefix");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -246,7 +252,10 @@ fn rejects_nested_and_duplicate_sketch_value_roots() {
                     &DecodeOptions::default(),
                 )
                 .expect_err("misframed sketch value root");
-            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+            assert!(matches!(
+                error,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+            ));
         }
     }
 }
@@ -307,7 +316,10 @@ fn rejects_point_alias_for_geom_point() {
             &DecodeOptions::default(),
         )
         .expect_err("unregistered point carrier");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -324,7 +336,10 @@ fn rejects_incomplete_present_sketch_placement() {
             &DecodeOptions::default(),
         )
         .expect_err("incomplete placement");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -428,7 +443,10 @@ fn rejects_malformed_constraint_operand_lists() {
                 &DecodeOptions::default(),
             )
             .expect_err("malformed constraint operand list");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 

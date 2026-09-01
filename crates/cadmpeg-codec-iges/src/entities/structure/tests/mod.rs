@@ -6,7 +6,6 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
@@ -392,7 +391,7 @@ fn strict_decode_refuses_an_unresolved_pointer_loss() {
         .unwrap_err();
 
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => {
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => {
             assert_eq!(loss_code, IgesLossCode::PointerUnresolved.kind().as_str());
         }
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
