@@ -785,15 +785,15 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/dialect.rs"
 # reconstructed streams (container.rs:1319-1338), and a coherent `E5 0D 03`
 # record walk (container.rs:1344-1346).
 #
-# These are B1 boundaries, not B3 content subsets: every input is a stream
-# name or a fixed marker signature read to choose the record grammar, and the
-# census counts markers rather than model content.
+# These are framing boundaries, not model-content subsets: every input is a
+# stream name or a fixed marker signature read to choose the record grammar,
+# and the census counts markers rather than model content.
 #
 # The `LastSaveVersion` release tuple (container.rs:76-88, parsed at
 # container.rs:293-314) is provenance: it is not an argument to
 # `identify_variant` and appears in no conditional in the crate. It surfaces
-# only as report text (container.rs:1533-1541) and IR attributes
-# (assemble.rs:426-435). The numbers 276 and 288 are cadmpeg's own native-
+# only as report text (`container::summarize`) and primary-layer declarations
+# (`dialect::declared`). The numbers 276 and 288 are cadmpeg's own native-
 # namespace schema version
 # (`CATIA_NATIVE_VERSION`, native.rs:25), not a file version; they do not
 # belong in this registry.

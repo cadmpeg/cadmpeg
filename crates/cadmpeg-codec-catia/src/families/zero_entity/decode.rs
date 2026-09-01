@@ -929,7 +929,7 @@ pub(crate) fn try_decode_zero_entity(
     Some(FamilyOutput {
         ir,
         report: DecodeReport::unclassified(
-            "catia",
+            crate::dialect::FORMAT,
             cadmpeg_ir::DecodeTransfer::full(true),
             coverage,
             vec![topology_loss.note(topology_message)],

@@ -14,7 +14,7 @@
 //! CATIA's storage families carry no version number: they are recognized from
 //! container shape, a reconstructed B-rep stream, spine markers, table
 //! delimiters, and a record-family census — all read by
-//! [`crate::container::scan_bytes`] before any parse strategy is chosen (B1).
+//! [`crate::container::scan_bytes`] before any parse strategy is chosen.
 //! So unlike IGES, identity is not a declaration that can be wrong; the file
 //! either exhibits a family's invariants or it does not.
 //!
@@ -88,9 +88,9 @@ impl Variant {
 /// Each of the six decoding families has at least one applicable route in
 /// [`crate::families::ROUTES`], and that route is the strategy the registry
 /// declares for its row: [`Admission::Admitted`]. Whether the route then yields
-/// a transferable model is content-conditioned, which B2 puts inside the
-/// dialect — a route returning `None` is a loss within an admitted dialect, and
-/// the existing geometry and topology losses already say so.
+/// a transferable model is content-conditioned. A route returning `None` is a
+/// loss within an admitted dialect, and the existing geometry and topology
+/// losses already say so.
 ///
 /// [`Variant::Unknown`] matches no route at all, so no declared strategy was
 /// applied to it: [`Admission::AdmittedUnverified`].
@@ -106,7 +106,7 @@ pub(crate) fn admission(variant: Variant) -> Admission {
     }
 }
 
-/// The dialect-unverified loss (§7), charged exactly on
+/// The dialect-unverified loss, charged exactly on
 /// [`Admission::AdmittedUnverified`].
 ///
 /// `None` exactly when the classified match is [`Admission::Admitted`]. The
@@ -124,7 +124,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     };
     Some(CatiaLossCode::SourceDialectUnverified.note(format!(
         "This container matched no CATIA V5 storage family's structural invariants, so it \
-is `{}`. No decode route declares a grammar for that row, and no declared \
+         is `{}`. No decode route declares a grammar for that row, and no declared \
                  dialect grammar was substituted; the file was \
                  admitted under the metadata-IR fallback, which enumerates the container and \
                  retains the source bytes without applying any family's record grammar.",
@@ -138,7 +138,7 @@ is `{}`. No decode route declares a grammar for that row, and no declared \
 /// `<ServicePack>`, and `<HotFix>` are decimal ASCII that
 /// `container::parse_last_save_version` resolves to integers — the whole tuple
 /// is absent unless all four read — and `<BuildDate>` is carried through as the
-/// string it is. Nothing here is branched on (§3.4): it is provenance recorded
+/// string it is. Nothing here branches on the tuple; it is provenance recorded
 /// as evidence.
 fn declared(scan: &ContainerScan) -> BTreeMap<String, String> {
     let mut declared = BTreeMap::new();

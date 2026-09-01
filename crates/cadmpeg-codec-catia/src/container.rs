@@ -1541,8 +1541,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         ));
     }
     notes.push(
-        "container-level enumeration; run `decode` to build geometry from the standard-nested \
-         BREP stream (other variants are container-only)"
+        "container-level enumeration; `decode` applies the identified storage family's \
+         standard, freeform, E5, zero-entity, or metadata-fallback route"
             .to_string(),
     );
 

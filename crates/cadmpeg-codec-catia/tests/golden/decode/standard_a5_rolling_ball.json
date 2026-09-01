@@ -960,7 +960,7 @@
       "outer V5_CFV2 container: directory offset 1095 + length 0 = 1095 (file size 1095); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
       "nested V5_CFV2 at file offset 524 with a CATIA_V5 CB0001 directory of 2 stream(s)",
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 2 edge-table delimiter(s)",
-      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+      "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
     ]
   },
   "source_fidelity": {

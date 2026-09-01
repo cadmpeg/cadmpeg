@@ -778,7 +778,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     Some(FamilyOutput {
         ir,
         report: DecodeReport::unclassified(
-            "catia",
+            crate::dialect::FORMAT,
             cadmpeg_ir::DecodeTransfer::full(true),
             coverage,
             losses,
@@ -1011,7 +1011,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         let Some(source) = surface.source_object.as_ref() else {
             continue;
         };
-        if source.format != "catia" {
+        if source.format != crate::dialect::FORMAT {
             continue;
         }
         let Some(tag) = source

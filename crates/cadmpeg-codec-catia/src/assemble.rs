@@ -31,7 +31,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 
 pub(crate) fn cgm_source_key(kind: &str, key: impl std::fmt::Display) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "catia".to_string(),
+        format: crate::dialect::FORMAT.to_string(),
         object_id: format!("cgm-{kind}:{key}"),
         name: None,
         color: None,
@@ -540,7 +540,7 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeReport::unclassified(
-        "catia",
+        crate::dialect::FORMAT,
         cadmpeg_ir::DecodeTransfer::full(true),
         std::collections::BTreeMap::new(),
         losses,
@@ -658,7 +658,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     ));
 
     DecodeReport::unclassified(
-        "catia",
+        crate::dialect::FORMAT,
         if container_only {
             cadmpeg_ir::DecodeTransfer::ContainerOnly
         } else {

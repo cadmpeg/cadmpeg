@@ -41,6 +41,6 @@
     "outer V5_CFV2 container: directory offset 679 + length 0 = 679 (file size 679); variant: float-packed inner-no-FBB (object-stream b5 03 topology): freeform carrier decode supported",
     "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
     "reconstructed BREP stream from MainDataStream + SurfacicReps: 0 FBB group(s) containing 0 face row(s), 3 vertex record(s), 0 edge-table delimiter(s)",
-    "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
   ]
 }
