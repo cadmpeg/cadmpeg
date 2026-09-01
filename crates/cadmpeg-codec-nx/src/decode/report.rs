@@ -275,8 +275,9 @@ pub(crate) fn build_geometry_report(
         ));
     }
 
-    let (dialects, notes) = summarize(scan);
-    losses.extend(crate::dialect::dialect_losses(&dialects));
+    let (classification, notes) = summarize(scan);
+    let (dialects, dialect_losses) = classification.into_report_parts();
+    losses.extend(dialect_losses);
     DecodeReport::classified(
         dialects,
         cadmpeg_ir::DecodeTransfer::full(true),

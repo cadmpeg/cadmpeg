@@ -486,8 +486,9 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         );
     }
 
-    let (dialects, notes) = summarize(scan);
-    losses.extend(crate::dialect::dialect_losses(&dialects));
+    let (classification, notes) = summarize(scan);
+    let (dialects, dialect_losses) = classification.into_report_parts();
+    losses.extend(dialect_losses);
     DecodeReport::classified(
         dialects,
         if container_only {
@@ -503,13 +504,13 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 }
 
 /// Classify a scan and build its inspection and decode notes.
-pub fn summarize(scan: &Scan) -> (cadmpeg_core::dialect::DialectLayers, Vec<String>) {
+pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<String>) {
     let c = &scan.container;
     let (control_count, classified_control_count) = offset_store_control_counts(c);
     let mut notes = if c.is_legacy_cfb() {
         vec![format!(
-            "legacy CFB container: UGII payload version {:#04x}, {} directory entr{}",
-            c.version,
+            "legacy CFB container: UGII payload version {}, {} directory entr{}",
+            crate::dialect::format_version_byte(c.version),
             c.header_entry_count,
             if c.header_entry_count == 1 {
                 "y"
@@ -519,8 +520,8 @@ pub fn summarize(scan: &Scan) -> (cadmpeg_core::dialect::DialectLayers, Vec<Stri
         )]
     } else {
         vec![format!(
-            "SPLMSSTR container: version {:#04x}, file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
-            c.version,
+            "SPLMSSTR container: version {}, file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
+            crate::dialect::format_version_byte(c.version),
             c.file_tag,
             c.footer_offset,
             c.header_entry_count,
@@ -539,9 +540,6 @@ pub fn summarize(scan: &Scan) -> (cadmpeg_core::dialect::DialectLayers, Vec<Stri
         notes.push(format!(
             "NX object model: {classified_control_count} of {control_count} bounded offset-store control block(s) have an admitted complete grammar"
         ));
-    }
-    if let Some(schema) = scan.streams.iter().find_map(|s| s.schema.as_deref()) {
-        notes.push(format!("Parasolid schema: {schema}"));
     }
     let framed_om_sections = c.om_sections();
     if !framed_om_sections.is_empty() {

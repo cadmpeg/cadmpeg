@@ -45,8 +45,8 @@ fn the_modern_container_reports_the_splmsstr_row_at_inspect_and_decode() {
     assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
     assert_eq!(matched.admission(), Admission::Admitted);
     assert_eq!(matched.declared()["splmsstr_version"], "6");
-    assert_eq!(matched.declared()["product_version"], "NX 2027.3102");
     assert!(!matched.declared().contains_key("ugii_version"));
+    assert_eq!(matched.declared().len(), 1);
     // The summary's container kind and its dialect id come from one enum.
     assert_eq!(summary.container_kind, "splmsstr");
 
@@ -62,6 +62,7 @@ fn the_legacy_container_reports_the_cfb_row_at_inspect_and_decode() {
     assert_eq!(matched.admission(), Admission::Admitted);
     assert!(matched.declared().contains_key("ugii_version"));
     assert!(!matched.declared().contains_key("splmsstr_version"));
+    assert_eq!(matched.declared().len(), 1);
     assert_eq!(summary.container_kind, "cfb");
 
     let result = decode(legacy_cfb_with_ug_part());

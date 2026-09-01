@@ -883,17 +883,14 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 # The legacy arm reads the corresponding byte from the validated UGII payload
 # prefix. Both arms store the byte on `Container::version`. It appears in the
 # human summary and in the primary `DialectMatch.declared` map as
-# `splmsstr_version` or `ugii_version`. The modern declaration also records
-# `product_version` from the first OM store section carrying a `store_version`
-# record. None of these keys remains in `SourceMeta.attributes`, and no decode
-# branch compares the container version byte.
+# `splmsstr_version` or `ugii_version`. No decode branch compares the byte.
 #
 # The product string is provenance too. `product_record_layout`
 # (om.rs:8992-9011) requires the text to start with `NX ` (om.rs:9001) and
 # accepts two framings (`ProductRecordForm::Modern` / `LegacyFeature`,
-# om.rs:8986-8990), but the extracted text is only carried as an opaque
-# `String` into native records (native/om.rs:42, :1850). Nothing parses a
-# release number from it. Cardinality is used structurally
+# om.rs:8986-8990). Each extracted value is carried as an opaque `String` on
+# its native `StoreHeader`; it is not projected onto the host dialect match.
+# Nothing parses a release number from it. Cardinality is used structurally
 # (`product_record_count != 1` rejects a candidate, om.rs:9336-9341); content
 # is not.
 #
