@@ -97,7 +97,12 @@ impl FreecadLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
+        let strict_floor = match self {
+            Self::SourceGuiSchemaUnverified => None,
+            other => other.shared_taxonomy().strict_floor(),
+        };
         LossKind::namespaced("fcstd", self.code(), self.shared_taxonomy())
+            .with_strict_floor(strict_floor)
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -160,5 +165,21 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn gui_schema_recovery_does_not_trigger_document_dialect_strictness() {
+        assert_eq!(
+            FreecadLossCode::SourceGuiSchemaUnverified
+                .kind()
+                .strict_floor(),
+            None
+        );
+        assert_eq!(
+            FreecadLossCode::SourceDialectUnverified
+                .kind()
+                .strict_floor(),
+            Some(cadmpeg_ir::report::Severity::Warning)
+        );
     }
 }

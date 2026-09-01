@@ -294,6 +294,7 @@ impl RhinoLossCode {
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::IntegrityFailure | Self::ObjectFramingUndecodable => Some(Severity::Warning),
+            Self::SourceWriterStampUnverified => None,
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -398,5 +399,19 @@ mod tests {
             assert_eq!(note.code.local_code(), code.code());
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn missing_writer_stamp_does_not_trigger_document_dialect_strictness() {
+        assert_eq!(
+            RhinoLossCode::SourceWriterStampUnverified
+                .kind()
+                .strict_floor(),
+            None
+        );
+        assert_eq!(
+            RhinoLossCode::SourceDialectUnverified.kind().strict_floor(),
+            Some(cadmpeg_ir::report::Severity::Warning)
+        );
     }
 }

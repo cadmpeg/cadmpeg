@@ -1197,17 +1197,11 @@ pub(crate) fn container_only_result(
     )?)
 }
 
-/// Return whether a version is inspectable only from its header, the complement
-/// of [`ArchiveVersion::is_chunked`].
-pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
-    !archive.is_chunked()
-}
-
 /// Inspect a Rhino stream, applying the version-specific scan depth.
 pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
-    if header_only(header.archive_version) {
+    if !header.archive_version.is_chunked() {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
         return Ok(ContainerSummary::classified(

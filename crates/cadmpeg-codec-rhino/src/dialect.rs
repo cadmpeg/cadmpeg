@@ -29,7 +29,7 @@
 //! Archive words 2 through 90 are one chunked grammar: the value alone selects
 //! the chunk value width and the begin-chunk form, so a word no row claims
 //! still selects a scan. The totality row is therefore read, not refused. It
-//! is read with the strategy selected by its chunk width: `rhino:archive-4`
+//! is read with the strategy selected by its chunk width: `rhino:archive-5`
 //! below word 50 and `rhino:archive-90` at or above word 50. Admission is
 //! [`Admission::AdmittedUnverified`] with that row as `using`, and
 //! [`admission_loss`] charges
@@ -141,7 +141,7 @@ impl ArchiveVersion {
                 if self.uses_eight_byte_values() {
                     Self::V9.id()
                 } else {
-                    Self::V4.id()
+                    Self::LegacyV5.id()
                 },
             )
             .expect("Rhino dialect and grammar ids share one format namespace")
@@ -168,21 +168,13 @@ pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
         .declared()
         .get(DECLARED_ARCHIVE_VERSION)
         .map_or("absent", String::as_str);
-    let message = using.map_or_else(
-        || {
-            format!(
-                "archive version word {word} has no declared row, so no declared identity was \
-                 verified. No declared Rhino grammar was substituted; the archive word selects \
-                 the chunk value width."
-            )
-        },
-        |using| {
-            format!(
-                "archive version word {word} has no declared row, so no declared identity was \
-                 verified. The document is read using {using}, which uses the chunk value width \
-                 selected by the archive word."
-            )
-        },
+    let using = using
+        .as_ref()
+        .expect("Rhino residual classification always names its selected grammar");
+    let message = format!(
+        "archive version word {word} has no declared row, so no declared identity was \
+         verified. The document is read using {using}, which uses the chunk value width \
+         selected by the archive word."
     );
     Some(crate::loss::RhinoLossCode::SourceDialectUnverified.note(message))
 }
