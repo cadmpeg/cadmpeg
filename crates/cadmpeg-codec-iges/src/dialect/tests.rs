@@ -12,11 +12,20 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(
-        &IgesDialect::ALL.map(IgesDialect::id),
-        FORMAT,
-    );
+fn representation_version_products_and_registry_rows_are_closed_bidirectionally() {
+    let mut ids = VersionFlag::ALL
+        .map(|flag| dialect_id(Representation::FixedAscii, Some(flag)))
+        .to_vec();
+    for representation in [Representation::CompressedAscii, Representation::Binary] {
+        ids.extend(
+            VersionFlag::ALL
+                .into_iter()
+                .filter(|flag| flag.verified_version().is_some())
+                .map(|flag| dialect_id(representation, Some(flag))),
+        );
+    }
+    ids.push(dialect_id(Representation::Unknown, None));
+    cadmpeg_test_support::assert_dialect_rows_closed(&ids, FORMAT);
 }
 
 #[test]
@@ -24,11 +33,8 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
     // Fixed ASCII enumerates all eleven flags the version table declares.
     for flag in 1..=11 {
         assert_ne!(
-            IgesDialect::from_representation_and_version(
-                Representation::FixedAscii,
-                VersionFlag::exact(flag),
-            ),
-            IgesDialect::Unknown,
+            dialect_id(Representation::FixedAscii, VersionFlag::exact(flag)),
+            dialect_id(Representation::Unknown, None),
             "fixed ASCII flag {flag} must name its own row"
         );
     }
@@ -36,21 +42,15 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
     for representation in [Representation::CompressedAscii, Representation::Binary] {
         for flag in [6, 8, 9, 10, 11] {
             assert_ne!(
-                IgesDialect::from_representation_and_version(
-                    representation,
-                    VersionFlag::exact(flag),
-                ),
-                IgesDialect::Unknown,
+                dialect_id(representation, VersionFlag::exact(flag)),
+                dialect_id(Representation::Unknown, None),
                 "{representation:?} flag {flag} must name its own row"
             );
         }
         for flag in [1, 2, 3, 4, 5, 7] {
             assert_eq!(
-                IgesDialect::from_representation_and_version(
-                    representation,
-                    VersionFlag::exact(flag),
-                ),
-                IgesDialect::Unknown,
+                dialect_id(representation, VersionFlag::exact(flag)),
+                dialect_id(Representation::Unknown, None),
                 "{representation:?} flag {flag} has no declared row"
             );
         }
@@ -66,7 +66,7 @@ fn every_write_target_names_a_fixed_ascii_row() {
         IgesVersion::V5_2,
         IgesVersion::V5_3,
     ] {
-        let id = IgesDialect::fixed_ascii(version).id();
+        let id = fixed_ascii_id(version);
         assert_eq!(id.as_str(), format!("iges:{}-fixed-ascii", version.name()));
     }
 }
@@ -99,7 +99,7 @@ fn global_charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> 
     let expected = IgesLossCode::SourceDialectUnverified
         .note(String::new())
         .code;
-    let matched = IgesDialect::classify(Representation::FixedAscii, global);
+    let matched = classify(Representation::FixedAscii, global);
     dialect_loss(&matched, global).is_some_and(|note| note.code == expected)
 }
 
@@ -211,7 +211,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             Representation::CompressedAscii,
             Representation::Binary,
         ] {
-            let matched = IgesDialect::classify(representation, &global);
+            let matched = classify(representation, &global);
             assert_eq!(
                 matched.admission() == Admission::Admitted,
                 !charged,
@@ -253,7 +253,7 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
                 "iges:5.3-compressed-ascii",
             ),
         ] {
-            let matched = IgesDialect::classify(representation, &global);
+            let matched = classify(representation, &global);
             let context = format!("field 23 {:?} as {representation:?}", case.declaration);
 
             assert_eq!(matched.dialect().as_str(), expected_id, "{context}");
@@ -422,8 +422,8 @@ fn the_totality_row_never_carries_a_verified_admission() {
             Representation::CompressedAscii,
             Representation::Binary,
         ] {
-            let matched = IgesDialect::classify(representation, &global);
-            if matched.dialect().as_str() == IgesDialect::Unknown.id().as_str() {
+            let matched = classify(representation, &global);
+            if matched.dialect() == &dialect_id(Representation::Unknown, None) {
                 assert_ne!(
                     matched.admission(),
                     Admission::Admitted,

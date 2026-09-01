@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-use crate::dialect::IgesDialect;
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, loss, native, parameter};
@@ -214,7 +213,7 @@ pub(crate) fn inspect(
     source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
     let parse = PhysicalParse::run(window, Some(ctx), ParseMode::Inspect)?;
-    let primary = IgesDialect::classify(representation, &parse.global);
+    let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses(&primary);
     losses.extend(parse.record_losses());
     let mut summary = card::summarize(&parse.scan, primary);
@@ -317,7 +316,7 @@ fn decode_with_occurrence_limits(
     if let Some(context) = &length_context {
         ir.tolerances.linear = context.minimum_resolution_mm();
     }
-    let primary = IgesDialect::classify(representation, &parse.global);
+    let primary = crate::dialect::classify(representation, &parse.global);
     ir.source = Some(source_meta(&parse.global, representation));
     let projection = match length_context.filter(|_| !options.container_only) {
         Some(context) => {
