@@ -18,16 +18,14 @@ fn assert_unsupported_dialect(
     expected_message: &str,
 ) {
     let cadmpeg_core::CodecError::UnsupportedDialect {
-        dialect_match,
-        message,
-        ..
+        dialects, message, ..
     } = error
     else {
         panic!("expected a typed STEP dialect refusal, found {error:?}");
     };
-    assert_eq!(dialect_match.dialect().as_str(), expected_id);
+    assert_eq!(dialects.primary().dialect().as_str(), expected_id);
     assert_eq!(
-        dialect_match.admission(),
+        dialects.primary().admission(),
         cadmpeg_core::dialect::Admission::Refused
     );
     assert_eq!(message, expected_message);

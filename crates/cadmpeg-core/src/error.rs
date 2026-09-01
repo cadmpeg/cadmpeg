@@ -2,7 +2,7 @@
 //! Errors returned by codec parsing and resource enforcement.
 
 use crate::decode::{ErrorContext, ResourceLimit, SourceLocation};
-use crate::dialect::DialectMatch;
+use crate::dialect::DialectLayers;
 use crate::target::TargetRefusal;
 
 /// Errors a codec can raise.
@@ -72,10 +72,10 @@ pub enum CodecError {
     /// The identification is boxed: it is the widest payload any variant of
     /// this enum carries, and every `Result<_, CodecError>` in the workspace
     /// would otherwise grow to its width.
-    #[error("unsupported {} dialect {}: {message}", .dialect_match.format(), .dialect_match.dialect())]
+    #[error("unsupported {} dialect {}: {message}", .dialects.primary().format(), .dialects.primary().dialect())]
     UnsupportedDialect {
-        /// The identification made before the refusal.
-        dialect_match: Box<DialectMatch>,
+        /// Every format layer identified before the refusal.
+        dialects: Box<DialectLayers>,
         /// Why the identified dialect is not supported.
         message: String,
     },
@@ -119,7 +119,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::CodecError;
-    use crate::dialect::{DialectId, DialectMatch};
+    use crate::dialect::{DialectId, DialectLayers, DialectMatch};
 
     #[test]
     fn malformed_constructor_formats_the_message_once() {
@@ -145,12 +145,16 @@ mod tests {
     #[test]
     fn a_dialect_refusal_keeps_the_identification_it_refused() {
         let error = CodecError::UnsupportedDialect {
-            dialect_match: Box::new(
-                DialectMatch::refused(DialectId::pinned("acis:save-format-binary-other"))
-                    .with_declared(BTreeMap::from([(
-                        "save_format".to_owned(),
-                        "700".to_owned(),
-                    )])),
+            dialects: Box::new(
+                DialectLayers::new(
+                    DialectMatch::refused(DialectId::pinned("acis:save-format-binary-other"))
+                        .with_declared(BTreeMap::from([(
+                            "save_format".to_owned(),
+                            "700".to_owned(),
+                        )])),
+                    vec![DialectMatch::refused(DialectId::pinned("sat:binary"))],
+                )
+                .expect("the test layers have distinct format keys"),
             ),
             message: "save format 700 has no read grammar".into(),
         };
@@ -159,13 +163,14 @@ mod tests {
             error.to_string(),
             "unsupported acis dialect acis:save-format-binary-other: save format 700 has no read grammar"
         );
-        let CodecError::UnsupportedDialect { dialect_match, .. } = &error else {
+        let CodecError::UnsupportedDialect { dialects, .. } = &error else {
             panic!("the variant just built is the one matched");
         };
         assert_eq!(
-            dialect_match.dialect().as_str(),
+            dialects.primary().dialect().as_str(),
             "acis:save-format-binary-other"
         );
-        assert_eq!(dialect_match.declared()["save_format"], "700");
+        assert_eq!(dialects.primary().declared()["save_format"], "700");
+        assert_eq!(dialects.iter().count(), 2);
     }
 }

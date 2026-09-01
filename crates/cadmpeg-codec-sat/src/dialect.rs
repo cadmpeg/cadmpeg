@@ -17,8 +17,8 @@
 //! BinaryFile`, or the two text header lines. A recognized stream that has no
 //! binary record-stream boundary or complete text framing takes
 //! [`Admission::Refused`]. Inspection reports that match, and decode returns
-//! [`cadmpeg_core::CodecError::UnsupportedDialect`] carrying the same primary
-//! match.
+//! [`cadmpeg_core::CodecError::UnsupportedDialect`] carrying the same host and
+//! kernel layers.
 //!
 //! The kernel save format is banded on the separate `acis:` layer. The Spatial
 //! ACIS record decoders are verified against majors 217 and 218; the ASM record
