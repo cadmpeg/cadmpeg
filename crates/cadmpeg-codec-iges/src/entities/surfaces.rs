@@ -1415,7 +1415,7 @@ pub(super) fn project(
         ) {
             losses.push(entity_loss(
                 entry,
-                "directrix entity is outside the declared dialect",
+                "directrix entity is outside the effective specification family",
             ));
             continue;
         }

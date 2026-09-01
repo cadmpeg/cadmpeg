@@ -277,21 +277,12 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-#[derive(Clone, Copy)]
-struct TargetProfile {
-    version: crate::IgesVersion,
-}
-
-impl TargetProfile {
-    const fn new(version: crate::IgesVersion) -> Self {
-        Self { version }
-    }
-
+impl crate::IgesVersion {
     fn admits(self, entity: &Entity) -> bool {
         if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
             return false;
         }
-        match self.version {
+        match self {
             crate::IgesVersion::V4_0 => matches!(
                 (entity.type_code, entity.form),
                 (
@@ -326,8 +317,7 @@ impl TargetProfile {
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
                     514 => {
-                        entity.form == 1
-                            || (entity.form == 2 && self.version == crate::IgesVersion::V5_3)
+                        entity.form == 1 || (entity.form == 2 && self == crate::IgesVersion::V5_3)
                     }
                     _ => false,
                 }
@@ -340,8 +330,7 @@ fn ensure_version_support(
     entities: &[Entity],
     version: crate::IgesVersion,
 ) -> Result<(), CodecError> {
-    let profile = TargetProfile::new(version);
-    if let Some(entity) = entities.iter().find(|entity| !profile.admits(entity)) {
+    if let Some(entity) = entities.iter().find(|entity| !version.admits(entity)) {
         return Err(CodecError::NotImplemented(format!(
             "IGES {} does not define emitted entity Type {} Form {}",
             version.name(),

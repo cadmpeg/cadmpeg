@@ -26,10 +26,12 @@ pub(crate) fn plan(
             Replay::Replayed { bytes } => {
                 Ok(replayed_plan(input.ir, resolved.dialect().clone(), bytes))
             }
-            Replay::Declined { .. } => Err(resolved.unavailable(
-                "its retained source image is unavailable for byte replay and the semantic \
-                     writer cannot synthesize it",
-            )),
+            Replay::Declined { reason } => Err(resolved.unavailable(match reason {
+                Some(reason) => format!(
+                    "{reason}; the semantic writer cannot synthesize the inherited dialect"
+                ),
+                None => "its retained source image is unavailable for byte replay and the semantic writer cannot synthesize it".to_owned(),
+            })),
         };
     };
     let preservation_eligible = resolved.source_preservation_eligible();

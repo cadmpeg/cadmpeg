@@ -951,7 +951,8 @@ impl Resolution {
                 String::from_utf8_lossy(bytes).into_owned()
             }
             Value::ForbiddenString => {
-                "a string payload contains a byte forbidden by the declared dialect".into()
+                "a string payload contains a byte forbidden by the effective specification family"
+                    .into()
             }
         }
     }
