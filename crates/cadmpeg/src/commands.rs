@@ -4,9 +4,9 @@
 mod reporting;
 
 use reporting::{
-    command_report_json, fidelity_diff, fidelity_differs, fidelity_json, losses,
-    print_check_report, print_decode_report, print_export_emission, print_fidelity_summary,
-    print_id_delta, print_source_diff, write_command_report, write_json_report, CommandReportBody,
+    command_report_json, fidelity_diff, fidelity_differs, losses, print_check_report,
+    print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
+    print_source_diff, write_command_report, write_json_report, CommandReportBody,
 };
 
 use cadmpeg_ir::codec::TargetRequest;
@@ -148,7 +148,7 @@ struct CheckReportPayload<'a> {
 struct DiffReportPayload<'a> {
     different: bool,
     diff: &'a cadmpeg_ir::IrDiff,
-    source_fidelity: serde_json::Value,
+    source_fidelity: &'a reporting::FidelitySummary,
 }
 
 /// Inspect a native container and print its entries.
@@ -551,7 +551,7 @@ pub fn diff(
     let payload = DiffReportPayload {
         different,
         diff: &result,
-        source_fidelity: fidelity_json(&fidelity),
+        source_fidelity: &fidelity,
     };
     write_json_report(a.path, report_path, force, "diff", &payload, None)?;
     if json {
