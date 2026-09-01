@@ -119,7 +119,7 @@ mod tests {
             for target in encoder.targets() {
                 for alias in target.aliases {
                     assert!(
-                        Format::from_name(alias).is_none(),
+                        !Format::is_known_name(alias),
                         "{}: alias {alias} of {} is also an output format name",
                         encoder.id(),
                         target.id

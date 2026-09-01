@@ -15,7 +15,6 @@ pub(crate) struct FormatDescriptor {
     pub decoder: Option<DecoderConstructor>,
     pub output: Option<Format>,
     pub output_order: Option<u8>,
-    pub output_names: &'static [&'static str],
     pub output_extensions: &'static [&'static str],
     pub encoder: Option<EncoderConstructor>,
 }
@@ -42,12 +41,11 @@ macro_rules! descriptor {
             decoder: Some($decoder),
             output: None,
             output_order: None,
-            output_names: &[],
             output_extensions: &[],
             encoder: None,
         }
     };
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $outputs:expr, $output_exts:expr, $encoder:expr) => {
+    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $encoder:expr) => {
         FormatDescriptor {
             id: $id,
             input_names: $inputs,
@@ -55,7 +53,6 @@ macro_rules! descriptor {
             decoder: Some($decoder),
             output: Some($format),
             output_order: Some($order),
-            output_names: $outputs,
             output_extensions: $output_exts,
             encoder: Some($encoder),
         }
@@ -72,7 +69,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         Format::Fcstd,
         2,
         &["fcstd"],
-        &["fcstd"],
         || Box::new(cadmpeg_codec_freecad::FcstdCodec)
     ),
     #[cfg(feature = "f3d")]
@@ -83,7 +79,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_f3d::F3dCodec),
         Format::F3d,
         3,
-        &["f3d"],
         &["f3d"],
         || Box::new(cadmpeg_codec_f3d::F3dCodec)
     ),
@@ -102,7 +97,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_sldprt::SldprtCodec),
         Format::Sldprt,
         4,
-        &["sldprt"],
         &["sldprt"],
         || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
     ),
@@ -126,7 +120,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_rhino::RhinoCodec),
         Format::Rhino,
         5,
-        &["rhino", "3dm"],
         &["3dm"],
         || Box::new(cadmpeg_codec_rhino::RhinoEncoder)
     ),
@@ -138,7 +131,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_step::StepCodec::default()),
         Format::Step,
         1,
-        &["step"],
         &["step", "stp"],
         || Box::new(cadmpeg_codec_step::StepCodec::default())
     ),
@@ -150,7 +142,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_iges::IgesCodec),
         Format::Iges,
         6,
-        &["iges", "igs"],
         &["iges", "igs"],
         || Box::new(cadmpeg_codec_iges::IgesEncoder)
     ),
@@ -168,7 +159,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         decoder: None,
         output: Some(Format::Cadir),
         output_order: Some(0),
-        output_names: &["cadir", "json"],
         output_extensions: &["cadir", "json"],
         encoder: Some(|| Box::new(CadirEncoder)),
     },
@@ -241,17 +231,13 @@ mod tests {
             );
             if let Some(format) = descriptor.output {
                 assert_eq!(format.name(), descriptor.id);
-                assert!(!descriptor.output_names.is_empty());
                 assert!(!descriptor.output_extensions.is_empty());
-                if format != Format::Cadir {
-                    for name in descriptor.output_names {
-                        assert!(
-                            crate::registry::is_format_name(name),
-                            "{} output spelling {name:?} is absent from docs/dialects.toml",
-                            descriptor.id
-                        );
-                    }
-                }
+                assert_eq!(
+                    crate::registry::canonical_format_name(descriptor.id),
+                    Some(descriptor.id),
+                    "{} output format is absent from docs/dialects.toml",
+                    descriptor.id
+                );
             }
         }
     }

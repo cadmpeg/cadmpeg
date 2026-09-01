@@ -48,10 +48,16 @@
 # it carries the discriminant value in its bytes, verified by reading them,
 # but it was not captured from vendor output. It witnesses that the row is
 # real; it does not witness vendor production of that dialect.
-#
+
 # Each row's comment cites the classification code that was read to verify its
 # discriminants. Where the superseded RFC's draft inventory disagrees with the
 # code, the code wins and the comment says so.
+
+# CADIR is a dialect-free format. Its section owns the neutral output-format
+# words without inventing a dialect row.
+[format.cadir]
+complete = true
+aliases = ["json"]
 
 # --------------------------------------------------------------------------
 # IGES
@@ -307,6 +313,7 @@ witness = "code:crates/cadmpeg-codec-iges/src/dialect.rs"
 # schema row (archive.rs:11, codec.rs:224-226), so it is not an identity row.
 [format.step]
 complete = false
+aliases = ["stp"]
 
 [[dialect]]
 # `StepSchema::Ap203Edition1` (options.rs:83). Fixture verified: line 5 of
