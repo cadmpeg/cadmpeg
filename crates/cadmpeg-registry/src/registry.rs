@@ -223,10 +223,12 @@ impl Registries {
     }
 
     /// The joined rows of one format, in registry order.
-    pub(crate) fn rows_of<'a>(&'a self, format: &str) -> impl Iterator<Item = &'a DialectEntry> {
-        let prefix = format!("{format}:");
+    pub(crate) fn rows_of<'a, 'format>(
+        &'a self,
+        format: &'format str,
+    ) -> impl Iterator<Item = &'a DialectEntry> + use<'a, 'format> {
         self.rows_all()
-            .filter(move |entry| entry.id.as_str().starts_with(&prefix))
+            .filter(move |entry| entry.id.namespace() == format)
     }
 
     pub(crate) fn rows_all(&self) -> impl Iterator<Item = &DialectEntry> {
@@ -448,11 +450,7 @@ mod tests {
                 );
                 for alias in target.aliases {
                     assert!(
-                        !registries
-                            .formats
-                            .iter()
-                            .any(|word| word.as_str() == *alias)
-                            && Format::from_name(alias).is_none(),
+                        !is_format_name(alias),
                         "{}: alias {alias:?} is also an output-format word",
                         target.id
                     );

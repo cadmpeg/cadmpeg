@@ -270,6 +270,15 @@ fn target_selection_owns_format_and_dialect_grammar() {
     assert_eq!(inferred.request(), TargetRequest::Explicit("5.1"));
 }
 
+#[cfg(feature = "step")]
+#[test]
+fn a_format_alias_does_not_become_a_dialect_request() {
+    let selection = TargetSelection::resolve(Some("stp"), Some(Path::new("part.stp")))
+        .expect("the identity registry owns the STEP alias");
+    assert_eq!(selection.format, Format::Step);
+    assert_eq!(selection.request(), TargetRequest::Inherit);
+}
+
 #[test]
 fn target_selection_rejects_an_empty_qualified_dialect() {
     let error = TargetSelection::resolve(Some("cadir:"), None).unwrap_err();

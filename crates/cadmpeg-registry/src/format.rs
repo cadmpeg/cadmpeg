@@ -36,9 +36,6 @@ impl Format {
     #[must_use]
     pub fn is_known_name(name: &str) -> bool {
         crate::registry::is_format_name(name)
-            || crate::descriptors::FORMAT_DESCRIPTORS
-                .iter()
-                .any(|descriptor| descriptor.output_names.contains(&name))
     }
 
     /// Every output format this build carries, in registry order.
@@ -55,8 +52,9 @@ impl Format {
     /// no compiled target alias lands here.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
+        let canonical = crate::registry::canonical_format_name(name)?;
         crate::descriptors::writable()
-            .find(|descriptor| descriptor.output_names.contains(&name))
+            .find(|descriptor| descriptor.id == canonical)
             .and_then(|descriptor| descriptor.output)
     }
 
@@ -92,6 +90,7 @@ mod tests {
             "cadir",
             "json",
             "step",
+            "stp",
             "fcstd",
             "f3d",
             "sldprt",
@@ -110,5 +109,13 @@ mod tests {
             assert!(Format::is_known_name(name), "{name}");
         }
         assert!(!Format::is_known_name("5.1"));
+    }
+
+    #[cfg(feature = "step")]
+    #[test]
+    fn output_aliases_resolve_through_the_identity_registry() {
+        assert_eq!(Format::from_name("stp"), Some(Format::Step));
+        assert_eq!(Format::from_name("json"), Some(Format::Cadir));
+        assert_eq!(Format::from_name("inventor"), None);
     }
 }

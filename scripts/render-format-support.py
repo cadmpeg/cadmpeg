@@ -69,6 +69,7 @@ class Target:
 # here must be a declared format. A new format therefore fails this renderer
 # until its published surfaces are named. Order is the published order.
 TARGETS: dict[str, Target] = {
+    "cadir": Target("CADIR"),
     "fcstd": Target("FreeCAD `.FCStd`", "cadmpeg-codec-freecad"),
     "f3d": Target("Autodesk Fusion `.f3d`", "cadmpeg-codec-f3d"),
     "inventor": Target("Autodesk Inventor `.ipt`/`.iam`", "cadmpeg-codec-inventor"),
