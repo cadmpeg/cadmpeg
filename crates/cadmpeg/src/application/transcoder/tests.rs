@@ -283,6 +283,28 @@ fn a_format_alias_does_not_become_a_dialect_request() {
 fn target_selection_rejects_an_empty_qualified_dialect() {
     let error = TargetSelection::resolve(Some("cadir:"), None).unwrap_err();
     assert!(error.to_string().contains("nothing after the colon"));
+    assert!(error.downcast_ref::<ConversionRefusal>().is_none());
+}
+
+#[test]
+fn an_unwritable_format_is_a_typed_plan_refusal() {
+    let error = TargetSelection::resolve(Some("catia:v5"), None).unwrap_err();
+    let refusal = error
+        .downcast_ref::<ConversionRefusal>()
+        .expect("unsupported output formats are semantic plan refusals");
+    assert!(matches!(
+        refusal,
+        ConversionRefusal::UnsupportedOutputFormat { .. }
+    ));
+    assert_eq!(
+        refusal.code(),
+        crate::application::refusal::RefusalCode::UnsupportedTarget
+    );
+    assert_eq!(
+        refusal.stage(),
+        crate::application::refusal::RefusalStage::Plan
+    );
+    assert_eq!(refusal.exit_code(), 1);
 }
 
 /// The cross-format default still lands on the catalog default.

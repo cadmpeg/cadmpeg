@@ -61,7 +61,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert_eq!(value["command"], "convert");
     assert_eq!(value["schema_version"], 7);
     assert_eq!(value["status"], "refused");
-    assert_eq!(value["refusal"]["stage"], "export");
+    assert_eq!(value["refusal"]["stage"], "plan");
     assert_eq!(value["refusal"]["code"], "empty_geometry");
     assert!(value["refusal"]["message"]
         .as_str()
