@@ -68,7 +68,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
-        SldprtLossCode::SourceDialectUnverified.kind()
+        SldprtLossCode::KernelDialectUnverified.kind()
     );
     assert_eq!(
         losses[0].strict_consequence(),

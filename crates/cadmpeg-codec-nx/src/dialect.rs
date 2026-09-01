@@ -21,17 +21,16 @@
 //! Each of the two host rows therefore names the grammar that actually parsed
 //! the document, so admission is [`Admission::Admitted`] on both. Embedded
 //! Parasolid streams form separate layers. A schema without a named grammar is
-//! admitted as residual and charges `source.dialect-unverified`; host admission
-//! does not launder the kernel layer.
+//! admitted as residual and charges `source.kernel-dialect-unverified`; host
+//! admission does not launder the kernel layer.
 //!
 //! # The version byte is provenance, not a discriminant
 //!
 //! `Container::version` is a `u8` — file offset 8 on the modern arm, byte 8 of
 //! the UGII payload prefix on the legacy arm. No branch in this codec reads it.
-//! Its consumers are report notes and the source attributes, which is exactly
-//! the role [`DialectMatch::declared`] exists for. It is recorded verbatim
-//! under the key the arm that read it already used, and it never moves the
-//! resolved id.
+//! Its consumers are report notes and [`DialectMatch::declared`]. It is
+//! recorded verbatim under the key the arm that read it already used, and it
+//! never moves the resolved id.
 //!
 //! A successful scan always reads the version byte, so the value used by decode
 //! and the declaration recorded here cannot diverge.
@@ -48,7 +47,7 @@
 
 use crate::container::Container;
 use crate::loss::NxLossCode;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::LossNote;
 
 use std::collections::BTreeMap;
@@ -109,19 +108,8 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
 pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
     layers
         .iter()
-        .filter_map(|matched| match matched.admission() {
-            Admission::Admitted | Admission::Refused => None,
-            Admission::AdmittedUnverified { .. } => {
-                let message = cadmpeg_parasolid::unverified_message(matched).unwrap_or_else(|| {
-                    format!(
-                        "The `{}` source layer was admitted without a verified declared \
-                             grammar.",
-                        matched.dialect()
-                    )
-                });
-                Some(NxLossCode::SourceDialectUnverified.note(message))
-            }
-        })
+        .filter_map(cadmpeg_parasolid::unverified_message)
+        .map(|message| NxLossCode::KernelDialectUnverified.note(message))
         .collect()
 }
 

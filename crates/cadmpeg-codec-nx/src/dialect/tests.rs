@@ -7,6 +7,7 @@
 use super::*;
 use crate::container::MAGIC;
 use crate::test_support::{extract_streams, single_part_prt};
+use cadmpeg_core::dialect::Admission;
 use std::sync::OnceLock;
 
 #[test]
@@ -59,7 +60,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
 
     let losses = dialect_losses(&layers);
     assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].code, NxLossCode::SourceDialectUnverified.kind());
+    assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
     assert_eq!(
         losses[0].strict_consequence(),
         cadmpeg_ir::report::StrictConsequence::Reject

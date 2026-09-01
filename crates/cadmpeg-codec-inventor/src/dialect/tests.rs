@@ -328,6 +328,14 @@ fn inspect_and_decode_do_not_invent_a_kernel_layer_without_kernel_evidence() {
         .all(|loss| { loss.code != InventorLossCode::KernelDialectUnverified.kind() }));
 }
 
+#[test]
+fn a_selected_unparseable_kernel_carrier_charges_its_retained_layer() {
+    let matched = cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
+    let loss = kernel_dialect_loss(&matched).expect("refused embedded layer is a reported loss");
+    assert_eq!(loss.code, InventorLossCode::KernelCarrierUnparseable.kind());
+    assert!(loss.message.contains("native records remain retained"));
+}
+
 /// The loss names what diverged, so a reader does not have to re-derive it.
 #[test]
 fn the_charged_loss_names_the_declaration_that_diverged() {
