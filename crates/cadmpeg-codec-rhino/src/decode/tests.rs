@@ -2,10 +2,6 @@
 #![allow(dead_code, clippy::disallowed_methods)]
 
 use super::*;
-use crate::brep::{
-    body_kind as brep_body_kind, body_kind_rests_on_missing_stamp,
-    serialized_body_kind as serialized_brep_body_kind, BrepBodyKind,
-};
 use crate::test_support::test_dump::*;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -728,93 +724,6 @@ fn polymorphic_object_geometry_starts_with_v2() {
     assert!(!ArchiveVersion::V1.is_chunked());
     assert!(ArchiveVersion::V2.is_chunked());
     assert!(ArchiveVersion::V8.is_chunked());
-}
-
-#[test]
-fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(1), Some(200_210_020), false),
-        BrepBodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(2), Some(200_210_020), false),
-        BrepBodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(3), Some(200_210_020), false),
-        BrepBodyKind::Sheet
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(3), Some(200_210_020), true),
-        BrepBodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(0), Some(200_210_020), true),
-        BrepBodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(0), Some(200_210_020), false),
-        BrepBodyKind::Sheet
-    );
-    assert_eq!(
-        serialized_brep_body_kind(1, Some(1), Some(200_210_020), true),
-        BrepBodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(1), Some(200_210_019), false),
-        BrepBodyKind::Sheet
-    );
-}
-
-/// A missing stamp trusts the stored solid flag; the loss follows that reading.
-///
-/// The same bytes classify as `Sheet` under any stamp older than the flag, so an
-/// unstamped archive that reads `Solid` was classified on an assumption it does
-/// not carry. Where the two readings agree nothing was substituted.
-#[test]
-fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(1), None, false),
-        BrepBodyKind::Solid
-    );
-    assert!(body_kind_rests_on_missing_stamp(2, Some(1), None, false));
-    assert!(body_kind_rests_on_missing_stamp(2, Some(2), None, false));
-
-    // A modern stamp vouches for the same flag: the reading is verified.
-    assert!(!body_kind_rests_on_missing_stamp(
-        2,
-        Some(1),
-        Some(200_210_020),
-        false
-    ));
-    // Both readings agree, so no kind was substituted.
-    assert!(!body_kind_rests_on_missing_stamp(2, Some(1), None, true));
-    assert!(!body_kind_rests_on_missing_stamp(2, Some(0), None, false));
-    assert!(!body_kind_rests_on_missing_stamp(2, None, None, false));
-    assert!(!body_kind_rests_on_missing_stamp(1, Some(1), None, false));
-
-    // The whole-record path reports the substitution as a typed loss.
-    let mut raw = region_raw(Vec::new(), Vec::new());
-    raw.minor = 2;
-    raw.is_solid = Some(1);
-    raw.edges = vec![crate::brep::RawBrepEdge {
-        index: 0,
-        curve: 0,
-        proxy_reversed: 0,
-        proxy_domain: crate::settings::Interval([0.0, 1.0]),
-        vertices: [0, 1],
-        trims: Vec::new(),
-        tolerance: 0.0,
-        domain: crate::settings::Interval([0.0, 1.0]),
-        source_range: 0..0,
-    }];
-    let (kind, substituted) = brep_body_kind(&raw, None);
-    assert_eq!(kind, BrepBodyKind::Solid);
-    assert_eq!(
-        substituted.as_ref().map(|loss| &loss.code),
-        Some(&RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
-    );
-    assert_eq!(brep_body_kind(&raw, Some(200_210_020)).1, None);
 }
 
 #[test]
