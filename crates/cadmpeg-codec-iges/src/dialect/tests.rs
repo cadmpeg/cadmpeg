@@ -223,6 +223,21 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 }
 
 #[test]
+fn dialect_loss_presence_follows_admission_not_global_recovery() {
+    let verified = resolved_global("11");
+    let unverified_match = DialectMatch::unverified(
+        DialectId::pinned("iges:5.3-fixed-ascii"),
+        DialectId::pinned("iges:5.3-fixed-ascii"),
+    )
+    .unwrap();
+    assert!(dialect_loss(&unverified_match, &verified).is_some());
+
+    let unverified = resolved_global("3");
+    let admitted_match = DialectMatch::admitted(DialectId::pinned("iges:2.0-fixed-ascii"));
+    assert!(dialect_loss(&admitted_match, &unverified).is_none());
+}
+
+#[test]
 fn each_declaration_classifies_into_the_row_its_discriminants_match() {
     for case in CASES {
         let global = resolved_global(case.declaration);
