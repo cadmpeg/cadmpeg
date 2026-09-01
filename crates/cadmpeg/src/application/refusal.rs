@@ -168,6 +168,27 @@ impl RefusalCode {
             Self::BinaryStdoutRejected => "binary_stdout_rejected",
         }
     }
+
+    /// Stable workflow metadata shared by every refusal carrying this code.
+    const fn disposition(self) -> RefusalDisposition {
+        let (stage, may_write_report, exit_code) = match self {
+            Self::DecodeFailed => (RefusalStage::Decode, true, 2),
+            Self::UnsupportedDialect | Self::StrictDecodeRejected | Self::DecodeLossRejected => {
+                (RefusalStage::Decode, true, 1)
+            }
+            Self::CheckFailed => (RefusalStage::Check, true, 1),
+            Self::ExportLossRejected => (RefusalStage::Export, true, 1),
+            Self::EmptyGeometry | Self::UnsupportedTarget | Self::UnsupportedOutputFormat => {
+                (RefusalStage::Plan, true, 1)
+            }
+            Self::BinaryStdoutRejected => (RefusalStage::Plan, false, 2),
+        };
+        RefusalDisposition {
+            stage,
+            may_write_report,
+            exit_code,
+        }
+    }
 }
 
 impl fmt::Display for RefusalCode {
@@ -305,6 +326,14 @@ pub(crate) struct RefusalReport<'a> {
     target: Option<&'a TargetRefusal>,
 }
 
+/// Variant metadata that does not depend on a refusal's carried reports.
+#[derive(Debug, Clone, Copy)]
+struct RefusalDisposition {
+    stage: RefusalStage,
+    may_write_report: bool,
+    exit_code: u8,
+}
+
 impl ConversionRefusal {
     /// Constructs a decode refusal without duplicating ownership and wording at
     /// each surface that can inspect or load a native container.
@@ -333,21 +362,15 @@ impl ConversionRefusal {
         }
     }
 
+    /// Projects the stable workflow metadata from the refusal code.
+    const fn disposition(&self) -> RefusalDisposition {
+        self.code().disposition()
+    }
+
     /// Workflow stage for the v7 report envelope.
     #[must_use]
     pub const fn stage(&self) -> RefusalStage {
-        match self {
-            Self::DecodeFailed { .. }
-            | Self::UnsupportedDialect { .. }
-            | Self::StrictDecodeRejected { .. } => RefusalStage::Decode,
-            Self::UnsupportedOutputFormat { .. }
-            | Self::UnsupportedTarget { .. }
-            | Self::BinaryStdoutRejected { .. } => RefusalStage::Plan,
-            Self::DecodeLossRejected { .. } => RefusalStage::Decode,
-            Self::CheckFailed { .. } => RefusalStage::Check,
-            Self::EmptyGeometry { .. } => RefusalStage::Plan,
-            Self::ExportLossRejected { .. } => RefusalStage::Export,
-        }
+        self.disposition().stage
     }
 
     /// Presentation message shown to the user and written to `refusal.message`.
@@ -417,18 +440,7 @@ impl ConversionRefusal {
     /// reports; later refusals serialize every report they hold.
     #[must_use]
     pub const fn may_write_report(&self) -> bool {
-        match self {
-            Self::DecodeFailed { .. }
-            | Self::UnsupportedDialect { .. }
-            | Self::StrictDecodeRejected { .. }
-            | Self::CheckFailed { .. }
-            | Self::DecodeLossRejected { .. }
-            | Self::ExportLossRejected { .. }
-            | Self::EmptyGeometry { .. }
-            | Self::UnsupportedOutputFormat { .. }
-            | Self::UnsupportedTarget { .. } => true,
-            Self::BinaryStdoutRejected { .. } => false,
-        }
+        self.disposition().may_write_report
     }
 
     /// Decode report to include in an optional command report.
@@ -479,10 +491,7 @@ impl ConversionRefusal {
     /// exit 2 because they are operational failures.
     #[must_use]
     pub const fn exit_code(&self) -> u8 {
-        match self {
-            Self::DecodeFailed { .. } | Self::BinaryStdoutRejected { .. } => 2,
-            _ => 1,
-        }
+        self.disposition().exit_code
     }
 }
 
