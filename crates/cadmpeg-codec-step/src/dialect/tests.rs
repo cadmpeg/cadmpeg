@@ -127,6 +127,13 @@ const CASES: &[Case] = &[
         id: "step:ap242-e3",
         arcs: Some(" 1 0 10303 442 4 1 4 "),
     },
+    Case {
+        identifiers: &[
+            "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { iso 0 10303 442 4 1 4 }",
+        ],
+        id: "step:ap242-e3",
+        arcs: Some(" iso 0 10303 442 4 1 4 "),
+    },
     // The AP242 name with no object identifier: a complete declaration naming
     // no edition. Its own row, not the totality row.
     Case {

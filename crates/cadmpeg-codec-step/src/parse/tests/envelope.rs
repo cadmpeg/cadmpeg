@@ -413,6 +413,20 @@ fn parser_recovers_an_unknown_implementation_level_with_a_diagnostic() {
 }
 
 #[test]
+fn unknown_implementation_level_uses_the_retained_substitution_for_later_sections() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<item>=#1;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) =
+        crate::parse::parse(source).expect("the substituted 4;3 grammar admits ANCHOR");
+    assert_eq!(exchange.implementation_level(), "1;1");
+    assert_eq!(exchange.anchors.len(), 1);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified
+    );
+}
+
+#[test]
 fn parser_accepts_historical_implementation_level_spellings() {
     for level in ["1", "2", "2;1", "2;2", "3;1", "3;2"] {
         let source = format!(

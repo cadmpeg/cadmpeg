@@ -1097,20 +1097,7 @@ enum StringEncoding {
 }
 
 fn string_encoding(exchange: &Exchange) -> StringEncoding {
-    let edition = exchange
-        .header
-        .iter()
-        .find(|record| record.name == "FILE_DESCRIPTION")
-        .and_then(|record| record.parameters.get(1))
-        .and_then(|value| match value {
-            Value::String(bytes) => bytes
-                .split(|byte| *byte == b';')
-                .next()
-                .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                .and_then(|edition| edition.parse::<u8>().ok()),
-            _ => None,
-        });
-    if edition == Some(4) {
+    if exchange.uses_utf8_strings() {
         StringEncoding::Utf8
     } else {
         StringEncoding::Iso8859_1

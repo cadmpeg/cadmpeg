@@ -670,12 +670,13 @@ impl StepLossCode {
             }
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
-            | Self::ImplementationLevelUnverified
             | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
