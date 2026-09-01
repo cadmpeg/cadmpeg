@@ -87,9 +87,8 @@ impl DecodeSidecar {
     /// still owes, oldest first, and only then imposes the current version's
     /// field expectations. Version [`DECODE_SIDECAR_VERSION_V1`] rewrites bare
     /// loss `code` strings into namespaced objects under the `shared`
-    /// namespace. Version [`DECODE_SIDECAR_VERSION_V2`] needs no rewrite: the
-    /// v3 field it lacks, `report.dialects`, is `#[serde(default)]` and reads
-    /// back empty, which is what a v2 decode meant by omitting it. Both are
+    /// namespace. Version [`DECODE_SIDECAR_VERSION_V2`] gains an explicit
+    /// `report.dialects: null`, which is what omission meant in v2. Both are
     /// restamped to [`DECODE_SIDECAR_VERSION`].
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
         let mut value: serde_json::Value =
@@ -126,12 +125,15 @@ impl DecodeSidecar {
 
 /// Restamp a v2 sidecar as v3.
 ///
-/// The only v3 addition is an always-present `report.dialects`, and its
-/// `#[serde(default)]` already yields the empty list a v2 sidecar meant. So
-/// there is nothing to rewrite, only the stamp to move — and the stamp must
-/// move, because [`DecodeSidecar::from_json`] rejects any parsed sidecar whose
-/// version is not the current one.
+/// The only v3 addition is an always-present `report.dialects`. Its v2
+/// omission means an unclassified report, represented in v3 by JSON `null`.
 fn migrate_sidecar_v2_to_v3(value: &mut serde_json::Value) {
+    if let Some(report) = value
+        .get_mut("report")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        report.entry("dialects").or_insert(serde_json::Value::Null);
+    }
     value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION.into());
 }
 
