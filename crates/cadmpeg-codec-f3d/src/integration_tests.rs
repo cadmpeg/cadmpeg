@@ -45,6 +45,42 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
     assert_valid(&result);
 }
 
+/// A single-document archive names its own row, not the F3Z one.
+#[test]
+fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
+    let document = f3d_with_smbh(&synthetic_geometry_smbh());
+
+    let summary = F3dCodec
+        .inspect(
+            &mut Cursor::new(document.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    let inspected = summary
+        .dialects()
+        .expect("inspect must report exactly one primary F3D layer")
+        .primary()
+        .clone();
+    let inspected_dialects = summary.dialects();
+    assert_eq!(inspected.format(), "f3d");
+    assert_eq!(inspected.dialect().as_str(), "f3d:manifest-3-2-0-0");
+    assert_eq!(
+        inspected.declared()["top_level_manifest_version"],
+        "3-2-0-0"
+    );
+    assert_eq!(
+        inspected.admission(),
+        cadmpeg_core::dialect::Admission::Admitted
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(document), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.report().dialects(), inspected_dialects);
+    let source = decoded.ir().source.as_ref().unwrap();
+    assert_eq!(source.dialect(), Some(&inspected));
+}
+
 #[test]
 fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families() {
     let fixtures = [
