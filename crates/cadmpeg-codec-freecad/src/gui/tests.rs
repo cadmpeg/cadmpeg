@@ -3,7 +3,7 @@
 
 #![allow(clippy::doc_markdown)]
 
-use super::{classify_gui_schema, GuiSchemaAdmission};
+use super::schema::{classify, Admission};
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -11,18 +11,18 @@ use std::io::Cursor;
 
 #[test]
 fn gui_schema_admission_matches_the_verbatim_declaration() {
-    assert_eq!(classify_gui_schema(Some("1")), GuiSchemaAdmission::Schema1);
+    assert_eq!(classify(Some("1")), Admission::Schema1);
     for declaration in ["01", "2", "not-an-integer"] {
         assert_eq!(
-            classify_gui_schema(Some(declaration)),
-            GuiSchemaAdmission::Unverified {
+            classify(Some(declaration)),
+            Admission::Unverified {
                 declaration: declaration.to_owned(),
             }
         );
     }
     assert_eq!(
-        classify_gui_schema(None),
-        GuiSchemaAdmission::Unverified {
+        classify(None),
+        Admission::Unverified {
             declaration: "missing".to_string(),
         }
     );
@@ -52,7 +52,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
         .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
         .expect("GUI documents");
     assert_eq!(documents.len(), 1);
-    assert_eq!(documents[0].schema_version, Some(1));
+    assert_eq!(documents[0].schema_version.as_deref(), Some("1"));
     assert_eq!(documents[0].attributes["active"], "UnrecognizedRootState");
     assert_eq!(
         documents[0]
@@ -179,7 +179,7 @@ fn a_noncanonical_gui_schema_one_declaration_is_unverified() {
     let documents = namespace
         .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
         .expect("GUI documents");
-    assert_eq!(documents[0].schema_version, Some(1));
+    assert_eq!(documents[0].schema_version.as_deref(), Some("01"));
     let loss = result
         .report()
         .losses

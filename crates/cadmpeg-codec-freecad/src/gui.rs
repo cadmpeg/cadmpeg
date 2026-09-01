@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of `GuiDocument.xml` object appearance into neutral presentation records.
 
+mod schema;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
@@ -22,31 +24,7 @@ use crate::native::{
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
 
-/// Admission result for the independent `GuiDocument.xml` schema layer.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum GuiSchemaAdmission {
-    /// Schema 1 uses the verified GUI vocabulary.
-    Schema1,
-    /// Any other declaration is read with the schema-1 vocabulary without a
-    /// verified declaration match.
-    Unverified { declaration: String },
-}
-
-/// Selects the `GuiDocument.xml` parser admission path.
-///
-/// GUI schema is not an `FCStd` host identity row. The declaration is matched
-/// verbatim because `"01"` does not declare the verified schema-1 vocabulary.
-pub(crate) fn classify_gui_schema(schema_version: Option<&str>) -> GuiSchemaAdmission {
-    match schema_version {
-        Some("1") => GuiSchemaAdmission::Schema1,
-        Some(value) => GuiSchemaAdmission::Unverified {
-            declaration: value.to_owned(),
-        },
-        None => GuiSchemaAdmission::Unverified {
-            declaration: "missing".into(),
-        },
-    }
-}
+use schema::Admission as GuiSchemaAdmission;
 
 #[derive(Default)]
 pub(crate) struct Graph {
@@ -145,7 +123,7 @@ pub(crate) fn transfer(
         "SchemaVersion",
         "schemaVersion",
     )?;
-    let admission = classify_gui_schema(schema_declaration.as_deref());
+    let admission = schema::classify(schema_declaration.as_deref());
     let transferred = transfer_schema_one(
         ir,
         text,
@@ -198,13 +176,6 @@ fn transfer_schema_one(
     requires_alpha_conversion: bool,
 ) -> Result<(Graph, AppearancePlan), CodecError> {
     let root = xml.root_element();
-    let schema_version = schema_declaration
-        .map(|value| {
-            value.parse::<u32>().map_err(|_| {
-                CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
-            })
-        })
-        .transpose()?;
     let mut plan = AppearancePlan::default();
     let camera_count = root
         .children()
@@ -229,7 +200,7 @@ fn transfer_schema_one(
         .collect::<Vec<_>>();
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
-        schema_version,
+        schema_version: schema_declaration.map(str::to_owned),
         attributes: root
             .attributes()
             .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
@@ -584,7 +555,10 @@ fn transfer_neutral_presentation(
         let camera = camera_state.map(camera_state_value).transpose()?;
         plan.presentation_documents.push(PresentationDocument {
             id: PresentationId("fcstd:presentation:document#0".into()),
-            schema_version: document.schema_version,
+            schema_version: document
+                .schema_version
+                .as_deref()
+                .and_then(|value| value.parse().ok()),
             active_view: None,
             camera,
             states: document

@@ -864,7 +864,7 @@ Co 1001000 +2 0 *
     assert_eq!(shape_material.properties.get("shininess"), Some(&0.75));
     assert_eq!(shape_material.properties.get("transparency"), Some(&0.25));
     let namespace = result.ir().native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 22);
+    assert_eq!(namespace.version, 23);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
