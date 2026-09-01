@@ -74,6 +74,20 @@ impl<'de> Deserialize<'de> for SidecarDecodeReport {
 impl<'de> Deserialize<'de> for DecodeSidecar {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = DecodeSidecarWire::deserialize(deserializer)?;
+        Self::from_current_wire(wire).map_err(serde::de::Error::custom)
+    }
+}
+
+impl DecodeSidecar {
+    fn from_current_wire(wire: DecodeSidecarWire) -> Result<Self, DecodeSidecarParseError> {
+        if wire.version != DECODE_SIDECAR_VERSION {
+            return Err(DecodeSidecarParseError::Version {
+                found: wire.version,
+            });
+        }
+        wire.fidelity
+            .validate()
+            .map_err(DecodeSidecarParseError::Fidelity)?;
         Ok(Self {
             version: wire.version,
             ir_sha256: wire.ir_sha256,
@@ -81,9 +95,7 @@ impl<'de> Deserialize<'de> for DecodeSidecar {
             fidelity: wire.fidelity,
         })
     }
-}
 
-impl DecodeSidecar {
     /// Binds decode metadata to exact serialized CADIR bytes.
     pub fn bind(ir_bytes: &[u8], report: DecodeReport, fidelity: SourceFidelity) -> Self {
         Self::bind_sha256(crate::hash::sha256_hex(ir_bytes), report, fidelity)
@@ -149,17 +161,8 @@ impl DecodeSidecar {
                 });
             }
         }
-        let sidecar: Self = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
-        if sidecar.version != DECODE_SIDECAR_VERSION {
-            return Err(DecodeSidecarParseError::Version {
-                found: sidecar.version,
-            });
-        }
-        sidecar
-            .fidelity
-            .validate()
-            .map_err(DecodeSidecarParseError::Fidelity)?;
-        Ok(sidecar)
+        let wire = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
+        Self::from_current_wire(wire)
     }
 }
 
@@ -526,6 +529,14 @@ mod tests {
             DecodeSidecar::from_json(&wrong_version),
             Err(DecodeSidecarParseError::Version { .. })
         ));
+        let direct_error = serde_json::from_str::<DecodeSidecar>(&wrong_version)
+            .expect_err("public deserialization accepts only the current sidecar version");
+        assert!(
+            direct_error
+                .to_string()
+                .contains("unsupported decode-sidecar version: 9"),
+            "{direct_error}"
+        );
     }
 
     #[test]
@@ -607,6 +618,39 @@ mod tests {
             matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("missing field `report`")),
             "{error}"
         );
+    }
+
+    #[test]
+    fn public_decode_sidecar_deserialization_validates_retained_payloads() {
+        let report = DecodeReport::unclassified(
+            "test",
+            crate::report::DecodeTransfer::full(true),
+            std::collections::BTreeMap::default(),
+            Vec::new(),
+            Vec::new(),
+            crate::report::TransferLedger::default(),
+        );
+        let mut fidelity = SourceFidelity::default();
+        fidelity.retained_records.push(record("record", b"payload"));
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report, fidelity);
+        let mut value = serde_json::to_value(sidecar).unwrap();
+        value["fidelity"]["retained_records"][0]["byte_len"] = 1.into();
+        let json = value.to_string();
+
+        let direct_error = serde_json::from_str::<DecodeSidecar>(&json)
+            .expect_err("public deserialization must validate fidelity");
+        assert!(
+            direct_error
+                .to_string()
+                .contains("retained source record record declares 1 bytes but contains 7"),
+            "{direct_error}"
+        );
+        assert!(matches!(
+            DecodeSidecar::from_json(&json),
+            Err(DecodeSidecarParseError::Fidelity(
+                FidelityError::Length { .. }
+            ))
+        ));
     }
 
     #[test]
