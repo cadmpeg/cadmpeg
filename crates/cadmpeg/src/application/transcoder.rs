@@ -77,10 +77,12 @@ impl TargetSelection {
     fn resolve_value(value: &str, inferred: Option<Format>) -> Result<Self> {
         if let Some((left, right)) = value.split_once(':') {
             let format = Format::from_name(left).ok_or_else(|| {
-                anyhow!(
-                    "--to {value}: {left} is not an output format of this build; available: {}",
-                    Format::vocabulary()
-                )
+                ConversionRefusal::UnsupportedOutputFormat {
+                    message: format!(
+                        "--to {value}: {left} is not an output format of this build; available: {}",
+                        Format::vocabulary()
+                    ),
+                }
             })?;
             if right.is_empty() {
                 bail!(
@@ -95,10 +97,13 @@ impl TargetSelection {
             return Ok(Self::new(format, None));
         }
         if Format::is_known_name(value) {
-            bail!(
-                "--to {value}: {value} is not an output format of this build; available: {}",
-                Format::vocabulary()
-            );
+            return Err(ConversionRefusal::UnsupportedOutputFormat {
+                message: format!(
+                    "--to {value}: {value} is not an output format of this build; available: {}",
+                    Format::vocabulary()
+                ),
+            }
+            .into());
         }
         let format = inferred.ok_or_else(|| {
             anyhow!(
@@ -243,7 +248,8 @@ impl DestinationPolicy {
         }
     }
 
-    fn resolve(&self, source: &Path, format: Format) -> Result<ResolvedDestination> {
+    /// Applies format-only destination admission before input decode.
+    fn admit_format(&self, format: Format) -> Result<()> {
         match self {
             Self::Stdout {
                 allow_binary: false,
@@ -256,6 +262,15 @@ impl DestinationPolicy {
                 ),
             }
             .into()),
+            Self::Stdout { .. } | Self::File { .. } => Ok(()),
+        }
+    }
+
+    /// Resolves filesystem-dependent destination rules. A missing source is
+    /// left for the loader; an existing destination still refuses before the
+    /// potentially expensive decode.
+    fn resolve(&self, source: &Path) -> Result<ResolvedDestination> {
+        match self {
             Self::Stdout { .. } => Ok(ResolvedDestination::Stdout),
             Self::File { path, overwrite } => {
                 ArtifactStore::check_output_path(source, path, *overwrite)?;
@@ -333,7 +348,8 @@ impl<'a> Transcoder<'a> {
         policy: &ConversionPolicy,
     ) -> Result<PreparedConversion> {
         let format = target.selection.format;
-        let destination = policy.destination.resolve(source.path, format)?;
+        policy.destination.admit_format(format)?;
+        let destination = policy.destination.resolve(source.path)?;
 
         let outcome =
             loader::load_artifact(self.inputs, source.path, source.options, source.forced)

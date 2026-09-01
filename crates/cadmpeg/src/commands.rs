@@ -393,17 +393,6 @@ pub fn convert(
             return Err(error);
         }
     };
-    if let Some(report_path) = conversion.report.as_deref() {
-        ArtifactStore::check_output_path(path, report_path, conversion.report_overwrite)?;
-        if let Some(destination) = conversion.policy.destination.path() {
-            ArtifactStore::check_distinct_output_paths(
-                destination,
-                "CAD output",
-                report_path,
-                "command report",
-            )?;
-        }
-    }
     let target = match export_target(selection) {
         Ok(target) => target,
         Err(error) => {
@@ -419,6 +408,17 @@ pub fn convert(
             return Err(error);
         }
     };
+    if let Some(report_path) = conversion.report.as_deref() {
+        ArtifactStore::check_output_path(path, report_path, conversion.report_overwrite)?;
+        if let Some(destination) = conversion.policy.destination.path() {
+            ArtifactStore::check_distinct_output_paths(
+                destination,
+                "CAD output",
+                report_path,
+                "command report",
+            )?;
+        }
+    }
 
     let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
     let source = SourceRequest {

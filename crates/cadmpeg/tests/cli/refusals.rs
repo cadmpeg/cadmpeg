@@ -200,8 +200,9 @@ fn convert_rejects_container_only_geometry_unless_allowed() {
 /// The format half of `--to` is checked before the input is opened.
 ///
 /// A format this build cannot write is wrong whatever the source turns out to
-/// be, so it fails against an absent path. The dialect half is a different
-/// question and is answered after the read, by the encoder.
+/// be, so it fails against an absent path as a typed plan refusal. A dialect
+/// token is admitted by the selected encoder's catalog at the same static
+/// boundary.
 #[test]
 fn an_unwritable_output_format_refuses_before_reading_input() {
     let dir = tempdir().unwrap();
@@ -212,7 +213,7 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
         .unwrap()
         .args(["convert", path, "--to", "catia:v5"])
         .assert()
-        .code(2)
+        .code(1)
         .stderr(
             predicate::str::contains("catia is not an output format of this build")
                 .and(predicate::str::contains("step")),
@@ -230,11 +231,31 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
             output.to_str().unwrap(),
         ])
         .assert()
-        .code(2)
+        .code(1)
         .stderr(predicate::str::contains(
             "catia is not an output format of this build",
         ));
 
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let report = dir.path().join("unwritable-format-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "--to",
+            "catia:v5",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1);
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["stage"], "plan");
+    assert_eq!(value["refusal"]["code"], "unsupported_target");
+    assert!(value["decode_report"].is_null());
+
+    let missing_report = dir.path().join("missing-input-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -244,11 +265,13 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
             "5.1",
             "-o",
             output.to_str().unwrap(),
+            "--report",
+            missing_report.to_str().unwrap(),
         ])
         .assert()
         .code(2)
         .stderr(
-            predicate::str::contains("No such file or directory")
+            predicate::str::contains(format!("opening {}", missing.display()))
                 .and(predicate::str::contains("not an output format").not()),
         );
 
@@ -333,10 +356,33 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("iges cannot write 9.9"));
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "unsupported_target");
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_null());
+
+    // Catalog admission owns the refusal even when the requested report path
+    // already exists. Report persistence may warn, but it cannot replace the
+    // semantic target verdict with an output-path error.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            native_input.to_str().unwrap(),
+            "-o",
+            refused_output.to_str().unwrap(),
+            "--to",
+            "8.8",
+            "--report",
+            report.to_str().unwrap(),
+            "--allow-errors",
+        ])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("iges cannot write 8.8")
+                .and(predicate::str::contains("exists; pass --force")),
+        );
 
     // Static target admission wins even when the source path cannot be read.
     let missing_input = dir.path().join("missing.cadir.json");

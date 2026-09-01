@@ -99,11 +99,19 @@ impl ArtifactStore {
 
     /// Refuse to overwrite the input path, or an existing output without force.
     pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
-        let input = std::fs::canonicalize(input)
-            .with_context(|| format!("canonicalizing {}", input.display()))?;
+        // A missing source is diagnosed by the loader. It cannot alias an
+        // existing source file, so output preflight must not replace that
+        // input error with a canonicalization failure.
+        let input = input
+            .exists()
+            .then(|| {
+                std::fs::canonicalize(input)
+                    .with_context(|| format!("canonicalizing {}", input.display()))
+            })
+            .transpose()?;
         let output_absolute = Self::absolute_output_path(output)?;
-        if input == output_absolute {
-            bail!("refusing to overwrite input {}", input.display());
+        if input.as_ref() == Some(&output_absolute) {
+            bail!("refusing to overwrite input {}", output_absolute.display());
         }
         if output.exists() && !force {
             bail!("{} exists; pass --force to overwrite", output.display());
@@ -286,6 +294,26 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
+
+    #[test]
+    fn output_preflight_leaves_a_missing_source_for_the_loader() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing.cadir.json");
+        let output = directory.path().join("part.step");
+
+        ArtifactStore::check_output_path(&missing, &output, false)
+            .expect("a missing source cannot alias an existing input file");
+    }
+
+    #[test]
+    fn output_preflight_still_rejects_the_existing_source_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("part.step");
+        std::fs::write(&source, b"source").unwrap();
+
+        let error = ArtifactStore::check_output_path(&source, &source, true).unwrap_err();
+        assert!(error.to_string().contains("refusing to overwrite input"));
+    }
 
     #[test]
     fn matching_sidecar_loads_and_mismatch_fails_closed() {

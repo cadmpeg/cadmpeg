@@ -216,6 +216,11 @@ pub enum ConversionRefusal {
         /// Validation report available for an optional `--report`.
         validation: Option<ValidationReport>,
     },
+    /// The command-line target cannot select a writable output format.
+    UnsupportedOutputFormat {
+        /// Human-readable selection failure.
+        message: String,
+    },
     /// The encoder could not resolve or deliver the requested target.
     UnsupportedTarget {
         /// Typed request state and the encoder's structured catalog.
@@ -244,6 +249,7 @@ impl ConversionRefusal {
             Self::DecodeLossRejected { .. } => RefusalCode::DecodeLossRejected,
             Self::ExportLossRejected { .. } => RefusalCode::ExportLossRejected,
             Self::EmptyGeometry { .. } => RefusalCode::EmptyGeometry,
+            Self::UnsupportedOutputFormat { .. } => RefusalCode::UnsupportedTarget,
             Self::UnsupportedTarget { .. } => RefusalCode::UnsupportedTarget,
             Self::BinaryStdoutRejected { .. } => RefusalCode::BinaryStdoutRejected,
         }
@@ -256,12 +262,13 @@ impl ConversionRefusal {
             Self::DecodeFailed { .. }
             | Self::UnsupportedDialect { .. }
             | Self::StrictDecodeRejected { .. } => RefusalStage::Decode,
-            Self::UnsupportedTarget { .. } | Self::BinaryStdoutRejected { .. } => {
-                RefusalStage::Plan
-            }
+            Self::UnsupportedOutputFormat { .. }
+            | Self::UnsupportedTarget { .. }
+            | Self::BinaryStdoutRejected { .. } => RefusalStage::Plan,
             Self::DecodeLossRejected { .. } => RefusalStage::Decode,
             Self::CheckFailed { .. } => RefusalStage::Check,
-            Self::ExportLossRejected { .. } | Self::EmptyGeometry { .. } => RefusalStage::Export,
+            Self::EmptyGeometry { .. } => RefusalStage::Plan,
+            Self::ExportLossRejected { .. } => RefusalStage::Export,
         }
     }
 
@@ -274,6 +281,7 @@ impl ConversionRefusal {
             | Self::DecodeLossRejected { message, .. }
             | Self::ExportLossRejected { message, .. }
             | Self::EmptyGeometry { message, .. }
+            | Self::UnsupportedOutputFormat { message }
             | Self::BinaryStdoutRejected { message } => Cow::Borrowed(message),
             Self::StrictDecodeRejected {
                 loss_code,
@@ -318,6 +326,7 @@ impl ConversionRefusal {
             | Self::DecodeLossRejected { .. }
             | Self::ExportLossRejected { .. }
             | Self::EmptyGeometry { .. }
+            | Self::UnsupportedOutputFormat { .. }
             | Self::UnsupportedTarget { .. } => true,
             Self::BinaryStdoutRejected { .. } => false,
         }
@@ -327,7 +336,9 @@ impl ConversionRefusal {
     #[must_use]
     pub fn decode_report(&self) -> Option<&DecodeReport> {
         match self {
-            Self::DecodeFailed { .. } | Self::UnsupportedDialect { .. } => None,
+            Self::DecodeFailed { .. }
+            | Self::UnsupportedDialect { .. }
+            | Self::UnsupportedOutputFormat { .. } => None,
             Self::StrictDecodeRejected { decode_report, .. } => Some(decode_report),
             Self::CheckFailed { decode_report, .. } => decode_report.as_ref(),
             Self::DecodeLossRejected { decode_report, .. } => Some(decode_report),
@@ -344,7 +355,8 @@ impl ConversionRefusal {
         match self {
             Self::DecodeFailed { .. }
             | Self::UnsupportedDialect { .. }
-            | Self::StrictDecodeRejected { .. } => None,
+            | Self::StrictDecodeRejected { .. }
+            | Self::UnsupportedOutputFormat { .. } => None,
             Self::CheckFailed { validation, .. } => Some(validation),
             Self::ExportLossRejected { validation, .. }
             | Self::EmptyGeometry { validation, .. }
