@@ -7,8 +7,7 @@ use super::super::feature_definition_is_incomplete;
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::report::DecodeReport::unclassified(
         "f3d",
-        false,
-        true,
+        cadmpeg_ir::DecodeTransfer::full(true),
         std::collections::BTreeMap::new(),
         Vec::new(),
         Vec::new(),

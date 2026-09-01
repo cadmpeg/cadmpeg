@@ -303,7 +303,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         CurveGeometry::Circle { center, radius, .. }
             if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
     )));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
     let cartesian_trim = result
         .ir()

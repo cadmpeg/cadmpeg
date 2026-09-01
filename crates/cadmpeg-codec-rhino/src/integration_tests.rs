@@ -66,7 +66,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
                 },
             )
             .expect("container-only 3DM decode");
-        assert!(container.report().container_only);
+        assert!(container.report().container_only());
         assert!(container.ir().model.points.is_empty());
     }
 }
@@ -1567,7 +1567,7 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     // The hatch loop curve is a real neutral carrier even though the fill is not.
     assert!(!result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.features.len(), 2);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_valid(&result);
 }
 

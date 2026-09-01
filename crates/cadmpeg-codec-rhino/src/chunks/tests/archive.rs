@@ -50,7 +50,7 @@ fn open_nurbs_object_record_short_typecodes_decode() {
     let result = decode(&archive(&[record]));
 
     assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .expect("required invariant")[1]
         .links
         .contains(&result.ir().model.curves[0].id.to_string()));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
@@ -672,7 +672,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .expect("required invariant")[0]
         .links
         .contains(&body.id.to_string()));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));

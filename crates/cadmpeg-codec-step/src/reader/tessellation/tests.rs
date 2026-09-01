@@ -167,7 +167,7 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
             &DecodeOptions::default(),
         )
         .expect("decode tessellation fixture");
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result
         .ir()
         .model

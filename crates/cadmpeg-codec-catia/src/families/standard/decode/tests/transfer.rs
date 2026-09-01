@@ -118,7 +118,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     // Three vertex records → three points and three vertices.
     assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(result.ir().model.vertices.len(), 3);

@@ -196,8 +196,7 @@ fn classify_outer_report(
     report.losses.extend(outer.losses);
     cadmpeg_ir::DecodeReport::classified(
         outer.layers,
-        report.container_only,
-        report.geometry_transferred,
+        report.transfer(),
         report.coverage,
         report.losses,
         report.notes,
@@ -493,7 +492,9 @@ fn merge_references(
             &occurrence,
         )?;
         merged += descendants + 1;
-        parent_report.geometry_transferred |= component_report.geometry_transferred;
+        if component_report.geometry_transferred() {
+            parent_report.mark_geometry_transferred();
+        }
         parent_report.losses.extend(component_report.losses);
         let placement = if reference.transform.is_some() {
             "Design occurrence transform"

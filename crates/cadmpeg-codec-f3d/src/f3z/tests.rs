@@ -297,7 +297,7 @@ fn f3z_archive_merges_identity_occurrences() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.report().geometry_transferred);
+    assert!(decoded.report().geometry_transferred());
     assert!(
         decoded
             .report()
@@ -414,7 +414,7 @@ fn f3z_drawing_root_decodes_its_unambiguous_derived_model() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.report().geometry_transferred);
+    assert!(decoded.report().geometry_transferred());
     assert!(decoded
         .report()
         .losses

@@ -111,7 +111,7 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     // The ASM-227 `lump` head is emitted as the region record.
     assert_eq!(result.ir().model.regions.len(), 1);
@@ -331,7 +331,7 @@ fn decode_retains_generated_asm_history_graph() {
     );
     assert_eq!(history.states[1].previous_ref, Some(0));
     assert_eq!(history.states[1].next_ref, None);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
 }
 
 #[test]
@@ -517,7 +517,7 @@ fn decode_yields_metadata_and_honest_report() {
     let mut cur = Cursor::new(f3d);
     let result = codec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.faces.is_empty());
     assert!(result.report().error_count() >= 1);
     assert!(result.report().losses.iter().any(|l| matches!(
@@ -629,7 +629,7 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(decoded.report().geometry_transferred);
+    assert!(decoded.report().geometry_transferred());
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(
         decoded

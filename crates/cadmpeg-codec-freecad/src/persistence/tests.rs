@@ -280,7 +280,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .map(|facts| facts.topology_version),
         Some(1)
     );
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {

@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::report::{DecodeReport, DecodeTransfer};
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
@@ -1187,8 +1187,7 @@ pub(crate) fn container_only_result(
         ir,
         DecodeReport::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),
-            true,
-            false,
+            DecodeTransfer::ContainerOnly,
             std::collections::BTreeMap::new(),
             losses,
             notes,

@@ -92,7 +92,7 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Cylinder { radius, .. } if radius == 1.0)
     }));
@@ -240,8 +240,8 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
             },
         )
         .expect("container-only Creo decode");
-    assert!(result.report().container_only);
-    assert!(!result.report().geometry_transferred);
+    assert!(result.report().container_only());
+    assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 2);

@@ -346,7 +346,7 @@ fn an_unverified_band_recovers_the_same_solid_as_the_verified_one() {
         let result = SatCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{label}: {error}"));
-        assert!(result.report().geometry_transferred, "{label}");
+        assert!(result.report().geometry_transferred(), "{label}");
         assert_eq!(result.ir().model.bodies.len(), 1, "{label}");
         assert_eq!(result.ir().model.faces.len(), 1, "{label}");
         assert_eq!(result.ir().model.surfaces.len(), 1, "{label}");

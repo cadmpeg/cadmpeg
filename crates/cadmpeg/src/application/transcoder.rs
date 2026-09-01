@@ -370,7 +370,7 @@ impl<'a> Transcoder<'a> {
         if transfers_geometry(format)
             && decode_report
                 .as_ref()
-                .is_some_and(|report| !report.geometry_transferred)
+                .is_some_and(|report| !report.geometry_transferred())
             && !policy.admission.admits_empty()
         {
             return Err(ConversionRefusal::EmptyGeometry {

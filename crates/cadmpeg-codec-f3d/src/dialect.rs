@@ -368,8 +368,11 @@ pub(crate) fn build_report(
     }
     DecodeReport::classified(
         dialects,
-        container_only,
-        geometry_transferred,
+        if container_only {
+            cadmpeg_ir::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
+        },
         std::collections::BTreeMap::new(),
         losses,
         summary

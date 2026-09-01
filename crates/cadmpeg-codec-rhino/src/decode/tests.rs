@@ -1232,7 +1232,7 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
         result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Unknown { .. }
     ));
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
 }
 
 #[test]

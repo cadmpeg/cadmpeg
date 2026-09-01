@@ -1673,8 +1673,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         ir,
         DecodeReport::classified(
             dialects,
-            ctx.container_only(),
-            geometry_transferred,
+            if ctx.container_only() {
+                cadmpeg_ir::DecodeTransfer::ContainerOnly
+            } else {
+                cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
+            },
             BTreeMap::from([
                 ("rse_storage_bands".into(), storage_bands.len()),
                 ("rse_databases".into(), databases.len()),

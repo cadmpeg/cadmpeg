@@ -39,7 +39,7 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
         .any(|entry| entry.role == role::BREP_SMBH));
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
@@ -195,8 +195,8 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
             },
         )
         .expect("container-only F3D decode");
-    assert!(result.report().container_only);
-    assert!(!result.report().geometry_transferred);
+    assert!(result.report().container_only());
+    assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.bodies.is_empty());
     assert!(!result.source_fidelity().retained_records.is_empty());
     assert!(result.ir().native.namespace("f3d").is_some());
@@ -215,7 +215,7 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
         "3-3-0-0",
     ));
 
-    assert!(drifted.report().geometry_transferred);
+    assert!(drifted.report().geometry_transferred());
     assert_eq!(
         drifted.ir().model.bodies.len(),
         known.ir().model.bodies.len()

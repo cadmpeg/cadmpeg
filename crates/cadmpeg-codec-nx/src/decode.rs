@@ -490,8 +490,11 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     losses.extend(crate::dialect::dialect_losses(&dialects));
     DecodeReport::classified(
         dialects,
-        container_only,
-        false,
+        if container_only {
+            cadmpeg_ir::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::DecodeTransfer::full(false)
+        },
         std::collections::BTreeMap::new(),
         losses,
         notes,

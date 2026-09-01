@@ -279,8 +279,7 @@ pub(crate) fn build_geometry_report(
     losses.extend(crate::dialect::dialect_losses(&dialects));
     DecodeReport::classified(
         dialects,
-        false,
-        true,
+        cadmpeg_ir::DecodeTransfer::full(true),
         std::collections::BTreeMap::new(),
         losses,
         notes,

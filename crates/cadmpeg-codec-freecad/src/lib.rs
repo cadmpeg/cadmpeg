@@ -1399,8 +1399,11 @@ impl CodecBackend for FcstdCodec {
             ir,
             DecodeReport::classified(
                 cadmpeg_core::dialect::DialectLayers::of(primary),
-                options.container_only,
-                geometry_transferred,
+                if options.container_only {
+                    cadmpeg_ir::DecodeTransfer::ContainerOnly
+                } else {
+                    cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
+                },
                 std::collections::BTreeMap::new(),
                 losses,
                 container::summarize(&scan).notes,

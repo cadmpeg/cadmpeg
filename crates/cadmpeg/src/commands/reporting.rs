@@ -252,8 +252,8 @@ pub(super) fn print_decode_report(
         writer,
         "decode report ({}): geometry_transferred={}, container_only={}",
         report.format(),
-        report.geometry_transferred,
-        report.container_only
+        report.geometry_transferred(),
+        report.container_only()
     )?;
     for line in crate::registry_view::dialect_lines(report.dialects()) {
         writeln!(writer, "{line}")?;

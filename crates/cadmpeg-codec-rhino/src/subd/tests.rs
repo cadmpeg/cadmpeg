@@ -821,7 +821,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .links,
         vec![subd.id.to_string()]
     );
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));

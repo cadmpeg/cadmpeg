@@ -456,7 +456,7 @@ pub(crate) mod tests {
             result.ir().model.points[1].position,
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
         assert!(result.report().losses.is_empty());
     }
 

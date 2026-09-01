@@ -869,7 +869,7 @@ fn container_only_preserves_raw_occurrence_expansion_without_structure_admission
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert_eq!(native.arenas["product_occurrences"].len(), 3);
     let expansion = &native.arenas["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields()["emitted"], 3);

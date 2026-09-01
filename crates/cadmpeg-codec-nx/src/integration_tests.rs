@@ -44,7 +44,7 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
         .any(|entry| entry.role == "parasolid-stream"));
 
     let result = decode(bytes);
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(!result.source_fidelity().retained_records.is_empty());
 }
 
@@ -61,7 +61,7 @@ fn legacy_cfb_nx_accepts_a_partial_final_stream_sector() {
         .any(|entry| entry.role == "parasolid-stream"));
 
     let result = decode(bytes);
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(!result.source_fidelity().retained_records.is_empty());
 }
 
@@ -140,7 +140,7 @@ fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() 
         .any(|note| note.contains("SCH_TEST_1_9999")));
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
 }
@@ -158,7 +158,7 @@ fn analytic_topology_pipeline_covers_every_supported_quadric_and_conic_family() 
     ];
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
         assert!(!result.ir().model.faces.is_empty());
         assert!(!result.ir().model.surfaces.is_empty());
         assert_valid(&result);
@@ -218,7 +218,7 @@ fn deltas_pipeline_replaces_geometry_without_discarding_partition_topology() {
     ];
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
         assert_eq!(result.ir().model.bodies.len(), 1);
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_valid(&result);

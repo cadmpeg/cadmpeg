@@ -4,8 +4,7 @@
 fn empty_report(geometry_transferred: bool) -> cadmpeg_ir::report::DecodeReport {
     cadmpeg_ir::report::DecodeReport::unclassified(
         "sldprt",
-        false,
-        geometry_transferred,
+        cadmpeg_ir::DecodeTransfer::full(geometry_transferred),
         std::collections::BTreeMap::new(),
         Vec::new(),
         Vec::new(),

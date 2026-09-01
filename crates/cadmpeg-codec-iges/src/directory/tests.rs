@@ -166,7 +166,7 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
         )
         .unwrap();
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert_eq!(result.report().losses.len(), 1);
     let loss = &result.report().losses[0];
     assert_eq!(loss.code, IgesLossCode::EntityRetainedUnprojected.kind());

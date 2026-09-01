@@ -552,7 +552,7 @@ fn decode_transfers_exact_datum_plane_carrier() {
     let result = CreoCodec
         .decode(&mut reader, &DecodeOptions::default())
         .unwrap();
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     let records = &result.ir().native.namespace("creo").unwrap().arenas["datum_planes"];
     assert_eq!(records[0].fields()["datum_id"], 4);
     assert_eq!(records[0].fields()["owner_feature_id"], 1);

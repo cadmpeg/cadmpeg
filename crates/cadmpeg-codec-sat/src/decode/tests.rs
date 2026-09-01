@@ -41,7 +41,7 @@ fn both_encodings_decode_the_same_solid() {
         assert_eq!(result.ir().model.shells.len(), 1);
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_eq!(result.ir().model.surfaces.len(), 1);
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
     }
     // 25 stream units at scale 1 (mm) and 2.5 binary centimetres are both
     // 25 mm in the model.
@@ -79,7 +79,7 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
     // A band no row verifies takes the same framing and record decode as a
     // verified one; only the mark on the result differs.
     let result = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
     assert!(result
@@ -98,7 +98,7 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
 #[test]
 fn an_unverified_acis_text_band_is_decoded_and_marked() {
     let result = decode_bytes(&acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
     assert!(result
@@ -125,7 +125,7 @@ fn an_unverified_band_that_decodes_nothing_reports_honest_coverage() {
     text.push_str("mystery_record $-1 -1 42 #\n");
     text.push_str("End-of-ACIS-data \n");
     let result = decode_bytes(text.as_bytes());
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(result.report().coverage.contains_key("unknown_records"));
     let codes = result
         .report()
@@ -237,7 +237,7 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
     text.push_str("mystery_record $-1 -1 42 #\n");
     text.push_str("End-of-ACIS-data \n");
     let result = decode_bytes(text.as_bytes());
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     let loss = result
         .report()
         .losses

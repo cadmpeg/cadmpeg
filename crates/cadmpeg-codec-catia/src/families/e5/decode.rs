@@ -264,8 +264,7 @@ pub(crate) fn try_decode_e5(
         ir,
         report: DecodeReport::unclassified(
             "catia",
-            false,
-            true,
+            cadmpeg_ir::DecodeTransfer::full(true),
             std::collections::BTreeMap::new(),
             losses,
             Vec::new(),

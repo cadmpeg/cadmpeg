@@ -201,7 +201,7 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     assert!(unknowns[0]
         .links
         .contains(&"step:data:opaque_target#2".to_string()));
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(result
         .report()
         .losses

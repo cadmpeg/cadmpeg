@@ -22,7 +22,7 @@ fn decode_builds_valid_topology_and_plane() {
         )
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.loops.len(), 1);

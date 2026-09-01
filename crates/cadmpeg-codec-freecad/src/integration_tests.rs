@@ -218,7 +218,7 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
             },
         )
         .expect("container-only FCStd decode");
-    assert!(result.report().container_only);
+    assert!(result.report().container_only());
     assert!(result.ir().model.features.is_empty());
     assert!(result
         .ir()
