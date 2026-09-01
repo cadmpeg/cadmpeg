@@ -48,7 +48,7 @@
 use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
-use crate::parse::{Exchange, Value};
+use crate::parse::Exchange;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
@@ -170,18 +170,18 @@ impl StepDialect {
     ///   that matches nothing this codec declares is an unrecognized
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
     ///   numeric object identifier reach the same place, through the same call.
-    fn from_schema_identifier(identifier: &str) -> Self {
-        let Some((name, object_identifier)) = split_schema_identifier(identifier) else {
+    fn from_schema_identifier(identifier: &str, object_identifier: Option<&[u64]>) -> Self {
+        let Some((name, object_identifier_text)) = split_schema_identifier(identifier) else {
             return Self::Unknown;
         };
         let ap242_name = Self::Ap242
             .schema_identifier()
             .expect("the AP242 row has a Part 21 identifier");
         if name.eq_ignore_ascii_case(ap242_name) {
-            if object_identifier.is_none() {
+            if object_identifier_text.is_none() {
                 return Self::Ap242;
             }
-            return Self::from_ap242_identifier(identifier).unwrap_or(Self::Unknown);
+            return Self::from_ap242_identifier(name, object_identifier).unwrap_or(Self::Unknown);
         }
         [
             Self::Schema(StepSchema::Ap203Edition1),
@@ -202,24 +202,16 @@ impl StepDialect {
 
     /// The AP242 edition row whose canonical object identifier the declaration
     /// names. A future or malformed object identifier names no verified row.
-    fn from_ap242_identifier(identifier: &str) -> Option<Self> {
-        let (name, arcs) = schema_identifier_arcs(identifier)?;
-        [
-            Self::Schema(StepSchema::Ap242Edition1),
-            Self::Schema(StepSchema::Ap242Edition2),
-            Self::Schema(StepSchema::Ap242Edition3),
-        ]
-        .into_iter()
-        .find(|dialect| {
-            schema_identifier_arcs(
-                dialect
-                    .schema_identifier()
-                    .expect("AP242 edition rows have identifiers"),
-            )
-            .is_some_and(|(candidate_name, candidate_arcs)| {
-                name.eq_ignore_ascii_case(candidate_name) && arcs == candidate_arcs
-            })
-        })
+    fn from_ap242_identifier(name: &str, object_identifier: Option<&[u64]>) -> Option<Self> {
+        if !name.eq_ignore_ascii_case(Self::Ap242.schema_identifier()?) {
+            return None;
+        }
+        match object_identifier? {
+            [1, 0, 10303, 442, 1, 1, 4] => Some(Self::Schema(StepSchema::Ap242Edition1)),
+            [1, 0, 10303, 442, 3, 1, 4] => Some(Self::Schema(StepSchema::Ap242Edition2)),
+            [1, 0, 10303, 442, 4, 1, 4] => Some(Self::Schema(StepSchema::Ap242Edition3)),
+            _ => None,
+        }
     }
 
     /// The refusal message this codec returns for an alternate encoding, or
@@ -264,7 +256,7 @@ impl StepDialect {
     pub(crate) fn classify(exchange: &Exchange) -> DialectMatch {
         let identifiers = exchange.schema_identifiers();
         let dialect = identifiers.first().map_or(Self::Unknown, |identifier| {
-            Self::from_schema_identifier(identifier)
+            Self::from_schema_identifier(identifier, exchange.primary_schema_object_identifier())
         });
 
         let mut declared = BTreeMap::new();
@@ -280,9 +272,10 @@ impl StepDialect {
                 identifiers.join(","),
             );
         }
-        if let Some(level) = implementation_level(exchange) {
-            declared.insert(DECLARED_IMPLEMENTATION_LEVEL.into(), level);
-        }
+        declared.insert(
+            DECLARED_IMPLEMENTATION_LEVEL.into(),
+            exchange.implementation_level().into(),
+        );
 
         if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), NEAREST_STRATEGY.id())
@@ -292,41 +285,6 @@ impl StepDialect {
         }
         .with_declared(declared)
     }
-}
-
-/// The schema name and numeric object-identifier arcs of one declaration.
-///
-/// Named components, fewer than two components, and non-decimal components do
-/// not form an object identifier that can match a declared edition row.
-fn schema_identifier_arcs(identifier: &str) -> Option<(&str, Vec<u64>)> {
-    let (name, object_identifier) = split_schema_identifier(identifier)?;
-    let object_identifier = object_identifier?;
-    if name.is_empty() {
-        return None;
-    }
-    let arcs = object_identifier
-        .split_whitespace()
-        .map(str::parse::<u64>)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    (arcs.len() >= 2).then_some((name, arcs))
-}
-
-/// The `FILE_DESCRIPTION` implementation level, verbatim as read.
-///
-/// `None` when the header declares no `FILE_DESCRIPTION`, when its second
-/// parameter is not a string, or when that string does not decode. The parse
-/// substitutes its edition-3 class-3 grammar for an unfamiliar declaration
-/// and emits a parser loss, so the original string still reaches this report.
-fn implementation_level(exchange: &Exchange) -> Option<String> {
-    let record = exchange
-        .header
-        .iter()
-        .find(|record| record.name == "FILE_DESCRIPTION")?;
-    let Some(Value::String(bytes)) = record.parameters.get(1) else {
-        return None;
-    };
-    crate::strings::decode(bytes).ok()
 }
 
 /// The dialect-unverified loss a match requires.

@@ -185,6 +185,10 @@ pub struct Exchange {
     pub signature_sections: Vec<SignatureSection>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
+    schema_identifiers: Vec<String>,
+    schema_object_identifiers: Vec<Option<Vec<u64>>>,
+    implementation_level: String,
+    implementation_grammar: ImplementationLevel,
     entity_ids: EntityIndex,
 }
 
@@ -231,32 +235,26 @@ impl PartialEq for EntityIndex {
 }
 
 impl Exchange {
-    /// Decoded `FILE_SCHEMA` identifiers in source order.
-    ///
-    /// Header validation guarantees that the record contains a non-empty list
-    /// of decodable strings. This accessor stays total for manually assembled
-    /// test values and returns only the strings it can recover.
-    pub(crate) fn schema_identifiers(&self) -> Vec<String> {
-        let Some(record) = self
-            .header
-            .iter()
-            .find(|record| record.name == "FILE_SCHEMA")
-        else {
-            return Vec::new();
-        };
-        let Some(Value::List(identifiers)) = record.parameters.first() else {
-            return Vec::new();
-        };
-        identifiers
-            .iter()
-            .filter_map(|value| match value {
-                Value::String(bytes) => Some(
-                    crate::strings::decode(bytes)
-                        .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned()),
-                ),
-                _ => None,
-            })
-            .collect()
+    /// Header-admitted `FILE_SCHEMA` identifiers in source order.
+    pub(crate) fn schema_identifiers(&self) -> &[String] {
+        &self.schema_identifiers
+    }
+
+    /// Numeric object-identifier components for the primary schema identifier.
+    pub(crate) fn primary_schema_object_identifier(&self) -> Option<&[u64]> {
+        self.schema_object_identifiers
+            .first()
+            .and_then(Option::as_deref)
+    }
+
+    /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.
+    pub(crate) fn implementation_level(&self) -> &str {
+        &self.implementation_level
+    }
+
+    /// Whether the admitted parse grammar uses edition-3 UTF-8 strings.
+    pub(crate) fn uses_utf8_strings(&self) -> bool {
+        self.implementation_grammar.is_edition3()
     }
 
     /// Release semantic source structures before retained opaque bytes are copied.
@@ -268,6 +266,9 @@ impl Exchange {
         self.signatures.clear();
         self.signature_sections.clear();
         self.records.clear();
+        self.schema_identifiers.clear();
+        self.schema_object_identifiers.clear();
+        self.implementation_level.clear();
         self.entity_ids = EntityIndex::default();
     }
 
@@ -473,6 +474,12 @@ enum ImplementationLevel {
     Edition3Class3,
 }
 
+struct HeaderAdmission {
+    grammar: ImplementationLevel,
+    implementation_level: String,
+    schema_identifiers: Vec<AdmittedSchemaIdentifier>,
+}
+
 impl ImplementationLevel {
     fn is_edition3(self) -> bool {
         matches!(
@@ -643,20 +650,31 @@ impl Parser<'_, '_, '_> {
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let (implementation_level, admitted_schema_identifiers, header_diagnostic) =
-            match validate_header(&header) {
-                Ok(admitted) => admitted,
-                Err(message) => return self.err(message),
-            };
+        let (header_admission, header_diagnostic) = match validate_header(&header) {
+            Ok(admitted) => admitted,
+            Err(message) => return self.err(message),
+        };
+        let implementation_level = header_admission.grammar;
         self.diagnostics.extend(header_diagnostic);
         self.diagnostics
             .extend(schema_object_identifier_diagnostics(
-                &admitted_schema_identifiers,
+                &header_admission.schema_identifiers,
                 header[2].offset,
             ));
-        let schema_identifiers = schema_identifiers(&admitted_schema_identifiers);
+        let schema_object_identifiers = header_admission
+            .schema_identifiers
+            .iter()
+            .map(AdmittedSchemaIdentifier::numeric_object_identifier)
+            .collect();
+        let declared_schema_identifiers = header_admission
+            .schema_identifiers
+            .iter()
+            .map(|identifier| identifier.text().to_owned())
+            .collect();
+        let schema_names_for_matching =
+            schema_names_for_matching(&header_admission.schema_identifiers);
         if let Err(message) =
-            validate_header_sections(implementation_level, &header, &schema_identifiers)
+            validate_header_sections(implementation_level, &header, &schema_names_for_matching)
         {
             return self.err(message);
         }
@@ -782,7 +800,7 @@ impl Parser<'_, '_, '_> {
                 self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
                 if let Err(message) = valid_data_parameters(
                     &parameters,
-                    &schema_identifiers,
+                    &schema_names_for_matching,
                     implementation_level,
                     &mut data_section_names,
                 ) {
@@ -824,7 +842,7 @@ impl Parser<'_, '_, '_> {
         if implementation_level.is_edition3()
             && data.len() == 1
             && data[0].parameters.is_empty()
-            && schema_identifiers.len() != 1
+            && schema_names_for_matching.len() != 1
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
@@ -1071,6 +1089,10 @@ impl Parser<'_, '_, '_> {
                 signatures,
                 signature_sections,
                 records,
+                schema_identifiers: declared_schema_identifiers,
+                schema_object_identifiers,
+                implementation_level: header_admission.implementation_level,
+                implementation_grammar: implementation_level,
                 entity_ids: EntityIndex::default(),
             },
             self.diagnostics,
@@ -1416,14 +1438,7 @@ fn value_storage_bytes(value: &Value) -> u64 {
 /// identifier list.
 fn validate_header(
     header: &[HeaderRecord],
-) -> Result<
-    (
-        ImplementationLevel,
-        Vec<AdmittedSchemaIdentifier>,
-        Option<ParseDiagnostic>,
-    ),
-    &'static str,
-> {
+) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if header.len() < REQUIRED.len()
         || header
@@ -1447,35 +1462,37 @@ fn validate_header(
     {
         return Err("FILE_DESCRIPTION has invalid parameters");
     }
-    let (implementation_level, implementation_diagnostic) = match description.get(1) {
-        Some(Value::String(value)) => {
-            let Ok(level) = crate::strings::decode(value) else {
-                return Err("FILE_DESCRIPTION has an unsupported implementation level");
-            };
-            let known = match level.as_str() {
-                "1" | "2" | "2;1" | "2;2" => Some(ImplementationLevel::LegacyEdition1),
-                "3;1" | "3;2" => Some(ImplementationLevel::LegacyEdition2),
-                "4;1" => Some(ImplementationLevel::Edition3Class1),
-                "4;2" => Some(ImplementationLevel::Edition3Class2),
-                "4;3" => Some(ImplementationLevel::Edition3Class3),
-                _ => None,
-            };
-            match known {
-                Some(known) => (known, None),
-                None => (
-                    ImplementationLevel::Edition3Class3,
-                    Some(ParseDiagnostic {
-                        offset: header[0].offset,
-                        kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-                        message: format!(
-                            "FILE_DESCRIPTION implementation level {level:?} has no implemented grammar; parsed with the 4;3 grammar"
-                        ),
-                    }),
-                ),
+    let (implementation_level, implementation_level_text, implementation_diagnostic) =
+        match description.get(1) {
+            Some(Value::String(value)) => {
+                let Ok(level) = crate::strings::decode(value) else {
+                    return Err("FILE_DESCRIPTION has an unsupported implementation level");
+                };
+                let known = match level.as_str() {
+                    "1" | "2" | "2;1" | "2;2" => Some(ImplementationLevel::LegacyEdition1),
+                    "3;1" | "3;2" => Some(ImplementationLevel::LegacyEdition2),
+                    "4;1" => Some(ImplementationLevel::Edition3Class1),
+                    "4;2" => Some(ImplementationLevel::Edition3Class2),
+                    "4;3" => Some(ImplementationLevel::Edition3Class3),
+                    _ => None,
+                };
+                match known {
+                    Some(known) => (known, level, None),
+                    None => (
+                        ImplementationLevel::Edition3Class3,
+                        level.clone(),
+                        Some(ParseDiagnostic {
+                            offset: header[0].offset,
+                            kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+                            message: format!(
+                                "FILE_DESCRIPTION implementation level {level:?} has no implemented grammar; parsed with the 4;3 grammar"
+                            ),
+                        }),
+                    ),
+                }
             }
-        }
-        _ => return Err("FILE_DESCRIPTION has invalid parameters"),
-    };
+            _ => return Err("FILE_DESCRIPTION has invalid parameters"),
+        };
     if !is_decodable_string_list(description.first(), implementation_level)
         || !is_decodable_string(
             description.get(1).expect("FILE_DESCRIPTION has two values"),
@@ -1591,7 +1608,14 @@ fn validate_header(
         };
         admitted.push(identifier);
     }
-    Ok((implementation_level, admitted, implementation_diagnostic))
+    Ok((
+        HeaderAdmission {
+            grammar: implementation_level,
+            implementation_level: implementation_level_text,
+            schema_identifiers: admitted,
+        },
+        implementation_diagnostic,
+    ))
 }
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
@@ -2136,7 +2160,7 @@ fn valid_data_parameters(
 }
 
 /// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
-fn schema_identifiers(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
+fn schema_names_for_matching(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
     admitted
         .iter()
         .map(|identifier| identifier.text().to_ascii_uppercase())
