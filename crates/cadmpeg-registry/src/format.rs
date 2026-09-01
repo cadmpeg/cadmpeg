@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The output-format vocabulary this build carries.
+//! Writable formats and registry-owned CLI format words.
 
 /// An output format this build can write.
 ///
 /// Not a `ValueEnum`: `--to` takes `FORMAT[:DIALECT]`, and clap cannot parse
-/// the dialect half. [`Format::from_name`] is the whole output-format
-/// vocabulary, aliases included.
+/// the dialect half. [`Format::from_name`] resolves the writable subset of the
+/// registry-owned format vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     /// CADIR JSON. Also spelled `json`.
@@ -45,11 +45,10 @@ impl Format {
 
     /// The format an output-format word names, by id or by accepted alias.
     ///
-    /// Total over the `--to` format vocabulary, and the reason a bare `--to`
-    /// value is unambiguous: a value this returns `Some` for is a format, and
-    /// every other bare value is a dialect of the inferred output format.
+    /// Returns `None` for a known read-only format as well as for an unknown
+    /// word. Call [`Self::is_known_name`] first when that distinction matters.
     /// `registry::tests::compiled_write_catalogs_match_registry_policy` proves
-    /// no compiled target alias lands here.
+    /// no compiled target alias is also a format word.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         let canonical = crate::registry::canonical_format_name(name)?;
@@ -100,7 +99,7 @@ mod tests {
     use super::Format;
 
     #[test]
-    fn known_format_vocabulary_includes_canonical_names_and_output_aliases() {
+    fn known_format_vocabulary_includes_every_registry_word() {
         for name in [
             "cadir",
             "json",
@@ -139,6 +138,7 @@ mod tests {
         assert_eq!(Format::from_name("stp"), Some(Format::Step));
         assert_eq!(Format::from_name("json"), Some(Format::Cadir));
         assert_eq!(Format::from_name("inventor"), None);
+        assert_eq!(Format::from_name("ipt"), None);
     }
 
     #[test]
