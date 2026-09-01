@@ -3,11 +3,11 @@
 `cadmpeg-codec-rhino` decodes Rhino `.3dm` archives into `CadIr` and encodes
 supported `CadIr` documents back to `.3dm`.
 
-<!-- generated: capability -->
+<!-- generated: capability rhino -->
 
 Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability rhino -->
 
 Bounded source-less native writing to archive 50, 60, 70, and 80 is an extra.
 

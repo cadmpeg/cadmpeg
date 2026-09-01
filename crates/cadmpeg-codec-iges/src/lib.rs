@@ -3,9 +3,9 @@
 //! version-specific envelope rules; semantic rules are verified for versions
 //! 5.1, 5.2, and 5.3.
 //!
-//! <!-- generated: capability -->
+//! <!-- generated: capability iges -->
 //! Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
-//! <!-- /generated: capability -->
+//! <!-- /generated: capability iges -->
 //!
 //! Compressed ASCII and Binary read normalization is provided. Bounded
 //! semantic writing and independent-producer acceptance are part of the

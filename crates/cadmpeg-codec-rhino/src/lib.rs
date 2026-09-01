@@ -2,9 +2,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
-//! <!-- generated: capability -->
+//! <!-- generated: capability rhino -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
-//! <!-- /generated: capability -->
+//! <!-- /generated: capability rhino -->
 //!
 //! The codec provides bounded 3DM container inspection, typed decoding, and
 //! explicitly versioned native writing from neutral IR.

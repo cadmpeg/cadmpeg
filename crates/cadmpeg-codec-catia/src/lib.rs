@@ -7,9 +7,9 @@
 //! logical streams, identifies the storage variant, and decodes the record
 //! families supported for that variant.
 //!
-//! <!-- generated: capability -->
+//! <!-- generated: capability catia -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
-//! <!-- /generated: capability -->
+//! <!-- /generated: capability catia -->
 //!
 //! Recognized storage families transfer typed geometry, topology, design
 //! records, and presentation data when their source relations are complete.

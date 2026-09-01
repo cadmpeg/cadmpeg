@@ -4,9 +4,9 @@
 //! [`InventorCodec`] detects Inventor documents from the compound-file
 //! directory structure. It does not classify unrelated CFB files as Inventor.
 //!
-//! <!-- generated: capability -->
+//! <!-- generated: capability inventor -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
-//! <!-- /generated: capability -->
+//! <!-- /generated: capability inventor -->
 
 mod assembly;
 mod container;

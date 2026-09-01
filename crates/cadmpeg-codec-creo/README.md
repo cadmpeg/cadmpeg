@@ -9,11 +9,11 @@ records into [`CadIr`].
 The `.prt` extension is also used by Siemens NX. Format detection uses the
 `#UGC:2` signature.
 
-<!-- generated: capability -->
+<!-- generated: capability creo -->
 
 Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability creo -->
 
 ## Install
 

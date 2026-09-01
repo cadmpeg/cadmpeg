@@ -5,11 +5,11 @@ AP203 editions 1–2, AP214, and AP242 editions 1–3. [`StepCodec::plan`] resol
 the requested [`StepSchema`] from the encoder catalog. [`StepCodec`] implements both
 [`Codec`] decode and [`Encoder`] write. The cadmpeg CLI uses the same model.
 
-<!-- generated: capability -->
+<!-- generated: capability step -->
 
 Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability step -->
 
 ## Install
 
