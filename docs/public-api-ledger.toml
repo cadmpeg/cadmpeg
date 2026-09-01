@@ -18,6 +18,13 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "12ebff1984cde78587f84e0dc34c086ece40bf44"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::DialectEntry::target"
+reason = "compiled write-target membership belongs to the requested encoder catalog returned beside the joined identity/support rows; storing the same fact on every row forced registry loading to construct every encoder"
+
+[[change]]
 commit = "af2b7480e00a9e1e871e0bdadb6da1d20c7788a6"
 crate = "cadmpeg-core"
 kind = "field"
