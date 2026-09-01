@@ -335,15 +335,20 @@ fn completed_scan(
     cache_cells: Vec<CacheCell>,
     compound_streams: Vec<CompoundStream>,
 ) -> ContainerScan<'_> {
-    let solidworks =
-        scan_solidworks_envelopes(blocks.iter().map(|block| block.payload.as_slice()).chain(
-            compound_streams.iter().map(|stream| {
-                stream
-                    .decoded_payload
-                    .as_deref()
-                    .unwrap_or(stream.payload.as_slice())
-            }),
-        ));
+    let solidworks = scan_solidworks_envelopes(
+        blocks
+            .iter()
+            .map(|block| (block.section.as_deref(), block.payload.as_slice()))
+            .chain(compound_streams.iter().map(|stream| {
+                (
+                    Some(stream.path.as_str()),
+                    stream
+                        .decoded_payload
+                        .as_deref()
+                        .unwrap_or(stream.payload.as_slice()),
+                )
+            })),
+    );
     ContainerScan {
         source_image,
         version,
@@ -1041,67 +1046,11 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
 pub(crate) fn manifest_active_configuration(
     scan: &ContainerScan<'_>,
 ) -> Option<(usize, Option<String>)> {
-    let mut candidate = None;
-    for section in scan.sections() {
-        if !is_features_manifest(section) {
-            continue;
-        }
-        let Some(text) = xml_text(section.payload()) else {
-            continue;
-        };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
-        };
-        if document.root_element().tag_name().name() != "swSolidWorks" {
-            continue;
-        }
-        let configurations = document
-            .descendants()
-            .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
-            .collect::<Vec<_>>();
-        if configurations.is_empty() {
-            continue;
-        }
-        let rows = configurations
-            .into_iter()
-            .filter(|node| node.attribute("swMostRecentConfiguration") == Some("YES"))
-            .collect::<Vec<_>>();
-        let [row] = rows.as_slice() else {
-            return None;
-        };
-        let id = row.attribute("swID")?;
-        if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        let index = id.parse::<usize>().ok()?;
-        let name = manifest_configuration_name(&document, *row, id);
-        let current = (index, name);
-        match candidate.as_mut() {
-            None => candidate = Some(current),
-            Some((previous_index, previous_name)) => {
-                if *previous_index != index {
-                    return None;
-                }
-                if let (Some(previous), Some(current)) =
-                    (previous_name.as_deref(), current.1.as_deref())
-                {
-                    if previous != current {
-                        return None;
-                    }
-                }
-                if previous_name.is_none() {
-                    *previous_name = current.1;
-                }
-            }
-        }
-    }
-    candidate
+    scan.solidworks.manifest_active_configuration.unique()
 }
 
-fn is_features_manifest(section: Section<'_>) -> bool {
-    section
-        .name()
-        .and_then(|name| name.rsplit('/').next())
+fn is_features_manifest_name(name: Option<&str>) -> bool {
+    name.and_then(|name| name.rsplit('/').next())
         .is_some_and(|name| name.eq_ignore_ascii_case("Features"))
 }
 
@@ -1139,37 +1088,7 @@ fn manifest_configuration_name(
 
 fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
     let active = active_configuration_name(scan)?;
-    let mut indices = Vec::new();
-    for section in scan.sections() {
-        let Some(text) = xml_text(section.payload()) else {
-            continue;
-        };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
-        };
-        if !document
-            .root_element()
-            .tag_name()
-            .name()
-            .contains("Keywords")
-        {
-            continue;
-        }
-        indices.extend(
-            document
-                .descendants()
-                .filter(|node| {
-                    node.is_element()
-                        && node.tag_name().name() == "Configuration"
-                        && node.attribute("Name") == Some(active.as_str())
-                })
-                .filter_map(|node| node.attribute("SourceIndex"))
-                .filter(|value| {
-                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
-                })
-                .filter_map(|value| value.parse::<usize>().ok()),
-        );
-    }
+    let indices = scan.solidworks.configuration_source_indices.get(&active)?;
     (indices.len() == 1).then(|| indices[0])
 }
 
@@ -1213,13 +1132,52 @@ pub(crate) struct SolidWorksEnvelope {
 pub(crate) struct SolidWorksEnvelopeScan {
     first: Option<SolidWorksEnvelope>,
     configuration_names: BTreeSet<String>,
+    manifest_active_configuration: ManifestActiveConfiguration,
+    configuration_source_indices: BTreeMap<String, Vec<usize>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum ManifestActiveConfiguration {
+    #[default]
+    Absent,
+    Unique(usize, Option<String>),
+    Ambiguous,
+}
+
+impl ManifestActiveConfiguration {
+    fn merge(&mut self, current: Self) {
+        match (&mut *self, current) {
+            (_, Self::Absent) | (Self::Ambiguous, _) => {}
+            (_, Self::Ambiguous) => *self = Self::Ambiguous,
+            (Self::Absent, current @ Self::Unique(..)) => *self = current,
+            (Self::Unique(previous_index, previous_name), Self::Unique(index, mut name)) => {
+                if *previous_index != index
+                    || matches!(
+                        (previous_name.as_deref(), name.as_deref()),
+                        (Some(previous), Some(current)) if previous != current
+                    )
+                {
+                    *self = Self::Ambiguous;
+                } else if previous_name.is_none() {
+                    *previous_name = name.take();
+                }
+            }
+        }
+    }
+
+    fn unique(&self) -> Option<(usize, Option<String>)> {
+        match self {
+            Self::Unique(index, name) => Some((*index, name.clone())),
+            Self::Absent | Self::Ambiguous => None,
+        }
+    }
 }
 
 fn scan_solidworks_envelopes<'a>(
-    payloads: impl IntoIterator<Item = &'a [u8]>,
+    sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
 ) -> SolidWorksEnvelopeScan {
     let mut scan = SolidWorksEnvelopeScan::default();
-    for payload in payloads {
+    for (section, payload) in sections {
         let Some(text) = xml_text(payload) else {
             continue;
         };
@@ -1227,6 +1185,33 @@ fn scan_solidworks_envelopes<'a>(
             continue;
         };
         let root = document.root_element();
+        if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
+            scan.manifest_active_configuration
+                .merge(manifest_active_configuration_in(&document));
+        }
+        if root.tag_name().name().contains("Keywords") {
+            for configuration in document
+                .descendants()
+                .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
+            {
+                let Some(name) = configuration.attribute("Name") else {
+                    continue;
+                };
+                let Some(index) = configuration
+                    .attribute("SourceIndex")
+                    .filter(|value| {
+                        !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+                    .and_then(|value| value.parse::<usize>().ok())
+                else {
+                    continue;
+                };
+                scan.configuration_source_indices
+                    .entry(name.to_owned())
+                    .or_default()
+                    .push(index);
+            }
+        }
         if root.tag_name().name() != "swSolidWorks" {
             continue;
         }
@@ -1281,11 +1266,40 @@ fn scan_solidworks_envelopes<'a>(
     scan
 }
 
+fn manifest_active_configuration_in(
+    document: &roxmltree::Document<'_>,
+) -> ManifestActiveConfiguration {
+    let configurations = document
+        .descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
+        .collect::<Vec<_>>();
+    if configurations.is_empty() {
+        return ManifestActiveConfiguration::Absent;
+    }
+    let rows = configurations
+        .into_iter()
+        .filter(|node| node.attribute("swMostRecentConfiguration") == Some("YES"))
+        .collect::<Vec<_>>();
+    let [row] = rows.as_slice() else {
+        return ManifestActiveConfiguration::Ambiguous;
+    };
+    let Some(id) = row.attribute("swID") else {
+        return ManifestActiveConfiguration::Ambiguous;
+    };
+    let Some(index) = (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| id.parse::<usize>().ok())
+        .flatten()
+    else {
+        return ManifestActiveConfiguration::Ambiguous;
+    };
+    ManifestActiveConfiguration::Unique(index, manifest_configuration_name(document, *row, id))
+}
+
 /// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
 pub(crate) fn first_solidworks_envelope<'a>(
     payloads: impl IntoIterator<Item = &'a [u8]>,
 ) -> Option<SolidWorksEnvelope> {
-    scan_solidworks_envelopes(payloads).first
+    scan_solidworks_envelopes(payloads.into_iter().map(|payload| (None, payload))).first
 }
 
 pub(crate) fn solidworks_envelope<'a>(
