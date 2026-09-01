@@ -106,7 +106,7 @@ fn encoder_planning_owns_unknown_explicit_target_admission() {
         panic!("the encoder must reject an unknown target");
     };
     assert!(matches!(
-        error.downcast_ref::<ConversionRefusal>(),
+        error.refusal(),
         Some(ConversionRefusal::UnsupportedTarget { .. })
     ));
 }
@@ -140,7 +140,7 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         panic!("the plan loss must refuse");
     };
     let refusal = error
-        .downcast_ref::<ConversionRefusal>()
+        .refusal()
         .expect("the shared gate returns a typed refusal");
     assert!(
         matches!(refusal, ConversionRefusal::ExportLossRejected { .. }),
@@ -219,15 +219,11 @@ fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
     let Err(error) = conversion.plan() else {
         panic!("the synthetic writer is not implemented");
     };
-    assert!(
-        matches!(
-            error.downcast_ref::<cadmpeg_core::CodecError>(),
-            Some(cadmpeg_core::CodecError::NotImplemented(message))
-                if message == "writer path is not implemented"
-        ),
-        "{error:#}"
+    assert_eq!(
+        error.to_string(),
+        "not implemented yet: writer path is not implemented"
     );
-    assert!(error.downcast_ref::<ConversionRefusal>().is_none());
+    assert!(error.refusal().is_none());
 }
 
 /// Flag absence is always `Inherit`; the encoder decides what that means.
@@ -278,14 +274,14 @@ fn a_format_alias_does_not_become_a_dialect_request() {
 fn target_selection_rejects_an_empty_qualified_dialect() {
     let error = TargetSelection::resolve(Some("cadir:"), None).unwrap_err();
     assert!(error.to_string().contains("nothing after the colon"));
-    assert!(error.downcast_ref::<ConversionRefusal>().is_none());
+    assert!(error.refusal().is_none());
 }
 
 #[test]
 fn an_unwritable_format_is_a_typed_plan_refusal() {
     let error = TargetSelection::resolve(Some("catia:v5"), None).unwrap_err();
     let refusal = error
-        .downcast_ref::<ConversionRefusal>()
+        .refusal()
         .expect("unsupported output formats are semantic plan refusals");
     assert!(matches!(
         refusal,

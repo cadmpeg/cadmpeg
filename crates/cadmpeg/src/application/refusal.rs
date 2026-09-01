@@ -14,64 +14,119 @@ use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use serde::Serialize;
 
-/// Classifies codec decode failures while preserving operational I/O errors.
-pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
-    let fallback_message = format!("decode failed: {error:#}");
-    if let Some(failure) = error.downcast_ref::<DecodeFailure>() {
-        if matches!(
-            failure,
-            DecodeFailure::Codec(cadmpeg_core::CodecError::Io(_))
-        ) {
-            return error;
+/// A conversion workflow either refuses a modeled request or fails
+/// operationally.
+#[derive(Debug)]
+pub enum ApplicationError {
+    /// A modeled conversion policy or capability refusal.
+    Refusal(Box<ConversionRefusal>),
+    /// Filesystem, I/O, malformed implementation, or artifact failure.
+    Operational(anyhow::Error),
+}
+
+impl ApplicationError {
+    /// Returns the typed refusal when this is a modeled verdict.
+    #[must_use]
+    pub fn refusal(&self) -> Option<&ConversionRefusal> {
+        match self {
+            Self::Refusal(refusal) => Some(refusal.as_ref()),
+            Self::Operational(_) => None,
         }
-        let Ok(failure) = error.downcast::<DecodeFailure>() else {
-            unreachable!("downcast_ref established the decode failure type");
-        };
-        return match failure {
-            DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
-                dialects,
-                message,
-            }) => ConversionRefusal::UnsupportedDialect {
-                dialects,
-                reason: message,
-            },
-            DecodeFailure::StrictRejected {
-                loss_code,
-                message,
-                report,
-            } => ConversionRefusal::StrictDecodeRejected {
-                loss_code,
-                loss_message: message,
-                decode_report: *report,
-            },
-            _ => ConversionRefusal::DecodeFailed {
-                message: fallback_message,
-            },
-        }
-        .into();
     }
 
-    let Some(codec_error) = error.downcast_ref::<cadmpeg_core::CodecError>() else {
-        return error;
-    };
-    if matches!(codec_error, cadmpeg_core::CodecError::Io(_)) {
-        return error;
+    /// Process exit status for this application result.
+    #[must_use]
+    pub fn exit_code(&self) -> u8 {
+        self.refusal().map_or(2, ConversionRefusal::exit_code)
     }
-    let Ok(codec_error) = error.downcast::<cadmpeg_core::CodecError>() else {
-        unreachable!("downcast_ref established the codec error type");
-    };
-    match codec_error {
-        cadmpeg_core::CodecError::UnsupportedDialect { dialects, message } => {
-            ConversionRefusal::UnsupportedDialect {
-                dialects,
-                reason: message,
-            }
+}
+
+impl From<ConversionRefusal> for ApplicationError {
+    fn from(refusal: ConversionRefusal) -> Self {
+        Self::Refusal(Box::new(refusal))
+    }
+}
+
+impl From<anyhow::Error> for ApplicationError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Operational(error)
+    }
+}
+
+impl From<std::io::Error> for ApplicationError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Operational(error.into())
+    }
+}
+
+impl From<serde_json::Error> for ApplicationError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Operational(error.into())
+    }
+}
+
+impl From<cadmpeg_core::CodecError> for ApplicationError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        Self::Operational(error.into())
+    }
+}
+
+impl fmt::Display for ApplicationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Refusal(refusal) => fmt::Display::fmt(refusal.as_ref(), f),
+            Self::Operational(error) if f.alternate() => write!(f, "{error:#}"),
+            Self::Operational(error) => fmt::Display::fmt(error, f),
         }
-        _ => ConversionRefusal::DecodeFailed {
-            message: fallback_message,
-        },
     }
-    .into()
+}
+
+impl std::error::Error for ApplicationError {}
+
+/// Classifies a typed loader result without inspecting an erased error chain.
+pub(crate) fn classify_load_error(error: crate::loader::LoadError) -> ApplicationError {
+    let (path, format_id, failure) = match error {
+        crate::loader::LoadError::Decode {
+            path,
+            format_id,
+            failure,
+        } => (path, format_id, failure),
+        crate::loader::LoadError::Operational(error) => {
+            return ApplicationError::Operational(error)
+        }
+    };
+
+    match *failure {
+        DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)) => ApplicationError::Operational(
+            anyhow::Error::new(DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)))
+                .context(format!("decoding {} as {format_id}", path.display())),
+        ),
+        DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
+            dialects,
+            message,
+        }) => ConversionRefusal::UnsupportedDialect {
+            dialects,
+            reason: message,
+        }
+        .into(),
+        DecodeFailure::StrictRejected {
+            loss_code,
+            message,
+            report,
+        } => ConversionRefusal::StrictDecodeRejected {
+            loss_code,
+            loss_message: message,
+            decode_report: *report,
+        }
+        .into(),
+        failure => ConversionRefusal::DecodeFailed {
+            message: format!(
+                "decode failed: decoding {} as {format_id}: {failure}",
+                path.display()
+            ),
+        }
+        .into(),
+    }
 }
 
 /// Stable refusal code written into v7 command reports and used by tests.
@@ -430,6 +485,7 @@ impl std::error::Error for ConversionRefusal {}
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
 
     use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
     use cadmpeg_core::target::TargetDescriptor;
@@ -445,6 +501,14 @@ mod tests {
 
     fn report_value(refusal: &ConversionRefusal) -> serde_json::Value {
         serde_json::to_value(refusal.report()).expect("serialize refusal report")
+    }
+
+    fn decode_load_error(failure: DecodeFailure) -> crate::loader::LoadError {
+        crate::loader::LoadError::Decode {
+            path: PathBuf::from("part.step"),
+            format_id: "step",
+            failure: Box::new(failure),
+        }
     }
 
     #[test]
@@ -522,15 +586,14 @@ mod tests {
     #[test]
     fn decode_classifier_preserves_an_unsupported_dialect_variant() {
         let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
-        let classified = classify_decode_failure(
+        let classified = classify_load_error(decode_load_error(DecodeFailure::Codec(
             cadmpeg_core::CodecError::UnsupportedDialect {
                 dialects: Box::new(DialectLayers::of(matched.clone())),
                 message: "the XML encoding has no decode grammar".into(),
-            }
-            .into(),
-        );
+            },
+        )));
         let refusal = classified
-            .downcast_ref::<ConversionRefusal>()
+            .refusal()
             .expect("codec refusal becomes an application refusal");
 
         let ConversionRefusal::UnsupportedDialect { dialects, .. } = refusal else {
@@ -549,16 +612,13 @@ mod tests {
             vec!["decode completed".into()],
             TransferLedger::default(),
         );
-        let classified = classify_decode_failure(
-            DecodeFailure::StrictRejected {
-                loss_code: "test/source.dialect-unverified".into(),
-                message: "the dialect was recovered provisionally".into(),
-                report: Box::new(report),
-            }
-            .into(),
-        );
+        let classified = classify_load_error(decode_load_error(DecodeFailure::StrictRejected {
+            loss_code: "test/source.dialect-unverified".into(),
+            message: "the dialect was recovered provisionally".into(),
+            report: Box::new(report),
+        }));
         let refusal = classified
-            .downcast_ref::<ConversionRefusal>()
+            .refusal()
             .expect("strict policy failure becomes an application refusal");
 
         assert_eq!(refusal.code(), RefusalCode::StrictDecodeRejected);
@@ -569,6 +629,21 @@ mod tests {
             refusal.decode_report().expect("completed report").notes,
             ["decode completed"]
         );
+    }
+
+    #[test]
+    fn decode_classifier_keeps_io_operational() {
+        let classified = classify_load_error(decode_load_error(DecodeFailure::Codec(
+            cadmpeg_core::CodecError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "short read",
+            )),
+        )));
+
+        assert!(classified.refusal().is_none());
+        assert_eq!(classified.exit_code(), 2);
+        assert_eq!(classified.to_string(), "decoding part.step as step");
+        assert!(format!("{classified:#}").contains("short read"));
     }
 
     #[test]

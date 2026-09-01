@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Input detection and loading into CADIR.
 
+use std::fmt;
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
-use cadmpeg_ir::codec::{Confidence, DecodeOptions};
+use anyhow::{anyhow, Context};
+use cadmpeg_ir::codec::{Confidence, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::CadIr;
 
 use cadmpeg_registry::{
@@ -35,6 +36,44 @@ pub struct LoadOutcome {
     pub notices: Vec<LoadNotice>,
 }
 
+/// A document-load failure before application refusal classification.
+#[derive(Debug)]
+pub enum LoadError {
+    /// A native codec returned a typed decode result.
+    Decode {
+        /// Input being decoded.
+        path: PathBuf,
+        /// Selected native codec.
+        format_id: &'static str,
+        /// Codec or strict-policy failure.
+        failure: Box<DecodeFailure>,
+    },
+    /// Filesystem, detection, CADIR parsing, or sidecar failure.
+    Operational(anyhow::Error),
+}
+
+impl From<anyhow::Error> for LoadError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Operational(error)
+    }
+}
+
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Decode {
+                path,
+                format_id,
+                failure,
+            } => write!(f, "decoding {} as {format_id}: {failure}", path.display()),
+            Self::Operational(error) if f.alternate() => write!(f, "{error:#}"),
+            Self::Operational(error) => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+impl std::error::Error for LoadError {}
+
 /// Restates a detection failure with the flag that overrides it.
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
@@ -57,7 +96,7 @@ pub fn load_artifact(
     path: &Path,
     options: DecodeOptions,
     forced: Option<ForcedInput>,
-) -> Result<LoadOutcome> {
+) -> Result<LoadOutcome, LoadError> {
     let prefix = ArtifactStore::read_detection_input(
         path,
         DETECTION_PREFIX_LEN,
@@ -82,7 +121,11 @@ pub fn load_artifact(
             let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
             let result = codec
                 .decode(&mut f, &options)
-                .with_context(|| format!("decoding {} as {}", path.display(), format_id))?;
+                .map_err(|failure| LoadError::Decode {
+                    path: path.to_owned(),
+                    format_id,
+                    failure: Box::new(failure),
+                })?;
             return Ok(LoadOutcome {
                 document: LoadedDocument::decoded(result),
                 notices,
@@ -93,7 +136,8 @@ pub fn load_artifact(
             return Err(anyhow!(
                 "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, .cadir.json; use --input-format to override detection",
                 path.display()
-            ));
+            )
+            .into());
         }
     }
 

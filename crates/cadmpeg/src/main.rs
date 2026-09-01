@@ -435,7 +435,7 @@ fn main() -> ExitCode {
         inputs: InputCatalog::with_builtins(),
         validators: NativeValidatorCatalog::with_builtins(),
     };
-    let result = match command {
+    let result: Result<ExitCode, application::refusal::ApplicationError> = match command {
         Command::Inspect {
             input,
             input_flag,
@@ -446,7 +446,9 @@ fn main() -> ExitCode {
             input_args,
             bytes,
         } => match bytes {
-            Some(byte_command) => inspect::run(byte_command),
+            Some(byte_command) => {
+                inspect::run(byte_command).map_err(application::refusal::ApplicationError::from)
+            }
             None => {
                 let input = resolve_input(input, input_flag);
                 commands::inspect(
@@ -476,7 +478,8 @@ fn main() -> ExitCode {
                     "dump writes the CADIR JSON artifact itself; its standard output is \
                      already JSON when -o is omitted; the dump report goes to --report FILE, \
                      projected with `cadmpeg query`"
-                ))
+                )
+                .into())
             } else {
                 commands::dump(
                     &catalogs,
@@ -490,7 +493,9 @@ fn main() -> ExitCode {
             }
         }
         .map(|()| ExitCode::SUCCESS),
-        Command::Query { view } => query::run(&view).map(|()| ExitCode::SUCCESS),
+        Command::Query { view } => query::run(&view)
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(application::refusal::ApplicationError::from),
         Command::Check {
             input,
             input_flag,
@@ -553,7 +558,7 @@ fn main() -> ExitCode {
             decode,
         } => {
             if json {
-                Err(misdirected_json("convert"))
+                Err(misdirected_json("convert").into())
             } else {
                 let conversion_args = commands::ConversionArgs {
                     policy: application::ConversionPolicy {
@@ -585,14 +590,11 @@ fn main() -> ExitCode {
         }
         Command::Dialects { format } => print_dialects(format.as_deref())
             .map(|()| ExitCode::SUCCESS)
-            .map_err(anyhow::Error::new),
+            .map_err(anyhow::Error::new)
+            .map_err(application::refusal::ApplicationError::from),
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");
-        if let Some(refusal) = err.downcast_ref::<application::ConversionRefusal>() {
-            ExitCode::from(refusal.exit_code())
-        } else {
-            ExitCode::from(2)
-        }
+        ExitCode::from(err.exit_code())
     })
 }
