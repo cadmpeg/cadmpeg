@@ -67,7 +67,7 @@ impl<'a> InventorContainer<'a> {
                         .insert("meta_marker".into(), meta.declared.marker.clone());
                     entry.attributes.insert(
                         "meta_stream_version".into(),
-                        meta.version.value().to_string(),
+                        meta.declared.version.to_string(),
                     );
                     entry
                         .attributes

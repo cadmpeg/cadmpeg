@@ -64,15 +64,6 @@ pub(crate) struct SegmentPair {
     pub(crate) bulk: CompoundStreamId,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MetaStreamVersion(u16);
-
-impl MetaStreamVersion {
-    pub(crate) const fn value(self) -> u16 {
-        self.0
-    }
-}
-
 /// The marker and version an `RSe` metadata stream declares in its first two
 /// fields, as read.
 ///
@@ -201,7 +192,6 @@ pub(crate) struct SegmentMeta<'a> {
     /// The marker and version the stream declared, kept verbatim: the grammar
     /// applied to the body is the version-8 one whatever this says.
     pub(crate) declared: MetaStreamDeclaration,
-    pub(crate) version: MetaStreamVersion,
     pub(crate) header_values: [u16; 8],
     pub(crate) display_name: String,
     pub(crate) segment_id: [u8; 16],
@@ -649,7 +639,6 @@ fn parse_meta_stream_v8<'a>(
     mut cursor: MetaCursor<'a>,
     declared: MetaStreamDeclaration,
 ) -> Result<SegmentMeta<'a>, CodecError> {
-    let version = declared.version;
     let header_values = cursor.u16_array("header values")?;
     let display_name = cursor.length_prefixed_utf16("display name")?;
     let mut segment_id = [0; 16];
@@ -670,7 +659,6 @@ fn parse_meta_stream_v8<'a>(
     let tables = parse_meta_tables(ctx, body)?;
     Ok(SegmentMeta {
         declared,
-        version: MetaStreamVersion(version),
         header_values,
         display_name,
         segment_id,
@@ -823,7 +811,7 @@ mod tests {
         else {
             panic!("version-eight metadata state")
         };
-        assert_eq!(meta.version.value(), 8);
+        assert_eq!(meta.declared.version, 8);
         assert_eq!(meta.header_values, [1, 0, 2, 0, 3, 0, 4, 0]);
         assert_eq!(meta.display_name, "PmBRepSegment");
         assert_eq!(meta.segment_id, [0x5a; 16]);

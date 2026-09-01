@@ -678,7 +678,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             Some(SegmentMetaRecord {
                 id: format!("inventor:rse:segment-meta#{}", segment.pair.token.as_str()),
                 token: segment.pair.token.as_str().into(),
-                version: meta.version.value(),
+                version: meta.declared.version,
                 kind: segment.kind.label().into(),
                 display_name: meta.display_name.clone(),
                 segment_id: hex(&meta.segment_id),
