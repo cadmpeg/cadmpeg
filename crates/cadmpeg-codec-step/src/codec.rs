@@ -61,12 +61,7 @@ impl Encoder for StepCodec {
         let Some(entry) = resolved.catalog_entry() else {
             return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
         };
-        let schema = StepSchema::from_target(entry).ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "STEP target catalog entry {} has no typed write schema",
-                entry.id
-            ))
-        })?;
+        let schema = StepSchema::from_catalog_entry(entry);
         let mut bytes = Vec::new();
         let outcome = write_step_outcome(input.ir, &mut bytes, schema, &self.options)
             .map_err(CodecError::from)?;

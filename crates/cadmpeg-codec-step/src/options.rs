@@ -108,10 +108,11 @@ impl StepSchema {
         }
     }
 
-    pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
+    pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
         Self::ALL
             .into_iter()
             .find(|schema| schema.descriptor().id == target.id)
+            .expect("STEP target catalog is projected from StepSchema::ALL")
     }
 
     const fn pinned(self) -> &'static str {
