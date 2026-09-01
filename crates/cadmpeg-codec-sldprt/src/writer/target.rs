@@ -3,13 +3,10 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    resolve_write_request, EncodeInput, ExportPlan, ResolvedWrite, TargetRequest,
-};
+use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
 
-use crate::dialect;
 use crate::loss::SldprtLossCode;
 use crate::{source_records, ReplaySkipped, SemanticFidelity, SldprtCodec, Written};
 
@@ -32,12 +29,11 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SldprtCodec, Writte
 /// inherit: the document has no source, or a source of another format.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    request: TargetRequest<'_>,
+    resolved: &ResolvedWrite,
 ) -> Result<ExportPlan, CodecError> {
-    let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let target = resolved.dialect().clone();
     let (written, bytes) = write(input, resolved.preserves_source())?;
-    check_honesty(&resolved, &written)?;
+    check_honesty(resolved, &written)?;
     Ok(finish(
         input,
         target,

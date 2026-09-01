@@ -40,11 +40,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
-    TargetRequest,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, EncoderBackend,
+    EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
@@ -1411,21 +1410,19 @@ impl CodecBackend for FcstdCodec {
     }
 }
 
-impl Encoder for FcstdCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+impl EncoderBackend for FcstdCodec {
+    const FORMAT: &'static str = dialect::FORMAT;
+    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(dialect::TARGETS);
 
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        dialect::TARGETS
-    }
-
-    fn plan(
+    fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
+        target: ResolvedEncoderTarget,
     ) -> Result<ExportPlan, CodecError> {
-        writer::target::plan(input, request)
+        let ResolvedEncoderTarget::Native(resolved) = target else {
+            unreachable!("a catalog encoder receives only native target resolutions")
+        };
+        writer::target::plan(input, &resolved)
     }
 }
 

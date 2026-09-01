@@ -9,7 +9,9 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{
+    Codec, DecodeFailure, DecodeOptions, DecodeResult, EncodeInput, Encoder, TargetRequest,
+};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{CadIr, WritePath};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};

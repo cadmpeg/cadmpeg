@@ -321,8 +321,59 @@ pub fn source_dialect_displaced_message(
     )
 }
 
-/// A native-format writer.
-pub trait Encoder {
+/// How an encoder resolves caller target requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncoderTargetDomain {
+    /// The neutral representation has no dialect catalog or target identity.
+    DialectFree,
+    /// A native format resolves every request against this complete catalog.
+    Catalog(&'static [TargetDescriptor]),
+}
+
+impl EncoderTargetDomain {
+    const fn targets(self) -> &'static [TargetDescriptor] {
+        match self {
+            Self::DialectFree => &[],
+            Self::Catalog(targets) => targets,
+        }
+    }
+}
+
+/// A target request resolved by the sealed encoder boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedEncoderTarget {
+    /// The dialect-free encoder received its only valid request, inherit.
+    DialectFree,
+    /// A native request resolved against the backend's declared catalog.
+    Native(ResolvedWrite),
+}
+
+/// Implementation surface for one output format.
+///
+/// Backends declare one target domain and receive only a request already
+/// resolved through that domain. Callers use the sealed [`Encoder`] wrapper.
+pub trait EncoderBackend {
+    /// Stable output format id.
+    const FORMAT: &'static str;
+
+    /// The target grammar this backend implements.
+    const TARGET_DOMAIN: EncoderTargetDomain;
+
+    /// Plans a write from the request resolved by [`Encoder::plan`].
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: ResolvedEncoderTarget,
+    ) -> Result<ExportPlan, CodecError>;
+}
+
+mod encoder_sealed {
+    pub trait Sealed {}
+    impl<E: super::EncoderBackend> Sealed for E {}
+}
+
+/// Public planning interface for an output format.
+pub trait Encoder: encoder_sealed::Sealed {
     /// Stable output format id.
     fn id(&self) -> &'static str;
 
@@ -342,6 +393,43 @@ pub trait Encoder {
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError>;
+}
+
+impl<E: EncoderBackend> Encoder for E {
+    fn id(&self) -> &'static str {
+        E::FORMAT
+    }
+
+    fn targets(&self) -> &'static [TargetDescriptor] {
+        E::TARGET_DOMAIN.targets()
+    }
+
+    fn plan(
+        &self,
+        input: EncodeInput<'_>,
+        request: TargetRequest<'_>,
+    ) -> Result<ExportPlan, CodecError> {
+        let target = match E::TARGET_DOMAIN {
+            EncoderTargetDomain::DialectFree => match request {
+                TargetRequest::Inherit => ResolvedEncoderTarget::DialectFree,
+                TargetRequest::Explicit(id) => {
+                    return Err(TargetRefusal::unknown_explicit(E::FORMAT, id, &[]).into());
+                }
+            },
+            EncoderTargetDomain::Catalog(targets) => ResolvedEncoderTarget::Native(
+                resolve_write_request(input.ir, request, E::FORMAT, targets)?,
+            ),
+        };
+        let plan = self.plan_resolved(input, target)?;
+        if plan.report().format() != E::FORMAT {
+            return Err(CodecError::ContractViolation {
+                codec: E::FORMAT,
+                operation: "plan",
+                reported: plan.report().format().to_owned(),
+            });
+        }
+        Ok(plan)
+    }
 }
 
 /// Borrowed inputs used to plan an export.
@@ -404,30 +492,23 @@ impl ExportPlan {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CadirEncoder;
 
-impl Encoder for CadirEncoder {
-    fn id(&self) -> &'static str {
-        "cadir"
-    }
+impl EncoderBackend for CadirEncoder {
+    const FORMAT: &'static str = "cadir";
 
     /// Empty. CADIR is the neutral document, not a native format: its version
     /// is data about cadmpeg, never a dialect, and `ExportReport::target` is
     /// `None` on every CADIR write. An encoder with no catalog takes
     /// [`TargetRequest::Inherit`] only.
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        &[]
-    }
+    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::DialectFree;
 
-    fn plan(
+    fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
+        target: ResolvedEncoderTarget,
     ) -> Result<ExportPlan, CodecError> {
-        match request {
-            TargetRequest::Inherit => {}
-            TargetRequest::Explicit(id) => {
-                return Err(TargetRefusal::unknown_explicit(self.id(), id, self.targets()).into());
-            }
-        }
+        let ResolvedEncoderTarget::DialectFree = target else {
+            unreachable!("a dialect-free encoder receives only dialect-free resolutions")
+        };
         let report = ExportReport::cadir(
             EntityCensus {
                 basis: CensusBasis::IrArenas,

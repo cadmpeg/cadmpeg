@@ -1,4 +1,4 @@
-# generated at 9e72f09dd
+# generated at 985fbb18d
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
@@ -17,10 +17,10 @@ pub fn cadmpeg_codec_step::StepCodec::decode_impl(&self, &cadmpeg_core::decode::
 pub fn cadmpeg_codec_step::StepCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_step::StepCodec::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_step::StepCodec::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+impl cadmpeg_ir::codec::write::EncoderBackend for cadmpeg_codec_step::StepCodec
+pub const cadmpeg_codec_step::StepCodec::FORMAT: &'static str
+pub const cadmpeg_codec_step::StepCodec::TARGET_DOMAIN: cadmpeg_ir::codec::write::EncoderTargetDomain
+pub fn cadmpeg_codec_step::StepCodec::plan_resolved(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::ResolvedEncoderTarget) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
 pub struct cadmpeg_codec_step::StepWriteOptions
 pub cadmpeg_codec_step::StepWriteOptions::author: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String

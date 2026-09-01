@@ -13,7 +13,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetRequest,
+    CodecBackend, Confidence, DecodeResult, EncodeInput, EncoderBackend, EncoderTargetDomain,
+    ExportPlan, ResolvedEncoderTarget,
 };
 
 pub(crate) mod annotations;
@@ -162,23 +163,22 @@ impl CodecBackend for RhinoCodec {
     }
 }
 
-impl Encoder for RhinoCodec {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
-
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        RhinoArchiveVersion::TARGETS
-    }
+impl EncoderBackend for RhinoCodec {
+    const FORMAT: &'static str = dialect::FORMAT;
+    const TARGET_DOMAIN: EncoderTargetDomain =
+        EncoderTargetDomain::Catalog(RhinoArchiveVersion::TARGETS);
 
     /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
     /// because 3DM has no retained-image path.
-    fn plan(
+    fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
+        target: ResolvedEncoderTarget,
     ) -> Result<ExportPlan, CodecError> {
-        writer::target::plan(input, request)
+        let ResolvedEncoderTarget::Native(resolved) = target else {
+            unreachable!("a catalog encoder receives only native target resolutions")
+        };
+        writer::target::plan(input, &resolved)
     }
 }
 

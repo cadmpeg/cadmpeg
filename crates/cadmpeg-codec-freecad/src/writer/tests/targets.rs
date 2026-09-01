@@ -2,7 +2,6 @@
 //! Resolution of a write request against the source: the synthesis catalog,
 //! preservation, and the refusals.
 
-use super::super::target::resolve;
 use super::super::*;
 use crate::native::DocumentFacts;
 use crate::test_support::*;
@@ -313,11 +312,6 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
             &DecodeOptions::default(),
         )
         .expect("decode schema 2");
-    assert!(
-        resolve(decoded.ir(), TargetRequest::Explicit("fcstd:schema-4")).is_err(),
-        "the retained schema-2 graph cannot deliver schema 4"
-    );
-
     let error = Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(decoded.ir(), None),

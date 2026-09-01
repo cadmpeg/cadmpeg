@@ -5,7 +5,6 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
-use cadmpeg_core::target::{find_target, TargetRefusal};
 use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
@@ -41,9 +40,8 @@ pub struct ExportTarget {
 ///
 /// `--to` names a dialect outright. A `--to` that names only a format, or no
 /// `--to` at all, leaves `request` unstated so the encoder inherits from the
-/// source. Explicit tokens are admitted against the selected encoder's static
-/// catalog before input decode. The encoder resolves source-dependent
-/// preservation and delivery during planning.
+/// source. The encoder resolves explicit tokens, source-dependent
+/// preservation, and delivery during planning.
 #[derive(Debug, Clone)]
 pub struct TargetSelection {
     /// Selected output format.
@@ -59,8 +57,8 @@ impl TargetSelection {
         Self { format, request }
     }
 
-    /// Resolves the `--to` grammar against the output path. [`export_target`]
-    /// admits an explicit dialect before input decode.
+    /// Resolves the format half of the `--to` grammar against the output path.
+    /// The encoder admits the dialect half during planning.
     pub fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
         let inferred = format_from_path(out);
         Ok(match to {
@@ -600,31 +598,17 @@ pub(crate) fn emit_export_plan(
 
 /// Builds an [`ExportTarget`] from the command-line selection.
 ///
-/// Explicit tokens are admitted against the encoder's static catalog here,
-/// before input decode. The encoder's `plan` resolves source-dependent inherit
-/// requests and input-conditioned delivery.
+/// This constructs the selected encoder without interpreting its dialect
+/// token. The encoder's sealed `plan` resolves catalog membership,
+/// source-dependent inheritance, and input-conditioned delivery once.
 ///
 /// `losses` is a policy, never a target: reading it as one would turn
 /// `convert a.step -o b.step --reject-lossy=export` into an explicit AP214
 /// request, silently rewriting the schema of a file the caller only asked to
 /// check for losses.
-pub fn export_target(selection: TargetSelection) -> Result<ExportTarget> {
+pub fn export_target(selection: TargetSelection) -> ExportTarget {
     let encoder = cadmpeg_registry::build_encoder(selection.format);
-    if let Some(requested) = selection.request.as_deref() {
-        if find_target(encoder.targets(), requested).is_none() {
-            return Err(ConversionRefusal::UnsupportedTarget {
-                refusal: Box::new(TargetRefusal::unknown_explicit(
-                    encoder.id(),
-                    requested,
-                    encoder.targets(),
-                )),
-                decode_report: None,
-                validation: None,
-            }
-            .into());
-        }
-    }
-    Ok(ExportTarget { encoder, selection })
+    ExportTarget { encoder, selection }
 }
 
 #[cfg(test)]
