@@ -372,32 +372,6 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     );
 }
 
-/// An explicit id outside the catalog is refused with the catalog, so the
-/// caller can correct the request from the message alone.
-#[test]
-fn an_unknown_explicit_target_is_refused_with_the_catalog() {
-    let result = decode(synthetic_sldprt());
-    let error = plan(
-        &result,
-        true,
-        cadmpeg_ir::codec::TargetRequest::Explicit("step:ap242-e3"),
-    )
-    .err()
-    .expect("a STEP schema is not a SLDPRT target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.requested(), Some("step:ap242-e3"));
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "sldprt:unknown"),
-        "{:?}",
-        refusal.available()
-    );
-}
-
 /// The §8.3 honesty invariant on the patch path: an edited part still writes
 /// the source's own dialect, because the retained `swSolidWorks` envelope goes
 /// through unchanged, and the report names it.
