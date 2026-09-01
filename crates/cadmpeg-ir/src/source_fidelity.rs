@@ -30,7 +30,7 @@ pub const DECODE_SIDECAR_VERSION_V1: &str = "1";
 pub const DECODE_SIDECAR_VERSION_V2: &str = "2";
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeSidecar {
     /// Serialized sidecar format version.
@@ -41,6 +41,46 @@ pub struct DecodeSidecar {
     pub report: DecodeReport,
     /// Decode-time annotations and retained source records.
     pub fidelity: SourceFidelity,
+}
+
+#[derive(Deserialize)]
+struct DecodeSidecarWire {
+    version: String,
+    ir_sha256: String,
+    report: SidecarDecodeReport,
+    fidelity: SourceFidelity,
+}
+
+/// A decode report inside a current sidecar, where `dialects` is required even
+/// though the reusable [`DecodeReport`] wire remains omission-tolerant.
+struct SidecarDecodeReport(DecodeReport);
+
+impl<'de> Deserialize<'de> for SidecarDecodeReport {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let Some(fields) = value.as_object() else {
+            return Err(serde::de::Error::custom(
+                "decode-sidecar report must be a JSON object",
+            ));
+        };
+        if !fields.contains_key("dialects") {
+            return Err(serde::de::Error::missing_field("dialects"));
+        }
+        let report = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+        Ok(Self(report))
+    }
+}
+
+impl<'de> Deserialize<'de> for DecodeSidecar {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = DecodeSidecarWire::deserialize(deserializer)?;
+        Ok(Self {
+            version: wire.version,
+            ir_sha256: wire.ir_sha256,
+            report: wire.report.0,
+            fidelity: wire.fidelity,
+        })
+    }
 }
 
 impl DecodeSidecar {
@@ -108,11 +148,6 @@ impl DecodeSidecar {
                     found: found.to_owned(),
                 });
             }
-        }
-        if value.pointer("/report/dialects").is_none() {
-            return Err(DecodeSidecarParseError::Json(
-                <serde_json::Error as serde::de::Error>::missing_field("report.dialects"),
-            ));
         }
         let sidecar: Self = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
         if sidecar.version != DECODE_SIDECAR_VERSION {
@@ -545,7 +580,31 @@ mod tests {
         let error = DecodeSidecar::from_json(&truncated)
             .expect_err("a v3 sidecar cannot silently lose its dialect classification");
         assert!(
-            matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("report.dialects")),
+            matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("missing field `dialects`")),
+            "{error}"
+        );
+        serde_json::from_str::<DecodeSidecar>(&truncated)
+            .expect_err("the sidecar wire itself requires report.dialects");
+    }
+
+    #[test]
+    fn current_decode_sidecar_reports_a_missing_report_at_the_outer_boundary() {
+        let report = DecodeReport::unclassified(
+            "test",
+            crate::report::DecodeTransfer::full(true),
+            std::collections::BTreeMap::default(),
+            Vec::new(),
+            Vec::new(),
+            crate::report::TransferLedger::default(),
+        );
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
+        let mut value = serde_json::to_value(sidecar).unwrap();
+        value.as_object_mut().unwrap().remove("report");
+
+        let error = DecodeSidecar::from_json(&value.to_string())
+            .expect_err("a current sidecar requires its report object");
+        assert!(
+            matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("missing field `report`")),
             "{error}"
         );
     }
