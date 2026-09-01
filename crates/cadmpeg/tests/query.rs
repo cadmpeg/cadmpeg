@@ -95,10 +95,14 @@ fn summary_exposes_document_and_decode_dialect_identity() {
           "source": {
             "format": "rhino",
             "attributes": {},
-            "dialect": {
-              "format": "rhino",
-              "dialect": "rhino:archive-80",
-              "admission": "admitted"
+            "dialects": {
+              "primary": {
+                "format": "rhino",
+                "dialect": "rhino:archive-80",
+                "declared": {"archive_version": "80"},
+                "admission": "admitted"
+              },
+              "extra": []
             }
           },
           "model": {},
@@ -111,9 +115,13 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         .success()
         .stdout(
             predicate::str::contains("source_format\trhino")
+                .and(predicate::str::contains("source_dialect_layers\t1"))
                 .and(predicate::str::contains("source_dialect\trhino:archive-80"))
                 .and(predicate::str::contains(
                     "source_dialect_admission\tadmitted",
+                ))
+                .and(predicate::str::contains(
+                    "source_dialect_declared\t{\"archive_version\":\"80\"}",
                 )),
         );
 
@@ -133,6 +141,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
               "primary": {
                 "format": "f3d",
                 "dialect": "f3d:archive-2",
+                "declared": {"manifest_version": "2"},
                 "admission": "admitted"
               },
               "extra": [{
@@ -151,20 +160,142 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         .success()
         .stdout(
             predicate::str::contains("decode_dialect_layers\t2")
+                .and(predicate::str::contains("decode_dialects\t{\"primary\":"))
                 .and(predicate::str::contains("decode_dialect\tf3d:archive-2"))
                 .and(predicate::str::contains(
                     "decode_dialect_admission\tadmitted",
                 ))
                 .and(predicate::str::contains(
-                    "decode_extra_1_dialect\tacis:sab-22300",
-                ))
-                .and(predicate::str::contains(
-                    "decode_extra_1_dialect_admission\t{\"admitted_unverified\":{\"using\":\"acis:sab-22200\"}}",
-                ))
-                .and(predicate::str::contains(
-                    "decode_extra_1_dialect_instance\tmember:model.sab",
+                    "decode_dialect_declared\t{\"manifest_version\":\"2\"}",
                 )),
         );
+}
+
+#[test]
+fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers() {
+    let dir = tempdir().unwrap();
+    let report = write(
+        dir.path(),
+        "identity.report.json",
+        r#"{
+          "schema_version": 7,
+          "command": "convert",
+          "status": "refused",
+          "refusal": {
+            "stage": "decode",
+            "code": "unsupported_dialect",
+            "message": "unsupported source",
+            "dialects": {
+              "primary": {
+                "format": "rhino",
+                "dialect": "rhino:unknown",
+                "declared": {"archive_version": "100"},
+                "admission": "refused"
+              },
+              "extra": []
+            }
+          },
+          "summary": {
+            "format": "rhino",
+            "losses": [{
+              "code": {"namespace": "rhino", "code": "source.dialect-unverified"},
+              "severity": "warning",
+              "message": "archive word is residual"
+            }],
+            "dialects": {
+              "primary": {
+                "format": "rhino",
+                "dialect": "rhino:archive-80",
+                "declared": {"archive_version": "80"},
+                "admission": "admitted"
+              },
+              "extra": []
+            }
+          },
+          "decode_report": null,
+          "check_report": null,
+          "export": {"format": "step", "target": "step:ap242-e3"}
+        }"#,
+    );
+
+    let output = cadmpeg()
+        .args(["query", "summary", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "refusal_dialects\t{\"primary\":",
+        "refusal_dialect\trhino:unknown",
+        "refusal_dialect_declared\t{\"archive_version\":\"100\"}",
+        "inspect_dialects\t{\"primary\":",
+        "inspect_dialect\trhino:archive-80",
+        "inspect_dialect_declared\t{\"archive_version\":\"80\"}",
+        "export_format\tstep",
+        "export_target\tstep:ap242-e3",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "missing {expected:?} in:\n{stdout}"
+        );
+    }
+    assert!(!stdout.contains("_extra_"), "{stdout}");
+
+    let json = cadmpeg()
+        .args(["query", "summary", "--json", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(json.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(
+        json["summary"]["refusal_dialects"]["primary"]["dialect"],
+        "rhino:unknown"
+    );
+    assert_eq!(
+        json["summary"]["inspect_dialect_declared"]["archive_version"],
+        "80"
+    );
+    assert_eq!(json["summary"]["export_target"], "step:ap242-e3");
+
+    cadmpeg()
+        .args(["query", "losses", report.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            "severity\tcode\tmessage\n\
+             warning\trhino/source.dialect-unverified\tarchive word is residual\n",
+        );
+}
+
+#[test]
+fn sidecar_summary_projects_supported_versions_and_discloses_unchecked_fidelity() {
+    let dir = tempdir().unwrap();
+    let sidecar = write(dir.path(), "legacy.fidelity.json", SIDECAR);
+
+    cadmpeg()
+        .args(["query", "summary", sidecar.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("sidecar_version\t3")
+                .and(predicate::str::contains("sidecar_input_version\t1"))
+                .and(predicate::str::contains(
+                    "sidecar_fidelity_validation\tnot_run",
+                )),
+        );
+
+    let unsupported = write(
+        dir.path(),
+        "future.fidelity.json",
+        &SIDECAR.replacen("\"version\": \"1\"", "\"version\": \"9\"", 1),
+    );
+    cadmpeg()
+        .args(["query", "summary", unsupported.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "unsupported decode-sidecar version: 9",
+        ));
 }
 
 #[test]
@@ -1113,7 +1244,7 @@ const FIDELITY_SIDECAR: &str = r#"{
   "version": "1",
   "ir_sha256": "abc",
   "report": {"format": "f3d", "container_only": false, "geometry_transferred": true,
-             "coverage": {}, "losses": []},
+             "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
     "version": "3",
     "annotations": {"streams": ["Contents/Config-0"],
@@ -1121,9 +1252,9 @@ const FIDELITY_SIDECAR: &str = r#"{
                     "exactness": {}},
     "retained_records": [
       {"id": "r1", "stream": "Contents/Config-0", "offset": 0, "byte_len": 4,
-       "sha256": "x", "data": "QUJDRA=="},
+       "sha256": "e12e115acf4552b2568b55e93cbd39394c4ef81c82447fafc997882a02d23677", "data": "QUJDRA=="},
       {"id": "r2", "stream": "Contents/Config-0", "offset": 4, "byte_len": 2,
-       "sha256": "y", "data": "RUY="},
+       "sha256": "3a4db4ee1e59ce1a0a1b9f56bd6d5506d8c204e2f1d501b7a3a4021e6365e8db", "data": "RUY="},
       {"id": "r3", "stream": "Other", "offset": 0, "byte_len": 3, "sha256": "z"}
     ]
   }

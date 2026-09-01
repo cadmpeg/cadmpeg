@@ -6,14 +6,14 @@
 //! base64 `retained_records`. The bare view lists them as a table — the
 //! extraction address space — and `--stream NAME` reassembles one
 //! stream's retained bytes, byte-exactly, into `-o FILE` (or stdout with
-//! `--binary-stdout`).
+//! `--binary-stdout`). The view migrates supported legacy sidecars and validates
+//! retained record identity, length, and digest before projecting or extracting.
 
 use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
-use serde::Deserialize;
 
 use super::{detect, print_json, read_input, Artifact};
 
@@ -40,46 +40,6 @@ pub struct FidelityArgs {
     pub json: bool,
 }
 
-/// Lenient mirror of the sidecar's fidelity payload: tolerant of version
-/// drift and unknown fields, unlike the strict parser in `cadmpeg-ir`.
-#[derive(Deserialize)]
-struct SidecarFidelityProbe {
-    #[serde(default)]
-    fidelity: Option<FidelityPayload>,
-}
-
-#[derive(Deserialize, Default)]
-struct FidelityPayload {
-    #[serde(default)]
-    annotations: AnnotationsProbe,
-    #[serde(default)]
-    retained_records: Vec<RecordProbe>,
-}
-
-#[derive(Deserialize, Default)]
-struct AnnotationsProbe {
-    #[serde(default)]
-    streams: Vec<String>,
-    #[serde(default)]
-    provenance: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    exactness: serde_json::Map<String, serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-struct RecordProbe {
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    stream: String,
-    #[serde(default)]
-    offset: u64,
-    #[serde(default)]
-    byte_len: u64,
-    #[serde(default, with = "cadmpeg_ir::bytes::option")]
-    data: Option<Vec<u8>>,
-}
-
 /// Runs `query fidelity` against one artifact.
 pub fn run(args: &FidelityArgs) -> Result<()> {
     let bytes = read_input(&args.file)?;
@@ -97,12 +57,18 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
             args.file.display()
         ),
     }
-    let probe: SidecarFidelityProbe = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parsing the fidelity payload of {}", args.file.display()))?;
-    let payload = probe.fidelity.unwrap_or_default();
+    let text = std::str::from_utf8(&bytes).with_context(|| {
+        format!(
+            "reading the decode sidecar {} as UTF-8",
+            args.file.display()
+        )
+    })?;
+    let sidecar = cadmpeg_ir::DecodeSidecar::from_json(text)
+        .with_context(|| format!("validating the decode sidecar {}", args.file.display()))?;
+    let payload = &sidecar.fidelity;
 
     match &args.stream {
-        Some(stream) => extract(args, &payload, stream),
+        Some(stream) => extract(args, payload, stream),
         None if args.json => {
             let records: Vec<serde_json::Value> = payload
                 .retained_records
@@ -157,9 +123,9 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
 }
 
 /// Reassembles one stream's retained bytes and writes them byte-exactly.
-fn extract(args: &FidelityArgs, payload: &FidelityPayload, stream: &str) -> Result<()> {
+fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &str) -> Result<()> {
     const SHOWN: usize = 20;
-    let mut matched: Vec<&RecordProbe> = payload
+    let mut matched: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
         .retained_records
         .iter()
         .filter(|record| record.stream == stream)
