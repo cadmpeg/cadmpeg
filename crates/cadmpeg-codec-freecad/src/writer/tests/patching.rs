@@ -159,8 +159,7 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .expect("write-only fallback");
     let mut streamed = Cursor::new(Vec::new());
     let resolution = resolve(decoded.ir(), TargetRequest::Inherit).expect("schema 4 is preserved");
-    crate::writer::write_seekable(decoded.ir(), &mut streamed, &resolution)
-        .expect("seekable writer");
+    crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
 }

@@ -27,14 +27,29 @@ use crate::native::DocumentFacts;
 /// hand proves that the retained document graph delivers the options it carries.
 /// [`write_seekable`] takes that proof instead of raw options, which is why it
 /// needs no target gate of its own.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Resolution {
+#[derive(Debug)]
+pub(crate) struct Resolution<'a> {
     dialect: crate::dialect::FcstdDialect,
+    ir: &'a CadIr,
+    namespace: &'a cadmpeg_ir::native::NativeNamespace,
+    document: DocumentFacts,
 }
 
-impl Resolution {
+impl<'a> Resolution<'a> {
     pub(super) const fn dialect(&self) -> crate::dialect::FcstdDialect {
         self.dialect
+    }
+
+    pub(super) const fn ir(&self) -> &'a CadIr {
+        self.ir
+    }
+
+    pub(super) const fn namespace(&self) -> &'a cadmpeg_ir::native::NativeNamespace {
+        self.namespace
+    }
+
+    pub(super) const fn document(&self) -> &DocumentFacts {
+        &self.document
     }
 }
 
@@ -68,9 +83,9 @@ pub(crate) fn plan(
 }
 
 /// Write the resolved export and state what the fidelity sidecar did.
-fn finish(input: EncodeInput<'_>, resolution: &Resolution) -> Result<ExportPlan, CodecError> {
+fn finish(input: EncodeInput<'_>, resolution: &Resolution<'_>) -> Result<ExportPlan, CodecError> {
     let mut bytes = Vec::new();
-    let outcome = write(input.ir, &mut bytes, resolution)?;
+    let outcome = write(&mut bytes, resolution)?;
     // A plan constructs its report once, after every report input is final.
     let report = ExportReport::native(
         outcome.target,
@@ -88,10 +103,10 @@ fn finish(input: EncodeInput<'_>, resolution: &Resolution) -> Result<ExportPlan,
 }
 
 /// Decide what to write, from the request and the source.
-pub(in crate::writer) fn resolve(
-    ir: &CadIr,
+pub(in crate::writer) fn resolve<'a>(
+    ir: &'a CadIr,
     request: TargetRequest<'_>,
-) -> Result<Resolution, CodecError> {
+) -> Result<Resolution<'a>, CodecError> {
     // This writer has no synthesize fallback, so it flattens the request locally.
     let resolved =
         cadmpeg_ir::codec::resolve_write_request(ir, request, dialect::FORMAT, dialect::TARGETS)?;
@@ -120,13 +135,19 @@ pub(in crate::writer) fn resolve(
 /// source's own dialect. A `SchemaVersion` of `"04"` classifies as
 /// `fcstd:unknown`, so it is preserved as residual identity rather than being
 /// rewritten as `"4"`.
-fn retained_baseline(ir: &CadIr, source_dialect: &DialectId) -> Option<Resolution> {
+fn retained_baseline<'a>(ir: &'a CadIr, source_dialect: &DialectId) -> Option<Resolution<'a>> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
     let [document] = documents.as_slice() else {
         return None;
     };
     let dialect = dialect::FcstdDialect::from_schema_version(&document.schema_version);
-    (dialect != dialect::FcstdDialect::Unknown && dialect.id() == *source_dialect)
-        .then_some(Resolution { dialect })
+    (dialect != dialect::FcstdDialect::Unknown && dialect.id() == *source_dialect).then(|| {
+        Resolution {
+            dialect,
+            ir,
+            namespace,
+            document: document.clone(),
+        }
+    })
 }

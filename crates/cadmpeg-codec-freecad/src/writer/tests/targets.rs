@@ -9,7 +9,7 @@ use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_core::target::{find_target, DefaultSource, TargetRefusalKind};
 use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
-use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::{CadIr, Codec, DecodeOptions, Encoder};
 use std::io::Cursor;
 
 #[test]
