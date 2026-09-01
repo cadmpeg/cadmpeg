@@ -130,6 +130,20 @@ pub fn classify_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dia
     }
 }
 
+/// Classify every Parasolid carrier in one host document.
+///
+/// A lone layer needs no instance. Several layers use their carrier paths as
+/// stable instance keys, so hosts cannot disagree about when identity needs a
+/// disambiguator.
+#[must_use]
+pub fn extra_layers(streams: Vec<(String, String)>) -> Vec<DialectMatch> {
+    let instance_tagged = streams.len() > 1;
+    streams
+        .into_iter()
+        .map(|(schema, carrier)| classify_layer(&schema, &carrier, instance_tagged))
+        .collect()
+}
+
 /// Explain why a residual Parasolid layer is admitted without verification.
 ///
 /// Host codecs own their loss vocabulary. This helper owns the interpretation
@@ -228,6 +242,22 @@ mod tests {
         let message = unverified_message(&matched).expect("residual layer explains its recovery");
         assert!(message.contains("SCH_TEST_1_9999"));
         assert!(message.contains("block@7:body+3"));
+    }
+
+    #[test]
+    fn several_layers_receive_carrier_instances() {
+        let layers = extra_layers(vec![
+            ("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned()),
+            ("SCH_TEST_1_9999".to_owned(), "stream@48".to_owned()),
+        ]);
+        assert_eq!(layers[0].instance(), Some("stream@12"));
+        assert_eq!(layers[1].instance(), Some("stream@48"));
+
+        let one = extra_layers(vec![(
+            "SCH_SW_33103_11000".to_owned(),
+            "stream@12".to_owned(),
+        )]);
+        assert_eq!(one[0].instance(), None);
     }
 
     #[test]

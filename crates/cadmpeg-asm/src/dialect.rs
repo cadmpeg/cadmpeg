@@ -37,6 +37,8 @@ pub const DECLARED_SAVE_FORMAT_MAJOR: &str = "save_format_major";
 pub const DECLARED_SAVE_FORMAT_MINOR: &str = "save_format_minor";
 /// Key of the binary kernel reference width in [`DialectMatch::declared`].
 pub const DECLARED_REFERENCE_WIDTH: &str = "reference_width";
+/// Key of the host carrier in [`DialectMatch::declared`].
+pub const DECLARED_CARRIER: &str = "carrier";
 
 /// Parsed kernel-header family used to select the canonical `acis:` row.
 #[derive(Debug, Clone, Copy)]
@@ -105,6 +107,28 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
         .with_declared(declared)
 }
 
+/// Classify one kernel stream and retain its host carrier.
+///
+/// `instance_tagged` identifies the carrier when a host reports several ACIS
+/// layers. The kernel declaration and carrier stay attached to the same match,
+/// independent of whether the header selects a verified row.
+#[must_use]
+pub fn classify_layer(
+    header: KernelHeaderRef<'_>,
+    carrier: &str,
+    instance_tagged: bool,
+) -> DialectMatch {
+    let matched = classify(header);
+    let mut declared = matched.declared().clone();
+    declared.insert(DECLARED_CARRIER.to_owned(), carrier.to_owned());
+    let matched = matched.with_declared(declared);
+    if instance_tagged {
+        matched.with_instance(carrier)
+    } else {
+        matched
+    }
+}
+
 /// Save-format majors the Spatial ACIS record decoders are verified against.
 pub const VERIFIED_ACIS_MAJORS: [u32; 2] = [217, 218];
 
@@ -159,11 +183,9 @@ pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
 /// the substituted registry row when classification selected one.
 #[must_use]
 pub fn unverified_message(subject: &str, matched: &DialectMatch) -> Option<String> {
-    assert_eq!(
-        matched.format(),
-        FORMAT,
-        "ACIS recovery reporting requires an acis: dialect layer"
-    );
+    if matched.format() != FORMAT {
+        return None;
+    }
     let using = match matched.admission() {
         Admission::AdmittedUnverified { using } => using,
         Admission::Admitted | Admission::Refused => return None,
@@ -227,13 +249,13 @@ pub fn asm_binary_row(width: u8) -> DialectId {
 #[cfg(test)]
 mod tests {
     use super::{
-        acis_admission, acis_band_verified, acis_binary_row, classify, nearest_verified_acis,
-        unverified_message, KernelHeaderRef, ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217,
-        ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM,
-        ACIS_UNKNOWN, FORMAT,
+        acis_admission, acis_band_verified, acis_binary_row, classify, classify_layer,
+        nearest_verified_acis, unverified_message, KernelHeaderRef, ACIS_ASM_BINARYFILE_8,
+        ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS,
+        ACIS_TEXT_ASM, ACIS_UNKNOWN, DECLARED_CARRIER, FORMAT,
     };
     use crate::kernel_header::KernelHeader;
-    use cadmpeg_core::dialect::{Admission, DialectMatch};
+    use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
     use std::collections::BTreeSet;
 
     fn header(width: u8, save_format_version: Option<u32>) -> KernelHeader {
@@ -311,6 +333,19 @@ mod tests {
             &classify(KernelHeaderRef::Acis(&header(4, Some(21_703))))
         )
         .is_none());
+        assert!(unverified_message(
+            "the carrier",
+            &DialectMatch::admitted(DialectId::pinned("sat:text"))
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn layer_classification_owns_carrier_identity() {
+        let header = header(4, Some(21_804));
+        let matched = classify_layer(KernelHeaderRef::Acis(&header), "stream@12", true);
+        assert_eq!(matched.declared()[DECLARED_CARRIER], "stream@12");
+        assert_eq!(matched.instance(), Some("stream@12"));
     }
 
     #[test]

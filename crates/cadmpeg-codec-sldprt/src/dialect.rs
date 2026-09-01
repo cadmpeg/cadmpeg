@@ -115,7 +115,7 @@ pub(crate) enum SldprtDialect {
 
 /// Classify the host document and every framed Parasolid stream it carries.
 pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<DialectLayers, CodecError> {
-    let mut kernels = scan
+    let kernels = scan
         .blocks
         .iter()
         .flat_map(|block| {
@@ -146,11 +146,7 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<DialectLayers,
                 })
         }))
         .collect::<Vec<_>>();
-    let several = kernels.len() > 1;
-    let extra = kernels
-        .drain(..)
-        .map(|(schema, carrier)| cadmpeg_parasolid::classify_layer(&schema, &carrier, several))
-        .collect();
+    let extra = cadmpeg_parasolid::extra_layers(kernels);
     DialectLayers::new(SldprtDialect::classify_scan(scan), extra).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid SLDPRT dialect-layer identities: {error}"

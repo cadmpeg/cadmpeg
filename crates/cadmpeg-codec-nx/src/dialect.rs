@@ -92,14 +92,12 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
                 .and_then(|stream| stream.schema.as_deref().map(|schema| (stream, schema)))
         })
         .collect::<Vec<_>>();
-    let several = streams.len() > 1;
-    let extra = streams
-        .into_iter()
-        .map(|(stream, schema)| {
-            let carrier = format!("stream@{}", stream.file_offset);
-            cadmpeg_parasolid::classify_layer(schema, &carrier, several)
-        })
-        .collect();
+    let extra = cadmpeg_parasolid::extra_layers(
+        streams
+            .into_iter()
+            .map(|(stream, schema)| (schema.to_owned(), format!("stream@{}", stream.file_offset)))
+            .collect(),
+    );
     DialectLayers::new(NxDialect::classify(&scan.container), extra)
         .expect("Parasolid stream offsets have unique instances")
 }
