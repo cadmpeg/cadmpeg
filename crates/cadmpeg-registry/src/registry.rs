@@ -14,18 +14,6 @@ use crate::{build_encoder, Format};
 const IDENTITY_TOML: &str = include_str!("../../../docs/dialects.toml");
 const SUPPORT_TOML: &str = include_str!("../../../docs/dialect-support.toml");
 
-/// Checker metadata explaining why an identity row uses the reserved `unknown` name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum UnknownDialectKind {
-    /// Detection cannot obtain enough format evidence to produce a report.
-    DetectUnreachable,
-    /// Classification read the evidence and no declared dialect row matched it.
-    RecoveredResidual,
-    /// Classification read the evidence, matched no declared row, and refused it.
-    RefusedResidual,
-}
-
 /// One dialect, as the two registries jointly describe it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectEntry {
@@ -48,8 +36,6 @@ pub struct DialectEntry {
 struct IdentityRow {
     id: DialectId,
     title: String,
-    #[serde(default)]
-    unknown_kind: Option<UnknownDialectKind>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,18 +58,6 @@ struct SupportRow {
     dialect: String,
     read: ReadDisposition,
     write: WriteDisposition,
-    #[serde(default)]
-    refusal: Option<RefusalCause>,
-}
-
-/// Structural reason a read capability is refused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum RefusalCause {
-    /// A recognized alternate encoding has no parser grammar.
-    AlternateEncodingNoGrammar,
-    /// The evidence does not select any framing grammar.
-    NoFramingGrammar,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,14 +90,6 @@ enum RegistryLoadError {
     SupportWithoutIdentity(String),
     #[error("identity row for dialect {0} has no support row")]
     IdentityWithoutSupport(DialectId),
-    #[error("refused support row for dialect {0} has no structural refusal cause")]
-    RefusalCauseMissing(String),
-    #[error("non-refused support row for dialect {0} has a refusal cause")]
-    RefusalCauseUnexpected(String),
-    #[error("unknown dialect row {0} has no unknown_kind")]
-    UnknownKindMissing(DialectId),
-    #[error("named dialect row {0} has checker-only unknown_kind")]
-    UnknownKindOnNamed(DialectId),
 }
 
 impl Registries {
@@ -131,8 +97,8 @@ impl Registries {
     ///
     /// A parse failure means the binary shipped a malformed registry, which
     /// `scripts/check-dialects.py` and `scripts/check-dialect-support.py`
-    /// forbid; `tests::the_embedded_registries_parse_and_join` is the in-tree
-    /// guard.
+    /// forbid. Runtime loading validates only the parse and total join needed
+    /// by this view; the Python checkers own fields that the view does not read.
     fn load() -> Result<Self, RegistryLoadError> {
         Self::load_from(IDENTITY_TOML, SUPPORT_TOML)
     }
@@ -160,15 +126,6 @@ impl Registries {
         let mut dispositions = BTreeMap::new();
         for row in support.support {
             let dialect = row.dialect;
-            match (row.read, row.refusal) {
-                (ReadDisposition::Refused, None) => {
-                    return Err(RegistryLoadError::RefusalCauseMissing(dialect));
-                }
-                (ReadDisposition::Refused, Some(_)) | (_, None) => {}
-                (_, Some(_)) => {
-                    return Err(RegistryLoadError::RefusalCauseUnexpected(dialect));
-                }
-            }
             let disposition = Disposition {
                 read: row.read,
                 write: row.write,
@@ -187,20 +144,6 @@ impl Registries {
                 .dialect
                 .into_iter()
                 .map(|row| {
-                    let is_unknown = row
-                        .id
-                        .as_str()
-                        .split_once(':')
-                        .is_some_and(|(_, name)| name == "unknown");
-                    match (is_unknown, row.unknown_kind) {
-                        (true, None) => {
-                            return Err(RegistryLoadError::UnknownKindMissing(row.id));
-                        }
-                        (false, Some(_)) => {
-                            return Err(RegistryLoadError::UnknownKindOnNamed(row.id));
-                        }
-                        (true, Some(_)) | (false, None) => {}
-                    }
                     let disposition = dispositions
                         .remove(row.id.as_str())
                         .ok_or_else(|| RegistryLoadError::IdentityWithoutSupport(row.id.clone()))?;
@@ -302,58 +245,6 @@ mod tests {
     }
 
     #[test]
-    fn unknown_rows_report_detection_recovery_or_refusal() {
-        let identity: Identity =
-            toml::from_str(IDENTITY_TOML).expect("the identity registry parses");
-        let kinds = identity
-            .dialect
-            .iter()
-            .filter_map(|row| row.unknown_kind.map(|kind| (row.id.as_str(), kind)))
-            .collect::<BTreeMap<_, _>>();
-
-        assert_eq!(
-            kinds.get("nx:unknown"),
-            Some(&UnknownDialectKind::DetectUnreachable)
-        );
-        assert_eq!(
-            kinds.get("rhino:unknown"),
-            Some(&UnknownDialectKind::RecoveredResidual)
-        );
-        assert_eq!(
-            kinds.get("acis:unknown"),
-            Some(&UnknownDialectKind::RefusedResidual)
-        );
-        assert_eq!(
-            kinds.len(),
-            13,
-            "every unknown registry row states its kind"
-        );
-    }
-
-    #[test]
-    fn the_registry_join_requires_checker_metadata_only_on_unknown_rows() {
-        let missing = Registries::load_from(
-            "[format.step]\n[[dialect]]\nid = \"step:unknown\"\ntitle = \"Unknown\"\n",
-            "[[support]]\ndialect = \"step:unknown\"\nread = \"detected\"\nwrite = \"none\"\n",
-        )
-        .err()
-        .expect("an unknown row must state its checker kind");
-        assert!(
-            matches!(missing, RegistryLoadError::UnknownKindMissing(id) if id.as_str() == "step:unknown")
-        );
-
-        let named = Registries::load_from(
-            "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\nunknown_kind = \"recovered-residual\"\n",
-            "[[support]]\ndialect = \"step:ap203\"\nread = \"detected\"\nwrite = \"none\"\n",
-        )
-        .err()
-        .expect("a named row cannot carry unknown checker metadata");
-        assert!(
-            matches!(named, RegistryLoadError::UnknownKindOnNamed(id) if id.as_str() == "step:ap203")
-        );
-    }
-
-    #[test]
     fn the_registry_join_rejects_a_support_row_without_an_identity() {
         let error = Registries::load_from(
             "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
@@ -388,30 +279,6 @@ mod tests {
         .err()
         .expect("the duplicate support row is rejected");
         assert!(matches!(error, RegistryLoadError::DuplicateSupport(id) if id == "step:ap203"));
-    }
-
-    #[test]
-    fn the_registry_join_requires_refusal_causes_exactly_on_refused_rows() {
-        let identity = "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n";
-        let missing = Registries::load_from(
-            identity,
-            "[[support]]\ndialect = \"step:ap203\"\nread = \"refused\"\nwrite = \"none\"\n",
-        )
-        .err()
-        .expect("a refused row must carry its structural cause");
-        assert!(
-            matches!(missing, RegistryLoadError::RefusalCauseMissing(id) if id == "step:ap203")
-        );
-
-        let unexpected = Registries::load_from(
-            identity,
-            "[[support]]\ndialect = \"step:ap203\"\nread = \"detected\"\nwrite = \"none\"\nrefusal = \"no-framing-grammar\"\n",
-        )
-        .err()
-        .expect("a non-refused row cannot carry a refusal cause");
-        assert!(
-            matches!(unexpected, RegistryLoadError::RefusalCauseUnexpected(id) if id == "step:ap203")
-        );
     }
 
     /// Compiled catalogs and write-policy rows describe the same synthesis
