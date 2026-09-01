@@ -29,17 +29,12 @@ use crate::native::DocumentFacts;
 /// needs no target gate of its own.
 #[derive(Debug)]
 pub(crate) struct Resolution<'a> {
-    dialect: crate::dialect::FcstdDialect,
     ir: &'a CadIr,
     namespace: &'a cadmpeg_ir::native::NativeNamespace,
     document: DocumentFacts,
 }
 
 impl<'a> Resolution<'a> {
-    pub(super) const fn dialect(&self) -> crate::dialect::FcstdDialect {
-        self.dialect
-    }
-
     pub(super) const fn ir(&self) -> &'a CadIr {
         self.ir
     }
@@ -140,7 +135,6 @@ fn retained_baseline<'a>(ir: &'a CadIr, source_dialect: &DialectId) -> Option<Re
     };
     let dialect = dialect::FcstdDialect::from_schema_version(&document.schema_version);
     (dialect.id() == *source_dialect).then(|| Resolution {
-        dialect,
         ir,
         namespace,
         document: document.clone(),

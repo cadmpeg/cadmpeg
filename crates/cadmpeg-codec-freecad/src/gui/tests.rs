@@ -129,6 +129,10 @@ fn a_foreign_gui_schema_uses_the_schema_one_vocabulary() {
         .expect("foreign GUI schema with schema-1 vocabulary");
 
     assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    assert_eq!(
+        result.ir().model.presentation_documents[0].schema_version,
+        None
+    );
     let loss = result
         .report()
         .losses
@@ -160,6 +164,10 @@ fn a_noncanonical_gui_schema_one_declaration_is_unverified() {
         .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
         .expect("GUI documents");
     assert_eq!(documents[0].schema_version.as_deref(), Some("01"));
+    assert_eq!(
+        result.ir().model.presentation_documents[0].schema_version,
+        None
+    );
     let loss = result
         .report()
         .losses

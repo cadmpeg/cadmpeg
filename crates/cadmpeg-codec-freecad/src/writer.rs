@@ -42,7 +42,9 @@ pub(crate) fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
 ) -> Result<WriteOutcome, CodecError> {
-    let target = resolution.dialect().id();
+    let target =
+        crate::dialect::FcstdDialect::from_schema_version(&resolution.document().schema_version)
+            .id();
     let ir = resolution.ir();
     let namespace = resolution.namespace();
     let document = resolution.document();

@@ -1122,9 +1122,9 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
-        // One `classify` call per run feeds `DecodeReport.dialects` and the
-        // dialect-unverified loss.
+        // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document);
+        let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         ir.source = Some(SourceMeta::unclassified(dialect::FORMAT, attributes));
         if let Some((name, bytes)) = thumbnail {
             ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
@@ -1385,16 +1385,17 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        losses.extend(dialect::FcstdDialect::dialect_loss(&primary));
+        losses.extend(dialect::FcstdDialect::dialect_loss(dialects.primary()));
         ctx.admit_entities(
             ir.model.entity_count() as u64,
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
+        let summary_notes = container::summary_notes(&scan);
         Ok(DecodeResult::new(
             ir,
             DecodeReport::classified(
-                cadmpeg_core::dialect::DialectLayers::of(primary),
+                dialects,
                 if options.container_only {
                     cadmpeg_ir::DecodeTransfer::ContainerOnly
                 } else {
@@ -1402,7 +1403,7 @@ impl CodecBackend for FcstdCodec {
                 },
                 std::collections::BTreeMap::new(),
                 losses,
-                container::summarize(&scan).notes,
+                summary_notes,
                 cadmpeg_ir::report::TransferLedger::default(),
             ),
             source_fidelity,
