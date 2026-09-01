@@ -41,7 +41,7 @@ use crate::DecodeArgs;
 /// always emits the dialect fields: `dialects` on every container summary and
 /// decode report, `target` on every export report, and `dialect` on every
 /// source metadata block. Version 6 added top-level `status` (`ok` | `refused`)
-/// and `refusal` (`{ stage, code, message }` or null).
+/// and `refusal` (`{ stage, code, message, dialects?, target? }` or null).
 pub(crate) const CLI_SCHEMA_VERSION: u32 = 7;
 
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
@@ -186,10 +186,7 @@ pub fn inspect(
     let summary = match inspection {
         Ok(summary) => summary,
         Err(cadmpeg_core::CodecError::UnsupportedDialect { dialects, message }) => {
-            let refusal = ConversionRefusal::UnsupportedDialect {
-                dialects,
-                reason: message,
-            };
+            let refusal = ConversionRefusal::unsupported_dialect(dialects, message);
             let payload = InspectReportPayload {
                 confidence,
                 summary: None,

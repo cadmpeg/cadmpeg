@@ -5,13 +5,14 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::dialect::DialectId;
+use serde::Serialize;
 
 /// One dialect that a caller can request from an encoder.
 ///
 /// Synthesis is a static capability. The catalog states ids, aliases, and
 /// the cross-format default; input-conditioned preservation remains a write
 /// planner decision.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TargetDescriptor {
     /// Registry dialect id, e.g. `step:ap242-e3`.
     pub id: DialectId,
@@ -89,7 +90,8 @@ pub fn default_target(targets: &'static [TargetDescriptor]) -> Option<&'static T
 ///
 /// Unlike [`DialectId`], this token need not name a registered dialect:
 /// refusals preserve an unknown explicit request verbatim.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
 pub struct TargetToken(String);
 
 impl TargetToken {
@@ -117,8 +119,9 @@ impl fmt::Display for TargetToken {
 /// Each request state is distinct. In particular, absence of an explicit
 /// token does not conflate an unclassified same-format source with a foreign
 /// source and a missing cross-format default.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
+#[serde(rename_all = "snake_case", tag = "kind")]
 pub enum TargetRefusalKind {
     /// An explicit token names no entry in the encoder catalog.
     UnknownExplicit {
@@ -170,15 +173,17 @@ pub enum TargetRefusalKind {
 ///
 /// The refusal carries the encoder catalog once, beside the request-state
 /// reason, so every reason is rendered and reported against the same catalog.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct TargetRefusal {
+    #[serde(flatten)]
     kind: TargetRefusalKind,
     available: &'static [TargetDescriptor],
 }
 
 /// Why inheritance must select an encoder catalog default.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "format")]
 pub enum DefaultSource {
     /// The document records no source metadata.
     NoSource,
@@ -364,6 +369,33 @@ mod tests {
             aliases,
             default,
         }
+    }
+
+    #[test]
+    fn target_refusal_serializes_request_state_and_the_complete_catalog() {
+        let refusal = TargetRefusal::new(
+            TargetRefusalKind::ExplicitUnavailable {
+                target: DialectId::pinned("fcstd:schema-4"),
+                requested: TargetToken::new("4"),
+                reason: "the source image cannot be patched".into(),
+            },
+            TARGETS,
+        );
+
+        assert_eq!(
+            serde_json::to_value(refusal).expect("target refusal serializes"),
+            serde_json::json!({
+                "kind": "explicit_unavailable",
+                "target": "fcstd:schema-4",
+                "requested": "4",
+                "reason": "the source image cannot be patched",
+                "available": [{
+                    "id": "fcstd:schema-4",
+                    "aliases": ["4"],
+                    "default": false
+                }]
+            })
+        );
     }
 
     #[test]

@@ -268,6 +268,67 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
 }
 
 #[test]
+fn summary_projects_structured_target_refusals() {
+    let dir = tempdir().unwrap();
+    let report = write(
+        dir.path(),
+        "target-refusal.json",
+        r#"{
+          "schema_version": 7,
+          "command": "convert",
+          "status": "refused",
+          "refusal": {
+            "stage": "plan",
+            "code": "unsupported_target",
+            "message": "iges cannot write 9.9",
+            "target": {
+              "kind": "unknown_explicit",
+              "format": "iges",
+              "requested": "9.9",
+              "available": [{
+                "id": "iges:5.3-fixed-ascii",
+                "aliases": ["5.3"],
+                "default": true
+              }]
+            }
+          },
+          "summary": null,
+          "decode_report": null,
+          "check_report": null,
+          "export": null
+        }"#,
+    );
+
+    let output = cadmpeg()
+        .args(["query", "summary", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("refusal_target\t{\"available\":[{"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\"kind\":\"unknown_explicit\""), "{stdout}");
+
+    let output = cadmpeg()
+        .args(["query", "summary", "--json", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["summary"]["refusal_target"]["kind"],
+        "unknown_explicit"
+    );
+    assert_eq!(value["summary"]["refusal_target"]["requested"], "9.9");
+    assert_eq!(
+        value["summary"]["refusal_target"]["available"][0]["id"],
+        "iges:5.3-fixed-ascii"
+    );
+}
+
+#[test]
 fn sidecar_summary_projects_supported_versions_and_discloses_unchecked_fidelity() {
     let dir = tempdir().unwrap();
     let sidecar = write(dir.path(), "legacy.fidelity.json", SIDECAR);

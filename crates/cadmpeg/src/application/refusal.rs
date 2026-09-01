@@ -104,11 +104,7 @@ pub(crate) fn classify_load_error(error: crate::loader::LoadError) -> Applicatio
         DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
             dialects,
             message,
-        }) => ConversionRefusal::UnsupportedDialect {
-            dialects,
-            reason: message,
-        }
-        .into(),
+        }) => ConversionRefusal::unsupported_dialect(dialects, message).into(),
         DecodeFailure::StrictRejected {
             loss_code,
             message,
@@ -305,9 +301,21 @@ pub(crate) struct RefusalReport<'a> {
     message: Cow<'a, str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dialects: Option<&'a DialectLayers>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<&'a TargetRefusal>,
 }
 
 impl ConversionRefusal {
+    /// Constructs a decode refusal without duplicating ownership and wording at
+    /// each surface that can inspect or load a native container.
+    #[must_use]
+    pub fn unsupported_dialect(dialects: Box<DialectLayers>, reason: impl Into<String>) -> Self {
+        Self::UnsupportedDialect {
+            dialects,
+            reason: reason.into(),
+        }
+    }
+
     /// Stable code for tests and the v7 report envelope.
     #[must_use]
     pub const fn code(&self) -> RefusalCode {
@@ -393,6 +401,10 @@ impl ConversionRefusal {
             message: self.message(),
             dialects: match self {
                 Self::UnsupportedDialect { dialects, .. } => Some(dialects),
+                _ => None,
+            },
+            target: match self {
+                Self::UnsupportedTarget { refusal, .. } => Some(refusal),
                 _ => None,
             },
         }
@@ -530,6 +542,13 @@ mod tests {
         let report = report_value(&refusal);
         assert_eq!(report["code"], "unsupported_target");
         assert_eq!(report["stage"], "plan");
+        assert_eq!(report["target"]["kind"], "unknown_explicit");
+        assert_eq!(report["target"]["format"], "iges");
+        assert_eq!(report["target"]["requested"], "iges:9.9");
+        assert_eq!(
+            report["target"]["available"][0]["id"],
+            "iges:5.3-fixed-ascii"
+        );
     }
 
     #[test]
