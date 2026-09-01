@@ -28,11 +28,6 @@ use cadmpeg_ir::topology::{Body, BodyKind, Region};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Native, NativeRecord};
 
-use super::{
-    append_feature_history, compose_transforms, extend_native, merge_member_layers, rescope_record,
-    OccurrenceScope,
-};
-
 mod archive;
 mod layers;
 mod merge;
