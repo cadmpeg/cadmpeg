@@ -405,8 +405,8 @@ fn duplicate_member_layer_identity_is_a_recorded_loss() {
         crate::dialect::F3dDialect::classify_document("3-2-0-0"),
     );
 
-    assert!(super::merge_member_layers(&mut target, &member, "part.f3d").is_empty());
-    let losses = super::merge_member_layers(&mut target, &member, "part.f3d");
+    assert!(crate::f3z::archive::merge_member_layers(&mut target, &member, "part.f3d").is_empty());
+    let losses = crate::f3z::archive::merge_member_layers(&mut target, &member, "part.f3d");
 
     assert_eq!(target.iter().count(), 2);
     assert_eq!(losses.len(), 1);

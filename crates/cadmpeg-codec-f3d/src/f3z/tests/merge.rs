@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::f3z::merge::{
+    append_feature_history, compose_transforms, extend_native, rescope_record, OccurrenceScope,
+};
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
@@ -41,7 +44,7 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
         ..Model::default()
     };
 
-    super::append_feature_history(&parent, &mut component).unwrap();
+    append_feature_history(&parent, &mut component).unwrap();
 
     assert_eq!(
         component
@@ -64,7 +67,7 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
         ..Model::default()
     };
 
-    let error = super::append_feature_history(&parent, &mut component).unwrap_err();
+    let error = append_feature_history(&parent, &mut component).unwrap_err();
 
     assert!(error
         .to_string()
@@ -91,7 +94,7 @@ fn rescoping_a_model_entity_preserves_a_non_finite_coordinate() {
         source_object: None,
     };
 
-    let rescoped = super::OccurrenceScope {
+    let rescoped = OccurrenceScope {
         occurrence: "role/occurrence-0",
     }
     .rewrite(point)
@@ -123,7 +126,7 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
     };
 
     assert_eq!(
-        super::compose_transforms(outer, inner).rows,
+        compose_transforms(outer, inner).rows,
         [
             [0.0, -1.0, 0.0, 20.0],
             [1.0, 0.0, 0.0, 35.0],
@@ -155,7 +158,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     };
     for ordinal in 0..2 {
         let occurrence = format!("role/occurrence-{ordinal}");
-        let mut scope = super::OccurrenceScope {
+        let mut scope = OccurrenceScope {
             occurrence: &occurrence,
         };
         merged
@@ -201,7 +204,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
         .set_arena("design_sketch_placements", &[placement])
         .expect("store component native");
     let mut root = Native::default();
-    super::extend_native(&mut root, component, "role/occurrence-0");
+    extend_native(&mut root, component, "role/occurrence-0");
 
     let merged: Vec<DesignSketchPlacement> = root
         .namespace("f3d")
@@ -230,7 +233,7 @@ fn occurrence_merge_remaps_native_record_map_keys_and_nested_payloads() {
         .clone(),
     );
 
-    let rescoped = super::rescope_record(&record, "role/occurrence-0");
+    let rescoped = rescope_record(&record, "role/occurrence-0");
 
     assert_eq!(
         rescoped.id(),
