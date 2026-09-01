@@ -67,7 +67,8 @@ pub(in super::super) fn build_report(
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> DecodeReport {
-    let summary = container::summarize(scan);
+    let classification = crate::dialect::classify(scan);
+    let summary = container::summarize(scan, &classification);
     let geom_sections = scan
         .framing
         .sections
@@ -97,14 +98,12 @@ pub(in super::super) fn build_report(
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. The loss reads the completed primary
-    // match and its framing scan, so admission and the stated cause share one
-    // classification.
+    // match, so admission and the stated cause share one classification.
     let dialects = summary
         .dialects()
         .expect("every Creo summary classifies its dialect")
         .clone();
-    let primary = dialects.primary();
-    losses.extend(crate::dialect::dialect_loss(primary, scan.framing.layout));
+    losses.extend(classification.loss());
 
     if container_only {
         losses.push(

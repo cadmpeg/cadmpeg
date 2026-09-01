@@ -27,14 +27,14 @@
 //! layout-conditional decode path is a positive gate on a named layout, so an
 //! unclassified document simply runs the layout-independent path and skips all
 //! of them. That is a real recovery strategy and it is charged as one:
-//! [`Admission::AdmittedUnverified`] plus
-//! [`CreoLossCode::SourceDialectUnverified`]. The loss reads the completed
-//! [`DialectMatch::admission`] and the scan that selected the fallback, so the
-//! admission and its explanation cannot disagree.
+//! [`cadmpeg_core::dialect::Admission::AdmittedUnverified`] plus
+//! [`CreoLossCode::SourceDialectUnverified`]. [`DialectClassification`] carries
+//! either an admitted match or a recovered match with its cause, so admission
+//! and explanation cannot be paired independently.
 
 use crate::container::{ContainerScan, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -59,32 +59,50 @@ const DECLARED_LEGACY_ASCII_SCHEMA: &str = "legacy_ascii_schema";
 /// no `Version` or `Release` word.
 const DECLARED_LEGACY_ASCII_PRODUCT_RELEASE: &str = "legacy_ascii_product_release";
 
-/// The loss charged when no layout discriminant matched.
-///
-/// `None` exactly when the completed match reports [`Admission::Admitted`].
-pub(crate) fn dialect_loss(matched: &DialectMatch, layout: Layout) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { .. } = matched.admission() else {
-        return None;
-    };
-    let cause = match layout {
-        Layout::Unknown(UnknownLayout::DepdbRootMissing) => {
-            "the PSB section table contains DEPDB_DATA, but its payload does not begin with the \
-             p_dep_db root record. DEPDB_DATA is the exclusive layout discriminator when present, \
-             so no other family was substituted"
+/// A completed host classification whose recovery cause cannot drift from its match.
+pub(crate) struct DialectClassification(ClassificationState);
+
+enum ClassificationState {
+    /// A named layout and the admitted identity it produced.
+    Admitted(DialectMatch),
+    /// The residual layout identity and the exact recovery cause selected by
+    /// the container classifier.
+    Recovered {
+        matched: DialectMatch,
+        cause: UnknownLayout,
+    },
+}
+
+impl DialectClassification {
+    pub(crate) fn matched(&self) -> &DialectMatch {
+        match &self.0 {
+            ClassificationState::Admitted(matched)
+            | ClassificationState::Recovered { matched, .. } => matched,
         }
-        Layout::Unknown(UnknownLayout::NoDiscriminant) => {
-            "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the \
-             p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII \
-             #P_OBJECT frame"
-        }
-        Layout::Nd | Layout::Depdb | Layout::LegacyAscii => {
-            unreachable!("only an unverified layout can carry an unverified admission")
-        }
-    };
-    Some(CreoLossCode::SourceDialectUnverified.note(format!(
-        "{cause}. This decode ran the layout-independent path only, so every ND, DEPDB, and \
-         legacy ASCII decode gate was skipped"
-    )))
+    }
+
+    /// The loss charged exactly for the recovered variant.
+    pub(crate) fn loss(&self) -> Option<LossNote> {
+        let ClassificationState::Recovered { cause, .. } = &self.0 else {
+            return None;
+        };
+        let cause = match cause {
+            UnknownLayout::DepdbRootMissing => {
+                "the PSB section table contains DEPDB_DATA, but its payload does not begin with the \
+                 p_dep_db root record. DEPDB_DATA is the exclusive layout discriminator when present, \
+                 so no other family was substituted"
+            }
+            UnknownLayout::NoDiscriminant => {
+                "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the \
+                 p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII \
+                 #P_OBJECT frame"
+            }
+        };
+        Some(CreoLossCode::SourceDialectUnverified.note(format!(
+            "{cause}. This decode ran the layout-independent path only, so every ND, DEPDB, and \
+             legacy ASCII decode gate was skipped"
+        )))
+    }
 }
 
 impl Layout {
@@ -127,7 +145,7 @@ impl Layout {
 /// The admission therefore carries no `using` value. Naming `creo:nd`,
 /// `creo:depdb`, or the residual row itself would assert a substitution that
 /// did not happen.
-pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
+pub(crate) fn classify(scan: &ContainerScan) -> DialectClassification {
     let layout = scan.framing.layout;
     let mut declared = BTreeMap::new();
     declared.insert(
@@ -143,12 +161,17 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
             );
         }
     }
-    if matches!(layout, Layout::Unknown(_)) {
-        DialectMatch::residual(layout.id())
-    } else {
-        DialectMatch::admitted(layout.id())
+    match layout {
+        Layout::Unknown(cause) => DialectClassification(ClassificationState::Recovered {
+            matched: DialectMatch::residual(layout.id()).with_declared(declared),
+            cause,
+        }),
+        Layout::Nd | Layout::Depdb | Layout::LegacyAscii => {
+            DialectClassification(ClassificationState::Admitted(
+                DialectMatch::admitted(layout.id()).with_declared(declared),
+            ))
+        }
     }
-    .with_declared(declared)
 }
 
 #[cfg(test)]

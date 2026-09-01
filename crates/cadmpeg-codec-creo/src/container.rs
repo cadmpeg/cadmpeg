@@ -2790,7 +2790,10 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
-pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub fn summarize(
+    scan: &ContainerScan,
+    classification: &crate::dialect::DialectClassification,
+) -> ContainerSummary {
     let entries = scan
         .framing
         .sections
@@ -2888,7 +2891,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     );
 
     ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::classify(scan)),
+        cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
         "psb",
         entries,
         notes,

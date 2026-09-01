@@ -134,7 +134,8 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
     assert!(container::has_thumbnail(&scan));
-    assert!(container::summarize(&scan)
+    let classification = crate::dialect::classify(&scan);
+    assert!(container::summarize(&scan, &classification)
         .notes
         .iter()
         .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
