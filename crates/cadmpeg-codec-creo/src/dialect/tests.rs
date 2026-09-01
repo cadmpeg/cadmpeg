@@ -11,6 +11,7 @@
 use super::*;
 use crate::container::scan_bytes;
 use crate::test_support::{build_prt, build_prt_raw};
+use cadmpeg_core::dialect::Admission;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() {
@@ -160,7 +161,8 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
         let scan = scan_bytes(bytes.as_slice());
         assert_eq!(scan.framing.layout, case.layout, "{}", case.label);
 
-        let matched = classify(&scan);
+        let classification = classify(&scan);
+        let matched = classification.matched();
         assert_eq!(matched.format(), FORMAT, "{}", case.label);
         assert_eq!(matched.dialect().as_str(), case.id, "{}", case.label);
         assert_eq!(
@@ -214,16 +216,18 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             Layout::Unknown(_) => unknown_bytes(),
         };
         let scan = scan_bytes(bytes.as_slice());
-        let matched = classify(&scan);
-        let charged = dialect_loss(&matched, scan.framing.layout).is_some();
+        let classification = classify(&scan);
+        let matched = classification.matched();
+        let charged = classification.loss().is_some();
         assert_eq!(matched.admission() == Admission::Admitted, !charged);
     }
 
     for case in CASES {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
-        let matched = classify(&scan);
-        let charged = dialect_loss(&matched, scan.framing.layout).is_some();
+        let classification = classify(&scan);
+        let matched = classification.matched();
+        let charged = classification.loss().is_some();
         assert_eq!(
             matched.admission() == Admission::Admitted,
             !charged,
@@ -237,7 +241,8 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
     let bytes = unknown_bytes();
     let scan = scan_bytes(bytes.as_slice());
-    let note = dialect_loss(&classify(&scan), scan.framing.layout)
+    let note = classify(&scan)
+        .loss()
         .expect("an unclassified layout charges the loss");
     assert_eq!(note.code.as_str(), "creo/source.dialect-unverified");
     assert_eq!(
@@ -256,7 +261,7 @@ fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
 fn malformed_depdb_loss_does_not_deny_present_nd_evidence() {
     let bytes = depdb_without_root_and_nd_bytes();
     let scan = scan_bytes(bytes.as_slice());
-    let note = dialect_loss(&classify(&scan), scan.framing.layout).expect("unknown layout loss");
+    let note = classify(&scan).loss().expect("unknown layout loss");
 
     assert!(note.message.contains("DEPDB_DATA is the exclusive"));
     assert!(!note.message.contains("no ND:"));
@@ -270,7 +275,8 @@ fn the_totality_row_never_carries_a_verified_admission() {
     for case in CASES {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
-        let matched = classify(&scan);
+        let classification = classify(&scan);
+        let matched = classification.matched();
         if matched.dialect().as_str()
             == Layout::Unknown(UnknownLayout::NoDiscriminant).id().as_str()
         {

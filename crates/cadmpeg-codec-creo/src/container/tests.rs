@@ -264,10 +264,11 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     data.extend_from_slice(&compressed);
 
     let scan = container::scan_bytes(data);
+    let classification = crate::dialect::classify(&scan);
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
-    let summary = container::summarize(&scan);
+    let summary = container::summarize(&scan, &classification);
     assert_eq!(summary.entries[0].compression, "unix-compress");
     assert_eq!(summary.entries[0].uncompressed_size, 18);
 }
