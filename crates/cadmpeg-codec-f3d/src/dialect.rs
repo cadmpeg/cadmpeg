@@ -227,23 +227,17 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
         Admission::AdmittedUnverified { using } => {
+            let using =
+                using.expect("the F3D unverified classifier always names its manifest strategy");
             let version = matched
                 .declared()
                 .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
                 .map_or("(none)", String::as_str);
-            let strategy = match using {
-                None => "No declared manifest grammar was substituted; only the residual path ran."
-                    .to_owned(),
-                Some(using) => {
-                    format!(
-                        "The document is read on {using}: every field after the version was parsed \
-                         with that layout. The layout fitting is consistency, not a declaration."
-                    )
-                }
-            };
             let message = format!(
                 "the top-level manifest declares version {version:?}, which no dialect row of \
-                 this codec names, so no declared identity was verified. {strategy}"
+                 this codec names, so no declared identity was verified. The document is read on \
+                 {using}: every field after the version was parsed with that layout. The layout \
+                 fitting is consistency, not a declaration."
             );
             let message = archive_member_message(matched, &message);
             Some(F3dLossCode::SourceDialectUnverified.note(message))

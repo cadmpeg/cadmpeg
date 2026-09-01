@@ -8,6 +8,7 @@ use super::*;
 use crate::loss::IgesLossCode;
 use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
 use crate::IgesCodec;
+use cadmpeg_core::dialect::Admission;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use std::io::Cursor;
 
@@ -99,8 +100,7 @@ fn global_charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> 
     let expected = IgesLossCode::SourceDialectUnverified
         .note(String::new())
         .code;
-    let matched = classify(Representation::FixedAscii, global);
-    dialect_loss(&matched, global).is_some_and(|note| note.code == expected)
+    dialect_loss(global).is_some_and(|note| note.code == expected)
 }
 
 /// One matrix row: a field-23 declaration and what each representation must
@@ -220,21 +220,6 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             );
         }
     }
-}
-
-#[test]
-fn dialect_loss_presence_follows_admission_not_global_recovery() {
-    let verified = resolved_global("11");
-    let unverified_match = DialectMatch::unverified(
-        DialectId::pinned("iges:5.3-fixed-ascii"),
-        DialectId::pinned("iges:5.3-fixed-ascii"),
-    )
-    .unwrap();
-    assert!(dialect_loss(&unverified_match, &verified).is_some());
-
-    let unverified = resolved_global("3");
-    let admitted_match = DialectMatch::admitted(DialectId::pinned("iges:2.0-fixed-ascii"));
-    assert!(dialect_loss(&admitted_match, &unverified).is_none());
 }
 
 #[test]

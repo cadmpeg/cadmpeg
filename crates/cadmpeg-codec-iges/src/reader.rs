@@ -5,7 +5,6 @@ use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
-use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{
@@ -176,9 +175,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         })
     }
 
-    fn admission_losses(&self, primary: &DialectMatch) -> Vec<LossNote> {
+    fn admission_losses(&self) -> Vec<LossNote> {
         let mut losses = Vec::new();
-        losses.extend(crate::dialect::dialect_loss(primary, &self.global));
+        losses.extend(crate::dialect::dialect_loss(&self.global));
         losses.extend(self.global_losses.iter().cloned());
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
@@ -215,7 +214,7 @@ pub(crate) fn inspect(
 ) -> Result<ContainerSummary, CodecError> {
     let parse = PhysicalParse::run(window, Some(ctx), ParseMode::Inspect)?;
     let primary = crate::dialect::classify(representation, &parse.global);
-    let mut losses = parse.admission_losses(&primary);
+    let mut losses = parse.admission_losses();
     losses.extend(parse.record_losses());
     let mut summary = card::summarize(&parse.scan, primary);
     summary.notes.extend(parse.global.summary_notes());
@@ -364,7 +363,7 @@ fn decode_with_occurrence_limits(
     ir.finalize();
     source_fidelity.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
-    let mut losses = parse.admission_losses(&primary);
+    let mut losses = parse.admission_losses();
     losses.extend(projection.losses);
     losses.extend(graph::losses(
         &parse.references,

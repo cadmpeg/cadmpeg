@@ -12,8 +12,8 @@
 //! codec has verified Global tables for five of them
 //! ([`crate::global::GlobalTable`] groups the rest as `Legacy`). A document at an
 //! unverified version still classifies into its own identity row and is
-//! admitted as [`Admission::AdmittedUnverified`], naming the row whose Global
-//! table actually parsed it.
+//! admitted as [`cadmpeg_core::dialect::Admission::AdmittedUnverified`], naming
+//! the row whose Global table actually parsed it.
 //!
 //! # The declaration is evidence; the id is identity
 //!
@@ -30,42 +30,39 @@ use crate::global::ResolvedGlobal;
 use crate::representation::Representation;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use crate::IgesVersion;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");
 
-/// The dialect-unverified loss required by a classified Global declaration.
-pub(crate) fn dialect_loss(matched: &DialectMatch, global: &ResolvedGlobal) -> Option<LossNote> {
-    match matched.admission() {
-        Admission::Admitted | Admission::Refused => return None,
-        Admission::AdmittedUnverified { .. } => {}
-    }
+/// The dialect-unverified loss required by a resolved Global declaration.
+///
+/// [`classify`] and this function consume the same recovery fact. A verified
+/// Global therefore cannot enter the unverified message construction, and no
+/// independently supplied match can contradict the declaration being reported.
+pub(crate) fn dialect_loss(global: &ResolvedGlobal) -> Option<LossNote> {
+    let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
+        return None;
+    };
     let declared = global.declared_version_flag();
     let version = global.version_name();
-    let (declaration, clamp) = match global.dialect_recovery() {
-        DialectRecovery::Unverified(UnverifiedDialectRecovery::UnreadableDeclaration(
-            declaration,
-        )) => (
+    let (declaration, clamp) = match recovery {
+        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => (
             format!(
                 "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared}",
             ),
             String::new(),
         ),
-        DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped) => (
+        UnverifiedDialectRecovery::Clamped => (
             format!("IGES Global version flag {declared}"),
             format!(
                 " after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor",
                 global.effective_version_flag()
             ),
         ),
-        DialectRecovery::Unverified(UnverifiedDialectRecovery::UnverifiedVersion) => (
+        UnverifiedDialectRecovery::UnverifiedVersion => (
             format!("IGES Global version flag {declared}"),
-            String::new(),
-        ),
-        DialectRecovery::Verified => (
-            format!("IGES Global version flag {declared} was admitted as unverified"),
             String::new(),
         ),
     };
