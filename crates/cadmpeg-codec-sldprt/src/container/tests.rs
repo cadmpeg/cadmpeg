@@ -132,7 +132,20 @@ fn parasolid_partition_selection_withholds_ambiguous_sites() {
     let scan = container::scan_bytes(&source);
 
     assert!(container::has_parasolid_body_stream(&scan));
-    assert!(container::select_active_parasolid(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&scan).is_none());
+}
+
+#[test]
+fn parasolid_partition_selection_retains_a_compound_stream_site() {
+    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    let stream =
+        container::compound_stream("Contents/Config-0-Partition".into(), 7, 11, payload, None);
+    let scan = container::completed_scan(&[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]);
+
+    let site = container::select_active_parasolid_site(&scan).expect("compound partition");
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
+    assert_eq!(site.site_key(), "compound@7");
+    assert!(matches!(site.section, container::Section::Compound(_)));
 }
 
 #[test]
@@ -150,13 +163,9 @@ fn parasolid_partition_selection_uses_explicit_active_source_index() {
     ));
     let scan = container::scan_bytes(&source);
 
-    let (block, header) =
-        container::select_active_parasolid(&scan).expect("explicit active partition");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-1-Partition")
-    );
-    assert!(header.description.contains("partition"));
+    let site = container::select_active_parasolid_site(&scan).expect("explicit active partition");
+    assert_eq!(site.name(), "Contents/Config-1-Partition");
+    assert!(site.header.description.contains("partition"));
 }
 
 #[test]
@@ -183,11 +192,8 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
         Some("Second")
     );
     assert_eq!(container::active_configuration_index(&scan), Some(1));
-    let (block, _) = container::select_active_parasolid(&scan).expect("manifest selects a site");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-1-Partition")
-    );
+    let site = container::select_active_parasolid_site(&scan).expect("manifest selects a site");
+    assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
 #[test]
@@ -202,11 +208,8 @@ fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
     let scan = container::scan_bytes(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(1));
-    let (block, _) = container::select_active_parasolid(&scan).expect("UTF-16 manifest");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-1-Partition")
-    );
+    let site = container::select_active_parasolid_site(&scan).expect("UTF-16 manifest");
+    assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
 #[test]
@@ -225,11 +228,8 @@ fn explicit_source_index_precedes_the_manifest_partition_id() {
     let scan = container::scan_bytes(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(0));
-    let (block, _) = container::select_active_parasolid(&scan).expect("explicit source index");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-0-Partition")
-    );
+    let site = container::select_active_parasolid_site(&scan).expect("explicit source index");
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn non_unique_manifest_activity_does_not_select_one_of_multiple_partitions() {
         let scan = container::scan_bytes(&source);
         assert_eq!(container::manifest_active_configuration(&scan), None);
         assert_eq!(container::active_configuration_index(&scan), None);
-        assert!(container::select_active_parasolid(&scan).is_none());
+        assert!(container::select_active_parasolid_site(&scan).is_none());
     }
 }
 
@@ -259,7 +259,7 @@ fn manifest_activity_is_read_only_from_the_features_stream() {
 
     assert_eq!(container::manifest_active_configuration(&scan), None);
     assert_eq!(container::active_configuration_index(&scan), None);
-    assert!(container::select_active_parasolid(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&scan).is_none());
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn parasolid_partition_selection_never_uses_a_deltas_section() {
     let scan = container::scan_bytes(&source);
 
     assert!(container::has_parasolid_body_stream(&scan));
-    assert!(container::select_active_parasolid(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&scan).is_none());
 }
 
 #[test]

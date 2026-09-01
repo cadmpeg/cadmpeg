@@ -354,12 +354,10 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .any(|block| { block.section.as_deref() == Some("Contents/Config-1-Partition") }));
     assert_eq!(container::active_configuration_index(&scan), Some(1));
     assert_eq!(
-        container::select_active_parasolid(&scan)
+        container::select_active_parasolid_site(&scan)
             .unwrap()
-            .0
-            .section
-            .as_deref(),
-        Some("Contents/Config-1-Partition")
+            .name(),
+        "Contents/Config-1-Partition"
     );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -428,12 +426,10 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert_eq!(container::active_configuration_index(&scan), Some(5));
     assert_eq!(
-        container::select_active_parasolid(&scan)
+        container::select_active_parasolid_site(&scan)
             .unwrap()
-            .0
-            .section
-            .as_deref(),
-        Some("Contents/Config-5-Partition")
+            .name(),
+        "Contents/Config-5-Partition"
     );
     let stale = scan
         .blocks

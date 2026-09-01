@@ -116,6 +116,8 @@ pub enum SldprtLossCode {
     SourceDialectUnverified,
     /// An embedded Parasolid schema has no declared grammar and was recovered as residual.
     KernelDialectUnverified,
+    /// Two embedded kernel carriers resolved to one dialect-layer identity.
+    DialectLayerCollision,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
 }
@@ -166,6 +168,7 @@ impl SldprtLossCode {
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
+        Self::DialectLayerCollision,
         Self::SourceDialectDisplaced,
     ];
 
@@ -216,6 +219,7 @@ impl SldprtLossCode {
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
+            Self::DialectLayerCollision => "source.dialect-layer-collision",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
         }
     }
@@ -239,6 +243,7 @@ impl SldprtLossCode {
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
+            Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
                 LossTaxonomy::TopologyGaugeSubstituted
@@ -332,6 +337,7 @@ mod tests {
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
+                "source.dialect-layer-collision",
                 "target.source-dialect-displaced",
             ]
         );

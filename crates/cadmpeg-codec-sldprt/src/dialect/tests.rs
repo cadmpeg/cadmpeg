@@ -67,7 +67,8 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
 fn parasolid_schema_evidence_emits_a_kernel_layer() {
     let bytes = synthetic_sldprt();
     let scan = scan_bytes(&bytes);
-    let layers = classify_layers(&scan);
+    let classification = classify_layers(&scan);
+    let layers = classification.layers();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -103,6 +104,7 @@ fn several_parasolid_streams_use_their_source_carriers_as_instances() {
     let bytes = sldprt_with_colliding_sites();
     let scan = scan_bytes(&bytes);
     let kernels = classify_layers(&scan)
+        .layers()
         .iter()
         .filter(|matched| matched.format() == PARASOLID_FORMAT)
         .cloned()
@@ -113,6 +115,27 @@ fn several_parasolid_streams_use_their_source_carriers_as_instances() {
         matched.instance() == matched.declared().get("carrier").map(String::as_str)
     }));
     assert_ne!(kernels[0].instance(), kernels[1].instance());
+}
+
+#[test]
+fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
+    let bytes = sldprt_with_colliding_sites();
+    let mut scan = scan_bytes(&bytes);
+    scan.blocks.push(scan.blocks[0].clone());
+
+    let classification = classify_layers(&scan);
+    let kernel_count = classification
+        .layers()
+        .iter()
+        .filter(|matched| matched.format() == PARASOLID_FORMAT)
+        .count();
+
+    assert_eq!(kernel_count, 2);
+    assert_eq!(classification.collision_losses().len(), 1);
+    assert_eq!(
+        classification.collision_losses()[0].code,
+        SldprtLossCode::DialectLayerCollision.kind()
+    );
 }
 
 /// One `swVersion` declaration and the row it selects.

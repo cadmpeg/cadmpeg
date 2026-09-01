@@ -24,7 +24,6 @@ pub(crate) use write::*;
 
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::decode::View;
 #[allow(unused_imports)]
 use cadmpeg_ir::annotations::Annotations;
 #[allow(unused_imports)]
@@ -52,7 +51,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
     scan.sections()
         .filter_map(|section| {
             let source = section.ordinal();
-            let text = xml_text(section.payload())?;
+            let text = crate::container::xml_text(section.payload())?;
             let doc = roxmltree::Document::parse(&text).ok()?;
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
@@ -595,20 +594,6 @@ mod literal_tests {
             rewrite_parameter_expression("Width * 2", &aliases).as_deref(),
             Some("\"Wall-Gauge\" * 2")
         );
-    }
-}
-
-fn xml_text(bytes: &[u8]) -> Option<String> {
-    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
-    if bytes.starts_with(&[0xff, 0xfe]) {
-        let mut view = View::over_retained(&bytes[2..]);
-        let mut units = Vec::new();
-        while let Some(unit) = view.u16_le() {
-            units.push(unit);
-        }
-        Some(String::from_utf16_lossy(&units))
-    } else {
-        std::str::from_utf8(bytes).ok().map(str::to_string)
     }
 }
 
