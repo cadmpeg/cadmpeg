@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The compiled format registry.
 
-use cadmpeg_ir::codec::{CadirEncoder, Codec, Encoder};
+use cadmpeg_ir::codec::write::{CadirEncoder, Encoder};
+use cadmpeg_ir::codec::Codec;
 
 use crate::{ForcedInput, Format};
 
@@ -72,167 +73,200 @@ pub(crate) struct FormatDescriptor {
     pub id: &'static str,
     pub input_extensions: &'static [&'static str],
     pub decoder: Option<DecoderConstructor>,
-    pub output: Option<OutputDescriptor>,
+    pub output: Option<&'static OutputDescriptor>,
 }
 
-#[cfg(any(
-    feature = "fcstd",
-    feature = "f3d",
-    feature = "inventor",
-    feature = "sldprt",
-    feature = "catia",
-    feature = "creo",
-    feature = "nx",
-    feature = "rhino",
-    feature = "step",
-    feature = "iges",
-    feature = "sat"
-))]
-macro_rules! descriptor {
-    ($id:literal, $input_exts:expr, $decoder:expr) => {
-        FormatDescriptor {
+macro_rules! reader {
+    ($name:ident, $id:literal, $input_exts:expr, $decoder:expr) => {
+        static $name: FormatDescriptor = FormatDescriptor {
             id: $id,
             input_extensions: $input_exts,
             decoder: Some($decoder),
             output: None,
-        }
-    };
-    ($id:literal, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
-        FormatDescriptor {
-            id: $id,
-            input_extensions: $input_exts,
-            decoder: Some($decoder),
-            output: Some(OutputDescriptor {
-                format: $format,
-                order: $order,
-                extensions: $output_exts,
-                physics: $physics,
-                encoder: $encoder,
-            }),
-        }
+        };
     };
 }
 
-pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
+macro_rules! writable {
+    ($name:ident, $output:ident, $id:literal, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
+        static $output: OutputDescriptor = OutputDescriptor {
+            format: $format,
+            order: $order,
+            extensions: $output_exts,
+            physics: $physics,
+            encoder: $encoder,
+        };
+        static $name: FormatDescriptor = FormatDescriptor {
+            id: $id,
+            input_extensions: $input_exts,
+            decoder: $decoder,
+            output: Some(&$output),
+        };
+    };
+}
+
+#[cfg(feature = "fcstd")]
+writable!(
+    FCSTD,
+    FCSTD_OUTPUT,
+    "fcstd",
+    &["fcstd"],
+    Some(|| Box::new(cadmpeg_codec_freecad::FcstdCodec)),
+    Format::Fcstd,
+    2,
+    &["fcstd"],
+    OutputPhysics::GeometryBinary,
+    || Box::new(cadmpeg_codec_freecad::FcstdCodec)
+);
+#[cfg(feature = "f3d")]
+writable!(
+    F3D,
+    F3D_OUTPUT,
+    "f3d",
+    &["f3d", "f3z"],
+    Some(|| Box::new(cadmpeg_codec_f3d::F3dCodec)),
+    Format::F3d,
+    3,
+    &["f3d"],
+    OutputPhysics::GeometryBinary,
+    || Box::new(cadmpeg_codec_f3d::F3dCodec)
+);
+#[cfg(feature = "inventor")]
+reader!(INVENTOR, "inventor", &["ipt", "iam"], || Box::new(
+    cadmpeg_codec_inventor::InventorCodec
+));
+#[cfg(feature = "sldprt")]
+writable!(
+    SLDPRT,
+    SLDPRT_OUTPUT,
+    "sldprt",
+    &["sldprt"],
+    Some(|| Box::new(cadmpeg_codec_sldprt::SldprtCodec)),
+    Format::Sldprt,
+    4,
+    &["sldprt"],
+    OutputPhysics::GeometryBinary,
+    || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
+);
+#[cfg(feature = "catia")]
+reader!(CATIA, "catia", &["catpart"], || Box::new(
+    cadmpeg_codec_catia::CatiaCodec
+));
+#[cfg(feature = "creo")]
+reader!(CREO, "creo", &["prt"], || Box::new(
+    cadmpeg_codec_creo::CreoCodec
+));
+#[cfg(feature = "nx")]
+reader!(NX, "nx", &["prt"], || Box::new(cadmpeg_codec_nx::NxCodec));
+#[cfg(feature = "rhino")]
+writable!(
+    RHINO,
+    RHINO_OUTPUT,
+    "rhino",
+    &["3dm"],
+    Some(|| Box::new(cadmpeg_codec_rhino::RhinoCodec)),
+    Format::Rhino,
+    5,
+    &["3dm"],
+    OutputPhysics::GeometryBinary,
+    || Box::new(cadmpeg_codec_rhino::RhinoCodec)
+);
+#[cfg(feature = "step")]
+writable!(
+    STEP,
+    STEP_OUTPUT,
+    "step",
+    &["step", "stp"],
+    Some(|| Box::new(cadmpeg_codec_step::StepCodec::default())),
+    Format::Step,
+    1,
+    &["step", "stp"],
+    OutputPhysics::GeometryText,
+    || Box::new(cadmpeg_codec_step::StepCodec::default())
+);
+#[cfg(feature = "iges")]
+writable!(
+    IGES,
+    IGES_OUTPUT,
+    "iges",
+    &["iges", "igs"],
+    Some(|| Box::new(cadmpeg_codec_iges::IgesCodec)),
+    Format::Iges,
+    6,
+    &["iges", "igs"],
+    OutputPhysics::GeometryText,
+    || Box::new(cadmpeg_codec_iges::IgesCodec)
+);
+#[cfg(feature = "sat")]
+reader!(SAT, "sat", &["sat", "sab", "smt", "smb"], || Box::new(
+    cadmpeg_codec_sat::SatCodec
+));
+writable!(
+    CADIR,
+    CADIR_OUTPUT,
+    "cadir",
+    &["cadir", "json"],
+    None,
+    Format::Cadir,
+    0,
+    &["cadir", "json"],
+    OutputPhysics::NeutralText,
+    || Box::new(CadirEncoder)
+);
+
+pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     #[cfg(feature = "fcstd")]
-    descriptor!(
-        "fcstd",
-        &["fcstd"],
-        || Box::new(cadmpeg_codec_freecad::FcstdCodec),
-        Format::Fcstd,
-        2,
-        &["fcstd"],
-        OutputPhysics::GeometryBinary,
-        || Box::new(cadmpeg_codec_freecad::FcstdCodec)
-    ),
+    &FCSTD,
     #[cfg(feature = "f3d")]
-    descriptor!(
-        "f3d",
-        &["f3d", "f3z"],
-        || Box::new(cadmpeg_codec_f3d::F3dCodec),
-        Format::F3d,
-        3,
-        &["f3d"],
-        OutputPhysics::GeometryBinary,
-        || Box::new(cadmpeg_codec_f3d::F3dCodec)
-    ),
+    &F3D,
     #[cfg(feature = "inventor")]
-    descriptor!("inventor", &["ipt", "iam"], || Box::new(
-        cadmpeg_codec_inventor::InventorCodec
-    )),
+    &INVENTOR,
     #[cfg(feature = "sldprt")]
-    descriptor!(
-        "sldprt",
-        &["sldprt"],
-        || Box::new(cadmpeg_codec_sldprt::SldprtCodec),
-        Format::Sldprt,
-        4,
-        &["sldprt"],
-        OutputPhysics::GeometryBinary,
-        || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
-    ),
+    &SLDPRT,
     #[cfg(feature = "catia")]
-    descriptor!("catia", &["catpart"], || Box::new(
-        cadmpeg_codec_catia::CatiaCodec
-    )),
+    &CATIA,
     #[cfg(feature = "creo")]
-    descriptor!("creo", &["prt"], || Box::new(cadmpeg_codec_creo::CreoCodec)),
+    &CREO,
     #[cfg(feature = "nx")]
-    descriptor!("nx", &["prt"], || Box::new(cadmpeg_codec_nx::NxCodec)),
+    &NX,
     #[cfg(feature = "rhino")]
-    descriptor!(
-        "rhino",
-        &["3dm"],
-        || Box::new(cadmpeg_codec_rhino::RhinoCodec),
-        Format::Rhino,
-        5,
-        &["3dm"],
-        OutputPhysics::GeometryBinary,
-        || Box::new(cadmpeg_codec_rhino::RhinoCodec)
-    ),
+    &RHINO,
     #[cfg(feature = "step")]
-    descriptor!(
-        "step",
-        &["step", "stp"],
-        || Box::new(cadmpeg_codec_step::StepCodec::default()),
-        Format::Step,
-        1,
-        &["step", "stp"],
-        OutputPhysics::GeometryText,
-        || Box::new(cadmpeg_codec_step::StepCodec::default())
-    ),
+    &STEP,
     #[cfg(feature = "iges")]
-    descriptor!(
-        "iges",
-        &["iges", "igs"],
-        || Box::new(cadmpeg_codec_iges::IgesCodec),
-        Format::Iges,
-        6,
-        &["iges", "igs"],
-        OutputPhysics::GeometryText,
-        || Box::new(cadmpeg_codec_iges::IgesCodec)
-    ),
+    &IGES,
     #[cfg(feature = "sat")]
-    descriptor!("sat", &["sat", "sab", "smt", "smb"], || Box::new(
-        cadmpeg_codec_sat::SatCodec
-    )),
-    FormatDescriptor {
-        id: "cadir",
-        input_extensions: &["cadir", "json"],
-        decoder: None,
-        output: Some(OutputDescriptor {
-            format: Format::Cadir,
-            order: 0,
-            extensions: &["cadir", "json"],
-            physics: OutputPhysics::NeutralText,
-            encoder: || Box::new(CadirEncoder),
-        }),
-    },
+    &SAT,
+    &CADIR,
 ];
 
-pub(crate) fn by_output(format: Format) -> (&'static FormatDescriptor, &'static OutputDescriptor) {
-    FORMAT_DESCRIPTORS
-        .iter()
-        .find_map(|descriptor| {
-            descriptor
-                .output
-                .as_ref()
-                .filter(|output| output.format == format)
-                .map(|output| (descriptor, output))
-        })
-        .expect("every Format has one descriptor")
+impl Format {
+    /// The compiled descriptor pair behind a writable format. Total: every
+    /// variant names its statics, so no lookup can miss.
+    pub(crate) fn descriptor(self) -> (&'static FormatDescriptor, &'static OutputDescriptor) {
+        match self {
+            Self::Cadir => (&CADIR, &CADIR_OUTPUT),
+            #[cfg(feature = "step")]
+            Self::Step => (&STEP, &STEP_OUTPUT),
+            #[cfg(feature = "fcstd")]
+            Self::Fcstd => (&FCSTD, &FCSTD_OUTPUT),
+            #[cfg(feature = "f3d")]
+            Self::F3d => (&F3D, &F3D_OUTPUT),
+            #[cfg(feature = "sldprt")]
+            Self::Sldprt => (&SLDPRT, &SLDPRT_OUTPUT),
+            #[cfg(feature = "rhino")]
+            Self::Rhino => (&RHINO, &RHINO_OUTPUT),
+            #[cfg(feature = "iges")]
+            Self::Iges => (&IGES, &IGES_OUTPUT),
+        }
+    }
 }
 
 pub(crate) fn writable(
 ) -> impl Iterator<Item = (&'static FormatDescriptor, &'static OutputDescriptor)> {
     let mut descriptors = FORMAT_DESCRIPTORS
         .iter()
-        .filter_map(|descriptor| {
-            descriptor
-                .output
-                .as_ref()
-                .map(|output| (descriptor, output))
-        })
+        .filter_map(|descriptor| descriptor.output.map(|output| (*descriptor, output)))
         .collect::<Vec<_>>();
     descriptors.sort_by_key(|(_, output)| output.order);
     descriptors.into_iter()
@@ -273,6 +307,13 @@ mod tests {
                 "duplicate {} descriptor",
                 descriptor.id
             );
+            if let Some(output) = descriptor.output {
+                assert!(
+                    std::ptr::eq(output.format.descriptor().0, *descriptor),
+                    "{} is not the descriptor its Format names",
+                    descriptor.id
+                );
+            }
             assert!(
                 crate::registry::format_words(descriptor.id)
                     .next()
@@ -285,7 +326,7 @@ mod tests {
                 "{} has no input extension",
                 descriptor.id
             );
-            if let Some(output) = &descriptor.output {
+            if let Some(output) = descriptor.output {
                 assert_eq!(output.format.name(), descriptor.id);
                 assert!(!output.extensions.is_empty());
                 assert_eq!(

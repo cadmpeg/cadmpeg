@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::*;
 use crate::IgesCodec;

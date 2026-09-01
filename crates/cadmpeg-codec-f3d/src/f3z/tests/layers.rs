@@ -40,7 +40,7 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
     );
     assert_eq!(
         inspected.admission(),
-        cadmpeg_core::dialect::Admission::Admitted
+        &cadmpeg_core::dialect::Admission::Admitted
     );
 
     let decoded = F3dCodec
@@ -309,7 +309,7 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
     assert_eq!(member.dialect().as_str(), "f3d:unknown");
     assert!(matches!(
         member.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified { .. }
+        cadmpeg_core::dialect::Admission::Unverified { .. }
     ));
     let refused_kernel = decoded
         .report()
@@ -323,7 +323,7 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
         .expect("the unparseable member remains a refused kernel layer");
     assert_eq!(
         refused_kernel.admission(),
-        cadmpeg_core::dialect::Admission::Refused
+        &cadmpeg_core::dialect::Admission::Refused
     );
 
     let losses = decoded
@@ -403,14 +403,20 @@ fn duplicate_member_layer_identity_is_a_recorded_loss() {
         cadmpeg_core::dialect::DialectLayers::of(crate::dialect::F3dDialect::classify_f3z(&[
             "part.f3d",
         ]));
-    let member = cadmpeg_core::dialect::DialectLayers::of(
+    let first = cadmpeg_core::dialect::DialectLayers::of(
         crate::dialect::F3dDialect::classify_document("3-2-0-0"),
     );
+    let later = cadmpeg_core::dialect::DialectLayers::of(
+        crate::dialect::F3dDialect::classify_document("3-3-0-0"),
+    );
 
-    assert!(crate::f3z::archive::merge_member_layers(&mut target, &member, "part.f3d").is_empty());
-    let losses = crate::f3z::archive::merge_member_layers(&mut target, &member, "part.f3d");
+    assert!(crate::f3z::archive::merge_member_layers(&mut target, &first, "part.f3d").is_empty());
+    let losses = crate::f3z::archive::merge_member_layers(&mut target, &later, "part.f3d");
 
     assert_eq!(target.iter().count(), 2);
+    assert!(target.iter().any(|layer| {
+        layer.instance() == Some("part.f3d") && layer.dialect().as_str() == "f3d:manifest-3-2-0-0"
+    }));
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, F3dLossCode::DialectLayerCollision.kind());
     assert!(losses[0].message.contains("f3d"));

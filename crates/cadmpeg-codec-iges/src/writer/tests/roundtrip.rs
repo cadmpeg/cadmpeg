@@ -4,10 +4,11 @@
 //! An export whose report carries no losses must decode back to an IR that
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
 
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;

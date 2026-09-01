@@ -19,7 +19,7 @@ use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
     push_structural_layer_notes,
 };
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::codec::DecodeBody;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;
@@ -59,14 +59,15 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
         || !model.tessellations.is_empty()
 }
 
-/// Build diagnostics for data that cannot be represented in the emitted IR.
+/// Build the decode body: diagnostics for data that cannot be represented in
+/// the emitted IR. Classification is not part of it.
 pub(in super::super) fn build_report(
     scan: &ContainerScan,
     ir: &CadIr,
     coverage: BTreeMap<String, usize>,
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
-) -> DecodeReport {
+) -> DecodeBody {
     let classification = crate::dialect::classify(scan);
     let summary = container::summarize(scan, &classification);
     let geom_sections = scan
@@ -97,12 +98,8 @@ pub(in super::super) fn build_report(
     let mut losses = Vec::new();
 
     // The admission charge, first: it describes how the whole document was
-    // read, not what any one record cost. The loss reads the completed primary
-    // match, so admission and the stated cause share one classification.
-    let dialects = summary
-        .dialects()
-        .expect("every Creo summary classifies its dialect")
-        .clone();
+    // read, not what any one record cost. Identity itself is authored once, in
+    // `ir.source`; the report body carries only the charge.
     losses.extend(classification.loss());
 
     if container_only {
@@ -162,16 +159,15 @@ pub(in super::super) fn build_report(
     push_structural_layer_notes(&mut losses, scan);
     push_coverage_drop_losses(&mut losses, &coverage);
 
-    DecodeReport::classified(
-        dialects,
-        if container_only {
+    DecodeBody {
+        transfer: if container_only {
             cadmpeg_ir::DecodeTransfer::ContainerOnly
         } else {
             cadmpeg_ir::DecodeTransfer::full(has_transferred_geometry(ir))
         },
         coverage,
         losses,
-        summary.notes,
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        notes: summary.notes,
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }

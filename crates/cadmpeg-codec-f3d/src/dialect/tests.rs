@@ -21,7 +21,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let mut scan = crate::container::scan(&ctx, root).unwrap();
     scan.breps.push(scan.breps[0].clone());
 
-    let (layers, losses) = classify_layers(&scan).into_parts();
+    let (layers, losses) = classify_layers(&scan);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, F3dLossCode::DialectLayerCollision.kind());
     assert_eq!(
@@ -43,7 +43,7 @@ fn a_document_match_names_its_row_and_records_the_version_the_parse_read() {
         matched.declared()[DECLARED_TOP_LEVEL_MANIFEST_VERSION],
         "3-2-0-0"
     );
-    assert_eq!(matched.admission(), Admission::Admitted);
+    assert_eq!(matched.admission(), &Admission::Admitted);
 }
 
 #[test]
@@ -58,17 +58,30 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
         "3-3-0-0"
     );
     assert_eq!(matched.dialect().as_str(), "f3d:unknown");
+    assert!(matches!(matched.admission(), Admission::Unverified { .. }));
     assert_eq!(
-        matched.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("f3d:manifest-3-2-0-0")),
-        }
+        matched.using(),
+        Some(DialectId::pinned("f3d:manifest-3-2-0-0"))
     );
 
     let loss = dialect_loss(&matched).expect("the recovery is charged");
     assert_eq!(loss.code, F3dLossCode::SourceDialectUnverified.kind());
     assert!(loss.message.contains("3-3-0-0"));
     assert!(loss.message.contains("f3d:manifest-3-2-0-0"));
+}
+
+#[test]
+fn a_residual_match_charges_without_inventing_a_substituted_grammar() {
+    let matched =
+        DialectMatch::residual(F3dDialect::Unknown.id()).with_declared(BTreeMap::from([(
+            DECLARED_TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+            "unframed".to_owned(),
+        )]));
+
+    let loss = dialect_loss(&matched).expect("a residual read is a recovery");
+    assert_eq!(loss.code, F3dLossCode::SourceDialectUnverified.kind());
+    assert!(loss.message.contains("residual parser path"));
+    assert!(!loss.message.contains("f3d:manifest-3-2-0-0"));
 }
 
 #[test]
@@ -87,7 +100,7 @@ fn an_f3z_match_names_its_row_and_records_the_root_members() {
             .contains_key(DECLARED_TOP_LEVEL_MANIFEST_VERSION),
         "the F3Z branch reads no version field, so it must declare none"
     );
-    assert_eq!(matched.admission(), Admission::Admitted);
+    assert_eq!(matched.admission(), &Admission::Admitted);
 }
 
 #[test]
@@ -98,7 +111,7 @@ fn the_identity_rows_are_admitted_and_charge_nothing() {
         F3dDialect::classify_document("3-2-0-0"),
         F3dDialect::classify_f3z(&["Part.f3d"]),
     ] {
-        assert_eq!(matched.admission(), Admission::Admitted);
+        assert_eq!(matched.admission(), &Admission::Admitted);
         assert!(dialect_loss(&matched).is_none());
     }
 }
@@ -125,9 +138,8 @@ fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
 fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
     let matched = DialectMatch::unverified(
         cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
-        cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
     )
-    .expect("F3D test dialect and grammar ids share one format namespace")
     .with_declared(BTreeMap::from([(
         cadmpeg_asm::dialect::DECLARED_CARRIER.to_owned(),
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat".to_owned(),

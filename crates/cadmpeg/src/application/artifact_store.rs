@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_container::compound::read_detection_prefix;
-use cadmpeg_ir::codec::ExportPlan;
+use cadmpeg_ir::codec::write::ExportPlan;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar, SourceFidelity};
 use sha2::{Digest, Sha256};
@@ -400,7 +400,7 @@ mod tests {
         let cli_candidates = InputCatalog::with_builtins()
             .candidates(&cli_prefix)
             .into_iter()
-            .map(|(descriptor, confidence)| (descriptor.format_id(), confidence))
+            .map(|(codec, confidence)| (codec.id(), confidence))
             .collect::<Vec<_>>();
         let mut source = Cursor::new(bytes);
         let library_candidates = identify(&mut source, &InspectOptions::default())

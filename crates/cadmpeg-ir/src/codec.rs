@@ -5,24 +5,25 @@
 //! byte prefix, inspection summarizes a seekable container, and decoding
 //! produces a finalized [`CadIr`] plus a [`DecodeReport`].
 //!
-//! A codec implements only the required [`Codec`] methods. The public
+//! A codec implements only the required [`CodecBackend`] methods. The public
 //! [`Codec::inspect`] and [`Codec::decode`] entry points are the
 //! single enforcement point for root-input limits and session finalize checks;
 //! they live on the sealed [`Codec`] trait, blanket-implemented for every
-//! `Codec`, so a codec cannot override an entry point and drop the
+//! [`CodecBackend`], so a codec cannot override an entry point and drop the
 //! enforcement.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
 use crate::document::CadIr;
-use crate::report::DecodeReport;
-use crate::report::StrictConsequence;
+use crate::report::{DecodeReport, DecodeTransfer, LossNote, StrictConsequence, TransferLedger};
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
 };
+use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -67,12 +68,13 @@ pub struct DecodeOptions {
 
 /// A decoded document plus its loss report.
 ///
-/// Construct only through [`DecodeResult::new`], which finalizes the IR and
-/// source fidelity. `#[non_exhaustive]` blocks external struct literals so
-/// callers cannot skip finalization. Read through [`Self::ir`], [`Self::report`],
-/// and [`Self::source_fidelity`]. Consume with [`Self::into_parts`]. The edit
-/// guards returned by [`Self::ir_mut`] and [`Self::source_fidelity_mut`]
-/// restore canonical order before the result can be read again.
+/// Construct only through [`DecodeResult::new`], which stamps the source
+/// classification onto the report and finalizes the IR and source fidelity.
+/// `#[non_exhaustive]` blocks external struct literals so callers cannot skip
+/// finalization. Read through [`Self::ir`], [`Self::report`], and
+/// [`Self::source_fidelity`]. Consume with [`Self::into_parts`]. The edit guards
+/// returned by [`Self::ir_mut`] and [`Self::source_fidelity_mut`] restore
+/// canonical order before the result can be read again.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct DecodeResult {
@@ -106,134 +108,74 @@ pub enum DecodeFailure {
     },
 }
 
-/// A decoded document and its report disagree about source identity.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{kind}")]
-#[non_exhaustive]
-pub struct DecodeResultError {
-    kind: DecodeResultErrorKind,
+/// What a backend returns from [`CodecBackend::decode_impl`].
+///
+/// Source identity is authored once, in `ir.source`. The sealed wrapper stamps
+/// that classification onto the report; a backend cannot describe the document
+/// and its report with two different identities.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decoded {
+    /// The decoded document, with its source metadata authored by the backend.
+    pub ir: CadIr,
+    /// The report without classification.
+    pub body: DecodeBody,
+    /// Decode-time annotations and retained source records.
+    pub source_fidelity: SourceFidelity,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-enum DecodeResultErrorKind {
-    #[error("classified decode report for {report_format:?} requires source metadata")]
-    ClassifiedReportWithoutSource { report_format: String },
-    #[error(
-        "decode source format {source_format:?} does not match report primary format {report_format:?}"
-    )]
-    SourceFormatMismatch {
-        source_format: String,
-        report_format: String,
-    },
-    #[error(
-        "decode source dialect layers ({source_layers}) disagree with report dialect layers ({report_layers})"
-    )]
-    SourceDialectMismatch {
-        source_layers: String,
-        report_layers: String,
-    },
-    #[error(
-        "decode source dialect {source_dialect:?} is classified but report for {report_format:?} is unclassified"
-    )]
-    ClassifiedSourceWithUnclassifiedReport {
-        source_dialect: String,
-        report_format: String,
-    },
+/// A [`DecodeReport`] without its classification.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodeBody {
+    /// Source-transfer disposition.
+    pub transfer: DecodeTransfer,
+    /// Coverage measures keyed by their declared name.
+    pub coverage: BTreeMap<String, usize>,
+    /// Losses resolved during decoding.
+    pub losses: Vec<LossNote>,
+    /// Codec-defined informational notes.
+    pub notes: Vec<String>,
+    /// Complete source-to-result accounting.
+    pub transfer_ledger: TransferLedger,
 }
 
-fn describe_dialect_layers(layers: &cadmpeg_core::dialect::DialectLayers) -> String {
-    layers
-        .iter()
-        .map(|matched| {
-            format!(
-                "dialect {}, admission {:?}, instance {:?}, declared {:?}",
-                matched.dialect(),
-                matched.admission(),
-                matched.instance(),
-                matched.declared()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
-}
-
-impl From<DecodeResultError> for CodecError {
-    fn from(error: DecodeResultError) -> Self {
-        Self::malformed(error)
+impl DecodeBody {
+    /// An empty body with the given transfer disposition.
+    #[must_use]
+    pub fn new(transfer: DecodeTransfer) -> Self {
+        Self {
+            transfer,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+            transfer_ledger: TransferLedger::default(),
+        }
     }
 }
 
 impl DecodeResult {
-    /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
+    /// Builds a result by stamping the document's source classification onto
+    /// the report body, then canonicalizing the IR and source fidelity.
     ///
-    /// # Errors
-    ///
-    /// Returns [`DecodeResultError`] when a classified report has no source
-    /// metadata, or when source metadata and report classification disagree.
-    pub fn new(
-        mut ir: CadIr,
-        report: DecodeReport,
-        mut source_fidelity: SourceFidelity,
-    ) -> Result<Self, DecodeResultError> {
-        match (ir.source.as_mut(), report.dialects()) {
-            (None, Some(dialects)) => {
-                return Err(DecodeResultError {
-                    kind: DecodeResultErrorKind::ClassifiedReportWithoutSource {
-                        report_format: dialects.primary().format().to_owned(),
-                    },
-                });
-            }
-            (Some(source), Some(dialects)) => {
-                if source.format() != dialects.primary().format() {
-                    return Err(DecodeResultError {
-                        kind: DecodeResultErrorKind::SourceFormatMismatch {
-                            source_format: source.format().to_owned(),
-                            report_format: dialects.primary().format().to_owned(),
-                        },
-                    });
-                }
-                if let Some(source_dialects) = source.dialects() {
-                    if source_dialects != dialects {
-                        return Err(DecodeResultError {
-                            kind: DecodeResultErrorKind::SourceDialectMismatch {
-                                source_layers: describe_dialect_layers(source_dialects),
-                                report_layers: describe_dialect_layers(dialects),
-                            },
-                        });
-                    }
-                }
-                *source = crate::document::SourceMeta::classified(
-                    dialects.clone(),
-                    std::mem::take(&mut source.attributes),
-                );
-            }
-            (Some(source), None) => {
-                if source.format() != report.format() {
-                    return Err(DecodeResultError {
-                        kind: DecodeResultErrorKind::SourceFormatMismatch {
-                            source_format: source.format().to_owned(),
-                            report_format: report.format().to_owned(),
-                        },
-                    });
-                }
-                if let Some(source_dialect) = source.dialect() {
-                    return Err(DecodeResultError {
-                        kind: DecodeResultErrorKind::ClassifiedSourceWithUnclassifiedReport {
-                            source_dialect: source_dialect.dialect().to_string(),
-                            report_format: report.format().to_owned(),
-                        },
-                    });
-                }
-            }
-            (None, None) => {}
-        }
+    /// A document without source metadata yields an unclassified report for
+    /// `format`, the codec's registry format.
+    #[must_use]
+    pub fn new(decoded: Decoded, format: &str) -> Self {
+        let Decoded {
+            mut ir,
+            body,
+            mut source_fidelity,
+        } = decoded;
+        let classification = match ir.source.as_ref() {
+            Some(source) => source.classification().clone(),
+            None => FormatIdentity::unclassified(format),
+        };
         ir.finalize();
         source_fidelity.finalize();
-        Ok(Self {
+        Self {
             ir,
-            report,
+            report: DecodeReport::from_body(classification, body),
             source_fidelity,
-        })
+        }
     }
 
     /// Borrow the finalized IR.
@@ -306,11 +248,14 @@ impl<T> Drop for FinalizingEdit<'_, T> {
 
 /// Decoder and container inspector for one source format.
 pub trait CodecBackend {
-    /// Stable short id for this codec, e.g. `"f3d"`.
-    fn id(&self) -> &'static str;
+    /// Registry format namespace this codec decodes, e.g. `"f3d"`.
+    ///
+    /// The sealed wrapper reports it as [`Codec::id`] and refuses any result
+    /// whose primary format names another namespace.
+    const FORMAT: &'static str;
 
     /// Judge, from a leading byte prefix, whether this codec applies.
-    fn detect(&self, prefix: &[u8]) -> Confidence;
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence;
 
     /// Enumerate the acquired root view's streams/segments without decoding
     /// geometry.
@@ -330,11 +275,7 @@ pub trait CodecBackend {
     /// Implemented by each codec; never called by the CLI or registry. The
     /// [`Codec::decode`] wrapper acquires the root and finalizes the
     /// context around this call.
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError>;
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError>;
 }
 
 mod sealed {
@@ -347,7 +288,7 @@ mod sealed {
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::codec::{
-///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult,
+///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Decoded,
 /// };
 /// use cadmpeg_core::{CodecError, ReadSeek};
 /// use cadmpeg_core::decode::{DecodeContext, View};
@@ -356,14 +297,16 @@ mod sealed {
 ///
 /// struct Rogue;
 /// impl CodecBackend for Rogue {
-///     fn id(&self) -> &'static str { "rogue" }
-///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     const FORMAT: &'static str = "rogue";
+///     fn detect_impl(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
-///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
+///         -> Result<Decoded, CodecError> { panic!("never runs") }
 /// }
 /// impl Codec for Rogue {
+///     fn id(&self) -> &'static str { "rogue" }
+///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
@@ -372,9 +315,14 @@ mod sealed {
 ///     }
 /// }
 /// ```
-pub trait Codec: CodecBackend + sealed::Sealed {
+pub trait Codec: sealed::Sealed {
+    /// Registry format namespace, [`CodecBackend::FORMAT`].
+    fn id(&self) -> &'static str;
+
+    /// Judge, from a leading byte prefix, whether this codec applies.
+    fn detect(&self, prefix: &[u8]) -> Confidence;
+
     /// Inspects the source under its input and resource limits.
-    ///
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -400,6 +348,14 @@ pub trait Codec: CodecBackend + sealed::Sealed {
 }
 
 impl<C: CodecBackend + ?Sized> Codec for C {
+    fn id(&self) -> &'static str {
+        C::FORMAT
+    }
+
+    fn detect(&self, prefix: &[u8]) -> Confidence {
+        self.detect_impl(prefix)
+    }
+
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -414,13 +370,12 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
         let result = result?;
-        if result.format() != self.id() {
-            return Err(CodecError::ContractViolation {
-                codec: self.id(),
-                operation: "inspect",
-                expected: self.id().to_owned(),
-                reported: result.format().to_owned(),
-            });
+        if result.format() != C::FORMAT {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} inspected a {:?} container",
+                C::FORMAT,
+                result.format()
+            )));
         }
         Ok(result)
     }
@@ -433,16 +388,15 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let arena = DecodeArena::new();
         let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
         ctx.set_container_only(options.container_only);
-        let result = self.decode_impl(&ctx, root);
+        let decoded = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
-        let mut result = result?;
-        if result.report().format() != self.id() {
-            return Err(CodecError::ContractViolation {
-                codec: self.id(),
-                operation: "decode",
-                expected: self.id().to_owned(),
-                reported: result.report().format().to_owned(),
-            }
+        let mut result = DecodeResult::new(decoded?, C::FORMAT);
+        if result.report().format() != C::FORMAT {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} decoded a {:?} document",
+                C::FORMAT,
+                result.report().format()
+            ))
             .into());
         }
         result.stamp_container_only(options.container_only);
@@ -469,13 +423,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     }
 }
 
-mod write;
-#[cfg(test)]
-use write::resolve_write_request;
-pub use write::{
-    CadirEncoder, EncodeInput, Encoder, EncoderBackend, EncoderTargetDomain, ExportPlan,
-    ResolvedEncoderTarget, ResolvedWrite, TargetRequest,
-};
+pub mod write;
 
 #[cfg(test)]
 mod tests;

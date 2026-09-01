@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::sketches::SketchConstraintDefinition;

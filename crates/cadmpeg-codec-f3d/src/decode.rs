@@ -3,7 +3,7 @@
     test,
     allow(clippy::default_trait_access, clippy::field_reassign_with_default)
 )]
-//! Assemble a `.f3d` archive into a [`CadIr`] document and [`DecodeReport`].
+//! Assemble a `.f3d` archive into a [`CadIr`] document and [`DecodeBody`].
 //!
 //! [`crate::container`] scans the ZIP, reads ASM headers, finds the history
 //! boundary. This module resolves Design body-to-blob bindings, frames every
@@ -20,11 +20,11 @@ use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{LossCategory, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -164,11 +164,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
         .count()
 }
 
-fn report_unresolved_dimension_companions(
-    report: &mut DecodeReport,
-    native: &F3dNative,
-    ir: &CadIr,
-) {
+fn report_unresolved_dimension_companions(report: &mut DecodeBody, native: &F3dNative, ir: &CadIr) {
     let count = unresolved_dimension_companion_count(native, ir);
     if count != 0 {
         report.losses.push(F3dLossCode::DimensionCompanionUntyped.note(format!(
@@ -177,11 +173,7 @@ fn report_unresolved_dimension_companions(
     }
 }
 
-fn report_unresolved_configuration_rules(
-    report: &mut DecodeReport,
-    native: &F3dNative,
-    ir: &CadIr,
-) {
+fn report_unresolved_configuration_rules(report: &mut DecodeBody, native: &F3dNative, ir: &CadIr) {
     let count = crate::design::configurations::unresolved_configuration_member_count(
         &native.design_configurations,
     );
@@ -217,7 +209,7 @@ fn report_unresolved_configuration_rules(
     }
 }
 
-fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize) {
+fn report_unretained_act_component_links(report: &mut DecodeBody, count: usize) {
     if count != 0 {
         report.losses.push(F3dLossCode::ActComponentLinkUnresolved.note(format!(
             "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
@@ -225,7 +217,7 @@ fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize
     }
 }
 
-fn report_untyped_material_distances(report: &mut DecodeReport, count: usize) {
+fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
     if count != 0 {
         report
             .losses
@@ -1758,7 +1750,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     gaps
 }
 
-fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: &F3dNative) {
+fn report_design_projection_gaps(report: &mut DecodeBody, ir: &CadIr, native: &F3dNative) {
     let gaps = design_projection_gaps(ir, native);
     let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
@@ -2130,7 +2122,7 @@ fn finish_model_decode<'a>(
     body_visibilities: Vec<crate::records::BodyVisibility>,
     undecoded_candidates: usize,
     session_state: DecodeSessionState,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     F3dDecodeSession::from_geometry(
         ctx,
         scan,
@@ -2174,7 +2166,8 @@ struct F3dDecodeSession<'a> {
     geometry_materials: Option<materials::DecodedMaterials>,
     native: F3dNative,
     ir: CadIr,
-    report: DecodeReport,
+    report: DecodeBody,
+    report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
     /// No-BREP finalize inputs retained across product decode.
     deferred_xref: Option<Result<Option<crate::xref::XrefTable>, CodecError>>,
@@ -2197,13 +2190,8 @@ impl<'a> F3dDecodeSession<'a> {
             mut admitted_entities,
             report_scope,
         } = session_state;
-        let mut report = crate::report::build_decode_report(
-            scan,
-            false,
-            true,
-            geometry_losses(&brep),
-            report_scope,
-        );
+        let mut report =
+            crate::report::build_decode_report(scan, false, true, geometry_losses(&brep));
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2253,6 +2241,7 @@ impl<'a> F3dDecodeSession<'a> {
             native,
             ir,
             report,
+            report_scope,
             unknowns,
             deferred_xref: None,
             deferred_non_root_act: None,
@@ -2278,13 +2267,8 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_materials: None,
             native: F3dNative::default(),
             ir,
-            report: crate::report::build_decode_report(
-                scan,
-                false,
-                false,
-                container_losses(scan),
-                report_scope,
-            ),
+            report: crate::report::build_decode_report(scan, false, false, container_losses(scan)),
+            report_scope,
             unknowns,
             deferred_xref: None,
             deferred_non_root_act: None,
@@ -2302,7 +2286,7 @@ impl<'a> F3dDecodeSession<'a> {
     }
 
     /// Decode design graph, products, annotations, and the report.
-    fn into_result(mut self) -> Result<DecodeResult, CodecError> {
+    fn into_result(mut self) -> Result<Decoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
         self.decode_design_graph()?;
         self.decode_products()?;
@@ -2888,7 +2872,7 @@ impl<'a> F3dDecodeSession<'a> {
         Ok(())
     }
 
-    fn finalize(mut self) -> Result<DecodeResult, CodecError> {
+    fn finalize(mut self) -> Result<Decoded, CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
         if self.geometry.is_none() {
@@ -2936,11 +2920,15 @@ impl<'a> F3dDecodeSession<'a> {
             let mut admitted_entities = self.admitted_entities;
             return decode_result(
                 ctx,
+                scan,
+                self.report_scope,
                 self.ir,
                 self.report,
-                annotations,
-                self.unknowns,
-                source_image,
+                RetainedArtifacts {
+                    annotations,
+                    unknowns: self.unknowns,
+                    source_image,
+                },
                 &mut admitted_entities,
             );
         }
@@ -2963,11 +2951,15 @@ impl<'a> F3dDecodeSession<'a> {
         let mut admitted_entities = self.admitted_entities;
         decode_result(
             ctx,
+            scan,
+            self.report_scope,
             self.ir,
             self.report,
-            annotations,
-            self.unknowns,
-            source_image,
+            RetainedArtifacts {
+                annotations,
+                unknowns: self.unknowns,
+                source_image,
+            },
             &mut admitted_entities,
         )
     }
@@ -2978,7 +2970,7 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 }
 
 /// Decode an F3D or F3Z reader.
-pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     decode_member(ctx, root)
 }
 
@@ -2986,7 +2978,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 pub(crate) fn decode_member<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     decode_document(ctx, root, crate::report::ReportScope::Standalone)
 }
 
@@ -2994,7 +2986,7 @@ pub(crate) fn decode_member<'a>(
 pub(crate) fn decode_archive_member<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     decode_scanned_document(ctx, scan, crate::report::ReportScope::ArchiveMember)
 }
 
@@ -3002,7 +2994,7 @@ fn decode_document<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
     report_scope: crate::report::ReportScope,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     match &scan.kind {
         container::F3dContainerKind::MultiDocument => crate::f3z::decode(ctx, &scan),
@@ -3016,7 +3008,7 @@ fn decode_scanned_document<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
     report_scope: crate::report::ReportScope,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
         scan.entries.len() as u64,
@@ -3029,23 +3021,22 @@ fn decode_scanned_document<'a>(
         annotate_docstruct(&mut ir, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(scan);
-        let mut report = crate::report::build_decode_report(
-            scan,
-            true,
-            false,
-            container_losses(scan),
-            report_scope,
-        );
+        let mut report =
+            crate::report::build_decode_report(scan, true, false, container_losses(scan));
         if let Ok(Some(table)) = crate::xref::decode(scan) {
             apply_assembly_classification(&mut report, scan, &table);
         }
         return decode_result(
             ctx,
+            scan,
+            report_scope,
             ir,
             report,
-            annotations,
-            unknowns,
-            source_image,
+            RetainedArtifacts {
+                annotations,
+                unknowns,
+                source_image,
+            },
             &mut admitted_entities,
         );
     }
@@ -3214,7 +3205,7 @@ fn project_mesh_bodies(
     scan: &ContainerScan,
     ir: &mut CadIr,
     native: &mut F3dNative,
-    report: &mut DecodeReport,
+    report: &mut DecodeBody,
 ) -> Result<MeshProjection, CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
 
@@ -3546,7 +3537,7 @@ fn mesh_attribute_channels(
 /// Report mesh attribute channels that the projector left unresolved, grouped by
 /// domain.
 fn report_unresolved_mesh_attributes(
-    report: &mut DecodeReport,
+    report: &mut DecodeBody,
     unresolved: &std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
 ) {
     use crate::paramesh::MeshAttributeDomain;
@@ -3599,7 +3590,7 @@ fn xref_parse_loss(error: &CodecError) -> LossNote {
 
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close and had no valid carrier.
-fn report_xref_placement_failures(report: &mut DecodeReport, table: &crate::xref::XrefTable) {
+fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
     for ordinal in &table.placement_failures {
         let Some(reference) = table
             .references
@@ -3620,7 +3611,7 @@ fn report_xref_placement_failures(report: &mut DecodeReport, table: &crate::xref
 
 /// Report structured placements that were ignored because a scope-bound
 /// Component Insert carrier supplied the occurrence transform for the role.
-fn report_xref_placement_overrides(report: &mut DecodeReport, table: &crate::xref::XrefTable) {
+fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
     for (ordinal, count) in &table.placement_overrides {
         let Some(reference) = table
             .references
@@ -3642,7 +3633,7 @@ fn report_xref_placement_overrides(report: &mut DecodeReport, table: &crate::xre
 ///
 /// Mesh bodies use tessellation as their geometry carrier. The report marks
 /// geometry as transferred and records vertex precision.
-fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerScan, bodies: usize) {
+fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan, bodies: usize) {
     if container::design_breps(scan).next().is_some() {
         return;
     }
@@ -3654,7 +3645,7 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.mark_geometry_transferred();
+    report.transfer = cadmpeg_ir::DecodeTransfer::full(true);
     report
         .losses
         .push(F3dLossCode::MeshVertexPrecisionReduced.note(format!(
@@ -3668,7 +3659,7 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
 /// Sketch entities can supply the complete geometry. Reference-image timeline
 /// objects are presentation content and require no geometry carrier.
 pub(crate) fn apply_bodyless_design_classification(
-    report: &mut DecodeReport,
+    report: &mut DecodeBody,
     brep_streams: usize,
     text_brep_streams: usize,
     declared_bodies: usize,
@@ -3690,7 +3681,7 @@ pub(crate) fn apply_bodyless_design_classification(
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.mark_geometry_transferred();
+    report.transfer = cadmpeg_ir::DecodeTransfer::full(true);
     let message = match (sketch_entities, reference_images) {
         (0, reference_images) => format!(
             "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
@@ -3711,7 +3702,7 @@ pub(crate) fn apply_bodyless_design_classification(
 /// its XREF targets, so producing no geometry is not a loss
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 fn apply_assembly_classification(
-    report: &mut DecodeReport,
+    report: &mut DecodeBody,
     scan: &ContainerScan,
     table: &crate::xref::XrefTable,
 ) {
@@ -3762,15 +3753,21 @@ fn apply_assembly_classification(
     }
 }
 
-fn decode_result(
-    ctx: &DecodeContext<'_>,
-    mut ir: CadIr,
-    report: DecodeReport,
+struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
+}
+
+fn decode_result(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    report_scope: crate::report::ReportScope,
+    mut ir: CadIr,
+    mut report: DecodeBody,
+    retained: RetainedArtifacts,
     admitted_entities: &mut u64,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
     ctx.admit_entities(
@@ -3778,20 +3775,25 @@ fn decode_result(
         admitted_entities,
         "admit F3D entities",
     )?;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
-    source_fidelity.retain_unknown_records("f3d", [source_image]);
-    let mut result = DecodeResult::new(ir, report, source_fidelity)?;
-    // Stamped after construction projects the primary dialect, so the write
-    // path compares against the exact finalized document it returns.
-    let hash = document_local_sha256(result.ir());
-    if let Some(source) = &mut result.ir_mut().source {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
+    source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns)?;
+    source_fidelity.retain_unknown_records("f3d", [retained.source_image]);
+    crate::report::classify_document(scan, report_scope, &mut ir, &mut report);
+    // Stamped on the finalized, classified document, so the write path
+    // compares against the exact document the sealed wrapper returns.
+    ir.finalize();
+    let hash = document_local_sha256(&ir);
+    if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
     }
-    Ok(result)
+    Ok(Decoded {
+        ir,
+        body: report,
+        source_fidelity,
+    })
 }
 
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
@@ -5082,7 +5084,7 @@ fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::LossNote> {
 /// it when the IR carries a complete document-local catalog and keeps it when a
 /// serialized assignment failed to resolve.
 pub(crate) fn reconcile_appearance_loss(
-    report: &mut DecodeReport,
+    report: &mut DecodeBody,
     ir: &CadIr,
     has_topology_assignments: bool,
 ) {

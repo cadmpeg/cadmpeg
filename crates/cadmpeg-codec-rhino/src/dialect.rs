@@ -33,8 +33,7 @@
 //! word no row claims still selects a scan. The totality row is therefore read,
 //! not refused. It is read directly as [`ArchiveVersion::Other`], and record
 //! branches continue to read the observed word. No declared archive row is
-//! substituted, so admission is [`Admission::AdmittedUnverified`] with no
-//! `using` value, and
+//! substituted, so admission is [`Admission::Residual`], and
 //! [`admission_loss`] charges
 //! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] for it.
 //!
@@ -128,14 +127,14 @@ impl ArchiveVersion {
 
 /// The dialect-unverified loss for a classified layer.
 ///
-/// `None` exactly where `matched.admission` is not
-/// [`Admission::AdmittedUnverified`], because this reads that field rather than
-/// reclassifying. The biconditional the decode policy requires is therefore
-/// structural: the note charged and the admission reported come from one value,
-/// not from two authors agreeing.
+/// `None` exactly where `matched.admission` is neither
+/// [`Admission::Residual`] nor [`Admission::Unverified`], because this reads
+/// that field rather than reclassifying. The biconditional the decode policy
+/// requires is therefore structural: the note charged and the admission
+/// reported come from one value, not from two authors agreeing.
 pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
-        Admission::AdmittedUnverified { .. } => {}
+        Admission::Residual | Admission::Unverified { .. } => {}
         Admission::Admitted | Admission::Refused => return None,
     }
     let word = matched

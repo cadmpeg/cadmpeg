@@ -151,7 +151,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             case.label
         );
         assert_eq!(
-            matched.admission() == Admission::Admitted,
+            matched.admission() == &Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             case.label
@@ -163,10 +163,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
     let (matched, losses) = decoded(&primary_envelope_fixture_with_broken_database());
     assert_eq!(matched.declared()[DECLARED_RSE_DB_SCHEMA], "31");
-    assert!(matches!(
-        matched.admission(),
-        Admission::AdmittedUnverified { .. }
-    ));
+    assert!(matches!(matched.admission(), Admission::Unverified { .. }));
     assert_eq!(matched.dialect().as_str(), "inventor:cfb3-rse31-meta8");
     let loss = losses
         .iter()
@@ -187,10 +184,7 @@ fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
     );
     assert_eq!(matched.declared()[DECLARED_META_STREAM_VERSION], "8");
     assert_eq!(matched.dialect().as_str(), "inventor:cfb3-rse31-meta8");
-    assert!(matches!(
-        matched.admission(),
-        Admission::AdmittedUnverified { .. }
-    ));
+    assert!(matches!(matched.admission(), Admission::Unverified { .. }));
     let loss = losses
         .iter()
         .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
@@ -212,11 +206,19 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
-            Admission::AdmittedUnverified {
-                using: Some(InventorDialect::Cfb3Rse31Meta8.id()),
+            Admission::Unverified {
+                using: cadmpeg_core::dialect::Grammar::local("cfb3-rse31-meta8").unwrap(),
             }
         };
-        assert_eq!(matched.admission(), expected_admission, "{}", case.label);
+        assert_eq!(matched.admission(), &expected_admission, "{}", case.label);
+        if !case.admitted {
+            assert_eq!(
+                matched.using(),
+                Some(InventorDialect::Cfb3Rse31Meta8.id()),
+                "{}",
+                case.label
+            );
+        }
 
         assert_eq!(
             matched.declared()[DECLARED_CFB_MAJOR_VERSION],
@@ -263,7 +265,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
     for case in CASES {
         let (matched, _) = decoded(&case.bytes());
         if matched.dialect().as_str() == InventorDialect::Unknown.id().as_str() {
-            assert_ne!(matched.admission(), Admission::Admitted, "{}", case.label);
+            assert_ne!(matched.admission(), &Admission::Admitted, "{}", case.label);
         }
     }
 }

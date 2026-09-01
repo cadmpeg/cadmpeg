@@ -2,7 +2,8 @@
 //! High-level CATPart-to-IR decoding.
 //!
 //! [`decode`] scans the container, selects a decoder from the identified storage
-//! variant, and returns the transferred model with a [`DecodeReport`].
+//! variant, and returns the transferred model with its [`DecodeBody`]; the
+//! sealed wrapper stamps the identity authored in `ir.source` onto the report.
 //!
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
@@ -11,9 +12,9 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::DecodeBody;
+use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 
@@ -48,7 +49,7 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// predicate accepts the scanned variant is tried in table order; the first to
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
 
     if ctx.container_only() {
@@ -126,11 +127,11 @@ fn finish_decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     mut ir: CadIr,
-    mut report: DecodeReport,
+    mut report: DecodeBody,
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     // Retained unknown records are source entities even when a route transfers
     // no neutral model entity (for example, an unrecognized storage variant).
     ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
@@ -3508,38 +3509,30 @@ fn modeling_graph_scope(
 
 /// The single site that finishes a decode and charges dialect admission loss.
 ///
-/// Every route supplies an unclassified report. This function summarizes and
-/// classifies it once. It charges the dialect-unverified loss from that same
-/// layer, so a report can carry `AdmittedUnverified` without its loss only if
-/// this function is bypassed.
+/// Identity is authored once, in `ir.source` by [`crate::assemble::source_meta`];
+/// the sealed wrapper stamps it onto the report. This function merges the
+/// container-level notes and charges the dialect-unverified loss from that same
+/// layer, so a residual admission can lack its loss only if this function is
+/// bypassed.
 fn decode_result(
     scan: &ContainerScan,
     mut ir: CadIr,
-    report: DecodeReport,
+    mut body: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
-) -> Result<DecodeResult, CodecError> {
-    let summary = crate::container::summarize(scan);
-    let dialects = summary
-        .dialects()
-        .expect("every CATIA summary classifies its dialect")
-        .clone();
-    let mut report = DecodeReport::classified(
-        dialects,
-        report.transfer(),
-        report.coverage,
-        report.losses,
-        summary.notes,
-        report.transfer_ledger,
-    );
-    let matched = report
-        .dialects()
-        .expect("every CATIA decode route classifies its report")
-        .primary();
-    report.losses.extend(crate::dialect::dialect_loss(matched));
+) -> Result<Decoded, CodecError> {
+    body.notes = crate::container::summarize(scan).notes;
+    body.losses
+        .extend(crate::dialect::dialect_loss(&crate::dialect::classify(
+            scan,
+        )));
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
-    Ok(DecodeResult::new(ir, report, source_fidelity)?)
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }
 
 #[cfg(test)]

@@ -12,10 +12,8 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, EncoderBackend, EncoderTargetDomain,
-    ExportPlan, ResolvedEncoderTarget,
-};
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::ContainerSummary;
 
 pub(crate) mod annotations;
@@ -100,13 +98,6 @@ impl RhinoArchiveVersion {
         V8
     );
 
-    pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
-        Self::ALL
-            .into_iter()
-            .find(|version| version.descriptor().id == target.id)
-            .expect("Rhino target catalog is projected from RhinoArchiveVersion::ALL")
-    }
-
     /// The typed write-target catalog row for this archive version.
     #[must_use]
     pub const fn descriptor(self) -> TargetDescriptor {
@@ -146,11 +137,9 @@ impl RhinoArchiveVersion {
 }
 
 impl CodecBackend for RhinoCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+    const FORMAT: &'static str = dialect::FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
             Confidence::High
         } else {
@@ -166,31 +155,24 @@ impl CodecBackend for RhinoCodec {
         container::inspect(root)
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         container::decode(ctx, root, ctx.container_only())
     }
 }
 
 impl EncoderBackend for RhinoCodec {
     const FORMAT: &'static str = dialect::FORMAT;
-    const TARGET_DOMAIN: EncoderTargetDomain =
-        EncoderTargetDomain::Catalog(RhinoArchiveVersion::TARGETS);
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog(RhinoArchiveVersion::TARGETS);
 
     /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
     /// because 3DM has no retained-image path.
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        target: ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, CodecError> {
-        let ResolvedEncoderTarget::Native(resolved) = target else {
-            unreachable!("a catalog encoder receives only native target resolutions")
-        };
-        writer::target::plan(input, &resolved)
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

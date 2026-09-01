@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, DecodeTransfer, LossNote};
+use cadmpeg_ir::report::{DecodeTransfer, LossNote};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
@@ -64,7 +64,7 @@ impl<T> std::ops::DerefMut for StageOutcome<T> {
 
 struct StepDecodeSession<'ctx, 'arena> {
     ir: CadIr,
-    report: DecodeReport,
+    body: DecodeBody,
     typed_records: HashSet<u64>,
     admitted_ir_entities: u64,
     semantic_input_work: u64,
@@ -90,26 +90,23 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
-        ir.source = Some(SourceMeta::unclassified(crate::dialect::FORMAT, attributes));
-
-        let mut report = DecodeReport::classified(
+        ir.source = Some(SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),
-            if container_only {
-                DecodeTransfer::ContainerOnly
-            } else {
-                DecodeTransfer::full(false)
-            },
-            BTreeMap::new(),
-            Vec::new(),
-            exchange
-                .references
-                .iter()
-                .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
-                .collect(),
-            cadmpeg_ir::report::TransferLedger::default(),
-        );
-        report.losses.extend(dialect_loss);
-        report.losses.extend(diagnostics.iter().map(|diagnostic| {
+            attributes,
+        ));
+
+        let mut body = DecodeBody::new(if container_only {
+            DecodeTransfer::ContainerOnly
+        } else {
+            DecodeTransfer::full(false)
+        });
+        body.notes = exchange
+            .references
+            .iter()
+            .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
+            .collect();
+        body.losses.extend(dialect_loss);
+        body.losses.extend(diagnostics.iter().map(|diagnostic| {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
@@ -137,7 +134,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 
         Self {
             ir,
-            report,
+            body,
             typed_records: HashSet::new(),
             admitted_ir_entities: 0,
             semantic_input_work: 0,
@@ -165,20 +162,24 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 
     fn absorb<T>(&mut self, outcome: &mut StageOutcome<T>) {
         self.typed_records.extend(outcome.claims.drain());
-        self.report.losses.append(&mut outcome.losses);
-        self.report.notes.append(&mut outcome.notes);
+        self.body.losses.append(&mut outcome.losses);
+        self.body.notes.append(&mut outcome.notes);
     }
 
     fn absorb_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
-        self.report.losses.extend(
+        self.body.losses.extend(
             warnings
                 .into_iter()
                 .map(|message| StepLossCode::DecodeWarning.note(message)),
         );
     }
 
-    fn into_result(self, source_fidelity: SourceFidelity) -> Result<DecodeResult, CodecError> {
-        Ok(DecodeResult::new(self.ir, self.report, source_fidelity)?)
+    fn into_result(self, source_fidelity: SourceFidelity) -> Decoded {
+        Decoded {
+            ir: self.ir,
+            body: self.body,
+            source_fidelity,
+        }
     }
 }
 
@@ -194,7 +195,7 @@ pub fn decode(
     input: &[u8],
     options: DecodeOptions,
     ctx: &DecodeContext<'_>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
     decode_exchange(input, options, exchange, &diagnostics, Some(ctx))
 }
@@ -205,7 +206,7 @@ pub(super) fn decode_exchange(
     mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     decode_exchange_mode(input, options, &mut exchange, diagnostics, true, ctx)
         .map(|(result, _)| result)
 }
@@ -220,7 +221,7 @@ pub(super) fn analyze_exchange(
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
+) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
     decode_exchange_mode(
         input,
         DecodeOptions::default(),
@@ -238,11 +239,11 @@ fn decode_exchange_mode(
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
+) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, options.container_only, ctx);
     if options.container_only {
         return Ok((
-            session.into_result(SourceFidelity::default())?,
+            session.into_result(SourceFidelity::default()),
             BTreeSet::new(),
         ));
     }
@@ -342,7 +343,7 @@ fn decode_exchange_mode(
         || !session.ir.model.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
-        session.report.mark_geometry_transferred();
+        session.body.transfer = DecodeTransfer::full(true);
     }
 
     // Keep the established report order while every pass contributes through
@@ -533,19 +534,19 @@ fn decode_exchange_mode(
     }
     if accounting.unclassified > 0 {
         session
-            .report
+            .body
             .losses
             .push(StepLossCode::ByteAccountingUnclassified.note(format!(
                 "STEP byte accounting left {} byte(s) unclassified",
                 accounting.unclassified
             )));
     }
-    session.report.notes.push(format!(
+    session.body.notes.push(format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
         accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
     ));
     session
-        .report
+        .body
         .losses
         .extend(counts.into_iter().map(|(name, count)| {
             StepLossCode::OpaqueRecordPreserved.note(format!(
@@ -553,7 +554,7 @@ fn decode_exchange_mode(
             ))
         }));
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
-    Ok((session.into_result(source_fidelity)?, opaque_offsets))
+    Ok((session.into_result(source_fidelity), opaque_offsets))
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.

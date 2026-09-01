@@ -4,7 +4,7 @@
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_ir::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 

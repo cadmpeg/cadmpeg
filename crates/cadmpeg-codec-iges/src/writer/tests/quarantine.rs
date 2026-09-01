@@ -3,10 +3,11 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::IgesVersion;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::WritePath;
 
 use crate::loss::IgesLossCode;

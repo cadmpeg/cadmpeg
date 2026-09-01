@@ -8,7 +8,8 @@ use std::io::Cursor;
 
 use cadmpeg_core::target::{default_target, find_target};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::units::Units;
@@ -190,8 +191,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
     );
 
     let error = inherit(&StepCodec::default(), decoded.ir())
-        .err()
-        .expect("an edition-unspecified AP242 source has no write target");
+        .expect_err("an edition-unspecified AP242 source has no write target");
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
     assert_eq!(requested, Some("step:ap242"));
@@ -223,9 +223,8 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
         Some("step:unknown".to_owned())
     );
 
-    let error = inherit(&StepCodec::default(), decoded.ir())
-        .err()
-        .expect("step:unknown has no write target");
+    let error =
+        inherit(&StepCodec::default(), decoded.ir()).expect_err("step:unknown has no write target");
     let (_, requested, available) = refusal(&error);
     assert_eq!(requested, Some("step:unknown"));
     assert!(
@@ -251,8 +250,7 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
     ));
 
     let error = inherit(&StepCodec::default(), &ir)
-        .err()
-        .expect("a STEP source with no dialect has nothing to preserve");
+        .expect_err("a STEP source with no dialect has nothing to preserve");
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
     assert_eq!(requested, None);

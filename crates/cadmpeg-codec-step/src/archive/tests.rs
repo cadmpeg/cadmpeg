@@ -52,7 +52,7 @@ fn rejects_archive_relative_traversal() {
 use std::io::{Cursor, Read as _};
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 

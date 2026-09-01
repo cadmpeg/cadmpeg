@@ -5,9 +5,9 @@ mod backend;
 mod resolve;
 
 pub use backend::{
-    CadirEncoder, EncodeInput, Encoder, EncoderBackend, EncoderTargetDomain, ExportPlan,
-    ResolvedEncoderTarget,
+    CadirEncoder, Catalog, Consumption, DialectFree, EncodeInput, Encoder, EncoderBackend,
+    ExportBody, ExportPlan, TargetDomain,
 };
 #[cfg(test)]
 pub(super) use resolve::resolve_write_request;
-pub use resolve::{ResolvedWrite, TargetRequest};
+pub use resolve::{ResolvedTarget, ResolvedWrite, SourceIdentity, TargetRequest};

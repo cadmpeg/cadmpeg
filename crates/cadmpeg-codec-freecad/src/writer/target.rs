@@ -5,19 +5,18 @@
 //! [`super::write_seekable`] then carries out what a
 //! [`Resolution`] settled without re-deciding any of it.
 //!
-//! [`Encoder::plan`]: cadmpeg_ir::codec::Encoder::plan
+//! [`Encoder::plan`]: cadmpeg_ir::codec::write::Encoder::plan
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
+use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{ExportReport, FidelityResolution};
 
 use super::write;
 use crate::dialect;
 use crate::native::DocumentFacts;
 
-/// What resolving a [`cadmpeg_ir::codec::TargetRequest`] against the source decided.
+/// What resolving a [`cadmpeg_ir::codec::write::TargetRequest`] against the source decided.
 ///
 /// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
@@ -71,38 +70,34 @@ impl<'a> Resolution<'a> {
 /// writer cannot synthesize the retained `FCStd` graph that its only row needs.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    resolved: &ResolvedWrite,
-) -> Result<ExportPlan, CodecError> {
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
     let resolution = resolve(input.ir, resolved)?;
-    finish(input, &resolution)
+    finish(&resolution)
 }
 
-/// Write the resolved export and state what the fidelity sidecar did.
-fn finish(input: EncodeInput<'_>, resolution: &Resolution<'_>) -> Result<ExportPlan, CodecError> {
+/// Write the resolved export. The sealed encoder stamps the target identity
+/// and the fidelity resolution; this writer patches the retained document and
+/// consumes no sidecar.
+fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
     let outcome = write(&mut bytes, resolution)?;
-    // A plan constructs its report once, after every report input is final.
-    let report = ExportReport::native(
-        outcome.target,
-        outcome.census,
-        if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        },
-        cadmpeg_ir::WritePath::Patched,
-        Vec::new(),
-        outcome.notes,
-    );
-    Ok(ExportPlan::buffered(report, bytes))
+    Ok(ExportBody {
+        bytes,
+        census: outcome.census,
+        write_path: cadmpeg_ir::WritePath::Patched,
+        losses: Vec::new(),
+        notes: outcome.notes,
+        consumption: Consumption::NotConsumed,
+    })
 }
 
 /// Decide what to write, from the request and the source.
 pub(in crate::writer) fn resolve<'a>(
     ir: &'a CadIr,
-    resolved: &ResolvedWrite,
+    resolved: &ResolvedWrite<'_>,
 ) -> Result<Resolution<'a>, CodecError> {
-    let target = resolved.dialect().clone();
+    let target = resolved.target_id();
     // Deliverability, not preference. This writer patches the retained
     // `Document.xml` and regenerates none, so the resolved target is reachable
     // exactly when the retained graph already declares it — §8.1's "a
@@ -110,7 +105,7 @@ pub(in crate::writer) fn resolve<'a>(
     // flavor, and the plan refuses by name where it cannot deliver". The
     // refusal is typed and carries the catalog, like every other write refusal;
     // it used to surface as a bare message string from deep inside `write`.
-    retained_baseline(ir, &target).ok_or_else(|| {
+    retained_baseline(ir, target).ok_or_else(|| {
         resolved.unavailable(
             "the retained FCStd document graph does not declare it, and this writer \
                  regenerates no Document.xml, so it cannot be written",

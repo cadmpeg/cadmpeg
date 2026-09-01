@@ -2,6 +2,7 @@
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -14,7 +15,6 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -777,14 +777,13 @@ pub(crate) fn try_decode_freeform_surfaces(
     }
     Some(FamilyOutput {
         ir,
-        report: DecodeReport::unclassified(
-            crate::dialect::FORMAT,
-            cadmpeg_ir::DecodeTransfer::full(true),
+        report: DecodeBody {
+            transfer: cadmpeg_ir::DecodeTransfer::full(true),
             coverage,
             losses,
-            Vec::new(),
-            cadmpeg_ir::report::TransferLedger::default(),
-        ),
+            notes: Vec::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        },
         annotations,
         unknowns,
         standard_face_population: false,

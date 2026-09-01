@@ -17,17 +17,23 @@ pub const SOURCE_FIDELITY_VERSION: &str = "3";
 
 /// Current serialized decode-sidecar version.
 ///
-/// Version 3 always carries `report.dialects`. Version 2 carries namespaced
+/// Version 4 carries the four-state dialect admission wire (`admitted`,
+/// `unverified`, `residual`, `refused`). Version 3 always carries
+/// `report.dialects` but spells unverified and residual admissions as one
+/// legacy `admitted_unverified` object. Version 2 carries namespaced
 /// [`crate::LossKind`] objects and omits `dialects` when the decode named no
 /// layer. Version 1 additionally spells loss codes as bare `snake_case`
-/// strings. Both migrate on read.
-pub const DECODE_SIDECAR_VERSION: &str = "3";
+/// strings. All migrate on read.
+pub const DECODE_SIDECAR_VERSION: &str = "4";
 
 /// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
 pub const DECODE_SIDECAR_VERSION_V1: &str = "1";
 
 /// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
 pub const DECODE_SIDECAR_VERSION_V2: &str = "2";
+
+/// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
+pub const DECODE_SIDECAR_VERSION_V3: &str = "3";
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -85,8 +91,13 @@ impl DecodeSidecar {
             DECODE_SIDECAR_VERSION_V1 => {
                 migrate_sidecar_v1_to_v2(&mut value)?;
                 migrate_sidecar_v2_to_v3(&mut value);
+                migrate_sidecar_v3_to_v4(&mut value);
             }
-            DECODE_SIDECAR_VERSION_V2 => migrate_sidecar_v2_to_v3(&mut value),
+            DECODE_SIDECAR_VERSION_V2 => {
+                migrate_sidecar_v2_to_v3(&mut value);
+                migrate_sidecar_v3_to_v4(&mut value);
+            }
+            DECODE_SIDECAR_VERSION_V3 => migrate_sidecar_v3_to_v4(&mut value),
             DECODE_SIDECAR_VERSION => {}
             found => {
                 return Err(DecodeSidecarParseError::Version {
@@ -151,13 +162,23 @@ impl DecodeSidecar {
     /// field expectations. Version [`DECODE_SIDECAR_VERSION_V1`] rewrites bare
     /// loss `code` strings into namespaced objects under the `shared`
     /// namespace. Version [`DECODE_SIDECAR_VERSION_V2`] gains an explicit
-    /// `report.dialects: null`, which is what omission meant in v2. Both are
+    /// `report.dialects: null`, which is what omission meant in v2. Version
+    /// [`DECODE_SIDECAR_VERSION_V3`] keeps its bytes; its legacy admission
+    /// spelling is migrated by the dialect layer wire itself. All are
     /// restamped to [`DECODE_SIDECAR_VERSION`].
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
         let value: serde_json::Value =
             serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
         Self::from_value(value)
     }
+}
+
+/// Restamp a v3 sidecar as v4.
+///
+/// The v4 change is the admission wire inside `report.dialects`; the dialect
+/// layer wire reads the legacy spelling itself, so the bytes are kept.
+fn migrate_sidecar_v3_to_v4(value: &mut serde_json::Value) {
+    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION.into());
 }
 
 /// Restamp a v2 sidecar as v3.
@@ -171,7 +192,7 @@ fn migrate_sidecar_v2_to_v3(value: &mut serde_json::Value) {
     {
         report.entry("dialects").or_insert(serde_json::Value::Null);
     }
-    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION.into());
+    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION_V3.into());
 }
 
 fn migrate_sidecar_v1_to_v2(value: &mut serde_json::Value) -> Result<(), DecodeSidecarParseError> {
@@ -517,8 +538,8 @@ mod tests {
 
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert_eq!(DecodeSidecar::from_json(&json).unwrap(), sidecar);
-        assert!(json.contains("\"version\":\"3\""));
-        let wrong_version = json.replacen("\"version\":\"3\"", "\"version\":\"9\"", 1);
+        assert!(json.contains("\"version\":\"4\""));
+        let wrong_version = json.replacen("\"version\":\"4\"", "\"version\":\"9\"", 1);
         assert!(matches!(
             DecodeSidecar::from_json(&wrong_version),
             Err(DecodeSidecarParseError::Version { .. })
@@ -551,10 +572,10 @@ mod tests {
         assert_eq!(loss.message, "thumbnail");
     }
 
-    /// A v2 sidecar omits `report.dialects`, which v3 always writes. It must
-    /// still load, and load as unclassified — that is what a v2 decode meant
-    /// by omitting the key. The v1 fixture reaches v3 through the same path,
-    /// one step further back.
+    /// A v2 sidecar omits `report.dialects`, which v3 and later always write.
+    /// It must still load, and load as unclassified — that is what a v2 decode
+    /// meant by omitting the key. The v1 fixture reaches v4 through the same
+    /// path, one step further back; a v3 sidecar is restamped as it is.
     #[test]
     fn decode_sidecar_loads_every_accepted_version() {
         let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
@@ -563,8 +584,13 @@ mod tests {
             serde_json::from_str(v1).expect("public deserialization migrates v1");
         assert_eq!(direct_v1, migrated);
 
-        let v3 = migrated.to_canonical_json().expect("serialize sidecar");
-        assert!(v3.contains("\"dialects\":null"), "{v3}");
+        let v4 = migrated.to_canonical_json().expect("serialize sidecar");
+        assert!(v4.contains("\"dialects\":null"), "{v4}");
+
+        let v3 = v4.replacen("\"version\":\"4\"", "\"version\":\"3\"", 1);
+        let from_v3 = DecodeSidecar::from_json(&v3).expect("migrate v3 sidecar");
+        assert_eq!(from_v3.version(), DECODE_SIDECAR_VERSION);
+        assert_eq!(from_v3, migrated);
 
         let v2 = v3
             .replacen("\"version\":\"3\"", "\"version\":\"2\"", 1)
@@ -581,15 +607,60 @@ mod tests {
     }
 
     #[test]
+    fn version_three_sidecar_migrates_the_legacy_admission_wire() {
+        let dialects = cadmpeg_core::dialect::DialectLayers::of(
+            cadmpeg_core::dialect::DialectMatch::unverified(
+                cadmpeg_core::dialect::DialectId::pinned("test:unknown"),
+                cadmpeg_core::dialect::Grammar::of(&cadmpeg_core::dialect::DialectId::pinned(
+                    "test:known",
+                )),
+            ),
+        );
+        let report = DecodeReport::classified(
+            dialects,
+            crate::report::DecodeTransfer::full(true),
+            std::collections::BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            crate::report::TransferLedger::default(),
+        );
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
+        let mut value = serde_json::to_value(sidecar).unwrap();
+        value["version"] = DECODE_SIDECAR_VERSION_V3.into();
+        value["report"]["dialects"]["primary"]["admission"] = serde_json::json!({
+            "admitted_unverified": { "using": "test:known" }
+        });
+
+        let migrated = DecodeSidecar::from_json(&value.to_string()).expect("migrate v3 sidecar");
+        let matched = migrated
+            .report
+            .dialects()
+            .expect("classified sidecar")
+            .primary();
+        assert!(matches!(
+            matched.admission(),
+            cadmpeg_core::dialect::Admission::Unverified { .. }
+        ));
+        assert_eq!(
+            matched.using(),
+            Some(cadmpeg_core::dialect::DialectId::pinned("test:known"))
+        );
+        let current = migrated.to_canonical_json().unwrap();
+        assert!(current.contains("\"version\":\"4\""), "{current}");
+        assert!(current.contains("\"unverified\""), "{current}");
+        assert!(!current.contains("admitted_unverified"), "{current}");
+    }
+
+    #[test]
     fn current_decode_sidecar_requires_its_dialect_field() {
         let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
         let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
-        let v3 = migrated.to_canonical_json().expect("serialize sidecar");
-        let truncated = v3.replace(",\"dialects\":null", "");
+        let v4 = migrated.to_canonical_json().expect("serialize sidecar");
+        let truncated = v4.replace(",\"dialects\":null", "");
         assert!(!truncated.contains("dialects"), "{truncated}");
 
         let error = DecodeSidecar::from_json(&truncated)
-            .expect_err("a v3 sidecar cannot silently lose its dialect classification");
+            .expect_err("a current sidecar cannot silently lose its dialect classification");
         assert!(
             matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("missing field `dialects`")),
             "{error}"

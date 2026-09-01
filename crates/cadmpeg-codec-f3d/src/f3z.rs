@@ -8,7 +8,7 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
@@ -50,12 +50,15 @@ pub(crate) fn inspect<'a>(
 pub fn decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let (model_root, omitted_drawing_root) = archive::model_root(scan)?;
     let outer = archive::classify_members(ctx, scan)?;
     let root_scan = outer.member_scan(&model_root)?;
-    let (mut ir, mut report, mut fidelity) =
-        crate::decode::decode_archive_member(ctx, root_scan)?.into_parts();
+    let Decoded {
+        mut ir,
+        body: mut report,
+        source_fidelity: mut fidelity,
+    } = crate::decode::decode_archive_member(ctx, root_scan)?;
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -76,7 +79,8 @@ pub fn decode<'a>(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
-        return finalize_result(ir, classify_outer_report(report, outer), fidelity);
+        classify_outer(&mut ir, &mut report, outer);
+        return Ok(finalize_result(ir, report, fidelity));
     }
 
     let merged = merge::merge_archive(
@@ -100,44 +104,37 @@ pub fn decode<'a>(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences);
-    finalize_result(ir, classify_outer_report(report, outer), fidelity)
+    classify_outer(&mut ir, &mut report, outer);
+    Ok(finalize_result(ir, report, fidelity))
 }
 
-fn classify_outer_report(
-    mut report: cadmpeg_ir::DecodeReport,
+fn classify_outer(
+    ir: &mut cadmpeg_ir::CadIr,
+    report: &mut DecodeBody,
     outer: archive::ArchiveSession<'_>,
-) -> cadmpeg_ir::DecodeReport {
+) {
     report.losses.extend(outer.losses);
-    cadmpeg_ir::DecodeReport::classified(
-        outer.layers,
-        report.transfer(),
-        report.coverage,
-        report.losses,
-        report.notes,
-        report.transfer_ledger,
-    )
+    crate::report::classify_source(ir, outer.layers);
 }
 
 fn finalize_result(
     mut ir: cadmpeg_ir::CadIr,
-    report: cadmpeg_ir::DecodeReport,
-    fidelity: cadmpeg_ir::SourceFidelity,
-) -> Result<DecodeResult, CodecError> {
-    if let Some(source) = ir.source.as_mut() {
-        *source = cadmpeg_ir::SourceMeta::unclassified(
-            report.format(),
-            std::mem::take(&mut source.attributes),
-        );
-    }
-    let mut result = DecodeResult::new(ir, report, fidelity)?;
-    let hash = crate::decode::document_local_sha256(result.ir());
-    if let Some(source) = &mut result.ir_mut().source {
+    body: DecodeBody,
+    source_fidelity: cadmpeg_ir::SourceFidelity,
+) -> Decoded {
+    ir.finalize();
+    let hash = crate::decode::document_local_sha256(&ir);
+    if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
     }
-    Ok(result)
+    Decoded {
+        ir,
+        body,
+        source_fidelity,
+    }
 }
 
 #[cfg(test)]

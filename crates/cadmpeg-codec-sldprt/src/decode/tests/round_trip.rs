@@ -2,11 +2,12 @@
 //! Decode/encode equivariance and fixpoint tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::EncodeInput;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::SldprtCodec;

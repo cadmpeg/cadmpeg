@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed conversion refusals.
 //!
-//! Report envelope `schema_version` 7 serializes [`RefusalCode`] under
-//! `refusal.code` with `status: "refused"`. Presentation messages stay on the
-//! variant for stderr and `refusal.message`.
+//! Report envelope `schema_version` 8 serializes [`RefusalCode`] under
+//! `refusal.code` with `status: "refused"`. [`ConversionRefusal::evidence`] is
+//! the one projection every surface reads.
 
 use std::borrow::Cow;
 use std::fmt;
+use std::path::Path;
 
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
@@ -83,49 +84,49 @@ impl fmt::Display for ApplicationError {
 
 impl std::error::Error for ApplicationError {}
 
-/// Classifies a typed loader result without inspecting an erased error chain.
-pub(crate) fn classify_load_error(error: crate::loader::LoadError) -> ApplicationError {
-    let (path, format_id, failure) = match error {
-        crate::loader::LoadError::Decode {
-            path,
-            format_id,
-            failure,
-        } => (path, format_id, failure),
-        crate::loader::LoadError::Operational(error) => {
-            return ApplicationError::Operational(error)
-        }
-    };
-
-    match *failure {
-        DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)) => ApplicationError::Operational(
-            anyhow::Error::new(DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)))
-                .context(format!("decoding {} as {format_id}", path.display())),
-        ),
-        DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
-            dialects,
-            message,
-        }) => ConversionRefusal::unsupported_dialect(dialects, message).into(),
-        DecodeFailure::StrictRejected {
-            loss_code,
-            message,
-            report,
-        } => ConversionRefusal::StrictDecodeRejected {
-            loss_code,
-            loss_message: message,
-            decode_report: *report,
-        }
-        .into(),
-        failure => ConversionRefusal::DecodeFailed {
-            message: format!(
-                "decode failed: decoding {} as {format_id}: {failure}",
-                path.display()
+impl ApplicationError {
+    /// Classifies a native codec's decode failure at the load site.
+    ///
+    /// I/O stays operational; a dialect the codec cannot admit and a strict
+    /// floor keep their typed evidence; every other codec error is a decode
+    /// refusal carrying the codec's message.
+    #[must_use]
+    pub fn from_decode_failure(
+        path: &Path,
+        format_id: &'static str,
+        failure: DecodeFailure,
+    ) -> Self {
+        match failure {
+            DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)) => Self::Operational(
+                anyhow::Error::new(DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)))
+                    .context(format!("decoding {} as {format_id}", path.display())),
             ),
+            DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
+                dialects,
+                message,
+            }) => ConversionRefusal::unsupported_dialect(dialects, message).into(),
+            DecodeFailure::StrictRejected {
+                loss_code,
+                message,
+                report,
+            } => ConversionRefusal::StrictDecodeRejected {
+                loss_code,
+                loss_message: message,
+                decode_report: *report,
+            }
+            .into(),
+            failure => ConversionRefusal::DecodeFailed {
+                message: format!(
+                    "decode failed: decoding {} as {format_id}: {failure}",
+                    path.display()
+                ),
+            }
+            .into(),
         }
-        .into(),
     }
 }
 
-/// Stable refusal code written into v7 command reports and used by tests.
+/// Stable refusal code written into command reports and used by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RefusalCode {
@@ -232,8 +233,8 @@ impl fmt::Display for RefusalStage {
 
 /// Typed refusal from the conversion workflow.
 ///
-/// Presentation messages stay on the variant; codes and stages reach the v7
-/// report envelope through [`ConversionRefusal::report`].
+/// Presentation messages, codes, typed detail, and retained reports are all
+/// projected once by [`ConversionRefusal::evidence`].
 #[derive(Debug)]
 pub enum ConversionRefusal {
     /// Native input decoding failed before a document could be produced.
@@ -314,7 +315,7 @@ pub enum ConversionRefusal {
     },
 }
 
-/// Stable typed contents of the v7 `refusal` object.
+/// Stable typed contents of the command-report `refusal` object.
 #[derive(Debug, Serialize)]
 pub(crate) struct RefusalReport<'a> {
     stage: RefusalStage,
@@ -324,6 +325,52 @@ pub(crate) struct RefusalReport<'a> {
     dialects: Option<&'a DialectLayers>,
     #[serde(skip_serializing_if = "Option::is_none")]
     target: Option<&'a TargetRefusal>,
+}
+
+/// Everything a surface may show or serialize about one refusal, projected
+/// once from the variant.
+#[derive(Debug)]
+pub struct RefusalEvidence<'a> {
+    /// Stable code for the report envelope and tests.
+    pub code: RefusalCode,
+    /// Presentation message for stderr and `refusal.message`.
+    pub message: Cow<'a, str>,
+    /// Typed evidence the refusal carries beyond its message.
+    pub detail: Option<RefusalDetail<'a>>,
+    /// Reports completed before the refusal, for an optional `--report`.
+    pub reports: RefusalReports<'a>,
+}
+
+/// Typed evidence serialized beside the refusal code.
+#[derive(Debug)]
+pub enum RefusalDetail<'a> {
+    /// Every format layer identified before the codec refused.
+    Dialects(&'a DialectLayers),
+    /// The encoder's typed target refusal and catalog.
+    Target(&'a TargetRefusal),
+}
+
+/// Reports a refusal retains from the stages that completed before it.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RefusalReports<'a> {
+    /// Completed decode report.
+    pub decode: Option<&'a DecodeReport>,
+    /// Completed validation report.
+    pub check: Option<&'a ValidationReport>,
+    /// Export report computed by encoder planning before rejection.
+    pub export: Option<&'a ExportReport>,
+}
+
+fn refusal_reports<'a>(
+    decode: Option<&'a DecodeReport>,
+    check: Option<&'a ValidationReport>,
+    export: Option<&'a ExportReport>,
+) -> RefusalReports<'a> {
+    RefusalReports {
+        decode,
+        check,
+        export,
+    }
 }
 
 /// Variant metadata that does not depend on a refusal's carried reports.
@@ -345,91 +392,122 @@ impl ConversionRefusal {
         }
     }
 
-    /// Stable code for tests and the v7 report envelope.
+    /// Projects code, message, typed detail, and retained reports at once.
     #[must_use]
-    pub const fn code(&self) -> RefusalCode {
+    pub fn evidence(&self) -> RefusalEvidence<'_> {
         match self {
-            Self::DecodeFailed { .. } => RefusalCode::DecodeFailed,
-            Self::UnsupportedDialect { .. } => RefusalCode::UnsupportedDialect,
-            Self::StrictDecodeRejected { .. } => RefusalCode::StrictDecodeRejected,
-            Self::CheckFailed { .. } => RefusalCode::CheckFailed,
-            Self::DecodeLossRejected { .. } => RefusalCode::DecodeLossRejected,
-            Self::ExportLossRejected { .. } => RefusalCode::ExportLossRejected,
-            Self::EmptyGeometry { .. } => RefusalCode::EmptyGeometry,
-            Self::UnsupportedOutputFormat { .. } => RefusalCode::UnsupportedOutputFormat,
-            Self::UnsupportedTarget { .. } => RefusalCode::UnsupportedTarget,
-            Self::BinaryStdoutRejected { .. } => RefusalCode::BinaryStdoutRejected,
-        }
-    }
-
-    /// Projects the stable workflow metadata from the refusal code.
-    const fn disposition(&self) -> RefusalDisposition {
-        self.code().disposition()
-    }
-
-    /// Workflow stage for the v7 report envelope.
-    #[must_use]
-    pub const fn stage(&self) -> RefusalStage {
-        self.disposition().stage
-    }
-
-    /// Presentation message shown to the user and written to `refusal.message`.
-    #[must_use]
-    pub fn message(&self) -> Cow<'_, str> {
-        match self {
-            Self::DecodeFailed { message }
-            | Self::CheckFailed { message, .. }
-            | Self::DecodeLossRejected { message, .. }
-            | Self::ExportLossRejected { message, .. }
-            | Self::EmptyGeometry { message, .. }
-            | Self::UnsupportedOutputFormat { message }
-            | Self::BinaryStdoutRejected { message } => Cow::Borrowed(message),
+            Self::DecodeFailed { message } => RefusalEvidence {
+                code: RefusalCode::DecodeFailed,
+                message: Cow::Borrowed(message),
+                detail: None,
+                reports: RefusalReports::default(),
+            },
+            Self::UnsupportedDialect { dialects, reason } => RefusalEvidence {
+                code: RefusalCode::UnsupportedDialect,
+                message: Cow::Owned(unsupported_dialect_message(dialects, reason)),
+                detail: Some(RefusalDetail::Dialects(dialects)),
+                reports: RefusalReports::default(),
+            },
             Self::StrictDecodeRejected {
                 loss_code,
                 loss_message,
-                ..
-            } => Cow::Owned(format!("strict mode rejects {loss_code}: {loss_message}")),
-            Self::UnsupportedDialect { dialects, reason } => {
-                let primary = dialects.primary();
-                let carried = dialects
-                    .iter()
-                    .skip(1)
-                    .map(|layer| layer.dialect().as_str())
-                    .collect::<Vec<_>>();
-                if carried.is_empty() {
-                    Cow::Owned(format!(
-                        "unsupported {} dialect {}: {reason}",
-                        primary.format(),
-                        primary.dialect()
-                    ))
-                } else {
-                    Cow::Owned(format!(
-                        "unsupported {} dialect {}; carried layers: {}; {reason}",
-                        primary.format(),
-                        primary.dialect(),
-                        carried.join(", ")
-                    ))
-                }
-            }
-            Self::UnsupportedTarget { refusal, .. } => Cow::Owned(refusal.to_string()),
+                decode_report,
+            } => RefusalEvidence {
+                code: RefusalCode::StrictDecodeRejected,
+                message: Cow::Owned(format!("strict mode rejects {loss_code}: {loss_message}")),
+                detail: None,
+                reports: refusal_reports(Some(decode_report), None, None),
+            },
+            Self::CheckFailed {
+                message,
+                decode_report,
+                validation,
+            } => RefusalEvidence {
+                code: RefusalCode::CheckFailed,
+                message: Cow::Borrowed(message),
+                detail: None,
+                reports: refusal_reports(decode_report.as_ref(), Some(validation), None),
+            },
+            Self::DecodeLossRejected {
+                message,
+                decode_report,
+            } => RefusalEvidence {
+                code: RefusalCode::DecodeLossRejected,
+                message: Cow::Borrowed(message),
+                detail: None,
+                reports: refusal_reports(Some(decode_report), None, None),
+            },
+            Self::ExportLossRejected {
+                message,
+                decode_report,
+                validation,
+                export_report,
+            } => RefusalEvidence {
+                code: RefusalCode::ExportLossRejected,
+                message: Cow::Borrowed(message),
+                detail: None,
+                reports: refusal_reports(
+                    decode_report.as_ref(),
+                    validation.as_ref(),
+                    Some(export_report),
+                ),
+            },
+            Self::EmptyGeometry {
+                message,
+                decode_report,
+                validation,
+            } => RefusalEvidence {
+                code: RefusalCode::EmptyGeometry,
+                message: Cow::Borrowed(message),
+                detail: None,
+                reports: refusal_reports(decode_report.as_ref(), validation.as_ref(), None),
+            },
+            Self::UnsupportedOutputFormat { message } => RefusalEvidence {
+                code: RefusalCode::UnsupportedOutputFormat,
+                message: Cow::Borrowed(message),
+                detail: None,
+                reports: RefusalReports::default(),
+            },
+            Self::UnsupportedTarget {
+                refusal,
+                decode_report,
+                validation,
+            } => RefusalEvidence {
+                code: RefusalCode::UnsupportedTarget,
+                message: Cow::Owned(refusal.to_string()),
+                detail: Some(RefusalDetail::Target(refusal)),
+                reports: refusal_reports(decode_report.as_ref(), validation.as_ref(), None),
+            },
+            Self::BinaryStdoutRejected { message } => RefusalEvidence {
+                code: RefusalCode::BinaryStdoutRejected,
+                message: Cow::Borrowed(message),
+                detail: None,
+                reports: RefusalReports::default(),
+            },
         }
     }
 
-    /// Typed `refusal` object for a v7 command report.
+    /// Stable code for tests and the report envelope.
+    #[must_use]
+    pub fn code(&self) -> RefusalCode {
+        self.evidence().code
+    }
+
+    /// Typed `refusal` object for a command report.
     #[must_use]
     pub(crate) fn report(&self) -> RefusalReport<'_> {
+        let evidence = self.evidence();
+        let (dialects, target) = match evidence.detail {
+            Some(RefusalDetail::Dialects(dialects)) => (Some(dialects), None),
+            Some(RefusalDetail::Target(target)) => (None, Some(target)),
+            None => (None, None),
+        };
         RefusalReport {
-            stage: self.stage(),
-            code: self.code(),
-            message: self.message(),
-            dialects: match self {
-                Self::UnsupportedDialect { dialects, .. } => Some(dialects),
-                _ => None,
-            },
-            target: match self {
-                Self::UnsupportedTarget { refusal, .. } => Some(refusal),
-                _ => None,
-            },
+            stage: evidence.code.disposition().stage,
+            code: evidence.code,
+            message: evidence.message,
+            dialects,
+            target,
         }
     }
 
@@ -439,50 +517,8 @@ impl ConversionRefusal {
     /// early target refusal writes its typed refusal without decode or check
     /// reports; later refusals serialize every report they hold.
     #[must_use]
-    pub const fn may_write_report(&self) -> bool {
-        self.disposition().may_write_report
-    }
-
-    /// Decode report to include in an optional command report.
-    #[must_use]
-    pub fn decode_report(&self) -> Option<&DecodeReport> {
-        match self {
-            Self::DecodeFailed { .. }
-            | Self::UnsupportedDialect { .. }
-            | Self::UnsupportedOutputFormat { .. } => None,
-            Self::StrictDecodeRejected { decode_report, .. } => Some(decode_report),
-            Self::CheckFailed { decode_report, .. } => decode_report.as_ref(),
-            Self::DecodeLossRejected { decode_report, .. } => Some(decode_report),
-            Self::ExportLossRejected { decode_report, .. }
-            | Self::EmptyGeometry { decode_report, .. }
-            | Self::UnsupportedTarget { decode_report, .. } => decode_report.as_ref(),
-            Self::BinaryStdoutRejected { .. } => None,
-        }
-    }
-
-    /// Check report to include in an optional command report.
-    #[must_use]
-    pub fn check_report(&self) -> Option<&ValidationReport> {
-        match self {
-            Self::DecodeFailed { .. }
-            | Self::UnsupportedDialect { .. }
-            | Self::StrictDecodeRejected { .. }
-            | Self::UnsupportedOutputFormat { .. } => None,
-            Self::CheckFailed { validation, .. } => Some(validation),
-            Self::ExportLossRejected { validation, .. }
-            | Self::EmptyGeometry { validation, .. }
-            | Self::UnsupportedTarget { validation, .. } => validation.as_ref(),
-            Self::DecodeLossRejected { .. } | Self::BinaryStdoutRejected { .. } => None,
-        }
-    }
-
-    /// Export report to include in an optional command report.
-    #[must_use]
-    pub fn export_report(&self) -> Option<&ExportReport> {
-        match self {
-            Self::ExportLossRejected { export_report, .. } => Some(export_report),
-            _ => None,
-        }
+    pub fn may_write_report(&self) -> bool {
+        self.code().disposition().may_write_report
     }
 
     /// Process exit status for this refusal.
@@ -490,14 +526,37 @@ impl ConversionRefusal {
     /// Semantic model refusals exit 1. Decode failure and binary-stdout remain
     /// exit 2 because they are operational failures.
     #[must_use]
-    pub const fn exit_code(&self) -> u8 {
-        self.disposition().exit_code
+    pub fn exit_code(&self) -> u8 {
+        self.code().disposition().exit_code
+    }
+}
+
+fn unsupported_dialect_message(dialects: &DialectLayers, reason: &str) -> String {
+    let primary = dialects.primary();
+    let carried = dialects
+        .iter()
+        .skip(1)
+        .map(|layer| layer.dialect().as_str())
+        .collect::<Vec<_>>();
+    if carried.is_empty() {
+        format!(
+            "unsupported {} dialect {}: {reason}",
+            primary.format(),
+            primary.dialect()
+        )
+    } else {
+        format!(
+            "unsupported {} dialect {}; carried layers: {}; {reason}",
+            primary.format(),
+            primary.dialect(),
+            carried.join(", ")
+        )
     }
 }
 
 impl fmt::Display for ConversionRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message().as_ref())
+        f.write_str(self.evidence().message.as_ref())
     }
 }
 
@@ -524,12 +583,8 @@ mod tests {
         serde_json::to_value(refusal.report()).expect("serialize refusal report")
     }
 
-    fn decode_load_error(failure: DecodeFailure) -> crate::loader::LoadError {
-        crate::loader::LoadError::Decode {
-            path: PathBuf::from("part.step"),
-            format_id: "step",
-            failure: Box::new(failure),
-        }
+    fn classify(failure: DecodeFailure) -> ApplicationError {
+        ApplicationError::from_decode_failure(&PathBuf::from("part.step"), "step", failure)
     }
 
     #[test]
@@ -544,7 +599,7 @@ mod tests {
             validation: None,
         };
         assert_eq!(refusal.code(), RefusalCode::UnsupportedTarget);
-        assert_eq!(refusal.stage(), RefusalStage::Plan);
+        assert_eq!(report_value(&refusal)["stage"], "plan");
         assert_eq!(refusal.exit_code(), 1);
         assert!(refusal.may_write_report());
         assert_eq!(refusal.to_string(), "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii");
@@ -573,20 +628,17 @@ mod tests {
         };
         assert_eq!(dialects.primary(), &matched);
         assert_eq!(refusal.code(), RefusalCode::UnsupportedDialect);
-        assert_eq!(refusal.stage(), RefusalStage::Decode);
+        assert_eq!(report_value(&refusal)["stage"], "decode");
         assert_eq!(refusal.exit_code(), 1);
         assert_eq!(report_value(&refusal)["code"], "unsupported_dialect");
     }
 
     #[test]
     fn unsupported_decode_serializes_every_identified_layer() {
-        let layers = DialectLayers::new(
-            DialectMatch::refused(DialectId::pinned("sldprt:sw-2024")),
-            vec![DialectMatch::residual(DialectId::pinned(
+        let layers = DialectLayers::of(DialectMatch::refused(DialectId::pinned("sldprt:sw-2024")))
+            .with(DialectMatch::residual(DialectId::pinned(
                 "parasolid:unknown",
-            ))],
-        )
-        .expect("host and kernel layers are distinct");
+            )));
         let refusal = ConversionRefusal::UnsupportedDialect {
             dialects: Box::new(layers),
             reason: "no decoder admits the host dialect".into(),
@@ -614,12 +666,12 @@ mod tests {
     #[test]
     fn decode_classifier_preserves_an_unsupported_dialect_variant() {
         let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
-        let classified = classify_load_error(decode_load_error(DecodeFailure::Codec(
+        let classified = classify(DecodeFailure::Codec(
             cadmpeg_core::CodecError::UnsupportedDialect {
                 dialects: Box::new(DialectLayers::of(matched.clone())),
                 message: "the XML encoding has no decode grammar".into(),
             },
-        )));
+        ));
         let refusal = classified
             .refusal()
             .expect("codec refusal becomes an application refusal");
@@ -640,32 +692,34 @@ mod tests {
             vec!["decode completed".into()],
             TransferLedger::default(),
         );
-        let classified = classify_load_error(decode_load_error(DecodeFailure::StrictRejected {
+        let classified = classify(DecodeFailure::StrictRejected {
             loss_code: "test/source.dialect-unverified".into(),
             message: "the dialect was recovered provisionally".into(),
             report: Box::new(report),
-        }));
+        });
         let refusal = classified
             .refusal()
             .expect("strict policy failure becomes an application refusal");
 
         assert_eq!(refusal.code(), RefusalCode::StrictDecodeRejected);
-        assert_eq!(refusal.stage(), RefusalStage::Decode);
+        assert_eq!(report_value(refusal)["stage"], "decode");
         assert_eq!(refusal.exit_code(), 1);
         assert_eq!(report_value(refusal)["code"], "strict_decode_rejected");
         assert_eq!(
-            refusal.decode_report().expect("completed report").notes,
+            refusal
+                .evidence()
+                .reports
+                .decode
+                .expect("completed report")
+                .notes,
             ["decode completed"]
         );
     }
 
     #[test]
     fn decode_classifier_keeps_io_operational() {
-        let classified = classify_load_error(decode_load_error(DecodeFailure::Codec(
-            cadmpeg_core::CodecError::Io(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "short read",
-            )),
+        let classified = classify(DecodeFailure::Codec(cadmpeg_core::CodecError::Io(
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "short read"),
         )));
 
         assert!(classified.refusal().is_none());
@@ -680,7 +734,7 @@ mod tests {
             message: "refusing to write binary sldprt to standard output".into(),
         };
         assert_eq!(refusal.code(), RefusalCode::BinaryStdoutRejected);
-        assert_eq!(refusal.stage(), RefusalStage::Plan);
+        assert_eq!(report_value(&refusal)["stage"], "plan");
         assert_eq!(refusal.exit_code(), 2);
         assert!(!refusal.may_write_report());
     }
@@ -691,11 +745,13 @@ mod tests {
             message: "decode failed: malformed container: test".into(),
         };
         assert_eq!(refusal.code(), RefusalCode::DecodeFailed);
-        assert_eq!(refusal.stage(), RefusalStage::Decode);
+        assert_eq!(report_value(&refusal)["stage"], "decode");
         assert_eq!(refusal.exit_code(), 2);
         assert!(refusal.may_write_report());
-        assert!(refusal.decode_report().is_none());
-        assert!(refusal.check_report().is_none());
+        let evidence = refusal.evidence();
+        assert!(evidence.reports.decode.is_none());
+        assert!(evidence.reports.check.is_none());
+        assert!(evidence.detail.is_none());
         let report = report_value(&refusal);
         assert_eq!(report["code"], "decode_failed");
         assert_eq!(report["stage"], "decode");
@@ -712,7 +768,7 @@ mod tests {
                 losses: Vec::new(),
             },
         };
-        assert_eq!(refusal.stage(), RefusalStage::Check);
+        assert_eq!(report_value(&refusal)["stage"], "check");
         assert_eq!(refusal.code().as_str(), "check_failed");
     }
 }

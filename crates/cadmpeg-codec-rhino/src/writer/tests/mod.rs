@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writer unit tests.
 
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -29,7 +30,7 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                cadmpeg_ir::codec::EncodeInput { ir, fidelity: None },
+                cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))

@@ -2129,3 +2129,276 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::diff::{SourceDiff::dialect_change,SourceDiff::declared}"
 reason = "the replacement dialects_change field carries complete typed layers, including admission, instance, declarations, and extras, without a lossy duplicate declaration projection"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::dialect::acis_admission"
+reason = "replaced by acis_match, which returns the classified DialectMatch directly; an Admission separated from its dialect could name a grammar of another namespace and had to be re-joined through a fallible constructor"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-parasolid"
+kind = "deletion"
+item = "cadmpeg_parasolid::KnownSchemaAdmission"
+reason = "a two-state host flag could claim verification for rows the host never parsed; hosts now list the rows they verified and every other row is residual by construction"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-parasolid"
+kind = "signature"
+item = "cadmpeg_parasolid::{classify_layer,extra_layers}"
+reason = "admission is decided per row from the host's verified-row list instead of a global flag"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::{EncoderTargetDomain,ResolvedEncoderTarget}"
+reason = "the target domain is now the backend's associated type (DialectFree or Catalog), so a dialect-free backend can no longer receive a native resolution and the unreachable arms it forced are gone"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::EncoderBackend::{TARGET_DOMAIN,plan_resolved}"
+reason = "TARGET_DOMAIN became `type Target: TargetDomain` plus `const TARGET`; plan_resolved receives that domain's resolution type and returns an ExportBody without identity or fidelity resolution, which the sealed wrapper stamps from the resolution and the input"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::CodecError::ContractViolation"
+reason = "sealed decode and encode wrappers now author report identity from the backend format constant and the resolved target; no backend supplies a second identity for this runtime comparison to check"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::ResolvedWrite"
+reason = "the resolution is a lifetime-carrying proof whose variants hold their own source relation and catalog index, so no query has an impossible source case"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::ResolvedWrite::{catalog_entry,dialect}"
+reason = "replaced by entry, index, and target_id; target_id is total because a preserved resolution carries its source dialect by construction"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-freecad"
+kind = "trait_impl"
+item = "cadmpeg_codec_freecad::FcstdCodec: CodecBackend"
+reason = "the codec names its format namespace as an associated constant and returns a Decoded body; the sealed wrapper stamps the report identity from the document's own source metadata, so no runtime agreement check remains"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-freecad"
+kind = "trait_impl"
+item = "cadmpeg_codec_freecad::FcstdCodec: EncoderBackend"
+reason = "the encoder declares a Catalog target domain by type and receives a ResolvedWrite directly, so the dialect-free arm and its unreachable! are gone; it returns an ExportBody and the sealed wrapper stamps identity and fidelity resolution"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-inventor"
+kind = "deletion"
+item = "<cadmpeg_codec_inventor::InventorCodec as CodecBackend>::id"
+reason = "the codec's format namespace is the associated constant CodecBackend::FORMAT; the sealed wrapper reports it, so no implementor method can disagree with it"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-inventor"
+kind = "signature"
+item = "<cadmpeg_codec_inventor::InventorCodec as CodecBackend>::{detect -> detect_impl,decode_impl}"
+reason = "the backend returns Decoded (document, report body, fidelity) and authors identity once in the document source; detect moved to detect_impl, and the wrapper stamps the report classification from the source"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-catia"
+kind = "deletion"
+item = "cadmpeg_codec_catia::CatiaCodec::id"
+reason = "the codec's format namespace is the CodecBackend::FORMAT constant; a method could return any string and the sealed wrapper had to check it at runtime"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-catia"
+kind = "signature"
+item = "cadmpeg_codec_catia::CatiaCodec::{detect -> detect_impl,decode_impl}"
+reason = "detection is a backend hook and decode returns Decoded (IR, report body, source fidelity); identity is authored once in the IR source and stamped onto the report by the sealed wrapper"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::{ResolvedInspection,ResolveInspectionError}"
+reason = "replaced by Result<Inspected, InspectError>: a summary exists only with the format and selection that produced it, and every non-summary outcome is one typed error instead of a success variant with a nested Result"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::resolve_and_inspect_with"
+reason = "returns Result<Inspected, InspectError>; CADIR and unrecognized sources are errors of inspection rather than successful non-inspections"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-registry"
+kind = "variant"
+item = "cadmpeg_registry::DetectionOutcome::{Detected,Ambiguous}"
+reason = "a detection carries its codec and format id directly; only descriptors with a codec take part in detection, so the descriptor-without-codec expect is unrepresentable"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::InputCatalog::candidates"
+reason = "yields the detecting codec rather than the descriptor that may lack one"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-sat"
+kind = "trait_impl"
+item = "cadmpeg_codec_sat::SatCodec as CodecBackend::{id -> FORMAT,detect -> detect_impl,decode_impl}"
+reason = "the codec names its format as the associated FORMAT constant, exposes detection only as a backend hook, and returns a Decoded body whose identity the sealed wrapper stamps from document source metadata"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-nx"
+kind = "deletion"
+item = "cadmpeg_codec_nx::NxCodec::id"
+reason = "the codec's format namespace is the associated const CodecBackend::FORMAT; a method could return a value the sealed wrapper then had to check"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-nx"
+kind = "signature"
+item = "cadmpeg_codec_nx::NxCodec::{detect -> detect_impl,decode_impl}"
+reason = "detection is a backend hook and decode returns Decoded (IR, report body, source fidelity); the sealed wrapper stamps report classification from the source metadata the codec authored once"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::dialect::Admission::{AdmittedUnverified,Unverified,Residual}"
+reason = "the residual path and the substituted-grammar path are distinct states; a required format-local Grammar replaces Option<DialectId> so a foreign-namespace grammar is unrepresentable"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::dialect::{DialectMatchError,DialectMatch::from_admission,DialectLayersError,DialectLayers::new,DialectLayers::try_push}"
+reason = "every constructor is infallible once the grammar namespace and the layer key are carried by the types; the runtime checks and their error types have nothing left to reject"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::dialect::{DialectMatch::unverified,DialectMatch::admission,DialectLayers::push}"
+reason = "unverified takes a checked format-local Grammar by value and cannot fail; admission is borrowed; push replaces the layer with the same (format, instance) key and returns the displaced layer instead of failing"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::target::TargetRefusalKind::{NoDefault,UnknownExplicit,UnrecordedSource}::format"
+reason = "the refusing encoder format is stated once on the TargetRefusal envelope instead of being duplicated on three refusal variants"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::target::TargetRefusal::new"
+reason = "construction now takes the refusing encoder format once for the refusal envelope"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-iges"
+kind = "trait_impl"
+item = "cadmpeg_codec_iges::IgesCodec: {CodecBackend,EncoderBackend}"
+reason = "the codec names its format as CodecBackend::FORMAT, exposes detection only as a backend hook, returns Decoded, and declares its catalog as an associated Target domain whose sealed wrappers stamp identity"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::CodecBackend"
+reason = "identity is declared once as the FORMAT constant; detect becomes detect_impl beside inspect_impl and decode_impl, and decode_impl returns a Decoded body whose only source identity is the document's own"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::Codec"
+reason = "the object-safe entry-point trait carries id and detect itself so a backend constant can name the format without breaking dyn Codec"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::DecodeResult::new"
+reason = "the report classification is stamped from the document's source metadata, so a document and its report cannot disagree and the constructor is total"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::DecodeResultError"
+reason = "the disagreement it reported is no longer representable"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-ir"
+kind = "move"
+item = "cadmpeg_ir::{CadirEncoder,Encoder} and cadmpeg_ir::codec::{CadirEncoder,EncodeInput,Encoder,EncoderBackend,ExportPlan,ResolvedWrite,TargetRequest} -> cadmpeg_ir::codec::write::*"
+reason = "write planning and target resolution are owned by codec::write; callers now import each write type from that module instead of the crate root or the decode orchestration module"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-rhino"
+kind = "trait_impl"
+item = "cadmpeg_codec_rhino::RhinoCodec: {CodecBackend, EncoderBackend}"
+reason = "the codec names its format once as a constant, returns a decoded body whose identity the sealed wrapper stamps from the source, and plans against a catalog-typed target so the dialect-free arm and its unreachable branch no longer exist"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-sldprt"
+kind = "trait_impl"
+item = "cadmpeg_codec_sldprt::SldprtCodec: CodecBackend"
+reason = "the codec declares its format namespace as the FORMAT constant and returns a Decoded body; the sealed wrapper stamps the identity the IR source authored, so the backend can no longer assert a report identity of its own"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-sldprt"
+kind = "trait_impl"
+item = "cadmpeg_codec_sldprt::SldprtCodec: EncoderBackend"
+reason = "the encoder declares Target = Catalog and receives a ResolvedWrite directly, so a dialect-free resolution is unrepresentable for it; it returns an ExportBody and the sealed wrapper stamps target identity and fidelity resolution"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-step"
+kind = "trait_impl"
+item = "cadmpeg_codec_step::StepCodec: CodecBackend"
+reason = "the codec declares its format namespace as the FORMAT constant and returns a Decoded body; the sealed wrapper stamps the identity the IR source authored, so the backend can no longer assert a report identity of its own"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-step"
+kind = "trait_impl"
+item = "cadmpeg_codec_step::StepCodec: EncoderBackend"
+reason = "the encoder declares Target = Catalog and receives a ResolvedWrite directly, so a dialect-free resolution is unrepresentable for it; it returns an ExportBody and the sealed wrapper stamps target identity and fidelity resolution"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-f3d"
+kind = "trait_impl"
+item = "cadmpeg_codec_f3d::F3dCodec: {CodecBackend, EncoderBackend}"
+reason = "the codec names its format once as a constant, authors identity once on the document source and returns a decoded body the sealed wrapper stamps from it, and plans against a catalog-typed target so the dialect-free arm and its unreachable branch no longer exist"
+
+[[change]]
+commit = "07d9d38f5277be298f9ecc0bafe065d5f6e220b3"
+crate = "cadmpeg-codec-creo"
+kind = "trait_impl"
+item = "cadmpeg_codec_creo::CreoCodec: CodecBackend"
+reason = "the codec names its format as the FORMAT constant, exposes detection only as a backend hook, and returns a Decoded body whose identity the sealed wrapper stamps from document source metadata"

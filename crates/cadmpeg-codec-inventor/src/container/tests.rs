@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::test_support::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;

@@ -186,8 +186,7 @@ pub(crate) fn inspect(
     };
     let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
     Ok(ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
-            .expect("the ACIS kernel layer differs from the SAT primary"),
+        cadmpeg_core::dialect::DialectLayers::of(matched).with(kernel),
         "stream",
         vec![ContainerEntry {
             name: "stream".to_string(),

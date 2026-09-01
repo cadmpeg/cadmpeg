@@ -7,15 +7,17 @@ use std::io::Cursor;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::{DefaultSource, TargetDescriptor, TargetRefusalKind, TargetToken};
 
-use crate::codec::{
-    CadirEncoder, Encoder, EncoderBackend, EncoderTargetDomain, ResolvedEncoderTarget,
-};
 use crate::examples::{directed_subd_sum, unit_cube};
-use crate::report::{DecodeTransfer, LossKind, LossNote, LossTaxonomy, TransferLedger};
-use crate::source_fidelity::RetainedSourceRecord;
+use crate::report::{DecodeTransfer, FidelityResolution, LossKind, LossNote, LossTaxonomy};
+use crate::source_fidelity::{RetainedSourceRecord, SourceFidelity};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+use super::write::resolve_write_request;
+use super::write::{
+    CadirEncoder, Catalog, Consumption, DialectFree, EncodeInput, Encoder, EncoderBackend,
+    ExportBody, ResolvedWrite, TargetRequest,
+};
 use super::*;
 
 #[test]
@@ -23,10 +25,7 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube();
     let mut encoded = Vec::new();
     let plan = CadirEncoder
-        .plan(
-            crate::codec::EncodeInput::new(&ir, None),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("empty-catalog inheritance resolves to CADIR identity");
     assert_eq!(plan.report().target(), None);
     plan.write_to(&mut encoded).unwrap();
@@ -40,111 +39,111 @@ fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum();
     let validation_counts = validate_neutral(&ir, Vec::new()).entity_counts;
     let plan = CadirEncoder
-        .plan(
-            crate::codec::EncodeInput::new(&ir, None),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("plan CADIR export");
 
     assert_eq!(plan.report().census.counts, validation_counts);
 }
 
-struct ForeignIdentityEncoder;
+struct NeutralEncoder;
 
-impl EncoderBackend for ForeignIdentityEncoder {
+impl EncoderBackend for NeutralEncoder {
     const FORMAT: &'static str = "selected";
-    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::DialectFree;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(
-        &self,
-        input: EncodeInput<'_>,
-        target: ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, CodecError> {
-        let ResolvedEncoderTarget::DialectFree = target else {
-            panic!("the sealed wrapper must honor the backend target domain")
-        };
-        CadirEncoder.plan_resolved(input, ResolvedEncoderTarget::DialectFree)
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        // The body carries no identity: whatever the backend does, the
+        // wrapper stamps FORMAT.
+        Ok(ExportBody::synthesized(Vec::new(), input.ir))
     }
 }
 
 #[test]
-fn sealed_plan_rejects_a_backend_that_reports_another_format() {
+fn the_wrapper_stamps_the_backend_format_on_a_dialect_free_plan() {
     let ir = CadIr::empty(crate::units::Units::default());
-    let Err(error) =
-        ForeignIdentityEncoder.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-    else {
-        panic!("the sealed wrapper must own plan format identity")
-    };
-
-    let CodecError::ContractViolation {
-        codec,
-        operation,
-        expected,
-        reported,
-    } = error
-    else {
-        panic!("expected an encoder contract violation")
-    };
-    assert_eq!(codec, "selected");
-    assert_eq!(operation, "plan");
-    assert_eq!(expected, "selected");
-    assert_eq!(reported, "cadir");
+    let plan = NeutralEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert_eq!(plan.report().format(), "selected");
+    assert_eq!(plan.report().target(), None);
+    assert_eq!(plan.report().fidelity, FidelityResolution::NotProvided);
 }
 
-struct WrongTargetEncoder;
+#[test]
+fn a_dialect_free_encoder_refuses_an_explicit_target() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let error = NeutralEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
+        .unwrap_err();
+    let CodecError::UnsupportedTarget(refusal) = error else {
+        panic!("a dialect-free encoder has no explicit targets")
+    };
+    assert!(matches!(
+        refusal.kind(),
+        TargetRefusalKind::UnknownExplicit { .. }
+    ));
+    assert!(refusal.available().is_empty());
+}
 
-impl EncoderBackend for WrongTargetEncoder {
+struct CatalogEncoder;
+
+impl EncoderBackend for CatalogEncoder {
     const FORMAT: &'static str = "test";
-    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(CATALOG_WRITE_TARGETS);
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog(CATALOG_WRITE_TARGETS);
 
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        target: ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, CodecError> {
-        let ResolvedEncoderTarget::Native(target) = target else {
-            panic!("the sealed wrapper must resolve a catalog target")
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(Vec::new(), input.ir);
+        body.notes
+            .push(format!("resolved {}", target.target_id().as_str()));
+        body.consumption = Consumption::Degraded {
+            reason: "test backend never replays".to_owned(),
         };
-        assert_eq!(target.dialect().as_str(), "test:new");
-        Ok(ExportPlan::buffered(
-            crate::report::ExportReport::native(
-                DialectId::pinned("test:old"),
-                crate::report::EntityCensus {
-                    basis: crate::report::CensusBasis::IrArenas,
-                    counts: input.ir.census(),
-                },
-                crate::report::FidelityResolution::NotProvided,
-                crate::report::WritePath::Synthesized,
-                Vec::new(),
-                Vec::new(),
-            ),
-            Vec::new(),
-        ))
+        Ok(body)
     }
 }
 
 #[test]
-fn sealed_plan_rejects_a_backend_that_reports_another_target_in_its_format() {
+fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
     let ir = CadIr::empty(crate::units::Units::default());
-    let Err(error) =
-        WrongTargetEncoder.plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
-    else {
-        panic!("the sealed wrapper must bind the exact resolved target")
-    };
+    let plan = CatalogEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
+        .unwrap();
+    assert_eq!(plan.report().format(), "test");
+    assert_eq!(plan.report().target(), Some(&DialectId::pinned("test:new")));
+    assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
+}
 
-    let CodecError::ContractViolation {
-        codec,
-        operation,
-        expected,
-        reported,
-    } = error
-    else {
-        panic!("expected an encoder target contract violation")
-    };
-    assert_eq!(codec, "test");
-    assert_eq!(operation, "plan target");
-    assert_eq!(expected, "test:new");
-    assert_eq!(reported, "test:old");
+#[test]
+fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let plan = CatalogEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
+        .unwrap();
+    assert_eq!(plan.report().fidelity, FidelityResolution::NotProvided);
+}
+
+#[test]
+fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let fidelity = SourceFidelity::default();
+    let plan = CatalogEncoder
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Explicit("new"),
+        )
+        .unwrap();
+    assert_eq!(
+        plan.report().fidelity,
+        FidelityResolution::Degraded {
+            reason: "test backend never replays".to_owned()
+        }
+    );
 }
 
 #[test]
@@ -162,20 +161,16 @@ fn an_empty_native_catalog_has_no_format_identity_request() {
     assert!(refusal.available().is_empty());
 }
 
-fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(
+fn decoded(ir: CadIr) -> Decoded {
+    Decoded {
         ir,
-        DecodeReport::unclassified(
-            "test",
-            DecodeTransfer::full(true),
-            BTreeMap::new(),
-            Vec::new(),
-            Vec::new(),
-            TransferLedger::default(),
-        ),
-        SourceFidelity::default(),
-    )
-    .expect("the test source and report formats agree")
+        body: DecodeBody::new(DecodeTransfer::full(true)),
+        source_fidelity: SourceFidelity::default(),
+    }
+}
+
+fn decode_result(ir: CadIr) -> DecodeResult {
+    DecodeResult::new(decoded(ir), "test")
 }
 
 fn retained_record(id: &str, offset: u64) -> RetainedSourceRecord {
@@ -244,11 +239,9 @@ fn reject_floor_kind() -> LossKind {
 }
 
 impl CodecBackend for RejectFloorCodec {
-    fn id(&self) -> &'static str {
-        "test"
-    }
+    const FORMAT: &'static str = "test";
 
-    fn detect(&self, _prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
         Confidence::No
     }
 
@@ -260,29 +253,28 @@ impl CodecBackend for RejectFloorCodec {
         panic!("the strict gate tests do not inspect")
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        _root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
-        let (ir, mut report, fidelity) = decode_result(unit_cube()).into_parts();
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
+        let mut decoded = decoded(unit_cube());
         // Deliberately report the opposite request scope; the wrapper owns it.
-        report.stamp_request_scope(!ctx.container_only());
-        report
+        decoded.body.transfer = if ctx.container_only() {
+            DecodeTransfer::full(true)
+        } else {
+            DecodeTransfer::ContainerOnly
+        };
+        decoded
+            .body
             .losses
             .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
-        Ok(DecodeResult::new(ir, report, fidelity)?)
+        Ok(decoded)
     }
 }
 
 struct ForeignIdentityCodec;
 
 impl CodecBackend for ForeignIdentityCodec {
-    fn id(&self) -> &'static str {
-        "selected"
-    }
+    const FORMAT: &'static str = "selected";
 
-    fn detect(&self, _prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
         Confidence::No
     }
 
@@ -304,9 +296,17 @@ impl CodecBackend for ForeignIdentityCodec {
         &self,
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
-        Ok(decode_result(unit_cube()))
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube();
+        ir.source = Some(crate::SourceMeta::unclassified("foreign", BTreeMap::new()));
+        Ok(decoded(ir))
     }
+}
+
+#[test]
+fn the_sealed_wrapper_reports_the_backend_format() {
+    assert_eq!(Codec::id(&ForeignIdentityCodec), "selected");
+    assert_eq!(ForeignIdentityCodec.detect(&[]), Confidence::No);
 }
 
 #[test]
@@ -318,23 +318,17 @@ fn sealed_inspect_rejects_a_backend_that_reports_another_format() {
         )
         .expect_err("the sealed wrapper owns inspect format identity");
 
-    let CodecError::ContractViolation {
-        codec,
-        operation,
-        expected,
-        reported,
-    } = error
-    else {
-        panic!("expected a codec contract violation")
+    let CodecError::WrongFormat(message) = error else {
+        panic!("expected a wrong-format refusal, got {error:?}")
     };
-    assert_eq!(codec, "selected");
-    assert_eq!(operation, "inspect");
-    assert_eq!(expected, "selected");
-    assert_eq!(reported, "foreign");
+    assert_eq!(
+        message,
+        "codec \"selected\" inspected a \"foreign\" container"
+    );
 }
 
 #[test]
-fn sealed_decode_rejects_a_consistent_foreign_result() {
+fn sealed_decode_rejects_a_document_authored_for_another_format() {
     let error = ForeignIdentityCodec
         .decode(
             &mut Cursor::new(vec![1u8, 2, 3, 4]),
@@ -342,19 +336,10 @@ fn sealed_decode_rejects_a_consistent_foreign_result() {
         )
         .expect_err("the sealed wrapper owns decode format identity");
 
-    let DecodeFailure::Codec(CodecError::ContractViolation {
-        codec,
-        operation,
-        expected,
-        reported,
-    }) = error
-    else {
-        panic!("expected a codec contract violation")
+    let DecodeFailure::Codec(CodecError::WrongFormat(message)) = error else {
+        panic!("expected a wrong-format refusal, got {error:?}")
     };
-    assert_eq!(codec, "selected");
-    assert_eq!(operation, "decode");
-    assert_eq!(expected, "selected");
-    assert_eq!(reported, "test");
+    assert_eq!(message, "codec \"selected\" decoded a \"foreign\" document");
 }
 
 fn strict_options(container_only: bool) -> DecodeOptions {
@@ -405,206 +390,71 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
 }
 
 #[test]
-fn a_decode_result_preserves_every_report_dialect_layer_on_the_source() {
+fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
     let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta::unclassified("test", BTreeMap::new()));
-    let report = DecodeReport::classified(
-        DialectLayers::new(
-            dialect_layer("test:only"),
-            vec![dialect_layer("acis:save-format-217")],
-        )
-        .unwrap(),
-        DecodeTransfer::full(true),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        TransferLedger::default(),
-    );
-    let result = DecodeResult::new(ir.clone(), report.clone(), SourceFidelity::default())
-        .expect("the test source and report formats agree");
-
-    assert_eq!(result.report().dialects().unwrap().iter().count(), 2);
-    assert_eq!(
-        result.ir().source.as_ref().unwrap().dialects(),
-        result.report().dialects()
-    );
-
-    let unclassified = DecodeResult::new(
-        ir,
-        DecodeReport::unclassified(
-            "test",
-            report.transfer(),
-            report.coverage,
-            report.losses,
-            report.notes,
-            report.transfer_ledger,
-        ),
-        SourceFidelity::default(),
-    )
-    .expect("the test source and report formats agree");
-    assert!(unclassified.report().dialects().is_none());
-}
-
-#[test]
-fn a_decode_result_projects_source_mirrors_from_all_layers() {
-    let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta::unclassified(
-        "test",
-        BTreeMap::from([("attribute".into(), "retained".into())]),
-    ));
     let primary = dialect_layer("test:only")
         .with_declared(BTreeMap::from([("version".into(), "only".into())]));
-    let layers = DialectLayers::new(
-        primary.clone(),
-        vec![dialect_layer("acis:save-format-217").with_instance("body.sab")],
-    )
-    .unwrap();
-    let report = DecodeReport::classified(
+    let layers = DialectLayers::of(primary.clone())
+        .with(dialect_layer("acis:save-format-217").with_instance("body.sab"));
+    ir.source = Some(crate::SourceMeta::classified(
         layers.clone(),
-        DecodeTransfer::full(true),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        TransferLedger::default(),
-    );
+        BTreeMap::from([("attribute".into(), "retained".into())]),
+    ));
 
-    let result = DecodeResult::new(ir, report, SourceFidelity::default())
-        .expect("the test source and report formats agree");
+    let result = decode_result(ir);
+
+    assert_eq!(result.report().format(), "test");
+    assert_eq!(result.report().dialects(), Some(&layers));
     let source = result
         .ir()
         .source
         .as_ref()
         .expect("source metadata remains");
     assert_eq!(source.dialect(), Some(&primary));
-    assert_eq!(source.dialects(), Some(&layers));
+    assert_eq!(source.dialects(), result.report().dialects());
     assert_eq!(source.attributes["attribute"], "retained");
 }
 
 #[test]
-fn a_decode_result_rejects_a_classified_report_without_source_metadata() {
+fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
+    let mut ir = unit_cube();
+    ir.source = Some(crate::SourceMeta::unclassified("test", BTreeMap::new()));
+
+    let result = decode_result(ir);
+
+    assert_eq!(result.report().format(), "test");
+    assert!(result.report().dialects().is_none());
+}
+
+#[test]
+fn a_decode_result_without_source_metadata_reports_the_codec_format() {
     let mut ir = unit_cube();
     ir.source = None;
-    let report = DecodeReport::classified(
-        DialectLayers::of(dialect_layer("test:only")),
-        DecodeTransfer::full(true),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        TransferLedger::default(),
-    );
 
-    let error = DecodeResult::new(ir, report, SourceFidelity::default())
-        .expect_err("classified reports require a source block for write inheritance");
-    assert_eq!(
-        error.to_string(),
-        "classified decode report for \"test\" requires source metadata"
-    );
+    let result = DecodeResult::new(decoded(ir), "test");
+
+    assert_eq!(result.report().format(), "test");
+    assert!(result.report().dialects().is_none());
+    assert!(result.ir().source.is_none());
 }
 
 #[test]
-fn a_decode_result_rejects_same_format_dialect_disagreement() {
-    let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta::classified(
-        DialectLayers::of(dialect_layer("test:wrong")),
-        BTreeMap::new(),
-    ));
-    let report = DecodeReport::classified(
-        DialectLayers::of(dialect_layer("test:only")),
-        DecodeTransfer::full(true),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        TransferLedger::default(),
+fn a_decode_result_keeps_the_body_it_was_given() {
+    let mut body = DecodeBody::new(DecodeTransfer::ContainerOnly);
+    body.notes.push("kept".into());
+    body.coverage.insert("entities".into(), 3);
+    let result = DecodeResult::new(
+        Decoded {
+            ir: unit_cube(),
+            body,
+            source_fidelity: SourceFidelity::default(),
+        },
+        "test",
     );
 
-    let error = DecodeResult::new(ir, report, SourceFidelity::default())
-        .expect_err("same-format dialect disagreement must not be overwritten");
-    assert_eq!(
-        error.to_string(),
-        "decode source dialect layers (dialect test:wrong, admission Admitted, instance None, declared {}) disagree with report dialect layers (dialect test:only, admission Admitted, instance None, declared {})"
-    );
-}
-
-#[test]
-fn a_decode_result_rejects_extra_layer_disagreement() {
-    let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta::classified(
-        DialectLayers::new(
-            dialect_layer("test:only"),
-            vec![dialect_layer("acis:save-format-217").with_instance("body-a.sab")],
-        )
-        .unwrap(),
-        BTreeMap::new(),
-    ));
-    let report = DecodeReport::classified(
-        DialectLayers::new(
-            dialect_layer("test:only"),
-            vec![dialect_layer("acis:save-format-217").with_instance("body-b.sab")],
-        )
-        .unwrap(),
-        DecodeTransfer::full(true),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        TransferLedger::default(),
-    );
-
-    let error = DecodeResult::new(ir, report, SourceFidelity::default())
-        .expect_err("extra dialect layers are part of source identity");
-    let rendered = error.to_string();
-    assert!(rendered.contains("body-a.sab"), "{rendered}");
-    assert!(rendered.contains("body-b.sab"), "{rendered}");
-}
-
-#[test]
-fn a_decode_result_explains_same_id_admission_disagreement() {
-    let mut ir = unit_cube();
-    ir.source = Some(crate::SourceMeta::classified(
-        DialectLayers::of(DialectMatch::admitted(DialectId::pinned("test:only"))),
-        BTreeMap::new(),
-    ));
-    let report = DecodeReport::classified(
-        DialectLayers::of(DialectMatch::residual(DialectId::pinned("test:only"))),
-        DecodeTransfer::full(true),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        TransferLedger::default(),
-    );
-
-    let error = DecodeResult::new(ir, report, SourceFidelity::default())
-        .expect_err("admission disagreement must not be overwritten");
-    let rendered = error.to_string();
-    assert!(rendered.contains("dialect test:only, admission Admitted,"));
-    assert!(rendered.contains("dialect test:only, admission AdmittedUnverified { using: None },"));
-}
-
-#[test]
-fn a_decode_result_rejects_a_source_and_report_format_mismatch_before_stamping() {
-    let mut ir = unit_cube();
-    let original = DialectMatch::admitted(DialectId::pinned("step:ap242e3"));
-    ir.source = Some(crate::SourceMeta::classified(
-        DialectLayers::of(original.clone()),
-        BTreeMap::new(),
-    ));
-    let report = DecodeReport::classified(
-        DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
-            "rhino:archive-80",
-        ))),
-        DecodeTransfer::full(true),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        TransferLedger::default(),
-    );
-
-    let error = DecodeResult::new(ir, report, SourceFidelity::default())
-        .expect_err("a decode result must not overwrite a foreign source classification");
-
-    assert_eq!(
-        error.to_string(),
-        "decode source format \"step\" does not match report primary format \"rhino\""
-    );
+    assert!(result.report().container_only());
+    assert_eq!(result.report().notes, ["kept"]);
+    assert_eq!(result.report().coverage["entities"], 3);
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {
@@ -646,7 +496,7 @@ fn write_request_resolves_an_explicit_on_catalog_target() {
         CATALOG_WRITE_TARGETS,
     )
     .unwrap();
-    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:old");
     assert!(!resolved.preserves_source());
     assert!(!resolved.has_same_format_source());
     assert!(!resolved.source_preservation_eligible());
@@ -685,7 +535,7 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
     let ir = catalog_write_ir(Some(("other", Some("other:only"))));
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
-    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:new");
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:new");
     assert!(!resolved.preserves_source());
     assert!(!resolved.has_same_format_source());
     assert!(!resolved.source_preservation_eligible());
@@ -703,8 +553,9 @@ fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
     };
     assert!(matches!(
         refusal.kind(),
-        TargetRefusalKind::UnrecordedSource { format } if format == "test"
+        TargetRefusalKind::UnrecordedSource
     ));
+    assert_eq!(refusal.format(), "test");
 }
 
 #[test]
@@ -718,7 +569,7 @@ fn write_request_explicit_over_an_unrecorded_source_has_no_recorded_relation() {
     )
     .unwrap();
 
-    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:old");
     assert!(!resolved.preserves_source());
     assert!(resolved.has_same_format_source());
     assert!(resolved.source_preservation_eligible());
@@ -730,7 +581,7 @@ fn write_request_inherit_preserves_a_same_format_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
-    assert_eq!(resolved.catalog_entry().unwrap().id.as_str(), "test:old");
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:old");
     assert!(resolved.preserves_source());
     assert!(resolved.has_same_format_source());
     assert!(resolved.source_preservation_eligible());
@@ -742,8 +593,8 @@ fn write_request_inherit_preserves_a_same_format_off_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, "test", CATALOG_WRITE_TARGETS).unwrap();
-    assert_eq!(resolved.catalog_entry(), None);
-    assert_eq!(resolved.dialect().as_str(), "test:future");
+    assert_eq!(resolved.entry(), None);
+    assert_eq!(resolved.target_id().as_str(), "test:future");
     assert!(resolved.preserves_source());
     assert!(resolved.has_same_format_source());
     assert!(resolved.source_preservation_eligible());
@@ -760,7 +611,7 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
         CATALOG_WRITE_TARGETS,
     )
     .unwrap();
-    let entry = resolved.catalog_entry().expect("expected a catalog target");
+    let entry = resolved.entry().expect("expected a catalog target");
     let displaced = resolved
         .displaced_source()
         .expect("the explicit target displaces the recorded source");

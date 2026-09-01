@@ -1065,9 +1065,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .expect("required invariant")
             .links
             .clear();
-        let result = context
-            .commit()
-            .expect("the Rhino source and report formats agree");
+        let result = cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT);
         assert!(result
             .report()
             .losses

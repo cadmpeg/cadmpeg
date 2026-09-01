@@ -62,7 +62,7 @@
         "extra": [],
         "primary": {
           "admission": {
-            "admitted_unverified": {
+            "unverified": {
               "using": "step:ap242-e3"
             }
           },
@@ -90,7 +90,7 @@
       "extra": [],
       "primary": {
         "admission": {
-          "admitted_unverified": {
+          "unverified": {
             "using": "step:ap242-e3"
           }
         },

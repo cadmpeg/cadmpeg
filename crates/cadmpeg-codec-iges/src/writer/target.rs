@@ -1,79 +1,88 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES target resolution and retained-image replay.
+//! IGES target planning and retained-image replay.
 
-use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    Consumption, EncodeInput, ExportBody, ResolvedTarget, ResolvedWrite, SourceIdentity,
+};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
+use cadmpeg_ir::{CadIr, SourceFidelity, WritePath};
 
 use crate::loss::IgesLossCode;
 
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    resolved: &ResolvedWrite,
-) -> Result<ExportPlan, CodecError> {
-    let Some(entry) = resolved.catalog_entry() else {
-        return match replay_bytes(input.ir, input.fidelity)? {
-            Replay::Replayed { bytes } => {
-                Ok(replayed_plan(input.ir, resolved.dialect().clone(), bytes))
-            }
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
+    match resolved.target() {
+        // Off-catalog same-format source: only a verbatim replay can honor it.
+        ResolvedTarget::Preserved { .. } => match replay_bytes(input.ir, input.fidelity)? {
+            Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
             Replay::Declined { reason } => Err(resolved.unavailable(match reason {
                 Some(reason) => format!(
                     "{reason}; the semantic writer cannot synthesize the inherited dialect"
                 ),
                 None => "its retained source image is unavailable for byte replay and the semantic writer cannot synthesize it".to_owned(),
             })),
-        };
-    };
-    let preservation_eligible = resolved.source_preservation_eligible();
-    if resolved.preserves_source() {
-        let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
-            Replay::Replayed { bytes } => {
-                return Ok(replayed_plan(input.ir, entry.id.clone(), bytes));
+        },
+        ResolvedTarget::Inherited { index, .. } => {
+            replay_or_synthesize(input, crate::IgesVersion::ALL[*index])
+        }
+        ResolvedTarget::Explicit {
+            index,
+            entry,
+            source: SourceIdentity::Recorded(source),
+            ..
+        } => {
+            let version = crate::IgesVersion::ALL[*index];
+            if source == &entry.id {
+                replay_or_synthesize(input, version)
+            } else {
+                synthesized_body(input, version, resolved.displacement_message(), None, false)
             }
-            Replay::Declined { reason } => reason,
-        };
-        synthesized_plan(
-            input,
-            crate::IgesVersion::from_catalog_entry(entry),
-            None,
-            replay_failure,
-            preservation_eligible,
-        )
-    } else {
-        synthesized_plan(
-            input,
-            crate::IgesVersion::from_catalog_entry(entry),
-            resolved.displacement_message(),
-            None,
-            preservation_eligible,
-        )
+        }
+        ResolvedTarget::Explicit {
+            index,
+            source: SourceIdentity::Unrecorded,
+            ..
+        } => synthesized_body(input, crate::IgesVersion::ALL[*index], None, None, true),
+        ResolvedTarget::Explicit { index, .. } | ResolvedTarget::Default { index, .. } => {
+            synthesized_body(input, crate::IgesVersion::ALL[*index], None, None, false)
+        }
     }
 }
 
-fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan {
-    ExportPlan::buffered(
-        super::report(
-            dialect,
-            FidelityResolution::Replayed,
-            WritePath::VerbatimReplay,
-            Vec::new(),
-            "preserved source container replayed verbatim",
-            super::counts_for_ir(ir),
-        ),
+/// A same-format source at the resolved target: replay its retained image when
+/// it is intact, otherwise regenerate and report why replay was declined.
+fn replay_or_synthesize(
+    input: EncodeInput<'_>,
+    version: crate::IgesVersion,
+) -> Result<ExportBody, CodecError> {
+    let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
+        Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
+        Replay::Declined { reason } => reason,
+    };
+    synthesized_body(input, version, None, replay_failure, true)
+}
+
+fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
+    super::body(
         bytes,
+        Consumption::Replayed,
+        WritePath::VerbatimReplay,
+        Vec::new(),
+        "preserved source container replayed verbatim",
+        super::counts_for_ir(ir),
     )
 }
 
-fn synthesized_plan(
+fn synthesized_body(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
     displacement: Option<String>,
     replay_failure: Option<String>,
     preservation_eligible: bool,
-) -> Result<ExportPlan, CodecError> {
-    let target = crate::dialect::fixed_ascii_id(version);
+) -> Result<ExportBody, CodecError> {
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
@@ -92,33 +101,24 @@ fn synthesized_plan(
     }
     let synthesis = super::synthesize(input.ir, version)?;
     losses.extend(synthesis.losses.clone());
-    let fidelity = if preservation_eligible && !source_available {
-        FidelityResolution::Degraded {
+    let consumption = if preservation_eligible && !source_available {
+        Consumption::Degraded {
             reason: "preserved IGES source image is unavailable".into(),
         }
     } else if displaced {
-        if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        }
+        Consumption::NotConsumed
     } else if let Some(reason) = replay_failure {
-        FidelityResolution::Degraded { reason }
-    } else if input.fidelity.is_some() {
-        FidelityResolution::NotConsumed
+        Consumption::Degraded { reason }
     } else {
-        FidelityResolution::NotProvided
+        Consumption::NotConsumed
     };
-    Ok(ExportPlan::buffered(
-        super::report(
-            target,
-            fidelity,
-            WritePath::Synthesized,
-            losses,
-            "IGES Fixed ASCII container regenerated from supported neutral geometry",
-            synthesis.counts,
-        ),
+    Ok(super::body(
         synthesis.bytes,
+        consumption,
+        WritePath::Synthesized,
+        losses,
+        "IGES Fixed ASCII container regenerated from supported neutral geometry",
+        synthesis.counts,
     ))
 }
 

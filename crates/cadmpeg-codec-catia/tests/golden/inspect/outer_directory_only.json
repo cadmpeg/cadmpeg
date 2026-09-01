@@ -3,9 +3,7 @@
   "dialects": {
     "extra": [],
     "primary": {
-      "admission": {
-        "admitted_unverified": {}
-      },
+      "admission": "residual",
       "dialect": "catia:unknown",
       "format": "catia"
     }

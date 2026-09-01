@@ -9,7 +9,8 @@ use crate::writer::tests::{
 };
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::container::role;
 use crate::SldprtCodec;
@@ -254,10 +255,10 @@ fn versioned_part() -> Vec<u8> {
 fn plan(
     result: &cadmpeg_ir::codec::DecodeResult,
     fidelity: bool,
-    request: cadmpeg_ir::codec::TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::CodecError> {
+    request: cadmpeg_ir::codec::write::TargetRequest<'_>,
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
     SldprtCodec.plan(
-        cadmpeg_ir::codec::EncodeInput::new(
+        cadmpeg_ir::codec::write::EncodeInput::new(
             result.ir(),
             fidelity.then(|| result.source_fidelity()),
         ),
@@ -265,7 +266,7 @@ fn plan(
     )
 }
 
-fn named_target(plan: &cadmpeg_ir::codec::ExportPlan) -> String {
+fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
     plan.report()
         .target()
         .expect("a SLDPRT write always names its dialect")
@@ -301,8 +302,12 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
         Some("sldprt:sw-version-12000-plus")
     );
 
-    let plan = plan(&result, true, cadmpeg_ir::codec::TargetRequest::Inherit)
-        .expect("the source's own dialect is preserved");
+    let plan = plan(
+        &result,
+        true,
+        cadmpeg_ir::codec::write::TargetRequest::Inherit,
+    )
+    .expect("the source's own dialect is preserved");
     assert_eq!(
         plan.report().write_path,
         cadmpeg_ir::WritePath::VerbatimReplay
@@ -322,9 +327,12 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
 #[test]
 fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
     let result = decode(versioned_part());
-    let error = plan(&result, false, cadmpeg_ir::codec::TargetRequest::Inherit)
-        .err()
-        .expect("a versioned row is not a synthesis target");
+    let error = plan(
+        &result,
+        false,
+        cadmpeg_ir::codec::write::TargetRequest::Inherit,
+    )
+    .expect_err("a versioned row is not a synthesis target");
     let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
@@ -356,7 +364,7 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     let plan = plan(
         &result,
         true,
-        cadmpeg_ir::codec::TargetRequest::Explicit("sldprt:unknown"),
+        cadmpeg_ir::codec::write::TargetRequest::Explicit("sldprt:unknown"),
     )
     .expect("the catalog row is synthesized from the neutral IR");
     assert_eq!(named_target(&plan), "sldprt:unknown");
@@ -386,8 +394,8 @@ fn the_patch_path_names_the_preserved_dialect() {
 
     let plan = SldprtCodec
         .plan(
-            cadmpeg_ir::codec::EncodeInput::new(&edited, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(result.source_fidelity())),
+            cadmpeg_ir::codec::write::TargetRequest::Inherit,
         )
         .expect("an edited part still preserves its dialect");
     assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Patched);
@@ -424,8 +432,8 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
 
     let plan = SldprtCodec
         .plan(
-            cadmpeg_ir::codec::EncodeInput::new(&ir, Some(&fidelity)),
-            cadmpeg_ir::codec::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
+            cadmpeg_ir::codec::write::TargetRequest::Inherit,
         )
         .expect("missing retained bytes fall back to semantic writing");
     assert_ne!(
@@ -458,8 +466,8 @@ fn the_generation_path_names_the_catalog_row() {
     let ir = source_less_cube();
     let plan = SldprtCodec
         .plan(
-            cadmpeg_ir::codec::EncodeInput::new(&ir, None),
-            cadmpeg_ir::codec::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
+            cadmpeg_ir::codec::write::TargetRequest::Inherit,
         )
         .expect("nothing to inherit, so the catalog default stands in");
     assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Synthesized);

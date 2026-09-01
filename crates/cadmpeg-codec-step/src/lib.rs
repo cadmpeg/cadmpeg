@@ -8,7 +8,7 @@
 //! <!-- /generated: capability step -->
 //!
 //! [`StepCodec`] emits the application protocol selected through
-//! [`cadmpeg_ir::codec::Encoder::plan`]. It writes product and representation context,
+//! [`cadmpeg_ir::codec::write::Encoder::plan`]. It writes product and representation context,
 //! connected exact shape, product occurrences, tessellation, presentation,
 //! and PMI when the target schema carries those domains.
 //!
