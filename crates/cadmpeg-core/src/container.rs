@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::dialect::DialectLayers;
@@ -52,32 +51,36 @@ enum ContainerClassification {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ContainerSummaryWire {
-    format: String,
-    container_kind: String,
-    entries: Vec<ContainerEntry>,
-    notes: Vec<String>,
+struct ContainerSummaryWire<Strings, Entries, Notes, Dialects: Default> {
+    format: Strings,
+    container_kind: Strings,
+    entries: Entries,
+    notes: Notes,
     /// Always serialized. Summaries written before the field existed omit the
     /// key and read back as unclassified.
     #[serde(default)]
-    dialects: Option<DialectLayers>,
+    dialects: Dialects,
 }
+
+type OwnedContainerSummaryWire =
+    ContainerSummaryWire<String, Vec<ContainerEntry>, Vec<String>, Option<DialectLayers>>;
 
 impl Serialize for ContainerSummary {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("ContainerSummary", 5)?;
-        state.serialize_field("format", self.format())?;
-        state.serialize_field("container_kind", &self.container_kind)?;
-        state.serialize_field("entries", &self.entries)?;
-        state.serialize_field("notes", &self.notes)?;
-        state.serialize_field("dialects", &self.dialects())?;
-        state.end()
+        ContainerSummaryWire {
+            format: self.format(),
+            container_kind: self.container_kind.as_str(),
+            entries: self.entries.as_slice(),
+            notes: self.notes.as_slice(),
+            dialects: self.dialects(),
+        }
+        .serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for ContainerSummary {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = ContainerSummaryWire::deserialize(deserializer)?;
+        let wire = OwnedContainerSummaryWire::deserialize(deserializer)?;
         match wire.dialects {
             Some(dialects) => {
                 if wire.format != dialects.primary().format() {
@@ -115,7 +118,7 @@ impl JsonSchema for ContainerSummary {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ContainerSummaryWire::json_schema(generator)
+        OwnedContainerSummaryWire::json_schema(generator)
     }
 }
 

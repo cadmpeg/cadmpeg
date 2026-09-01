@@ -329,8 +329,31 @@ fn a_decode_result_rejects_same_format_dialect_disagreement() {
         .expect_err("same-format dialect disagreement must not be overwritten");
     assert_eq!(
         error.to_string(),
-        "decode source dialect metadata for \"test:wrong\" disagrees with report primary dialect metadata for \"test:only\""
+        "decode source dialect metadata (dialect test:wrong, admission Admitted, instance None, declared {}) disagrees with report primary dialect metadata (dialect test:only, admission Admitted, instance None, declared {})"
     );
+}
+
+#[test]
+fn a_decode_result_explains_same_id_admission_disagreement() {
+    let mut ir = unit_cube();
+    ir.source = Some(crate::SourceMeta::classified(
+        DialectMatch::admitted(DialectId::pinned("test:only")),
+        BTreeMap::new(),
+    ));
+    let report = DecodeReport::classified(
+        DialectLayers::of(DialectMatch::residual(DialectId::pinned("test:only"))),
+        DecodeTransfer::full(true),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+
+    let error = DecodeResult::new(ir, report, SourceFidelity::default())
+        .expect_err("admission disagreement must not be overwritten");
+    let rendered = error.to_string();
+    assert!(rendered.contains("dialect test:only, admission Admitted,"));
+    assert!(rendered.contains("dialect test:only, admission AdmittedUnverified { using: None },"));
 }
 
 #[test]

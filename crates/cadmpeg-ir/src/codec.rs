@@ -125,11 +125,11 @@ enum DecodeResultErrorKind {
         report_format: String,
     },
     #[error(
-        "decode source dialect metadata for {source_dialect:?} disagrees with report primary dialect metadata for {report_dialect:?}"
+        "decode source dialect metadata ({source_match}) disagrees with report primary dialect metadata ({report_match})"
     )]
     SourceDialectMismatch {
-        source_dialect: String,
-        report_dialect: String,
+        source_match: String,
+        report_match: String,
     },
     #[error(
         "decode source dialect {source_dialect:?} is classified but report for {report_format:?} is unclassified"
@@ -138,6 +138,16 @@ enum DecodeResultErrorKind {
         source_dialect: String,
         report_format: String,
     },
+}
+
+fn describe_dialect_match(matched: &cadmpeg_core::dialect::DialectMatch) -> String {
+    format!(
+        "dialect {}, admission {:?}, instance {:?}, declared {:?}",
+        matched.dialect(),
+        matched.admission(),
+        matched.instance(),
+        matched.declared()
+    )
 }
 
 impl From<DecodeResultError> for CodecError {
@@ -184,8 +194,8 @@ impl DecodeResult {
                     if source_dialect != matched {
                         return Err(DecodeResultError {
                             kind: DecodeResultErrorKind::SourceDialectMismatch {
-                                source_dialect: source_dialect.dialect().to_string(),
-                                report_dialect: matched.dialect().to_string(),
+                                source_match: describe_dialect_match(source_dialect),
+                                report_match: describe_dialect_match(matched),
                             },
                         });
                     }
