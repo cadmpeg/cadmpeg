@@ -410,7 +410,15 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
-        result
+        let result = result?;
+        if result.format() != self.id() {
+            return Err(CodecError::ContractViolation {
+                codec: self.id(),
+                operation: "inspect",
+                reported: result.format().to_owned(),
+            });
+        }
+        Ok(result)
     }
 
     fn decode(
@@ -424,6 +432,14 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let result = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
         let mut result = result?;
+        if result.report().format() != self.id() {
+            return Err(CodecError::ContractViolation {
+                codec: self.id(),
+                operation: "decode",
+                reported: result.report().format().to_owned(),
+            }
+            .into());
+        }
         result.stamp_container_only(options.container_only);
         let strict_refusal = if options.policy.mode == DecodeMode::Strict && !options.container_only
         {

@@ -145,7 +145,7 @@ fn reject_floor_kind() -> LossKind {
 
 impl CodecBackend for RejectFloorCodec {
     fn id(&self) -> &'static str {
-        "reject-floor"
+        "test"
     }
 
     fn detect(&self, _prefix: &[u8]) -> Confidence {
@@ -173,6 +173,83 @@ impl CodecBackend for RejectFloorCodec {
             .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
         Ok(DecodeResult::new(ir, report, fidelity)?)
     }
+}
+
+struct ForeignIdentityCodec;
+
+impl CodecBackend for ForeignIdentityCodec {
+    fn id(&self) -> &'static str {
+        "selected"
+    }
+
+    fn detect(&self, _prefix: &[u8]) -> Confidence {
+        Confidence::No
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        Ok(ContainerSummary::unclassified(
+            "foreign",
+            "test",
+            Vec::new(),
+            Vec::new(),
+        ))
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<DecodeResult, CodecError> {
+        Ok(decode_result(unit_cube()))
+    }
+}
+
+#[test]
+fn sealed_inspect_rejects_a_backend_that_reports_another_format() {
+    let error = ForeignIdentityCodec
+        .inspect(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &InspectOptions::default(),
+        )
+        .expect_err("the sealed wrapper owns inspect format identity");
+
+    let CodecError::ContractViolation {
+        codec,
+        operation,
+        reported,
+    } = error
+    else {
+        panic!("expected a codec contract violation")
+    };
+    assert_eq!(codec, "selected");
+    assert_eq!(operation, "inspect");
+    assert_eq!(reported, "foreign");
+}
+
+#[test]
+fn sealed_decode_rejects_a_consistent_foreign_result() {
+    let error = ForeignIdentityCodec
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &DecodeOptions::default(),
+        )
+        .expect_err("the sealed wrapper owns decode format identity");
+
+    let DecodeFailure::Codec(CodecError::ContractViolation {
+        codec,
+        operation,
+        reported,
+    }) = error
+    else {
+        panic!("expected a codec contract violation")
+    };
+    assert_eq!(codec, "selected");
+    assert_eq!(operation, "decode");
+    assert_eq!(reported, "test");
 }
 
 fn strict_options(container_only: bool) -> DecodeOptions {
