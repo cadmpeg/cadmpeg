@@ -69,12 +69,6 @@ struct DesignObjectReference {
     ids: Vec<u64>,
 }
 
-/// Whether a scanned archive is a `.f3z`: it carries the two archive-level
-/// JSON members and at least one `.f3d` document member.
-pub fn is_f3z(scan: &ContainerScan) -> bool {
-    scan.is_multi_document()
-}
-
 /// Inspect every document member under the F3Z archive identity.
 pub(crate) fn inspect<'a>(
     ctx: &DecodeContext<'a>,
@@ -275,9 +269,12 @@ fn classify_archive_members<'a>(
                 continue;
             }
         };
-        let kernel_layers = crate::dialect::kernel_layers(&member_scan);
-        let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers)
-            .expect("an F3D member's kernel layers have unique identities");
+        let classification = crate::report::classify_document(&member_scan);
+        let (member_layers, member_losses) = classification.into_parts();
+        losses.extend(member_losses.into_iter().map(|mut loss| {
+            loss.message = format!("archive member {member_path}: {}", loss.message);
+            loss
+        }));
         losses.extend(merge_member_layers(
             &mut layers,
             &member_layers,
@@ -288,7 +285,7 @@ fn classify_archive_members<'a>(
             ClassifiedMember::Scanned(Box::new(member_scan)),
         );
     }
-    losses.extend(crate::dialect::report_dialect_losses(&layers));
+    losses.extend(crate::report::dialect_losses(&layers));
     Ok(ArchiveSession {
         members,
         layers,

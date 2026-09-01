@@ -290,11 +290,6 @@ impl<'a> ContainerScan<'a> {
         }
     }
 
-    /// Whether this is an outer multi-document F3Z archive.
-    pub fn is_multi_document(&self) -> bool {
-        matches!(self.kind, F3dContainerKind::MultiDocument)
-    }
-
     /// Whether `name` is inside the manifest-selected Design asset folder.
     pub(crate) fn belongs_to_design_asset(&self, name: &str) -> bool {
         self.design_asset_folder().is_some_and(|folder| {
@@ -505,8 +500,13 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 /// extension. Design body bindings perform the model selection during decode.
 pub fn summarize(
     scan: &ContainerScan<'_>,
-    kernel_layers: &[cadmpeg_core::dialect::DialectMatch],
+    dialects: cadmpeg_core::dialect::DialectLayers,
 ) -> ContainerSummary {
+    ContainerSummary::classified(dialects, "zip", scan.entries.clone(), summary_notes(scan))
+}
+
+/// Container notes shared by inspection and decode report construction.
+pub(crate) fn summary_notes(scan: &ContainerScan<'_>) -> Vec<String> {
     let mut notes = Vec::new();
     if let Some(folder) = scan.design_asset_folder() {
         notes.push(format!("Design asset folder (from manifests): {folder}"));
@@ -547,13 +547,7 @@ pub fn summarize(
             .to_string(),
     );
 
-    ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::new(scan.dialect.clone(), kernel_layers.to_vec())
-            .expect("kernel layers use formats other than the F3D primary"),
-        "zip",
-        scan.entries.clone(),
-        notes,
-    )
+    notes
 }
 
 /// Root-level `*.f3d` member names, sorted by archive path.

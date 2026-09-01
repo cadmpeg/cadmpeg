@@ -561,10 +561,8 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
         assert!(!fallback.is_smbh);
         assert!(container::select_history_brep(scan).is_none());
         assert!(container::legacy_design_model_breps(scan).is_none());
-        let kernel_layers = crate::dialect::kernel_layers(scan);
-        let summary = container::summarize(scan, &kernel_layers);
-        assert!(summary
-            .notes
+        let notes = container::summary_notes(scan);
+        assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));
     });
