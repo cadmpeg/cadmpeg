@@ -243,7 +243,7 @@ fn export_report_wire_rejects_a_foreign_target_namespace() {
     assert!(
         error
             .to_string()
-            .contains("export target \"step:ap242-e3\" is not in format namespace \"rhino\""),
+            .contains("format \"rhino\" does not match classified payload format \"step\""),
         "{error}"
     );
 }
@@ -328,9 +328,9 @@ fn classified_report_wire_requires_its_primary_format() {
     let error = serde_json::from_str::<DecodeReport>(&mismatched)
         .expect_err("the report and its primary layer must name the same format");
     assert!(
-        error.to_string().contains(
-            "decode report format \"step\" differs from primary dialect format \"rhino\""
-        ),
+        error
+            .to_string()
+            .contains("format \"step\" does not match classified payload format \"rhino\""),
         "{error}"
     );
 }
