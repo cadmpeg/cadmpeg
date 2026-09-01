@@ -586,10 +586,11 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # classifies here, including 51 and 61 -- `ArchiveVersion::from_word` does not
 # fold near-misses into a band. The document decodes with
 # `Admission::AdmittedUnverified`. A word below 50 uses the four-byte chunk
-# value width and names `rhino:archive-4` as its nearest declared strategy. A
-# word of 50 or greater uses the eight-byte chunk value width and names
-# `rhino:archive-90`. The report charges `rhino/source.dialect-unverified` for
-# the substituted declared strategy.
+# value width. A word of 50 or greater uses the eight-byte chunk value width.
+# Record branches continue to use the observed word through
+# `ArchiveVersion::Other`; no declared row is substituted, so `using` is
+# absent. The report charges `rhino/source.dialect-unverified` for the direct
+# residual route.
 #
 # This row exists under `complete = true` because B4 requires classification
 # to be total. The enumerated archive words remain the complete discriminant

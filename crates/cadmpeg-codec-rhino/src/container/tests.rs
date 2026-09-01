@@ -276,8 +276,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
 #[test]
 fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
     // The residual row runs the chunked route, not a header-only stop: the
-    // scan reaches the tables and the report names the row whose strategy was
-    // substituted.
+    // scan reaches the tables without claiming a declared row was substituted.
     let archive = ArchiveVersion::from_word(100);
     let bytes = minimal_document(
         "100",
@@ -305,9 +304,7 @@ fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
         .primary();
     assert_eq!(
         matched.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned("rhino:archive-90",)),
-        }
+        cadmpeg_core::dialect::Admission::AdmittedUnverified { using: None }
     );
     assert_eq!(matched.declared()["archive_version"], "100");
 }
