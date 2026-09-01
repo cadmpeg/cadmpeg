@@ -46,6 +46,7 @@ pub(crate) struct ActiveCarrier<'a> {
     pub(crate) schema: u32,
     pub(crate) carrier_offset: u64,
     pub(crate) bytes: View<'a>,
+    pub(crate) header: Result<Box<KernelHeader>, String>,
     pub(crate) selected_key: u32,
     pub(crate) enabled: bool,
     pub(crate) delta_state: i32,
@@ -65,30 +66,27 @@ pub(crate) struct DecodedKernelCarrier {
     pub(crate) brep: AsmBrep,
 }
 
-pub(crate) fn parse_kernel_header(carrier: &ActiveCarrier<'_>) -> Result<KernelHeader, CodecError> {
-    let bytes = carrier.bytes.window();
-    match carrier.family {
-        KernelFamily::Asm => asm_header::parse(bytes).ok_or_else(|| {
-            CodecError::Malformed("Inventor ASM carrier has no parseable header".into())
-        }),
-        KernelFamily::Acis => acis_header::parse(bytes).ok_or_else(|| {
-            CodecError::Malformed("Inventor ACIS carrier has no parseable header".into())
-        }),
+fn parse_kernel_header(family: KernelFamily, bytes: &[u8]) -> Result<KernelHeader, String> {
+    match family {
+        KernelFamily::Asm => asm_header::parse(bytes)
+            .ok_or_else(|| "Inventor ASM carrier has no parseable header".into()),
+        KernelFamily::Acis => acis_header::parse(bytes)
+            .ok_or_else(|| "Inventor ACIS carrier has no parseable header".into()),
     }
 }
 
 pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
-    header: KernelHeader,
+    header: &KernelHeader,
 ) -> Result<DecodedKernelCarrier, CodecError> {
     let bytes = carrier.bytes.window();
     let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
-            asm_header::record_stream_start_with_header(bytes, &header).ok_or_else(|| {
+            asm_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                 CodecError::Malformed("Inventor ASM carrier has no record stream".into())
             })?,
-            asm_header::solved_record_limit_with_header(bytes, &header),
+            asm_header::solved_record_limit_with_header(bytes, header),
         ),
         KernelFamily::Acis => {
             // Every save-format band frames and decodes the same way. The band
@@ -96,10 +94,10 @@ pub(crate) fn decode_kernel_carrier(
             // source.kernel-dialect-unverified mark (`dialect::kernel_layer`), never
             // whether the records are read.
             (
-                acis_header::record_stream_start_with_header(bytes, &header).ok_or_else(|| {
+                acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                     CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
                 })?,
-                acis_header::solved_record_limit_with_header(bytes, &header),
+                acis_header::solved_record_limit_with_header(bytes, header),
             )
         }
     };
@@ -127,7 +125,10 @@ pub(crate) fn decode_kernel_carrier(
         IdFormat("inventor"),
         DecodePurpose::Model,
     );
-    Ok(DecodedKernelCarrier { header, brep })
+    Ok(DecodedKernelCarrier {
+        header: header.clone(),
+        brep,
+    })
 }
 
 pub(crate) fn select_active_carrier<'a>(
@@ -223,6 +224,7 @@ fn parse_carrier<'a>(
             payload.start() + carrier_end,
         )
         .ok_or_else(|| CodecError::Malformed("Inventor kernel-carrier range is invalid".into()))?;
+    let header = parse_kernel_header(family, carrier.window()).map(Box::new);
     let mut offset = carrier_end;
     let selected_key = read_u32(bytes, offset, "carrier selected key")?;
     offset += 4;
@@ -266,6 +268,7 @@ fn parse_carrier<'a>(
         schema,
         carrier_offset: record_payload_offset + carrier_header::LEN as u64,
         bytes: carrier,
+        header,
         selected_key,
         enabled,
         delta_state,
@@ -299,7 +302,10 @@ mod tests {
         ctx: &DecodeContext<'_>,
         carrier: &ActiveCarrier<'_>,
     ) -> Result<DecodedKernelCarrier, CodecError> {
-        let header = parse_kernel_header(carrier)?;
+        let header = carrier
+            .header
+            .as_ref()
+            .map_err(|detail| CodecError::Malformed(detail.clone()))?;
         decode_kernel_carrier(ctx, carrier, header)
     }
 

@@ -1315,25 +1315,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT);
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
-        ActiveCarrierState::Selected(carrier) => {
-            match crate::kernel::parse_kernel_header(carrier) {
-                Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
-                    Ok(decoded) => {
-                        apply_kernel_header(&mut ir, carrier.family, &decoded.header);
-                        Some(decoded.brep)
-                    }
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => {
-                        geometry_failure = Some(error.to_string());
-                        None
-                    }
-                },
+        ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
+            Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
+                Ok(decoded) => {
+                    apply_kernel_header(&mut ir, carrier.family, &decoded.header);
+                    Some(decoded.brep)
+                }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     geometry_failure = Some(error.to_string());
                     None
                 }
+            },
+            Err(detail) => {
+                geometry_failure = Some(detail.clone());
+                None
             }
-        }
+        },
         _ => None,
     };
     let AsmTransferRemainder {

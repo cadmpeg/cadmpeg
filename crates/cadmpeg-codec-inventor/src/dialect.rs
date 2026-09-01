@@ -374,12 +374,10 @@ fn unknown_kernel_layer() -> DialectMatch {
 /// call this function and therefore make the same distinction.
 pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch> {
     match state {
-        ActiveCarrierState::Selected(carrier) => {
-            Some(crate::kernel::parse_kernel_header(carrier).map_or_else(
-                |_| unknown_kernel_layer(),
-                |header| kernel_layer(carrier.family, &header),
-            ))
-        }
+        ActiveCarrierState::Selected(carrier) => Some(carrier.header.as_ref().map_or_else(
+            |_| unknown_kernel_layer(),
+            |header| kernel_layer(carrier.family, header),
+        )),
         ActiveCarrierState::NotApplicable
         | ActiveCarrierState::NotExpanded
         | ActiveCarrierState::Unavailable(_) => None,
