@@ -73,12 +73,31 @@ impl<'de> Deserialize<'de> for SidecarDecodeReport {
 
 impl<'de> Deserialize<'de> for DecodeSidecar {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DecodeSidecarWire::deserialize(deserializer)?;
-        Self::from_current_wire(wire).map_err(serde::de::Error::custom)
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Self::from_value(value).map_err(serde::de::Error::custom)
     }
 }
 
 impl DecodeSidecar {
+    fn from_value(mut value: serde_json::Value) -> Result<Self, DecodeSidecarParseError> {
+        let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("");
+        match version {
+            DECODE_SIDECAR_VERSION_V1 => {
+                migrate_sidecar_v1_to_v2(&mut value)?;
+                migrate_sidecar_v2_to_v3(&mut value);
+            }
+            DECODE_SIDECAR_VERSION_V2 => migrate_sidecar_v2_to_v3(&mut value),
+            DECODE_SIDECAR_VERSION => {}
+            found => {
+                return Err(DecodeSidecarParseError::Version {
+                    found: found.to_owned(),
+                });
+            }
+        }
+        let wire = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
+        Self::from_current_wire(wire)
+    }
+
     fn from_current_wire(wire: DecodeSidecarWire) -> Result<Self, DecodeSidecarParseError> {
         if wire.version != DECODE_SIDECAR_VERSION {
             return Err(DecodeSidecarParseError::Version {
@@ -143,26 +162,9 @@ impl DecodeSidecar {
     /// `report.dialects: null`, which is what omission meant in v2. Both are
     /// restamped to [`DECODE_SIDECAR_VERSION`].
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
-        let mut value: serde_json::Value =
+        let value: serde_json::Value =
             serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
-        let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("");
-        match version {
-            DECODE_SIDECAR_VERSION_V1 => {
-                migrate_sidecar_v1_to_v2(&mut value)?;
-                migrate_sidecar_v2_to_v3(&mut value);
-            }
-            DECODE_SIDECAR_VERSION_V2 => {
-                migrate_sidecar_v2_to_v3(&mut value);
-            }
-            DECODE_SIDECAR_VERSION => {}
-            found => {
-                return Err(DecodeSidecarParseError::Version {
-                    found: found.to_owned(),
-                });
-            }
-        }
-        let wire = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
-        Self::from_current_wire(wire)
+        Self::from_value(value)
     }
 }
 
@@ -530,7 +532,7 @@ mod tests {
             Err(DecodeSidecarParseError::Version { .. })
         ));
         let direct_error = serde_json::from_str::<DecodeSidecar>(&wrong_version)
-            .expect_err("public deserialization accepts only the current sidecar version");
+            .expect_err("public deserialization rejects an unknown sidecar version");
         assert!(
             direct_error
                 .to_string()
@@ -565,6 +567,9 @@ mod tests {
     fn decode_sidecar_loads_every_accepted_version() {
         let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
         let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
+        let direct_v1: DecodeSidecar =
+            serde_json::from_str(v1).expect("public deserialization migrates v1");
+        assert_eq!(direct_v1, migrated);
 
         let v3 = migrated.to_canonical_json().expect("serialize sidecar");
         assert!(v3.contains("\"dialects\":null"), "{v3}");
@@ -575,9 +580,12 @@ mod tests {
         assert!(!v2.contains("dialects"), "{v2}");
 
         let from_v2 = DecodeSidecar::from_json(&v2).expect("migrate v2 sidecar");
+        let direct_v2: DecodeSidecar =
+            serde_json::from_str(&v2).expect("public deserialization migrates v2");
         assert_eq!(from_v2.version(), DECODE_SIDECAR_VERSION);
         assert!(from_v2.report.dialects().is_none());
         assert_eq!(from_v2, migrated);
+        assert_eq!(direct_v2, migrated);
     }
 
     #[test]
