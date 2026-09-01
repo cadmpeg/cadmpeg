@@ -40,32 +40,34 @@ pub(crate) const FORMAT: &str = "iges";
 
 /// The dialect-unverified loss required by a classified Global declaration.
 pub(crate) fn dialect_loss(matched: &DialectMatch, global: &ResolvedGlobal) -> Option<LossNote> {
-    let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
-        debug_assert_eq!(matched.admission(), Admission::Admitted);
-        return None;
-    };
-    debug_assert!(matches!(
-        matched.admission(),
-        Admission::AdmittedUnverified { .. }
-    ));
+    match matched.admission() {
+        Admission::Admitted | Admission::Refused => return None,
+        Admission::AdmittedUnverified { .. } => {}
+    }
     let declared = global.declared_version_flag();
     let version = global.version_name();
-    let (declaration, clamp) = match recovery {
-        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => (
+    let (declaration, clamp) = match global.dialect_recovery() {
+        DialectRecovery::Unverified(UnverifiedDialectRecovery::UnreadableDeclaration(
+            declaration,
+        )) => (
             format!(
                 "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared}",
             ),
             String::new(),
         ),
-        UnverifiedDialectRecovery::Clamped => (
+        DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped) => (
             format!("IGES Global version flag {declared}"),
             format!(
                 " after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor",
                 global.effective_version_flag()
             ),
         ),
-        UnverifiedDialectRecovery::UnverifiedVersion => (
+        DialectRecovery::Unverified(UnverifiedDialectRecovery::UnverifiedVersion) => (
             format!("IGES Global version flag {declared}"),
+            String::new(),
+        ),
+        DialectRecovery::Verified => (
+            format!("IGES Global version flag {declared} was admitted as unverified"),
             String::new(),
         ),
     };

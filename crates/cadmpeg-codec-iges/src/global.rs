@@ -1406,14 +1406,9 @@ impl ResolvedGlobal {
     /// Why this decode did not read the file with a Global table verified for
     /// the version its field 23 declares.
     ///
-    /// The single predicate behind two facts that must never disagree: the
-    /// [`IgesLossCode::SourceDialectUnverified`] charge in
-    /// [`crate::dialect::dialect_loss`] and the `Admission` in
-    /// `crate::dialect`. Both call this; neither
-    /// recomputes it. `Verified` is the only state that charges no loss and the
-    /// only state admitted as `Admission::Admitted`, so the biconditional the
-    /// decode policy requires holds by construction rather than by two authors
-    /// agreeing.
+    /// The single predicate from which dialect classification derives its
+    /// admission. Loss reporting consumes that admission as the authoritative
+    /// proof and consults this recovery only for the explanatory message.
     pub(crate) fn dialect_recovery(&self) -> DialectRecovery<'_> {
         if let Some(declaration) = self.unreadable_version_declaration() {
             // A malformed field 23 is replaced by the specification default, so
