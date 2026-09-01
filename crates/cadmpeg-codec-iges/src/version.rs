@@ -17,6 +17,13 @@ pub(crate) enum DialectRecovery<'a> {
     /// Field 23 names a version whose Global table this codec verified against
     /// that version's own specification. The only state that charges no loss.
     Verified,
+    /// The Global table was not verified for the source declaration.
+    Unverified(UnverifiedDialectRecovery<'a>),
+}
+
+/// Why the selected Global table was not verified for the source declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UnverifiedDialectRecovery<'a> {
     /// Field 23 does not read as an integer; the specification default stood in.
     UnreadableDeclaration(&'a str),
     /// Field 23 names a value outside the version table, moved by the
