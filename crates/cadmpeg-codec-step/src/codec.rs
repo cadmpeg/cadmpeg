@@ -6,14 +6,12 @@ use std::collections::BTreeMap;
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    resolve_write_request, CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput,
-    Encoder, ExportPlan, TargetRequest,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    TargetRequest,
 };
-use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
-use crate::export::write_step_outcome;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::parse;
 use crate::reader;
@@ -24,17 +22,6 @@ pub struct StepCodec {
     /// Header metadata and deterministic writer options.
     pub options: StepWriteOptions,
 }
-
-/// Why this writer cannot reproduce a source schema outside
-/// [`StepSchema::TARGETS`].
-///
-/// The one per-codec sentence of the shared catalog-write resolution: STEP has
-/// no retained-image path, and every schema this writer emits stamps
-/// object-identifier arcs, so an edition-unspecified or unrecognized
-/// declaration cannot be written back at all.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the semantic writer cannot synthesize it, and writing another schema would change what the \
-     file declares; name a target to choose one";
 
 impl Encoder for StepCodec {
     fn id(&self) -> &'static str {
@@ -52,40 +39,7 @@ impl Encoder for StepCodec {
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError> {
-        let resolved = resolve_write_request(
-            input.ir,
-            request,
-            crate::dialect::FORMAT,
-            StepSchema::TARGETS,
-        )?;
-        let Some(entry) = resolved.catalog_entry() else {
-            return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
-        };
-        let schema = StepSchema::from_catalog_entry(entry);
-        let mut bytes = Vec::new();
-        let outcome = write_step_outcome(input.ir, &mut bytes, schema, &self.options)
-            .map_err(CodecError::from)?;
-        let target = cadmpeg_core::dialect::DialectId::pinned(schema.target());
-        let mut losses = outcome.losses;
-        if let Some(source) = resolved.displaced_source() {
-            losses.push(crate::loss::StepLossCode::SourceDialectDisplaced.note(
-                cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
-            ));
-        }
-        // A plan constructs its report once, after every report input is final.
-        let report = ExportReport::native(
-            target,
-            outcome.census,
-            if input.fidelity.is_some() {
-                FidelityResolution::NotConsumed
-            } else {
-                FidelityResolution::NotProvided
-            },
-            WritePath::Synthesized,
-            losses,
-            outcome.notes,
-        );
-        Ok(ExportPlan::buffered(report, bytes))
+        crate::writer::target::plan(self, input, request)
     }
 }
 

@@ -3,6 +3,8 @@
 
 use std::io::{Seek, SeekFrom, Write};
 
+pub(crate) mod target;
+
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
