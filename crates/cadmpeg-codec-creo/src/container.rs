@@ -141,7 +141,7 @@ pub struct LegacyAsciiFraming {
 }
 
 impl Layout {
-    /// A short, stable token for reports and source attributes.
+    /// A short, stable token for human reports.
     pub fn token(self) -> &'static str {
         match self {
             Layout::Nd => "ND",
