@@ -737,15 +737,13 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 complete = false
 
 [[dialect]]
-# `form_code_padding`
-# (crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs):
-# `(version > 0).then_some(if version >= 12_000 { Eight } else { Four })`.
-# The exact comparison is `>= 12_000`.
+# `SldprtDialect::from_declaration` owns the identity boundary and
+# `SldprtDialect::form_code_padding` projects its grammar width.
 id = "sldprt:sw-version-pre-12000"
 title = "SolidWorks part with swVersion below 12000"
 discriminants = { sw_version = "1..11999" }
 seam = "four-byte feature-operation form-code padding, shifting every feature-operation read"
-witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs"
+witness = "code:crates/cadmpeg-codec-sldprt/src/dialect.rs"
 
 [[dialect]]
 # Same site, the `Eight` arm. The boundary value 12000 itself belongs to this
@@ -754,14 +752,14 @@ id = "sldprt:sw-version-12000-plus"
 title = "SolidWorks part with swVersion 12000 or above"
 discriminants = { sw_version = ">= 12000" }
 seam = "eight-byte feature-operation form-code padding"
-witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:33"
+witness = "code:crates/cadmpeg-codec-sldprt/src/dialect.rs"
 
 [[dialect]]
 id = "sldprt:unknown"
 unknown_kind = "recovered-residual"
 title = "SolidWorks part with no usable swVersion declaration"
 discriminants = { sw_version = "absent, not a u32 above zero" }
-witness = "code:crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:32"
+witness = "code:crates/cadmpeg-codec-sldprt/src/dialect.rs"
 
 # --------------------------------------------------------------------------
 # CATIA V5 CATPart

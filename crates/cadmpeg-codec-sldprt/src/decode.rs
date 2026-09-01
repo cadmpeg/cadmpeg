@@ -3099,15 +3099,6 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
     }
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes);
-    source_meta_with_dialect(attributes)
-}
-
-/// Leaves the primary-layer match for `DecodeResult` to mirror into
-/// [`SourceMeta::dialect`].
-///
-/// Non-identity source metadata stays in the attribute map. `sw_name` and
-/// `sldprt_active_partition_unresolved` gate the writer.
-fn source_meta_with_dialect(attributes: BTreeMap<String, String>) -> SourceMeta {
     SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
 }
 
@@ -3357,7 +3348,7 @@ fn build_metadata_ir(
         });
     }
 
-    ir.source = Some(source_meta_with_dialect(attributes));
+    ir.source = Some(SourceMeta::unclassified(crate::dialect::FORMAT, attributes));
     project_design_history(
         &mut ir,
         &histories,

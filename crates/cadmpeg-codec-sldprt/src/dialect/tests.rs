@@ -106,10 +106,9 @@ struct Case {
 
 /// Declarations spanning every arm of the padding rule.
 ///
-/// The rule is `(version > 0).then_some(if version >= 12_000 { Eight } else
-/// { Four })` over `swVersion.parse::<u32>()`
-/// (`resolved_features/operations.rs`), so the arms are: a parse failure, zero,
-/// below 12000, and 12000 or above. 11999 and 12000 pin the boundary.
+/// [`SldprtDialect::form_code_padding`] owns the rule over
+/// `swVersion.parse::<u32>()`, so the arms are: a parse failure, zero, below
+/// 12000, and 12000 or above. 11999 and 12000 pin the boundary.
 const CASES: &[Case] = &[
     Case {
         declaration: None,

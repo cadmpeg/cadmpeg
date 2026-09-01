@@ -156,7 +156,6 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<DialectLayers,
 
 impl SldprtDialect {
     /// Every dialect identity this enum can name.
-    #[cfg(test)]
     pub(crate) const ALL: [Self; 3] = [
         Self::SwVersionPre12000,
         Self::SwVersion12000Plus,
@@ -203,13 +202,7 @@ impl SldprtDialect {
     /// The typed row carried by an existing classification.
     pub(crate) fn from_match(matched: &DialectMatch) -> Option<Self> {
         let id = matched.dialect();
-        [
-            Self::SwVersionPre12000,
-            Self::SwVersion12000Plus,
-            Self::Unknown,
-        ]
-        .into_iter()
-        .find(|dialect| dialect.id() == *id)
+        Self::ALL.into_iter().find(|dialect| dialect.id() == *id)
     }
 
     /// Classifies one document from its `swVersion` declaration. The single
