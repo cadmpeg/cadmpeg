@@ -7,7 +7,6 @@ use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
 
-use crate::dialect::IgesDialect;
 use crate::loss::IgesLossCode;
 
 pub(crate) fn plan(
@@ -74,7 +73,7 @@ fn synthesized_plan(
     replay_failure: Option<String>,
     preservation_eligible: bool,
 ) -> Result<ExportPlan, CodecError> {
-    let target = IgesDialect::fixed_ascii(version).id();
+    let target = crate::dialect::fixed_ascii_id(version);
     let source_available = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))

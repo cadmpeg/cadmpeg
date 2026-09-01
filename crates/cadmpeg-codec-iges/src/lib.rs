@@ -108,7 +108,7 @@ impl IgesVersion {
             Self::V5_3 => (&["5.3"].as_slice(), true),
         };
         TargetDescriptor {
-            id: dialect::IgesDialect::fixed_ascii(self).id(),
+            id: dialect::fixed_ascii_id(self),
             aliases,
             default,
         }

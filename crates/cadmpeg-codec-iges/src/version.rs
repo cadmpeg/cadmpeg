@@ -52,7 +52,7 @@ pub(crate) enum VersionFlag {
 }
 
 impl VersionFlag {
-    const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::V1_0,
         Self::AnsiY1426M1981,
         Self::V2_0,
