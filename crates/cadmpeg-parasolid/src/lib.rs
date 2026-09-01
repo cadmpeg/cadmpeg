@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 
 include!("registry_ids.rs");
 
@@ -165,6 +165,29 @@ pub fn extra_layers(
         .collect()
 }
 
+/// Adds classified Parasolid layers and reports every uniqueness collision.
+///
+/// Hosts own their loss-code vocabulary. This helper owns the shared layer-set
+/// operation and its explanation so NX and SLDPRT cannot describe the same
+/// Parasolid collision differently.
+pub fn push_extras(
+    layers: &mut DialectLayers,
+    extras: impl IntoIterator<Item = DialectMatch>,
+) -> Vec<String> {
+    let mut collisions = Vec::new();
+    for layer in extras {
+        let format = layer.format().to_owned();
+        let instance = layer.instance().unwrap_or("unidentified").to_owned();
+        if layers.try_push(layer).is_err() {
+            collisions.push(format!(
+                "the container produced a duplicate {format} dialect layer at carrier {instance}; \
+                 the later classification was omitted"
+            ));
+        }
+    }
+    collisions
+}
+
 /// Explain why a Parasolid layer was admitted without verification.
 ///
 /// Host codecs own their loss vocabulary. This helper owns the interpretation
@@ -297,6 +320,36 @@ mod tests {
             KnownSchemaAdmission::Verified,
         );
         assert_eq!(one[0].instance(), None);
+    }
+
+    #[test]
+    fn push_extras_preserves_the_first_layer_and_reports_later_collisions() {
+        let mut layers = DialectLayers::of(DialectMatch::admitted(
+            DialectId::parse("nx:splmsstr").expect("valid host dialect id"),
+        ));
+        let first = classify_layer(
+            "SCH_SW_33103_11000",
+            "stream@12",
+            true,
+            KnownSchemaAdmission::Unverified,
+        );
+        let later = classify_layer(
+            "SCH_SW_32001_11000",
+            "stream@12",
+            true,
+            KnownSchemaAdmission::Unverified,
+        );
+
+        let collisions = push_extras(&mut layers, [first.clone(), later]);
+
+        assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [&first]);
+        assert_eq!(
+            collisions,
+            [
+                "the container produced a duplicate parasolid dialect layer at carrier stream@12; \
+              the later classification was omitted"
+            ]
+        );
     }
 
     #[test]

@@ -116,16 +116,10 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
     );
     let (host, matched) = classify_host(&scan.container);
     let mut layers = DialectLayers::of(matched);
-    let mut losses = Vec::new();
-    for layer in extra {
-        let format = layer.format().to_owned();
-        let instance = layer.instance().unwrap_or("unidentified").to_owned();
-        if layers.try_push(layer).is_err() {
-            losses.push(NxLossCode::DialectLayerCollision.note(format!(
-                "the container produced a duplicate {format} dialect layer at carrier {instance}; the later classification was omitted"
-            )));
-        }
-    }
+    let losses = cadmpeg_parasolid::push_extras(&mut layers, extra)
+        .into_iter()
+        .map(|message| NxLossCode::DialectLayerCollision.note(message))
+        .collect();
     LayerClassification {
         host,
         layers,
