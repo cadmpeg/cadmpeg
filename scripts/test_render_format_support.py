@@ -78,9 +78,9 @@ EVALUATIONS = "evaluation = []\n"
 class HeadlineCase(unittest.TestCase):
     """The owner-declared digit is printed without arithmetic."""
 
-    def _format(self, *, level: int = 3, evaluated: frozenset[str] = frozenset()):
+    def _format(self, *, level: int = 3):
         row = renderer.Row("demo:one", "detected", "none")
-        return renderer.Format("demo", level, frozenset({"demo:one"}), evaluated, (row,))
+        return renderer.Format("demo", level, (row,))
 
     def test_headline_is_the_declared_digit(self):
         self.assertEqual(self._format(level=7).headline, "L7")
@@ -153,6 +153,12 @@ class RegistryCase(unittest.TestCase):
 
     def test_a_well_formed_pair_loads(self):
         with self._root() as root, self._targets({"demo": renderer.Target("Demo")}):
+            formats = renderer.load_formats(root)
+            self.assertEqual(formats["demo"].headline, "L3")
+
+    def test_evaluations_are_not_a_renderer_input(self):
+        with self._root() as root, self._targets({"demo": renderer.Target("Demo")}):
+            (root / "docs" / "evaluations.toml").unlink()
             formats = renderer.load_formats(root)
             self.assertEqual(formats["demo"].headline, "L3")
 

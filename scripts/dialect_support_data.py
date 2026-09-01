@@ -11,15 +11,18 @@ IDENTITY_REL = Path("docs") / "dialects.toml"
 SUPPORT_REL = Path("docs") / "dialect-support.toml"
 EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 
+# Formats whose registry rows describe neutral identity or embedded kernel
+# layers rather than a top-level codec with published support surfaces.
+REGISTRY_ONLY_FORMATS = frozenset({"cadir", "acis", "parasolid"})
+
 
 class RegistryDataError(ValueError):
     """The registry documents cannot form one identity/support table."""
 
 
-def load_documents(root: Path) -> tuple[dict, dict, dict]:
-    """Parse the three registry documents under ``root``."""
+def _load_documents(root: Path, relatives: tuple[Path, ...]) -> tuple[dict, ...]:
     documents = []
-    for relative in (IDENTITY_REL, SUPPORT_REL, EVALUATIONS_REL):
+    for relative in relatives:
         path = root / relative
         try:
             with path.open("rb") as handle:
@@ -31,6 +34,20 @@ def load_documents(root: Path) -> tuple[dict, dict, dict]:
         except OSError as error:
             raise RegistryDataError(f"{relative.name}: {error}") from error
     return tuple(documents)
+
+
+def load_identity_support(root: Path) -> tuple[dict, dict]:
+    """Parse the identity and support registries under ``root``."""
+    identity, support = _load_documents(root, (IDENTITY_REL, SUPPORT_REL))
+    return identity, support
+
+
+def load_documents(root: Path) -> tuple[dict, dict, dict]:
+    """Parse the identity, support, and evaluation registries under ``root``."""
+    identity, support, evaluations = _load_documents(
+        root, (IDENTITY_REL, SUPPORT_REL, EVALUATIONS_REL)
+    )
+    return identity, support, evaluations
 
 
 def joined_rows(identity: dict, support: dict) -> tuple[dict, list[tuple[dict, dict]]]:

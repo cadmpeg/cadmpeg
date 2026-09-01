@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Render every published capability table from the dialect registries.
 
-The registries are the only input: ``docs/dialects.toml`` (identity),
-``docs/dialect-support.toml`` (capability), and ``docs/evaluations.toml``
-(maintainer evaluations). This script owns marker-delimited regions inside
+The identity and support registries are the only data input. This script owns
+marker-delimited regions inside
 ``docs/format-support.md``, the root ``README.md``, each codec crate's
 ``README.md``, and each codec crate's ``src/lib.rs`` doc header. Prose outside
 a region is hand-written and is never touched.
@@ -33,12 +32,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from dialect_support_data import RegistryDataError, joined_rows, load_documents
+from dialect_support_data import (
+    REGISTRY_ONLY_FORMATS,
+    RegistryDataError,
+    joined_rows,
+    load_identity_support,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_REL = Path("docs") / "dialects.toml"
 SUPPORT_REL = Path("docs") / "dialect-support.toml"
-EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 LADDER_REL = Path("docs") / "format-support.md"
 README_REL = Path("README.md")
 SELF_TEST_REL = Path("scripts") / "test_render_format_support.py"
@@ -59,11 +62,6 @@ class Target:
 
     name: str
     crate: str | None = None
-
-    @property
-    def registry_only(self) -> bool:
-        return self.crate is None
-
 
 # Every format declared in `docs/dialects.toml` must appear here, and every key
 # here must be a declared format. A new format therefore fails this renderer
@@ -106,12 +104,10 @@ class Row:
 
 @dataclass(frozen=True)
 class Format:
-    """One format's owner-declared level, cut, and rows."""
+    """One format's owner-declared level and rows."""
 
     fmt: str
     level: int | None
-    scored: frozenset[str]
-    evaluated: frozenset[str]
     rows: tuple[Row, ...]
 
     @property
@@ -123,22 +119,13 @@ class Format:
 def load_formats(root: Path) -> dict[str, Format]:
     """Join the registries into per-format row sets."""
     try:
-        identity, capability, evaluations = load_documents(root)
+        identity, capability = load_identity_support(root)
         declared, joined = joined_rows(identity, capability)
     except RegistryDataError as error:
         raise RenderError(str(error)) from error
     format_levels = capability.get("format")
     if not isinstance(format_levels, dict):
         raise RenderError(f"{SUPPORT_REL}: no [format.<id>] entries")
-    evaluation_rows = evaluations.get("evaluation")
-    if not isinstance(evaluation_rows, list):
-        raise RenderError(f"{EVALUATIONS_REL}: no [[evaluation]] rows")
-    evaluated = {
-        row.get("dialect")
-        for row in evaluation_rows
-        if isinstance(row, dict) and isinstance(row.get("dialect"), str)
-    }
-
     grouped: dict[str, list[Row]] = {fmt: [] for fmt in declared}
     for entry, support in joined:
         dialect = entry["id"]
@@ -167,12 +154,9 @@ def load_formats(root: Path) -> dict[str, Format]:
     for fmt, rows in grouped.items():
         block = format_levels.get(fmt)
         level = block.get("level") if isinstance(block, dict) else None
-        scored = block.get("scored", []) if isinstance(block, dict) else []
         result[fmt] = Format(
             fmt=fmt,
             level=level if isinstance(level, int) else None,
-            scored=frozenset(scored if isinstance(scored, list) else []),
-            evaluated=frozenset(evaluated),
             rows=tuple(rows),
         )
     return result
@@ -224,7 +208,7 @@ def ladder_table(formats: dict[str, Format]) -> str:
     rows = [
         (TARGETS[fmt].name, formats[fmt].headline)
         for fmt in TARGETS
-        if not TARGETS[fmt].registry_only
+        if fmt not in REGISTRY_ONLY_FORMATS
     ]
     return f"\n{_table(('Format', 'Level'), rows)}\n"
 
@@ -241,7 +225,7 @@ def readme_lines(formats: dict[str, Format], anchors: dict[str, str]) -> str:
         f"- **{TARGETS[fmt].name}** — {formats[fmt].headline} "
         f"([profile](docs/format-support.md#{anchors[fmt]}))"
         for fmt in TARGETS
-        if not TARGETS[fmt].registry_only
+        if fmt not in REGISTRY_ONLY_FORMATS
     ]
     return "\n" + "\n".join(lines) + "\n"
 
@@ -294,7 +278,7 @@ def render(root: Path) -> dict[Path, str]:
     ladder_rel = LADDER_REL
     ladder = _read(root, ladder_rel)
     anchors = section_anchors(ladder)
-    expected = {fmt for fmt, target in TARGETS.items() if not target.registry_only}
+    expected = set(TARGETS) - REGISTRY_ONLY_FORMATS
     if set(anchors) != expected:
         missing = ", ".join(sorted(expected - set(anchors))) or "none"
         extra = ", ".join(sorted(set(anchors) - expected)) or "none"

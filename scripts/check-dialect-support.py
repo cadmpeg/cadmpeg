@@ -39,12 +39,11 @@ import datetime
 import json
 import re
 import sys
-import tomllib
 import unittest
 from collections import Counter
 from pathlib import Path
 
-from dialect_support_data import RegistryDataError, joined_rows, load_documents
+from dialect_support_data import REGISTRY_ONLY_FORMATS, RegistryDataError, load_documents
 
 ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_REL = Path("docs") / "dialects.toml"
@@ -58,8 +57,12 @@ FORMAT_KEYS = frozenset({"level", "scored"})
 REQUIRED_FORMAT_KEYS = ("level", "scored")
 EVALUATION_KEYS = frozenset({"dialect", "date", "level", "files", "result"})
 REQUIRED_EVALUATION_KEYS = ("dialect", "date", "level", "files", "result")
-REGISTRY_ONLY_FORMATS = frozenset({"acis", "parasolid"})
 PATH_LIKE = re.compile(r"(?:[/\\]|(?:^|\s)\.\.?(?:[/\\]|$)|\b[A-Za-z]:[/\\])")
+
+FIXTURE_DIR_OVERRIDES = {
+    "cadmpeg-codec-freecad": Path("corpus/freecad_fcstd/fixtures"),
+    "cadmpeg-codec-step": Path("crates/cadmpeg-codec-step/tests/fixtures"),
+}
 
 # `L0`..`L9` are the ladder; the other three are the non-score dispositions
 # (design section 6.2). `detected` is the floor an unwitnessed row may claim.
@@ -83,20 +86,6 @@ UNKNOWN_KIND_READS = {
 
 def _is_table(value: object) -> bool:
     return isinstance(value, dict)
-
-
-def _load(path: Path, label: str, failures: list[str]) -> dict | None:
-    if not path.is_file():
-        failures.append(f"{label}: not found")
-        return None
-    try:
-        with path.open("rb") as handle:
-            return tomllib.load(handle)
-    except tomllib.TOMLDecodeError as err:
-        failures.append(f"{label}: parse error: {err}")
-    except OSError as err:
-        failures.append(f"{label}: {err}")
-    return None
 
 
 # --------------------------------------------------------------------------
@@ -370,21 +359,48 @@ def snapshot_dialects(root: Path) -> dict[str, set[str]]:
 def _fixture_candidates(root: Path, crate: str, stem: str) -> list[Path]:
     """Fixture files a golden snapshot basename can name, in harness order.
 
-    The shared harness takes the crate's ``tests/golden/fixtures`` by default
-    and accepts an override (``Harness::with_fixture_dir``). Two overrides are
-    live: STEP reads ``tests/fixtures`` and FreeCAD reads the charter fixtures
-    under ``corpus/freecad_fcstd/fixtures``.
+    The shared harness takes the crate's ``tests/golden/fixtures`` by default.
+    A crate-scoped override replaces that directory; it is never searched for
+    another codec's snapshot.
     """
+    override = FIXTURE_DIR_OVERRIDES.get(crate)
     roots = [
-        root / "crates" / crate / "tests" / "golden" / "fixtures",
-        root / "crates" / crate / "tests" / "fixtures",
-        root / "corpus" / "freecad_fcstd" / "fixtures",
+        root / override
+        if override is not None
+        else root / "crates" / crate / "tests" / "golden" / "fixtures"
     ]
     found: list[Path] = []
     for base in roots:
         if base.is_dir():
             found.extend(sorted(base.rglob(stem + ".*")))
     return found
+
+
+def check_fixture_dir_overrides(root: Path, failures: list[str]) -> None:
+    """Keep the checker's crate-scoped roots aligned with harness overrides."""
+    actual: set[str] = set()
+    crates = root / "crates"
+    if crates.is_dir():
+        for source in crates.glob("*/src/**/*.rs"):
+            try:
+                body = source.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if ".with_fixture_dir(" in body:
+                actual.add(source.relative_to(crates).parts[0])
+    expected = {
+        crate
+        for crate in FIXTURE_DIR_OVERRIDES
+        if (crates / crate / "src").is_dir()
+    }
+    for crate in sorted(actual - expected):
+        failures.append(
+            f"{crate}: Harness::with_fixture_dir has no checker fixture-root override"
+        )
+    for crate in sorted(expected - actual):
+        failures.append(
+            f"{crate}: checker fixture-root override has no Harness::with_fixture_dir call"
+        )
 
 
 def _walk_dialect_ids(node: object) -> set[str]:
@@ -437,13 +453,9 @@ def check(root: Path) -> tuple[list[str], str]:
     if not known:
         failures.append(f"{IDENTITY_REL.as_posix()}: no identity rows to support")
         return failures, ""
-    try:
-        joined_rows(identity, support)
-    except RegistryDataError as error:
-        failures.append(str(error))
-
     formats = check_formats(support.get("format"), known, failures)
     evaluations = check_evaluations(evaluations_doc, known, failures)
+    check_fixture_dir_overrides(root, failures)
     domains = snapshot_domains(root)
 
     rows = support.get("support")

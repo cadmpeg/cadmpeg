@@ -14,7 +14,7 @@ fi
 # Dialect ids are pinned forever, so a bad edit to the registry must not reach
 # a commit. Run the checker's own synthesized-violation suite first: it is the
 # only thing that proves the rules still fire.
-if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$'; then
+if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$|^crates/[^/]+/src/.*\.rs$'; then
   echo "pre-commit: scripts/check-dialects.py"
   python3 scripts/check-dialects.py --self-test
   python3 scripts/check-dialects.py
@@ -23,7 +23,7 @@ fi
 # The capability registry cross-references the identity registry, fixture tree,
 # and golden snapshots. Run its docs-only checks whenever an input is staged.
 if git diff --cached --name-only \
-    | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^scripts/(check-dialect-support\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
+    | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^scripts/(check-dialect-support\.py|dialect_support_data\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
   echo "pre-commit: scripts/check-dialect-support.py"
   python3 scripts/check-dialect-support.py --self-test
   python3 scripts/check-dialect-support.py
@@ -50,7 +50,7 @@ fi
 # must not reach a commit. Run it whenever a registry, the renderer, or a file
 # that owns a generated region is staged.
 if git diff --cached --name-only \
-    | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
+    | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(dialect_support_data\.py|render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
   echo "pre-commit: scripts/render-format-support.py --check"
   python3 scripts/render-format-support.py --self-test
   python3 scripts/render-format-support.py --check
