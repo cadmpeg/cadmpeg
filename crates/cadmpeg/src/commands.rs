@@ -153,7 +153,12 @@ pub fn inspect(
     let summary = inspection
         .map_err(anyhow::Error::new)
         .with_context(|| format!("inspecting {}", path.display()))?;
-    debug_assert_eq!(summary.format(), format);
+    if summary.format() != format {
+        bail!(
+            "input registry selected format {format:?}, but its inspector classified primary format {:?}",
+            summary.format()
+        );
+    }
     write_json_report(
         path,
         report_path,
