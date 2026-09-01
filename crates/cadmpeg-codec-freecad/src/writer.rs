@@ -12,25 +12,21 @@ use std::collections::HashSet;
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use zip::write::SimpleFileOptions;
 
-use crate::native::{
-    DocumentFacts, EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord,
-};
+use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord};
 use target::Resolution;
 
 pub(crate) trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
 pub(crate) fn write(
-    ir: &CadIr,
     output: &mut dyn Write,
-    resolution: &Resolution,
+    resolution: &Resolution<'_>,
 ) -> Result<WriteOutcome, CodecError> {
     let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(ir, &mut staged, resolution)?;
+    let report = write_seekable(&mut staged, resolution)?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, output)?;
     Ok(report)
@@ -43,15 +39,13 @@ pub(crate) fn write(
 /// dialect written here is the one the retained document already declares.
 /// This function carries out that decision; it does not gate it.
 pub(crate) fn write_seekable(
-    ir: &CadIr,
     output: &mut dyn WriteSeek,
-    resolution: &Resolution,
+    resolution: &Resolution<'_>,
 ) -> Result<WriteOutcome, CodecError> {
     let target = resolution.dialect().id();
-    let namespace = ir
-        .native
-        .namespace("fcstd")
-        .ok_or_else(|| CodecError::Malformed("FCStd native namespace is absent".into()))?;
+    let ir = resolution.ir();
+    let namespace = resolution.namespace();
+    let document = resolution.document();
     let entry_records = namespace
         .arenas
         .get("entries")
@@ -72,19 +66,6 @@ pub(crate) fn write_seekable(
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
-    let documents = namespace.arena_as::<DocumentFacts>("document")?;
-    let [document] = documents.as_slice() else {
-        return Err(CodecError::Malformed(
-            "FCStd native graph does not have exactly one document record".into(),
-        ));
-    };
-    if crate::dialect::FcstdDialect::from_schema_version(&document.schema_version)
-        != resolution.dialect()
-    {
-        return Err(CodecError::Malformed(
-            "FCStd document schema no longer matches the resolved target".into(),
-        ));
-    }
     validate_entry_names(&entries)?;
     let source_document_slot = entries
         .iter()
