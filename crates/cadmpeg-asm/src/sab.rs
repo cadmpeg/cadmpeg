@@ -30,6 +30,22 @@ pub(crate) fn vec3_le_at(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
     ])
 }
 
+/// Whether an exact short identifier token begins at `at`.
+///
+/// Header partition scanners use this after the framed solved records. Keeping
+/// the token law with SAB framing prevents ACIS and ASM headers from defining
+/// subtly different boundary recognizers.
+pub(crate) fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bool {
+    let Some((&0x0d, rest)) = bytes.get(at..).and_then(|tail| tail.split_first()) else {
+        return false;
+    };
+    let Some((&length, payload)) = rest.split_first() else {
+        return false;
+    };
+    usize::from(length) == expected.len()
+        && payload.get(..usize::from(length)) == Some(expected.as_bytes())
+}
+
 /// A decoded SAB token. The codec assigns typed values to the payload it
 /// consumes; framing preserves every token so record boundaries stay exact.
 #[derive(Debug, Clone, PartialEq)]
@@ -546,7 +562,21 @@ fn frame_impl(
 
 #[cfg(test)]
 mod tests {
-    use super::{frame, frame_history, payload_token_offset};
+    use super::{exact_identifier_at, frame, frame_history, payload_token_offset};
+
+    #[test]
+    fn exact_identifier_requires_the_tag_length_and_complete_payload() {
+        let bytes = b"prefix\x0d\x0bdelta_state suffix";
+        let at = "prefix".len();
+        assert!(exact_identifier_at(bytes, at, "delta_state"));
+        assert!(!exact_identifier_at(bytes, at, "delta"));
+        assert!(!exact_identifier_at(&bytes[..at + 7], at, "delta_state"));
+        assert!(!exact_identifier_at(
+            b"prefix\x07\x0bdelta_state",
+            at,
+            "delta_state"
+        ));
+    }
 
     #[test]
     fn history_framer_accepts_only_the_final_record_at_eof() {

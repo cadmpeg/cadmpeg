@@ -257,6 +257,6 @@ fn a_non_stream_input_is_refused() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_))
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::WrongFormat(_))
     ));
 }
