@@ -112,8 +112,17 @@ pub enum Layout {
     Depdb,
     /// ASCII `P_OBJECT` persistence used before the ND and DEPDB byte grammars.
     LegacyAscii,
-    /// Neither signature was conclusive.
-    Unknown,
+    /// No verified layout matched, with the failed discriminant retained.
+    Unknown(UnknownLayout),
+}
+
+/// Why no verified Creo persistence layout matched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownLayout {
+    /// `DEPDB_DATA` was present but did not start with its required root record.
+    DepdbRootMissing,
+    /// No DEPDB root, ND decoration, or complete legacy object was present.
+    NoDiscriminant,
 }
 
 /// Header metadata from a complete legacy ASCII `P_OBJECT` frame.
@@ -138,7 +147,7 @@ impl Layout {
             Layout::Nd => "ND",
             Layout::Depdb => "DEPDB",
             Layout::LegacyAscii => "LEGACY_ASCII",
-            Layout::Unknown => "unknown",
+            Layout::Unknown(_) => "unknown",
         }
     }
 }
@@ -939,14 +948,14 @@ fn identify_layout(data: &[u8], sections: &[Section], has_legacy_ascii_object: b
         if has_depdb_root {
             Layout::Depdb
         } else {
-            Layout::Unknown
+            Layout::Unknown(UnknownLayout::DepdbRootMissing)
         }
     } else if has_nd_decoration {
         Layout::Nd
     } else if has_legacy_ascii_object {
         Layout::LegacyAscii
     } else {
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     }
 }
 

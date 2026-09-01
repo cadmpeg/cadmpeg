@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container::{self, Layout};
+use crate::container::{self, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
 use crate::test_support::*;
 use crate::CreoCodec;
@@ -1056,13 +1056,13 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
     let incomplete = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n@P_object 1 0\n".to_vec();
     assert_eq!(
         container::scan_bytes(incomplete).framing.layout,
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
     let empty_schema = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT \n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER";
     assert_eq!(
         container::scan_bytes(empty_schema).framing.layout,
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 
     let embedded = build_prt_raw(
@@ -1074,6 +1074,6 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
     );
     assert_eq!(
         container::scan_bytes(embedded).framing.layout,
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 }
