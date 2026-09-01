@@ -70,8 +70,6 @@ pub(crate) struct OutputDescriptor {
 /// One compiled format and all registration facts owned by the registry.
 pub(crate) struct FormatDescriptor {
     pub id: &'static str,
-    /// Input-only carrier spellings not owned by `docs/dialects.toml`.
-    pub input_aliases: &'static [&'static str],
     pub input_extensions: &'static [&'static str],
     pub decoder: Option<DecoderConstructor>,
     pub output: Option<OutputDescriptor>,
@@ -91,19 +89,17 @@ pub(crate) struct FormatDescriptor {
     feature = "sat"
 ))]
 macro_rules! descriptor {
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr) => {
+    ($id:literal, $input_exts:expr, $decoder:expr) => {
         FormatDescriptor {
             id: $id,
-            input_aliases: $inputs,
             input_extensions: $input_exts,
             decoder: Some($decoder),
             output: None,
         }
     };
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
+    ($id:literal, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
         FormatDescriptor {
             id: $id,
-            input_aliases: $inputs,
             input_extensions: $input_exts,
             decoder: Some($decoder),
             output: Some(OutputDescriptor {
@@ -121,7 +117,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
     #[cfg(feature = "fcstd")]
     descriptor!(
         "fcstd",
-        &[],
         &["fcstd"],
         || Box::new(cadmpeg_codec_freecad::FcstdCodec),
         Format::Fcstd,
@@ -133,7 +128,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
     #[cfg(feature = "f3d")]
     descriptor!(
         "f3d",
-        &[],
         &["f3d", "f3z"],
         || Box::new(cadmpeg_codec_f3d::F3dCodec),
         Format::F3d,
@@ -143,13 +137,12 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_f3d::F3dCodec)
     ),
     #[cfg(feature = "inventor")]
-    descriptor!("inventor", &["ipt", "iam"], &["ipt", "iam"], || Box::new(
+    descriptor!("inventor", &["ipt", "iam"], || Box::new(
         cadmpeg_codec_inventor::InventorCodec
     )),
     #[cfg(feature = "sldprt")]
     descriptor!(
         "sldprt",
-        &[],
         &["sldprt"],
         || Box::new(cadmpeg_codec_sldprt::SldprtCodec),
         Format::Sldprt,
@@ -159,19 +152,16 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
     ),
     #[cfg(feature = "catia")]
-    descriptor!("catia", &["catpart"], &["catpart"], || Box::new(
+    descriptor!("catia", &["catpart"], || Box::new(
         cadmpeg_codec_catia::CatiaCodec
     )),
     #[cfg(feature = "creo")]
-    descriptor!("creo", &[], &["prt"], || Box::new(
-        cadmpeg_codec_creo::CreoCodec
-    )),
+    descriptor!("creo", &["prt"], || Box::new(cadmpeg_codec_creo::CreoCodec)),
     #[cfg(feature = "nx")]
-    descriptor!("nx", &[], &["prt"], || Box::new(cadmpeg_codec_nx::NxCodec)),
+    descriptor!("nx", &["prt"], || Box::new(cadmpeg_codec_nx::NxCodec)),
     #[cfg(feature = "rhino")]
     descriptor!(
         "rhino",
-        &[],
         &["3dm"],
         || Box::new(cadmpeg_codec_rhino::RhinoCodec),
         Format::Rhino,
@@ -183,7 +173,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
     #[cfg(feature = "step")]
     descriptor!(
         "step",
-        &[],
         &["step", "stp"],
         || Box::new(cadmpeg_codec_step::StepCodec::default()),
         Format::Step,
@@ -195,7 +184,6 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
     #[cfg(feature = "iges")]
     descriptor!(
         "iges",
-        &[],
         &["iges", "igs"],
         || Box::new(cadmpeg_codec_iges::IgesCodec),
         Format::Iges,
@@ -205,15 +193,11 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         || Box::new(cadmpeg_codec_iges::IgesCodec)
     ),
     #[cfg(feature = "sat")]
-    descriptor!(
-        "sat",
-        &["smt", "smb", "sab"],
-        &["sat", "sab", "smt", "smb"],
-        || Box::new(cadmpeg_codec_sat::SatCodec)
-    ),
+    descriptor!("sat", &["sat", "sab", "smt", "smb"], || Box::new(
+        cadmpeg_codec_sat::SatCodec
+    )),
     FormatDescriptor {
         id: "cadir",
-        input_aliases: &[],
         input_extensions: &["cadir", "json"],
         decoder: None,
         output: Some(OutputDescriptor {
@@ -257,10 +241,10 @@ pub(crate) fn writable(
 /// Resolves the CLI's forced-input vocabulary from the compiled descriptors.
 #[must_use]
 pub fn forced_input(name: &str) -> Option<ForcedInput> {
-    let canonical = crate::registry::canonical_format_name(name);
-    let descriptor = FORMAT_DESCRIPTORS.iter().find(|descriptor| {
-        canonical == Some(descriptor.id) || descriptor.input_aliases.contains(&name)
-    })?;
+    let canonical = crate::registry::canonical_format_name(name)?;
+    let descriptor = FORMAT_DESCRIPTORS
+        .iter()
+        .find(|descriptor| canonical == descriptor.id)?;
     Some(if descriptor.decoder.is_some() {
         ForcedInput::Codec(descriptor.id)
     } else {
@@ -270,9 +254,9 @@ pub fn forced_input(name: &str) -> Option<ForcedInput> {
 
 /// Every forced-input spelling accepted by this build.
 pub fn input_names() -> impl Iterator<Item = &'static str> {
-    FORMAT_DESCRIPTORS.iter().flat_map(|descriptor| {
-        crate::registry::format_words(descriptor.id).chain(descriptor.input_aliases.iter().copied())
-    })
+    FORMAT_DESCRIPTORS
+        .iter()
+        .flat_map(|descriptor| crate::registry::format_words(descriptor.id))
 }
 
 #[cfg(test)]
@@ -315,16 +299,14 @@ mod tests {
     }
 
     #[test]
-    fn every_registry_word_and_input_only_alias_resolves_through_its_descriptor() {
+    fn every_registry_word_resolves_through_its_descriptor() {
         for descriptor in FORMAT_DESCRIPTORS {
             let expected = if descriptor.decoder.is_some() {
                 ForcedInput::Codec(descriptor.id)
             } else {
                 ForcedInput::Cadir
             };
-            for name in crate::registry::format_words(descriptor.id)
-                .chain(descriptor.input_aliases.iter().copied())
-            {
+            for name in crate::registry::format_words(descriptor.id) {
                 assert_eq!(forced_input(name), Some(expected), "{name}");
             }
         }

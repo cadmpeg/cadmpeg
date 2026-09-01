@@ -11,8 +11,10 @@
 #                      enumerable from the format's own documentation.
 #                      complete = false means the rows are grammar classes
 #                      plus a mandatory `unknown` row.
-#                      aliases are other output-format words. The canonical id
-#                      and aliases together own the format-name vocabulary.
+#                      aliases are other CLI format words. The canonical id and
+#                      aliases together own both input and output format-name
+#                      vocabularies. Ambiguous filename extensions are not
+#                      format words.
 #   [[dialect]]        id            `<format>:<name>`, lowercase-hyphenated,
 #                                    stable forever.
 #                      title         human-facing name.
@@ -800,6 +802,7 @@ witness = "code:crates/cadmpeg-codec-sldprt/src/dialect.rs"
 # `complete = false`: the CATIA V5 storage-family space is not published.
 [format.catia]
 complete = false
+aliases = ["catpart"]
 
 [[dialect]]
 # `Variant::StandardNested` (variant.rs:16), selected when
@@ -1111,6 +1114,7 @@ witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs"
 # goldens are code-built. Both rows rest on code.
 [format.inventor]
 complete = false
+aliases = ["iam", "ipt"]
 
 [[dialect]]
 id = "inventor:cfb3-rse31-meta8"
@@ -1150,6 +1154,7 @@ witness = "code:crates/cadmpeg-codec-inventor/src/dialect.rs:230"
 # construction path for a `DialectMatch`.
 [format.sat]
 complete = false
+aliases = ["sab", "smb", "smt"]
 
 [[dialect]]
 # `StreamKind::AsmBinary`. Magic prefix `ASM BinaryFile`
