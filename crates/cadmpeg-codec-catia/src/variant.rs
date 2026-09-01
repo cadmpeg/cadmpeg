@@ -11,8 +11,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
     /// Nested `V5_CFV2` with a `30 04 04 ff` FBB spine followed by the standard
-    /// `10 24 04 ff ff 00 00 00` edge-table delimiter: the family this codec
-    /// decodes geometry for.
+    /// `10 24 04 ff ff 00 00 00` edge-table delimiter. The standard route
+    /// decodes its geometry.
     StandardNested,
     /// Nested `V5_CFV2` with an FBB spine and `05 08 01` vertices but no standard
     /// edge-table delimiter (its post-FBB edge rows use width-selected handles
@@ -25,8 +25,8 @@ pub enum Variant {
     FloatPackedInnerNoFbb,
     /// A coherent E5 (`E5 0D 03`) record stream carries the geometry.
     E5Stream,
-    /// A nested `V5_CFV2` whose directory catalogues no BREP body (the body sits
-    /// in the contiguous inner region before the directory); not decoded here.
+    /// A nested `V5_CFV2` whose directory catalogues no BREP body. The freeform
+    /// route decodes the contiguous inner body before the directory.
     InnerNoDirectory,
     /// None of the decodable families' invariants held.
     Unknown,
