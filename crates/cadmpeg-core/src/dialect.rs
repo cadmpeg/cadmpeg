@@ -38,8 +38,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A registry dialect id, for example `"rhino:archive-80"`.
 ///
-/// Canonical form is `<format>:<name>`, lowercase and hyphenated, stable
-/// forever. Outside the owning codec the validated id is an opaque label.
+/// Canonical form is `<format>:<name>`. The format contains lowercase ASCII
+/// letters and digits. The name also admits dots and hyphens, but a hyphen
+/// cannot be first or last. Outside the owning codec the validated id is an
+/// opaque label.
 ///
 /// Serializes and deserializes as the plain string. Read it with
 /// [`DialectId::as_str`] or print it; there is no other access to the raw
@@ -91,27 +93,34 @@ const fn valid_dialect_id(id: &str) -> bool {
     let mut index = 0;
     let mut colon = None;
     while index < bytes.len() {
-        let byte = bytes[index];
-        if byte == b':' {
+        if bytes[index] == b':' {
             if colon.is_some() || index == 0 || index + 1 == bytes.len() {
                 return false;
             }
             colon = Some(index);
-        } else if (!byte.is_ascii_lowercase()
-            && !byte.is_ascii_digit()
-            && byte != b'-'
-            && byte != b'.')
-            || (byte == b'-'
-                && (index == 0
-                    || index + 1 == bytes.len()
-                    || bytes[index - 1] == b':'
-                    || bytes[index + 1] == b':'))
-        {
+        }
+        index += 1;
+    }
+    let Some(colon) = colon else {
+        return false;
+    };
+    index = 0;
+    while index < colon {
+        let byte = bytes[index];
+        if !byte.is_ascii_lowercase() && !byte.is_ascii_digit() {
             return false;
         }
         index += 1;
     }
-    colon.is_some()
+    index = colon + 1;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if !byte.is_ascii_lowercase() && !byte.is_ascii_digit() && byte != b'-' && byte != b'.' {
+            return false;
+        }
+        index += 1;
+    }
+    bytes[colon + 1] != b'-' && bytes[bytes.len() - 1] != b'-'
 }
 
 /// A string is not a canonical dialect id.
@@ -643,6 +652,12 @@ mod tests {
 
     use super::*;
 
+    #[derive(serde::Deserialize)]
+    struct DialectIdConformance {
+        valid: Vec<String>,
+        invalid: Vec<String>,
+    }
+
     fn layer(format: &str) -> DialectMatch {
         DialectMatch::admitted(DialectId::parse(format!("{format}:known")).unwrap())
     }
@@ -672,6 +687,21 @@ mod tests {
         ] {
             serde_json::from_value::<DialectId>(serde_json::json!(id))
                 .expect_err("a malformed dialect id must be rejected");
+        }
+    }
+
+    #[test]
+    fn dialect_id_matches_the_shared_conformance_corpus() {
+        let cases: DialectIdConformance =
+            toml::from_str(include_str!("../../../docs/dialect-id-conformance.toml")).unwrap();
+        for id in cases.valid {
+            DialectId::parse(id.clone()).unwrap_or_else(|_| panic!("valid dialect id {id:?}"));
+        }
+        for id in cases.invalid {
+            assert!(
+                DialectId::parse(id.clone()).is_err(),
+                "invalid dialect id {id:?}"
+            );
         }
     }
 

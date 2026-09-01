@@ -30,6 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_REL = Path("docs") / "dialects.toml"
+ID_CONFORMANCE_REL = Path("docs") / "dialect-id-conformance.toml"
 SELF_TEST_REL = Path("scripts") / "test_check_dialects.py"
 
 # The schema keys a `[[dialect]]` row may carry. Anything else is a typo or an
@@ -61,6 +62,63 @@ FORMAT_ID = re.compile(r"[a-z0-9]+")
 FORMAT_KEYS = frozenset({"complete", "aliases"})
 # Dots are legal in a dialect name: `iges:5.3-fixed-ascii`.
 DIALECT_NAME = re.compile(r"[a-z0-9.-]+")
+
+
+def valid_dialect_name(name: str) -> bool:
+    """Return whether ``name`` has the canonical dialect-name grammar."""
+    return bool(
+        DIALECT_NAME.fullmatch(name)
+        and not name.startswith("-")
+        and not name.endswith("-")
+    )
+
+
+def valid_dialect_id(raw_id: str) -> bool:
+    """Return whether ``raw_id`` has the canonical Rust/registry grammar."""
+    if raw_id.count(":") != 1:
+        return False
+    head, name = raw_id.split(":")
+    return bool(FORMAT_ID.fullmatch(head) and valid_dialect_name(name))
+
+
+def check_id_conformance(root: Path, failures: list[str]) -> None:
+    """Require the checker to satisfy the corpus shared with ``DialectId``."""
+    path = root / ID_CONFORMANCE_REL
+    if not path.is_file():
+        failures.append(f"{ID_CONFORMANCE_REL.as_posix()}: not found")
+        return
+    try:
+        with path.open("rb") as handle:
+            cases = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as err:
+        failures.append(f"{ID_CONFORMANCE_REL.as_posix()}: {err}")
+        return
+    valid = cases.get("valid")
+    invalid = cases.get("invalid")
+    if (
+        not isinstance(valid, list)
+        or not valid
+        or not all(isinstance(case, str) for case in valid)
+    ):
+        failures.append(
+            f"{ID_CONFORMANCE_REL.as_posix()}: valid must be a non-empty string list"
+        )
+        return
+    if (
+        not isinstance(invalid, list)
+        or not invalid
+        or not all(isinstance(case, str) for case in invalid)
+    ):
+        failures.append(
+            f"{ID_CONFORMANCE_REL.as_posix()}: invalid must be a non-empty string list"
+        )
+        return
+    for case in valid:
+        if not valid_dialect_id(case):
+            failures.append(f"{ID_CONFORMANCE_REL.as_posix()}: valid case rejected: {case!r}")
+    for case in invalid:
+        if valid_dialect_id(case):
+            failures.append(f"{ID_CONFORMANCE_REL.as_posix()}: invalid case accepted: {case!r}")
 
 
 def _is_table(value: object) -> bool:
@@ -201,8 +259,10 @@ def check_row(row: object, index: int, formats: dict, root: Path, failures: list
                 fmt = head
                 if head not in formats:
                     failures.append(f"{label}: no [format.{head}] entry")
-            if not DIALECT_NAME.fullmatch(name):
-                failures.append(f"{label}: name must be lowercase [a-z0-9.-]+")
+            if not valid_dialect_name(name):
+                failures.append(
+                    f"{label}: name must be lowercase [a-z0-9.-]+ and must not start or end with a hyphen"
+                )
             else:
                 dialect_id = raw_id
 
@@ -305,6 +365,8 @@ def check(root: Path) -> tuple[list[str], str]:
         return [f"{REGISTRY_REL.as_posix()}: parse error: {err}"], ""
     except OSError as err:
         return [f"{REGISTRY_REL.as_posix()}: {err}"], ""
+
+    check_id_conformance(root, failures)
 
     formats = check_formats(data.get("format"), failures)
 

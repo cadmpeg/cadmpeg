@@ -48,6 +48,9 @@ class RegistryCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
+            (root / checker.ID_CONFORMANCE_REL).write_bytes(
+                (REPO / checker.ID_CONFORMANCE_REL).read_bytes()
+            )
             if text is not None:
                 (root / "docs" / "dialects.toml").write_text(text, encoding="utf-8")
                 ids = re.findall(r'^id = "([^"]+)"$', text, re.MULTILINE)

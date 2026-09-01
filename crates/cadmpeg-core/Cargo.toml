@@ -23,5 +23,8 @@ schemars = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+toml.workspace = true
+
 [lints]
 workspace = true
