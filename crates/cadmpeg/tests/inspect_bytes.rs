@@ -972,6 +972,7 @@ fn container_json_lists_entries_under_the_envelope() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schema_version"], 7);
     assert_eq!(value["command"], "inspect container");
+    assert!(value["generator"].as_str().unwrap().starts_with("cadmpeg "));
     assert_eq!(value["container_kind"], "zip");
     let entries = value["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
@@ -1129,6 +1130,7 @@ fn find_json_emits_the_versioned_envelope() {
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect find");
+    assert!(value["generator"].as_str().unwrap().starts_with("cadmpeg "));
     assert_eq!(value["hits"], serde_json::json!([4, 14]));
     assert_eq!(value["truncated"], false);
 }

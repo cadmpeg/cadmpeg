@@ -464,11 +464,7 @@ fn find(args: &FindArgs) -> Result<()> {
     let hits = search::find_all(&bytes, &pattern, limit);
     let truncated = limit.is_some_and(|max| hits.len() >= max);
     if args.json {
-        let envelope = serde_json::json!({
-            "schema_version": crate::commands::CLI_SCHEMA_VERSION,
-            "command": "inspect find",
-            "status": "ok",
-            "refusal": null,
+        let payload = serde_json::json!({
             "pattern": described,
             "pattern_bytes": pattern.len(),
             "truncated": truncated,
@@ -476,7 +472,7 @@ fn find(args: &FindArgs) -> Result<()> {
         });
         println!(
             "{}",
-            serde_json::to_string_pretty(&envelope).expect("envelope serializes")
+            crate::commands::reporting::command_report_json("inspect find", &payload, None)?
         );
         return Ok(());
     }

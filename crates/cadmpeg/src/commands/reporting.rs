@@ -282,7 +282,7 @@ impl<'a, P> CommandReport<'a, P> {
     }
 }
 
-pub(super) fn command_report_json<P: Serialize>(
+pub(crate) fn command_report_json<P: Serialize>(
     command: &'static str,
     payload: P,
     refusal: Option<&ConversionRefusal>,

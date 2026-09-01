@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Command execution, artifact writing, and human-readable reports.
 
-mod reporting;
+pub(crate) mod reporting;
 
 use reporting::{
     command_report_json, fidelity_diff, fidelity_differs, losses, print_check_report,
