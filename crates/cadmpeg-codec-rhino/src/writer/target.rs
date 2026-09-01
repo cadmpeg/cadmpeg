@@ -2,7 +2,7 @@
 //! Rhino target resolution and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
 use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
 
 use crate::loss::RhinoLossCode;
@@ -21,14 +21,8 @@ const OFF_CATALOG_SOURCE_REASON: &str =
 /// Resolve the request against the source and synthesize the selected archive.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    request: TargetRequest<'_>,
+    resolved: &ResolvedWrite,
 ) -> Result<ExportPlan, CodecError> {
-    let resolved = resolve_write_request(
-        input.ir,
-        request,
-        crate::dialect::FORMAT,
-        RhinoArchiveVersion::TARGETS,
-    )?;
     let Some(entry) = resolved.catalog_entry() else {
         return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
     };

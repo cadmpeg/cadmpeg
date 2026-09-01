@@ -190,19 +190,15 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
 
 struct NotImplementedEncoder;
 
-impl Encoder for NotImplementedEncoder {
-    fn id(&self) -> &'static str {
-        "not-implemented-test"
-    }
+impl cadmpeg_ir::codec::EncoderBackend for NotImplementedEncoder {
+    const FORMAT: &'static str = "not-implemented-test";
+    const TARGET_DOMAIN: cadmpeg_ir::codec::EncoderTargetDomain =
+        cadmpeg_ir::codec::EncoderTargetDomain::DialectFree;
 
-    fn targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor] {
-        &[]
-    }
-
-    fn plan(
+    fn plan_resolved(
         &self,
         _input: EncodeInput<'_>,
-        _request: TargetRequest<'_>,
+        _target: cadmpeg_ir::codec::ResolvedEncoderTarget,
     ) -> Result<ExportPlan, cadmpeg_core::CodecError> {
         Err(cadmpeg_core::CodecError::NotImplemented(
             "writer path is not implemented".into(),
@@ -314,7 +310,7 @@ fn an_unwritable_format_is_a_typed_plan_refusal() {
 #[cfg(feature = "step")]
 #[test]
 fn rejecting_export_losses_does_not_name_a_target() {
-    let target = export_target(TargetSelection::new(Format::Step, None)).unwrap();
+    let target = export_target(TargetSelection::new(Format::Step, None));
 
     assert!(target.selection.request.is_none(), "{:?}", target.selection);
     assert_eq!(target.selection.request(), TargetRequest::Inherit);
@@ -322,8 +318,7 @@ fn rejecting_export_losses_does_not_name_a_target() {
     let named = export_target(TargetSelection::new(
         Format::Step,
         Some("step:ap242-e3".to_owned()),
-    ))
-    .unwrap();
+    ));
     assert_eq!(
         named.selection.request(),
         TargetRequest::Explicit("step:ap242-e3")
@@ -346,8 +341,7 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
         let target = export_target(TargetSelection::new(
             Format::Rhino,
             Some(spelling.to_owned()),
-        ))
-        .unwrap();
+        ));
         assert_eq!(
             target.selection.request(),
             TargetRequest::Explicit(spelling)
@@ -366,20 +360,23 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
     }
 }
 
-/// A dialect outside the catalog is refused before any input is decoded.
+/// A dialect outside the catalog reaches the encoder and is refused by the
+/// sealed planning boundary.
 #[cfg(feature = "iges")]
 #[test]
-fn an_unknown_dialect_is_refused_before_decode_with_its_catalog() {
-    let error = export_target(TargetSelection::new(
+fn an_unknown_dialect_is_refused_by_plan_with_its_catalog() {
+    let target = export_target(TargetSelection::new(
         Format::Iges,
         Some("ap242e3".to_owned()),
-    ))
-    .err()
-    .expect("a STEP alias is not an IGES target");
-    let refusal = error
-        .downcast_ref::<ConversionRefusal>()
-        .expect("target admission is a typed refusal");
-    assert!(refusal.decode_report().is_none());
+    ));
+    let error = target
+        .encoder
+        .plan(
+            EncodeInput::new(&CadIr::empty(cadmpeg_ir::units::Units::default()), None),
+            target.selection.request(),
+        )
+        .err()
+        .expect("a STEP alias is not an IGES target");
     let message = error.to_string();
     assert!(message.contains("ap242e3"), "{message}");
     assert!(message.contains("iges:5.3-fixed-ascii"), "{message}");

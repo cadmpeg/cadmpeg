@@ -1912,3 +1912,52 @@ crate = "cadmpeg-codec-step"
 kind = "signature"
 item = "cadmpeg_codec_step::StepSchema::target -> descriptor"
 reason = "the public writer vocabulary exposes its typed TargetDescriptor row instead of an unvalidated dialect string"
+
+[[change]]
+commit = "985fbb18d0ad7172ba0c482f1960c6a7acfbb467"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::codec::Encoder implementation surface -> EncoderBackend"
+reason = "the sealed Encoder blanket implementation resolves every TargetRequest through the backend format and declared catalog before a codec can plan, so external implementations move to the checked EncoderBackend surface"
+
+[[change]]
+commit = "985fbb18d0ad7172ba0c482f1960c6a7acfbb467"
+crate = "cadmpeg-codec-f3d"
+kind = "trait_impl"
+item = "impl Encoder for cadmpeg_codec_f3d::F3dCodec -> EncoderBackend"
+reason = "the shared Encoder blanket implementation owns target resolution against the codec's declared catalog"
+
+[[change]]
+commit = "985fbb18d0ad7172ba0c482f1960c6a7acfbb467"
+crate = "cadmpeg-codec-freecad"
+kind = "trait_impl"
+item = "impl Encoder for cadmpeg_codec_freecad::FcstdCodec -> EncoderBackend"
+reason = "the shared Encoder blanket implementation owns target resolution against the codec's declared catalog"
+
+[[change]]
+commit = "985fbb18d0ad7172ba0c482f1960c6a7acfbb467"
+crate = "cadmpeg-codec-iges"
+kind = "trait_impl"
+item = "impl Encoder for cadmpeg_codec_iges::IgesCodec -> EncoderBackend"
+reason = "the shared Encoder blanket implementation owns target resolution against the codec's declared catalog"
+
+[[change]]
+commit = "985fbb18d0ad7172ba0c482f1960c6a7acfbb467"
+crate = "cadmpeg-codec-rhino"
+kind = "trait_impl"
+item = "impl Encoder for cadmpeg_codec_rhino::RhinoCodec -> EncoderBackend"
+reason = "the shared Encoder blanket implementation owns target resolution against the codec's declared catalog"
+
+[[change]]
+commit = "985fbb18d0ad7172ba0c482f1960c6a7acfbb467"
+crate = "cadmpeg-codec-sldprt"
+kind = "trait_impl"
+item = "impl Encoder for cadmpeg_codec_sldprt::SldprtCodec -> EncoderBackend"
+reason = "the shared Encoder blanket implementation owns target resolution against the codec's declared catalog"
+
+[[change]]
+commit = "985fbb18d0ad7172ba0c482f1960c6a7acfbb467"
+crate = "cadmpeg-codec-step"
+kind = "trait_impl"
+item = "impl Encoder for cadmpeg_codec_step::StepCodec -> EncoderBackend"
+reason = "the shared Encoder blanket implementation owns target resolution against the codec's declared catalog"

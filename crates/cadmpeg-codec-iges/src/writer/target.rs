@@ -3,7 +3,7 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{CadIr, FidelityResolution, SourceFidelity, WritePath};
 
@@ -12,14 +12,8 @@ use crate::loss::IgesLossCode;
 
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    request: TargetRequest<'_>,
+    resolved: &ResolvedWrite,
 ) -> Result<ExportPlan, CodecError> {
-    let resolved = resolve_write_request(
-        input.ir,
-        request,
-        crate::dialect::FORMAT,
-        crate::IgesVersion::TARGETS,
-    )?;
     let Some(entry) = resolved.catalog_entry() else {
         return match replay_bytes(input.ir, input.fidelity)? {
             Replay::Replayed { bytes } => {

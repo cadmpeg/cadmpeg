@@ -402,21 +402,7 @@ pub fn convert(
             return Err(error);
         }
     };
-    let target = match export_target(selection) {
-        Ok(target) => target,
-        Err(error) => {
-            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
-                write_refusal_command_report(
-                    path,
-                    conversion.report.as_deref(),
-                    conversion.report_overwrite,
-                    "convert",
-                    refusal,
-                );
-            }
-            return Err(error);
-        }
-    };
+    let target = export_target(selection);
     if let Some(report_path) = conversion.report.as_deref() {
         ArtifactStore::check_output_path(path, report_path, conversion.report_overwrite)?;
         if let Some(destination) = conversion.policy.destination.path() {

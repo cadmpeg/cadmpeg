@@ -3,7 +3,7 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 use super::*;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder, TargetRequest};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 

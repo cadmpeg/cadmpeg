@@ -131,9 +131,9 @@ use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use std::io::Write;
 
-use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan, TargetRequest,
+    CodecBackend, Confidence, DecodeResult, EncodeInput, EncoderBackend, EncoderTargetDomain,
+    ExportPlan, ResolvedEncoderTarget,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
@@ -387,21 +387,19 @@ impl CodecBackend for SldprtCodec {
     }
 }
 
-impl Encoder for SldprtCodec {
-    fn id(&self) -> &'static str {
-        "sldprt"
-    }
+impl EncoderBackend for SldprtCodec {
+    const FORMAT: &'static str = dialect::FORMAT;
+    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(dialect::TARGETS);
 
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        dialect::TARGETS
-    }
-
-    fn plan(
+    fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
+        target: ResolvedEncoderTarget,
     ) -> Result<ExportPlan, CodecError> {
-        writer::target::plan(input, request)
+        let ResolvedEncoderTarget::Native(resolved) = target else {
+            unreachable!("a catalog encoder receives only native target resolutions")
+        };
+        writer::target::plan(input, &resolved)
     }
 }
 

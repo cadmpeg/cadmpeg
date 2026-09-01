@@ -7,7 +7,9 @@ use std::io::Cursor;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::{DefaultSource, TargetDescriptor, TargetRefusalKind, TargetToken};
 
-use crate::codec::{CadirEncoder, Encoder};
+use crate::codec::{
+    CadirEncoder, Encoder, EncoderBackend, EncoderTargetDomain, ResolvedEncoderTarget,
+};
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::{DecodeTransfer, LossKind, LossNote, LossTaxonomy, TransferLedger};
 use crate::source_fidelity::RetainedSourceRecord;
@@ -45,6 +47,46 @@ fn cadir_encoder_census_matches_validation_counts() {
         .expect("plan CADIR export");
 
     assert_eq!(plan.report().census.counts, validation_counts);
+}
+
+struct ForeignIdentityEncoder;
+
+impl EncoderBackend for ForeignIdentityEncoder {
+    const FORMAT: &'static str = "selected";
+    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::DialectFree;
+
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: ResolvedEncoderTarget,
+    ) -> Result<ExportPlan, CodecError> {
+        let ResolvedEncoderTarget::DialectFree = target else {
+            panic!("the sealed wrapper must honor the backend target domain")
+        };
+        CadirEncoder.plan_resolved(input, ResolvedEncoderTarget::DialectFree)
+    }
+}
+
+#[test]
+fn sealed_plan_rejects_a_backend_that_reports_another_format() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let Err(error) =
+        ForeignIdentityEncoder.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+    else {
+        panic!("the sealed wrapper must own plan format identity")
+    };
+
+    let CodecError::ContractViolation {
+        codec,
+        operation,
+        reported,
+    } = error
+    else {
+        panic!("expected an encoder contract violation")
+    };
+    assert_eq!(codec, "selected");
+    assert_eq!(operation, "plan");
+    assert_eq!(reported, "cadir");
 }
 
 #[test]

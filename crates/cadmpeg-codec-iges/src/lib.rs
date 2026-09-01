@@ -38,8 +38,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
-    TargetRequest,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, EncoderBackend,
+    EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget,
 };
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
@@ -183,21 +183,19 @@ impl CodecBackend for IgesCodec {
     }
 }
 
-impl Encoder for IgesCodec {
-    fn id(&self) -> &'static str {
-        "iges"
-    }
+impl EncoderBackend for IgesCodec {
+    const FORMAT: &'static str = dialect::FORMAT;
+    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(IgesVersion::TARGETS);
 
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        IgesVersion::TARGETS
-    }
-
-    fn plan(
+    fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
+        target: ResolvedEncoderTarget,
     ) -> Result<ExportPlan, CodecError> {
-        writer::target::plan(input, request)
+        let ResolvedEncoderTarget::Native(resolved) = target else {
+            unreachable!("a catalog encoder receives only native target resolutions")
+        };
+        writer::target::plan(input, &resolved)
     }
 }
 

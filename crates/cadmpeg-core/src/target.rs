@@ -367,6 +367,20 @@ mod tests {
     }
 
     #[test]
+    fn target_lookup_accepts_each_owned_spelling_and_rejects_a_miss() {
+        let targets = [target("test:first", &["one", "primary"], false)];
+
+        for token in ["test:first", "first", "one", "primary"] {
+            assert_eq!(
+                find_target(&targets, token).map(|entry| entry.id.as_str()),
+                Some("test:first"),
+                "lookup failed for {token:?}"
+            );
+        }
+        assert_eq!(find_target(&targets, "missing"), None);
+    }
+
+    #[test]
     #[should_panic(expected = "at most one entry may be the default")]
     fn a_target_catalog_rejects_multiple_defaults() {
         let targets = [

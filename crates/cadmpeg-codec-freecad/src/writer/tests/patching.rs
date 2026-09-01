@@ -7,7 +7,7 @@ use super::super::target::resolve;
 use super::super::*;
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
+use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, TargetRequest};
 use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 use std::io::Cursor;
 
@@ -158,7 +158,14 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .and_then(|plan| plan.write_to(&mut staged))
         .expect("write-only fallback");
     let mut streamed = Cursor::new(Vec::new());
-    let resolution = resolve(decoded.ir(), TargetRequest::Inherit).expect("schema 4 is preserved");
+    let resolved = resolve_write_request(
+        decoded.ir(),
+        TargetRequest::Inherit,
+        crate::dialect::FORMAT,
+        crate::dialect::TARGETS,
+    )
+    .expect("schema 4 resolves");
+    let resolution = resolve(decoded.ir(), &resolved).expect("schema 4 is preserved");
     crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);

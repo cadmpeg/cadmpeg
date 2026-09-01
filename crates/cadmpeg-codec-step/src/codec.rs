@@ -3,11 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
-    TargetRequest,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, EncoderBackend,
+    EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget,
 };
 
 use crate::archive;
@@ -23,23 +22,21 @@ pub struct StepCodec {
     pub options: StepWriteOptions,
 }
 
-impl Encoder for StepCodec {
-    fn id(&self) -> &'static str {
-        "step"
-    }
-
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        StepSchema::TARGETS
-    }
+impl EncoderBackend for StepCodec {
+    const FORMAT: &'static str = crate::dialect::FORMAT;
+    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(StepSchema::TARGETS);
 
     /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
     /// because every emitted schema stamps object-identifier arcs.
-    fn plan(
+    fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
+        target: ResolvedEncoderTarget,
     ) -> Result<ExportPlan, CodecError> {
-        crate::writer::target::plan(self, input, request)
+        let ResolvedEncoderTarget::Native(resolved) = target else {
+            unreachable!("a catalog encoder receives only native target resolutions")
+        };
+        crate::writer::target::plan(self, input, &resolved)
     }
 }
 

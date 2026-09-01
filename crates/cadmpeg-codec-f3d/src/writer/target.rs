@@ -3,12 +3,11 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 
-use crate::dialect;
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
@@ -30,9 +29,8 @@ use crate::{ids, F3dCodec};
 /// inherit: the document has no source, or a source of another format.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    request: TargetRequest<'_>,
+    resolved: &ResolvedWrite,
 ) -> Result<ExportPlan, CodecError> {
-    let resolved = resolve_write_request(input.ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let Some(entry) = resolved.catalog_entry() else {
         return match preserve(input)? {
             Preservation::Written { bytes, write_path } => Ok(preserved_plan(

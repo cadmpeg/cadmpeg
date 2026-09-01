@@ -1,4 +1,4 @@
-# generated at 9e72f09dd
+# generated at 985fbb18d
 pub mod cadmpeg_codec_iges
 pub enum cadmpeg_codec_iges::IgesVersion
 pub cadmpeg_codec_iges::IgesVersion::V4_0
@@ -14,7 +14,7 @@ pub fn cadmpeg_codec_iges::IgesCodec::decode_impl(&self, &cadmpeg_core::decode::
 pub fn cadmpeg_codec_iges::IgesCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_iges::IgesCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_iges::IgesCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_iges::IgesCodec
-pub fn cadmpeg_codec_iges::IgesCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_iges::IgesCodec::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_iges::IgesCodec::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+impl cadmpeg_ir::codec::write::EncoderBackend for cadmpeg_codec_iges::IgesCodec
+pub const cadmpeg_codec_iges::IgesCodec::FORMAT: &'static str
+pub const cadmpeg_codec_iges::IgesCodec::TARGET_DOMAIN: cadmpeg_ir::codec::write::EncoderTargetDomain
+pub fn cadmpeg_codec_iges::IgesCodec::plan_resolved(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::ResolvedEncoderTarget) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>

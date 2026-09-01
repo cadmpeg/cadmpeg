@@ -9,7 +9,7 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{ExportReport, FidelityResolution};
 
@@ -17,7 +17,7 @@ use super::write;
 use crate::dialect;
 use crate::native::DocumentFacts;
 
-/// What resolving a [`TargetRequest`] against the source decided.
+/// What resolving a [`cadmpeg_ir::codec::TargetRequest`] against the source decided.
 ///
 /// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
@@ -76,9 +76,9 @@ impl<'a> Resolution<'a> {
 /// writer cannot synthesize the retained `FCStd` graph that its only row needs.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    request: TargetRequest<'_>,
+    resolved: &ResolvedWrite,
 ) -> Result<ExportPlan, CodecError> {
-    let resolution = resolve(input.ir, request)?;
+    let resolution = resolve(input.ir, resolved)?;
     finish(input, &resolution)
 }
 
@@ -105,11 +105,8 @@ fn finish(input: EncodeInput<'_>, resolution: &Resolution<'_>) -> Result<ExportP
 /// Decide what to write, from the request and the source.
 pub(in crate::writer) fn resolve<'a>(
     ir: &'a CadIr,
-    request: TargetRequest<'_>,
+    resolved: &ResolvedWrite,
 ) -> Result<Resolution<'a>, CodecError> {
-    // This writer has no synthesize fallback, so it flattens the request locally.
-    let resolved =
-        cadmpeg_ir::codec::resolve_write_request(ir, request, dialect::FORMAT, dialect::TARGETS)?;
     let target = resolved.dialect().clone();
     // Deliverability, not preference. This writer patches the retained
     // `Document.xml` and regenerates none, so the resolved target is reachable
