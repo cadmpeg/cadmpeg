@@ -224,7 +224,7 @@ pub struct ContainerScan<'a> {
     /// discriminants that chose [`Self::kind`].
     ///
     /// Exactly one entry, `format == "f3d"`. Embedded ACIS layers are derived
-    /// from [`Self::breps`] when a report is built.
+    /// from [`Self::breps`] when document or archive identity is assembled.
     pub dialect: DialectMatch,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,

@@ -305,13 +305,12 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     Some(F3dLossCode::KernelDialectUnverified.note(message))
 }
 
-/// Whether document-local dialect losses are emitted immediately or deferred
-/// until an F3Z archive has assembled its final layer set.
+/// Identity owner of a decoded F3D member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DialectLossProjection {
-    /// Emit losses from this document's classified layers.
-    Document,
-    /// Keep the layers but let the containing archive emit losses once.
+pub(crate) enum ReportScope {
+    /// The member is the decoded document and owns its classified layers.
+    Standalone,
+    /// The containing F3Z archive owns identity and classifies every member.
     ArchiveMember,
 }
 
@@ -339,33 +338,49 @@ pub(crate) fn build_report(
     container_only: bool,
     geometry_transferred: bool,
     mut losses: Vec<LossNote>,
-    projection: DialectLossProjection,
+    scope: ReportScope,
 ) -> DecodeReport {
-    let kernel_layers = kernel_layers(scan);
-    let summary = crate::container::summarize(scan, &kernel_layers);
-    let dialects = summary
-        .dialects()
-        .expect("F3D summary is classified")
-        .clone();
-    if projection == DialectLossProjection::Document {
-        losses.extend(report_dialect_losses(&dialects));
+    let transfer = if container_only {
+        cadmpeg_ir::DecodeTransfer::ContainerOnly
+    } else {
+        cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
+    };
+    match scope {
+        ReportScope::Standalone => {
+            let summary = crate::container::summarize(scan, &kernel_layers(scan));
+            let dialects = summary
+                .dialects()
+                .expect("standalone F3D summary is classified")
+                .clone();
+            losses.extend(report_dialect_losses(&dialects));
+            DecodeReport::classified(
+                dialects,
+                transfer,
+                std::collections::BTreeMap::new(),
+                losses,
+                report_notes(summary.notes, container_only),
+                cadmpeg_ir::report::TransferLedger::default(),
+            )
+        }
+        ReportScope::ArchiveMember => {
+            let summary = crate::container::summarize(scan, &[]);
+            DecodeReport::unclassified(
+                FORMAT,
+                transfer,
+                std::collections::BTreeMap::new(),
+                losses,
+                report_notes(summary.notes, container_only),
+                cadmpeg_ir::report::TransferLedger::default(),
+            )
+        }
     }
-    DecodeReport::classified(
-        dialects,
-        if container_only {
-            cadmpeg_ir::DecodeTransfer::ContainerOnly
-        } else {
-            cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
-        },
-        std::collections::BTreeMap::new(),
-        losses,
-        summary
-            .notes
-            .into_iter()
-            .filter(|note| container_only || !note.starts_with("container-level inspection only"))
-            .collect(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+}
+
+fn report_notes(notes: Vec<String>, container_only: bool) -> Vec<String> {
+    notes
+        .into_iter()
+        .filter(|note| container_only || !note.starts_with("container-level inspection only"))
+        .collect()
 }
 
 /// Build a single-document inspection summary with the same dialect facts that

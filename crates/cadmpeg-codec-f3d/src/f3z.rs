@@ -10,6 +10,7 @@
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_value::Value;
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
@@ -75,9 +76,9 @@ pub fn is_f3z(scan: &ContainerScan) -> bool {
 }
 
 /// Inspect every document member under the F3Z archive identity.
-pub(crate) fn inspect(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
+pub(crate) fn inspect<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
 ) -> Result<ContainerSummary, CodecError> {
     let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
         .map_err(|error| {
@@ -89,7 +90,7 @@ pub(crate) fn inspect(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let classified = classify_archive_layers(ctx, scan)?;
+    let classified = classify_archive_members(ctx, scan)?;
     let member_count = scan
         .entries
         .iter()
@@ -102,7 +103,7 @@ pub(crate) fn inspect(
         classified
             .losses
             .iter()
-            .map(|loss| format!("dialect classification loss: {}", loss.message)),
+            .map(|loss| format!("archive classification loss: {}", loss.message)),
     );
     Ok(ContainerSummary::classified(
         classified.layers,
@@ -113,23 +114,19 @@ pub(crate) fn inspect(
 }
 
 /// Decode a scanned `.f3z` archive into one merged document.
-pub fn decode(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
+pub fn decode<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
 ) -> Result<DecodeResult, CodecError> {
     let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
         .map_err(|error| {
             CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
         })?;
     let (model_root, omitted_drawing_root) = model_root_member(scan, &manifest.root)?;
-    let root_view = scan.entry_view(&model_root).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "f3z root member {model_root} is not present in the archive"
-        ))
-    })?;
+    let outer = classify_archive_members(ctx, scan)?;
+    let root_scan = outer.member_scan(&model_root)?;
     let (mut ir, mut report, mut fidelity) =
-        crate::decode::decode_archive_member(ctx, root_view)?.into_parts();
-    let outer = classify_archive_layers(ctx, scan)?;
+        crate::decode::decode_archive_member(ctx, root_scan)?.into_parts();
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -154,16 +151,13 @@ pub fn decode(
     }
 
     let table = xref_table_from_ir(&ir)?;
-    let mut stack = vec![model_root];
-    let merged = merge_references(
+    let merged = MergeSession {
         ctx,
-        &mut ir,
-        &mut report,
-        &mut fidelity,
         scan,
-        &table,
-        &mut stack,
-    )?;
+        archive: &outer,
+        stack: vec![model_root],
+    }
+    .merge(&mut ir, &mut report, &mut fidelity, &table)?;
     if merged > 0 {
         fidelity
             .retained_records
@@ -182,10 +176,10 @@ pub fn decode(
 
 fn classify_outer_report(
     mut report: cadmpeg_ir::DecodeReport,
-    outer: ArchiveClassification,
+    outer: ArchiveSession<'_>,
 ) -> cadmpeg_ir::DecodeReport {
-    // Archive-member decodes defer dialect losses. Derive them once from the
-    // archive's final layer set, including members no XREF traversal reached.
+    // The archive pass owns member identity and its losses, including members
+    // no XREF traversal reached. Intermediate member reports are unclassified.
     report.losses.extend(outer.losses);
     cadmpeg_ir::DecodeReport::classified(
         outer.layers,
@@ -202,11 +196,10 @@ fn finalize_result(
     report: cadmpeg_ir::DecodeReport,
     fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<DecodeResult, CodecError> {
-    // The decoded model root entered as a standalone F3D member. The final
+    // The decoded model root is an unclassified intermediate member. The final
     // document is the containing F3Z archive, whose report primary is the sole
-    // authority for source identity. Preserve member-derived attributes but
-    // remove the superseded member classification before DecodeResult mirrors
-    // the archive primary.
+    // authority for source identity. Preserve member-derived attributes before
+    // DecodeResult mirrors the archive primary.
     if let Some(source) = ir.source.as_mut() {
         *source = cadmpeg_ir::SourceMeta::unclassified(
             report.format(),
@@ -225,15 +218,36 @@ fn finalize_result(
 }
 
 /// Classify every F3D document member and attach its layers to its archive path.
-struct ArchiveClassification {
+struct ArchiveSession<'a> {
+    members: BTreeMap<String, ClassifiedMember<'a>>,
     layers: DialectLayers,
     losses: Vec<LossNote>,
 }
 
-fn classify_archive_layers(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-) -> Result<ArchiveClassification, CodecError> {
+enum ClassifiedMember<'a> {
+    Scanned(Box<ContainerScan<'a>>),
+    Unreadable(String),
+}
+
+impl ArchiveSession<'_> {
+    fn member_scan(&self, path: &str) -> Result<&ContainerScan<'_>, CodecError> {
+        match self.members.get(path) {
+            Some(ClassifiedMember::Scanned(scan)) => Ok(scan),
+            Some(ClassifiedMember::Unreadable(message)) => Err(CodecError::malformed(
+                format_args!("f3z document member {path} could not be scanned: {message}"),
+            )),
+            None => Err(CodecError::malformed(format_args!(
+                "f3z document member {path} is not present in the archive"
+            ))),
+        }
+    }
+}
+
+fn classify_archive_members<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
+) -> Result<ArchiveSession<'a>, CodecError> {
+    let mut members = BTreeMap::new();
     let mut layers = DialectLayers::of(scan.dialect.clone());
     let mut losses = Vec::new();
     for member_path in scan
@@ -247,7 +261,20 @@ fn classify_archive_layers(
                 "f3z document member {member_path} is not readable"
             ))
         })?;
-        let member_scan = crate::container::scan(ctx, member_view)?;
+        let member_scan = match crate::container::scan(ctx, member_view) {
+            Ok(member_scan) => member_scan,
+            Err(error) => {
+                let message = error.to_string();
+                losses.push(F3dLossCode::XrefMemberUndecoded.note(format!(
+                    "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
+                )));
+                members.insert(
+                    member_path.to_owned(),
+                    ClassifiedMember::Unreadable(message),
+                );
+                continue;
+            }
+        };
         let kernel_layers = crate::dialect::kernel_layers(&member_scan);
         let member_layers = DialectLayers::new(member_scan.dialect.clone(), kernel_layers)
             .expect("an F3D member's kernel layers have unique identities");
@@ -256,9 +283,17 @@ fn classify_archive_layers(
             &member_layers,
             member_path,
         ));
+        members.insert(
+            member_path.to_owned(),
+            ClassifiedMember::Scanned(Box::new(member_scan)),
+        );
     }
     losses.extend(crate::dialect::report_dialect_losses(&layers));
-    Ok(ArchiveClassification { layers, losses })
+    Ok(ArchiveSession {
+        members,
+        layers,
+        losses,
+    })
 }
 
 /// Attach one archive member's identity and nested layers to its archive path.
@@ -386,121 +421,148 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
     })
 }
 
-/// Resolve `table`'s outgoing references against the archive and merge each
-/// resolved member into `parent`, returning the number of merged occurrences.
-///
-/// `parent` accumulates in its own document form: a member's arenas are
-/// appended entity by entity and record by record as it is resolved, and the
-/// member is dropped before the next one is decoded. Nothing beyond the
-/// occupancy of the merged document and one member is resident at any point.
-///
-/// A reference that cannot be resolved -- a cycle, an absent member, a member
-/// that fails to decode, or one whose units differ -- is recorded as a loss and
-/// skipped, leaving the rest of the archive to merge.
-fn merge_references(
-    ctx: &DecodeContext<'_>,
-    parent_ir: &mut cadmpeg_ir::CadIr,
-    parent_report: &mut cadmpeg_ir::DecodeReport,
-    parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
-    scan: &ContainerScan<'_>,
-    table: &XrefTable,
-    stack: &mut Vec<String>,
-) -> Result<usize, CodecError> {
-    let mut merged = 0usize;
-    for reference in &table.references {
-        let occurrence = occurrence_key(reference);
-        let label = xref::design_for(table, reference).map_or_else(
-            || reference.relative_path.clone(),
-            |design| design.display_name.clone(),
-        );
-        if stack.contains(&reference.relative_path) {
-            parent_report
-                .losses
-                .push(F3dLossCode::XrefCycle.note(format!(
-                    "xref {label}: reference cycle through {}; the occurrence was not resolved",
-                    reference.relative_path
-                )));
-            continue;
-        }
-        let Some(member_view) = scan.entry_view(&reference.relative_path) else {
-            parent_report
-                .losses
-                .push(F3dLossCode::XrefMemberMissing.note(format!(
-                    "xref {label}: member {} is not present in the archive; the occurrence was \
-                 not resolved",
-                    reference.relative_path
-                )));
-            continue;
-        };
-        let component = match crate::decode::decode_archive_member(ctx, member_view) {
-            Ok(component) => component,
-            Err(error) => {
+/// State shared by recursive F3Z reference traversal.
+struct MergeSession<'r, 'a> {
+    ctx: &'r DecodeContext<'a>,
+    scan: &'r ContainerScan<'a>,
+    archive: &'r ArchiveSession<'a>,
+    stack: Vec<String>,
+}
+
+impl MergeSession<'_, '_> {
+    /// Resolve `table`'s outgoing references against the archive and merge each
+    /// resolved member into `parent`, returning the number of merged occurrences.
+    ///
+    /// `parent` accumulates in its own document form: a member's arenas are
+    /// appended entity by entity and record by record as it is resolved, and the
+    /// member is dropped before the next one is decoded. Nothing beyond the
+    /// neutral and native model population of the merged document and one decoded
+    /// member is resident at any point. The lightweight container scans retained
+    /// by [`ArchiveSession`] borrow archive storage and hold classification facts.
+    ///
+    /// A reference that cannot be resolved -- a cycle, an absent member, a member
+    /// that fails to decode, or one whose units differ -- is recorded as a loss and
+    /// skipped, leaving the rest of the archive to merge.
+    fn merge(
+        &mut self,
+        parent_ir: &mut cadmpeg_ir::CadIr,
+        parent_report: &mut cadmpeg_ir::DecodeReport,
+        parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
+        table: &XrefTable,
+    ) -> Result<usize, CodecError> {
+        let mut merged = 0usize;
+        for reference in &table.references {
+            let occurrence = occurrence_key(reference);
+            let label = xref::design_for(table, reference).map_or_else(
+                || reference.relative_path.clone(),
+                |design| design.display_name.clone(),
+            );
+            if self.stack.contains(&reference.relative_path) {
                 parent_report
                     .losses
-                    .push(F3dLossCode::XrefMemberUndecoded.note(format!(
-                        "xref {label}: member {} failed to decode ({error}); the occurrence was \
-                     not resolved",
+                    .push(F3dLossCode::XrefCycle.note(format!(
+                        "xref {label}: reference cycle through {}; the occurrence was not resolved",
                         reference.relative_path
                     )));
                 continue;
             }
-        };
-        if component.ir().units != parent_ir.units {
+            let Some(member) = self.archive.members.get(&reference.relative_path) else {
+                let (code, message) = if self.scan.entry_view(&reference.relative_path).is_some() {
+                    (
+                    F3dLossCode::XrefMemberUndecoded,
+                    format!(
+                        "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
+                        reference.relative_path
+                    ),
+                )
+                } else {
+                    (
+                    F3dLossCode::XrefMemberMissing,
+                    format!(
+                        "xref {label}: member {} is not present in the archive; the occurrence was not resolved",
+                        reference.relative_path
+                    ),
+                )
+                };
+                parent_report.losses.push(code.note(message));
+                continue;
+            };
+            let member_scan = match member {
+                ClassifiedMember::Scanned(member_scan) => member_scan,
+                ClassifiedMember::Unreadable(_) => continue,
+            };
+            let component = match crate::decode::decode_archive_member(self.ctx, member_scan) {
+                Ok(component) => component,
+                Err(error) => {
+                    parent_report
+                        .losses
+                        .push(F3dLossCode::XrefMemberUndecoded.note(format!(
+                        "xref {label}: member {} failed to decode ({error}); the occurrence was \
+                     not resolved",
+                        reference.relative_path
+                    )));
+                    continue;
+                }
+            };
+            if component.ir().units != parent_ir.units {
+                parent_report
+                    .losses
+                    .push(F3dLossCode::XrefUnitsMismatch.note(format!(
+                        "xref {label}: component units differ from the containing document; the \
+                 occurrence was not merged"
+                    )));
+                continue;
+            }
+            let child_table = xref_table_from_ir(component.ir())?;
+            let (mut component_ir, mut component_report, mut component_fidelity) =
+                component.into_parts();
+            self.stack.push(reference.relative_path.clone());
+            let descendants = self.merge(
+                &mut component_ir,
+                &mut component_report,
+                &mut component_fidelity,
+                &child_table,
+            )?;
+            self.stack.pop();
+            if let Some(transform) = reference.transform {
+                apply_occurrence_transform(&mut component_ir.model, transform);
+            }
+            append_feature_history(&parent_ir.model, &mut component_ir.model)?;
+            let mut scope = OccurrenceScope {
+                occurrence: &occurrence,
+            };
+            parent_ir
+                .model
+                .extend_rewritten(component_ir.model, &mut scope)?;
+            extend_native(&mut parent_ir.native, component_ir.native, &occurrence);
+            merge_annotations(
+                &mut parent_fidelity.annotations,
+                component_fidelity.annotations,
+                &occurrence,
+            )?;
+            merged += descendants + 1;
+            if component_report.geometry_transferred() {
+                parent_report.mark_geometry_transferred();
+            }
             parent_report
                 .losses
-                .push(F3dLossCode::XrefUnitsMismatch.note(format!(
-                    "xref {label}: component units differ from the containing document; the \
-                 occurrence was not merged"
-                )));
-            continue;
-        }
-        let child_table = xref_table_from_ir(component.ir())?;
-        let (mut component_ir, mut component_report, mut component_fidelity) =
-            component.into_parts();
-        stack.push(reference.relative_path.clone());
-        let descendants = merge_references(
-            ctx,
-            &mut component_ir,
-            &mut component_report,
-            &mut component_fidelity,
-            scan,
-            &child_table,
-            stack,
-        )?;
-        stack.pop();
-        if let Some(transform) = reference.transform {
-            apply_occurrence_transform(&mut component_ir.model, transform);
-        }
-        append_feature_history(&parent_ir.model, &mut component_ir.model)?;
-        let mut scope = OccurrenceScope {
-            occurrence: &occurrence,
-        };
-        parent_ir
-            .model
-            .extend_rewritten(component_ir.model, &mut scope)?;
-        extend_native(&mut parent_ir.native, component_ir.native, &occurrence);
-        merge_annotations(
-            &mut parent_fidelity.annotations,
-            component_fidelity.annotations,
-            &occurrence,
-        )?;
-        merged += descendants + 1;
-        if component_report.geometry_transferred() {
-            parent_report.mark_geometry_transferred();
-        }
-        parent_report.losses.extend(component_report.losses);
-        let placement = if reference.transform.is_some() {
-            "Design occurrence transform"
-        } else {
-            "identity placement"
-        };
-        parent_report.notes.push(format!(
+                .extend(component_report.losses.into_iter().map(|mut loss| {
+                    loss.message = format!("xref {label}: {}", loss.message);
+                    loss
+                }));
+            let placement = if reference.transform.is_some() {
+                "Design occurrence transform"
+            } else {
+                "identity placement"
+            };
+            parent_report.notes.push(format!(
             "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested \
              occurrence(s))",
             reference.relative_path
         ));
+        }
+        Ok(merged)
     }
-    Ok(merged)
 }
 
 /// Places one component's feature history after every feature already merged.
