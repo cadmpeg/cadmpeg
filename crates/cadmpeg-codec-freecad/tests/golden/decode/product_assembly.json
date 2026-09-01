@@ -4433,12 +4433,10 @@
         "archive_entry_count": "13",
         "document_kind": "assembly",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "24",
         "physical_archive_bytes": "7109",
         "physical_ledger_spans": "92",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
       },
       "dialect": {
         "admission": "admitted",

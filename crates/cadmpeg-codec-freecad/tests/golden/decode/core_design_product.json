@@ -7696,12 +7696,10 @@
         "archive_entry_count": "12",
         "document_kind": "part-design",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "17",
         "physical_archive_bytes": "9807",
         "physical_ledger_spans": "85",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
       },
       "dialect": {
         "admission": "admitted",

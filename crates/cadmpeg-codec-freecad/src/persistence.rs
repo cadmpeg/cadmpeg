@@ -31,30 +31,22 @@ pub struct Graph {
     pub properties: Vec<PropertyRecord>,
 }
 
-/// Recover the persistence graph without interpreting geometry.
-#[allow(
-    dead_code,
-    reason = "the declaration-reading entry point remains the schema identity owner"
-)]
-pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
-    let (_, schema, _) = crate::container::parse_document(bytes).map_err(|error| match error {
-        CodecError::WrongFormat(message) => CodecError::Malformed(message),
-        error => error,
-    })?;
-    parse_with_context(bytes, schema, None)
-}
-
 /// Recover the persistence graph, charging retained property XML against the session.
 pub fn parse_with_context(
     bytes: &[u8],
-    schema: FcstdDialect,
+    document: &crate::native::DocumentFacts,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
-    parse_document(text, &xml, schema, ctx)
+    parse_document(
+        text,
+        &xml,
+        FcstdDialect::from_schema_version(&document.schema_version),
+        ctx,
+    )
 }
 
 fn parse_document(

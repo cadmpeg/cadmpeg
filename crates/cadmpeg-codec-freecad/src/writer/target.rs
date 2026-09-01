@@ -29,17 +29,12 @@ use crate::native::DocumentFacts;
 /// needs no target gate of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Resolution {
-    schema: crate::dialect::FcstdDialect,
-    target: DialectId,
+    dialect: crate::dialect::FcstdDialect,
 }
 
 impl Resolution {
-    pub(super) const fn schema(&self) -> crate::dialect::FcstdDialect {
-        self.schema
-    }
-
-    pub(super) fn target(&self) -> &DialectId {
-        &self.target
+    pub(super) const fn dialect(&self) -> crate::dialect::FcstdDialect {
+        self.dialect
     }
 }
 
@@ -121,20 +116,17 @@ pub(in crate::writer) fn resolve(
 ///
 /// The graph is the whole baseline: the writer never regenerates a
 /// `Document.xml`, so preservation is possible exactly when the retained
-/// document record is present, declares the source's own dialect, and declares
-/// it in a form the write options can restate. A `SchemaVersion` of `"04"`
-/// classifies as `fcstd:unknown` and does not round-trip through `u32`, so it
-/// fails the last condition rather than being rewritten as `"4"`.
+/// document record is present and its exact declaration classifies as the
+/// source's own dialect. A `SchemaVersion` of `"04"` classifies as
+/// `fcstd:unknown`, so it is preserved as residual identity rather than being
+/// rewritten as `"4"`.
 fn retained_baseline(ir: &CadIr, source_dialect: &DialectId) -> Option<Resolution> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
-    if documents.len() != 1 {
+    let [document] = documents.as_slice() else {
         return None;
-    }
-    let classified = ir.source.as_ref()?.dialect()?.dialect();
-    let schema = dialect::FcstdDialect::from_id(classified)?;
-    (schema != dialect::FcstdDialect::Unknown && classified == source_dialect).then(|| Resolution {
-        schema,
-        target: source_dialect.clone(),
-    })
+    };
+    let dialect = dialect::FcstdDialect::from_schema_version(&document.schema_version);
+    (dialect != dialect::FcstdDialect::Unknown && dialect.id() == *source_dialect)
+        .then_some(Resolution { dialect })
 }

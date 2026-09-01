@@ -2126,12 +2126,10 @@
         "archive_entry_count": "5",
         "document_kind": "drawing",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "8",
         "physical_archive_bytes": "5014",
         "physical_ledger_spans": "36",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
       },
       "dialect": {
         "admission": "admitted",

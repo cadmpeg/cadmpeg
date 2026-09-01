@@ -14096,12 +14096,10 @@
         "archive_entry_count": "16",
         "document_kind": "part",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "13",
         "physical_archive_bytes": "12122",
         "physical_ledger_spans": "113",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
       },
       "dialect": {
         "admission": "admitted",

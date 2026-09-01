@@ -40591,12 +40591,10 @@
         "archive_entry_count": "66",
         "document_kind": "part-design",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "57",
         "physical_archive_bytes": "43614",
         "physical_ledger_spans": "463",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
       },
       "dialect": {
         "admission": "admitted",

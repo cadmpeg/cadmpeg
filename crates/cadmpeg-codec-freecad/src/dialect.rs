@@ -127,13 +127,6 @@ impl FcstdDialect {
         }
     }
 
-    /// The typed row named by an already-classified dialect id.
-    pub(crate) fn from_id(id: &DialectId) -> Option<Self> {
-        [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown]
-            .into_iter()
-            .find(|dialect| dialect.id() == *id)
-    }
-
     /// Element vocabulary selected by this persistence identity strategy.
     pub(crate) const fn persistence_tags(self) -> (&'static str, &'static str, &'static str) {
         match self {
@@ -164,7 +157,8 @@ impl FcstdDialect {
     /// decode path, container-only or full, and every inspect reads an
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
-    pub(crate) fn classify(document: &DocumentFacts, dialect: Self) -> DialectMatch {
+    pub(crate) fn classify(document: &DocumentFacts) -> DialectMatch {
+        let dialect = Self::from_schema_version(&document.schema_version);
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_SCHEMA_VERSION.into(),

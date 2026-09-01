@@ -10,7 +10,6 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 
 use crate::brep::ShapePayloadRecord;
-use crate::dialect::FcstdDialect;
 use crate::gui;
 use crate::native::{
     ArchiveSpan, ByteCoverageRecord, DocumentFacts, ElementMapRecord, EntryRecord, LogicalSpan,
@@ -62,10 +61,6 @@ pub struct Scan<'a> {
     pub entries: Vec<ContainerEntry>,
     /// Persistence metadata.
     pub document: DocumentFacts,
-    /// Typed persistence schema selected at the container boundary.
-    pub(crate) schema: FcstdDialect,
-    /// Parsed `FileVersion` used by layout consumers.
-    pub(crate) file_version: usize,
     /// Exact physical archive partition.
     pub ledger: Vec<ArchiveSpan>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
@@ -88,7 +83,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         .get("Document.xml")
         .map(|view| view.window())
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
-    let (document, schema, file_version) = parse_document(document_bytes)?;
+    let document = parse_document(document_bytes)?;
     let ledger = archive
         .physical_ledger()?
         .into_iter()
@@ -104,8 +99,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
     Ok(Scan {
         entries: archive.container_entries(classify),
         document,
-        schema,
-        file_version,
         ledger,
         data,
     })
@@ -125,9 +118,8 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
         notes.push(format!("ProgramVersion={version}"));
     }
     ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(FcstdDialect::classify(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::FcstdDialect::classify(
             &scan.document,
-            scan.schema,
         )),
         "zip",
         scan.entries.clone(),
@@ -204,9 +196,7 @@ fn unique_section<'a, 'input>(
     }
 }
 
-pub(crate) fn parse_document(
-    bytes: &[u8],
-) -> Result<(DocumentFacts, FcstdDialect, usize), CodecError> {
+pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -225,10 +215,10 @@ pub(crate) fn parse_document(
     schema_version
         .parse::<u32>()
         .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
-    let schema = FcstdDialect::from_schema_version(&schema_version);
-    let parsed_file_version = file_version
+    file_version
         .parse::<usize>()
         .map_err(|_| CodecError::Malformed("Document.xml FileVersion is invalid".into()))?;
+    let schema = crate::dialect::FcstdDialect::from_schema_version(&schema_version);
     let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
     let _ = unique_section(root, data_tag)?;
     let declarations = unique_section(root, declaration_tag)?
@@ -272,7 +262,7 @@ pub(crate) fn parse_document(
         document_kind,
         domains,
     };
-    Ok((document, schema, parsed_file_version))
+    Ok(document)
 }
 
 pub(crate) fn logical_ledger(
