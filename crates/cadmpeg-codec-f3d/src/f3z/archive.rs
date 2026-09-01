@@ -124,7 +124,7 @@ pub(super) fn classify_members<'a>(
                 continue;
             }
         };
-        let classification = crate::report::classify_document(&member_scan);
+        let classification = crate::dialect::classify_layers(&member_scan);
         let (member_layers, member_losses) = classification.into_parts();
         losses.extend(member_losses.into_iter().map(|mut loss| {
             loss.message = format!("archive member {member_path}: {}", loss.message);
@@ -140,7 +140,7 @@ pub(super) fn classify_members<'a>(
             ClassifiedMember::Scanned(Box::new(member_scan)),
         );
     }
-    losses.extend(crate::report::dialect_losses(&layers));
+    losses.extend(crate::dialect::dialect_losses(&layers));
     Ok(ArchiveSession {
         members,
         layers,

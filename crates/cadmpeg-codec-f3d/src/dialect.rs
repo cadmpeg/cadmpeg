@@ -33,7 +33,7 @@
 //! structural: a manifest whose bytes do not fit the anchors is refused by
 //! `crate::manifest::parse_top_level`, and no version is on an allowlist.
 //!
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -174,6 +174,53 @@ impl F3dDialect {
         }
         .with_declared(declared)
     }
+}
+
+/// One document's admitted identity layers and recoverable classification loss.
+pub(crate) struct DocumentClassification {
+    layers: DialectLayers,
+    losses: Vec<LossNote>,
+}
+
+impl DocumentClassification {
+    pub(crate) fn into_parts(self) -> (DialectLayers, Vec<LossNote>) {
+        (self.layers, self.losses)
+    }
+}
+
+/// Classify the document and every kernel carrier without refusing on a layer
+/// identity collision.
+pub(crate) fn classify_layers(
+    scan: &crate::container::ContainerScan<'_>,
+) -> DocumentClassification {
+    let mut layers = DialectLayers::of(scan.dialect.clone());
+    let mut losses = Vec::new();
+    for layer in kernel_layers(scan) {
+        let format = layer.format().to_owned();
+        let instance = layer.instance().unwrap_or("unidentified").to_owned();
+        if layers.try_push(layer).is_err() {
+            losses.push(F3dLossCode::DialectLayerCollision.note(format!(
+                "the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"
+            )));
+        }
+    }
+    DocumentClassification { layers, losses }
+}
+
+/// Dialect-derived losses implied by a report's final classified layers.
+pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
+    let mut losses = layers
+        .iter()
+        .filter(|matched| matched.format() == FORMAT)
+        .filter_map(dialect_loss)
+        .collect::<Vec<_>>();
+    losses.extend(
+        layers
+            .iter()
+            .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+            .filter_map(kernel_dialect_loss),
+    );
+    losses
 }
 
 /// The dialect-unverified loss for a classified layer.
