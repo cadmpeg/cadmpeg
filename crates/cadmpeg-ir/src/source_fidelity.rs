@@ -109,6 +109,11 @@ impl DecodeSidecar {
                 });
             }
         }
+        if value.pointer("/report/dialects").is_none() {
+            return Err(DecodeSidecarParseError::Json(
+                <serde_json::Error as serde::de::Error>::missing_field("report.dialects"),
+            ));
+        }
         let sidecar: Self = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
         if sidecar.version != DECODE_SIDECAR_VERSION {
             return Err(DecodeSidecarParseError::Version {
@@ -527,6 +532,22 @@ mod tests {
         assert_eq!(from_v2.version(), DECODE_SIDECAR_VERSION);
         assert!(from_v2.report.dialects().is_none());
         assert_eq!(from_v2, migrated);
+    }
+
+    #[test]
+    fn current_decode_sidecar_requires_its_dialect_field() {
+        let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
+        let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
+        let v3 = migrated.to_canonical_json().expect("serialize sidecar");
+        let truncated = v3.replace(",\"dialects\":null", "");
+        assert!(!truncated.contains("dialects"), "{truncated}");
+
+        let error = DecodeSidecar::from_json(&truncated)
+            .expect_err("a v3 sidecar cannot silently lose its dialect classification");
+        assert!(
+            matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("report.dialects")),
+            "{error}"
+        );
     }
 
     #[test]
