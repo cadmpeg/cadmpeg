@@ -4,7 +4,7 @@
 
 The registry pins format-identity names: an id chosen once is an id forever.
 This checker is its oracle for registry-internal rules -- schema, id grammar,
-witness form, supersession, and pinned-id presence in codec source.
+witness form, supersession, and generated codec-id constants.
 
 Rendered support tables are checked by ``scripts/render-format-support.py
 --check``, which regenerates every published table from this registry and
@@ -27,11 +27,66 @@ import tomllib
 import unittest
 from collections import Counter
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_REL = Path("docs") / "dialects.toml"
 ID_CONFORMANCE_REL = Path("docs") / "dialect-id-conformance.toml"
 SELF_TEST_REL = Path("scripts") / "test_check_dialects.py"
+
+
+class GeneratedIdOwner(NamedTuple):
+    """One format's generated Rust module and constant visibility."""
+
+    path: Path
+    visibility: str
+    format_visibility: str = "pub(crate)"
+
+
+# This map owns implementation placement, not identity. Id values and constant
+# names come only from docs/dialects.toml. Each format with dialect rows has
+# exactly one output module; CADIR has no rows and therefore no output.
+GENERATED_ID_OWNERS = {
+    "acis": GeneratedIdOwner(
+        Path("crates/cadmpeg-asm/src/dialect/registry_ids.rs"), "pub", "pub"
+    ),
+    "catia": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-catia/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "creo": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-creo/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "f3d": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-f3d/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "fcstd": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-freecad/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "iges": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-iges/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "inventor": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-inventor/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "nx": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-nx/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "parasolid": GeneratedIdOwner(
+        Path("crates/cadmpeg-parasolid/src/registry_ids.rs"), "pub(crate)", "pub"
+    ),
+    "rhino": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-rhino/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "sat": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-sat/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "sldprt": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-sldprt/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "step": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-step/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+}
 
 # The schema keys a `[[dialect]]` row may carry. Anything else is a typo or an
 # unreviewed schema extension; both are failures.
@@ -43,7 +98,6 @@ ROW_KEYS = frozenset(
         "witness",
         "seam",
         "supersedes",
-        "pinned",
         "unknown_kind",
     }
 )
@@ -273,9 +327,6 @@ def check_row(row: object, index: int, formats: dict, root: Path, failures: list
     if "seam" in row and not isinstance(row["seam"], str):
         failures.append(f"{label}: seam must be a string")
 
-    if "pinned" in row and not isinstance(row["pinned"], bool):
-        failures.append(f"{label}: pinned must be a boolean")
-
     is_unknown = isinstance(raw_id, str) and raw_id.endswith(":unknown")
     unknown_kind = row.get("unknown_kind")
     if is_unknown and unknown_kind is None:
@@ -352,7 +403,7 @@ def check_supersedes_graph(rows: list[dict], known: set[str], failures: list[str
             stack.append((nxt, list(graph.get(nxt, ()))))
 
 
-def check(root: Path) -> tuple[list[str], str]:
+def check(root: Path, *, generated: bool = True) -> tuple[list[str], str]:
     """Check the registry under ``root``. Returns ``(failures, summary)``."""
     failures: list[str] = []
     path = root / REGISTRY_REL
@@ -395,7 +446,8 @@ def check(root: Path) -> tuple[list[str], str]:
     for fmt, body in formats.items():
         if body.get("complete") is False and f"{fmt}:unknown" not in seen:
             failures.append(f"format {fmt}: complete = false requires {fmt}:unknown")
-    failures.extend(check_codec_emitted_ids(root))
+    if generated and (root / "Cargo.toml").is_file() and not failures:
+        failures.extend(check_generated_id_modules(root, rows))
 
     counts = ", ".join(f"{fmt} {n}" for fmt, n in sorted(per_format.items()))
     summary = (
@@ -405,44 +457,129 @@ def check(root: Path) -> tuple[list[str], str]:
     return failures, summary
 
 
-def check_codec_emitted_ids(root: Path) -> list[str]:
-    """Require each reportable pinned id in non-comment workspace Rust text.
+def rust_constant_name(dialect_id: str) -> str:
+    """Derive one stable Rust constant name from a registry id."""
+    fmt, local = dialect_id.split(":", 1)
+    return f"{fmt}_{re.sub(r'[^a-z0-9]', '_', local)}".upper()
 
-    This text scan removes ``//`` line comments and non-nested ``/* ... */``
-    block comments. It does not parse Rust syntax, distinguish comment markers
-    inside string literals, or exclude code disabled by ``cfg`` attributes.
-    """
-    path = root / REGISTRY_REL
-    try:
-        with path.open("rb") as handle:
-            rows = tomllib.load(handle).get("dialect", [])
-    except (OSError, tomllib.TOMLDecodeError):
-        return []
 
-    literals: set[str] = set()
-    crates = root / "crates"
-    if crates.is_dir():
-        for source in crates.glob("*/src/**/*.rs"):
-            try:
-                text = source.read_text(encoding="utf-8")
-            except OSError:
-                continue
-            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
-            text = re.sub(r"//.*$", "", text, flags=re.MULTILINE)
-            literals.update(re.findall(r'"([a-z0-9]+:[a-z0-9.-]+)"', text))
-
+def render_generated_id_module(
+    fmt: str,
+    rows: list[dict],
+    visibility: str,
+    format_visibility: str,
+) -> tuple[str | None, list[str]]:
+    """Render one format's constants and report generated-name collisions."""
     failures: list[str] = []
-    for row in rows if isinstance(rows, list) else []:
-        if (
-            not _is_table(row)
-            or row.get("pinned") is False
-            or row.get("unknown_kind") == "detect-unreachable"
-        ):
-            continue
+    constants: list[tuple[str, str, bool]] = []
+    names: dict[str, str] = {}
+    for row in rows:
         dialect_id = row.get("id")
-        if isinstance(dialect_id, str) and dialect_id not in literals:
-            failures.append(f"{dialect_id}: no string literal under crates/*/src")
+        if not isinstance(dialect_id, str) or not dialect_id.startswith(f"{fmt}:"):
+            continue
+        name = rust_constant_name(dialect_id)
+        if previous := names.get(name):
+            failures.append(
+                f"{dialect_id}: generated constant {name} collides with {previous}"
+            )
+        else:
+            names[name] = dialect_id
+            constants.append(
+                (
+                    name,
+                    dialect_id,
+                    row.get("unknown_kind") == "detect-unreachable",
+                )
+            )
+    if failures:
+        return None, failures
+    lines = [
+        "// SPDX-License-Identifier: Apache-2.0",
+        "// Generated by scripts/check-dialects.py from docs/dialects.toml.",
+        "// Do not edit this file directly.",
+        "",
+        "/// Registry-owned format namespace.",
+        f'{format_visibility} const FORMAT: &str = "{fmt}";',
+        "",
+    ]
+    for name, dialect_id, detect_unreachable in constants:
+        lines.append(f"/// Registry-owned dialect id `{dialect_id}`.")
+        if detect_unreachable:
+            lines.extend(
+                [
+                    "// Container detection cannot produce this registry row.",
+                    "#[allow(dead_code)]",
+                ]
+            )
+        lines.append(
+            f'{visibility} const {name}: DialectId = DialectId::pinned("{dialect_id}");'
+        )
+    return "\n".join(lines) + "\n", []
+
+
+def generated_id_modules(
+    rows: list[dict],
+    owners: dict[str, GeneratedIdOwner] = GENERATED_ID_OWNERS,
+) -> tuple[dict[Path, str], list[str]]:
+    """Render every format module and enforce one implementation owner."""
+    row_formats = {
+        dialect_id.split(":", 1)[0]
+        for row in rows
+        if _is_table(row)
+        and isinstance((dialect_id := row.get("id")), str)
+        and dialect_id.count(":") == 1
+    }
+    failures = [
+        f"format {fmt}: no generated dialect-id owner"
+        for fmt in sorted(row_formats - owners.keys())
+    ]
+    failures.extend(
+        f"format {fmt}: generated dialect-id owner has no registry rows"
+        for fmt in sorted(owners.keys() - row_formats)
+    )
+    outputs: dict[Path, str] = {}
+    for fmt in sorted(row_formats & owners.keys()):
+        owner = owners[fmt]
+        rendered, render_failures = render_generated_id_module(
+            fmt, rows, owner.visibility, owner.format_visibility
+        )
+        failures.extend(render_failures)
+        if rendered is not None:
+            outputs[owner.path] = rendered
+    return outputs, failures
+
+
+def check_generated_id_modules(
+    root: Path,
+    rows: list[dict],
+    owners: dict[str, GeneratedIdOwner] = GENERATED_ID_OWNERS,
+) -> list[str]:
+    """Require checked-in codec constants to equal registry-derived output."""
+    outputs, failures = generated_id_modules(rows, owners)
+    for rel, expected in outputs.items():
+        path = root / rel
+        try:
+            actual = path.read_text(encoding="utf-8")
+        except OSError:
+            actual = None
+        if actual != expected:
+            failures.append(
+                f"{rel.as_posix()}: generated dialect ids differ; run "
+                "python3 scripts/check-dialects.py --write-generated"
+            )
     return failures
+
+
+def write_generated_id_modules(root: Path, rows: list[dict]) -> list[str]:
+    """Write every registry-derived codec constant module."""
+    outputs, failures = generated_id_modules(rows)
+    if failures:
+        return failures
+    for rel, content in outputs.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return []
 
 
 def self_test() -> int:
@@ -470,10 +607,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="run the synthesized-violation suite instead of checking the registry",
     )
+    parser.add_argument(
+        "--write-generated",
+        action="store_true",
+        help="regenerate per-format Rust dialect-id constants",
+    )
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
-    failures, summary = check(args.root.resolve())
+    root = args.root.resolve()
+    failures, summary = check(root, generated=not args.write_generated)
+    if not failures and args.write_generated:
+        with (root / REGISTRY_REL).open("rb") as handle:
+            rows = tomllib.load(handle).get("dialect", [])
+        failures.extend(write_generated_id_modules(root, rows))
+        if not failures:
+            failures, summary = check(root)
     if failures:
         for failure in failures:
             print(f"error: {failure}", file=sys.stderr)

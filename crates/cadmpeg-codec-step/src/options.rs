@@ -8,6 +8,10 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::TargetDescriptor;
 
+use crate::dialect::{
+    STEP_AP203_E1, STEP_AP203_E2, STEP_AP214, STEP_AP242_E1, STEP_AP242_E2, STEP_AP242_E3,
+};
+
 /// Metadata written to the STEP `FILE_NAME` header record.
 ///
 /// Default values produce deterministic output. They identify the file as
@@ -115,17 +119,13 @@ impl StepSchema {
 
     /// The typed dialect identity written for this schema.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(self.pinned())
-    }
-
-    const fn pinned(self) -> &'static str {
         match self {
-            Self::Ap203Edition1 => "step:ap203-e1",
-            Self::Ap203Edition2 => "step:ap203-e2",
-            Self::Ap214 => "step:ap214",
-            Self::Ap242Edition1 => "step:ap242-e1",
-            Self::Ap242Edition2 => "step:ap242-e2",
-            Self::Ap242Edition3 => "step:ap242-e3",
+            Self::Ap203Edition1 => STEP_AP203_E1,
+            Self::Ap203Edition2 => STEP_AP203_E2,
+            Self::Ap214 => STEP_AP214,
+            Self::Ap242Edition1 => STEP_AP242_E1,
+            Self::Ap242Edition2 => STEP_AP242_E2,
+            Self::Ap242Edition3 => STEP_AP242_E3,
         }
     }
 

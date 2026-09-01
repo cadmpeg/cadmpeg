@@ -115,7 +115,7 @@ pub struct NxCodec;
 
 impl CodecBackend for NxCodec {
     fn id(&self) -> &'static str {
-        "nx"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

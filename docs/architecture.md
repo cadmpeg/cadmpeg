@@ -77,6 +77,8 @@ These hold across every codec, every dialect, and every release. A change that b
 
 **The registries are two files and never one.** `docs/dialects.toml` states which dialects exist. It describes formats, so it changes when a vendor ships. `docs/dialect-support.toml` states what cadmpeg does with each. It describes cadmpeg, so it changes per commit. Merging them makes cadmpeg's coverage look like a property of the format, which is the claim that must never become writable.
 
+**Dialect identity has one author.** `docs/dialects.toml` is the source of every codec dialect-id constant. `scripts/check-dialects.py --write-generated` projects each format into its owning private Rust module; the default check compares those modules byte for byte with the registry-derived output. Codec-local enums map parser facts to those constants. They do not repeat id strings. The generated modules contain constants only, not a runtime table or a shared dialect enum.
+
 ## Crate map
 
 | Crate                    | Responsibility                                                                                                                         |

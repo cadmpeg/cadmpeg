@@ -2,10 +2,9 @@
 //! IGES dialect identity: which registry row a document is, and how it was
 //! admitted.
 //!
-//! The dialect-id function is internal, `DialectId::pinned` strings are the
-//! boundary, [`classify`] is the one construction path, and the vocabulary is
-//! closed. Tests close it directly against
-//! `docs/dialects.toml`.
+//! The dialect-id function is internal, registry-generated [`DialectId`]
+//! constants are the boundary, [`classify`] is the one construction path, and
+//! the vocabulary is closed.
 //!
 //! Identity rows and parser grammars are independent, and IGES shows the gap
 //! plainly. The registry enumerates eleven Fixed ASCII versions
@@ -35,8 +34,7 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "iges";
+include!("dialect/registry_ids.rs");
 
 /// The dialect-unverified loss required by a classified Global declaration.
 pub(crate) fn dialect_loss(matched: &DialectMatch, global: &ResolvedGlobal) -> Option<LossNote> {
@@ -115,37 +113,36 @@ pub(crate) const fn dialect_id(
     representation: Representation,
     version: Option<VersionFlag>,
 ) -> DialectId {
-    let id = match (representation, version) {
-        (Representation::FixedAscii, Some(VersionFlag::V1_0)) => "iges:1.0-fixed-ascii",
+    match (representation, version) {
+        (Representation::FixedAscii, Some(VersionFlag::V1_0)) => IGES_1_0_FIXED_ASCII,
         (Representation::FixedAscii, Some(VersionFlag::AnsiY1426M1981)) => {
-            "iges:ansi-y14.26m-1981-fixed-ascii"
+            IGES_ANSI_Y14_26M_1981_FIXED_ASCII
         }
-        (Representation::FixedAscii, Some(VersionFlag::V2_0)) => "iges:2.0-fixed-ascii",
-        (Representation::FixedAscii, Some(VersionFlag::V3_0)) => "iges:3.0-fixed-ascii",
+        (Representation::FixedAscii, Some(VersionFlag::V2_0)) => IGES_2_0_FIXED_ASCII,
+        (Representation::FixedAscii, Some(VersionFlag::V3_0)) => IGES_3_0_FIXED_ASCII,
         (Representation::FixedAscii, Some(VersionFlag::AsmeAnsiY1426M1987)) => {
-            "iges:asme-ansi-y14.26m-1987-fixed-ascii"
+            IGES_ASME_ANSI_Y14_26M_1987_FIXED_ASCII
         }
-        (Representation::FixedAscii, Some(VersionFlag::V4_0)) => "iges:4.0-fixed-ascii",
+        (Representation::FixedAscii, Some(VersionFlag::V4_0)) => IGES_4_0_FIXED_ASCII,
         (Representation::FixedAscii, Some(VersionFlag::AsmeY1426M1989)) => {
-            "iges:asme-y14.26m-1989-fixed-ascii"
+            IGES_ASME_Y14_26M_1989_FIXED_ASCII
         }
-        (Representation::FixedAscii, Some(VersionFlag::V5_0)) => "iges:5.0-fixed-ascii",
-        (Representation::FixedAscii, Some(VersionFlag::V5_1)) => "iges:5.1-fixed-ascii",
-        (Representation::FixedAscii, Some(VersionFlag::V5_2)) => "iges:5.2-fixed-ascii",
-        (Representation::FixedAscii, Some(VersionFlag::V5_3)) => "iges:5.3-fixed-ascii",
-        (Representation::CompressedAscii, Some(VersionFlag::V4_0)) => "iges:4.0-compressed-ascii",
-        (Representation::CompressedAscii, Some(VersionFlag::V5_0)) => "iges:5.0-compressed-ascii",
-        (Representation::CompressedAscii, Some(VersionFlag::V5_1)) => "iges:5.1-compressed-ascii",
-        (Representation::CompressedAscii, Some(VersionFlag::V5_2)) => "iges:5.2-compressed-ascii",
-        (Representation::CompressedAscii, Some(VersionFlag::V5_3)) => "iges:5.3-compressed-ascii",
-        (Representation::Binary, Some(VersionFlag::V4_0)) => "iges:4.0-binary",
-        (Representation::Binary, Some(VersionFlag::V5_0)) => "iges:5.0-binary",
-        (Representation::Binary, Some(VersionFlag::V5_1)) => "iges:5.1-binary",
-        (Representation::Binary, Some(VersionFlag::V5_2)) => "iges:5.2-binary",
-        (Representation::Binary, Some(VersionFlag::V5_3)) => "iges:5.3-binary",
-        _ => "iges:unknown",
-    };
-    DialectId::pinned(id)
+        (Representation::FixedAscii, Some(VersionFlag::V5_0)) => IGES_5_0_FIXED_ASCII,
+        (Representation::FixedAscii, Some(VersionFlag::V5_1)) => IGES_5_1_FIXED_ASCII,
+        (Representation::FixedAscii, Some(VersionFlag::V5_2)) => IGES_5_2_FIXED_ASCII,
+        (Representation::FixedAscii, Some(VersionFlag::V5_3)) => IGES_5_3_FIXED_ASCII,
+        (Representation::CompressedAscii, Some(VersionFlag::V4_0)) => IGES_4_0_COMPRESSED_ASCII,
+        (Representation::CompressedAscii, Some(VersionFlag::V5_0)) => IGES_5_0_COMPRESSED_ASCII,
+        (Representation::CompressedAscii, Some(VersionFlag::V5_1)) => IGES_5_1_COMPRESSED_ASCII,
+        (Representation::CompressedAscii, Some(VersionFlag::V5_2)) => IGES_5_2_COMPRESSED_ASCII,
+        (Representation::CompressedAscii, Some(VersionFlag::V5_3)) => IGES_5_3_COMPRESSED_ASCII,
+        (Representation::Binary, Some(VersionFlag::V4_0)) => IGES_4_0_BINARY,
+        (Representation::Binary, Some(VersionFlag::V5_0)) => IGES_5_0_BINARY,
+        (Representation::Binary, Some(VersionFlag::V5_1)) => IGES_5_1_BINARY,
+        (Representation::Binary, Some(VersionFlag::V5_2)) => IGES_5_2_BINARY,
+        (Representation::Binary, Some(VersionFlag::V5_3)) => IGES_5_3_BINARY,
+        _ => IGES_UNKNOWN,
+    }
 }
 
 /// The Fixed ASCII row for one public write version.

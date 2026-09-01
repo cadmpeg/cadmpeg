@@ -358,7 +358,7 @@ impl Written {
 
 impl CodecBackend for SldprtCodec {
     fn id(&self) -> &'static str {
-        "sldprt"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

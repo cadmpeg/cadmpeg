@@ -26,8 +26,7 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 
 use crate::kernel_header::KernelHeader;
 
-/// Registry format id for the embedded ACIS/ASM kernel layer.
-pub const FORMAT: &str = "acis";
+include!("dialect/registry_ids.rs");
 
 /// Key of the kernel save-format major component in
 /// [`DialectMatch::declared`].
@@ -132,14 +131,6 @@ pub fn classify_layer(
 /// Save-format majors the Spatial ACIS record decoders are verified against.
 pub const VERIFIED_ACIS_MAJORS: [u32; 2] = [217, 218];
 
-/// Registry row of the lower verified Spatial ACIS band.
-pub const ACIS_SAVE_FORMAT_217: DialectId = DialectId::pinned("acis:save-format-217");
-/// Registry row of the upper verified Spatial ACIS band.
-pub const ACIS_SAVE_FORMAT_218: DialectId = DialectId::pinned("acis:save-format-218");
-/// Registry row of every other Spatial ACIS binary save format.
-pub const ACIS_SAVE_FORMAT_BINARY_OTHER: DialectId =
-    DialectId::pinned("acis:save-format-binary-other");
-
 /// Whether a Spatial ACIS save format is one the record decoders are verified
 /// against.
 ///
@@ -221,17 +212,6 @@ pub fn acis_binary_row(save_format_major: Option<u32>) -> DialectId {
         _ => ACIS_SAVE_FORMAT_BINARY_OTHER,
     }
 }
-
-/// Registry row of an ASM binary stream at four-byte reference width.
-pub const ACIS_ASM_BINARYFILE_4: DialectId = DialectId::pinned("acis:asm-binaryfile-4");
-/// Registry row of an ASM binary stream at eight-byte reference width.
-pub const ACIS_ASM_BINARYFILE_8: DialectId = DialectId::pinned("acis:asm-binaryfile-8");
-/// Registry row of a text stream terminated by `End-of-ASM-data`.
-pub const ACIS_TEXT_ASM: DialectId = DialectId::pinned("acis:text-asm");
-/// Registry row of a text stream terminated by `End-of-ACIS-data`.
-pub const ACIS_TEXT_ACIS: DialectId = DialectId::pinned("acis:text-acis");
-/// Registry row of a kernel stream matching no ACIS or ASM framing.
-pub const ACIS_UNKNOWN: DialectId = DialectId::pinned("acis:unknown");
 
 /// The `acis:` ASM binary row one reference width satisfies.
 ///
@@ -335,7 +315,7 @@ mod tests {
         .is_none());
         assert!(unverified_message(
             "the carrier",
-            &DialectMatch::admitted(DialectId::pinned("sat:text"))
+            &DialectMatch::admitted(DialectId::pinned("test:text"))
         )
         .is_none());
     }

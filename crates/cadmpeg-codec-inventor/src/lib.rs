@@ -55,7 +55,7 @@ pub struct InventorCodec;
 
 impl CodecBackend for InventorCodec {
     fn id(&self) -> &'static str {
-        "inventor"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

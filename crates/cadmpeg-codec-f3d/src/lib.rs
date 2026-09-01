@@ -195,7 +195,7 @@ impl F3dCodec {
 
 impl CodecBackend for F3dCodec {
     fn id(&self) -> &'static str {
-        "f3d"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

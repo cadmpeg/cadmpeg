@@ -43,7 +43,7 @@ impl EncoderBackend for StepCodec {
 
 impl CodecBackend for StepCodec {
     fn id(&self) -> &'static str {
-        "step"
+        crate::dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

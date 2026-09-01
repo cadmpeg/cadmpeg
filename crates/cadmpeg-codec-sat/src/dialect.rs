@@ -2,10 +2,9 @@
 //! SAT dialect identity: which registry row a bare stream is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. Tests close it directly against the reportable rows
-//! in `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`classify`] is the one
+//! construction path, and the vocabulary is closed.
 //!
 //! This module owns the primary `sat:` host layer. Each classified stream also
 //! emits the non-primary `acis:` kernel layer owned by `cadmpeg-asm`.
@@ -38,6 +37,7 @@
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
 use crate::detect::StreamKind;
+use crate::{SAT_ACIS_BINARY, SAT_ASM_BINARY, SAT_TEXT};
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
@@ -57,7 +57,7 @@ impl StreamKind {
     #[cfg(test)]
     pub(crate) const ALL: [Self; 3] = [Self::AsmBinary, Self::AcisBinary, Self::Text];
 
-    /// The pinned registry id when this kind reaches classification.
+    /// The registry-generated id when this kind reaches classification.
     ///
     /// One row of `docs/dialects.toml` under the `sat` namespace per stream
     /// kind: the discriminant is the leading magic, or the two-line header shape
@@ -71,9 +71,9 @@ impl StreamKind {
     /// [`Confidence::No`]: cadmpeg_ir::codec::Confidence::No
     pub(crate) const fn reportable_id(self) -> Option<DialectId> {
         match self {
-            Self::AsmBinary => Some(DialectId::pinned("sat:asm-binary")),
-            Self::AcisBinary => Some(DialectId::pinned("sat:acis-binary")),
-            Self::Text => Some(DialectId::pinned("sat:text")),
+            Self::AsmBinary => Some(SAT_ASM_BINARY),
+            Self::AcisBinary => Some(SAT_ACIS_BINARY),
+            Self::Text => Some(SAT_TEXT),
             Self::Unknown => None,
         }
     }

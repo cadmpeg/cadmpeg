@@ -134,7 +134,7 @@ pub(crate) fn document_digest(ir: &CadIr) -> String {
 
 impl CodecBackend for IgesCodec {
     fn id(&self) -> &'static str {
-        "iges"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

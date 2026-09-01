@@ -21,10 +21,10 @@
 //!
 //! Producers use [`DialectId::pinned`] for checked static ids. Wire readers use
 //! [`DialectId::parse`] for checked owned ids. A codec backs its dialects with
-//! its own enum and returns pinned ids from it — the `*LossCode` template: enum
-//! inside, pinned string at the boundary, one construction path, closed
-//! vocabulary. Deserialization is the only other way an id comes into being,
-//! and it reconstructs an id that some producer pinned.
+//! its own enum and returns registry-generated pinned constants from it — the
+//! `*LossCode` template: enum inside, pinned string at the boundary, one
+//! construction path, closed vocabulary. Deserialization is the only other way
+//! an id comes into being, and it reconstructs an id that some producer pinned.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;

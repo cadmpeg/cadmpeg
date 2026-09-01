@@ -2,10 +2,9 @@
 //! Creo dialect identity: which registry row a document is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`classify`] is the one construction
-//! path, and the vocabulary is closed. Tests close it directly against
-//! `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`classify`] is the one
+//! construction path, and the vocabulary is closed.
 //!
 //! # The discriminant is the layout classification
 //!
@@ -38,8 +37,7 @@ use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "creo";
+include!("dialect/registry_ids.rs");
 
 /// Key of the `#UGC:2` header line, verbatim, in [`DialectMatch::declared`].
 ///
@@ -115,7 +113,7 @@ impl Layout {
         Self::Unknown(UnknownLayout::NoDiscriminant),
     ];
 
-    /// The pinned registry id.
+    /// The registry-generated id.
     ///
     /// One row of `docs/dialects.toml` under the `creo` namespace, and the only
     /// registry string boundary this enum has. `docs/dialects.toml` declares
@@ -126,12 +124,12 @@ impl Layout {
     /// Total by construction: [`Layout`] is closed and this match is
     /// exhaustive, so `detect`'s whole domain classifies.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
-            Self::Nd => "creo:nd",
-            Self::Depdb => "creo:depdb",
-            Self::LegacyAscii => "creo:legacy-ascii",
-            Self::Unknown(_) => "creo:unknown",
-        })
+        match self {
+            Self::Nd => CREO_ND,
+            Self::Depdb => CREO_DEPDB,
+            Self::LegacyAscii => CREO_LEGACY_ASCII,
+            Self::Unknown(_) => CREO_UNKNOWN,
+        }
     }
 }
 

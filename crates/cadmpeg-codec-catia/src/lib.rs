@@ -94,7 +94,7 @@ pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
     fn id(&self) -> &'static str {
-        "catia"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
