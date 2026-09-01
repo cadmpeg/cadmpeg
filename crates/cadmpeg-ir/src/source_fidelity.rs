@@ -94,16 +94,8 @@ impl DecodeSidecar {
                 });
             }
         }
-        let wire = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
-        Self::from_current_wire(wire)
-    }
-
-    fn from_current_wire(wire: DecodeSidecarWire) -> Result<Self, DecodeSidecarParseError> {
-        if wire.version != DECODE_SIDECAR_VERSION {
-            return Err(DecodeSidecarParseError::Version {
-                found: wire.version,
-            });
-        }
+        let wire: DecodeSidecarWire =
+            serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
         wire.fidelity
             .validate()
             .map_err(DecodeSidecarParseError::Fidelity)?;
