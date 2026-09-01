@@ -40,7 +40,7 @@
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::report::{ExportReport, WritePath};
@@ -72,7 +72,7 @@ where
         TargetRequest::Inherit,
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
-    let path = ExportPlan::write_path(&plan);
+    let path = plan.report().write_path;
     let mut written = Vec::new();
     let report = plan
         .write_to(&mut written)
@@ -154,7 +154,7 @@ pub fn semantic_roundtrip<C>(
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = ExportPlan::write_path(&plan);
+            let path = plan.report().write_path;
             let mut bytes = Vec::new();
             let report = plan
                 .write_to(&mut bytes)
@@ -265,7 +265,7 @@ where
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = ExportPlan::write_path(&plan);
+            let path = plan.report().write_path;
             let mut bytes = Vec::new();
             let report = plan
                 .write_to(&mut bytes)

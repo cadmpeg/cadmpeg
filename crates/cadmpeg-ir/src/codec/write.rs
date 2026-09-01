@@ -471,16 +471,6 @@ impl ExportPlan {
         &self.report
     }
 
-    /// Returns how source fidelity was resolved while planning.
-    pub fn fidelity_resolution(&self) -> &FidelityResolution {
-        &self.report.fidelity
-    }
-
-    /// Returns the write path the encoder took to produce this plan's payload.
-    pub fn write_path(&self) -> WritePath {
-        self.report.write_path
-    }
-
     /// Writes the planned payload and returns the unchanged plan-time report.
     pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
         writer.write_all(&self.bytes)?;

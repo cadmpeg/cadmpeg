@@ -183,7 +183,7 @@ fn encode_replays_an_unchanged_iges_source_image() {
         Some(decoded.source_fidelity()),
     )
     .unwrap();
-    assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
+    assert_eq!(plan.report().write_path, WritePath::VerbatimReplay);
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     assert_eq!(written, bytes);
@@ -349,7 +349,7 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
         Some(decoded.source_fidelity()),
     )
     .unwrap();
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    assert_eq!(plan.report().write_path, WritePath::Synthesized);
 
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -372,7 +372,7 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
         position: Point3::new(4.0, 5.0, 6.0),
     });
     let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    assert_eq!(plan.report().write_path, WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
@@ -400,7 +400,7 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     let (mut ir, _, fidelity) = decoded.into_parts();
     ir.model.points[0].position.x += 1.0;
     let plan = plan_at(IgesVersion::V5_3, &ir, Some(&fidelity)).unwrap();
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    assert_eq!(plan.report().write_path, WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report

@@ -96,7 +96,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     )
     .expect("explicit transcode plans");
 
-    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotConsumed);
+    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
     let displacement = plan
         .report()
         .losses
@@ -125,7 +125,7 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
     .expect("inherit synthesizes the catalog source dialect");
 
     assert_eq!(
-        plan.fidelity_resolution(),
+        &plan.report().fidelity,
         &FidelityResolution::Degraded {
             reason: "preserved SLDPRT source image is unavailable".into(),
         }

@@ -98,9 +98,9 @@ fuzz_target!(|data: &[u8]| {
             )
         .expect("writer output must plan after the optional source edit");
     if control & 0x40 == 0 {
-        assert_eq!(replay.write_path(), WritePath::VerbatimReplay);
+        assert_eq!(replay.report().write_path, WritePath::VerbatimReplay);
     } else {
-        assert_ne!(replay.write_path(), WritePath::VerbatimReplay);
+        assert_ne!(replay.report().write_path, WritePath::VerbatimReplay);
     }
     let mut replayed = Vec::new();
     replay

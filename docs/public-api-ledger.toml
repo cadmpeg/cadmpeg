@@ -1961,3 +1961,10 @@ crate = "cadmpeg-codec-step"
 kind = "trait_impl"
 item = "impl Encoder for cadmpeg_codec_step::StepCodec -> EncoderBackend"
 reason = "the shared Encoder blanket implementation owns target resolution against the codec's declared catalog"
+
+[[change]]
+commit = "5ab799ccb26b003c833ac4b6f3b4ef44ce8958b5"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::ExportPlan::{fidelity_resolution,write_path}"
+reason = "both methods mirrored public fields of ExportPlan::report() without adding an invariant; callers now read the owning ExportReport directly"

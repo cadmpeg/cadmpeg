@@ -366,7 +366,7 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.write_path();
+            let path = plan.report().write_path;
             match plan.write_to(&mut out) {
                 Ok(_) => {
                     assert_eq!(
