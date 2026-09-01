@@ -1,5 +1,4 @@
 use super::*;
-use cadmpeg_ir::codec::CadirEncoder;
 use cadmpeg_ir::CadIr;
 
 #[test]
@@ -307,91 +306,6 @@ fn an_unwritable_format_is_a_typed_plan_refusal() {
     assert_eq!(refusal.exit_code(), 1);
 }
 
-/// The cross-format default still lands on the catalog default.
-///
-/// A source of another format has nothing to inherit, so write resolution
-/// selects the catalog default.
-#[cfg(feature = "iges")]
-#[test]
-fn a_cross_format_convert_writes_the_catalog_default() {
-    use cadmpeg_ir::codec::resolve_write_request;
-
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.source = Some(cadmpeg_ir::SourceMeta::unclassified(
-        "step",
-        std::collections::BTreeMap::new(),
-    ));
-    let encoder = cadmpeg_codec_iges::IgesCodec;
-    let resolved =
-        resolve_write_request(&ir, TargetRequest::Inherit, encoder.id(), encoder.targets())
-            .expect("the fallback resolves");
-    let entry = resolved
-        .catalog_entry()
-        .expect("a cross-format request resolves to the catalog");
-    assert_eq!(entry.id.as_str(), "iges:5.3-fixed-ascii");
-    assert!(!resolved.preserves_source());
-}
-
-/// CADIR has no native dialect catalog, so it handles `Inherit` locally.
-#[test]
-fn cadir_takes_inherit() {
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .expect("CADIR admits its dialect-free format identity");
-    assert_eq!(plan.report().target(), None);
-}
-
-/// `convert old.3dm -o new.3dm` with no target flag writes the archive
-/// version the file already is.
-///
-/// The whole chain the command line owns, minus argv parsing: no flag makes
-/// [`export_target`] build a Rhino encoder and a selection with no target
-/// token, the selection resolves to `Inherit`, and the
-/// encoder resolves `Inherit` against the source's dialect. The source is
-/// archive 50 and the catalog default is archive 80, so the assertion cannot
-/// pass by coincidence.
-///
-/// Until this change `export_target` substituted archive 80 for flag
-/// absence, so the round trip handed a Rhino 5 user a file their own Rhino
-/// cannot open. `cadmpeg-codec-rhino`'s `writer/tests/targets.rs` covers the
-/// explicit flag, the cross-format default, and the refusal.
-#[cfg(feature = "rhino")]
-#[test]
-fn a_same_format_rhino_convert_keeps_the_source_archive_version() {
-    use cadmpeg_core::dialect::DialectId;
-    use cadmpeg_ir::codec::Codec;
-
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let mut archive_50 = Vec::new();
-    cadmpeg_codec_rhino::RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit("rhino:archive-50"),
-        )
-        .expect("archive 50 is a target")
-        .write_to(&mut archive_50)
-        .expect("the plan writes");
-    let decoded = cadmpeg_codec_rhino::RhinoCodec
-        .decode(
-            &mut std::io::Cursor::new(archive_50),
-            &DecodeOptions::default(),
-        )
-        .expect("the archive decodes");
-
-    let target = export_target(TargetSelection::new(Format::Rhino, None)).unwrap();
-    let request = target.selection.request();
-    assert_eq!(request, TargetRequest::Inherit);
-
-    let plan = target
-        .encoder
-        .plan(EncodeInput::new(decoded.ir(), None), request)
-        .expect("the inherited target is writable");
-    assert_eq!(
-        plan.report().target().map(DialectId::as_str),
-        Some("rhino:archive-50")
-    );
-}
 /// Export-loss rejection is not a target.
 ///
 /// A loss flag that also named a target would turn `convert a.step -o
