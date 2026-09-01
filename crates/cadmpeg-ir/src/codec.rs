@@ -467,10 +467,11 @@ impl<C: CodecBackend + ?Sized> Codec for C {
 }
 
 mod write;
+#[cfg(test)]
+use write::resolve_write_request;
 pub use write::{
-    resolve_write_request, source_dialect_displaced_message, CadirEncoder, EncodeInput, Encoder,
-    EncoderBackend, EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget, ResolvedWrite,
-    TargetRequest,
+    CadirEncoder, EncodeInput, Encoder, EncoderBackend, EncoderTargetDomain, ExportPlan,
+    ResolvedEncoderTarget, ResolvedWrite, TargetRequest,
 };
 
 #[cfg(test)]

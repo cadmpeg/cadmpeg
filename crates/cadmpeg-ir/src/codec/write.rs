@@ -46,7 +46,7 @@ enum ResolvedTarget {
 
 /// A native write resolved against the encoder catalog and source identity.
 ///
-/// Only [`resolve_write_request`] constructs this proof. Its queries keep the
+/// Only the internal `resolve_write_request` operation constructs this proof. Its queries keep the
 /// catalog target, preservation eligibility, and displaced source consistent;
 /// codecs do not reconstruct those relations from public fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +152,18 @@ impl ResolvedWrite {
             | ResolvedTarget::Default { .. }
             | ResolvedTarget::Preserved => None,
         }
+    }
+
+    /// Describes the source-dialect displacement selected by this resolution.
+    #[must_use]
+    pub fn displacement_message(&self) -> Option<String> {
+        self.displaced_source().map(|displaced| {
+            format!(
+                "source dialect {displaced} was displaced by target dialect {}; the source \
+                 dialect identity is not preserved",
+                self.dialect()
+            )
+        })
     }
 
     /// Whether the document records source metadata for this encoder format.
@@ -261,7 +273,7 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
 /// Native requests always name a catalog or preserved off-catalog dialect.
 /// A dialect-free neutral encoder handles its format identity locally instead
 /// of adding an identity case to every native writer.
-pub fn resolve_write_request(
+pub(super) fn resolve_write_request(
     ir: &CadIr,
     request: TargetRequest<'_>,
     format: &str,
@@ -308,17 +320,6 @@ pub fn resolve_write_request(
             },
         },
     }
-}
-
-/// State that a write displaced the source dialect with another target.
-#[must_use]
-pub fn source_dialect_displaced_message(
-    displaced: &cadmpeg_core::dialect::DialectId,
-    target: &cadmpeg_core::dialect::DialectId,
-) -> String {
-    format!(
-        "source dialect {displaced} was displaced by target dialect {target}; the source dialect identity is not preserved"
-    )
 }
 
 /// How an encoder resolves caller target requests.

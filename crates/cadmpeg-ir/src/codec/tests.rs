@@ -726,10 +726,9 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
     assert_eq!(displaced, &DialectId::pinned("test:old"));
     assert!(!resolved.source_preservation_eligible());
     assert_eq!(
-        source_dialect_displaced_message(
-            displaced,
-            &entry.id,
-        ),
+        resolved.displacement_message().as_deref(),
+        Some(
         "source dialect test:old was displaced by target dialect test:new; the source dialect identity is not preserved"
+        )
     );
 }

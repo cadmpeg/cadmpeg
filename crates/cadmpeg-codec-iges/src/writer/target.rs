@@ -46,7 +46,7 @@ pub(crate) fn plan(
         synthesized_plan(
             input,
             crate::IgesVersion::from_catalog_entry(entry),
-            resolved.displaced_source(),
+            resolved.displacement_message(),
             None,
             preservation_eligible,
         )
@@ -70,7 +70,7 @@ fn replayed_plan(ir: &CadIr, dialect: DialectId, bytes: Vec<u8>) -> ExportPlan {
 fn synthesized_plan(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
-    displaced: Option<&DialectId>,
+    displacement: Option<String>,
     replay_failure: Option<String>,
     preservation_eligible: bool,
 ) -> Result<ExportPlan, CodecError> {
@@ -87,10 +87,9 @@ fn synthesized_plan(
             ),
         );
     }
-    if let Some(source) = displaced.as_ref() {
-        losses.push(IgesLossCode::SourceDialectDisplaced.note(
-            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
-        ));
+    let displaced = displacement.is_some();
+    if let Some(message) = displacement {
+        losses.push(IgesLossCode::SourceDialectDisplaced.note(message));
     }
     let synthesis = super::synthesize(input.ir, version)?;
     losses.extend(synthesis.losses.clone());
@@ -98,7 +97,7 @@ fn synthesized_plan(
         FidelityResolution::Degraded {
             reason: "preserved IGES source image is unavailable".into(),
         }
-    } else if displaced.is_some() {
+    } else if displaced {
         if input.fidelity.is_some() {
             FidelityResolution::NotConsumed
         } else {

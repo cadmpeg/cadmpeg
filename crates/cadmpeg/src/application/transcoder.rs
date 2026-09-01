@@ -117,10 +117,10 @@ impl TargetSelection {
     ///
     /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
     /// resolves to is the encoder's answer, not the command line's:
-    /// `resolve_write_request` preserves the source dialect within one format
-    /// and selects the catalog default when there is nothing to inherit: no
-    /// source or a source of another format. Deciding the cross-format default here as well would be the
-    /// same rule written twice, in two places that can drift.
+    /// [`Encoder::plan`](cadmpeg_ir::codec::Encoder::plan) preserves the source
+    /// dialect within one format and selects the catalog default when there is
+    /// nothing to inherit: no source or a source of another format. Deciding
+    /// the cross-format default here as well would write the same rule twice.
     fn request(&self) -> TargetRequest<'_> {
         match self.request.as_deref() {
             Some(id) => TargetRequest::Explicit(id),

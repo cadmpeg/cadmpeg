@@ -56,7 +56,7 @@ pub(crate) fn plan(
     synthesized_plan(
         input,
         &target,
-        resolved.displaced_source(),
+        resolved.displacement_message(),
         preservation_eligible,
     )
 }
@@ -113,7 +113,7 @@ fn preserved_plan(
 fn synthesized_plan(
     input: EncodeInput<'_>,
     target: &DialectId,
-    displaced: Option<&DialectId>,
+    displacement: Option<String>,
     preservation_eligible: bool,
 ) -> Result<ExportPlan, CodecError> {
     let mut bytes = Vec::new();
@@ -138,10 +138,8 @@ fn synthesized_plan(
         })
         .into_iter()
         .collect();
-    if let Some(source) = displaced.as_ref() {
-        losses.push(F3dLossCode::SourceDialectDisplaced.note(
-            cadmpeg_ir::codec::source_dialect_displaced_message(source, target),
-        ));
+    if let Some(message) = displacement {
+        losses.push(F3dLossCode::SourceDialectDisplaced.note(message));
     }
     Ok(ExportPlan::buffered(
         report(

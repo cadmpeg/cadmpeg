@@ -54,10 +54,8 @@ pub(crate) fn plan(
         });
     let mut losses = Vec::new();
     let target = version.descriptor().id;
-    if let Some(source) = resolved.displaced_source() {
-        losses.push(RhinoLossCode::SourceDialectDisplaced.note(
-            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
-        ));
+    if let Some(message) = resolved.displacement_message() {
+        losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
     }
     if vertex_quantization {
         losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(
