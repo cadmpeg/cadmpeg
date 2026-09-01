@@ -605,11 +605,11 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # FreeCAD FCStd
 # --------------------------------------------------------------------------
 # One discriminant: the `SchemaVersion` attribute on the `<Document>` root of
-# `Document.xml` inside the ZIP
-# (crates/cadmpeg-codec-freecad/src/container.rs:214-215; re-read
-# independently at persistence.rs:48-51). The lowercase alias `schemaVersion`
-# alone is refused, and carrying both spellings is refused
-# (container.rs:168-182). `GuiDocument.xml` carries its own unrelated
+# `Document.xml` inside the ZIP. `container::parse_document` reads it once and
+# keeps the exact string on `DocumentFacts`; container inspection, dialect
+# classification, persistence parsing, and retained writing consume that typed
+# fact. The lowercase alias `schemaVersion` alone is refused, and carrying both
+# spellings is refused. `GuiDocument.xml` carries its own unrelated
 # `SchemaVersion`; it is not run through this dispatch. Every GUI schema uses
 # the schema-1 vocabulary. A foreign declaration that fits is retained with
 # `fcstd/source.gui-schema-unverified`; a failed foreign-schema attempt drops
@@ -636,11 +636,10 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 complete = false
 
 [[dialect]]
-# persistence.rs:52-60, the `"2"` arm: element vocabulary
+# `FcstdDialect::persistence_tags`, the schema-2 arm: element vocabulary
 # Features/FeatureData/Feature. Schema 2 additionally forbids the dependency
-# envelope (persistence.rs:78-82) and never parses `ObjectDeps`
-# (persistence.rs:84). The same 2-vs-rest split is duplicated in the container
-# scan (container.rs:224, 229, 234).
+# envelope and never parses `ObjectDeps`. Container validation and persistence
+# graph recovery read the same typed schema and call the same vocabulary owner.
 #
 # A strategy is declared for this row, so a schema 2 document is
 # `Admission::Admitted`.
@@ -653,9 +652,8 @@ seam = "a different XML element vocabulary: Features/FeatureData/Feature instead
 witness = "code:crates/cadmpeg-codec-freecad/src/persistence.rs:53"
 
 [[dialect]]
-# persistence.rs:52-60, the `"3" | "4"` arm. Schema 3 and schema 4 share one
-# parse path: no `== "3"` or `== "4"` test exists anywhere in the crate. They
-# are still separate identity rows and one grammar class. That grammar is
+# The schema-3/schema-4 arm of `FcstdDialect::persistence_tags`. Schema 3 and
+# schema 4 are separate identity rows and one grammar class. That grammar is
 # declared for both rows, so schema 3
 # and schema 4 documents are both `Admission::Admitted`.
 id = "fcstd:schema-3"
@@ -664,7 +662,7 @@ discriminants = { schema_version = "3" }
 witness = "code:crates/cadmpeg-codec-freecad/src/persistence.rs:54"
 
 [[dialect]]
-# persistence.rs:52-60, same arm as schema 3. Fixture verified: every archive
+# Same grammar arm as schema 3. Fixture verified: every archive
 # in `corpus/freecad_fcstd/fixtures/` opens
 # `<Document SchemaVersion="4" ProgramVersion="1.1R20260414 (Git shallow)"
 # FileVersion="1" StringHasher="1">`. `ProgramVersion` is metadata; nothing
@@ -676,9 +674,10 @@ witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). Every undeclared unsigned schema version is
-# decoded with the Objects/ObjectData/Object vocabulary because both full and
-# container decode test only `schema_version == "2"` and use that vocabulary
-# for the `else` branch (persistence.rs:52-60, container.rs:224-237).
+# decoded with the Objects/ObjectData/Object vocabulary because
+# `FcstdDialect::persistence_tags` maps every non-schema-2 declaration to that
+# vocabulary, and both container validation and full graph recovery consume
+# that result.
 # `FcstdDialect::classify` returns `Admission::AdmittedUnverified`, names
 # `fcstd:schema-4` as the row in use, and both decode branches charge
 # `fcstd/source.dialect-unverified` (dialect.rs:169-220). Schema 4 is the newer
@@ -1040,23 +1039,15 @@ witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt
 # The classification lives in crates/cadmpeg-codec-f3d/src/dialect.rs and runs
 # inside `container::scan`, beside the branch that chooses the parse strategy.
 #
-# Open grammar question, not decided here. Two further document-wide forks
-# live inside the same manifest and would each be a B1 boundary if the codec
-# owner reads them that way:
-#   generation sentinel -- `generation == 1234` selects a three-extra-word
-#     layout (major/minor/flags); any other value selects a one-extra-word
-#     legacy layout (manifest.rs:206-217). BOTH branches are admitted: this is
-#     a real fork, not a gate. All four components are parsed and discarded.
-#   asset-manifest revision -- `parse_asset_header` (manifest.rs:400-431)
-#     admits revisions 0, 10, 11, 12, 13, 14, 15, 19, and 20 through three
-#     genuinely distinct grammars (dispatch at manifest.rs:415-426;
-#     `parse_revision_zero_design_asset` :471, `parse_revision_ten_design_asset`
-#     :485, `parse_current_design_asset` for the rest), and REFUSES 16, 17,
-#     18, and everything at 21 or above. The refused band is a gap in the
-#     middle of the admitted range, not a ceiling.
-# Every in-tree fixture is the single point {version "3-2-0-0", generation
-# 1234, asset revision 20}, so splitting on either fork would produce
-# unwitnessable rows today.
+# Two internal self-framing dispatches stay within the document row. The
+# top-level generation sentinel selects either the `1234` header with three
+# generation words or the legacy header with one further generation word;
+# both arms are admitted by `parse_top_level_body`. Each asset has its own
+# `Manifest.dat`, so its revision is not a document-wide identity axis.
+# `parse_asset_header` gives revisions 0 and 10 dedicated grammars and attempts
+# the current grammar for every other revision. It has no revision allowlist;
+# a structurally incompatible asset manifest fails because that attempted
+# grammar does not fit.
 #
 # `complete = false`: Autodesk publishes no manifest-version enumeration.
 [format.f3d]
