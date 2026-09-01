@@ -2157,7 +2157,7 @@ struct GeometryIndex {
 #[derive(Debug, Clone, Copy)]
 struct DecodeSessionState {
     admitted_entities: u64,
-    dialect_losses: crate::dialect::DialectLossProjection,
+    report_scope: crate::dialect::ReportScope,
 }
 
 /// Private decode accumulator for one `.f3d` document.
@@ -2195,10 +2195,10 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Result<Self, CodecError> {
         let DecodeSessionState {
             mut admitted_entities,
-            dialect_losses,
+            report_scope,
         } = session_state;
         let mut report =
-            crate::dialect::build_report(scan, false, true, geometry_losses(&brep), dialect_losses);
+            crate::dialect::build_report(scan, false, true, geometry_losses(&brep), report_scope);
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2263,7 +2263,7 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Self {
         let DecodeSessionState {
             admitted_entities,
-            dialect_losses,
+            report_scope,
         } = session_state;
         let (ir, unknowns) = build_metadata_ir(scan);
         Self {
@@ -2278,7 +2278,7 @@ impl<'a> F3dDecodeSession<'a> {
                 false,
                 false,
                 container_losses(scan),
-                dialect_losses,
+                report_scope,
             ),
             unknowns,
             deferred_xref: None,
@@ -2982,27 +2982,34 @@ pub(crate) fn decode_member<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<DecodeResult, CodecError> {
-    decode_document(ctx, root, crate::dialect::DialectLossProjection::Document)
+    decode_document(ctx, root, crate::dialect::ReportScope::Standalone)
 }
 
-/// Decode one F3Z member while deferring dialect losses to the archive layer.
+/// Decode one already-scanned F3Z member under archive-owned identity.
 pub(crate) fn decode_archive_member<'a>(
     ctx: &DecodeContext<'a>,
-    root: View<'a>,
+    scan: &'a ContainerScan<'a>,
 ) -> Result<DecodeResult, CodecError> {
-    decode_document(
-        ctx,
-        root,
-        crate::dialect::DialectLossProjection::ArchiveMember,
-    )
+    decode_scanned_document(ctx, scan, crate::dialect::ReportScope::ArchiveMember)
 }
 
 fn decode_document<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-    dialect_losses: crate::dialect::DialectLossProjection,
+    report_scope: crate::dialect::ReportScope,
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
+    if crate::f3z::is_f3z(&scan) {
+        return crate::f3z::decode(ctx, &scan);
+    }
+    decode_scanned_document(ctx, &scan, report_scope)
+}
+
+fn decode_scanned_document<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &'a ContainerScan<'a>,
+    report_scope: crate::dialect::ReportScope,
+) -> Result<DecodeResult, CodecError> {
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
         scan.entries.len() as u64,
@@ -3010,24 +3017,15 @@ fn decode_document<'a>(
         "admit F3D archive entries",
     )?;
 
-    if crate::f3z::is_f3z(&scan) {
-        return crate::f3z::decode(ctx, &scan);
-    }
-
     if ctx.container_only() {
-        let (mut ir, unknowns) = build_metadata_ir(&scan);
-        annotate_docstruct(&mut ir, &scan);
-        let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
-        let source_image = preserve_source_image(&scan);
-        let mut report = crate::dialect::build_report(
-            &scan,
-            true,
-            false,
-            container_losses(&scan),
-            dialect_losses,
-        );
-        if let Ok(Some(table)) = crate::xref::decode(&scan) {
-            apply_assembly_classification(&mut report, &scan, &table);
+        let (mut ir, unknowns) = build_metadata_ir(scan);
+        annotate_docstruct(&mut ir, scan);
+        let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
+        let source_image = preserve_source_image(scan);
+        let mut report =
+            crate::dialect::build_report(scan, true, false, container_losses(scan), report_scope);
+        if let Ok(Some(table)) = crate::xref::decode(scan) {
+            apply_assembly_classification(&mut report, scan, &table);
         }
         return decode_result(
             ctx,
@@ -3040,10 +3038,10 @@ fn decode_document<'a>(
         );
     }
 
-    let model_blob_names = crate::design::decode::body::design_model_blob_names(&scan)?;
+    let model_blob_names = crate::design::decode::body::design_model_blob_names(scan)?;
     let unbound_body_bindings =
-        crate::design::decode::body::decode_design_body_bindings(&scan, None, &[])?;
-    let model_breps = model_brep_candidates(&scan, &model_blob_names)?;
+        crate::design::decode::body::decode_design_body_bindings(scan, None, &[])?;
+    let model_breps = model_brep_candidates(scan, &model_blob_names)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
@@ -3053,7 +3051,7 @@ fn decode_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(&scan)?;
+        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
@@ -3063,7 +3061,7 @@ fn decode_document<'a>(
                 .insert(binding.asm_body_key);
         }
         for candidate in &model_breps {
-            let Some(mut part) = try_decode_brep(&scan, candidate)? else {
+            let Some(mut part) = try_decode_brep(scan, candidate)? else {
                 continue;
             };
             let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
@@ -3125,14 +3123,14 @@ fn decode_document<'a>(
             // Re-find primary in model_breps after move — keep the cloned primary.
             return finish_model_decode(
                 ctx,
-                &scan,
+                scan,
                 &primary_model_brep,
                 brep,
                 body_visibilities,
                 model_breps.len() - decoded_brep_count,
                 DecodeSessionState {
                     admitted_entities,
-                    dialect_losses,
+                    report_scope,
                 },
             );
         }
@@ -3140,17 +3138,17 @@ fn decode_document<'a>(
 
     // No binary stream decoded: the model may be carried only in the text
     // encoding.
-    if let Some((text_facts, text_brep)) = try_decode_text_model(&scan)? {
+    if let Some((text_facts, text_brep)) = try_decode_text_model(scan)? {
         return finish_model_decode(
             ctx,
-            &scan,
+            scan,
             &text_facts,
             text_brep,
             Vec::new(),
             0,
             DecodeSessionState {
                 admitted_entities,
-                dialect_losses,
+                report_scope,
             },
         );
     }
@@ -3158,10 +3156,10 @@ fn decode_document<'a>(
     // No decodable SAB stream: use container metadata through the shared session.
     F3dDecodeSession::from_metadata(
         ctx,
-        &scan,
+        scan,
         DecodeSessionState {
             admitted_entities,
-            dialect_losses,
+            report_scope,
         },
     )
     .into_result()

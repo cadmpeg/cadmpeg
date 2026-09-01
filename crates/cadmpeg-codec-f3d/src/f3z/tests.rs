@@ -980,6 +980,54 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
 }
 
 #[test]
+fn an_unreadable_unreferenced_member_is_retained_without_refusing_the_root() {
+    let root = f3d_with_smbh(&synthetic_smbh());
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("broken.f3d", b"not an F3D archive"),
+        ],
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("an unreadable unreferenced member must not erase the decoded root");
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind())
+        .expect("the unreadable retained member is reported");
+    assert!(loss.message.starts_with("xref broken.f3d:"));
+    assert!(loss.message.contains("source bytes remain retained"));
+}
+
+#[test]
+fn merged_member_losses_keep_their_xref_context() {
+    let component = f3d_without_brep("component-design", "comp.f3d", &[]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("comp.f3d", component.as_slice()),
+        ],
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("the bodyless member still merges its retained metadata");
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::MissingGeometryStream.kind())
+        .expect("the merged bodyless member reports its missing geometry carrier");
+    assert!(loss.message.starts_with("xref "), "{loss:?}");
+}
+
+#[test]
 fn duplicate_member_layer_identity_is_a_recorded_loss() {
     let mut target =
         cadmpeg_core::dialect::DialectLayers::of(crate::dialect::F3dDialect::classify_f3z(&[
