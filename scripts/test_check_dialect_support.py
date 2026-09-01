@@ -162,6 +162,18 @@ class TestFileLevel(SupportCase):
     def test_support_element_not_a_table(self):
         self.assertFires('support = ["nope"]\n', "support #0: not a table")
 
+    def test_an_unregistered_harness_fixture_override_fails_closed(self):
+        self.assertFires(
+            GOOD_SUPPORT,
+            "Harness::with_fixture_dir has no checker fixture-root override",
+            files={
+                FIXTURE: "demo bytes",
+                "crates/cadmpeg-codec-demo/src/golden_tests.rs": (
+                    "fn harness() { Harness::new().with_fixture_dir(path); }"
+                ),
+            },
+        )
+
 
 class TestRowShape(SupportCase):
     def test_missing_required_keys(self):
@@ -346,6 +358,17 @@ class TestSnapshotDomainGating(SupportCase):
                 "crates/cadmpeg-codec-demo/tests/golden/one.json": json.dumps(
                     {"decode": {"ir": {"source": {"dialect": "demo:one"}}}}
                 ),
+            },
+            snapshot_id=None,
+        )
+
+    def test_another_codecs_override_cannot_supply_the_fixture(self):
+        self.assertFires(
+            GOOD_SUPPORT,
+            "no golden snapshot domain",
+            files={
+                "corpus/freecad_fcstd/fixtures/one.demo": "not a demo fixture",
+                SNAPSHOT: json.dumps({"dialects": [{"dialect": "demo:one"}]}),
             },
             snapshot_id=None,
         )
