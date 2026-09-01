@@ -26,6 +26,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
 use serde::de::{IgnoredAny, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 
 use crate::commands::CLI_SCHEMA_VERSION;
 
@@ -233,6 +234,25 @@ struct DecodeReportProbe {
     coverage: BTreeMap<String, u64>,
     #[serde(default)]
     losses: Vec<LossProbe>,
+    #[serde(default)]
+    dialects: Option<DialectLayersProbe>,
+}
+
+/// Lenient dialect identity. Admission stays as JSON so a future admission
+/// variant does not make an otherwise projectable artifact unreadable.
+#[derive(Deserialize)]
+struct DialectMatchProbe {
+    #[serde(default)]
+    dialect: Option<String>,
+    #[serde(default)]
+    admission: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct DialectLayersProbe {
+    primary: DialectMatchProbe,
+    #[serde(default)]
+    extra: Vec<DialectMatchProbe>,
 }
 
 #[derive(Deserialize)]
@@ -291,9 +311,19 @@ impl LossCodeProbe {
 struct CadirProbe {
     ir_version: String,
     #[serde(default)]
+    source: Option<SourceProbe>,
+    #[serde(default)]
     model: BTreeMap<String, ArenaLen>,
     #[serde(default)]
     native: BTreeMap<String, NativeNamespaceProbe>,
+}
+
+#[derive(Deserialize)]
+struct SourceProbe {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    dialect: Option<DialectMatchProbe>,
 }
 
 #[derive(Deserialize)]
@@ -523,6 +553,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         decode.coverage.len().to_string(),
                     ));
                     rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
+                    push_decode_dialect_summary(&mut rows, decode);
                 }
                 None => rows.push(("decode_report".to_owned(), "null".to_owned())),
             }
@@ -551,6 +582,15 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
         }
         Artifact::Cadir(cadir) => {
             rows.push(("ir_version".to_owned(), cell(&cadir.ir_version)));
+            match &cadir.source {
+                Some(source) => {
+                    if let Some(format) = &source.format {
+                        rows.push(("source_format".to_owned(), cell(format)));
+                    }
+                    push_dialect_summary(&mut rows, "source", source.dialect.as_ref());
+                }
+                None => rows.push(("source".to_owned(), "null".to_owned())),
+            }
             rows.push(("model_arenas".to_owned(), cadir.model.len().to_string()));
             rows.push((
                 "model_entities".to_owned(),
@@ -589,6 +629,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         decode.coverage.len().to_string(),
                     ));
                     rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
+                    push_decode_dialect_summary(&mut rows, decode);
                 }
                 None => rows.push(("report".to_owned(), "null".to_owned())),
             }
@@ -605,6 +646,43 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
         for (field, value) in rows {
             println!("{field}\t{value}");
         }
+    }
+}
+
+fn push_decode_dialect_summary(rows: &mut Vec<(String, String)>, decode: &DecodeReportProbe) {
+    match &decode.dialects {
+        Some(layers) => {
+            rows.push((
+                "decode_dialect_layers".to_owned(),
+                (1 + layers.extra.len()).to_string(),
+            ));
+            push_dialect_summary(rows, "decode", Some(&layers.primary));
+        }
+        None => push_dialect_summary(rows, "decode", None),
+    }
+}
+
+fn push_dialect_summary(
+    rows: &mut Vec<(String, String)>,
+    prefix: &str,
+    matched: Option<&DialectMatchProbe>,
+) {
+    let Some(matched) = matched else {
+        rows.push((format!("{prefix}_dialect"), "null".to_owned()));
+        return;
+    };
+    rows.push((
+        format!("{prefix}_dialect"),
+        matched
+            .dialect
+            .as_ref()
+            .map_or_else(|| "null".to_owned(), |dialect| cell(dialect)),
+    ));
+    if let Some(admission) = &matched.admission {
+        let value = admission
+            .as_str()
+            .map_or_else(|| admission.to_string(), cell);
+        rows.push((format!("{prefix}_dialect_admission"), value));
     }
 }
 

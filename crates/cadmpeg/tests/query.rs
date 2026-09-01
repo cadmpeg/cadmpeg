@@ -85,6 +85,79 @@ fn summary_detects_all_three_artifact_kinds() {
 }
 
 #[test]
+fn summary_exposes_document_and_decode_dialect_identity() {
+    let dir = tempdir().unwrap();
+    let cadir = write(
+        dir.path(),
+        "classified.cadir.json",
+        r#"{
+          "ir_version": "4",
+          "source": {
+            "format": "rhino",
+            "attributes": {},
+            "dialect": {
+              "format": "rhino",
+              "dialect": "rhino:archive-80",
+              "admission": "admitted"
+            }
+          },
+          "model": {},
+          "native": {}
+        }"#,
+    );
+    cadmpeg()
+        .args(["query", "summary", cadir.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("source_format\trhino")
+                .and(predicate::str::contains("source_dialect\trhino:archive-80"))
+                .and(predicate::str::contains(
+                    "source_dialect_admission\tadmitted",
+                )),
+        );
+
+    let sidecar = write(
+        dir.path(),
+        "classified.fidelity.json",
+        r#"{
+          "version": "3",
+          "ir_sha256": "abc123",
+          "report": {
+            "format": "f3d",
+            "container_only": false,
+            "geometry_transferred": true,
+            "coverage": {},
+            "losses": [],
+            "dialects": {
+              "primary": {
+                "format": "f3d",
+                "dialect": "f3d:archive-2",
+                "admission": "admitted"
+              },
+              "extra": [{
+                "format": "acis",
+                "dialect": "acis:sab-22300",
+                "admission": {"admitted_unverified": {"using": "acis:sab-22200"}}
+              }]
+            }
+          }
+        }"#,
+    );
+    cadmpeg()
+        .args(["query", "summary", sidecar.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("decode_dialect_layers\t2")
+                .and(predicate::str::contains("decode_dialect\tf3d:archive-2"))
+                .and(predicate::str::contains(
+                    "decode_dialect_admission\tadmitted",
+                )),
+        );
+}
+
+#[test]
 fn findings_and_losses_project_tsv_with_a_header() {
     let dir = tempdir().unwrap();
     let report = write(dir.path(), "report.json", CHECK_REPORT);
