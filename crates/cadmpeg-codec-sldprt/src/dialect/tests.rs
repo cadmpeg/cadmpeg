@@ -47,7 +47,7 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
 fn parasolid_schema_evidence_emits_a_kernel_layer() {
     let bytes = synthetic_sldprt();
     let scan = scan_bytes(&bytes);
-    let layers = classify_layers(&scan).expect("valid dialect layers");
+    let layers = classify_layers(&scan);
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -83,7 +83,6 @@ fn several_parasolid_streams_use_their_source_carriers_as_instances() {
     let bytes = sldprt_with_colliding_sites();
     let scan = scan_bytes(&bytes);
     let kernels = classify_layers(&scan)
-        .expect("valid dialect layers")
         .iter()
         .filter(|matched| matched.format() == PARASOLID_FORMAT)
         .cloned()

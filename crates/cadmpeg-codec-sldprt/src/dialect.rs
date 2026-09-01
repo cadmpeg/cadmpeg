@@ -71,7 +71,6 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::LossNote;
 use std::collections::BTreeMap;
 
@@ -114,7 +113,7 @@ pub(crate) enum SldprtDialect {
 }
 
 /// Classify the host document and every framed Parasolid stream it carries.
-pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<DialectLayers, CodecError> {
+pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> DialectLayers {
     let kernels = scan
         .blocks
         .iter()
@@ -140,11 +139,8 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<DialectLayers,
         }))
         .collect::<Vec<_>>();
     let extra = cadmpeg_parasolid::extra_layers(kernels);
-    DialectLayers::new(SldprtDialect::classify_scan(scan), extra).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "invalid SLDPRT dialect-layer identities: {error}"
-        ))
-    })
+    DialectLayers::new(SldprtDialect::classify_scan(scan), extra)
+        .expect("SLDPRT carrier locations produce unique Parasolid layer instances")
 }
 
 impl SldprtDialect {

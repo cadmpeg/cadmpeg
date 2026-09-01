@@ -120,7 +120,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
-    let dialects = crate::dialect::classify_layers(&scan)?;
+    let dialects = crate::dialect::classify_layers(&scan);
     let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
         .and_then(crate::dialect::SldprtDialect::form_code_padding);
     // Charge container cardinality before BREP/IR construction so max_entities
