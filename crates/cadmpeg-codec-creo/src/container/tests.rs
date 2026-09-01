@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
-use crate::container::{self, role, Layout};
+use crate::container::{self, role, Layout, UnknownLayout};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -413,7 +413,10 @@ fn depdb_layout_requires_root_record() {
         ],
     );
     let scan = container::scan_bytes(data);
-    assert_eq!(scan.framing.layout, Layout::Unknown);
+    assert_eq!(
+        scan.framing.layout,
+        Layout::Unknown(UnknownLayout::DepdbRootMissing)
+    );
 }
 
 #[test]

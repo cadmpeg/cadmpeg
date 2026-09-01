@@ -86,8 +86,7 @@ struct Case {
     legacy_release: Option<&'static str>,
 }
 
-/// Containers spanning every arm of `identify_layout`, including both causes
-/// that collapse into `Layout::Unknown`.
+/// Containers spanning every arm of `identify_layout`, including both unknown causes.
 const CASES: &[Case] = &[
     Case {
         label: "ND: decorated section",
@@ -128,7 +127,7 @@ const CASES: &[Case] = &[
     Case {
         label: "DEPDB_DATA without the root record",
         bytes: depdb_without_root_bytes,
-        layout: Layout::Unknown,
+        layout: Layout::Unknown(UnknownLayout::DepdbRootMissing),
         id: "creo:unknown",
         admitted: false,
         legacy_schema: None,
@@ -137,7 +136,7 @@ const CASES: &[Case] = &[
     Case {
         label: "DEPDB_DATA without the root record plus ND decoration",
         bytes: depdb_without_root_and_nd_bytes,
-        layout: Layout::Unknown,
+        layout: Layout::Unknown(UnknownLayout::DepdbRootMissing),
         id: "creo:unknown",
         admitted: false,
         legacy_schema: None,
@@ -146,7 +145,7 @@ const CASES: &[Case] = &[
     Case {
         label: "no layout signature at all",
         bytes: unknown_bytes,
-        layout: Layout::Unknown,
+        layout: Layout::Unknown(UnknownLayout::NoDiscriminant),
         id: "creo:unknown",
         admitted: false,
         legacy_schema: None,
@@ -206,17 +205,17 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         Layout::Nd,
         Layout::Depdb,
         Layout::LegacyAscii,
-        Layout::Unknown,
+        Layout::Unknown(UnknownLayout::NoDiscriminant),
     ] {
         let bytes = match layout {
             Layout::Nd => nd_bytes(),
             Layout::Depdb => depdb_bytes(),
             Layout::LegacyAscii => legacy_ascii_bytes(),
-            Layout::Unknown => unknown_bytes(),
+            Layout::Unknown(_) => unknown_bytes(),
         };
         let scan = scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
-        let charged = dialect_loss(&matched, &scan).is_some();
+        let charged = dialect_loss(&matched, scan.framing.layout).is_some();
         assert_eq!(matched.admission() == Admission::Admitted, !charged);
     }
 
@@ -224,7 +223,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
-        let charged = dialect_loss(&matched, &scan).is_some();
+        let charged = dialect_loss(&matched, scan.framing.layout).is_some();
         assert_eq!(
             matched.admission() == Admission::Admitted,
             !charged,
@@ -238,8 +237,8 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
     let bytes = unknown_bytes();
     let scan = scan_bytes(bytes.as_slice());
-    let note =
-        dialect_loss(&classify(&scan), &scan).expect("an unclassified layout charges the loss");
+    let note = dialect_loss(&classify(&scan), scan.framing.layout)
+        .expect("an unclassified layout charges the loss");
     assert_eq!(note.code.as_str(), "creo/source.dialect-unverified");
     assert_eq!(
         note.code.taxonomy(),
@@ -257,7 +256,7 @@ fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
 fn malformed_depdb_loss_does_not_deny_present_nd_evidence() {
     let bytes = depdb_without_root_and_nd_bytes();
     let scan = scan_bytes(bytes.as_slice());
-    let note = dialect_loss(&classify(&scan), &scan).expect("unknown layout loss");
+    let note = dialect_loss(&classify(&scan), scan.framing.layout).expect("unknown layout loss");
 
     assert!(note.message.contains("DEPDB_DATA is the exclusive"));
     assert!(!note.message.contains("no ND:"));
@@ -272,7 +271,9 @@ fn the_totality_row_never_carries_a_verified_admission() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
         let matched = classify(&scan);
-        if matched.dialect().as_str() == Layout::Unknown.id().as_str() {
+        if matched.dialect().as_str()
+            == Layout::Unknown(UnknownLayout::NoDiscriminant).id().as_str()
+        {
             assert_ne!(matched.admission(), Admission::Admitted, "{}", case.label);
         }
     }
@@ -287,7 +288,7 @@ fn the_layout_token_vocabulary_is_not_the_registry_vocabulary() {
         Layout::Nd,
         Layout::Depdb,
         Layout::LegacyAscii,
-        Layout::Unknown,
+        Layout::Unknown(UnknownLayout::NoDiscriminant),
     ] {
         let id = layout.id();
         assert_ne!(id.as_str(), layout.token());

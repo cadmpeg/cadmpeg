@@ -104,7 +104,7 @@ pub(in super::super) fn build_report(
         .expect("every Creo summary classifies its dialect")
         .clone();
     let primary = dialects.primary();
-    losses.extend(crate::dialect::dialect_loss(primary, scan));
+    losses.extend(crate::dialect::dialect_loss(primary, scan.framing.layout));
 
     if container_only {
         losses.push(
