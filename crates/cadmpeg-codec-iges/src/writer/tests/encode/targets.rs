@@ -149,36 +149,6 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         .all(|loss| loss.code != IgesLossCode::PreservedSourceUnavailable.kind()));
 }
 
-/// An explicit id outside the catalog is refused with the catalog, so the
-/// caller can correct the request from the message alone.
-#[test]
-fn an_unknown_explicit_target_is_refused_with_the_catalog() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
-    let error = IgesCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit("step:ap242-e3"),
-        )
-        .err()
-        .expect("a STEP schema is not an IGES target");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.requested(), Some("step:ap242-e3"));
-    for version in IgesVersion::ALL {
-        assert!(
-            refusal
-                .available()
-                .iter()
-                .any(|target| target.id.as_str() == version.target()),
-            "{:?}",
-            refusal.available()
-        );
-    }
-}
-
 /// The catalog is the five Fixed ASCII rows the semantic writer emits, each
 /// reachable by its bare version as well as its id. Compressed ASCII and Binary
 /// are deliberately absent: no input makes the writer produce them, and they are

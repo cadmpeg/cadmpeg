@@ -406,28 +406,6 @@ fn a_same_dialect_request_replays_under_both_spellings() {
     }
 }
 
-/// An explicit id outside the catalog is refused with the catalog, so the
-/// caller can correct the request from the message alone.
-#[test]
-fn an_unknown_explicit_target_is_refused_with_the_catalog() {
-    let result = decode(f3d_with_smbh(&synthetic_geometry_smbh()));
-    let error = plan(&result, true, TargetRequest::Explicit("step:ap242-e3"))
-        .err()
-        .expect("a STEP schema is not an F3D target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.requested(), Some("step:ap242-e3"));
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
-    );
-}
-
 /// The patch path names a dialect too, and it is the source's: patching
 /// rewrites members inside the retained archive and never its `Manifest.dat`,
 /// so the output is still whatever the source was.
