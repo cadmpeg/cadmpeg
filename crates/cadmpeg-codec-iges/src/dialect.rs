@@ -68,9 +68,8 @@ pub(crate) fn dialect_loss(matched: &DialectMatch, global: &ResolvedGlobal) -> O
             format!("IGES Global version flag {declared}"),
             String::new(),
         ),
-        DialectRecovery::Verified => (
-            format!("IGES Global version flag {declared}"),
-            String::new(),
+        DialectRecovery::Verified => unreachable!(
+            "verified Global recovery cannot accompany an unverified dialect admission"
         ),
     };
     Some(crate::loss::IgesLossCode::SourceDialectUnverified.note(format!(

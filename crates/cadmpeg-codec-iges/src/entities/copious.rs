@@ -234,7 +234,7 @@ pub(super) fn project(
                 losses.push(entity_loss(
                     entry,
                     format!(
-                        "linear paths require at least {minimum_tuple_count} tuple(s) under the declared dialect"
+            "linear paths require at least {minimum_tuple_count} tuple(s) under the effective specification family"
                     ),
                 ));
                 continue;

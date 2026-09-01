@@ -1549,7 +1549,7 @@ fn project_with_type_130_policy(
         }) {
             losses.push(entity_loss(
                 entry,
-                "composite child is missing, outside the declared dialect, or is not physically dependent",
+                "composite child is missing, outside the effective specification family, or is not physically dependent",
             ));
             continue;
         }

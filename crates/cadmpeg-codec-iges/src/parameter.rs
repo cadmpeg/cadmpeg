@@ -2449,7 +2449,7 @@ impl ParameterDefect {
                 "a Hollerith count and H delimiter cross a card boundary"
             }
             Self::HollerithForbiddenByte => {
-                "a Hollerith string contains a byte forbidden by the declared dialect"
+                "a Hollerith string contains a byte forbidden by the effective specification family"
             }
             Self::NumericCrossesCard => "a numeric field or its delimiter crosses a card boundary",
             Self::NumericContainsBlanks => "a numeric field contains embedded or trailing blanks",

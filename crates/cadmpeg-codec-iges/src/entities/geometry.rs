@@ -1218,7 +1218,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(
                 entry,
                 format!(
-                    "Entity Use Flag {:02} is outside the declared dialect",
+                    "Entity Use Flag {:02} is outside the effective specification family",
                     entry.status.use_flag
                 ),
             ));
@@ -1482,7 +1482,7 @@ pub(crate) fn project_geometry(
         if !point_display_symbol_valid(record, &entries, global.global_table()) {
             losses.push(
                 IgesLossCode::DisplayDataNotProjected
-                    .note("Type 116 display symbol pointer is invalid for the declared dialect")
+                            .note("Type 116 display symbol pointer is invalid for the effective specification family")
                     .with_provenance(entry.loss_provenance()),
             );
         }
