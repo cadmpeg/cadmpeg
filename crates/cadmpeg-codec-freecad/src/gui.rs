@@ -124,11 +124,13 @@ pub(crate) fn transfer(
         "schemaVersion",
     )?;
     let admission = schema::classify(schema_declaration.as_deref());
+    let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ir,
         text,
         &xml,
         schema_declaration.as_deref(),
+        neutral_schema_version,
         entries,
         objects,
         properties,
@@ -168,6 +170,7 @@ fn transfer_schema_one(
     text: &str,
     xml: &roxmltree::Document<'_>,
     schema_declaration: Option<&str>,
+    neutral_schema_version: Option<u32>,
     entries: &BTreeMap<String, View<'_>>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
@@ -522,7 +525,7 @@ fn transfer_schema_one(
         &mut material_losses,
     )?;
     graph.losses.extend(material_losses);
-    transfer_neutral_presentation(&mut plan, &graph)?;
+    transfer_neutral_presentation(&mut plan, &graph, neutral_schema_version)?;
     Ok((graph, plan))
 }
 
@@ -543,6 +546,7 @@ fn presentation_property_type(name: &str) -> Option<&'static str> {
 fn transfer_neutral_presentation(
     plan: &mut AppearancePlan,
     graph: &Graph,
+    neutral_schema_version: Option<u32>,
 ) -> Result<(), CodecError> {
     for document in &graph.documents {
         let mut camera_states = document
@@ -555,10 +559,7 @@ fn transfer_neutral_presentation(
         let camera = camera_state.map(camera_state_value).transpose()?;
         plan.presentation_documents.push(PresentationDocument {
             id: PresentationId("fcstd:presentation:document#0".into()),
-            schema_version: document
-                .schema_version
-                .as_deref()
-                .and_then(|value| value.parse().ok()),
+            schema_version: neutral_schema_version,
             active_view: None,
             camera,
             states: document

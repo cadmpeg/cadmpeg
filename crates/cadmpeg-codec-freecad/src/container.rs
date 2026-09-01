@@ -106,6 +106,18 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 
 /// Summarize one scan.
 pub fn summarize(scan: &Scan) -> ContainerSummary {
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::FcstdDialect::classify(
+            &scan.document,
+        )),
+        "zip",
+        scan.entries.clone(),
+        summary_notes(scan),
+    )
+}
+
+/// Notes shared by inspect and decode without reclassifying host identity.
+pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
     let mut notes = vec![
         format!("SchemaVersion={}", scan.document.schema_version),
         format!("FileVersion={}", scan.document.file_version),
@@ -117,14 +129,7 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
     if let Some(version) = &scan.document.program_version {
         notes.push(format!("ProgramVersion={version}"));
     }
-    ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::FcstdDialect::classify(
-            &scan.document,
-        )),
-        "zip",
-        scan.entries.clone(),
-        notes,
-    )
+    notes
 }
 
 fn validate_name(name: &str) -> Result<(), CodecError> {
