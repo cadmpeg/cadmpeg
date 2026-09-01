@@ -1,4 +1,4 @@
-# generated at 17ba45230
+# generated at 58532625f
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -5308,6 +5308,8 @@ pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::resu
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::version(&self) -> &str
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::DecodeSidecar
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::source_fidelity::RetainedSourceRecord
 pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::byte_len: u64
 pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::data: core::option::Option<alloc::vec::Vec<u8>>
@@ -7122,6 +7124,8 @@ pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::resu
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::version(&self) -> &str
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::DecodeSidecar
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::DesignConfiguration
 pub cadmpeg_ir::DesignConfiguration::active: cadmpeg_ir::features::ConfigurationActivation
 pub cadmpeg_ir::DesignConfiguration::bodies: cadmpeg_ir::features::ConfigurationBodies
