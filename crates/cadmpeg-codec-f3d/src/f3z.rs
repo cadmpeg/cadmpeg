@@ -28,13 +28,6 @@ pub const MANIFEST_ENTRY: &str = "Manifest.json";
 /// The archive-level design-graph member.
 pub const DESIGN_DESCRIPTION_ENTRY: &str = "DesignDescription.json";
 
-/// Whether an archive member name is a `.f3d` document member.
-fn is_f3d_member(name: &str) -> bool {
-    std::path::Path::new(name)
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("f3d"))
-}
-
 #[derive(Deserialize)]
 struct ManifestJson {
     root: String,
@@ -100,7 +93,7 @@ pub(crate) fn inspect(
     let member_count = scan
         .entries
         .iter()
-        .filter(|entry| is_f3d_member(&entry.name))
+        .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
     let mut notes = vec![format!(
         "f3z archive: {member_count} document member(s); model root {model_root}"
@@ -151,7 +144,7 @@ pub fn decode(
     let member_count = scan
         .entries
         .iter()
-        .filter(|entry| is_f3d_member(&entry.name))
+        .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
     report.notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
@@ -247,7 +240,7 @@ fn classify_archive_layers(
         .entries
         .iter()
         .map(|entry| entry.name.as_str())
-        .filter(|name| is_f3d_member(name))
+        .filter(|name| crate::container::is_f3d_name(name))
     {
         let member_view = scan.entry_view(member_path).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -310,7 +303,7 @@ fn model_root_member(
     scan: &ContainerScan<'_>,
     archive_root: &str,
 ) -> Result<(String, Option<String>), CodecError> {
-    if is_f3d_member(archive_root) {
+    if crate::container::is_f3d_name(archive_root) {
         return Ok((archive_root.to_owned(), None));
     }
 
@@ -336,7 +329,7 @@ fn model_root_member(
         for object in &graph.design_objects {
             if derived_ids.contains(&object.id)
                 && object.content_type.eq_ignore_ascii_case("f3d")
-                && is_f3d_member(&object.relative_path)
+                && crate::container::is_f3d_name(&object.relative_path)
                 && scan.entry_view(&object.relative_path).is_some()
             {
                 candidates.push(object.relative_path.clone());
