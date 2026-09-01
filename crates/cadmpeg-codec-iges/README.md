@@ -49,7 +49,7 @@ and inspected by name and refused for semantic decode.
 ## Write
 
 `IgesCodec` replays an unchanged decoded source image byte for byte when its
-retained source record and document baseline are intact. `IgesEncoder` accepts
+retained source record and document baseline are intact. `IgesCodec` accepts
 an explicit target version. The bounded semantic writer supports standalone points,
 finite lines, analytic conic arcs, NURBS curves, planar and NURBS support
 surfaces, one-face trimmed sheet bodies with NURBS parameter curves, and

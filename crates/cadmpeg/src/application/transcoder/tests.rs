@@ -98,7 +98,7 @@ fn encoder_planning_owns_unknown_explicit_target_admission() {
     let mut conversion = prepared(
         CadIr::empty(cadmpeg_ir::units::Units::default()),
         Format::Iges,
-        Box::new(cadmpeg_codec_iges::IgesEncoder),
+        Box::new(cadmpeg_codec_iges::IgesCodec),
         LossPolicy::Allow,
     );
     conversion.selection.request = Some("nonesuch".into());
@@ -321,7 +321,7 @@ fn a_cross_format_convert_writes_the_catalog_default() {
         "step",
         std::collections::BTreeMap::new(),
     ));
-    let encoder = cadmpeg_codec_iges::IgesEncoder;
+    let encoder = cadmpeg_codec_iges::IgesCodec;
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, encoder.id(), encoder.targets())
             .expect("the fallback resolves");
@@ -364,7 +364,7 @@ fn a_same_format_rhino_convert_keeps_the_source_archive_version() {
 
     let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut archive_50 = Vec::new();
-    cadmpeg_codec_rhino::RhinoEncoder
+    cadmpeg_codec_rhino::RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit("rhino:archive-50"),

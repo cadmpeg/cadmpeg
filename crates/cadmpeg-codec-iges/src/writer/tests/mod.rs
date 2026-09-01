@@ -16,7 +16,7 @@ use crate::test_support::{
     trimmed_plane_file, trimmed_plane_with_inner_loop_file,
 };
 use crate::writer::Entity;
-use crate::{IgesCodec, IgesEncoder, IgesVersion};
+use crate::{IgesCodec, IgesVersion};
 
 mod encode;
 mod quarantine;
@@ -84,7 +84,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .retain(|pcurve| used_pcurves.contains(&pcurve.id));
     }
 
-    let result = IgesEncoder.plan(
+    let result = IgesCodec.plan(
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit(IgesVersion::V5_3.target()),
     );
@@ -236,7 +236,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         position: Point3::new(123.0, -4.0, 5.0),
     });
 
-    let plan = crate::IgesEncoder
+    let plan = crate::IgesCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),
@@ -335,7 +335,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
         position: Point3::new(1.0, 2.0, 3.0),
     });
 
-    let plan = crate::IgesEncoder
+    let plan = crate::IgesCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),
@@ -369,7 +369,7 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
         .expect("source resolution witness decodes");
     assert_eq!(decoded.ir().tolerances.linear, 0.001);
 
-    let plan = crate::IgesEncoder
+    let plan = crate::IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),
@@ -502,7 +502,7 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("fixture decodes");
-        let plan = IgesEncoder
+        let plan = IgesCodec
             .plan(
                 EncodeInput::new(decoded.ir(), None),
                 TargetRequest::Explicit(IgesVersion::V5_3.target()),

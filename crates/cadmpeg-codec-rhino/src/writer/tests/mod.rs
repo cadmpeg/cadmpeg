@@ -11,7 +11,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::units::Units;
 
 pub(crate) use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 mod encoding;
 mod free_geometry;
@@ -27,7 +27,7 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 cadmpeg_ir::codec::EncodeInput { ir, fidelity: None },
                 TargetRequest::Explicit(version.target()),

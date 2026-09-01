@@ -44,14 +44,14 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 ## Encode
 
 ```rust,no_run
-use cadmpeg_codec_rhino::RhinoEncoder;
+use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::CadIr;
 use std::fs::File;
 
 fn write_3dm(ir: &CadIr, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut output = File::create(path)?;
-    RhinoEncoder::default()
+    RhinoCodec::default()
         .plan(
             EncodeInput::new(ir, None),
             TargetRequest::Explicit("rhino:archive-70"),
@@ -61,7 +61,7 @@ fn write_3dm(ir: &CadIr, path: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`RhinoEncoder` selects the target archive version explicitly. Writing is
+`RhinoCodec` selects the target archive version explicitly. Writing is
 source-less semantic regeneration from a narrowly writable IR. `fidelity` is
 ignored and resolves to `NotConsumed`. Writable families are points and point
 clouds, circles, canonical NURBS curves and surfaces, planes, restricted

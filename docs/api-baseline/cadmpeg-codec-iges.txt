@@ -1,4 +1,4 @@
-# generated at c5a524805
+# generated at 9e72f09dd
 pub mod cadmpeg_codec_iges
 pub enum cadmpeg_codec_iges::IgesVersion
 pub cadmpeg_codec_iges::IgesVersion::V4_0
@@ -7,15 +7,14 @@ pub cadmpeg_codec_iges::IgesVersion::V5_1
 pub cadmpeg_codec_iges::IgesVersion::V5_2
 pub cadmpeg_codec_iges::IgesVersion::V5_3
 impl cadmpeg_codec_iges::IgesVersion
-pub const fn cadmpeg_codec_iges::IgesVersion::target(self) -> &'static str
+pub const fn cadmpeg_codec_iges::IgesVersion::descriptor(self) -> cadmpeg_core::target::TargetDescriptor
 pub struct cadmpeg_codec_iges::IgesCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_iges::IgesCodec
 pub fn cadmpeg_codec_iges::IgesCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_iges::IgesCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_iges::IgesCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_iges::IgesCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-pub struct cadmpeg_codec_iges::IgesEncoder
-impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_iges::IgesEncoder
-pub fn cadmpeg_codec_iges::IgesEncoder::id(&self) -> &'static str
-pub fn cadmpeg_codec_iges::IgesEncoder::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_iges::IgesEncoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+impl cadmpeg_ir::codec::write::Encoder for cadmpeg_codec_iges::IgesCodec
+pub fn cadmpeg_codec_iges::IgesCodec::id(&self) -> &'static str
+pub fn cadmpeg_codec_iges::IgesCodec::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_iges::IgesCodec::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]

@@ -11,7 +11,7 @@ use cadmpeg_ir::report::WritePath;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::{owned_test_file, OwnedTestEntity};
-use crate::{IgesCodec, IgesEncoder};
+use crate::IgesCodec;
 
 /// A file whose second Directory Entry pair carries a non-integer level field.
 fn quarantined_directory_file() -> Vec<u8> {
@@ -54,7 +54,7 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
         1
     );
 
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),

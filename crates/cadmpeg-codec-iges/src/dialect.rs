@@ -175,7 +175,7 @@ impl IgesDialect {
     }
 
     /// The pinned registry id as a static string, for the write-target catalog
-    /// and for [`crate::IgesVersion::target`].
+    /// and for [`crate::IgesVersion::descriptor`].
     pub(crate) const fn pinned(self) -> &'static str {
         match self {
             Self::V1_0FixedAscii => "iges:1.0-fixed-ascii",

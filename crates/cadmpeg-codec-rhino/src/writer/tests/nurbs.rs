@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 use cadmpeg_ir::math::Point3;
 
 use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
@@ -36,7 +36,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -140,7 +140,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -195,7 +195,7 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         parameter_range: None,
     }];
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -245,7 +245,7 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
     ];
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -287,7 +287,7 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -329,7 +329,7 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -379,7 +379,7 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -498,7 +498,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -537,7 +537,7 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
     };
     direction.v += 0.25;
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -556,7 +556,7 @@ fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
         coedge.pcurves.clear();
     }
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),

@@ -4,8 +4,8 @@
 use super::*;
 use crate::loss::IgesLossCode;
 use crate::test_support::{point_file, point_file_with_global};
+use crate::IgesCodec;
 use crate::IgesVersion;
-use crate::{IgesCodec, IgesEncoder};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::TargetRequest;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
@@ -163,7 +163,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     // explicit Fixed ASCII target declines replay and charges displacement.
     // The gate used to compare the version alone and replayed the
     // compressed bytes while the plan claimed Fixed ASCII.
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),
@@ -194,7 +194,7 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     let result = IgesCodec
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
             TargetRequest::Inherit,

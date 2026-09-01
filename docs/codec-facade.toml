@@ -37,7 +37,7 @@ fuzz_reason = "focused targets call FcstdCodec::decode"
 
 [[crate]]
 id = "iges"
-names = ["IgesCodec", "IgesEncoder", "IgesVersion"]
+names = ["IgesCodec", "IgesVersion"]
 fuzz = "required"
 
 [[crate]]
@@ -53,7 +53,7 @@ fuzz = "required"
 
 [[crate]]
 id = "rhino"
-names = ["RhinoCodec", "RhinoArchiveVersion", "RhinoEncoder"]
+names = ["RhinoCodec", "RhinoArchiveVersion"]
 fuzz = "required"
 
 [[crate]]

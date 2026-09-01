@@ -21,7 +21,7 @@ fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::ExportPlan, CodecError> {
-    IgesEncoder.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+    IgesCodec.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
 }
 
 /// The flagship case: `convert in.igs -o out.igs` on a file that is not the
@@ -156,7 +156,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
-    let error = IgesEncoder
+    let error = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Explicit("step:ap242-e3"),
@@ -185,7 +185,7 @@ fn an_unknown_explicit_target_is_refused_with_the_catalog() {
 /// written by preserving a source image instead.
 #[test]
 fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
-    let targets = IgesEncoder.targets();
+    let targets = IgesCodec.targets();
     assert_eq!(targets.len(), IgesVersion::ALL.len());
     for version in IgesVersion::ALL {
         assert!(find_target(targets, version.target()).is_some());
@@ -218,7 +218,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     });
 
     for version in IgesVersion::ALL {
-        let plan = IgesEncoder
+        let plan = IgesCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),

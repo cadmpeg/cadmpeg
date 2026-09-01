@@ -182,7 +182,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         5,
         &["3dm"],
         OutputPhysics::GeometryBinary,
-        || Box::new(cadmpeg_codec_rhino::RhinoEncoder)
+        || Box::new(cadmpeg_codec_rhino::RhinoCodec)
     ),
     #[cfg(feature = "step")]
     descriptor!(
@@ -206,7 +206,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         6,
         &["iges", "igs"],
         OutputPhysics::GeometryText,
-        || Box::new(cadmpeg_codec_iges::IgesEncoder)
+        || Box::new(cadmpeg_codec_iges::IgesCodec)
     ),
     #[cfg(feature = "sat")]
     descriptor!(

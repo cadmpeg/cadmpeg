@@ -1,4 +1,4 @@
-# generated at c5a524805
+# generated at 9e72f09dd
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
@@ -8,8 +8,8 @@ pub cadmpeg_codec_step::StepSchema::Ap242Edition1
 pub cadmpeg_codec_step::StepSchema::Ap242Edition2
 pub cadmpeg_codec_step::StepSchema::Ap242Edition3
 impl cadmpeg_codec_step::StepSchema
+pub const fn cadmpeg_codec_step::StepSchema::descriptor(self) -> cadmpeg_core::target::TargetDescriptor
 pub const fn cadmpeg_codec_step::StepSchema::file_schema(self) -> &'static str
-pub const fn cadmpeg_codec_step::StepSchema::target(self) -> &'static str
 pub struct cadmpeg_codec_step::StepCodec
 pub cadmpeg_codec_step::StepCodec::options: cadmpeg_codec_step::StepWriteOptions
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_step::StepCodec
