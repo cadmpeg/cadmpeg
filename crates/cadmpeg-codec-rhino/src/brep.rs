@@ -576,7 +576,7 @@ impl ValidatedRawBrep {
 }
 
 /// Classifies one B-rep body, reporting whether a missing stamp decided it.
-pub(crate) fn body_kind(
+fn body_kind(
     raw: &RawBrep,
     writer_version: Option<i64>,
 ) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
@@ -610,7 +610,7 @@ const SOLID_FLAG_WRITER_VERSION: i64 = 200_210_020;
 /// archive is classified on an assumption the archive does not carry. This
 /// compares the two readings of the same bytes and reports only a disagreement:
 /// where both readings pick the same body kind nothing was substituted.
-pub(crate) fn body_kind_rests_on_missing_stamp(
+fn body_kind_rests_on_missing_stamp(
     minor: u8,
     is_solid: Option<i32>,
     writer_version: Option<i64>,
@@ -621,7 +621,7 @@ pub(crate) fn body_kind_rests_on_missing_stamp(
             != serialized_body_kind(minor, is_solid, Some(SOLID_FLAG_WRITER_VERSION - 1), closed)
 }
 
-pub(crate) fn serialized_body_kind(
+fn serialized_body_kind(
     minor: u8,
     is_solid: Option<i32>,
     writer_version: Option<i64>,
@@ -3014,6 +3014,83 @@ mod tests {
             loop_array_range: 0..0,
             face_array_range: 0..0,
         }
+    }
+
+    #[test]
+    fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
+        assert_eq!(
+            serialized_body_kind(2, Some(1), Some(200_210_020), false),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(2), Some(200_210_020), false),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(3), Some(200_210_020), false),
+            BrepBodyKind::Sheet
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(3), Some(200_210_020), true),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(0), Some(200_210_020), true),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(0), Some(200_210_020), false),
+            BrepBodyKind::Sheet
+        );
+        assert_eq!(
+            serialized_body_kind(1, Some(1), Some(200_210_020), true),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(1), Some(200_210_019), false),
+            BrepBodyKind::Sheet
+        );
+    }
+
+    /// A missing stamp trusts the stored solid flag; the loss follows that reading.
+    ///
+    /// The same bytes classify as `Sheet` under any stamp older than the flag, so an
+    /// unstamped archive that reads `Solid` was classified on an assumption it does
+    /// not carry. Where the two readings agree nothing was substituted.
+    #[test]
+    fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
+        assert_eq!(
+            serialized_body_kind(2, Some(1), None, false),
+            BrepBodyKind::Solid
+        );
+        assert!(body_kind_rests_on_missing_stamp(2, Some(1), None, false));
+        assert!(body_kind_rests_on_missing_stamp(2, Some(2), None, false));
+
+        // A modern stamp vouches for the same flag: the reading is verified.
+        assert!(!body_kind_rests_on_missing_stamp(
+            2,
+            Some(1),
+            Some(200_210_020),
+            false
+        ));
+        // Both readings agree, so no kind was substituted.
+        assert!(!body_kind_rests_on_missing_stamp(2, Some(1), None, true));
+        assert!(!body_kind_rests_on_missing_stamp(2, Some(0), None, false));
+        assert!(!body_kind_rests_on_missing_stamp(2, None, None, false));
+        assert!(!body_kind_rests_on_missing_stamp(1, Some(1), None, false));
+
+        // The whole-record path reports the substitution as a typed loss.
+        let mut raw = one_face_raw();
+        raw.minor = 2;
+        raw.is_solid = Some(1);
+        let validated = ValidatedRawBrep::try_new(raw).expect("valid Brep");
+        let (kind, substituted) = validated.body_kind(None);
+        assert_eq!(kind, BrepBodyKind::Solid);
+        assert_eq!(
+            substituted.as_ref().map(|loss| &loss.code),
+            Some(&crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
+        );
+        assert_eq!(validated.body_kind(Some(200_210_020)).1, None);
     }
 
     fn degenerate_trim_raw(trim_type: i32, curve: i32) -> RawBrep {
