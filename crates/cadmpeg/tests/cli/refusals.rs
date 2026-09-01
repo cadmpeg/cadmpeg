@@ -103,6 +103,45 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
 }
 
 #[test]
+fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
+    let dir = tempdir().unwrap();
+    let input = minimal_rhino_archive(dir.path(), "undeclared.3dm", "100");
+
+    for (command, extra) in [
+        ("dump", Vec::<&str>::new()),
+        ("convert", vec!["--to", "cadir", "--reject-lossy"]),
+    ] {
+        let report = dir.path().join(format!("{command}-strict-report.json"));
+        let mut args = vec![command, input.to_str().unwrap(), "--no-salvage"];
+        args.extend(extra);
+        args.extend(["--report", report.to_str().unwrap()]);
+
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(args)
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("strict mode rejects"));
+
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        assert_eq!(value["status"], "refused");
+        assert_eq!(value["refusal"]["stage"], "decode");
+        assert_eq!(value["refusal"]["code"], "strict_decode_rejected");
+        let decode_report = value["decode_report"]
+            .as_object()
+            .expect("strict refusal keeps its completed decode report");
+        assert!(decode_report["losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["code"]["namespace"] == "rhino"
+                    && loss["code"]["code"] == "source.dialect-unverified"
+            }));
+    }
+}
+
+#[test]
 fn convert_rejects_empty_native_geometry_unless_allowed() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");

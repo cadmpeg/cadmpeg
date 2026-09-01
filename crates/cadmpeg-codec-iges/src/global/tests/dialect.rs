@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
@@ -132,7 +131,7 @@ fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
             .decode(&mut Cursor::new(bytes), &strict_options(false))
             .unwrap_err();
         match error {
-            CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
                 loss_code,
                 IgesLossCode::SourceDialectUnverified.kind().as_str()
             ),
@@ -243,7 +242,7 @@ fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss()
         .decode(&mut Cursor::new(bytes), &strict_options(false))
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
             loss_code,
             IgesLossCode::SourceDialectUnverified.kind().as_str()
         ),

@@ -1135,7 +1135,10 @@ fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect_err("oversized inflated entry must be rejected");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)),
+        matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
+        ),
         "{error:?}"
     );
 }
@@ -1207,7 +1210,7 @@ fn nested_protein_decode_charges_through_session_expand_ceilings() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::DecompressedBytes
         ),
         "{error:?}"
@@ -1255,7 +1258,7 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::DecompressedBytes
         ),
         "{error:?}"

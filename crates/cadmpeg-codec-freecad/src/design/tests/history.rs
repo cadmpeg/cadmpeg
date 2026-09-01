@@ -689,7 +689,10 @@ fn rejects_nested_spreadsheet_value_roots() {
 <Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><Wrapper><RowInfo Count="1"><Row name="1" height="45"/></RowInfo></Wrapper></Property>"#,
     ] {
         let error = decode(properties).expect_err("nested spreadsheet value root");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 

@@ -19,7 +19,7 @@
 //! use cadmpeg_codec_sldprt::SldprtCodec;
 //! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
-//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_core::CodecError> {
+//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_ir::DecodeFailure> {
 //! let decoded = SldprtCodec.decode(
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),

@@ -828,7 +828,9 @@ pub(crate) mod tests {
                         &mut Cursor::new(archive(&document)),
                         &DecodeOptions::default(),
                     ),
-                    Err(cadmpeg_core::CodecError::Malformed(_))
+                    Err(cadmpeg_ir::DecodeFailure::Codec(
+                        cadmpeg_core::CodecError::Malformed(_)
+                    ))
                 ),
                 "{case}"
             );
@@ -852,7 +854,7 @@ pub(crate) mod tests {
 
         assert!(matches!(
             error,
-            cadmpeg_core::CodecError::Malformed(message)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains("position requires both X and Y")
         ));
     }
@@ -929,7 +931,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -956,7 +960,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }

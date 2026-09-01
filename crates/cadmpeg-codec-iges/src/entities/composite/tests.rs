@@ -835,7 +835,7 @@ fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
 
     assert!(matches!(
         error,
-        CodecError::ResourceLimit(limit)
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Codec("iges_composite_children")
                 && limit.limit == 100_000
                 && limit.used == 100_000
@@ -1772,7 +1772,7 @@ fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
         .unwrap_err();
 
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => {
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => {
             assert_eq!(
                 loss_code,
                 IgesLossCode::CompositeCarrierDegraded.kind().as_str()

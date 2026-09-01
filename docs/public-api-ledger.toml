@@ -1835,3 +1835,17 @@ crate = "cadmpeg-core"
 kind = "field"
 item = "cadmpeg_core::CodecError::UnsupportedDialect::dialect_match -> dialects"
 reason = "identified-dialect refusal retains every classified host and carried-kernel layer instead of discarding all evidence except the primary match"
+
+[[change]]
+commit = "511ae8368157e9e8fb65e1dfe0d3e97466cebb16"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::CodecError::StrictRefusal"
+reason = "strict policy runs after decode and must retain the completed DecodeReport, so it is an IR-owned DecodeFailure rather than a backend or byte-structure error"
+
+[[change]]
+commit = "511ae8368157e9e8fb65e1dfe0d3e97466cebb16"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::Codec::decode"
+reason = "the public decode boundary returns DecodeFailure so codec failures and strict-policy refusals with completed report evidence remain distinct"

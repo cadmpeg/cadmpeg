@@ -114,7 +114,7 @@ fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
 
     assert!(matches!(
         error,
-        CodecError::ResourceLimit(limit)
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Codec("iges_surface_poles")
                 && limit.limit == 1_000_000
                 && limit.used == 1_000_000

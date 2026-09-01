@@ -80,6 +80,31 @@ pub struct DecodeResult {
     source_fidelity: SourceFidelity,
 }
 
+/// Failure from the policy-enforcing decode entry point.
+///
+/// Backend and resource failures remain [`CodecError`] values. A strict-policy
+/// refusal is separate because decoding completed and produced a report; the
+/// caller must be able to serialize that evidence even though no document is
+/// admitted.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum DecodeFailure {
+    /// The codec or decode context failed before a result was produced.
+    #[error(transparent)]
+    Codec(#[from] CodecError),
+    /// Strict mode rejected the first loss whose floor requires refusal.
+    #[error("strict mode rejects {loss_code}: {message}")]
+    StrictRejected {
+        /// Stable `namespace/code` form of the refusing loss.
+        loss_code: String,
+        /// The refusing loss's own message, without any refusal prefix.
+        message: String,
+        /// Completed decode report containing the refusing loss and all other
+        /// evidence recovered before the policy gate ran.
+        report: Box<DecodeReport>,
+    },
+}
+
 /// A decoded document and its report disagree about source identity.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{kind}")]
@@ -329,7 +354,9 @@ mod sealed {
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
-///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
+///         -> Result<DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
+///         panic!("never runs")
+///     }
 /// }
 /// ```
 pub trait Codec: CodecBackend + sealed::Sealed {
@@ -344,7 +371,7 @@ pub trait Codec: CodecBackend + sealed::Sealed {
     /// Decodes the source under its input and resource limits.
     ///
     /// [`DecodeMode::Strict`] refuses the decode with
-    /// [`CodecError::StrictRefusal`] for the first reported loss whose
+    /// [`DecodeFailure::StrictRejected`] for the first reported loss whose
     /// [`StrictConsequence`] is [`StrictConsequence::Reject`]. The gate
     /// evaluates full-decode reports only: a container-only decode keeps its
     /// losses and is never refused. This gate owns the refusal predicate and
@@ -356,7 +383,7 @@ pub trait Codec: CodecBackend + sealed::Sealed {
         &self,
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
-    ) -> Result<DecodeResult, CodecError>;
+    ) -> Result<DecodeResult, DecodeFailure>;
 }
 
 impl<C: CodecBackend + ?Sized> Codec for C {
@@ -380,7 +407,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         &self,
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
-    ) -> Result<DecodeResult, CodecError> {
+    ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
         let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
         ctx.set_container_only(options.container_only);
@@ -388,18 +415,24 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         ctx.finish_session()?;
         let mut result = result?;
         result.stamp_container_only(options.container_only);
-        if options.policy.mode == DecodeMode::Strict && !options.container_only {
-            if let Some(loss) = result
+        let strict_refusal = if options.policy.mode == DecodeMode::Strict && !options.container_only
+        {
+            result
                 .report()
                 .losses
                 .iter()
                 .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-            {
-                return Err(CodecError::StrictRefusal {
-                    loss_code: loss.code.to_string(),
-                    message: loss.message.clone(),
-                });
-            }
+                .map(|loss| (loss.code.to_string(), loss.message.clone()))
+        } else {
+            None
+        };
+        if let Some((loss_code, message)) = strict_refusal {
+            let (_, report, _) = result.into_parts();
+            return Err(DecodeFailure::StrictRejected {
+                loss_code,
+                message,
+                report: Box::new(report),
+            });
         }
         Ok(result)
     }

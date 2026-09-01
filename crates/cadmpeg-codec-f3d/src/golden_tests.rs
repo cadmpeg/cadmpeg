@@ -9,8 +9,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{CadIr, WritePath};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
@@ -295,7 +294,7 @@ fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
     })
 }
 
-fn decode_result(bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+fn decode_result(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
     F3dCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
 }
 

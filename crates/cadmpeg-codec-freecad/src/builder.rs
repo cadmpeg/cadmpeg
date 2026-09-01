@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use zip::write::SimpleFileOptions;
 
@@ -227,6 +227,10 @@ impl FcstdDocumentBuilder {
         FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .map(|result| result.into_parts().0)
+            .map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                _ => unreachable!("the fixed salvage decode cannot produce a strict refusal"),
+            })
     }
 
     fn archive_bytes(self) -> Result<Vec<u8>, CodecError> {

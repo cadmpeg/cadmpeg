@@ -35,8 +35,7 @@ Semantic decode is bounded by the caller's `DecodePolicy`. The policy limits inp
 
 `dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 7`, which always emits the dialect fields: `dialects` on every container summary and decode report, `target` on every export report, and `dialect` and `declared` on every source metadata block. Version 6 added top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. A codec-level decode failure during `dump` with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. JSON from `inspect`, `check`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
-Status 0 is success. Status 1 is a negative verdict on a verdict command; other commands stay off 1. Status 2 is operational failure.
-`dump` uses status 2 for decode and operational failures, aligned with `convert`; neither command uses the verdict-only status 1.
+Status 0 is success. Status 1 is a semantic refusal, including strict decode policy. Status 2 is an operational failure. A strict refusal from `dump` or `convert` uses `refusal.code: strict_decode_rejected` and serializes its completed decode report. A codec failure from either command uses status 2 and `refusal.code: decode_failed` when an explicit command report is written.
 
 Writers create a unique temporary file in the destination directory, then rename it into place. `--force` replaces an existing file. The CLI rejects an output path that resolves to the input.
 
@@ -109,8 +108,8 @@ Each input codec implements `Codec`:
 - `id() -> &'static str` names the codec for registry lookup and `--input-format`.
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
 - `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure.
-- `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, CodecError>` produces `CadIr`, `DecodeReport`, and source fidelity.
+- `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, DecodeFailure>` produces `CadIr`, `DecodeReport`, and source fidelity. `DecodeFailure::Codec` carries backend and resource failures.
 
 `--input-format` selects a codec. Without it, the CLI detects one. Native writers use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.
 
-Strict decode refuses at the `Codec::decode` wrapper, which returns `CodecError::StrictRefusal` for the first reported loss whose strict consequence is `Reject`. The wrapper applies that predicate to full-decode reports only: a container-only decode keeps its losses and is admitted in either mode. The refusal carries that loss code and that loss message. It is not `CodecError::Malformed`: a strict refusal reports a mode decision, not a defect in the bytes, so a caller separates a damaged file from a policy stop by the error class alone. A codec reports its losses with their strict floors and adds no strict gate of its own. A local gate widens the refusal predicate and reclassifies the refusal where the caller cannot see it.
+Strict decode refuses at the `Codec::decode` wrapper, which returns `DecodeFailure::StrictRejected` for the first reported loss whose strict consequence is `Reject`. The wrapper applies that predicate to full-decode reports only: a container-only decode keeps its losses and is admitted in either mode. The refusal carries the loss code, loss message, and completed `DecodeReport`. It is not a `CodecError`: a strict refusal reports a policy decision after decode, not a defect in the bytes. A codec reports its losses with their strict floors and adds no strict gate of its own. A local gate widens the refusal predicate and reclassifies the refusal where the caller cannot see it.

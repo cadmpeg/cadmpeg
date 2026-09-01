@@ -13,13 +13,16 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use crate::StepCodec;
 
 fn assert_unsupported_dialect(
-    error: cadmpeg_core::CodecError,
+    error: impl Into<cadmpeg_ir::DecodeFailure>,
     expected_id: &str,
     expected_message: &str,
 ) {
-    let cadmpeg_core::CodecError::UnsupportedDialect {
-        dialects, message, ..
-    } = error
+    let error = error.into();
+    let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
+        dialects,
+        message,
+        ..
+    }) = error
     else {
         panic!("expected a typed STEP dialect refusal, found {error:?}");
     };
@@ -863,7 +866,9 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             &mut Cursor::new(invalid_hdf5_offset),
             &DecodeOptions::default()
         ),
-        Err(cadmpeg_core::CodecError::WrongFormat(message))
+        Err(cadmpeg_ir::DecodeFailure::Codec(
+            cadmpeg_core::CodecError::WrongFormat(message)
+        ))
             if message == "missing ISO-10303-21 magic"
     ));
     assert_eq!(
@@ -885,7 +890,9 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     assert_eq!(codec.detect(lookalike), Confidence::No);
     assert!(matches!(
         codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
-        Err(cadmpeg_core::CodecError::WrongFormat(_))
+        Err(cadmpeg_ir::DecodeFailure::Codec(
+            cadmpeg_core::CodecError::WrongFormat(_)
+        ))
     ));
 }
 
@@ -907,7 +914,9 @@ fn bo_model_detection_requires_root_namespace_binding() {
         assert_eq!(codec.detect(xml), Confidence::No);
         assert!(matches!(
             codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::WrongFormat(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::WrongFormat(_)
+            ))
         ));
     }
 }

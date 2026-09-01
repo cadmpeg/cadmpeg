@@ -186,7 +186,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert!(matches!(
         invalid,
-        Err(cadmpeg_core::CodecError::Malformed(message))
+        Err(cadmpeg_ir::DecodeFailure::Codec(
+            cadmpeg_core::CodecError::Malformed(message)
+        ))
             if message.contains("configuration JSON must be an object")
     ));
 
@@ -218,7 +220,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         );
         assert!(matches!(
             invalid,
-            Err(cadmpeg_core::CodecError::Malformed(message))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(message)
+            ))
                 if message.contains(expected)
         ));
     }

@@ -1017,7 +1017,10 @@ fn refuses_malformed_non_sketch_profile_frame_before_design_transfer() {
             &DecodeOptions::default(),
         )
         .expect_err("malformed non-sketch profile placement");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]

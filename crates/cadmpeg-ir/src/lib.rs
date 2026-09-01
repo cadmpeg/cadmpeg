@@ -20,9 +20,10 @@
 //!
 //! Format crates implement [`CodecBackend`]; callers use the sealed [`Codec`]
 //! entry points. Detection selects a codec from a byte prefix, inspection
-//! enumerates a container, and decoding returns a [`DecodeResult`]. Operation
-//! failures use [`cadmpeg_core::CodecError`]. A successful decode reports
-//! partial transfer through [`DecodeReport`] and [`LossNote`].
+//! enumerates a container, and decoding returns a [`DecodeResult`].
+//! [`DecodeFailure`] separates backend [`cadmpeg_core::CodecError`] values from
+//! strict-policy refusals that retain the completed report. A successful decode
+//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -77,7 +78,8 @@ pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, StreamProvenance};
 pub use codec::{
-    CadirEncoder, Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Encoder,
+    CadirEncoder, Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult,
+    Encoder,
 };
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};

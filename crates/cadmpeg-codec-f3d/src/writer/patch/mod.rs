@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
@@ -71,7 +71,14 @@ pub fn write_semantic(
     } else {
         validate_assembly_projection(target, None)?;
     }
-    let baseline = F3dCodec.decode(&mut Cursor::new(source_image), &DecodeOptions::default())?;
+    let baseline = F3dCodec
+        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
+        .map_err(|failure| match failure {
+            DecodeFailure::Codec(error) => error,
+            _ => {
+                unreachable!("the fixed salvage decode cannot produce a strict refusal")
+            }
+        })?;
     let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),

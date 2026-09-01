@@ -127,7 +127,7 @@ fn requires_one_camera_in_schema_one_gui_document() {
 
         assert!(matches!(
             error,
-            cadmpeg_core::CodecError::Malformed(message)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains("schema 1 requires one Camera record")
         ));
     }
@@ -271,7 +271,10 @@ fn rejects_invalid_schema_one_camera_values() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid schema-one camera value");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -321,7 +324,7 @@ fn rejects_duplicate_camera_settings_fields() {
             .expect_err("duplicate camera settings field");
         assert!(matches!(
             error,
-            cadmpeg_core::CodecError::Malformed(message)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains("multiple")
         ));
     }
@@ -595,7 +598,7 @@ fn rejects_ambiguous_gui_containers_and_names() {
                 &DecodeOptions::default(),
             )
             .expect_err("ambiguous GUI graph");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))));
     }
 }
 
@@ -647,7 +650,10 @@ fn rejects_malformed_registered_gui_property_values() {
             &DecodeOptions::default(),
         )
         .expect_err("mismatched GUI value tag");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -692,7 +698,10 @@ fn validates_gui_link_value_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid GUI link grammar");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -732,7 +741,10 @@ fn validates_gui_constraint_attribute_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid GUI constraint attribute");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -776,7 +788,10 @@ fn validates_gui_in_memory_list_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("nested GUI list value");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -903,7 +918,7 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid visual layer list");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))));
     }
 }
 
@@ -977,7 +992,10 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
             &DecodeOptions::default(),
         )
         .expect_err("trailing dynamic float-list bytes");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -1036,7 +1054,10 @@ fn rejects_gui_side_entries_owned_by_nested_values() {
                 &DecodeOptions::default(),
             )
             .expect_err("nested GUI side-entry reference");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1081,7 +1102,10 @@ fn validates_gui_mesh_and_points_value_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid GUI mesh or points root");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1121,7 +1145,10 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw GeomFormatList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1184,7 +1211,10 @@ fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw CosmeticVertexList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1259,7 +1289,10 @@ fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw CosmeticEdgeList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1322,7 +1355,10 @@ fn validates_gui_techdraw_center_line_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw CenterLineList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1398,7 +1434,10 @@ fn rejects_truncated_gui_material_list_payload() {
             &DecodeOptions::default(),
         )
         .expect_err("truncated GUI material list");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]

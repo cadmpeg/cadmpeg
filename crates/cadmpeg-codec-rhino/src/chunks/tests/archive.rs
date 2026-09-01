@@ -4,7 +4,6 @@ use std::fmt::Write;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
@@ -505,7 +504,10 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
         .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)
         .expect_err("strict mode refuses an undecodable framed object record");
 
-    let CodecError::StrictRefusal { loss_code, message } = &error else {
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected {
+        loss_code, message, ..
+    } = &error
+    else {
         panic!("a strict refusal is a policy class, not a container defect: {error:?}");
     };
     assert_eq!(

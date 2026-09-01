@@ -75,7 +75,9 @@ fn rejects_ambiguous_attachment_carriers() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -98,7 +100,9 @@ fn rejects_noncanonical_map_mode_value_grammar() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -122,7 +126,9 @@ fn rejects_invalid_attachment_placement_values() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }

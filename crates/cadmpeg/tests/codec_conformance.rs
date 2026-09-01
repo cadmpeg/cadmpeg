@@ -162,7 +162,8 @@ mod budget {
                         },
                     )
                     .expect_err("starved decode must fail");
-                let CodecError::ResourceLimit(limit) = error else {
+                let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error
+                else {
                     panic!(
                         "{} returned the wrong error classification: {error}",
                         case.name

@@ -330,7 +330,10 @@ fn rejects_noncanonical_page_link_carriers() {
                 &DecodeOptions::default(),
             )
             .expect_err("noncanonical page link carrier");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -365,7 +368,9 @@ fn rejects_duplicate_drawing_carrier_properties_and_values() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -395,7 +400,9 @@ fn rejects_noncanonical_drawing_scalar_attributes() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -510,7 +517,9 @@ fn rejects_wrong_drawing_carrier_types() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -540,7 +549,9 @@ fn rejects_invalid_drawing_numeric_admission() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }

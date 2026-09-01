@@ -90,7 +90,10 @@ fn rejects_duplicate_root_property_containers() {
             &DecodeOptions::default(),
         )
         .expect_err("duplicate root Properties containers");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -109,7 +112,7 @@ fn rejects_duplicate_property_names_for_one_owner() {
         .expect_err("duplicate object property names");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("duplicate property name Label")
     ));
 }
@@ -144,7 +147,9 @@ fn rejects_nested_xlink_value_children() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -163,7 +168,9 @@ pub(crate) fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_co
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default()
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -509,7 +516,9 @@ fn rejects_ambiguous_persistence_carriers() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default()
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }

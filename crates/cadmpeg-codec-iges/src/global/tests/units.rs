@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
@@ -201,7 +200,7 @@ fn recovered_global_real_is_strictly_reported_as_noncanonical() {
         .decode(&mut Cursor::new(bytes), &strict_options(false))
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
             loss_code,
             IgesLossCode::GlobalNumericSyntaxRecovered.kind().as_str()
         ),
@@ -252,7 +251,7 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         .decode(&mut Cursor::new(bytes.clone()), &strict_options(false))
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
             loss_code,
             IgesLossCode::GlobalLengthUnitUnresolved.kind().as_str()
         ),
