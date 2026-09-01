@@ -35,7 +35,6 @@ mod writer;
 pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
@@ -79,10 +78,6 @@ impl IgesVersion {
         Self::V5_3.descriptor(),
     ];
 
-    const fn target(self) -> &'static str {
-        dialect::IgesDialect::fixed_ascii(self).pinned()
-    }
-
     pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
         Self::ALL
             .into_iter()
@@ -101,7 +96,7 @@ impl IgesVersion {
             Self::V5_3 => (&["5.3"].as_slice(), true),
         };
         TargetDescriptor {
-            id: DialectId::pinned(self.target()),
+            id: dialect::IgesDialect::fixed_ascii(self).id(),
             aliases,
             default,
         }

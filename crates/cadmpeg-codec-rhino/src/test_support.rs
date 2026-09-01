@@ -24,6 +24,6 @@ pub(crate) fn plan_at(
 
     crate::RhinoCodec.plan(
         EncodeInput::new(ir, None),
-        TargetRequest::Explicit(version.target()),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
 }

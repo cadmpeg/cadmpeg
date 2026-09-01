@@ -15,7 +15,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_0.target()),
+            TargetRequest::Explicit(IgesVersion::V5_0.descriptor().id.as_str()),
         )
         .expect("V5.0 admits a typed ellipse");
     let mut written = Vec::new();

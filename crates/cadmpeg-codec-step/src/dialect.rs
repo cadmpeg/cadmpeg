@@ -124,17 +124,13 @@ impl StepDialect {
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(self.pinned())
-    }
-
-    const fn pinned(self) -> &'static str {
         match self {
-            Self::Schema(schema) => schema.target(),
-            Self::Ap242 => "step:ap242",
-            Self::Part28Xml => "step:part28-xml",
-            Self::Ap242BoModelXml => "step:ap242-bo-model-xml",
-            Self::Part26Hdf5 => "step:part26-hdf5",
-            Self::Unknown => "step:unknown",
+            Self::Schema(schema) => schema.id(),
+            Self::Ap242 => DialectId::pinned("step:ap242"),
+            Self::Part28Xml => DialectId::pinned("step:part28-xml"),
+            Self::Ap242BoModelXml => DialectId::pinned("step:ap242-bo-model-xml"),
+            Self::Part26Hdf5 => DialectId::pinned("step:part26-hdf5"),
+            Self::Unknown => DialectId::pinned("step:unknown"),
         }
     }
 

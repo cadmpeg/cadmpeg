@@ -158,14 +158,14 @@ fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
     let targets = IgesCodec.targets();
     assert_eq!(targets.len(), IgesVersion::ALL.len());
     for version in IgesVersion::ALL {
-        assert!(find_target(targets, version.target()).is_some());
+        assert!(find_target(targets, version.descriptor().id.as_str()).is_some());
         assert!(find_target(targets, version.name()).is_some());
     }
     assert!(find_target(targets, "iges:5.3-compressed-ascii").is_none());
     assert!(find_target(targets, "iges:5.3-binary").is_none());
     assert_eq!(
         cadmpeg_core::target::default_target(targets).map(|target| target.id.as_str()),
-        Some(IgesVersion::V5_3.target())
+        Some(IgesVersion::V5_3.descriptor().id.as_str())
     );
 }
 
@@ -191,7 +191,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         let plan = IgesCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = plan

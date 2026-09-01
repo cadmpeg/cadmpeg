@@ -40,19 +40,12 @@
 //! framing as words 2 through 4. It therefore selects the same chunked scan.
 
 use crate::chunks::ArchiveVersion;
-use crate::RhinoArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 /// The format layer every match here classifies.
 pub(crate) const FORMAT: &str = "rhino";
-
-impl RhinoArchiveVersion {
-    pub(crate) const fn pinned(self) -> &'static str {
-        ArchiveVersion::from_write_version(self).pinned()
-    }
-}
 
 /// Key of the archive-version word in [`DialectMatch::declared`].
 ///
@@ -93,15 +86,6 @@ impl ArchiveVersion {
         Self::V9,
         Self::Other(0),
     ];
-
-    const fn from_write_version(version: RhinoArchiveVersion) -> Self {
-        match version {
-            RhinoArchiveVersion::V5 => Self::V5,
-            RhinoArchiveVersion::V6 => Self::V6,
-            RhinoArchiveVersion::V7 => Self::V7,
-            RhinoArchiveVersion::V8 => Self::V8,
-        }
-    }
 
     /// The pinned registry id. The only string boundary this enum has.
     pub(crate) const fn id(self) -> DialectId {

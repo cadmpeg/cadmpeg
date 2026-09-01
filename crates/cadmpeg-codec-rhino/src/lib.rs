@@ -10,7 +10,6 @@
 //! explicitly versioned native writing from neutral IR.
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
@@ -88,11 +87,6 @@ impl RhinoArchiveVersion {
         Self::V8.descriptor(),
     ];
 
-    #[cfg(test)]
-    const fn target(self) -> &'static str {
-        self.pinned()
-    }
-
     pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
         Self::ALL
             .into_iter()
@@ -103,14 +97,14 @@ impl RhinoArchiveVersion {
     /// The typed write-target catalog row for this archive version.
     #[must_use]
     pub const fn descriptor(self) -> TargetDescriptor {
-        let (aliases, default) = match self {
-            Self::V5 => (&["50"].as_slice(), false),
-            Self::V6 => (&["6", "60"].as_slice(), false),
-            Self::V7 => (&["7", "70"].as_slice(), false),
-            Self::V8 => (&["8", "80"].as_slice(), true),
+        let (dialect, aliases, default) = match self {
+            Self::V5 => (chunks::ArchiveVersion::V5, &["50"].as_slice(), false),
+            Self::V6 => (chunks::ArchiveVersion::V6, &["6", "60"].as_slice(), false),
+            Self::V7 => (chunks::ArchiveVersion::V7, &["7", "70"].as_slice(), false),
+            Self::V8 => (chunks::ArchiveVersion::V8, &["8", "80"].as_slice(), true),
         };
         TargetDescriptor {
-            id: DialectId::pinned(self.pinned()),
+            id: dialect.id(),
             aliases,
             default,
         }

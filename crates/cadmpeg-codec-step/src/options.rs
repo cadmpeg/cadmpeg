@@ -92,10 +92,6 @@ impl StepSchema {
         Self::Ap242Edition3.descriptor(),
     ];
 
-    pub(crate) const fn target(self) -> &'static str {
-        self.pinned()
-    }
-
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {
         match self {
@@ -113,6 +109,11 @@ impl StepSchema {
             .into_iter()
             .find(|schema| schema.descriptor().id == target.id)
             .expect("STEP target catalog is projected from StepSchema::ALL")
+    }
+
+    /// The typed dialect identity written for this schema.
+    pub(crate) const fn id(self) -> DialectId {
+        DialectId::pinned(self.pinned())
     }
 
     const fn pinned(self) -> &'static str {
@@ -138,7 +139,7 @@ impl StepSchema {
             Self::Ap242Edition3 => (&["ap242e3"].as_slice(), false),
         };
         TargetDescriptor {
-            id: DialectId::pinned(self.pinned()),
+            id: self.id(),
             aliases,
             default,
         }

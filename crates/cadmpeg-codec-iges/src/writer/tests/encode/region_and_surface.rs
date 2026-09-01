@@ -30,7 +30,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
     let mut written = Vec::new();
@@ -205,7 +205,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         let plan = IgesCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(IgesVersion::V5_3.target()),
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let mut written = Vec::new();

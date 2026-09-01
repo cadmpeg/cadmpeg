@@ -166,7 +166,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     let plan = IgesCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
     assert_eq!(plan.write_path(), WritePath::Synthesized);

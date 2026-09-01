@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
-use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{resolve_write_request, EncodeInput, ExportPlan, TargetRequest};
 use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
@@ -40,7 +39,7 @@ pub(crate) fn plan(
     let mut bytes = Vec::new();
     let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)
         .map_err(CodecError::from)?;
-    let target = DialectId::pinned(schema.target());
+    let target = schema.descriptor().id;
     let mut losses = outcome.losses;
     if let Some(source) = resolved.displaced_source() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(

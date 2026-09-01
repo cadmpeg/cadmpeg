@@ -32,6 +32,6 @@ pub(crate) fn plan_at(
 
     crate::IgesCodec.plan(
         EncodeInput { ir, fidelity },
-        TargetRequest::Explicit(version.target()),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
 }
