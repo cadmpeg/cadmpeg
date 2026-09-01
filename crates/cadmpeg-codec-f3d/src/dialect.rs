@@ -83,9 +83,6 @@ pub(crate) const DECLARED_ROOT_DOCUMENT_MEMBERS: &str = "root_document_members";
 /// this is presentation provenance rather than a uniqueness key.
 pub(crate) const DECLARED_ARCHIVE_MEMBER: &str = "archive_member";
 
-/// Key of the embedded B-rep carrier path within one F3D document.
-pub(crate) const DECLARED_KERNEL_CARRIER: &str = "carrier";
-
 /// Separator between root-level member names in
 /// [`DECLARED_ROOT_DOCUMENT_MEMBERS`].
 const MEMBER_SEPARATOR: &str = ",";
@@ -220,9 +217,11 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 
 /// Kernel dialect layers from the binary and text B-rep streams.
 pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
+    let text_names = crate::container::text_brep_names(scan);
+    let instance_tagged = scan.breps.len() + text_names.len() > 1;
     let mut matches = Vec::new();
     for brep in &scan.breps {
-        let parsed = brep
+        let header = brep
             .header
             .as_ref()
             .map(cadmpeg_asm::dialect::KernelHeaderRef::Asm)
@@ -231,17 +230,14 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<D
                     .as_ref()
                     .map(cadmpeg_asm::dialect::KernelHeaderRef::Acis)
             })
-            .map(cadmpeg_asm::dialect::classify)
-            .map(|matched| with_carrier(matched, &brep.name));
-        if let Some(matched) = parsed {
-            matches.push(matched);
-        } else {
-            let matched =
-                cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
-            matches.push(with_carrier(matched, &brep.name));
-        }
+            .unwrap_or(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
+        matches.push(cadmpeg_asm::dialect::classify_layer(
+            header,
+            &brep.name,
+            instance_tagged,
+        ));
     }
-    for name in crate::container::text_brep_names(scan) {
+    for name in text_names {
         let parsed = scan
             .entry_bytes(name)
             .ok()
@@ -257,29 +253,17 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<D
                         cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
                     }
                 };
-                cadmpeg_asm::dialect::classify(reference)
+                cadmpeg_asm::dialect::classify_layer(reference, name, instance_tagged)
             }
-            None => cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown),
+            None => cadmpeg_asm::dialect::classify_layer(
+                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+                name,
+                instance_tagged,
+            ),
         };
-        matches.push(with_carrier(matched, name));
-    }
-    let format_counts = matches.iter().fold(BTreeMap::new(), |mut counts, matched| {
-        *counts.entry(matched.format().to_owned()).or_insert(0usize) += 1;
-        counts
-    });
-    for matched in &mut matches {
-        if format_counts[matched.format()] > 1 && matched.instance().is_none() {
-            let carrier = matched.declared()[DECLARED_KERNEL_CARRIER].clone();
-            *matched = matched.clone().with_instance(carrier);
-        }
+        matches.push(matched);
     }
     matches
-}
-
-fn with_carrier(matched: DialectMatch, carrier: &str) -> DialectMatch {
-    let mut declared = matched.declared().clone();
-    declared.insert(DECLARED_KERNEL_CARRIER.to_owned(), carrier.to_owned());
-    matched.with_declared(declared)
 }
 
 /// The recovery loss a kernel layer charges, if it recovered.
@@ -288,7 +272,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         Admission::Refused => {
             let carrier = matched
                 .declared()
-                .get(DECLARED_KERNEL_CARRIER)
+                .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
                 .map_or("an unnamed carrier", String::as_str);
             let message = format!(
                 "kernel carrier {carrier} could not be framed for dialect inspection; its retained \
@@ -306,7 +290,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     }
     let carrier = matched
         .declared()
-        .get(DECLARED_KERNEL_CARRIER)
+        .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
         .map_or("an unnamed carrier", String::as_str);
     let message = cadmpeg_asm::dialect::unverified_message(
         &format!("the kernel carrier {carrier}"),

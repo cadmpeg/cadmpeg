@@ -1,4 +1,4 @@
-# generated at 366fe80f5
+# generated at 8aa0a071b
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -223,6 +223,7 @@ pub const cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_BINARY_OTHER: cadmpeg_core::dia
 pub const cadmpeg_asm::dialect::ACIS_TEXT_ACIS: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_TEXT_ASM: cadmpeg_core::dialect::DialectId
 pub const cadmpeg_asm::dialect::ACIS_UNKNOWN: cadmpeg_core::dialect::DialectId
+pub const cadmpeg_asm::dialect::DECLARED_CARRIER: &str
 pub const cadmpeg_asm::dialect::DECLARED_REFERENCE_WIDTH: &str
 pub const cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR: &str
 pub const cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR: &str
@@ -233,6 +234,7 @@ pub fn cadmpeg_asm::dialect::acis_band_verified(core::option::Option<u32>) -> bo
 pub fn cadmpeg_asm::dialect::acis_binary_row(core::option::Option<u32>) -> cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_asm::dialect::asm_binary_row(u8) -> cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef<'_>) -> cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_asm::dialect::classify_layer(cadmpeg_asm::dialect::KernelHeaderRef<'_>, &str, bool) -> cadmpeg_core::dialect::DialectMatch
 pub fn cadmpeg_asm::dialect::nearest_verified_acis(core::option::Option<u32>) -> cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_asm::dialect::unverified_message(&str, &cadmpeg_core::dialect::DialectMatch) -> core::option::Option<alloc::string::String>
 pub mod cadmpeg_asm::edit
