@@ -45,19 +45,19 @@ edit without a re-render fails the gate.
 
 <!-- generated: ladder-table -->
 
-| Format                          | Level |
-| ------------------------------- | ----- |
-| FreeCAD `.FCStd`                | L5    |
-| Autodesk Fusion `.f3d`          | L4    |
-| Autodesk Inventor `.ipt`/`.iam` | L1    |
-| SolidWorks `.sldprt`            | L1    |
-| Rhino `.3dm`                    | L1    |
-| Siemens NX `.prt`               | L1    |
-| CATIA V5 `.CATPart`             | L1    |
-| Creo Parametric `.prt`          | L1    |
-| STEP Part 21                    | L9    |
-| IGES                            | L9    |
-| ASM/ACIS bare streams           | L1    |
+| Format                                            | Level |
+| ------------------------------------------------- | ----- |
+| Autodesk Inventor `.ipt` and `.iam`               | L1    |
+| ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` streams | L1    |
+| FreeCAD `.FCStd`                                  | L5    |
+| IGES                                              | L9    |
+| Rhino `.3dm`                                      | L1    |
+| SolidWorks `.sldprt`                              | L1    |
+| Fusion 360 `.f3d`                                 | L4    |
+| Siemens NX `.prt`                                 | L1    |
+| CATIA V5 `.CATPart`                               | L1    |
+| Creo Parametric `.prt`                            | L1    |
+| STEP Part 21                                      | L9    |
 
 <!-- /generated: ladder-table -->
 

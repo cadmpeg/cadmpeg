@@ -56,34 +56,6 @@ MARKER_README_LINES = "capability-lines"
 MARKER_CAPABILITY = "capability"
 
 
-@dataclass(frozen=True)
-class Target:
-    """A format's published surfaces. File paths are not registry data."""
-
-    name: str
-    crate: str | None = None
-
-# Every format declared in `docs/dialects.toml` must appear here, and every key
-# here must be a declared format. A new format therefore fails this renderer
-# until its published surfaces are named. Order is the published order.
-TARGETS: dict[str, Target] = {
-    "cadir": Target("CADIR"),
-    "fcstd": Target("FreeCAD `.FCStd`", "cadmpeg-codec-freecad"),
-    "f3d": Target("Autodesk Fusion `.f3d`", "cadmpeg-codec-f3d"),
-    "inventor": Target("Autodesk Inventor `.ipt`/`.iam`", "cadmpeg-codec-inventor"),
-    "sldprt": Target("SolidWorks `.sldprt`", "cadmpeg-codec-sldprt"),
-    "rhino": Target("Rhino `.3dm`", "cadmpeg-codec-rhino"),
-    "nx": Target("Siemens NX `.prt`", "cadmpeg-codec-nx"),
-    "catia": Target("CATIA V5 `.CATPart`", "cadmpeg-codec-catia"),
-    "creo": Target("Creo Parametric `.prt`", "cadmpeg-codec-creo"),
-    "step": Target("STEP Part 21", "cadmpeg-codec-step"),
-    "iges": Target("IGES", "cadmpeg-codec-iges"),
-    "sat": Target("ASM/ACIS bare streams", "cadmpeg-codec-sat"),
-    "acis": Target("ACIS save formats"),
-    "parasolid": Target("Parasolid schemas"),
-}
-
-
 class RenderError(Exception):
     """A structural fault that no re-render can fix. Exit code 2."""
 
@@ -116,6 +88,7 @@ class Format:
             raise RenderError(f"{SUPPORT_REL}: format.{self.fmt} has no level")
         return f"L{self.level}"
 
+
 def load_formats(root: Path) -> dict[str, Format]:
     """Join the registries into per-format row sets."""
     try:
@@ -136,18 +109,6 @@ def load_formats(root: Path) -> dict[str, Format]:
                 read=support.get("read", ""),
                 write=support.get("write", ""),
             )
-        )
-
-    missing = sorted(set(declared) - set(TARGETS))
-    if missing:
-        raise RenderError(
-            "formats absent from TARGETS in scripts/render-format-support.py: "
-            + ", ".join(missing)
-        )
-    extra = sorted(set(TARGETS) - set(declared))
-    if extra:
-        raise RenderError(
-            "TARGETS names formats absent from the registry: " + ", ".join(extra)
         )
 
     result = {}
@@ -204,12 +165,17 @@ def _table(header: tuple[str, ...], rows: list[tuple[str, ...]]) -> str:
 # Bodies
 # --------------------------------------------------------------------------
 
-def ladder_table(formats: dict[str, Format]) -> str:
-    rows = [
-        (TARGETS[fmt].name, formats[fmt].headline)
-        for fmt in TARGETS
-        if fmt not in REGISTRY_ONLY_FORMATS
-    ]
+
+@dataclass(frozen=True)
+class Profile:
+    """One hand-authored format profile that owns its name and ordering."""
+
+    name: str
+    anchor: str
+
+
+def ladder_table(formats: dict[str, Format], profiles: dict[str, Profile]) -> str:
+    rows = [(profile.name, formats[fmt].headline) for fmt, profile in profiles.items()]
     return f"\n{_table(('Format', 'Level'), rows)}\n"
 
 
@@ -220,18 +186,17 @@ def format_section(fmt: str, formats: dict[str, Format]) -> str:
     return f"\n**Ladder: {entry.headline}.**\n\n{_table(header, rows)}\n"
 
 
-def readme_lines(formats: dict[str, Format], anchors: dict[str, str]) -> str:
+def readme_lines(formats: dict[str, Format], profiles: dict[str, Profile]) -> str:
     lines = [
-        f"- **{TARGETS[fmt].name}** — {formats[fmt].headline} "
-        f"([profile](docs/format-support.md#{anchors[fmt]}))"
-        for fmt in TARGETS
-        if fmt not in REGISTRY_ONLY_FORMATS
+        f"- **{profile.name}** — {formats[fmt].headline} "
+        f"([profile](docs/format-support.md#{profile.anchor}))"
+        for fmt, profile in profiles.items()
     ]
     return "\n" + "\n".join(lines) + "\n"
 
 
-def crate_line(fmt: str, formats: dict[str, Format], anchors: dict[str, str]) -> str:
-    return f"Support: {formats[fmt].headline} ([ladder]({BLOB}#{anchors[fmt]}))."
+def crate_line(fmt: str, formats: dict[str, Format], profiles: dict[str, Profile]) -> str:
+    return f"Support: {formats[fmt].headline} ([ladder]({BLOB}#{profiles[fmt].anchor}))."
 
 
 # --------------------------------------------------------------------------
@@ -245,13 +210,14 @@ def _anchor(heading: str) -> str:
     return ANCHOR_DROP.sub("", heading.strip().lower()).replace(" ", "-")
 
 
-def section_anchors(ladder: str) -> dict[str, str]:
-    """Anchor of the ``##`` heading that encloses each per-format region.
+def section_profiles(ladder: str) -> dict[str, Profile]:
+    """Name and anchor of the ``##`` heading enclosing each format region.
 
-    Deriving the anchor from the document its own links point into means a
-    renamed heading cannot leave a dangling link behind.
+    The profile document owns published names and ordering. Deriving both from
+    that document means a renamed or moved heading cannot leave a parallel
+    renderer catalog or a dangling link behind.
     """
-    anchors: dict[str, str] = {}
+    profiles: dict[str, Profile] = {}
     heading = None
     begin = re.compile(r"^<!-- generated: dialects ([a-z0-9]+) -->$")
     for line in ladder.split("\n"):
@@ -262,8 +228,39 @@ def section_anchors(ladder: str) -> dict[str, str]:
             continue
         if heading is None:
             raise RenderError(f"{LADDER_REL}: {line} precedes every '## ' heading")
-        anchors[match.group(1)] = _anchor(heading)
-    return anchors
+        fmt = match.group(1)
+        if fmt in profiles:
+            raise RenderError(f"{LADDER_REL}: several profile regions name {fmt}")
+        profiles[fmt] = Profile(name=heading, anchor=_anchor(heading))
+    return profiles
+
+
+def capability_targets(root: Path) -> dict[str, tuple[Path, Path]]:
+    """Find codec-owned generated regions by their format-qualified markers."""
+    targets: dict[str, tuple[Path, Path]] = {}
+    begin = re.compile(r"^<!-- generated: capability ([a-z0-9]+) -->$", re.MULTILINE)
+    lib_begin = re.compile(
+        r"^//! <!-- generated: capability ([a-z0-9]+) -->$", re.MULTILINE
+    )
+    for crate in sorted((root / "crates").glob("cadmpeg-codec-*")):
+        readme = crate / "README.md"
+        lib = crate / "src" / "lib.rs"
+        if not readme.is_file() or not lib.is_file():
+            continue
+        readme_matches = begin.findall(_read(root, readme.relative_to(root)))
+        lib_matches = lib_begin.findall(_read(root, lib.relative_to(root)))
+        if not readme_matches and not lib_matches:
+            continue
+        if len(readme_matches) != 1 or readme_matches != lib_matches:
+            raise RenderError(
+                f"{crate.relative_to(root)}: README.md and src/lib.rs must name "
+                "the same one capability format"
+            )
+        fmt = readme_matches[0]
+        if fmt in targets:
+            raise RenderError(f"several codec crates own capability format {fmt}")
+        targets[fmt] = (readme.relative_to(root), lib.relative_to(root))
+    return targets
 
 
 # --------------------------------------------------------------------------
@@ -277,18 +274,20 @@ def render(root: Path) -> dict[Path, str]:
 
     ladder_rel = LADDER_REL
     ladder = _read(root, ladder_rel)
-    anchors = section_anchors(ladder)
-    expected = set(TARGETS) - REGISTRY_ONLY_FORMATS
-    if set(anchors) != expected:
-        missing = ", ".join(sorted(expected - set(anchors))) or "none"
-        extra = ", ".join(sorted(set(anchors) - expected)) or "none"
+    profiles = section_profiles(ladder)
+    expected = set(formats) - REGISTRY_ONLY_FORMATS
+    if set(profiles) != expected:
+        missing = ", ".join(sorted(expected - set(profiles))) or "none"
+        extra = ", ".join(sorted(set(profiles) - expected)) or "none"
         raise RenderError(
             f"{ladder_rel}: per-format regions do not match the codec formats "
             f"(missing: {missing}; unexpected: {extra})"
         )
 
-    ladder = splice(ladder, MARKER_LADDER_TABLE, ladder_table(formats), rel=ladder_rel)
-    for fmt in anchors:
+    ladder = splice(
+        ladder, MARKER_LADDER_TABLE, ladder_table(formats, profiles), rel=ladder_rel
+    )
+    for fmt in profiles:
         ladder = splice(
             ladder, f"dialects {fmt}", format_section(fmt, formats), rel=ladder_rel
         )
@@ -296,21 +295,28 @@ def render(root: Path) -> dict[Path, str]:
 
     readme = _read(root, README_REL)
     out[README_REL] = splice(
-        readme, MARKER_README_LINES, readme_lines(formats, anchors), rel=README_REL
+        readme, MARKER_README_LINES, readme_lines(formats, profiles), rel=README_REL
     )
 
-    for fmt, target in TARGETS.items():
-        if target.crate is None:
-            continue
-        line = crate_line(fmt, formats, anchors)
-        crate_readme = Path("crates") / target.crate / "README.md"
-        out[crate_readme] = splice(
-            _read(root, crate_readme), MARKER_CAPABILITY, f"\n{line}\n", rel=crate_readme
+    targets = capability_targets(root)
+    if set(targets) != set(profiles):
+        missing = ", ".join(sorted(set(profiles) - set(targets))) or "none"
+        extra = ", ".join(sorted(set(targets) - set(profiles))) or "none"
+        raise RenderError(
+            "codec capability regions do not match the format profiles "
+            f"(missing: {missing}; unexpected: {extra})"
         )
-        crate_lib = Path("crates") / target.crate / "src" / "lib.rs"
+    for fmt, (crate_readme, crate_lib) in targets.items():
+        line = crate_line(fmt, formats, profiles)
+        out[crate_readme] = splice(
+            _read(root, crate_readme),
+            f"{MARKER_CAPABILITY} {fmt}",
+            f"\n{line}\n",
+            rel=crate_readme,
+        )
         out[crate_lib] = splice(
             _read(root, crate_lib),
-            MARKER_CAPABILITY,
+            f"{MARKER_CAPABILITY} {fmt}",
             f"//! {line}",
             rel=crate_lib,
             prefix="//! ",

@@ -6,11 +6,11 @@ container metadata, ASM B-rep topology, analytic and cached NURBS geometry,
 body transforms, design and sketch records, construction history, and
 appearances. Multi-document `.f3z` archives decode into one merged document.
 
-<!-- generated: capability -->
+<!-- generated: capability f3d -->
 
 Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability f3d -->
 
 ## Install
 

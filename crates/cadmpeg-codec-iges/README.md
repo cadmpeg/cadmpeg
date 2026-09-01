@@ -3,11 +3,11 @@
 `cadmpeg-codec-iges` inspects, decodes, and writes IGES 4.0, 5.0, 5.1, 5.2, and 5.3
 Fixed ASCII files through `CadIr`.
 
-<!-- generated: capability -->
+<!-- generated: capability iges -->
 
 Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability iges -->
 
 Semantic decode is bounded,
 validates the returned `CadIr`, accounts for every retained Directory Entry,

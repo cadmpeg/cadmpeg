@@ -3,9 +3,9 @@
 //! Reads and writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP Part
 //! 21 exchange structures for AP203, AP214, and AP242.
 //!
-//! <!-- generated: capability -->
+//! <!-- generated: capability step -->
 //! Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
-//! <!-- /generated: capability -->
+//! <!-- /generated: capability step -->
 //!
 //! [`StepCodec`] emits the application protocol selected through
 //! [`cadmpeg_ir::codec::Encoder::plan`]. It writes product and representation context,

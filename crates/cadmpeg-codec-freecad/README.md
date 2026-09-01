@@ -3,11 +3,11 @@
 `cadmpeg-codec-freecad` decodes FreeCAD `.FCStd` archives into `CadIr` and
 encodes supported `CadIr` documents back to `.FCStd`.
 
-<!-- generated: capability -->
+<!-- generated: capability fcstd -->
 
 Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability fcstd -->
 
 Deterministic retained writes, checked edits, and source-less typed application
 graphs are extras above the schema-4/file-1 envelope.

@@ -140,24 +140,13 @@ class RegistryCase(unittest.TestCase):
             (root / "docs" / "evaluations.toml").write_text(evaluations, encoding="utf-8")
             yield root
 
-    @contextlib.contextmanager
-    def _targets(self, mapping: dict[str, renderer.Target]):
-        saved = dict(renderer.TARGETS)
-        renderer.TARGETS.clear()
-        renderer.TARGETS.update(mapping)
-        try:
-            yield
-        finally:
-            renderer.TARGETS.clear()
-            renderer.TARGETS.update(saved)
-
     def test_a_well_formed_pair_loads(self):
-        with self._root() as root, self._targets({"demo": renderer.Target("Demo")}):
+        with self._root() as root:
             formats = renderer.load_formats(root)
             self.assertEqual(formats["demo"].headline, "L3")
 
     def test_evaluations_are_not_a_renderer_input(self):
-        with self._root() as root, self._targets({"demo": renderer.Target("Demo")}):
+        with self._root() as root:
             (root / "docs" / "evaluations.toml").unlink()
             formats = renderer.load_formats(root)
             self.assertEqual(formats["demo"].headline, "L3")
@@ -174,32 +163,20 @@ class RegistryCase(unittest.TestCase):
 
     def test_an_identity_row_with_no_support_row_fails(self):
         trimmed = SUPPORT.split("[[support]]\ndialect = \"demo:two\"")[0]
-        with self._root(support=trimmed) as root, self._targets({"demo": renderer.Target("Demo")}):
+        with self._root(support=trimmed) as root:
             with self.assertRaisesRegex(renderer.RenderError, "no support row for demo:two"):
                 renderer.load_formats(root)
 
     def test_a_support_row_naming_no_identity_row_fails(self):
         extra = SUPPORT + '\n[[support]]\ndialect = "demo:ghost"\nread = "detected"\nwrite = "none"\nreason = "x"\n'
-        with self._root(support=extra) as root, self._targets({"demo": renderer.Target("Demo")}):
+        with self._root(support=extra) as root:
             with self.assertRaisesRegex(renderer.RenderError, "demo:ghost"):
                 renderer.load_formats(root)
 
     def test_a_duplicate_support_row_fails(self):
         doubled = SUPPORT + '\n[[support]]\ndialect = "demo:one"\nread = "L1"\nwrite = "none"\n'
-        with self._root(support=doubled) as root, self._targets({"demo": renderer.Target("Demo")}):
+        with self._root(support=doubled) as root:
             with self.assertRaisesRegex(renderer.RenderError, "duplicate support row"):
-                renderer.load_formats(root)
-
-    def test_a_format_absent_from_the_target_map_fails(self):
-        with self._root() as root, self._targets({"other": renderer.Target("Other")}):
-            with self.assertRaisesRegex(renderer.RenderError, "absent from TARGETS"):
-                renderer.load_formats(root)
-
-    def test_a_target_map_key_absent_from_the_registry_fails(self):
-        with self._root() as root, self._targets(
-            {"demo": renderer.Target("Demo"), "ghost": renderer.Target("Ghost")}
-        ):
-            with self.assertRaisesRegex(renderer.RenderError, "absent from the registry"):
                 renderer.load_formats(root)
 
 
@@ -208,11 +185,65 @@ class AnchorCase(unittest.TestCase):
 
     def test_the_enclosing_heading_supplies_the_anchor(self):
         ladder = "## CATIA V5 `.CATPart`\n\n<!-- generated: dialects catia -->\n"
-        self.assertEqual(renderer.section_anchors(ladder), {"catia": "catia-v5-catpart"})
+        self.assertEqual(
+            renderer.section_profiles(ladder),
+            {
+                "catia": renderer.Profile(
+                    name="CATIA V5 `.CATPart`", anchor="catia-v5-catpart"
+                )
+            },
+        )
 
     def test_a_region_before_every_heading_fails(self):
         with self.assertRaisesRegex(renderer.RenderError, "precedes every"):
-            renderer.section_anchors("<!-- generated: dialects catia -->\n")
+            renderer.section_profiles("<!-- generated: dialects catia -->\n")
+
+    def test_a_format_cannot_own_several_profile_regions(self):
+        ladder = (
+            "## First\n<!-- generated: dialects demo -->\n"
+            "## Second\n<!-- generated: dialects demo -->\n"
+        )
+        with self.assertRaisesRegex(renderer.RenderError, "several profile regions"):
+            renderer.section_profiles(ladder)
+
+
+class CapabilityTargetCase(unittest.TestCase):
+    """Each codec names its own format at both generated surfaces."""
+
+    @contextlib.contextmanager
+    def _root(self, readme_format: str, lib_format: str):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            crate = root / "crates" / "cadmpeg-codec-demo"
+            (crate / "src").mkdir(parents=True)
+            (crate / "README.md").write_text(
+                f"<!-- generated: capability {readme_format} -->\n"
+                f"<!-- /generated: capability {readme_format} -->\n",
+                encoding="utf-8",
+            )
+            (crate / "src" / "lib.rs").write_text(
+                f"//! <!-- generated: capability {lib_format} -->\n"
+                f"//! <!-- /generated: capability {lib_format} -->\n",
+                encoding="utf-8",
+            )
+            yield root
+
+    def test_matching_markers_name_the_target(self):
+        with self._root("demo", "demo") as root:
+            self.assertEqual(
+                renderer.capability_targets(root),
+                {
+                    "demo": (
+                        Path("crates/cadmpeg-codec-demo/README.md"),
+                        Path("crates/cadmpeg-codec-demo/src/lib.rs"),
+                    )
+                },
+            )
+
+    def test_mismatched_markers_fail(self):
+        with self._root("demo", "other") as root:
+            with self.assertRaisesRegex(renderer.RenderError, "must name the same"):
+                renderer.capability_targets(root)
 
 
 class CommittedCase(unittest.TestCase):

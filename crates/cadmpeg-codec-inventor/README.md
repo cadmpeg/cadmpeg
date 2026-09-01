@@ -6,11 +6,11 @@ Protein, external-reference, presentation, and design-record layers. Supported
 part kernel carriers transfer through [`cadmpeg-asm`][asm]. The codec is
 read-only: it has no Inventor writer, replay path, or patch path.
 
-<!-- generated: capability -->
+<!-- generated: capability inventor -->
 
 Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability inventor -->
 
 The primary structural envelope is CFB v3, RSe schema 31, Meta Stream 8. ACIS
 217/218 part carriers show as extras. The finite support claims and extras are

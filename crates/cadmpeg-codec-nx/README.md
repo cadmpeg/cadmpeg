@@ -5,11 +5,11 @@ into [`CadIr`][ir]. It detects the container by its `SPLMSSTR` signature,
 extracts zlib-compressed Parasolid neutral-binary streams from the canonical
 part payload, and decodes supported geometry and topology.
 
-<!-- generated: capability -->
+<!-- generated: capability nx -->
 
 Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability nx -->
 
 Connected B-rep on selected or terminal-lineage-resolved body images shows as
 extras. `RMFastLoad` retains every body whose complete

@@ -6,11 +6,11 @@ transfers B-rep topology, analytic and NURBS carriers, display meshes,
 appearances, selected document attributes, Keywords XML feature history, and
 ResolvedFeatures sketch-entity records.
 
-<!-- generated: capability -->
+<!-- generated: capability sldprt -->
 
 Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
 
-<!-- /generated: capability -->
+<!-- /generated: capability sldprt -->
 
 ## Install
 

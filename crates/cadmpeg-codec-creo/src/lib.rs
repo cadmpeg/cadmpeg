@@ -8,9 +8,9 @@
 //! the geometry, topology, sketches, and design records supported for that
 //! layout.
 //!
-//! <!-- generated: capability -->
+//! <!-- generated: capability creo -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
-//! <!-- /generated: capability -->
+//! <!-- /generated: capability creo -->
 //!
 //! # Quick start
 //!
