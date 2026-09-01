@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::dialect::{DialectId, FormatIdentity};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::ser::SerializeStruct;
@@ -31,8 +31,7 @@ pub struct ExportReport {
 #[derive(Debug, Clone, PartialEq)]
 enum ExportIdentity {
     Cadir,
-    ClassifiedNative(DialectId),
-    UnclassifiedNative(String),
+    Native(FormatIdentity<DialectId>),
 }
 
 #[derive(Deserialize)]
@@ -73,17 +72,9 @@ impl<'de> Deserialize<'de> for ExportReport {
                     target.as_str()
                 )))
             }
-            (_, Some(target)) if target.namespace() == wire.format => {
-                ExportIdentity::ClassifiedNative(target)
-            }
-            (_, Some(target)) => {
-                return Err(serde::de::Error::custom(format_args!(
-                    "export target {:?} is not in format namespace {:?}",
-                    target.as_str(),
-                    wire.format
-                )))
-            }
-            (_, None) => ExportIdentity::UnclassifiedNative(wire.format),
+            (_, target) => ExportIdentity::Native(
+                FormatIdentity::from_wire(wire.format, target).map_err(serde::de::Error::custom)?,
+            ),
         };
         Ok(Self {
             identity,
@@ -199,8 +190,7 @@ impl ExportReport {
     pub fn format(&self) -> &str {
         match &self.identity {
             ExportIdentity::Cadir => "cadir",
-            ExportIdentity::ClassifiedNative(target) => target.namespace(),
-            ExportIdentity::UnclassifiedNative(format) => format,
+            ExportIdentity::Native(identity) => identity.format(),
         }
     }
 
@@ -212,8 +202,8 @@ impl ExportReport {
     #[must_use]
     pub fn target(&self) -> Option<&DialectId> {
         match &self.identity {
-            ExportIdentity::ClassifiedNative(target) => Some(target),
-            ExportIdentity::Cadir | ExportIdentity::UnclassifiedNative(_) => None,
+            ExportIdentity::Native(identity) => identity.classified_payload(),
+            ExportIdentity::Cadir => None,
         }
     }
 
@@ -258,7 +248,7 @@ impl ExportReport {
             "a native export target cannot use the reserved CADIR namespace"
         );
         Self {
-            identity: ExportIdentity::ClassifiedNative(target),
+            identity: ExportIdentity::Native(FormatIdentity::classified(target)),
             census,
             fidelity,
             write_path,

@@ -375,6 +375,125 @@ impl fmt::Display for DialectLayersError {
 
 impl Error for DialectLayersError {}
 
+mod format_identity_sealed {
+    pub trait Sealed {}
+}
+
+/// A classified payload whose format namespace is intrinsic to the payload.
+///
+/// This trait is sealed. The supported payloads are [`DialectId`],
+/// [`DialectMatch`], and [`DialectLayers`].
+pub trait FormatIdentityPayload: format_identity_sealed::Sealed {
+    /// Returns the payload's authoritative format namespace.
+    fn format(&self) -> &str;
+}
+
+impl format_identity_sealed::Sealed for DialectId {}
+
+impl FormatIdentityPayload for DialectId {
+    fn format(&self) -> &str {
+        self.namespace()
+    }
+}
+
+impl format_identity_sealed::Sealed for DialectMatch {}
+
+impl FormatIdentityPayload for DialectMatch {
+    fn format(&self) -> &str {
+        self.format()
+    }
+}
+
+impl format_identity_sealed::Sealed for DialectLayers {}
+
+impl FormatIdentityPayload for DialectLayers {
+    fn format(&self) -> &str {
+        self.primary().format()
+    }
+}
+
+/// A format identity that is either classified by a typed payload or retains
+/// only its known format.
+///
+/// Classified state stores no second format string. The payload is the one
+/// author of its namespace, so in-memory identity cannot drift. Wire readers
+/// use [`Self::from_wire`] to validate a denormalized top-level `format` field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FormatIdentity<T> {
+    /// The payload carries the complete classified identity.
+    Classified(T),
+    /// The format is known but no classification payload exists.
+    Unclassified(String),
+}
+
+impl<T: FormatIdentityPayload> FormatIdentity<T> {
+    /// Constructs an identity whose format comes from its classified payload.
+    #[must_use]
+    pub fn classified(payload: T) -> Self {
+        Self::Classified(payload)
+    }
+
+    /// Constructs an identity for a known format without classification.
+    #[must_use]
+    pub fn unclassified(format: impl Into<String>) -> Self {
+        Self::Unclassified(format.into())
+    }
+
+    /// Validates and constructs the identity projected by a wire envelope.
+    pub fn from_wire(
+        format: impl Into<String>,
+        payload: Option<T>,
+    ) -> Result<Self, FormatIdentityError> {
+        let format = format.into();
+        match payload {
+            Some(payload) if payload.format() == format => Ok(Self::Classified(payload)),
+            Some(payload) => Err(FormatIdentityError {
+                envelope: format,
+                classified: payload.format().to_owned(),
+            }),
+            None => Ok(Self::Unclassified(format)),
+        }
+    }
+
+    /// Returns the authoritative format id.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        match self {
+            Self::Classified(payload) => payload.format(),
+            Self::Unclassified(format) => format,
+        }
+    }
+
+    /// Returns the classified payload, when present.
+    #[must_use]
+    pub fn classified_payload(&self) -> Option<&T> {
+        match self {
+            Self::Classified(payload) => Some(payload),
+            Self::Unclassified(_) => None,
+        }
+    }
+
+    /// Consumes the identity into the denormalized wire fields.
+    #[must_use]
+    pub fn into_wire_parts(self) -> (String, Option<T>) {
+        match self {
+            Self::Classified(payload) => {
+                let format = payload.format().to_owned();
+                (format, Some(payload))
+            }
+            Self::Unclassified(format) => (format, None),
+        }
+    }
+}
+
+/// A wire envelope's format disagrees with its classified payload.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("format {envelope:?} does not match classified payload format {classified:?}")]
+pub struct FormatIdentityError {
+    envelope: String,
+    classified: String,
+}
+
 /// A dialect admission named a parser grammar from another format layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectMatchError {

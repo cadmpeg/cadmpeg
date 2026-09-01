@@ -262,7 +262,7 @@ fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() 
     assert!(
         error
             .to_string()
-            .contains("source format \"step\" does not match dialect format \"rhino\""),
+            .contains("format \"step\" does not match classified payload format \"rhino\""),
         "{error}"
     );
 }

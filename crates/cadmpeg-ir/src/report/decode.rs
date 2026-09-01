@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::DialectLayers;
+use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ use super::{LossNote, Severity};
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(into = "DecodeReportWire")]
 pub struct DecodeReport {
-    classification: DecodeClassification,
+    classification: FormatIdentity<DialectLayers>,
     transfer: DecodeTransfer,
     /// Decode coverage counts keyed by measure name.
     pub coverage: BTreeMap<String, usize>,
@@ -68,12 +68,6 @@ impl DecodeTransfer {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum DecodeClassification {
-    Classified(DialectLayers),
-    Unclassified { format: String },
-}
-
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DecodeReportWire {
@@ -100,12 +94,7 @@ impl From<DecodeReport> for DecodeReportWire {
             notes,
             transfer_ledger,
         } = report;
-        let (format, dialects) = match classification {
-            DecodeClassification::Classified(dialects) => {
-                (dialects.primary().format().to_owned(), Some(dialects))
-            }
-            DecodeClassification::Unclassified { format } => (format, None),
-        };
+        let (format, dialects) = classification.into_wire_parts();
         Self {
             format,
             container_only: transfer.container_only(),
@@ -122,21 +111,8 @@ impl From<DecodeReport> for DecodeReportWire {
 impl<'de> Deserialize<'de> for DecodeReport {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = DecodeReportWire::deserialize(deserializer)?;
-        let classification = match wire.dialects {
-            Some(dialects) => {
-                let primary_format = dialects.primary().format();
-                if wire.format != primary_format {
-                    return Err(serde::de::Error::custom(format_args!(
-                        "decode report format {:?} differs from primary dialect format {:?}",
-                        wire.format, primary_format
-                    )));
-                }
-                DecodeClassification::Classified(dialects)
-            }
-            None => DecodeClassification::Unclassified {
-                format: wire.format,
-            },
-        };
+        let classification = FormatIdentity::from_wire(wire.format, wire.dialects)
+            .map_err(serde::de::Error::custom)?;
         let transfer = match (wire.container_only, wire.geometry_transferred) {
             (true, true) => {
                 return Err(serde::de::Error::custom(
@@ -284,7 +260,7 @@ impl DecodeReport {
         transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
-            classification: DecodeClassification::Classified(dialects),
+            classification: FormatIdentity::classified(dialects),
             transfer,
             coverage,
             losses,
@@ -304,9 +280,7 @@ impl DecodeReport {
         transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
-            classification: DecodeClassification::Unclassified {
-                format: format.into(),
-            },
+            classification: FormatIdentity::unclassified(format),
             transfer,
             coverage,
             losses,
@@ -318,19 +292,13 @@ impl DecodeReport {
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
-        match &self.classification {
-            DecodeClassification::Classified(dialects) => dialects.primary().format(),
-            DecodeClassification::Unclassified { format } => format,
-        }
+        self.classification.format()
     }
 
     /// Returns the classified dialect layers, if decoding classified them.
     #[must_use]
     pub fn dialects(&self) -> Option<&DialectLayers> {
-        match &self.classification {
-            DecodeClassification::Classified(dialects) => Some(dialects),
-            DecodeClassification::Unclassified { .. } => None,
-        }
+        self.classification.classified_payload()
     }
 
     /// Returns the typed source-transfer state.

@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::ser::SerializeStruct;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 
-use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::dialect::{DialectMatch, FormatIdentity};
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -470,15 +470,9 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
 /// [`cadmpeg_ir::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceMeta {
-    classification: SourceClassification,
+    classification: FormatIdentity<DialectMatch>,
     /// Format-specific attributes.
     pub attributes: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SourceClassification {
-    Classified(DialectMatch),
-    Unclassified { format: String },
 }
 
 #[derive(Deserialize)]
@@ -510,19 +504,12 @@ impl Serialize for SourceMeta {
 impl<'de> Deserialize<'de> for SourceMeta {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = SourceMetaWire::deserialize(deserializer)?;
-        match wire.dialect {
-            Some(dialect) => {
-                if wire.format != dialect.format() {
-                    return Err(serde::de::Error::custom(format_args!(
-                        "source format {:?} does not match dialect format {:?}",
-                        wire.format,
-                        dialect.format()
-                    )));
-                }
-                Ok(Self::classified(dialect, wire.attributes))
-            }
-            None => Ok(Self::unclassified(wire.format, wire.attributes)),
-        }
+        let classification = FormatIdentity::from_wire(wire.format, wire.dialect)
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            classification,
+            attributes: wire.attributes,
+        })
     }
 }
 
@@ -546,7 +533,7 @@ impl SourceMeta {
     #[must_use]
     pub fn classified(dialect: DialectMatch, attributes: BTreeMap<String, String>) -> Self {
         Self {
-            classification: SourceClassification::Classified(dialect),
+            classification: FormatIdentity::classified(dialect),
             attributes,
         }
     }
@@ -555,9 +542,7 @@ impl SourceMeta {
     #[must_use]
     pub fn unclassified(format: impl Into<String>, attributes: BTreeMap<String, String>) -> Self {
         Self {
-            classification: SourceClassification::Unclassified {
-                format: format.into(),
-            },
+            classification: FormatIdentity::unclassified(format),
             attributes,
         }
     }
@@ -565,10 +550,7 @@ impl SourceMeta {
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
-        match &self.classification {
-            SourceClassification::Classified(dialect) => dialect.format(),
-            SourceClassification::Unclassified { format } => format,
-        }
+        self.classification.format()
     }
 
     /// Returns the primary source dialect match when the source was classified.
@@ -578,10 +560,7 @@ impl SourceMeta {
     /// source format returned by [`Self::format`].
     #[must_use]
     pub fn dialect(&self) -> Option<&DialectMatch> {
-        match &self.classification {
-            SourceClassification::Classified(dialect) => Some(dialect),
-            SourceClassification::Unclassified { .. } => None,
-        }
+        self.classification.classified_payload()
     }
 }
 

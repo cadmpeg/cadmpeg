@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::dialect::DialectLayers;
+use crate::dialect::{DialectLayers, FormatIdentity};
 
 /// One stream or segment in a container summary.
 ///
@@ -34,19 +34,13 @@ pub struct ContainerEntry {
 /// The result of inspecting a container without decoding its geometry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerSummary {
-    classification: ContainerClassification,
+    classification: FormatIdentity<DialectLayers>,
     /// Container kind, for example, `"zip"`.
     pub container_kind: String,
     /// Enumerated entries.
     pub entries: Vec<ContainerEntry>,
     /// Codec-defined informational notes.
     pub notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ContainerClassification {
-    Classified(DialectLayers),
-    Unclassified { format: String },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -81,29 +75,14 @@ impl Serialize for ContainerSummary {
 impl<'de> Deserialize<'de> for ContainerSummary {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = OwnedContainerSummaryWire::deserialize(deserializer)?;
-        match wire.dialects {
-            Some(dialects) => {
-                if wire.format != dialects.primary().format() {
-                    return Err(serde::de::Error::custom(format_args!(
-                        "container format {:?} does not match primary dialect format {:?}",
-                        wire.format,
-                        dialects.primary().format()
-                    )));
-                }
-                Ok(Self::classified(
-                    dialects,
-                    wire.container_kind,
-                    wire.entries,
-                    wire.notes,
-                ))
-            }
-            None => Ok(Self::unclassified(
-                wire.format,
-                wire.container_kind,
-                wire.entries,
-                wire.notes,
-            )),
-        }
+        let classification = FormatIdentity::from_wire(wire.format, wire.dialects)
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            classification,
+            container_kind: wire.container_kind,
+            entries: wire.entries,
+            notes: wire.notes,
+        })
     }
 }
 
@@ -132,7 +111,7 @@ impl ContainerSummary {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            classification: ContainerClassification::Classified(dialects),
+            classification: FormatIdentity::classified(dialects),
             container_kind: container_kind.into(),
             entries,
             notes,
@@ -148,9 +127,7 @@ impl ContainerSummary {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            classification: ContainerClassification::Unclassified {
-                format: format.into(),
-            },
+            classification: FormatIdentity::unclassified(format),
             container_kind: container_kind.into(),
             entries,
             notes,
@@ -160,19 +137,13 @@ impl ContainerSummary {
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
-        match &self.classification {
-            ContainerClassification::Classified(dialects) => dialects.primary().format(),
-            ContainerClassification::Unclassified { format } => format,
-        }
+        self.classification.format()
     }
 
     /// Returns the classified dialect layers, if inspection classified them.
     #[must_use]
     pub fn dialects(&self) -> Option<&DialectLayers> {
-        match &self.classification {
-            ContainerClassification::Classified(dialects) => Some(dialects),
-            ContainerClassification::Unclassified { .. } => None,
-        }
+        self.classification.classified_payload()
     }
 }
 
@@ -237,11 +208,9 @@ mod tests {
         malformed["format"] = serde_json::json!("step");
         let error = serde_json::from_value::<ContainerSummary>(malformed)
             .expect_err("a classified summary must match its primary dialect format");
-        assert!(
-            error.to_string().contains(
-                "container format \"step\" does not match primary dialect format \"rhino\""
-            ),
-            "{error}"
+        assert_eq!(
+            error.to_string(),
+            "format \"step\" does not match classified payload format \"rhino\""
         );
     }
 }
