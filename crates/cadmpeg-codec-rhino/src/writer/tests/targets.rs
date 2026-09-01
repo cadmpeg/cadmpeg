@@ -216,7 +216,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         let plan = Encoder::plan(
             &RhinoCodec,
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(version.target()),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = plan

@@ -59,7 +59,7 @@ fn planar_sheet_round_trips_object_attributes() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -106,7 +106,7 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -174,7 +174,7 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -248,7 +248,7 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -317,7 +317,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -353,7 +353,7 @@ fn open_planar_solid_is_rejected_before_output() {
     let error = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");

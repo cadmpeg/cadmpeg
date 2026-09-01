@@ -65,7 +65,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
     RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -94,7 +94,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
     let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("user-string metadata must not be discarded");
@@ -114,7 +114,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -143,7 +143,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("mesh modifier metadata must not be discarded");
@@ -163,7 +163,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -196,7 +196,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("layer metadata must not be discarded");

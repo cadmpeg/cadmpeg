@@ -30,7 +30,7 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
         RhinoCodec
             .plan(
                 cadmpeg_ir::codec::EncodeInput { ir, fidelity: None },
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");

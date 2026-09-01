@@ -140,11 +140,11 @@ fn encode_snapshot(bytes: &[u8]) -> String {
         "inherit": encode_arm(&decoded, TargetRequest::Inherit),
         "explicit_default": encode_arm(
             &decoded,
-            TargetRequest::Explicit(StepSchema::Ap214.target()),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
         ),
         "explicit_ap242_e3": encode_arm(
             &decoded,
-            TargetRequest::Explicit(StepSchema::Ap242Edition3.target()),
+            TargetRequest::Explicit(StepSchema::Ap242Edition3.descriptor().id.as_str()),
         ),
     });
     snapshot_text(&value)

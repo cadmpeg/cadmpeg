@@ -270,7 +270,7 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
 fn written_schema_declarations_classify_to_their_target_identity() {
     for schema in StepSchema::ALL {
         let matched = StepDialect::classify(&exchange(&[schema.file_schema()], "2;1"));
-        assert_eq!(matched.dialect().as_str(), schema.target());
+        assert_eq!(matched.dialect().as_str(), schema.descriptor().id.as_str());
     }
 }
 

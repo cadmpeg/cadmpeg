@@ -36,7 +36,7 @@ fn source_less_points_round_trip_across_target_versions() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -71,7 +71,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("coarse absolute tolerance is writable");
@@ -102,7 +102,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         let error = RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut output))
             .expect_err("invalid tolerance must not be serialized");
@@ -125,7 +125,7 @@ fn rejection_occurs_before_output() {
     assert!(RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target())
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
         )
         .and_then(|plan| plan.write_to(&mut output))
         .is_err());
@@ -149,7 +149,7 @@ fn source_less_circle_round_trips_with_its_frame() {
     RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -197,7 +197,7 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -285,7 +285,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -338,7 +338,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -370,7 +370,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
     assert!(matches!(
         RhinoCodec.plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target())
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
         ),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
@@ -405,7 +405,7 @@ fn mesh_precision_is_target_specific_and_reported() {
     let v5_report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V5.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V5.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut v5))
         .expect("required invariant");
@@ -418,7 +418,7 @@ fn mesh_precision_is_target_specific_and_reported() {
     let v8_report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut v8))
         .expect("required invariant");
@@ -478,7 +478,7 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
     RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -535,7 +535,7 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
     RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("channel bytes are opaque to chunk framing");
@@ -604,7 +604,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
     RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -634,7 +634,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -648,7 +648,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect("required invariant");
@@ -673,7 +673,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -696,7 +696,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
@@ -726,7 +726,7 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
     assert!(RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.target())
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
         )
         .and_then(|plan| plan.write_to(&mut output))
         .is_err());

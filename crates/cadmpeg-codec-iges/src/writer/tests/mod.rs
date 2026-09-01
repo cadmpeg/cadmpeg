@@ -86,7 +86,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
 
     let result = IgesCodec.plan(
         EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Explicit(IgesVersion::V5_3.target()),
+        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
     );
     assert!(matches!(result, Err(CodecError::NotImplemented(_))));
 }
@@ -239,7 +239,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let plan = crate::IgesCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .expect("NURBS curve has a supported semantic writer profile");
     let mut written = Vec::new();
@@ -338,7 +338,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let plan = crate::IgesCodec
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .expect("neutral tolerance floor is writable");
     let mut written = Vec::new();
@@ -372,7 +372,7 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
     let plan = crate::IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .expect("source resolution witness is writable");
     let mut written = Vec::new();
@@ -505,7 +505,7 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         let plan = IgesCodec
             .plan(
                 EncodeInput::new(decoded.ir(), None),
-                TargetRequest::Explicit(IgesVersion::V5_3.target()),
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
             )
             .expect("fixture has a semantic writer profile");
         let mut written = Vec::new();

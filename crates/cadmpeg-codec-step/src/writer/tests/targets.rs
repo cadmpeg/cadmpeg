@@ -154,7 +154,10 @@ fn inherit_round_trips_the_declaration_of_every_catalog_row() {
         let decoded = source_declaring(schema.file_schema());
         let plan = inherit(&StepCodec::default(), decoded.ir())
             .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
-        assert_eq!(target_of(&plan), Some(schema.target().to_owned()));
+        assert_eq!(
+            target_of(&plan),
+            Some(schema.descriptor().id.as_str().to_owned())
+        );
         assert!(
             written_text(plan).contains(schema.file_schema()),
             "{schema:?}"
@@ -196,7 +199,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
         assert!(
             available
                 .iter()
-                .any(|target| target.id.as_str() == schema.target()),
+                .any(|target| target.id.as_str() == schema.descriptor().id.as_str()),
             "{available:?}"
         );
     }
@@ -411,7 +414,7 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
     let targets = Encoder::targets(&encoder);
     assert_eq!(targets.len(), StepSchema::ALL.len());
     for schema in StepSchema::ALL {
-        let target = find_target(targets, schema.target())
+        let target = find_target(targets, schema.descriptor().id.as_str())
             .unwrap_or_else(|| panic!("{schema:?} has no catalog row"));
         assert!(!target.aliases.is_empty(), "{schema:?}");
         for alias in target.aliases {
@@ -425,7 +428,7 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
         assert!(
             StepSchema::ALL
                 .into_iter()
-                .any(|schema| schema.target() == target.id.as_str()),
+                .any(|schema| schema.descriptor().id.as_str() == target.id.as_str()),
             "catalog row {} names no schema",
             target.id
         );
@@ -459,7 +462,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         let plan = StepCodec::default()
             .plan(
                 EncodeInput::new(&cube, None),
-                TargetRequest::Explicit(schema.target()),
+                TargetRequest::Explicit(schema.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
         let claimed = plan

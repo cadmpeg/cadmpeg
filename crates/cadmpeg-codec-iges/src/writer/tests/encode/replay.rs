@@ -30,7 +30,7 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_2.target()),
+            TargetRequest::Explicit(IgesVersion::V5_2.descriptor().id.as_str()),
         )
         .unwrap();
 
@@ -63,7 +63,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let plan = IgesCodec
         .plan(
             EncodeInput::new(&unclassified, Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
 
@@ -79,7 +79,7 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
     assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
@@ -116,7 +116,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
         let plan = IgesCodec
             .plan(
                 EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.target()),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .unwrap();
         let mut written = Vec::new();
@@ -139,7 +139,7 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
     let plan = IgesCodec
         .plan(
             EncodeInput::new(&edited, Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.target()),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
 

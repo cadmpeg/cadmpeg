@@ -4,8 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
-#[cfg(test)]
-use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -56,7 +54,7 @@ pub(crate) fn write_step(
 ) -> std::io::Result<ExportReport> {
     let outcome = write_step_outcome(ir, w, schema, opts)?;
     Ok(ExportReport::native(
-        DialectId::pinned(schema.target()),
+        schema.descriptor().id,
         outcome.census,
         FidelityResolution::NotProvided,
         WritePath::Synthesized,
