@@ -91,6 +91,8 @@ pub enum InventorLossCode {
     SourceDialectUnverified,
     /// The active kernel carrier used an unverified Spatial ACIS grammar band.
     KernelDialectUnverified,
+    /// The selected kernel carrier did not expose a parseable kernel header.
+    KernelCarrierUnparseable,
 }
 
 impl InventorLossCode {
@@ -129,6 +131,7 @@ impl InventorLossCode {
         Self::AssemblyPlacementNotTransferred,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
+        Self::KernelCarrierUnparseable,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -169,6 +172,7 @@ impl InventorLossCode {
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
+            Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
         }
     }
 
@@ -202,6 +206,7 @@ impl InventorLossCode {
             | Self::PropertySetStreamMalformed
             | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
+            Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
             Self::FeatureOperationGraphOpen
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
@@ -283,6 +288,7 @@ mod tests {
                 "assembly.placement-not-transferred",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
+                "source.kernel-carrier-unparseable",
             ]
         );
     }

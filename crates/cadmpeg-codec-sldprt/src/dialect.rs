@@ -250,7 +250,10 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         Admission::Admitted => None,
         Admission::AdmittedUnverified { .. } => {
             if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
-                return Some(SldprtLossCode::SourceDialectUnverified.note(message));
+                return Some(SldprtLossCode::KernelDialectUnverified.note(message));
+            }
+            if matched.format() != FORMAT {
+                return None;
             }
             let declaration = match matched.declared().get(DECLARED_SW_VERSION) {
                 Some(value) => format!(

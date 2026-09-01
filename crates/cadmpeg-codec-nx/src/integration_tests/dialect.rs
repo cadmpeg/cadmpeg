@@ -109,7 +109,7 @@ fn residual_parasolid_layer_is_present_in_decode_losses() {
         Admission::AdmittedUnverified { .. }
     ));
     assert!(result.report().losses.iter().any(|note| {
-        note.code == crate::loss::NxLossCode::SourceDialectUnverified.kind()
+        note.code == crate::loss::NxLossCode::KernelDialectUnverified.kind()
             && note.message.contains("SCH_TEST_1_9999")
     }));
 }

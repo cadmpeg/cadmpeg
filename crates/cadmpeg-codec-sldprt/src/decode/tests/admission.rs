@@ -183,7 +183,7 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
         .expect("salvage decode admits the residual kernel layer");
     assert!(salvaged.report().geometry_transferred());
     assert!(salvaged.report().losses.iter().any(|note| {
-        note.code == SldprtLossCode::SourceDialectUnverified.kind()
+        note.code == SldprtLossCode::KernelDialectUnverified.kind()
             && note.message.contains("SCH_TEST_1_9999")
     }));
 
@@ -191,7 +191,7 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
     match strict {
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. }) => assert_eq!(
             loss_code,
-            SldprtLossCode::SourceDialectUnverified.kind().to_string()
+            SldprtLossCode::KernelDialectUnverified.kind().to_string()
         ),
         other => panic!("strict decode must reject the residual kernel layer, got {other:?}"),
     }

@@ -620,7 +620,7 @@
         },
         {
           "code": {
-            "code": "source.dialect-unverified",
+            "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
             "namespace": "nx"
           },
@@ -629,7 +629,7 @@
         },
         {
           "code": {
-            "code": "source.dialect-unverified",
+            "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
             "namespace": "nx"
           },

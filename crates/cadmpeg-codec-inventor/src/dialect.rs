@@ -398,8 +398,17 @@ pub(crate) fn layers(primary: DialectMatch, carrier: &ActiveCarrierState<'_>) ->
 
 /// The recovery loss the kernel layer charges, if it recovered.
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    cadmpeg_asm::dialect::unverified_message("the active kernel carrier", matched)
-        .map(|message| InventorLossCode::KernelDialectUnverified.note(message))
+    match matched.admission() {
+        cadmpeg_core::dialect::Admission::Refused
+            if matched.format() == cadmpeg_asm::dialect::FORMAT =>
+        {
+            Some(InventorLossCode::KernelCarrierUnparseable.note(
+                "the selected kernel carrier did not expose a parseable ACIS or ASM header; its native records remain retained",
+            ))
+        }
+        _ => cadmpeg_asm::dialect::unverified_message("the active kernel carrier", matched)
+            .map(|message| InventorLossCode::KernelDialectUnverified.note(message)),
+    }
 }
 
 #[cfg(test)]
