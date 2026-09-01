@@ -1,4 +1,4 @@
-# generated at 490794a09
+# generated at 292712893
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -23,8 +23,10 @@ impl cadmpeg_registry::Format
 pub fn cadmpeg_registry::Format::all() -> impl core::iter::traits::iterator::Iterator<Item = Self>
 pub fn cadmpeg_registry::Format::from_extension(&str) -> core::option::Option<Self>
 pub fn cadmpeg_registry::Format::from_name(&str) -> core::option::Option<Self>
+pub fn cadmpeg_registry::Format::is_binary(self) -> bool
 pub fn cadmpeg_registry::Format::is_known_name(&str) -> bool
 pub fn cadmpeg_registry::Format::name(self) -> &'static str
+pub fn cadmpeg_registry::Format::transfers_geometry(self) -> bool
 pub fn cadmpeg_registry::Format::vocabulary() -> alloc::string::String
 pub enum cadmpeg_registry::Inspection
 pub cadmpeg_registry::Inspection::Classified(cadmpeg_core::container::ContainerSummary)

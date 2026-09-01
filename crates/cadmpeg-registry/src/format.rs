@@ -40,7 +40,7 @@ impl Format {
 
     /// Every output format this build carries, in registry order.
     pub fn all() -> impl Iterator<Item = Self> {
-        crate::descriptors::writable().filter_map(|descriptor| descriptor.output)
+        crate::descriptors::writable().map(|(_, output)| output.format)
     }
 
     /// The format an output-format word names, by id or by accepted alias.
@@ -54,8 +54,8 @@ impl Format {
     pub fn from_name(name: &str) -> Option<Self> {
         let canonical = crate::registry::canonical_format_name(name)?;
         crate::descriptors::writable()
-            .find(|descriptor| descriptor.id == canonical)
-            .and_then(|descriptor| descriptor.output)
+            .find(|(descriptor, _)| descriptor.id == canonical)
+            .map(|(_, output)| output.format)
     }
 
     /// The output-format words this build accepts, for a refusal message.
@@ -69,14 +69,29 @@ impl Format {
     pub fn from_extension(extension: &str) -> Option<Self> {
         let extension = extension.to_ascii_lowercase();
         crate::descriptors::writable()
-            .find(|descriptor| descriptor.output_extensions.contains(&extension.as_str()))
-            .and_then(|descriptor| descriptor.output)
+            .find(|(_, output)| output.extensions.contains(&extension.as_str()))
+            .map(|(_, output)| output.format)
     }
 
     /// The stable format id, which is also its canonical `--to` spelling.
     #[must_use]
     pub fn name(self) -> &'static str {
-        crate::descriptors::by_output(self).id
+        crate::descriptors::by_output(self).0.id
+    }
+
+    /// Whether this format's encoder emits a binary container.
+    #[must_use]
+    pub fn is_binary(self) -> bool {
+        crate::descriptors::by_output(self).1.physics.is_binary()
+    }
+
+    /// Whether an export to this format requires transferred geometry.
+    #[must_use]
+    pub fn transfers_geometry(self) -> bool {
+        crate::descriptors::by_output(self)
+            .1
+            .physics
+            .transfers_geometry()
     }
 }
 
@@ -117,5 +132,21 @@ mod tests {
         assert_eq!(Format::from_name("stp"), Some(Format::Step));
         assert_eq!(Format::from_name("json"), Some(Format::Cadir));
         assert_eq!(Format::from_name("inventor"), None);
+    }
+
+    #[test]
+    fn output_physics_come_from_each_writable_descriptor() {
+        assert!(!Format::Cadir.is_binary());
+        assert!(!Format::Cadir.transfers_geometry());
+        #[cfg(feature = "step")]
+        {
+            assert!(!Format::Step.is_binary());
+            assert!(Format::Step.transfers_geometry());
+        }
+        #[cfg(feature = "rhino")]
+        {
+            assert!(Format::Rhino.is_binary());
+            assert!(Format::Rhino.transfers_geometry());
+        }
     }
 }

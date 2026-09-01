@@ -20,10 +20,8 @@ use crate::Format;
 /// and nothing an encoder needs at construction can be wrong by then. What can
 /// be wrong is the dialect, and that is `plan`'s question, not this one's.
 pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
-    let descriptor = crate::descriptors::by_output(format);
-    descriptor
-        .encoder
-        .expect("every output format has an encoder")()
+    let constructor = crate::descriptors::by_output(format).1.encoder;
+    constructor()
 }
 
 #[cfg(test)]
