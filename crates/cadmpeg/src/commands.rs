@@ -135,7 +135,7 @@ pub(crate) struct DiffInput<'a> {
 #[derive(Serialize)]
 struct InspectReportPayload<'a> {
     confidence: Option<cadmpeg_ir::codec::Confidence>,
-    summary: Option<&'a cadmpeg_core::ContainerSummary>,
+    summary: Option<&'a cadmpeg_ir::ContainerSummary>,
 }
 
 #[derive(Serialize)]

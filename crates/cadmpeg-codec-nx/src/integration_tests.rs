@@ -134,10 +134,10 @@ fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() 
         .entries
         .iter()
         .any(|entry| entry.role == "parasolid-stream"));
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note.contains("SCH_TEST_1_9999")));
+    assert!(summary.losses.iter().any(|loss| {
+        loss.code == crate::loss::NxLossCode::KernelDialectUnverified.kind()
+            && loss.message.contains("SCH_TEST_1_9999")
+    }));
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());

@@ -3,11 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, EncoderBackend,
     EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget,
 };
+use cadmpeg_ir::ContainerSummary;
 
 use crate::archive;
 use crate::dialect::{refuse_alternate_encoding, StepDialect};
@@ -206,6 +207,7 @@ impl CodecBackend for StepCodec {
             cadmpeg_core::dialect::DialectLayers::of(matched),
             "iso-10303-21-clear-text",
             entries,
+            decoded.report().losses.clone(),
             notes,
         ))
     }
@@ -312,6 +314,7 @@ fn inspect_zip(
         format!("archive entries={entry_count}; root data offset={root_data_offset}"),
     ];
     notes.extend(std::mem::take(&mut root_summary.notes));
+    let losses = std::mem::take(&mut root_summary.losses);
     notes.extend(resource_notes);
     // ZIP packaging is a container fact, not an identity axis: the
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
@@ -320,6 +323,7 @@ fn inspect_zip(
         dialects,
         "iso-10303-21-zip",
         entries,
+        losses,
         notes,
     ))
 }

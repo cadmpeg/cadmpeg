@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode and inspection reports assembled from F3D identity and transfer facts.
 
-use cadmpeg_core::ContainerSummary;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
 
@@ -67,13 +67,12 @@ fn report_notes(notes: Vec<String>, container_only: bool) -> Vec<String> {
 pub(crate) fn build_inspection_summary(scan: &ContainerScan<'_>) -> ContainerSummary {
     let classification = crate::dialect::classify_layers(scan);
     let (layers, classification_losses) = classification.into_parts();
-    let classification_notes = classification_losses
+    let losses = classification_losses
         .into_iter()
         .chain(crate::dialect::dialect_losses(&layers))
-        .map(|loss| format!("dialect classification loss: {}", loss.message))
         .collect::<Vec<_>>();
     let mut summary = crate::container::summarize(scan, layers);
-    summary.notes.extend(classification_notes);
+    summary.losses = losses;
     summary
 }
 

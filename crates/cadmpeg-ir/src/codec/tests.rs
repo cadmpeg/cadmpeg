@@ -296,6 +296,7 @@ impl CodecBackend for ForeignIdentityCodec {
             "test",
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         ))
     }
 

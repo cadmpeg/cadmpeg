@@ -1,8 +1,8 @@
-# generated at c3715792f
+# generated at 8b1cd929e
 pub mod cadmpeg_codec_nx
 pub struct cadmpeg_codec_nx::NxCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_nx::NxCodec
 pub fn cadmpeg_codec_nx::NxCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_nx::NxCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_nx::NxCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_nx::NxCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_nx::NxCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>

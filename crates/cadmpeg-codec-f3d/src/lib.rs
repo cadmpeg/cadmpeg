@@ -117,13 +117,14 @@ mod zip_write;
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeResult, EncodeInput, EncoderBackend, EncoderTargetDomain,
     ExportPlan, ResolvedEncoderTarget,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::WritePath;
 use std::io::Write;
 

@@ -40,7 +40,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{
     CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, EncoderBackend,
     EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget,
@@ -51,6 +51,7 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FreecadLossCode;

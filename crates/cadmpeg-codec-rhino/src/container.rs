@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::{DecodeReport, DecodeTransfer};
 use cadmpeg_ir::units::Units;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
     checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
@@ -1114,10 +1115,15 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             .iter()
             .map(|diagnostic| diagnostic.message.clone()),
     );
+    let matched = dialect_match(scan);
+    let losses = crate::dialect::admission_loss(&matched)
+        .into_iter()
+        .collect();
     ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(dialect_match(scan)),
+        cadmpeg_core::dialect::DialectLayers::of(matched),
         "3dm-chunks",
         entries,
+        losses,
         notes,
     )
 }
@@ -1204,10 +1210,15 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     if !header.archive_version.is_chunked() {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
+        let matched = header.archive_version.classify(None);
+        let losses = crate::dialect::admission_loss(&matched)
+            .into_iter()
+            .collect();
         return Ok(ContainerSummary::classified(
-            cadmpeg_core::dialect::DialectLayers::of(header.archive_version.classify(None)),
+            cadmpeg_core::dialect::DialectLayers::of(matched),
             "3dm-chunks",
             Vec::new(),
+            losses,
             vec![format!(
                 "archive version {}",
                 header.archive_version.value()

@@ -128,10 +128,6 @@ impl LayerClassification {
         losses.extend(dialect_losses(&self.layers));
         losses.extend(self.losses.iter().cloned());
     }
-
-    pub(crate) fn collision_losses(&self) -> &[LossNote] {
-        &self.losses
-    }
 }
 
 /// Classify the host document and every framed Parasolid stream it carries.

@@ -9,6 +9,6 @@ pub mod error;
 pub mod io;
 pub mod target;
 
-pub use container::{ContainerEntry, ContainerSummary};
+pub use container::ContainerEntry;
 pub use error::CodecError;
 pub use io::ReadSeek;

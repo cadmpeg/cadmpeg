@@ -6,8 +6,9 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::ContainerSummary;
 use std::collections::BTreeMap;
 
 use crate::dialect::{terminator_line, StreamEvidence, TextEvidence};
@@ -183,6 +184,7 @@ pub(crate) fn inspect(
             ))
         }
     };
+    let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
             .expect("the ACIS kernel layer differs from the SAT primary"),
@@ -201,6 +203,7 @@ pub(crate) fn inspect(
             uncompressed_size: bytes.len() as u64,
             attributes,
         }],
+        losses,
         notes,
     ))
 }

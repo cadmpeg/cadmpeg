@@ -18,7 +18,8 @@ use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
 use cadmpeg_core::decode::View;
-use cadmpeg_core::{ContainerEntry, ContainerSummary};
+use cadmpeg_core::ContainerEntry;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::layout::extent_struct as extent;
 use crate::layout::fbb_face_row as fbb_row;
@@ -1546,10 +1547,13 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
+    let matched = crate::dialect::classify(scan);
+    let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();
     ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::classify(scan)),
+        cadmpeg_core::dialect::DialectLayers::of(matched),
         "v5-cfv2",
         entries,
+        losses,
         notes,
     )
 }

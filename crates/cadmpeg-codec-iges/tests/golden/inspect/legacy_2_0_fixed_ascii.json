@@ -75,6 +75,17 @@
     }
   ],
   "format": "iges",
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "iges"
+      },
+      "message": "IGES Global version flag 3 names effective specification version 2.0; this decode interpreted the file with the semantics verified for versions 4.0, 5.0, 5.1, 5.2, 5.3",
+      "severity": "warning"
+    }
+  ],
   "notes": [
     "source_bytes=567",
     "parameter_delimiter=,",
@@ -88,7 +99,6 @@
     "entity.116.form.0=1",
     "parameter_records=1",
     "parameter_tokens=4",
-    "external_references=0",
-    "loss.iges/source.dialect-unverified=1"
+    "external_references=0"
   ]
 }

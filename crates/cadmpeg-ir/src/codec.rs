@@ -19,10 +19,11 @@ use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::StrictConsequence;
 use crate::source_fidelity::SourceFidelity;
+use crate::ContainerSummary;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
 };
-use cadmpeg_core::{CodecError, ContainerSummary, ReadSeek};
+use cadmpeg_core::{CodecError, ReadSeek};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -347,9 +348,10 @@ mod sealed {
 /// use cadmpeg_ir::codec::{
 ///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult,
 /// };
-/// use cadmpeg_core::{CodecError, ContainerSummary, ReadSeek};
+/// use cadmpeg_core::{CodecError, ReadSeek};
 /// use cadmpeg_core::decode::{DecodeContext, View};
 /// use cadmpeg_core::decode::InspectOptions;
+/// use cadmpeg_ir::ContainerSummary;
 ///
 /// struct Rogue;
 /// impl CodecBackend for Rogue {

@@ -71,6 +71,23 @@
     }
   ],
   "format": "iges",
+  "losses": [
+    {
+      "code": {
+        "code": "parameter.data-quarantined",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "iges"
+      },
+      "message": "IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
+      "provenance": {
+        "format": "iges",
+        "offset": 3464,
+        "stream": "iges",
+        "tag": "D23:parameter"
+      },
+      "severity": "warning"
+    }
+  ],
   "notes": [
     "source_bytes=3807",
     "parameter_delimiter=,",
@@ -91,7 +108,6 @@
     "entity.514.form.2=1",
     "parameter_records=13",
     "parameter_tokens=133",
-    "external_references=0",
-    "loss.iges/parameter.data-quarantined=1"
+    "external_references=0"
   ]
 }

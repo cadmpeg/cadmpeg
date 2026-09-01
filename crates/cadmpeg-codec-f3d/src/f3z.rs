@@ -7,8 +7,9 @@
 //! occurrence-scoped graph composition to [`merge`].
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
@@ -33,19 +34,14 @@ pub(crate) fn inspect<'a>(
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    let mut notes = vec![format!(
+    let notes = vec![format!(
         "f3z archive: {member_count} document member(s); model root {model_root}"
     )];
-    notes.extend(
-        classified
-            .losses
-            .iter()
-            .map(|loss| format!("archive classification loss: {}", loss.message)),
-    );
     Ok(ContainerSummary::classified(
         classified.layers,
         "zip",
         scan.entries.clone(),
+        classified.losses,
         notes,
     ))
 }

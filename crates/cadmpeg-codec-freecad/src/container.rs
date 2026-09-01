@@ -7,7 +7,8 @@ use std::path::{Component, Path};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
 use crate::gui;
@@ -106,12 +107,15 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 
 /// Summarize one scan.
 pub fn summarize(scan: &Scan) -> ContainerSummary {
+    let matched = crate::dialect::FcstdDialect::classify(&scan.document);
+    let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
+        .into_iter()
+        .collect();
     ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::FcstdDialect::classify(
-            &scan.document,
-        )),
+        cadmpeg_core::dialect::DialectLayers::of(matched),
         "zip",
         scan.entries.clone(),
+        losses,
         summary_notes(scan),
     )
 }

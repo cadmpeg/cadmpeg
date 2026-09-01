@@ -41,6 +41,7 @@ pub mod attributes;
 pub mod bytes;
 pub mod codec;
 pub mod compare;
+pub mod container;
 
 pub mod diff;
 pub mod document;
@@ -81,6 +82,7 @@ pub use codec::{
     CadirEncoder, Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult,
     Encoder,
 };
+pub use container::ContainerSummary;
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use draft::{DocumentDraft, ModelDraft};

@@ -55,7 +55,7 @@ Export-side refusal is not owned by the `Encoder` trait. The conversion layer ow
 
 These hold across every codec, every dialect, and every release. A change that breaks one is a change to the architecture, not to a codec.
 
-**Every classified report has one primary layer.** `ContainerSummary` and `DecodeReport` store classified dialects as `DialectLayers`, whose constructor requires one primary layer. Extra layers are unique by `(format, instance)`. An extra layer in the primary format requires an instance, so it cannot masquerade as a second primary. `None` means the report is unclassified. The invariant is enforced at construction; report consumers read the primary through `DialectLayers::primary` and do not search a flat list or panic to repair an invalid shape.
+**Every classified report has one primary layer.** `ContainerSummary` and `DecodeReport` store classified dialects as `DialectLayers`, whose constructor requires one primary layer. Extra layers are unique by `(format, instance)`. An extra layer in the primary format requires an instance, so it cannot masquerade as a second primary. `None` means the report is unclassified. The invariant is enforced at construction; report consumers read the primary through `DialectLayers::primary` and do not search a flat list or panic to repair an invalid shape. Both report types carry typed `LossNote` values. Inspection charges every loss it resolves directly instead of encoding loss facts as informational strings.
 
 **Per-entity persistent identity.** Every entity carries a globally unique id under the entity-ID grammar, and that id is what `diff`, `query graph`, `query join`, and golden stability are built on. A dialect never appears in an id: classification refines, and an id that moved when the classifier improved would churn every diff and every golden against no collision that has ever been constructed.
 
@@ -107,7 +107,7 @@ Each input codec implements `Codec`:
 
 - `id() -> &'static str` names the codec for registry lookup and `--input-format`.
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
-- `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure.
+- `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure and reports the losses resolved at inspection depth.
 - `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, DecodeFailure>` produces `CadIr`, `DecodeReport`, and source fidelity. `DecodeFailure::Codec` carries backend and resource failures.
 
 `--input-format` selects a codec. Without it, the CLI detects one. Native writers use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.

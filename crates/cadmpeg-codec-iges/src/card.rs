@@ -3,9 +3,10 @@
 
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::SourceProvenance;
 use std::collections::BTreeMap;
 
@@ -605,6 +606,7 @@ pub(crate) fn summarize(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         "fixed-ascii",
         entries,
+        Vec::new(),
         vec![format!("source_bytes={}", scan.source.len())],
     )
 }

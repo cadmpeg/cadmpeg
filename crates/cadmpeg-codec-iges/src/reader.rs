@@ -3,10 +3,10 @@
 
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
-use crate::{card, directory, entities, global, graph, loss, native, parameter};
+use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::dialect::DialectMatch;
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{
     document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
@@ -15,6 +15,7 @@ use cadmpeg_ir::report::{
     DecodeReport, DecodeTransfer, LossNote, Severity, TransferDisposition, TransferLedger,
 };
 use cadmpeg_ir::units::Units;
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -227,7 +228,7 @@ pub(crate) fn inspect(
     summary
         .notes
         .extend(graph::summary_notes(&parse.references));
-    summary.notes.extend(loss::census(&losses));
+    summary.losses = losses;
     if representation != Representation::FixedAscii {
         summary.container_kind = representation.as_str().into();
         if let Some(note) = summary
