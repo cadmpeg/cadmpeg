@@ -24,6 +24,20 @@ pub struct TargetDescriptor {
     pub default: bool,
 }
 
+impl TargetDescriptor {
+    /// Every token accepted for this target: full id, format-local id, and aliases.
+    pub fn accepted_tokens(&self) -> impl Iterator<Item = &str> {
+        let local = self
+            .id
+            .as_str()
+            .split_once(':')
+            .map_or(self.id.as_str(), |(_, local)| local);
+        std::iter::once(self.id.as_str())
+            .chain(std::iter::once(local))
+            .chain(self.aliases.iter().copied())
+    }
+}
+
 /// Panics when a static encoder target catalog violates its uniqueness rules.
 ///
 /// Every spelling accepted by [`find_target`] belongs to one row. A row may
@@ -38,15 +52,7 @@ pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
 
     let mut tokens = BTreeMap::<&str, usize>::new();
     for (index, target) in targets.iter().enumerate() {
-        let local = target
-            .id
-            .as_str()
-            .split_once(':')
-            .map_or(target.id.as_str(), |(_, local)| local);
-        for token in std::iter::once(target.id.as_str())
-            .chain(std::iter::once(local))
-            .chain(target.aliases.iter().copied())
-        {
+        for token in target.accepted_tokens() {
             if let Some(previous) = tokens.insert(token, index) {
                 assert_eq!(
                     previous, index,
@@ -68,15 +74,9 @@ pub fn find_target<'a>(
     targets: &'a [TargetDescriptor],
     token: &str,
 ) -> Option<&'a TargetDescriptor> {
-    targets.iter().find(|target| {
-        target.id.as_str() == token
-            || target
-                .id
-                .as_str()
-                .split_once(':')
-                .is_some_and(|(_, local)| local == token)
-            || target.aliases.contains(&token)
-    })
+    targets
+        .iter()
+        .find(|target| target.accepted_tokens().any(|accepted| accepted == token))
 }
 
 /// The catalog's cross-format default, or `None` when none is declared.
@@ -370,6 +370,10 @@ mod tests {
     fn target_lookup_accepts_each_owned_spelling_and_rejects_a_miss() {
         let targets = [target("test:first", &["one", "primary"], false)];
 
+        assert_eq!(
+            targets[0].accepted_tokens().collect::<Vec<_>>(),
+            vec!["test:first", "first", "one", "primary"]
+        );
         for token in ["test:first", "first", "one", "primary"] {
             assert_eq!(
                 find_target(&targets, token).map(|entry| entry.id.as_str()),

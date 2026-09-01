@@ -1,4 +1,4 @@
-# generated at f9f336db6
+# generated at eea176852
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -437,6 +437,8 @@ pub struct cadmpeg_core::target::TargetDescriptor
 pub cadmpeg_core::target::TargetDescriptor::aliases: &'static [&'static str]
 pub cadmpeg_core::target::TargetDescriptor::default: bool
 pub cadmpeg_core::target::TargetDescriptor::id: cadmpeg_core::dialect::DialectId
+impl cadmpeg_core::target::TargetDescriptor
+pub fn cadmpeg_core::target::TargetDescriptor::accepted_tokens(&self) -> impl core::iter::traits::iterator::Iterator<Item = &str>
 #[non_exhaustive] pub struct cadmpeg_core::target::TargetRefusal
 impl cadmpeg_core::target::TargetRefusal
 pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]

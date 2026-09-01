@@ -48,7 +48,7 @@ impl Format {
     /// Returns `None` for a known read-only format as well as for an unknown
     /// word. Call [`Self::is_known_name`] first when that distinction matters.
     /// `registry::tests::compiled_write_catalogs_match_registry_policy` proves
-    /// no compiled target alias is also a format word.
+    /// no compiled target's local id or alias is also a format word.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         let canonical = crate::registry::canonical_format_name(name)?;
