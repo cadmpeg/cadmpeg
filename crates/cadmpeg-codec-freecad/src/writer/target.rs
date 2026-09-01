@@ -142,12 +142,10 @@ fn retained_baseline<'a>(ir: &'a CadIr, source_dialect: &DialectId) -> Option<Re
         return None;
     };
     let dialect = dialect::FcstdDialect::from_schema_version(&document.schema_version);
-    (dialect != dialect::FcstdDialect::Unknown && dialect.id() == *source_dialect).then(|| {
-        Resolution {
-            dialect,
-            ir,
-            namespace,
-            document: document.clone(),
-        }
+    (dialect.id() == *source_dialect).then(|| Resolution {
+        dialect,
+        ir,
+        namespace,
+        document: document.clone(),
     })
 }
