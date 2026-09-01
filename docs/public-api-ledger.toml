@@ -18,6 +18,20 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "3b458dbbb52cd610617aa56018e35c9915fbc58a"
+crate = "cadmpeg-parasolid"
+kind = "signature"
+item = "cadmpeg_parasolid::classify_layer"
+reason = "embedded Parasolid identity is shared, but the host must now state whether it verified the grammar of a named schema row"
+
+[[change]]
+commit = "3b458dbbb52cd610617aa56018e35c9915fbc58a"
+crate = "cadmpeg-parasolid"
+kind = "signature"
+item = "cadmpeg_parasolid::extra_layers"
+reason = "bulk layer classification now requires the same explicit host-owned known-schema admission decision"
+
+[[change]]
 commit = "12ebff1984cde78587f84e0dc34c086ece40bf44"
 crate = "cadmpeg-registry"
 kind = "deletion"

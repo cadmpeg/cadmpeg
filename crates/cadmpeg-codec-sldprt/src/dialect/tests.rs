@@ -77,12 +77,18 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
     assert_eq!(kernel.dialect().as_str(), "parasolid:sch-sw-33103");
     assert_eq!(kernel.declared()["schema"], "SCH_SW_33103_11000");
     assert_eq!(kernel.instance(), None);
+    assert_eq!(kernel.admission(), Admission::Admitted);
 }
 
 #[test]
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
-    let kernel = cadmpeg_parasolid::classify_layer("SCH_TEST_1_9999", "block@7:body+3", false);
+    let kernel = cadmpeg_parasolid::classify_layer(
+        "SCH_TEST_1_9999",
+        "block@7:body+3",
+        false,
+        cadmpeg_parasolid::KnownSchemaAdmission::Verified,
+    );
     let layers = DialectLayers::new(host, vec![kernel]).unwrap();
     let losses = dialect_losses(&layers);
 

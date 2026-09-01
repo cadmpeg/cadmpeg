@@ -113,6 +113,7 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
             .into_iter()
             .map(|(stream, schema)| (schema.to_owned(), format!("stream@{}", stream.file_offset)))
             .collect(),
+        cadmpeg_parasolid::KnownSchemaAdmission::Unverified,
     );
     let (host, matched) = classify_host(&scan.container);
     let mut layers = DialectLayers::of(matched);

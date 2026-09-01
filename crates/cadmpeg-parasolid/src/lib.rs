@@ -17,6 +17,19 @@ pub const DECLARED_SCHEMA: &str = "schema";
 /// Declared-key name for the host location carrying the stream.
 pub const DECLARED_CARRIER: &str = "carrier";
 
+/// Whether the host parser verified the grammar of a named Parasolid row.
+///
+/// Identity comes from the shared schema-token map. Admission is a separate
+/// host fact: two containers can carry the same token while applying different
+/// embedded-stream grammars.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnownSchemaAdmission {
+    /// The host applied and verified the grammar named by a recognized row.
+    Verified,
+    /// The host retained the recognized identity without verifying its grammar.
+    Unverified,
+}
+
 /// One exact ASCII `SCH_` token and its location in a supplied prologue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchemaToken<'a> {
@@ -100,27 +113,33 @@ fn schema_token(prologue: &[u8], offset: usize, end: usize) -> Option<SchemaToke
 /// one Parasolid stream. The schema and carrier are always retained verbatim as
 /// declarations, independent of whether the schema has a named registry row.
 #[must_use]
-pub fn classify_layer(schema: &str, carrier: &str, instance_tagged: bool) -> DialectMatch {
-    let (id, admitted) = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
-        ("parasolid:sch-sw-33103", true)
+pub fn classify_layer(
+    schema: &str,
+    carrier: &str,
+    instance_tagged: bool,
+    known_admission: KnownSchemaAdmission,
+) -> DialectMatch {
+    let id = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
+        "parasolid:sch-sw-33103"
     } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
-        ("parasolid:sch-sw-32001", true)
+        "parasolid:sch-sw-32001"
     } else if schema
         .rsplit_once('_')
         .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("13006"))
     {
-        ("parasolid:format-13006", true)
+        "parasolid:format-13006"
     } else {
-        ("parasolid:unknown", false)
+        "parasolid:unknown"
     };
     let declared = BTreeMap::from([
         (DECLARED_SCHEMA.to_owned(), schema.to_owned()),
         (DECLARED_CARRIER.to_owned(), carrier.to_owned()),
     ]);
-    let matched = if admitted {
-        DialectMatch::admitted(DialectId::pinned(id))
-    } else {
-        DialectMatch::residual(DialectId::pinned(id))
+    let matched = match (id, known_admission) {
+        ("parasolid:unknown", _) | (_, KnownSchemaAdmission::Unverified) => {
+            DialectMatch::residual(DialectId::pinned(id))
+        }
+        (_, KnownSchemaAdmission::Verified) => DialectMatch::admitted(DialectId::pinned(id)),
     }
     .with_declared(declared);
     if instance_tagged {
@@ -136,15 +155,20 @@ pub fn classify_layer(schema: &str, carrier: &str, instance_tagged: bool) -> Dia
 /// stable instance keys, so hosts cannot disagree about when identity needs a
 /// disambiguator.
 #[must_use]
-pub fn extra_layers(streams: Vec<(String, String)>) -> Vec<DialectMatch> {
+pub fn extra_layers(
+    streams: Vec<(String, String)>,
+    known_admission: KnownSchemaAdmission,
+) -> Vec<DialectMatch> {
     let instance_tagged = streams.len() > 1;
     streams
         .into_iter()
-        .map(|(schema, carrier)| classify_layer(&schema, &carrier, instance_tagged))
+        .map(|(schema, carrier)| {
+            classify_layer(&schema, &carrier, instance_tagged, known_admission)
+        })
         .collect()
 }
 
-/// Explain why a residual Parasolid layer is admitted without verification.
+/// Explain why a Parasolid layer was admitted without verification.
 ///
 /// Host codecs own their loss vocabulary. This helper owns the interpretation
 /// of the declarations produced by [`classify_layer`], so every host wraps the
@@ -165,10 +189,19 @@ pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
         .declared()
         .get(DECLARED_CARRIER)
         .map_or("<unrecorded>", String::as_str);
+    if matched.dialect().as_str() == "parasolid:unknown" {
+        return Some(format!(
+            "The Parasolid stream at {carrier} declares schema {schema:?}, which has no declared \
+             grammar. It was admitted as the `{}` residual layer without substituting another \
+             schema grammar; bounded structural recovery retains the source stream.",
+            matched.dialect()
+        ));
+    }
     Some(format!(
-        "The Parasolid stream at {carrier} declares schema {schema:?}, which has no declared \
-         grammar. It was admitted as the `{}` residual layer without substituting another \
-         schema grammar; bounded structural recovery retains the source stream.",
+        "The Parasolid stream at {carrier} declares schema {schema:?}, which maps to the named \
+         `{}` row, but the host did not verify that row's schema grammar. It was admitted \
+         without substituting another schema grammar; bounded structural recovery retains the \
+         source stream.",
         matched.dialect()
     ))
 }
@@ -218,7 +251,8 @@ mod tests {
             ("Sch_Sw_32001_11000", "parasolid:sch-sw-32001"),
             ("SCH_3201255_32001_13006", "parasolid:format-13006"),
         ] {
-            let matched = classify_layer(schema, "stream@12", false);
+            let matched =
+                classify_layer(schema, "stream@12", false, KnownSchemaAdmission::Verified);
             assert_eq!(matched.dialect().as_str(), expected);
             assert_eq!(matched.admission(), Admission::Admitted);
             assert_eq!(matched.declared()[DECLARED_SCHEMA], schema);
@@ -229,7 +263,12 @@ mod tests {
 
     #[test]
     fn residual_schemas_use_unverified_admission_without_a_substitution() {
-        let matched = classify_layer("SCH_TEST_1_9999", "block@7:body+3", true);
+        let matched = classify_layer(
+            "SCH_TEST_1_9999",
+            "block@7:body+3",
+            true,
+            KnownSchemaAdmission::Verified,
+        );
 
         assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
         assert_eq!(
@@ -246,17 +285,20 @@ mod tests {
 
     #[test]
     fn several_layers_receive_carrier_instances() {
-        let layers = extra_layers(vec![
-            ("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned()),
-            ("SCH_TEST_1_9999".to_owned(), "stream@48".to_owned()),
-        ]);
+        let layers = extra_layers(
+            vec![
+                ("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned()),
+                ("SCH_TEST_1_9999".to_owned(), "stream@48".to_owned()),
+            ],
+            KnownSchemaAdmission::Verified,
+        );
         assert_eq!(layers[0].instance(), Some("stream@12"));
         assert_eq!(layers[1].instance(), Some("stream@48"));
 
-        let one = extra_layers(vec![(
-            "SCH_SW_33103_11000".to_owned(),
-            "stream@12".to_owned(),
-        )]);
+        let one = extra_layers(
+            vec![("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned())],
+            KnownSchemaAdmission::Verified,
+        );
         assert_eq!(one[0].instance(), None);
     }
 
@@ -269,12 +311,31 @@ mod tests {
             "SCH_TEST_1_9999",
         ]
         .map(|schema| {
-            classify_layer(schema, "carrier", false)
+            classify_layer(schema, "carrier", false, KnownSchemaAdmission::Verified)
                 .dialect()
                 .to_string()
         })
         .into_iter()
         .collect();
         assert_eq!(ids, cadmpeg_test_support::registry_ids(FORMAT));
+    }
+
+    #[test]
+    fn a_known_row_can_be_identified_without_claiming_host_verification() {
+        let matched = classify_layer(
+            "SCH_3501171_35102_13006",
+            "stream@12",
+            false,
+            KnownSchemaAdmission::Unverified,
+        );
+
+        assert_eq!(matched.dialect().as_str(), "parasolid:format-13006");
+        assert_eq!(
+            matched.admission(),
+            Admission::AdmittedUnverified { using: None }
+        );
+        let message = unverified_message(&matched).expect("unverified row explains its admission");
+        assert!(message.contains("host did not verify"));
+        assert!(message.contains("parasolid:format-13006"));
     }
 }

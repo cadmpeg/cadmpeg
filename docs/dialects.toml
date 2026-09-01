@@ -1316,6 +1316,11 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 # There is no Parasolid transmit-file (.x_t/.x_b) support anywhere in the
 # workspace: Parasolid is reached only as an embedded stream.
 #
+# The schema token selects one shared identity row. Admission remains a host
+# fact. SLDPRT verifies the named rows with its embedded-stream grammar. NX
+# retains the same named identities as unverified because its Parasolid path
+# does not apply those SLDPRT grammar branches.
+#
 # `complete = false`: Siemens publishes no schema-token enumeration, and the
 # ids below follow the pinned `parasolid:sch-sw-33103` shape, which
 # truncates the format suffix. The full token is in `discriminants`.
