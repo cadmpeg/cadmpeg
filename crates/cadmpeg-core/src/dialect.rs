@@ -27,7 +27,7 @@
 //! and it reconstructs an id that some producer pinned.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
@@ -304,24 +304,35 @@ impl DialectLayers {
         primary: DialectMatch,
         extra: Vec<DialectMatch>,
     ) -> Result<Self, DialectLayersError> {
-        let mut keys = BTreeSet::from([(primary.format(), &primary.instance)]);
-        for layer in &extra {
-            if layer.format() == primary.format() && layer.instance.is_none() {
-                return Err(DialectLayersError {
-                    format: layer.format().to_owned(),
-                    instance: None,
-                    reason: DialectLayersErrorReason::UnidentifiedPrimaryFormatExtra,
-                });
-            }
-            if !keys.insert((layer.format(), &layer.instance)) {
-                return Err(DialectLayersError {
-                    format: layer.format().to_owned(),
-                    instance: layer.instance.clone(),
-                    reason: DialectLayersErrorReason::DuplicateLayer,
-                });
-            }
+        let mut layers = Self::of(primary);
+        for layer in extra {
+            layers.try_push(layer)?;
         }
-        Ok(Self { primary, extra })
+        Ok(layers)
+    }
+
+    /// Adds an extra layer while preserving `(format, instance)` uniqueness.
+    ///
+    /// The collection is unchanged when the layer violates an invariant.
+    pub fn try_push(&mut self, layer: DialectMatch) -> Result<(), DialectLayersError> {
+        if layer.format() == self.primary.format() && layer.instance.is_none() {
+            return Err(DialectLayersError {
+                format: layer.format().to_owned(),
+                instance: None,
+                reason: DialectLayersErrorReason::UnidentifiedPrimaryFormatExtra,
+            });
+        }
+        if self.iter().any(|existing| {
+            existing.format() == layer.format() && existing.instance == layer.instance
+        }) {
+            return Err(DialectLayersError {
+                format: layer.format().to_owned(),
+                instance: layer.instance.clone(),
+                reason: DialectLayersErrorReason::DuplicateLayer,
+            });
+        }
+        self.extra.push(layer);
+        Ok(())
     }
 
     /// Returns the report's primary format layer.
@@ -850,6 +861,18 @@ mod tests {
             error.to_string(),
             "duplicate dialect layer for format \"acis\" and instance Some(\"body\")"
         );
+    }
+
+    #[test]
+    fn dialect_layers_try_push_does_not_mutate_on_collision() {
+        let existing = layer("acis").with_instance("body");
+        let mut layers = DialectLayers::new(layer("rhino"), vec![existing.clone()]).unwrap();
+
+        layers
+            .try_push(existing)
+            .expect_err("duplicate extra-layer keys must be rejected");
+
+        assert_eq!(layers.iter().count(), 2);
     }
 
     #[test]

@@ -302,8 +302,6 @@ fn merge_member_layers(
     member: &DialectLayers,
     member_path: &str,
 ) -> Vec<LossNote> {
-    let primary = target.primary().clone();
-    let mut extra = target.iter().skip(1).cloned().collect::<Vec<_>>();
     let mut losses = Vec::new();
     for matched in member.iter().cloned() {
         let instance = matched.instance().map_or_else(
@@ -316,21 +314,17 @@ fn merge_member_layers(
             member_path.to_owned(),
         );
         let matched = matched.with_declared(declared).with_instance(instance);
-        if extra.iter().any(|existing| {
-            existing.format() == matched.format() && existing.instance() == matched.instance()
-        }) {
+        let format = matched.format().to_owned();
+        let instance = matched
+            .instance()
+            .expect("attached member layers have instances")
+            .to_owned();
+        if target.try_push(matched).is_err() {
             losses.push(F3dLossCode::DialectLayerCollision.note(format!(
-                "archive member {member_path} produced a duplicate {} dialect layer at instance {}; the later layer was omitted",
-                matched.format(),
-                matched.instance().expect("attached member layers have instances")
+                "archive member {member_path} produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted",
             )));
-        } else {
-            extra.push(matched);
         }
     }
-    let merged = DialectLayers::new(primary, extra)
-        .expect("archive member layers have unique format and archive-path instances");
-    *target = merged;
     losses
 }
 
