@@ -107,7 +107,7 @@ fn decode_without_geometry_falls_back_to_metadata() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert_eq!(result.ir().native_unknowns("sldprt").unwrap().len(), 1);
     assert_eq!(result.source_fidelity().retained_records.len(), 2);
     assert!(result
@@ -137,7 +137,7 @@ fn decode_explicit_empty_partition_and_deltas_as_an_empty_model() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.report().geometry_transferred);
+    assert!(decoded.report().geometry_transferred());
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message.contains("geometry was not transferred")
@@ -162,7 +162,7 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.report().geometry_transferred);
+    assert!(!decoded.report().geometry_transferred());
     let feature = decoded
         .ir()
         .model
@@ -211,7 +211,7 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.report().geometry_transferred);
+    assert!(!decoded.report().geometry_transferred());
     let feature = decoded
         .ir()
         .model

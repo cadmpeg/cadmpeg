@@ -3526,8 +3526,7 @@ fn decode_result(
         .clone();
     let mut report = DecodeReport::classified(
         dialects,
-        report.container_only,
-        report.geometry_transferred,
+        report.transfer(),
         report.coverage,
         report.losses,
         summary.notes,

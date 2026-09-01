@@ -141,7 +141,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
         assert_eq!(result.ir().ir_version(), IR_VERSION);
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
-        assert!(result.report().container_only);
+        assert!(result.report().container_only());
         assert_eq!(result.report().format(), "rhino");
     }
 }
@@ -172,7 +172,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
         assert_eq!(result.ir().ir_version(), IR_VERSION);
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
-        assert!(result.report().container_only);
+        assert!(result.report().container_only());
     }
 }
 
@@ -208,7 +208,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
             },
         )
         .expect("V2 container-only decode");
-    assert!(container_only.report().container_only);
+    assert!(container_only.report().container_only());
     assert!(container_only.ir().model.points.is_empty());
 
     let decoded = RhinoCodec
@@ -255,7 +255,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
             },
         )
         .expect("archive word 5 reaches chunked container decode");
-    assert!(decoded.report().container_only);
+    assert!(decoded.report().container_only());
     assert_eq!(
         decoded
             .report()

@@ -1350,7 +1350,9 @@ fn try_decode_standard_populations(
             .extend_rewritten(model, &mut rewriter)
             .ok()?;
         merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope)?;
-        merged.report.geometry_transferred |= output.report.geometry_transferred;
+        if output.report.geometry_transferred() {
+            merged.report.mark_geometry_transferred();
+        }
     }
 
     for (key, value) in population_coverage {

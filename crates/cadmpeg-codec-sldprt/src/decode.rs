@@ -3271,8 +3271,7 @@ fn build_geometry_report(
     append_dialect_losses(dialects, &mut losses);
     DecodeReport::classified(
         dialects.clone(),
-        false,
-        true,
+        cadmpeg_ir::DecodeTransfer::full(true),
         std::collections::BTreeMap::new(),
         losses,
         container::summarize(scan, dialects.clone()).notes,
@@ -4603,8 +4602,11 @@ fn build_container_report(
 
     DecodeReport::classified(
         dialects.clone(),
-        container_only,
-        false,
+        if container_only {
+            cadmpeg_ir::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::DecodeTransfer::full(false)
+        },
         std::collections::BTreeMap::new(),
         losses,
         summary.notes,

@@ -15,7 +15,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, DecodeTransfer, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -2577,8 +2577,7 @@ impl<'a> DecodeContext<'a> {
             self.ir,
             DecodeReport::classified(
                 cadmpeg_core::dialect::DialectLayers::of(primary),
-                false,
-                self.geometry_transferred,
+                DecodeTransfer::full(self.geometry_transferred),
                 std::collections::BTreeMap::new(),
                 losses,
                 notes,

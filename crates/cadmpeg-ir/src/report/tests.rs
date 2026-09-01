@@ -155,8 +155,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
 fn unclassified_reports_serialize_empty_dialect_keys() {
     let decode = DecodeReport::unclassified(
         "rhino",
-        false,
-        true,
+        DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -301,8 +300,7 @@ fn classified_report_wire_requires_its_primary_format() {
         DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             DialectId::pinned("rhino:archive-80"),
         )),
-        false,
-        true,
+        DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -318,6 +316,14 @@ fn classified_report_wire_requires_its_primary_format() {
         report
     );
 
+    let contradictory = golden.replacen("\"container_only\":false", "\"container_only\":true", 1);
+    let error = serde_json::from_str::<DecodeReport>(&contradictory)
+        .expect_err("container-only reports cannot claim geometry transfer");
+    assert_eq!(
+        error.to_string(),
+        "container-only decode report cannot claim geometry transfer"
+    );
+
     let mismatched = golden.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
     let error = serde_json::from_str::<DecodeReport>(&mismatched)
         .expect_err("the report and its primary layer must name the same format");
@@ -326,5 +332,28 @@ fn classified_report_wire_requires_its_primary_format() {
             "decode report format \"step\" differs from primary dialect format \"rhino\""
         ),
         "{error}"
+    );
+}
+
+#[test]
+fn container_only_report_wire_preserves_the_coherent_transfer_state() {
+    let report = DecodeReport::unclassified(
+        "test",
+        DecodeTransfer::ContainerOnly,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+
+    let rendered = serde_json::to_string(&report).unwrap();
+    assert!(rendered.contains("\"container_only\":true"), "{rendered}");
+    assert!(
+        rendered.contains("\"geometry_transferred\":false"),
+        "{rendered}"
+    );
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
+        report
     );
 }

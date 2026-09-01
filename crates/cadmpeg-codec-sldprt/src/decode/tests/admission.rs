@@ -108,7 +108,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage decode keeps the partial result");
-    assert!(!salvaged.report().geometry_transferred);
+    assert!(!salvaged.report().geometry_transferred());
     assert!(salvaged
         .report()
         .losses
@@ -158,7 +158,7 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
     let strict = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect("strict decode accepts a tolerable-loss geometry result");
-    assert!(strict.report().geometry_transferred);
+    assert!(strict.report().geometry_transferred());
     assert!(strict
         .report()
         .losses
@@ -181,7 +181,7 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage decode admits the residual kernel layer");
-    assert!(salvaged.report().geometry_transferred);
+    assert!(salvaged.report().geometry_transferred());
     assert!(salvaged.report().losses.iter().any(|note| {
         note.code == SldprtLossCode::SourceDialectUnverified.kind()
             && note.message.contains("SCH_TEST_1_9999")

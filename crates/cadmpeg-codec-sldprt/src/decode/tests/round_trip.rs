@@ -107,7 +107,7 @@ fn decode_encode_decode_reaches_fixpoint() {
     let first = SldprtCodec
         .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
         .expect("first decode");
-    assert!(first.report().geometry_transferred);
+    assert!(first.report().geometry_transferred());
 
     let mut reencoded = Vec::new();
     SldprtCodec
@@ -148,8 +148,8 @@ fn decode_encode_decode_reaches_fixpoint() {
         "coedges diverged at the fixpoint"
     );
     assert_eq!(
-        first.report().geometry_transferred,
-        second.report().geometry_transferred,
+        first.report().geometry_transferred(),
+        second.report().geometry_transferred(),
         "geometry-transferred flag diverged at the fixpoint"
     );
 }

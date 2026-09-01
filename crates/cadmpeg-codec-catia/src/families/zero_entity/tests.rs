@@ -23,7 +23,7 @@ fn decode_zero_entity_falls_back_to_metadata() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(
         source
@@ -99,7 +99,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert!(result.ir().model.points.is_empty());
     assert!(result.ir().model.vertices.is_empty());

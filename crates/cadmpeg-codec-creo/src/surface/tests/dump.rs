@@ -622,7 +622,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         "plane_local_system",
         Exactness::Derived,
     );
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
 }
 
 #[test]

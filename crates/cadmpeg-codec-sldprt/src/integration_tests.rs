@@ -76,7 +76,7 @@ fn parasolid_pipeline_composes_closed_open_analytic_freeform_and_degenerate_topo
             .iter()
             .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid);
         saw_pcurve |= !result.ir().model.pcurves.is_empty();
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
         assert_valid(&result);
     }
     assert!(saw_solid && saw_pcurve);
@@ -91,7 +91,7 @@ fn configuration_pipeline_merges_partition_deltas_colliding_sites_and_membership
     ];
     for bytes in fixtures {
         let result = decode(bytes);
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
         assert!(!result.ir().model.bodies.is_empty());
         assert_valid(&result);
     }

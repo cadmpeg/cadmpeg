@@ -9,7 +9,7 @@ use cadmpeg_core::target::{DefaultSource, TargetDescriptor, TargetRefusalKind, T
 
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
-use crate::report::{LossKind, LossNote, LossTaxonomy, TransferLedger};
+use crate::report::{DecodeTransfer, LossKind, LossNote, LossTaxonomy, TransferLedger};
 use crate::source_fidelity::RetainedSourceRecord;
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -67,8 +67,7 @@ fn decode_result(ir: CadIr) -> DecodeResult {
         ir,
         DecodeReport::unclassified(
             "test",
-            false,
-            true,
+            DecodeTransfer::full(true),
             BTreeMap::new(),
             Vec::new(),
             Vec::new(),
@@ -167,8 +166,8 @@ impl CodecBackend for RejectFloorCodec {
         _root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let (ir, mut report, fidelity) = decode_result(unit_cube()).into_parts();
-        // Deliberately lie in both directions; the wrapper owns this field.
-        report.container_only = !ctx.container_only();
+        // Deliberately report the opposite request scope; the wrapper owns it.
+        report.stamp_request_scope(!ctx.container_only());
         report
             .losses
             .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
@@ -210,7 +209,8 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
         .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &strict_options(true))
         .unwrap();
 
-    assert!(result.report().container_only);
+    assert!(result.report().container_only());
+    assert!(!result.report().geometry_transferred());
     assert_eq!(
         result
             .report()
@@ -232,8 +232,7 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
             vec![dialect_layer("acis:save-format-217")],
         )
         .unwrap(),
-        false,
-        true,
+        DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -248,8 +247,7 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
         ir,
         DecodeReport::unclassified(
             "test",
-            report.container_only,
-            report.geometry_transferred,
+            report.transfer(),
             report.coverage,
             report.losses,
             report.notes,
@@ -272,8 +270,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         .with_declared(BTreeMap::from([("version".into(), "only".into())]));
     let report = DecodeReport::classified(
         DialectLayers::new(primary.clone(), Vec::new()).unwrap(),
-        false,
-        true,
+        DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -297,8 +294,7 @@ fn a_decode_result_rejects_a_classified_report_without_source_metadata() {
     ir.source = None;
     let report = DecodeReport::classified(
         DialectLayers::of(dialect_layer("test:only")),
-        false,
-        true,
+        DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -322,8 +318,7 @@ fn a_decode_result_rejects_same_format_dialect_disagreement() {
     ));
     let report = DecodeReport::classified(
         DialectLayers::of(dialect_layer("test:only")),
-        false,
-        true,
+        DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -350,8 +345,7 @@ fn a_decode_result_rejects_a_source_and_report_format_mismatch_before_stamping()
         DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
             "rhino:archive-80",
         ))),
-        false,
-        true,
+        DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),

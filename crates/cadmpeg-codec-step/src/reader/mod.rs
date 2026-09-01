@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::{DecodeReport, DecodeTransfer, LossNote};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
@@ -94,8 +94,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 
         let mut report = DecodeReport::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),
-            container_only,
-            false,
+            if container_only {
+                DecodeTransfer::ContainerOnly
+            } else {
+                DecodeTransfer::full(false)
+            },
             BTreeMap::new(),
             Vec::new(),
             exchange
@@ -333,11 +336,14 @@ fn decode_exchange_mode(
     );
     session.charge_stage("step_validation_decode")?;
     let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);
-    session.report.geometry_transferred = !session.ir.model.points.is_empty()
+    if !session.ir.model.points.is_empty()
         || !session.ir.model.curves.is_empty()
         || !session.ir.model.surfaces.is_empty()
         || !session.ir.model.bodies.is_empty()
-        || !session.ir.model.tessellations.is_empty();
+        || !session.ir.model.tessellations.is_empty()
+    {
+        session.report.mark_geometry_transferred();
+    }
 
     // Keep the established report order while every pass contributes through
     // the same accumulator.

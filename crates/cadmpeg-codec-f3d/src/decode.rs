@@ -3644,7 +3644,7 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.geometry_transferred = true;
+    report.mark_geometry_transferred();
     report
         .losses
         .push(F3dLossCode::MeshVertexPrecisionReduced.note(format!(
@@ -3680,7 +3680,7 @@ pub(crate) fn apply_bodyless_design_classification(
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.geometry_transferred = true;
+    report.mark_geometry_transferred();
     let message = match (sketch_entities, reference_images) {
         (0, reference_images) => format!(
             "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"

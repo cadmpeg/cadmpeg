@@ -12,7 +12,9 @@ use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{
     document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
 };
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity, TransferDisposition, TransferLedger};
+use cadmpeg_ir::report::{
+    DecodeReport, DecodeTransfer, LossNote, Severity, TransferDisposition, TransferLedger,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -541,8 +543,11 @@ fn decode_with_occurrence_limits(
         ir,
         DecodeReport::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),
-            options.container_only,
-            geometry_transferred,
+            if options.container_only {
+                DecodeTransfer::ContainerOnly
+            } else {
+                DecodeTransfer::full(geometry_transferred)
+            },
             std::collections::BTreeMap::new(),
             losses,
             notes,

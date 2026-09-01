@@ -31,7 +31,7 @@ fn decode_builds_valid_topology_and_geometry() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result
         .report()
         .notes
@@ -1117,7 +1117,7 @@ fn decode_succeeds_when_geometry_present() {
     let result = F3dCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.surfaces.len(), 1);
 }
 
@@ -1140,7 +1140,7 @@ fn decode_keeps_face_on_unknown_surface() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.coedges.len(), 3);
     assert_eq!(result.ir().model.vertices.len(), 3);

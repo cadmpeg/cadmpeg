@@ -1504,7 +1504,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     // Two faces (one plane, one spline), sharing one edge; five edges total.
     assert_eq!(result.ir().model.faces.len(), 2);
     assert_eq!(result.ir().model.edges.len(), 5);
@@ -1905,8 +1905,7 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
     cadmpeg_ir::report::DecodeReport::unclassified(
         "f3d",
-        false,
-        false,
+        cadmpeg_ir::DecodeTransfer::full(false),
         std::collections::BTreeMap::new(),
         vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \

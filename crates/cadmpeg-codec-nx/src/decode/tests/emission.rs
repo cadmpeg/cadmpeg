@@ -1780,7 +1780,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     let mut cur = Cursor::new(single_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
     // Point coordinate is scaled metres → millimetres, byte-exact.

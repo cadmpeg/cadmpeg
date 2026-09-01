@@ -50,7 +50,7 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
         .any(|note| note.contains("standard nested")));
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(result.ir().model.surfaces.len(), 2);
     assert!(result
@@ -100,7 +100,7 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     assert_eq!(scan.census.edge_delimiters, 0);
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.surfaces.len(), 2);
     assert!(result.ir().model.faces.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
@@ -117,7 +117,7 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     assert_eq!(scan.census.edge_delimiters, 0);
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.points.len(), 4);
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
@@ -146,7 +146,7 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert!(crate::families::standard::topology::parse_fbb(&topology).is_none());
 
     let result = decode(fbb_only_quad_unmatched_edge_catpart());
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(
@@ -174,7 +174,7 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     );
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result
         .ir()
         .model
@@ -204,7 +204,7 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
     assert!(crate::container::e5_record_stream(&scan.data).is_some());
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result
         .ir()
         .model
@@ -222,7 +222,7 @@ fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
     assert_eq!(scan.variant, Variant::FloatPackedInnerNoFbb);
 
     let result = decode(bytes);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result
         .ir()
         .model
@@ -258,8 +258,8 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
                 },
             )
             .expect("container-only CATPart decode");
-        assert!(result.report().container_only);
-        assert!(!result.report().geometry_transferred);
+        assert!(result.report().container_only());
+        assert!(!result.report().geometry_transferred());
         assert!(result.ir().model.points.is_empty());
         assert!(result.ir().model.surfaces.is_empty());
         assert!(result.ir().model.faces.is_empty());

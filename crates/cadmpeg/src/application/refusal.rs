@@ -466,8 +466,7 @@ mod tests {
     fn decode_classifier_preserves_a_strict_refusal_and_its_completed_report() {
         let report = DecodeReport::unclassified(
             "test",
-            false,
-            false,
+            cadmpeg_ir::DecodeTransfer::full(false),
             BTreeMap::new(),
             Vec::new(),
             vec!["decode completed".into()],

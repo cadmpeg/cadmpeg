@@ -165,8 +165,11 @@ pub(in super::super) fn build_report(
 
     DecodeReport::classified(
         dialects,
-        container_only,
-        has_transferred_geometry(ir),
+        if container_only {
+            cadmpeg_ir::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::DecodeTransfer::full(has_transferred_geometry(ir))
+        },
         coverage,
         losses,
         summary.notes,

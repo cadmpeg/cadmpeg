@@ -459,8 +459,7 @@ mod tests {
     fn decode_sidecar_binds_exact_ir_bytes_and_validates_versions() {
         let report = DecodeReport::unclassified(
             "test",
-            false,
-            true,
+            crate::report::DecodeTransfer::full(true),
             std::collections::BTreeMap::default(),
             Vec::new(),
             Vec::new(),

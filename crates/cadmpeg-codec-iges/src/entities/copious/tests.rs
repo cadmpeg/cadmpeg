@@ -435,7 +435,7 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(!witness.report().geometry_transferred);
+    assert!(!witness.report().geometry_transferred());
     assert!(witness.ir().model.curves.is_empty());
     assert!(witness
         .report()

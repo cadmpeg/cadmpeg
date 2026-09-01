@@ -19,8 +19,7 @@ use crate::loss::F3dLossCode;
 fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
     cadmpeg_ir::report::DecodeReport::unclassified(
         "f3d",
-        false,
-        false,
+        cadmpeg_ir::DecodeTransfer::full(false),
         std::collections::BTreeMap::new(),
         vec![
             F3dLossCode::GeometryNotTransferred.note("stated before classification"),
@@ -38,7 +37,7 @@ fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
 fn sketch_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 13, 0);
-    assert!(report.geometry_transferred);
+    assert!(report.geometry_transferred());
     assert!(
         report
             .losses
@@ -59,7 +58,7 @@ fn sketch_only_design_is_not_a_geometry_loss() {
 fn presentation_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 1);
-    assert!(report.geometry_transferred);
+    assert!(report.geometry_transferred());
     assert!(
         report
             .losses
@@ -79,7 +78,7 @@ fn presentation_only_design_is_not_a_geometry_loss() {
 fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 1, 13, 0);
-    assert!(!report.geometry_transferred);
+    assert!(!report.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
 
@@ -90,7 +89,7 @@ fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
 fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 0);
-    assert!(!report.geometry_transferred);
+    assert!(!report.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
 
@@ -100,7 +99,7 @@ fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
 fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 1, 0, 0, 13, 0);
-    assert!(!report.geometry_transferred);
+    assert!(!report.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
 
@@ -109,6 +108,6 @@ fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
 fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 2, 0, 13, 0);
-    assert!(!report.geometry_transferred);
+    assert!(!report.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }

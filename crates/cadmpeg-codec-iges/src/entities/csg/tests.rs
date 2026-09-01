@@ -152,7 +152,7 @@ fn decode_rejects_invalid_csg_primitive_dimensions_semantically() {
     assert!(result.report().losses.iter().any(|loss| loss
         .message
         .contains("primitive dimension invariant is violated")));
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
 }
 
 #[test]

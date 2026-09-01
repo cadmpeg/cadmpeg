@@ -15,7 +15,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, TransferLedger};
+use cadmpeg_ir::report::{DecodeReport, DecodeTransfer, TransferLedger};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
@@ -2435,11 +2435,9 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
         ir,
         DecodeReport::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),
-            false,
-            decoded > 0
-                || decoded_curves > 0
-                || decoded_meshes > 0
-                || decoded_breps > 0,
+            DecodeTransfer::full(
+                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
+            ),
             BTreeMap::from([
                 ("legacy_v1_points".to_string(), decoded),
                 ("legacy_v1_curve_segments".to_string(), decoded_curves),
@@ -2931,7 +2929,7 @@ mod tests {
             result.ir().model.points[0].position,
             Point3::new(1.0, 2.0, 3.0)
         );
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
     }
 
     #[test]

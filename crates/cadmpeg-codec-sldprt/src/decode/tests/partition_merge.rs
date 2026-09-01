@@ -21,7 +21,7 @@ fn decode_merges_partition_and_deltas_records() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.points.len(), 3);
     assert!(result

@@ -222,7 +222,7 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         "furlong"
     );
     assert!(result.ir().model.points.is_empty());
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(!result
         .ir()
         .native

@@ -930,8 +930,7 @@ pub(crate) fn try_decode_zero_entity(
         ir,
         report: DecodeReport::unclassified(
             "catia",
-            false,
-            true,
+            cadmpeg_ir::DecodeTransfer::full(true),
             coverage,
             vec![topology_loss.note(topology_message)],
             Vec::new(),

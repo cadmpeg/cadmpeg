@@ -93,7 +93,7 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         )
         .expect("decode thumbnail");
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 1);
     let retained = result
@@ -552,7 +552,7 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         .decode(&mut reader, &DecodeOptions::default())
         .expect("decode");
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     // The two PSB geometry sections are preserved as unknown records.
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 2);
@@ -628,8 +628,8 @@ fn container_only_preserves_sections_without_transferring_entities() {
         )
         .expect("container decode");
 
-    assert!(result.report().container_only);
-    assert!(!result.report().geometry_transferred);
+    assert!(result.report().container_only());
+    assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 1);

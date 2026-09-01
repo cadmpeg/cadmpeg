@@ -241,7 +241,7 @@ impl DecodeResult {
 
     /// Record whether the caller requested a container-only decode.
     fn stamp_container_only(&mut self, container_only: bool) {
-        self.report.container_only = container_only;
+        self.report.stamp_request_scope(container_only);
     }
 
     /// Borrow source fidelity.

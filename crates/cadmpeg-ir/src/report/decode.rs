@@ -15,11 +15,7 @@ use super::{LossNote, Severity};
 #[serde(into = "DecodeReportWire")]
 pub struct DecodeReport {
     classification: DecodeClassification,
-    /// Whether the decode stopped at the container layer (no entity decode).
-    /// The shared codec wrapper stamps this from the decode request.
-    pub container_only: bool,
-    /// Whether the decoder transferred B-rep geometry into the IR.
-    pub geometry_transferred: bool,
+    transfer: DecodeTransfer,
     /// Decode coverage counts keyed by measure name.
     pub coverage: BTreeMap<String, usize>,
     /// Explicit loss notes.
@@ -28,6 +24,48 @@ pub struct DecodeReport {
     pub notes: Vec<String>,
     /// Per-source disposition ledger for decoded records and entities.
     pub transfer_ledger: TransferLedger,
+}
+
+/// Mutually exclusive source-transfer states for a decode report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DecodeTransfer {
+    /// The request stopped after container inspection and transferred no
+    /// semantic geometry.
+    ContainerOnly,
+    /// The request ran the full decoder, with the recorded B-rep geometry
+    /// outcome.
+    Full {
+        /// Whether B-rep geometry was transferred into the IR.
+        geometry_transferred: bool,
+    },
+}
+
+impl DecodeTransfer {
+    /// Constructs the state for a full decode with its geometry outcome.
+    #[must_use]
+    pub const fn full(geometry_transferred: bool) -> Self {
+        Self::Full {
+            geometry_transferred,
+        }
+    }
+
+    /// Returns whether the request stopped at the container layer.
+    #[must_use]
+    pub const fn container_only(self) -> bool {
+        matches!(self, Self::ContainerOnly)
+    }
+
+    /// Returns whether B-rep geometry was transferred into the IR.
+    #[must_use]
+    pub const fn geometry_transferred(self) -> bool {
+        matches!(
+            self,
+            Self::Full {
+                geometry_transferred: true
+            }
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,8 +94,7 @@ impl From<DecodeReport> for DecodeReportWire {
     fn from(report: DecodeReport) -> Self {
         let DecodeReport {
             classification,
-            container_only,
-            geometry_transferred,
+            transfer,
             coverage,
             losses,
             notes,
@@ -71,8 +108,8 @@ impl From<DecodeReport> for DecodeReportWire {
         };
         Self {
             format,
-            container_only,
-            geometry_transferred,
+            container_only: transfer.container_only(),
+            geometry_transferred: transfer.geometry_transferred(),
             coverage,
             losses,
             notes,
@@ -100,10 +137,18 @@ impl<'de> Deserialize<'de> for DecodeReport {
                 format: wire.format,
             },
         };
+        let transfer = match (wire.container_only, wire.geometry_transferred) {
+            (true, true) => {
+                return Err(serde::de::Error::custom(
+                    "container-only decode report cannot claim geometry transfer",
+                ));
+            }
+            (true, false) => DecodeTransfer::ContainerOnly,
+            (false, geometry_transferred) => DecodeTransfer::full(geometry_transferred),
+        };
         Ok(Self {
             classification,
-            container_only: wire.container_only,
-            geometry_transferred: wire.geometry_transferred,
+            transfer,
             coverage: wire.coverage,
             losses: wire.losses,
             notes: wire.notes,
@@ -232,8 +277,7 @@ impl DecodeReport {
     #[must_use]
     pub fn classified(
         dialects: DialectLayers,
-        container_only: bool,
-        geometry_transferred: bool,
+        transfer: DecodeTransfer,
         coverage: BTreeMap<String, usize>,
         losses: Vec<LossNote>,
         notes: Vec<String>,
@@ -241,8 +285,7 @@ impl DecodeReport {
     ) -> Self {
         Self {
             classification: DecodeClassification::Classified(dialects),
-            container_only,
-            geometry_transferred,
+            transfer,
             coverage,
             losses,
             notes,
@@ -254,8 +297,7 @@ impl DecodeReport {
     #[must_use]
     pub fn unclassified(
         format: impl Into<String>,
-        container_only: bool,
-        geometry_transferred: bool,
+        transfer: DecodeTransfer,
         coverage: BTreeMap<String, usize>,
         losses: Vec<LossNote>,
         notes: Vec<String>,
@@ -265,8 +307,7 @@ impl DecodeReport {
             classification: DecodeClassification::Unclassified {
                 format: format.into(),
             },
-            container_only,
-            geometry_transferred,
+            transfer,
             coverage,
             losses,
             notes,
@@ -290,6 +331,39 @@ impl DecodeReport {
             DecodeClassification::Classified(dialects) => Some(dialects),
             DecodeClassification::Unclassified { .. } => None,
         }
+    }
+
+    /// Returns the typed source-transfer state.
+    #[must_use]
+    pub const fn transfer(&self) -> DecodeTransfer {
+        self.transfer
+    }
+
+    /// Returns whether the decode stopped at the container layer.
+    #[must_use]
+    pub const fn container_only(&self) -> bool {
+        self.transfer.container_only()
+    }
+
+    /// Returns whether B-rep geometry was transferred into the IR.
+    #[must_use]
+    pub const fn geometry_transferred(&self) -> bool {
+        self.transfer.geometry_transferred()
+    }
+
+    /// Records that a full decode transferred B-rep geometry.
+    pub fn mark_geometry_transferred(&mut self) {
+        self.transfer = DecodeTransfer::full(true);
+    }
+
+    /// Stamps the caller's requested decode scope while retaining the
+    /// backend's full-decode geometry outcome.
+    pub(crate) fn stamp_request_scope(&mut self, container_only: bool) {
+        self.transfer = if container_only {
+            DecodeTransfer::ContainerOnly
+        } else {
+            DecodeTransfer::full(self.geometry_transferred())
+        };
     }
 
     /// Records a coverage measure count for a statically declared key.

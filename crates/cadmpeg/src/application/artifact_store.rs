@@ -295,8 +295,7 @@ mod tests {
         std::fs::write(&path, &text).unwrap();
         let report = DecodeReport::unclassified(
             "test",
-            false,
-            false,
+            cadmpeg_ir::DecodeTransfer::full(false),
             Default::default(),
             Vec::new(),
             Vec::new(),

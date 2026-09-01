@@ -779,8 +779,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         ir,
         report: DecodeReport::unclassified(
             "catia",
-            false,
-            true,
+            cadmpeg_ir::DecodeTransfer::full(true),
             coverage,
             losses,
             Vec::new(),

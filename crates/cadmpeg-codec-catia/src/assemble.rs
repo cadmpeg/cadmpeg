@@ -541,8 +541,7 @@ pub(crate) fn build_geometry_report(
 
     DecodeReport::unclassified(
         "catia",
-        false,
-        true,
+        cadmpeg_ir::DecodeTransfer::full(true),
         std::collections::BTreeMap::new(),
         losses,
         Vec::new(),
@@ -660,8 +659,11 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
 
     DecodeReport::unclassified(
         "catia",
-        container_only,
-        false,
+        if container_only {
+            cadmpeg_ir::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::DecodeTransfer::full(false)
+        },
         std::collections::BTreeMap::new(),
         losses,
         Vec::new(),

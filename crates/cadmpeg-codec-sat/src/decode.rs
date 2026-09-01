@@ -231,8 +231,7 @@ fn build_result(
     let report = DecodeReport::classified(
         cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
             .expect("the ACIS kernel layer differs from the SAT primary"),
-        false,
-        geometry_transferred,
+        cadmpeg_ir::DecodeTransfer::full(geometry_transferred),
         coverage,
         losses,
         Vec::new(),

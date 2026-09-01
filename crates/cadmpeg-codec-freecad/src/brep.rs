@@ -4896,7 +4896,7 @@ pub(crate) mod tests {
             [result.ir().model.faces[0].id.clone()]
         );
         assert_eq!(result.ir().model.coedges.len(), 1);
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
     }
 
     #[test]

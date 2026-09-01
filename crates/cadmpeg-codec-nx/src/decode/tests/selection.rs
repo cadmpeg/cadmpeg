@@ -629,7 +629,7 @@ fn decode_tracks_geometry_envelope_escape_shift() {
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(result
         .report()
         .losses
@@ -649,7 +649,7 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
         .decode(&mut Cursor::new(file), &options)
         .expect("live stream and final metadata copy fit the retained budget");
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
 }
 
@@ -835,8 +835,8 @@ fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
     let opts = options_in(DecodeMode::Salvage, true);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
-    assert!(!result.report().geometry_transferred);
-    assert!(result.report().container_only);
+    assert!(!result.report().geometry_transferred());
+    assert!(result.report().container_only());
     assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
     assert!(result.ir().model.points.is_empty());
 }

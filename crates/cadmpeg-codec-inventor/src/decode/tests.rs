@@ -84,7 +84,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         )
         .expect("synthetic Inventor container decodes structurally");
     assert_eq!(decoded.report().format(), "inventor");
-    assert!(!decoded.report().container_only);
+    assert!(!decoded.report().container_only());
     assert!(decoded
         .report()
         .losses
@@ -277,7 +277,7 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
     let unverified = decode(70_000);
 
     for (label, decoded) in [("verified", &verified), ("unverified", &unverified)] {
-        assert!(decoded.report().geometry_transferred, "{label}");
+        assert!(decoded.report().geometry_transferred(), "{label}");
         assert_eq!(decoded.ir().model.bodies.len(), 1, "{label}");
         assert_eq!(decoded.ir().model.faces.len(), 1, "{label}");
         assert_eq!(decoded.ir().model.surfaces.len(), 1, "{label}");
