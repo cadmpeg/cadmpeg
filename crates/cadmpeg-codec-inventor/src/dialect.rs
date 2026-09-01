@@ -286,17 +286,22 @@ impl DialectRecovery {
                         .map(|schema| schema.value().to_string())
                 )
             ));
-        } else if self.schemas.is_empty() {
+        }
+        if self.schemas.is_empty() {
             reasons.push("no RSe database stream declares a schema".to_owned());
-        } else if self
-            .schemas
-            .iter()
-            .any(|schema| *schema != RseSchema::SCHEMA_31)
-        {
-            reasons.push(format!(
-                "RSe database schema {} is declared",
-                join(self.schemas.iter().map(|schema| schema.value().to_string()))
-            ));
+        } else {
+            let foreign = self
+                .schemas
+                .iter()
+                .copied()
+                .filter(|schema| *schema != RseSchema::SCHEMA_31)
+                .collect::<Vec<_>>();
+            if !foreign.is_empty() {
+                reasons.push(format!(
+                    "RSe database schema {} is declared",
+                    join(foreign.iter().map(|schema| schema.value().to_string()))
+                ));
+            }
         }
         if !self.unframed_meta_streams.is_empty() {
             reasons.push(format!(
@@ -312,26 +317,26 @@ impl DialectRecovery {
                         .map(|declared| declared.version.to_string())
                 )
             ));
-        } else if self.meta_streams.is_empty() {
+        }
+        if self.meta_streams.is_empty() {
             reasons.push("no RSe segment metadata stream declares a marker and version".to_owned());
-        } else if self
-            .meta_streams
-            .iter()
-            .any(|declared| !declared.is_verified())
-        {
-            reasons.push(format!(
-                "RSe segment metadata marker {} version {} is declared",
-                join(
-                    self.meta_streams
-                        .iter()
-                        .map(|declared| format!("{:?}", declared.marker))
-                ),
-                join(
-                    self.meta_streams
-                        .iter()
-                        .map(|declared| declared.version.to_string())
-                )
-            ));
+        } else {
+            let foreign = self
+                .meta_streams
+                .iter()
+                .filter(|declared| !declared.is_verified())
+                .collect::<Vec<_>>();
+            if !foreign.is_empty() {
+                reasons.push(format!(
+                    "RSe segment metadata marker {} version {} is declared",
+                    join(
+                        foreign
+                            .iter()
+                            .map(|declared| format!("{:?}", declared.marker))
+                    ),
+                    join(foreign.iter().map(|declared| declared.version.to_string()))
+                ));
+            }
         }
         InventorLossCode::SourceDialectUnverified.note(format!(
             "{}; this decode applied the only Inventor grammars this codec implements — RSe \

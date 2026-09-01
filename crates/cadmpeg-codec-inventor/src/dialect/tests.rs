@@ -356,6 +356,41 @@ fn the_charged_loss_names_the_declaration_that_diverged() {
     assert!(note.message.contains("version 9"), "{note:?}");
 }
 
+#[test]
+fn mixed_unframed_and_foreign_declarations_report_every_admission_cause() {
+    let verified_meta = MetaStreamDeclaration {
+        marker: MetaStreamDeclaration::VERIFIED_MARKER.to_owned(),
+        version: MetaStreamDeclaration::VERIFIED_VERSION,
+    };
+    let foreign_meta = MetaStreamDeclaration {
+        marker: "RSe Meta Stream Version 9".to_owned(),
+        version: 9,
+    };
+    let foreign_schema = RseSchema::from_declared(12);
+    let recovery = DialectRecovery {
+        cfb_major_version: 3,
+        schemas: vec![foreign_schema, RseSchema::SCHEMA_31],
+        unframed_schemas: vec![RseSchema::SCHEMA_31],
+        meta_streams: vec![verified_meta.clone(), foreign_meta.clone()],
+        unframed_meta_streams: vec![verified_meta],
+    };
+
+    let classification = recovery.classify();
+    let note = classification
+        .loss
+        .expect("mixed admission failures charge one complete dialect loss");
+    assert!(note
+        .message
+        .contains("schema 31 is declared but its body does not frame"));
+    assert!(note.message.contains("database schema 12 is declared"));
+    assert!(note.message.contains(
+        "marker \"RSe Meta Stream Version 8\" version 8 is declared but its body does not frame"
+    ));
+    assert!(note
+        .message
+        .contains("marker \"RSe Meta Stream Version 9\" version 9 is declared"));
+}
+
 /// The coverage counts one decode of `bytes` reported.
 fn coverage(bytes: &[u8]) -> std::collections::BTreeMap<String, usize> {
     InventorCodec

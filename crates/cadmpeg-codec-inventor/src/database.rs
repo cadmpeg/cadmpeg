@@ -10,6 +10,10 @@ pub(crate) struct RseSchema(u32);
 impl RseSchema {
     pub(crate) const SCHEMA_31: Self = Self(31);
 
+    pub(crate) const fn from_declared(value: u32) -> Self {
+        Self(value)
+    }
+
     pub(crate) const fn value(self) -> u32 {
         self.0
     }
@@ -137,7 +141,7 @@ pub(crate) fn parse_database(
 ) -> Result<DatabaseHeader, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe database");
     let id = cursor.array("database id")?;
-    let schema = RseSchema(cursor.u32("schema")?);
+    let schema = RseSchema::from_declared(cursor.u32("schema")?);
     // The schema is a declaration, never a gate (`docs/architecture.md`:
     // "Refusal is structural, never a version allowlist"). A foreign schema is
     // read with the schema-31 grammar, and only that attempt failing
