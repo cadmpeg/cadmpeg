@@ -55,7 +55,6 @@
       },
       "source": {
         "attributes": {
-          "container_kind": "cfb",
           "deltas_streams": "0",
           "directory_entries": "2",
           "file_size": "6656",

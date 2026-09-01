@@ -66,7 +66,6 @@ const DECLARED_SPLMSSTR_VERSION: &str = "splmsstr_version";
 /// Absent when no indexed store section carries a `store_version` record.
 const DECLARED_PRODUCT_VERSION: &str = "product_version";
 /// Key of the legacy UGII payload version byte in [`DialectMatch::declared`].
-///
 const DECLARED_UGII_VERSION: &str = "ugii_version";
 
 /// One reportable row of `docs/dialects.toml` under the `nx` namespace.
@@ -154,9 +153,9 @@ impl NxDialect {
     /// [`DialectMatch`] in this codec, so a classification bug and the report
     /// can never disagree.
     ///
-    /// The declared keys are the version fields the arm that ran actually read,
-    /// under the keys the source attributes already use. They are evidence: the
-    /// resolved id comes from the container dispatch and never from them.
+    /// The declared keys are the version fields the arm that ran actually read.
+    /// They are evidence: the resolved id comes from the container dispatch and
+    /// never from them.
     pub(crate) fn classify(container: &Container<'_>) -> DialectMatch {
         let dialect = Self::of_container(container);
         let mut declared = BTreeMap::new();
