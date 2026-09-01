@@ -420,12 +420,30 @@ impl<E: EncoderBackend> Encoder for E {
                 resolve_write_request(input.ir, request, E::FORMAT, targets)?,
             ),
         };
+        let expected_target = match &target {
+            ResolvedEncoderTarget::DialectFree => None,
+            ResolvedEncoderTarget::Native(write) => Some(write.dialect().clone()),
+        };
         let plan = self.plan_resolved(input, target)?;
         if plan.report().format() != E::FORMAT {
             return Err(CodecError::ContractViolation {
                 codec: E::FORMAT,
                 operation: "plan",
+                expected: E::FORMAT.to_owned(),
                 reported: plan.report().format().to_owned(),
+            });
+        }
+        if plan.report().target() != expected_target.as_ref() {
+            return Err(CodecError::ContractViolation {
+                codec: E::FORMAT,
+                operation: "plan target",
+                expected: expected_target
+                    .as_ref()
+                    .map_or_else(|| "none".to_owned(), ToString::to_string),
+                reported: plan
+                    .report()
+                    .target()
+                    .map_or_else(|| "none".to_owned(), ToString::to_string),
             });
         }
         Ok(plan)

@@ -79,6 +79,7 @@ fn sealed_plan_rejects_a_backend_that_reports_another_format() {
     let CodecError::ContractViolation {
         codec,
         operation,
+        expected,
         reported,
     } = error
     else {
@@ -86,7 +87,64 @@ fn sealed_plan_rejects_a_backend_that_reports_another_format() {
     };
     assert_eq!(codec, "selected");
     assert_eq!(operation, "plan");
+    assert_eq!(expected, "selected");
     assert_eq!(reported, "cadir");
+}
+
+struct WrongTargetEncoder;
+
+impl EncoderBackend for WrongTargetEncoder {
+    const FORMAT: &'static str = "test";
+    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(CATALOG_WRITE_TARGETS);
+
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: ResolvedEncoderTarget,
+    ) -> Result<ExportPlan, CodecError> {
+        let ResolvedEncoderTarget::Native(target) = target else {
+            panic!("the sealed wrapper must resolve a catalog target")
+        };
+        assert_eq!(target.dialect().as_str(), "test:new");
+        Ok(ExportPlan::buffered(
+            crate::report::ExportReport::native(
+                DialectId::pinned("test:old"),
+                crate::report::EntityCensus {
+                    basis: crate::report::CensusBasis::IrArenas,
+                    counts: input.ir.census(),
+                },
+                crate::report::FidelityResolution::NotProvided,
+                crate::report::WritePath::Synthesized,
+                Vec::new(),
+                Vec::new(),
+            ),
+            Vec::new(),
+        ))
+    }
+}
+
+#[test]
+fn sealed_plan_rejects_a_backend_that_reports_another_target_in_its_format() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let Err(error) =
+        WrongTargetEncoder.plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
+    else {
+        panic!("the sealed wrapper must bind the exact resolved target")
+    };
+
+    let CodecError::ContractViolation {
+        codec,
+        operation,
+        expected,
+        reported,
+    } = error
+    else {
+        panic!("expected an encoder target contract violation")
+    };
+    assert_eq!(codec, "test");
+    assert_eq!(operation, "plan target");
+    assert_eq!(expected, "test:new");
+    assert_eq!(reported, "test:old");
 }
 
 #[test]
@@ -262,6 +320,7 @@ fn sealed_inspect_rejects_a_backend_that_reports_another_format() {
     let CodecError::ContractViolation {
         codec,
         operation,
+        expected,
         reported,
     } = error
     else {
@@ -269,6 +328,7 @@ fn sealed_inspect_rejects_a_backend_that_reports_another_format() {
     };
     assert_eq!(codec, "selected");
     assert_eq!(operation, "inspect");
+    assert_eq!(expected, "selected");
     assert_eq!(reported, "foreign");
 }
 
@@ -284,6 +344,7 @@ fn sealed_decode_rejects_a_consistent_foreign_result() {
     let DecodeFailure::Codec(CodecError::ContractViolation {
         codec,
         operation,
+        expected,
         reported,
     }) = error
     else {
@@ -291,6 +352,7 @@ fn sealed_decode_rejects_a_consistent_foreign_result() {
     };
     assert_eq!(codec, "selected");
     assert_eq!(operation, "decode");
+    assert_eq!(expected, "selected");
     assert_eq!(reported, "test");
 }
 

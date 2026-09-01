@@ -415,6 +415,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             return Err(CodecError::ContractViolation {
                 codec: self.id(),
                 operation: "inspect",
+                expected: self.id().to_owned(),
                 reported: result.format().to_owned(),
             });
         }
@@ -436,6 +437,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             return Err(CodecError::ContractViolation {
                 codec: self.id(),
                 operation: "decode",
+                expected: self.id().to_owned(),
                 reported: result.report().format().to_owned(),
             }
             .into());
