@@ -570,12 +570,7 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
     );
     assert!(v4_analysis.groups.is_none());
 
-    for global_table in [
-        GlobalTable::V5_0,
-        GlobalTable::V5_1,
-        GlobalTable::V5_2,
-        GlobalTable::V5_3,
-    ] {
+    for global_table in [GlobalTable::V5_0, GlobalTable::V5Later] {
         assert_eq!(
             entity_primary_end_for_global_table(&omitted_count, &directory, global_table),
             Some(4),

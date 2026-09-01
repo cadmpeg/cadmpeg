@@ -377,7 +377,7 @@ pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_for_global_table(record, directory, GlobalTable::V5_3)
+    analyze_trailing_pointer_groups_for_global_table(record, directory, GlobalTable::V5Later)
 }
 
 fn analyze_trailing_pointer_groups_with_records_for_global_table(
@@ -417,7 +417,7 @@ fn analyze_trailing_pointer_groups_with_records(
         record,
         directory,
         records,
-        GlobalTable::V5_3,
+        GlobalTable::V5Later,
     )
 }
 
@@ -986,7 +986,7 @@ pub(crate) fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
-    entity_primary_end_for_global_table(record, directory, GlobalTable::V5_3)
+    entity_primary_end_for_global_table(record, directory, GlobalTable::V5Later)
 }
 
 fn entity_primary_end_with_records_for_global_table(
@@ -1010,7 +1010,12 @@ fn entity_primary_end_with_records(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Option<usize> {
-    entity_primary_end_with_records_for_global_table(record, directory, records, GlobalTable::V5_3)
+    entity_primary_end_with_records_for_global_table(
+        record,
+        directory,
+        records,
+        GlobalTable::V5Later,
+    )
 }
 
 fn counted_primary_end(record: &ParameterRecord) -> usize {

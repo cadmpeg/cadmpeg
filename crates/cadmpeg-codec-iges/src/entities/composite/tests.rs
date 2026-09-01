@@ -34,14 +34,14 @@ fn composite_child_types_follow_the_declared_dialect() {
     assert!(!composite_child_type_allowed(130, 0, GlobalTable::V4_0));
     assert!(composite_child_type_allowed(106, 1, GlobalTable::V5_0));
     assert!(composite_child_type_allowed(130, 0, GlobalTable::V5_0));
-    assert!(composite_child_type_allowed(142, 0, GlobalTable::V5_3));
+    assert!(composite_child_type_allowed(142, 0, GlobalTable::V5Later));
 }
 
 #[test]
 fn composite_child_count_follows_the_declared_dialect() {
     assert_eq!(composite_minimum_child_count(GlobalTable::V4_0), 2);
     assert_eq!(composite_minimum_child_count(GlobalTable::V5_0), 1);
-    assert_eq!(composite_minimum_child_count(GlobalTable::V5_3), 1);
+    assert_eq!(composite_minimum_child_count(GlobalTable::V5Later), 1);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn composite_logical_connector_use_flag_is_a_v5_rule() {
     assert!(composite_logical_connector_use_valid(
         4,
         true,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
     assert!(!composite_logical_connector_use_valid(
         5,

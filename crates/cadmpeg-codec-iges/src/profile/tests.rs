@@ -84,7 +84,7 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
                 .is_some_and(|forms| matrix_admits(forms, form))
                 || matrix_range_admits(&ranges, entity_type, form);
             assert_eq!(
-                crate::profile::envelope_a_admits(entity_type, form, GlobalTable::V5_3),
+                crate::profile::envelope_a_admits(entity_type, form, GlobalTable::V5Later),
                 expected,
                 "entity type {entity_type} form {form}"
             );
@@ -95,7 +95,7 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
             let expected =
                 matrix_admits(forms, form) || matrix_range_admits(&ranges, entity_type, form);
             assert_eq!(
-                crate::profile::envelope_a_admits(entity_type, form, GlobalTable::V5_3),
+                crate::profile::envelope_a_admits(entity_type, form, GlobalTable::V5Later),
                 expected,
                 "high-form probe: entity type {entity_type} form {form}"
             );
@@ -104,27 +104,27 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
     assert!(crate::profile::envelope_a_admits(
         601,
         5001,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
     assert!(crate::profile::envelope_a_admits(
         10_000,
         i64::MAX,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
     assert!(!crate::profile::envelope_a_admits(
         700,
         0,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
     assert!(!crate::profile::envelope_a_admits(
         100_000,
         0,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
     assert!(!crate::profile::envelope_a_admits(
         i64::MAX,
         i64::MAX,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
 }
 
@@ -236,13 +236,7 @@ fn v4_admission_matches_its_entity_and_form_table() {
 
 #[test]
 fn standard_fem_forms_are_admitted_in_v4_and_v5() {
-    for global_table in [
-        GlobalTable::V4_0,
-        GlobalTable::V5_0,
-        GlobalTable::V5_1,
-        GlobalTable::V5_2,
-        GlobalTable::V5_3,
-    ] {
+    for global_table in [GlobalTable::V4_0, GlobalTable::V5_0, GlobalTable::V5Later] {
         for entity_type in [134, 136, 138, 418] {
             assert!(
                 crate::profile::envelope_a_admits(entity_type, 0, global_table),
@@ -276,13 +270,7 @@ fn standard_fem_forms_are_admitted_in_v4_and_v5() {
 
 #[test]
 fn macro_instance_ranges_are_admitted_in_all_fixed_ascii_dialects() {
-    for global_table in [
-        GlobalTable::V4_0,
-        GlobalTable::V5_0,
-        GlobalTable::V5_1,
-        GlobalTable::V5_2,
-        GlobalTable::V5_3,
-    ] {
+    for global_table in [GlobalTable::V4_0, GlobalTable::V5_0, GlobalTable::V5Later] {
         for entity_type in [600, 699, 10_000, 99_999] {
             assert!(crate::profile::envelope_a_admits(
                 entity_type,
@@ -312,12 +300,7 @@ fn type230_form1_is_admitted_from_iges_5_0_onward() {
         1,
         GlobalTable::V4_0
     ));
-    for global_table in [
-        GlobalTable::V5_0,
-        GlobalTable::V5_1,
-        GlobalTable::V5_2,
-        GlobalTable::V5_3,
-    ] {
+    for global_table in [GlobalTable::V5_0, GlobalTable::V5Later] {
         assert!(
             crate::profile::envelope_a_admits(230, 1, global_table),
             "{global_table:?}"
@@ -332,12 +315,7 @@ fn type228_implementor_forms_are_admitted_from_iges_5_0_onward() {
         5001,
         GlobalTable::V4_0
     ));
-    for global_table in [
-        GlobalTable::V5_0,
-        GlobalTable::V5_1,
-        GlobalTable::V5_2,
-        GlobalTable::V5_3,
-    ] {
+    for global_table in [GlobalTable::V5_0, GlobalTable::V5Later] {
         assert!(
             crate::profile::envelope_a_admits(228, 5001, global_table),
             "{global_table:?}"
@@ -408,13 +386,7 @@ fn v5_0_admission_is_the_4_0_table_plus_v5_0_ecos() {
 
 #[test]
 fn implementor_defined_property_forms_are_admitted_in_each_fixed_ascii_dialect() {
-    for global_table in [
-        GlobalTable::V4_0,
-        GlobalTable::V5_0,
-        GlobalTable::V5_1,
-        GlobalTable::V5_2,
-        GlobalTable::V5_3,
-    ] {
+    for global_table in [GlobalTable::V4_0, GlobalTable::V5_0, GlobalTable::V5Later] {
         assert!(crate::profile::envelope_a_admits(406, 5001, global_table));
         assert!(crate::profile::envelope_a_admits(406, 9999, global_table));
         assert!(!crate::profile::envelope_a_admits(406, 5000, global_table));

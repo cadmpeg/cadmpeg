@@ -3,6 +3,7 @@
 
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
+use crate::version::{DialectRecovery, VersionFlag};
 use crate::IgesVersion;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
@@ -56,179 +57,40 @@ pub(crate) struct RawGlobal {
 ///
 /// The older declarations remain grouped as `Legacy` until their own
 /// specifications are verified. The 4.0 and 5.0 families are separate because
-/// their Global tables stop at fields 24 and 25 respectively.
+/// their Global tables stop at fields 24 and 25 respectively. Versions 5.1,
+/// 5.2, and 5.3 share the same 26-field grammar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GlobalTable {
     Legacy,
     V4_0,
     V5_0,
-    V5_1,
-    V5_2,
-    V5_3,
-}
-
-/// Whether field 23 selected a Global table this codec verified for the version
-/// the source declared, and if not, why not.
-///
-/// Distinct from [`GlobalTable`], which names the table actually used. This names
-/// the relationship between that table and the declaration: a decode can read a
-/// file with the 5.3 table because the file says 5.3 ([`Self::Verified`]),
-/// because the file says 5.1 and the tables coincide, because field 23 was
-/// unreadable, or because field 23 named a value the version table does not
-/// contain at all.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DialectRecovery<'a> {
-    /// Field 23 names a version whose Global table this codec verified against
-    /// that version's own specification. The only state that charges no loss.
-    Verified,
-    /// Field 23 does not read as an integer; the specification default stood in.
-    UnreadableDeclaration(&'a str),
-    /// Field 23 names a value outside the version table, moved by the
-    /// postprocessor clamp of IGES 5.3 section 2.2.4.3.23.
-    Clamped,
-    /// Field 23 names a version whose own specification this codec has not
-    /// verified its Global table against.
-    UnverifiedVersion,
-}
-
-/// One entry in the eleven-value version table selected by Global field 23.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i64)]
-pub(crate) enum VersionFlag {
-    V1_0 = 1,
-    AnsiY1426M1981 = 2,
-    V2_0 = 3,
-    V3_0 = 4,
-    AsmeAnsiY1426M1987 = 5,
-    V4_0 = 6,
-    AsmeY1426M1989 = 7,
-    V5_0 = 8,
-    V5_1 = 9,
-    V5_2 = 10,
-    V5_3 = 11,
-}
-
-impl VersionFlag {
-    const ALL: [Self; 11] = [
-        Self::V1_0,
-        Self::AnsiY1426M1981,
-        Self::V2_0,
-        Self::V3_0,
-        Self::AsmeAnsiY1426M1987,
-        Self::V4_0,
-        Self::AsmeY1426M1989,
-        Self::V5_0,
-        Self::V5_1,
-        Self::V5_2,
-        Self::V5_3,
-    ];
-    const MIN: i64 = Self::V1_0 as i64;
-    const MAX: i64 = Self::V5_3 as i64;
-
-    /// Returns the exact table entry, without applying postprocessor recovery.
-    pub(crate) const fn exact(value: i64) -> Option<Self> {
-        if value < Self::MIN || value > Self::MAX {
-            return None;
-        }
-        Some(Self::ALL[(value - Self::MIN) as usize])
-    }
-
-    /// Applies the IGES 5.3 postprocessor clamp to a declared value.
-    const fn effective(declared: i64) -> Self {
-        match Self::exact(declared) {
-            Some(flag) => flag,
-            None if declared < Self::MIN => Self::V2_0,
-            None => Self::V5_3,
-        }
-    }
-
-    pub(crate) const fn value(self) -> i64 {
-        self as i64
-    }
-
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::V1_0 => "1.0",
-            Self::AnsiY1426M1981 => "ANSI-Y14.26M-1981",
-            Self::V2_0 => "2.0",
-            Self::V3_0 => "3.0",
-            Self::AsmeAnsiY1426M1987 => "ASME-ANSI-Y14.26M-1987",
-            Self::V4_0 => "4.0",
-            Self::AsmeY1426M1989 => "ASME-Y14.26M-1989",
-            Self::V5_0 => "5.0",
-            Self::V5_1 => "5.1",
-            Self::V5_2 => "5.2",
-            Self::V5_3 => "5.3",
-        }
-    }
-
-    const fn global_table(self) -> GlobalTable {
-        match self {
-            Self::V4_0 => GlobalTable::V4_0,
-            Self::V5_0 => GlobalTable::V5_0,
-            Self::V5_1 => GlobalTable::V5_1,
-            Self::V5_2 => GlobalTable::V5_2,
-            Self::V5_3 => GlobalTable::V5_3,
-            Self::V1_0
-            | Self::AnsiY1426M1981
-            | Self::V2_0
-            | Self::V3_0
-            | Self::AsmeAnsiY1426M1987
-            | Self::AsmeY1426M1989 => GlobalTable::Legacy,
-        }
-    }
-
-    const fn verified_version(self) -> Option<IgesVersion> {
-        match self {
-            Self::V4_0 => Some(IgesVersion::V4_0),
-            Self::V5_0 => Some(IgesVersion::V5_0),
-            Self::V5_1 => Some(IgesVersion::V5_1),
-            Self::V5_2 => Some(IgesVersion::V5_2),
-            Self::V5_3 => Some(IgesVersion::V5_3),
-            Self::V1_0
-            | Self::AnsiY1426M1981
-            | Self::V2_0
-            | Self::V3_0
-            | Self::AsmeAnsiY1426M1987
-            | Self::AsmeY1426M1989 => None,
-        }
-    }
-
-    pub(crate) const fn from_write_version(version: IgesVersion) -> Self {
-        match version {
-            IgesVersion::V4_0 => Self::V4_0,
-            IgesVersion::V5_0 => Self::V5_0,
-            IgesVersion::V5_1 => Self::V5_1,
-            IgesVersion::V5_2 => Self::V5_2,
-            IgesVersion::V5_3 => Self::V5_3,
-        }
-    }
+    V5Later,
 }
 
 impl GlobalTable {
     const fn global_field_count(self) -> usize {
         match self {
-            Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3 => 26,
+            Self::Legacy | Self::V5Later => 26,
             Self::V4_0 => 24,
             Self::V5_0 => 25,
         }
     }
 
     const fn accepts_four_digit_date(self) -> bool {
-        matches!(self, Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3)
+        matches!(self, Self::Legacy | Self::V5Later)
     }
 
     const fn default_model_scale(self) -> Option<f64> {
         match self {
             Self::V4_0 => None,
-            Self::Legacy | Self::V5_0 | Self::V5_1 | Self::V5_2 | Self::V5_3 => Some(1.0),
+            Self::Legacy | Self::V5_0 | Self::V5Later => Some(1.0),
         }
     }
 
     const fn default_units_flag(self) -> Option<i64> {
         match self {
             Self::V4_0 | Self::V5_0 => None,
-            Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3 => Some(1),
+            Self::Legacy | Self::V5Later => Some(1),
         }
     }
 
@@ -237,15 +99,15 @@ impl GlobalTable {
     }
 
     const fn has_application_protocol(self) -> bool {
-        matches!(self, Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3)
+        matches!(self, Self::Legacy | Self::V5Later)
     }
 
     const fn defaults_receiver_product_to_sender(self) -> bool {
-        matches!(self, Self::V5_0 | Self::V5_1 | Self::V5_2 | Self::V5_3)
+        matches!(self, Self::V5_0 | Self::V5Later)
     }
 
     const fn defaults_units_name(self) -> bool {
-        matches!(self, Self::V5_0 | Self::V5_1 | Self::V5_2 | Self::V5_3)
+        matches!(self, Self::V5_0 | Self::V5Later)
     }
 
     const fn string_byte_is_forbidden(self, byte: u8) -> bool {
@@ -277,7 +139,7 @@ impl GlobalTable {
                     | FIELD_MINIMUM_RESOLUTION
             ),
             Self::Legacy => false,
-            Self::V5_1 | Self::V5_2 | Self::V5_3 => matches!(
+            Self::V5Later => matches!(
                 index,
                 FIELD_SENDER_PRODUCT..=FIELD_DOUBLE_SIGNIFICANCE
                     | FIELD_MAXIMUM_LINE_WIDTH..=FIELD_MINIMUM_RESOLUTION

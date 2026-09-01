@@ -65,10 +65,7 @@ fn composite_logical_connector_use_valid(
     global_table: GlobalTable,
 ) -> bool {
     !is_logical_connector
-        || !matches!(
-            global_table,
-            GlobalTable::V5_0 | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3
-        )
+        || !matches!(global_table, GlobalTable::V5_0 | GlobalTable::V5Later)
         || use_flag == 4
 }
 

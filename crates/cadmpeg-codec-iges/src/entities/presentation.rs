@@ -76,7 +76,7 @@ pub(super) fn general_note_font_valid_for_global_table(
             value,
             0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001
         ),
-        GlobalTable::Legacy | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
+        GlobalTable::Legacy | GlobalTable::V5Later => {
             matches!(
                 value,
                 0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
@@ -117,7 +117,7 @@ fn text_template_directory_valid(entry: &DirectoryEntry, global_table: GlobalTab
         GlobalTable::V4_0 | GlobalTable::V5_0 => {
             entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
         }
-        GlobalTable::Legacy | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
+        GlobalTable::Legacy | GlobalTable::V5Later => {
             entry.status.subordinate == 0
                 && entry.status.use_flag == 2
                 && entry.structure == 0

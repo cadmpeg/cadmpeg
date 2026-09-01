@@ -27,8 +27,9 @@
 //! expect an id to agree with the `version_flag` beside it, and the answer is
 //! wrong for exactly the files whose declarations are wrong.
 
-use crate::global::{DialectRecovery, ResolvedGlobal, VersionFlag};
+use crate::global::ResolvedGlobal;
 use crate::representation::Representation;
+use crate::version::{DialectRecovery, VersionFlag};
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
