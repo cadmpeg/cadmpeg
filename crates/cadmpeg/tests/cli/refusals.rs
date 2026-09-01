@@ -358,6 +358,12 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .stderr(predicate::str::contains("iges cannot write 9.9"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "unsupported_target");
+    assert_eq!(value["refusal"]["target"]["kind"], "unknown_explicit");
+    assert_eq!(value["refusal"]["target"]["format"], "iges");
+    assert_eq!(value["refusal"]["target"]["requested"], "9.9");
+    assert!(value["refusal"]["target"]["available"]
+        .as_array()
+        .is_some_and(|available| !available.is_empty()));
     assert!(value["decode_report"].is_object());
     assert!(value["decode_report"]["dialects"].is_object());
     assert!(value["check_report"].is_object());

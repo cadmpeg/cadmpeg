@@ -229,6 +229,10 @@ struct RefusalProbe {
     message: Option<String>,
     #[serde(default)]
     dialects: Option<DialectLayersProbe>,
+    /// Structured encoder request state and catalog on target refusals.
+    /// Keep this lenient so query can project future target-refusal variants.
+    #[serde(default)]
+    target: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -722,6 +726,9 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                     rows.push(("refusal_message".to_owned(), cell(message)));
                 }
                 push_dialect_layers_summary(&mut rows, "refusal", refusal.dialects.as_ref());
+                if let Some(target) = &refusal.target {
+                    rows.push(("refusal_target".to_owned(), target.to_string()));
+                }
             }
             if let Some(generator) = &report.generator {
                 rows.push(("generator".to_owned(), cell(generator)));
@@ -853,7 +860,9 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
         let map: serde_json::Map<String, serde_json::Value> = rows
             .into_iter()
             .map(|(field, value)| {
-                let value = if field.ends_with("_dialects") || field.ends_with("_dialect_declared")
+                let value = if field.ends_with("_dialects")
+                    || field.ends_with("_dialect_declared")
+                    || field == "refusal_target"
                 {
                     serde_json::from_str(&value)
                         .expect("structured identity summary cells contain JSON")
