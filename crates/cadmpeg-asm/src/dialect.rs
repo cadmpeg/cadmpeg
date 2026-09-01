@@ -16,13 +16,12 @@
 //! whatever it reads is reported as it read. What the band decides is how the
 //! host labels the result. A binary ACIS stream outside the band uses the
 //! nearest verified binary row as its substituted grammar. A text ACIS stream
-//! outside the band has no declared text-band grammar to name, so it is
-//! unverified without a `using` row. The host charges either recovery from the
-//! kernel layer.
+//! outside the band has no declared text-band grammar to name, so it takes the
+//! residual path. The host charges either recovery from the kernel layer.
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar};
 
 use crate::kernel_header::KernelHeader;
 
@@ -74,36 +73,32 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
         }
     }
 
-    let (dialect, admission) = match header {
+    let matched = match header {
         KernelHeaderRef::Acis(header) => {
             declared.insert(
                 DECLARED_REFERENCE_WIDTH.to_owned(),
                 header.width.to_string(),
             );
-            let major = header.save_format_major();
-            (acis_binary_row(major), acis_admission(major))
+            acis_match(header.save_format_major())
         }
         KernelHeaderRef::Asm(header) => {
             declared.insert(
                 DECLARED_REFERENCE_WIDTH.to_owned(),
                 header.width.to_string(),
             );
-            (asm_binary_row(header.width), Admission::Admitted)
+            DialectMatch::admitted(asm_binary_row(header.width))
         }
-        KernelHeaderRef::TextAsm(_) => (ACIS_TEXT_ASM, Admission::Admitted),
-        KernelHeaderRef::TextAcis(header) => (
-            ACIS_TEXT_ACIS,
+        KernelHeaderRef::TextAsm(_) => DialectMatch::admitted(ACIS_TEXT_ASM),
+        KernelHeaderRef::TextAcis(header) => {
             if acis_band_verified(header.save_format_major()) {
-                Admission::Admitted
+                DialectMatch::admitted(ACIS_TEXT_ACIS)
             } else {
-                Admission::AdmittedUnverified { using: None }
-            },
-        ),
-        KernelHeaderRef::Unknown => (ACIS_UNKNOWN, Admission::Refused),
+                DialectMatch::residual(ACIS_TEXT_ACIS)
+            }
+        }
+        KernelHeaderRef::Unknown => DialectMatch::refused(ACIS_UNKNOWN),
     };
-    DialectMatch::from_admission(dialect, admission)
-        .expect("ASM dialect admissions use only ACIS grammar ids")
-        .with_declared(declared)
+    matched.with_declared(declared)
 }
 
 /// Classify one kernel stream and retain its host carrier.
@@ -155,21 +150,22 @@ pub fn nearest_verified_acis(save_format_major: Option<u32>) -> DialectId {
     }
 }
 
-/// Admission of a Spatial ACIS binary stream under the verified decoder band.
+/// The Spatial ACIS binary row one save format satisfies, admitted under the
+/// verified decoder band or read unverified with the nearest verified grammar.
 #[must_use]
-pub fn acis_admission(save_format_major: Option<u32>) -> Admission {
+pub fn acis_match(save_format_major: Option<u32>) -> DialectMatch {
+    let row = acis_binary_row(save_format_major);
     if acis_band_verified(save_format_major) {
-        Admission::Admitted
+        DialectMatch::admitted(row)
     } else {
-        Admission::AdmittedUnverified {
-            using: Some(nearest_verified_acis(save_format_major)),
-        }
+        DialectMatch::unverified(row, Grammar::of(&nearest_verified_acis(save_format_major)))
     }
 }
 
 /// Describe the recovery reported by an unverified `acis:` layer.
 ///
-/// Returns `Some` exactly for [`Admission::AdmittedUnverified`]. The message
+/// Returns `Some` exactly for [`Admission::Unverified`] and
+/// [`Admission::Residual`]. The message
 /// names both save-format components when the stream declares them and names
 /// the substituted registry row when classification selected one.
 #[must_use]
@@ -178,7 +174,8 @@ pub fn unverified_message(subject: &str, matched: &DialectMatch) -> Option<Strin
         return None;
     }
     let using = match matched.admission() {
-        Admission::AdmittedUnverified { using } => using,
+        Admission::Unverified { .. } => matched.using(),
+        Admission::Residual => None,
         Admission::Admitted | Admission::Refused => return None,
     };
     let declared = match (
@@ -229,7 +226,7 @@ pub fn asm_binary_row(width: u8) -> DialectId {
 #[cfg(test)]
 mod tests {
     use super::{
-        acis_admission, acis_band_verified, acis_binary_row, classify, classify_layer,
+        acis_band_verified, acis_binary_row, acis_match, classify, classify_layer,
         nearest_verified_acis, unverified_message, KernelHeaderRef, ACIS_ASM_BINARYFILE_8,
         ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS,
         ACIS_TEXT_ASM, ACIS_UNKNOWN, DECLARED_CARRIER, FORMAT,
@@ -278,16 +275,16 @@ mod tests {
 
     #[test]
     fn admission_folds_the_verified_band_and_nearest_row() {
-        assert_eq!(acis_admission(Some(217)), Admission::Admitted);
         assert_eq!(
-            acis_admission(Some(700)),
-            Admission::AdmittedUnverified {
-                using: Some(ACIS_SAVE_FORMAT_218),
-            }
+            acis_match(Some(217)),
+            DialectMatch::admitted(ACIS_SAVE_FORMAT_217)
         );
+        let unverified = acis_match(Some(700));
+        assert_eq!(unverified.dialect(), &ACIS_SAVE_FORMAT_BINARY_OTHER);
+        assert_eq!(unverified.using(), Some(ACIS_SAVE_FORMAT_218));
         assert_eq!(
             classify(KernelHeaderRef::TextAcis(&header(4, Some(70_000)))).admission(),
-            Admission::AdmittedUnverified { using: None }
+            &Admission::Residual
         );
     }
 
@@ -334,7 +331,7 @@ mod tests {
         let matched = classify(KernelHeaderRef::Acis(&acis));
         assert_eq!(matched.format(), FORMAT);
         assert_eq!(matched.dialect(), &ACIS_SAVE_FORMAT_217);
-        assert_eq!(matched.admission(), Admission::Admitted);
+        assert_eq!(matched.admission(), &Admission::Admitted);
         assert_eq!(
             matched.declared().clone().into_iter().collect::<Vec<_>>(),
             [
@@ -368,7 +365,7 @@ mod tests {
         );
         let unknown = classify(KernelHeaderRef::Unknown);
         assert_eq!(unknown.dialect(), &ACIS_UNKNOWN);
-        assert_eq!(unknown.admission(), Admission::Refused);
+        assert_eq!(unknown.admission(), &Admission::Refused);
         assert!(unknown.declared().is_empty());
     }
 

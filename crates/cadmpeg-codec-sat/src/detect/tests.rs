@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Detection and inspect tests for bare ASM streams.
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 use std::io::Cursor;
 
 use crate::test_support::text_sphere_stream;

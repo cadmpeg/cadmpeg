@@ -155,7 +155,7 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
     assert_eq!(inspected.dialect().as_str(), "sat:acis-binary");
     assert_eq!(
         inspected.admission(),
-        cadmpeg_core::dialect::Admission::Refused
+        &cadmpeg_core::dialect::Admission::Refused
     );
     assert_eq!(layers.iter().count(), 2, "inspect retains both layers");
     assert_eq!(inspected.declared()["encoding"], "binary");
@@ -204,7 +204,7 @@ fn unframed_discriminant_has_the_same_refused_match_at_inspect_and_decode() {
     assert_eq!(inspected.dialect().as_str(), "sat:text");
     assert_eq!(
         inspected.admission(),
-        cadmpeg_core::dialect::Admission::Refused
+        &cadmpeg_core::dialect::Admission::Refused
     );
     assert_eq!(
         layers.iter().count(),

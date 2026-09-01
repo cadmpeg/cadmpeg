@@ -363,9 +363,7 @@
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": {
-            "admitted_unverified": {}
-          },
+          "admission": "residual",
           "declared": {
             "version_line": "#UGC:2 P c"
           },
@@ -751,9 +749,7 @@
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": {
-          "admitted_unverified": {}
-        },
+        "admission": "residual",
         "declared": {
           "version_line": "#UGC:2 P c"
         },

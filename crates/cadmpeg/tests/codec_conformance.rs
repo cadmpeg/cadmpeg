@@ -215,10 +215,12 @@ mod product_roundtrip {
 
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_codec_step::StepCodec;
-    use cadmpeg_ir::codec::TargetRequest;
-    use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput};
+    use cadmpeg_ir::codec::write::EncodeInput;
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::codec::write::TargetRequest;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::products::{AssemblyGraph, Occurrence, OccurrenceParent, PrototypeReference};
-    use cadmpeg_ir::{CadIr, Encoder};
+    use cadmpeg_ir::CadIr;
 
     const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),

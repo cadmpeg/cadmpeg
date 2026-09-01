@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
-use cadmpeg_ir::codec::EncodeInput;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::container::role;
 use crate::test_support::*;
@@ -70,7 +71,7 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
     );
     assert_eq!(
         inspected.admission(),
-        cadmpeg_core::dialect::Admission::Admitted
+        &cadmpeg_core::dialect::Admission::Admitted
     );
 
     let decoded = F3dCodec
@@ -264,13 +265,15 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
         .expect("the primary layer is classified")
         .primary();
     assert_eq!(matched.dialect().as_str(), "f3d:unknown");
-    assert_eq!(
+    assert!(matches!(
         matched.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned(
-                "f3d:manifest-3-2-0-0",
-            )),
-        }
+        cadmpeg_core::dialect::Admission::Unverified { .. }
+    ));
+    assert_eq!(
+        matched.using(),
+        Some(cadmpeg_core::dialect::DialectId::pinned(
+            "f3d:manifest-3-2-0-0"
+        ))
     );
     assert_eq!(matched.declared()["top_level_manifest_version"], "3-3-0-0");
 
@@ -302,14 +305,14 @@ fn plan(
     result: &cadmpeg_ir::codec::DecodeResult,
     fidelity: bool,
     request: TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
     F3dCodec.plan(
         EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
         request,
     )
 }
 
-fn named_target(plan: &cadmpeg_ir::codec::ExportPlan) -> String {
+fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
     plan.report()
         .target()
         .expect("an F3D write always names its dialect")
@@ -350,8 +353,7 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
         "3-3-0-0",
     ));
     let error = plan(&result, false, TargetRequest::Inherit)
-        .err()
-        .expect("f3d:unknown is not a synthesis target");
+        .expect_err("f3d:unknown is not a synthesis target");
     let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };

@@ -9,7 +9,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
 use crate::IgesCodec;
 use cadmpeg_core::dialect::Admission;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
@@ -213,7 +213,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         ] {
             let matched = classify(representation, &global);
             assert_eq!(
-                matched.admission() == Admission::Admitted,
+                matched.admission() == &Admission::Admitted,
                 !charged,
                 "field 23 {:?} as {representation:?}: admission and the dialect-unverified loss must agree",
                 case.declaration
@@ -260,14 +260,15 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
                 "{context}"
             );
 
-            let expected_admission = if case.admitted {
-                Admission::Admitted
+            if case.admitted {
+                assert_eq!(matched.admission(), &Admission::Admitted, "{context}");
             } else {
-                Admission::AdmittedUnverified {
-                    using: Some(DialectId::pinned(nearest_id)),
-                }
-            };
-            assert_eq!(matched.admission(), expected_admission, "{context}");
+                assert_eq!(
+                    matched.using(),
+                    Some(DialectId::pinned(nearest_id)),
+                    "{context}"
+                );
+            }
         }
     }
 }
@@ -323,10 +324,8 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
         "iges:ansi-y14.26m-1981-fixed-ascii"
     );
     assert_eq!(
-        matched.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("iges:5.3-fixed-ascii")),
-        }
+        matched.using(),
+        Some(DialectId::pinned("iges:5.3-fixed-ascii"))
     );
     assert_eq!(matched.declared()["version_flag"], "2");
     assert_eq!(matched.declared()["effective_version"], "ANSI-Y14.26M-1981");
@@ -363,10 +362,8 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
-        matched.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("iges:5.3-fixed-ascii")),
-        }
+        matched.using(),
+        Some(DialectId::pinned("iges:5.3-fixed-ascii"))
     );
     assert_eq!(matched.declared()["version_flag"], "99");
     assert_eq!(matched.declared()["effective_version"], "5.3");
@@ -391,7 +388,7 @@ fn a_verified_fixed_ascii_declaration_is_admitted_with_no_dialect_loss() {
 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:4.0-fixed-ascii");
-    assert_eq!(matched.admission(), Admission::Admitted);
+    assert_eq!(matched.admission(), &Admission::Admitted);
     assert!(!charges_dialect_unverified(&decoded));
 }
 
@@ -411,7 +408,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
             if matched.dialect() == &dialect_id(Representation::Unknown, None) {
                 assert_ne!(
                     matched.admission(),
-                    Admission::Admitted,
+                    &Admission::Admitted,
                     "field 23 {:?} as {representation:?}",
                     case.declaration
                 );

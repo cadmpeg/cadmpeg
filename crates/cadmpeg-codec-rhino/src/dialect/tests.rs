@@ -78,7 +78,7 @@ fn the_totality_row_records_no_substituted_declared_strategy() {
         let matched = classify_word(word);
         assert_eq!(
             matched.admission(),
-            Admission::AdmittedUnverified { using: None },
+            &Admission::Residual,
             "archive word {word}"
         );
         let note = admission_loss(&matched).expect("an unverified admission charges its loss");
@@ -98,7 +98,7 @@ fn the_totality_row_records_no_substituted_declared_strategy() {
 #[test]
 fn archive_word_5_is_admitted_on_its_declared_narrow_chunk_grammar() {
     let matched = classify_word(5);
-    assert_eq!(matched.admission(), Admission::Admitted);
+    assert_eq!(matched.admission(), &Admission::Admitted);
     assert!(admission_loss(&matched).is_none());
 }
 

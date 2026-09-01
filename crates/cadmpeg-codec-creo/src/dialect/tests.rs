@@ -193,9 +193,9 @@ fn each_container_classifies_into_the_row_its_discriminants_match() {
         let expected_admission = if case.admitted {
             Admission::Admitted
         } else {
-            Admission::AdmittedUnverified { using: None }
+            Admission::Residual
         };
-        assert_eq!(matched.admission(), expected_admission, "{}", case.label);
+        assert_eq!(*matched.admission(), expected_admission, "{}", case.label);
     }
 }
 
@@ -219,7 +219,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let classification = classify(&scan);
         let matched = classification.matched();
         let charged = classification.loss().is_some();
-        assert_eq!(matched.admission() == Admission::Admitted, !charged);
+        assert_eq!(*matched.admission() == Admission::Admitted, !charged);
     }
 
     for case in CASES {
@@ -229,7 +229,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let matched = classification.matched();
         let charged = classification.loss().is_some();
         assert_eq!(
-            matched.admission() == Admission::Admitted,
+            *matched.admission() == Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             case.label
@@ -280,7 +280,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
         if matched.dialect().as_str()
             == Layout::Unknown(UnknownLayout::NoDiscriminant).id().as_str()
         {
-            assert_ne!(matched.admission(), Admission::Admitted, "{}", case.label);
+            assert_ne!(*matched.admission(), Admission::Admitted, "{}", case.label);
         }
     }
 }

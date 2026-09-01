@@ -57,10 +57,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     assert_eq!(kernel.dialect().as_str(), "parasolid:unknown");
     assert_eq!(kernel.declared()["schema"], "SCH_TEST_1_9999");
     assert_eq!(kernel.instance(), None);
-    assert_eq!(
-        kernel.admission(),
-        Admission::AdmittedUnverified { using: None }
-    );
+    assert_eq!(kernel.admission(), &Admission::Residual);
 
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
@@ -87,10 +84,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
         .expect("the extracted Parasolid stream emits a layer");
 
     assert_eq!(kernel.dialect().as_str(), "parasolid:format-13006");
-    assert_eq!(
-        kernel.admission(),
-        Admission::AdmittedUnverified { using: None }
-    );
+    assert_eq!(kernel.admission(), &Admission::Residual);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
     assert!(losses[0].message.contains("host did not verify"));
@@ -154,7 +148,7 @@ fn both_container_rows_are_admitted_because_classification_is_structural() {
     for legacy_cfb in [false, true] {
         let container = container(legacy_cfb, 0x06);
         let matched = classify(&container);
-        assert_eq!(matched.admission(), Admission::Admitted);
+        assert_eq!(matched.admission(), &Admission::Admitted);
     }
 }
 
@@ -196,7 +190,7 @@ fn the_version_byte_is_evidence_and_never_moves_the_resolved_id() {
             matched.declared()[DECLARED_SPLMSSTR_VERSION],
             version.to_string()
         );
-        assert_eq!(matched.admission(), Admission::Admitted);
+        assert_eq!(matched.admission(), &Admission::Admitted);
     }
 }
 

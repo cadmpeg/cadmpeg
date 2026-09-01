@@ -2,10 +2,11 @@
 //! Source-less IR builders and encode/decode helpers for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::SldprtCodec;
 
@@ -116,7 +117,7 @@ pub(crate) fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec:
     let mut encoded = Vec::new();
     SldprtCodec
         .plan(
-            cadmpeg_ir::codec::EncodeInput { ir, fidelity: None },
+            cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
             TargetRequest::Inherit,
         )
         .and_then(|plan| plan.write_to(&mut encoded))

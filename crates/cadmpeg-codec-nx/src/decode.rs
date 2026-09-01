@@ -4,18 +4,16 @@
 //! [`scan`] parses the container and inflates its embedded streams. [`decode`]
 //! converts supported analytic and NURBS carriers to millimetres, resolves
 //! supported topology, preserves each Parasolid stream as an unknown record, and
-//! returns a [`DecodeReport`] describing incomplete transfer. Partition and
-//! deltas streams are both decoded; callers must use the report to account for
-//! unresolved active-face selection and other loss.
-//!
-//! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
+//! returns a decode body describing incomplete transfer; the sealed wrapper stamps
+//! the classification onto the report. Partition and deltas streams are both
+//! decoded; callers must use the report to account for unresolved active-face
+//! selection and other loss.
 
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -230,52 +228,31 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 /// emits supported geometry and resolvable topology. A valid container can
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
-pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = scan(ctx, root)?;
 
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
         ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
         let (ir, annotations, unknowns) = build_container_only_ir(ctx, &scan)?;
-        let mut report = build_container_report(&scan, true);
-        report_untransferred_streams(&scan, &mut report, false);
-        return decode_result(
-            ctx,
-            ir,
-            report,
-            annotations,
-            unknowns,
-            &mut admitted_entities,
-        );
+        let mut body = build_container_body(&scan, true);
+        report_untransferred_streams(&scan, &mut body, false);
+        return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
     // Charge stream cardinality before geometry construction.
     ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
 
-    if let Some((ir, report, annotations, unknowns)) =
+    if let Some((ir, body, annotations, unknowns)) =
         try_decode_geometry(ctx, root, &scan, &mut admitted_entities)?
     {
-        return decode_result(
-            ctx,
-            ir,
-            report,
-            annotations,
-            unknowns,
-            &mut admitted_entities,
-        );
+        return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
-    let mut report = build_container_report(&scan, false);
-    report_untransferred_streams(&scan, &mut report, true);
-    decode_result(
-        ctx,
-        ir,
-        report,
-        annotations,
-        unknowns,
-        &mut admitted_entities,
-    )
+    let mut body = build_container_body(&scan, false);
+    report_untransferred_streams(&scan, &mut body, true);
+    decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
 
 fn build_container_only_ir(
@@ -308,14 +285,14 @@ fn build_container_only_ir(
     Ok((ir, annotations.build(), unknowns))
 }
 
-fn decode_result(
+fn decoded(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
-    report: DecodeReport,
+    body: DecodeBody,
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     admitted_entities: &mut u64,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     ctx.admit_entities(
         ir.model.entity_count() as u64,
         admitted_entities,
@@ -323,17 +300,17 @@ fn decode_result(
     )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
-    Ok(DecodeResult::new(ir, report, source_fidelity)?)
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }
 
-fn report_untransferred_streams(
-    scan: &Scan,
-    report: &mut DecodeReport,
-    typed_native_available: bool,
-) {
+fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native_available: bool) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
-        report.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
+        body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
             "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
             control_count - classified_control_count
         )));
@@ -345,7 +322,7 @@ fn report_untransferred_streams(
                 && content == EntryContent::SaveToggleInfo
                 && crate::native::has_complete_saved_toggle_stream(&scan.container))
         {
-            report.losses.push(NxLossCode::ContainerStreamOpaque.note(format!(
+            body.losses.push(NxLossCode::ContainerStreamOpaque.note(format!(
                 "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                 entry.name,
                 content.label()
@@ -354,8 +331,7 @@ fn report_untransferred_streams(
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
-            report
-                .losses
+            body.losses
                 .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
                     "Non-Parasolid {} stream #{index} was classified but not transferred.",
                     stream.kind.label()
@@ -453,7 +429,7 @@ fn build_metadata_ir(
     Ok((ir, annotations.build(), unknowns))
 }
 
-fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
+fn build_container_body(scan: &Scan, container_only: bool) -> DecodeBody {
     let mut losses = Vec::new();
 
     let assembly = scan
@@ -487,20 +463,18 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     }
 
     let (classification, notes) = summarize(scan);
-    let (dialects, dialect_losses) = classification.into_report_parts();
-    losses.extend(dialect_losses);
-    DecodeReport::classified(
-        dialects,
-        if container_only {
+    losses.extend(classification.into_losses());
+    DecodeBody {
+        transfer: if container_only {
             cadmpeg_ir::DecodeTransfer::ContainerOnly
         } else {
             cadmpeg_ir::DecodeTransfer::full(false)
         },
-        std::collections::BTreeMap::new(),
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes,
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }
 
 /// Classify a scan and build its inspection and decode notes.
@@ -509,8 +483,7 @@ pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<Strin
     let (control_count, classified_control_count) = offset_store_control_counts(c);
     let mut notes = if c.is_legacy_cfb() {
         vec![format!(
-            "legacy CFB container: UGII payload version {}, {} directory entr{}",
-            crate::dialect::format_version_byte(c.version),
+            "legacy CFB container: {} directory entr{}",
             c.header_entry_count,
             if c.header_entry_count == 1 {
                 "y"
@@ -520,8 +493,7 @@ pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<Strin
         )]
     } else {
         vec![format!(
-            "SPLMSSTR container: version {}, file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
-            crate::dialect::format_version_byte(c.version),
+            "SPLMSSTR container: file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
             c.file_tag,
             c.footer_offset,
             c.header_entry_count,

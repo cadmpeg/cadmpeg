@@ -8,8 +8,8 @@
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{Consumption, ExportBody};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
@@ -17,9 +17,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{
-    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, WritePath,
-};
+use cadmpeg_ir::report::{CensusBasis, EntityCensus, LossNote, WritePath};
 use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Region, Sense};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -83,25 +81,25 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 
 pub(crate) mod target;
 
-fn report(
-    target: DialectId,
-    fidelity: FidelityResolution,
+fn body(
+    bytes: Vec<u8>,
+    consumption: Consumption,
     write_path: WritePath,
     losses: Vec<LossNote>,
     note: &str,
     counts: BTreeMap<String, usize>,
-) -> ExportReport {
-    ExportReport::native(
-        target,
-        EntityCensus {
+) -> ExportBody {
+    ExportBody {
+        bytes,
+        census: EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts,
         },
-        fidelity,
         write_path,
         losses,
-        vec![note.into()],
-    )
+        notes: vec![note.into()],
+        consumption,
+    }
 }
 
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {

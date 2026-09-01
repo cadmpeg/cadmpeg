@@ -36,7 +36,8 @@ pub enum ReadDisposition {
     /// `CodecError` raised before any report exists.
     Refused,
     /// Parsed with a strategy some other row declares, which is
-    /// `Admission::AdmittedUnverified`.
+    /// `Admission::Unverified`, or with no declared strategy at all, which
+    /// is `Admission::Residual`.
     UnclassifiedRecovered,
 }
 

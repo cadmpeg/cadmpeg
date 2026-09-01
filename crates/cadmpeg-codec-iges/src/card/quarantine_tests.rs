@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::IgesLossCode;

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 
 use crate::archive::tests::{

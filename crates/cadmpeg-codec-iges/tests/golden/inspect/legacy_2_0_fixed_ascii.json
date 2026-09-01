@@ -4,7 +4,7 @@
     "extra": [],
     "primary": {
       "admission": {
-        "admitted_unverified": {
+        "unverified": {
           "using": "iges:5.3-fixed-ascii"
         }
       },

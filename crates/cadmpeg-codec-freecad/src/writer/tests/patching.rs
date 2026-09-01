@@ -7,8 +7,9 @@ use super::super::target::retained_baseline;
 use super::super::*;
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
-use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]

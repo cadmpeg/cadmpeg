@@ -21,7 +21,7 @@ pub(super) fn merge_archive(
     archive: &ArchiveSession<'_>,
     model_root: String,
     ir: &mut cadmpeg_ir::CadIr,
-    report: &mut cadmpeg_ir::DecodeReport,
+    report: &mut cadmpeg_ir::codec::DecodeBody,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
     let table = xref_table_from_ir(ir)?;
@@ -82,7 +82,7 @@ impl MergeSession<'_, '_> {
     fn merge(
         &mut self,
         parent_ir: &mut cadmpeg_ir::CadIr,
-        parent_report: &mut cadmpeg_ir::DecodeReport,
+        parent_report: &mut cadmpeg_ir::codec::DecodeBody,
         parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
         table: &XrefTable,
     ) -> Result<usize, CodecError> {
@@ -139,7 +139,7 @@ impl MergeSession<'_, '_> {
                     continue;
                 }
             };
-            if component.ir().units != parent_ir.units {
+            if component.ir.units != parent_ir.units {
                 parent_report
                     .losses
                     .push(F3dLossCode::XrefUnitsMismatch.note(format!(
@@ -147,9 +147,12 @@ impl MergeSession<'_, '_> {
                     )));
                 continue;
             }
-            let child_table = xref_table_from_ir(component.ir())?;
-            let (mut component_ir, mut component_report, mut component_fidelity) =
-                component.into_parts();
+            let child_table = xref_table_from_ir(&component.ir)?;
+            let cadmpeg_ir::codec::Decoded {
+                ir: mut component_ir,
+                body: mut component_report,
+                source_fidelity: mut component_fidelity,
+            } = component;
             self.stack.push(reference.relative_path.clone());
             let descendants = self.merge(
                 &mut component_ir,
@@ -175,8 +178,8 @@ impl MergeSession<'_, '_> {
                 &occurrence,
             )?;
             merged += descendants + 1;
-            if component_report.geometry_transferred() {
-                parent_report.mark_geometry_transferred();
+            if component_report.transfer.geometry_transferred() {
+                parent_report.transfer = cadmpeg_ir::DecodeTransfer::full(true);
             }
             parent_report
                 .losses

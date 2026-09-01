@@ -2,9 +2,10 @@
 //! Source-less document builder unit tests.
 
 use crate::FcstdCodec;
-use cadmpeg_ir::codec::EncodeInput;
-use cadmpeg_ir::codec::TargetRequest;
-use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]

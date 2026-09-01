@@ -87,7 +87,7 @@ def run_command(command: Sequence[str], timeout: float, stderr_path: Path) -> Co
 
 
 def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, str | None]:
-    """Read and validate the v7 refusal envelope emitted by ``dump``."""
+    """Read and validate the v8 refusal envelope emitted by ``dump``."""
 
     try:
         payload = json.loads(report_path.read_text(encoding="utf-8"))
@@ -95,8 +95,8 @@ def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, st
         return None, f"decode refusal report is unavailable or invalid: {error}"
     if not isinstance(payload, dict):
         return None, "decode refusal report is not a JSON object"
-    if payload.get("schema_version") != 7:
-        return None, "decode refusal report does not use schema_version 7"
+    if payload.get("schema_version") != 8:
+        return None, "decode refusal report does not use schema_version 8"
     if payload.get("command") != "dump":
         return None, "decode refusal report command is not dump"
     if payload.get("status") != "refused":

@@ -3,7 +3,8 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 use super::*;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
@@ -376,7 +377,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
     assert_eq!(matched.format(), "fcstd");
     assert_eq!(matched.dialect().as_str(), "fcstd:schema-4");
     assert_eq!(
-        matched.admission(),
+        matched.admission().clone(),
         cadmpeg_core::dialect::Admission::Admitted
     );
 
@@ -425,9 +426,10 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             .as_ref()
             .expect("FCStd inspection reports dialect layers")
             .primary()
-            .admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4")),
+            .admission()
+            .clone(),
+        cadmpeg_core::dialect::Admission::Unverified {
+            using: cadmpeg_core::dialect::Grammar::local("schema-4").unwrap(),
         }
     );
 
@@ -499,7 +501,8 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
             .as_ref()
             .expect("FCStd decode reports dialect layers")
             .primary()
-            .admission(),
+            .admission()
+            .clone(),
         cadmpeg_core::dialect::Admission::Admitted
     );
     assert_eq!(
@@ -509,9 +512,10 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
             .as_ref()
             .expect("FCStd decode reports dialect layers")
             .primary()
-            .admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned("fcstd:schema-4")),
+            .admission()
+            .clone(),
+        cadmpeg_core::dialect::Admission::Unverified {
+            using: cadmpeg_core::dialect::Grammar::local("schema-4").unwrap(),
         }
     );
 
@@ -543,7 +547,8 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
                 .as_ref()
                 .expect("FCStd decode reports dialect layers")
                 .primary()
-                .admission(),
+                .admission()
+                .clone(),
             cadmpeg_core::dialect::Admission::Admitted
         );
     }

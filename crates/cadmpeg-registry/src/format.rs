@@ -75,22 +75,19 @@ impl Format {
     /// The stable format id, which is also its canonical `--to` spelling.
     #[must_use]
     pub fn name(self) -> &'static str {
-        crate::descriptors::by_output(self).0.id
+        self.descriptor().0.id
     }
 
     /// Whether this format's encoder emits a binary container.
     #[must_use]
     pub fn is_binary(self) -> bool {
-        crate::descriptors::by_output(self).1.physics.is_binary()
+        self.descriptor().1.physics.is_binary()
     }
 
     /// Whether an export to this format requires transferred geometry.
     #[must_use]
     pub fn transfers_geometry(self) -> bool {
-        crate::descriptors::by_output(self)
-            .1
-            .physics
-            .transfers_geometry()
+        self.descriptor().1.physics.transfers_geometry()
     }
 }
 

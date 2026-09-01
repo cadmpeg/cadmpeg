@@ -107,8 +107,8 @@ pub enum SldprtLossCode {
     /// verified.
     ///
     /// Charged exactly when the primary-layer [`crate::dialect`] match is
-    /// `Admission::AdmittedUnverified`, from the same predicate that decides
-    /// the admission. A residual `unknown` row is the absence of a declared
+    /// `Admission::Residual`, from the same predicate that decides the
+    /// admission. A residual `unknown` row is the absence of a declared
     /// identity, and admission verifies a declared identity, so the pair
     /// (`sldprt:unknown`, `Admitted`) is unreachable: a part that declares
     /// nothing must be distinguishable from one whose declaration was

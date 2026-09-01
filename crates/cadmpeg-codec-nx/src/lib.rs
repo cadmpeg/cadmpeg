@@ -106,7 +106,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::ContainerSummary;
 
 /// Decoder and inspector for Siemens NX `.prt` files.
@@ -114,11 +114,9 @@ use cadmpeg_ir::ContainerSummary;
 pub struct NxCodec;
 
 impl CodecBackend for NxCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+    const FORMAT: &'static str = dialect::FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(prefix) {
             Confidence::High
         } else {
@@ -135,11 +133,7 @@ impl CodecBackend for NxCodec {
         Ok(summarize(&scan))
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }

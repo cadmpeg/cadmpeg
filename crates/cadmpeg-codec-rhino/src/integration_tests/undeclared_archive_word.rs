@@ -32,7 +32,7 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
     assert_eq!(matched.dialect().as_str(), "rhino:unknown");
     assert_eq!(
         matched.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified { using: None }
+        &cadmpeg_core::dialect::Admission::Residual
     );
     assert_eq!(matched.declared()["archive_version"], "100");
     assert_eq!(

@@ -119,7 +119,7 @@ ASM/ACIS decoder with segment- and carrier-qualified identities.
 ACIS binary carriers use the 32-bit ACIS header and SAB grammar at every save
 format. Majors 217 and 218 are the verified bands; a carrier outside them is
 framed and decoded the same way, reports the non-primary `acis:` layer as
-`Admission::AdmittedUnverified` naming the nearer verified band, and charges
+`Admission::Unverified` naming the nearer verified band, and charges
 `source.dialect-unverified`. The embedded carrier and the exact extracted carrier
 use the same decoder and must produce equal normalized geometry and validation
 findings. Other ACIS save-format bands remain retained carriers and produce a

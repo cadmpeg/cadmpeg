@@ -12,7 +12,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::Decoded;
 
 use crate::container;
 
@@ -61,12 +61,13 @@ mod prototype_local_frame_tests;
 #[cfg(test)]
 mod prototype_association_tests;
 
-/// Decode a `.prt` stream into an IR document and loss report.
+/// Decode a `.prt` stream into an IR document and decode body; the sealed
+/// wrapper stamps the report identity from `ir.source`.
 ///
 /// The stream is read from its beginning. When `options.container_only` is set,
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
     // Charge section cardinality before IR construction so max_entities can
     // refuse the build rather than only the finalizer.
@@ -89,7 +90,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         &mut admitted_entities,
         "admit Creo entities",
     )?;
-    let report = build_report(
+    let body = build_report(
         &scan,
         &ir,
         coverage,
@@ -98,5 +99,9 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     );
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
-    Ok(DecodeResult::new(ir, report, source_fidelity)?)
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }

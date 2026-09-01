@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
-use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
@@ -81,12 +81,9 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
     )
     .expect("inherit synthesizes the catalog source dialect");
 
-    assert_eq!(
-        &plan.report().fidelity,
-        &FidelityResolution::Degraded {
-            reason: "preserved F3D source image is unavailable".into(),
-        }
-    );
+    // No fidelity was offered, so the sealed wrapper owns this state and
+    // stamps `NotProvided`; the missing-image fact survives as the typed loss.
+    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotProvided);
     assert!(plan
         .report()
         .losses

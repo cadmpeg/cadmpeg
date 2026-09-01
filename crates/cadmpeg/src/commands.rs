@@ -9,7 +9,7 @@ use reporting::{
     print_source_diff, write_command_report, write_json_report, CommandReportBody,
 };
 
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -20,11 +20,10 @@ use cadmpeg_core::decode::InspectOptions;
 use serde::Serialize;
 
 use cadmpeg_registry::{
-    build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog,
-    ResolveInspectionError, ResolvedInspection,
+    build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
+    Inspected,
 };
 
-use crate::application::refusal::classify_load_error;
 use crate::application::refusal::ApplicationError;
 use crate::application::transcoder::{emit_export_plan, TargetSelection};
 use crate::application::validators::validate_ir;
@@ -37,12 +36,14 @@ use crate::DecodeArgs;
 
 /// CLI command-report envelope version.
 ///
-/// Independent of `CadIr.ir_version` and `DECODE_SIDECAR_VERSION`. Version 7
-/// always emits the dialect fields: `dialects` on every container summary and
-/// decode report, `target` on every export report, and `dialect` on every
-/// source metadata block. Version 6 added top-level `status` (`ok` | `refused`)
-/// and `refusal` (`{ stage, code, message, dialects?, target? }` or null).
-pub(crate) const CLI_SCHEMA_VERSION: u32 = 7;
+/// Independent of `CadIr.ir_version` and `DECODE_SIDECAR_VERSION`. Version 8
+/// carries the four-state dialect admission wire (`admitted`, `unverified`,
+/// `residual`, `refused`). Version 7 made the dialect fields unconditional:
+/// `dialects` on every container summary and decode report, `target` on every
+/// export report, and `dialect` on every source metadata block. Version 6
+/// added top-level `status` (`ok` | `refused`) and `refusal`
+/// (`{ stage, code, message, dialects?, target? }` or null).
+pub(crate) const CLI_SCHEMA_VERSION: u32 = 8;
 
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
@@ -82,10 +83,11 @@ pub struct ConversionArgs {
 }
 
 fn refusal_report_body(refusal: &ConversionRefusal) -> CommandReportBody<'_> {
+    let reports = refusal.evidence().reports;
     CommandReportBody {
-        decode_report: refusal.decode_report(),
-        check_report: refusal.check_report(),
-        export: refusal.export_report(),
+        decode_report: reports.decode,
+        check_report: reports.check,
+        export: reports.export,
         refusal: Some(refusal),
     }
 }
@@ -165,30 +167,32 @@ pub fn inspect(
         return Err(anyhow!("inspect requires a container input, not cadir").into());
     }
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let resolved = resolve_and_inspect_with(
+    let Inspected {
+        selection, summary, ..
+    } = match resolve_and_inspect_with(
         &catalogs.inputs,
         &mut file,
         forced,
         &InspectOptions { limits },
-    )
-    .map_err(|error| match error {
-        ResolveInspectionError::Io(error) => inspect_io_error(path, limits.max_input_bytes, error),
-        ResolveInspectionError::Resolve(error) => loader::detection_failure(&error),
-    })?;
-    let ResolvedInspection::Native {
-        confidence,
-        inspection,
-        ..
-    } = resolved
-    else {
-        return Err(inspect_unrecognized(path).into());
-    };
-    let summary = match inspection {
-        Ok(summary) => summary,
-        Err(cadmpeg_core::CodecError::UnsupportedDialect { dialects, message }) => {
+    ) {
+        Ok(inspected) => inspected,
+        Err(InspectError::Io(error)) => {
+            return Err(inspect_io_error(path, limits.max_input_bytes, error).into())
+        }
+        Err(InspectError::Unresolved(error)) => {
+            return Err(loader::detection_failure(&error).into())
+        }
+        Err(InspectError::Cadir | InspectError::Unrecognized) => {
+            return Err(inspect_unrecognized(path).into())
+        }
+        Err(InspectError::Codec {
+            selection,
+            error: cadmpeg_core::CodecError::UnsupportedDialect { dialects, message },
+            ..
+        }) => {
             let refusal = ConversionRefusal::unsupported_dialect(dialects, message);
             let payload = InspectReportPayload {
-                confidence,
+                confidence: selection.confidence(),
                 summary: None,
             };
             write_refusal_report(path, report_path, force, "inspect", &payload, &refusal);
@@ -200,12 +204,13 @@ pub fn inspect(
             }
             return Err(refusal.into());
         }
-        Err(error) => {
+        Err(InspectError::Codec { error, .. }) => {
             return Err(anyhow::Error::new(error)
                 .context(format!("inspecting {}", path.display()))
                 .into())
         }
     };
+    let confidence = selection.confidence();
     let payload = InspectReportPayload {
         confidence,
         summary: Some(&summary),
@@ -293,7 +298,6 @@ pub fn dump(
     let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
         Ok(outcome) => outcome,
         Err(error) => {
-            let error = classify_load_error(error);
             let Some(report_path) = report_path else {
                 return Err(error);
             };
@@ -307,7 +311,7 @@ pub fn dump(
     let loaded = &outcome.document;
     let encoder = build_encoder(Format::Cadir);
     let plan = encoder.plan(
-        cadmpeg_ir::codec::EncodeInput::new(&loaded.ir, loaded.fidelity()),
+        cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
         TargetRequest::Inherit,
     )?;
     let emission = emit_export_plan(
@@ -352,7 +356,6 @@ pub fn check_cmd(
     let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
         Ok(outcome) => outcome,
         Err(error) => {
-            let error = classify_load_error(error);
             if let Some(refusal) = error.refusal() {
                 write_refusal_command_report(path, report_path, force, "check", refusal);
             }
@@ -450,11 +453,12 @@ pub fn convert(
     // admits one.
     let render_refusal = |refusal: &ConversionRefusal| -> Result<()> {
         let mut stderr = io::stderr();
-        if let Some(report) = refusal.decode_report() {
+        let reports = refusal.evidence().reports;
+        if let Some(report) = reports.decode {
             print_decode_report(&mut stderr, report)?;
             writeln!(stderr)?;
         }
-        if let Some(validation) = refusal.check_report() {
+        if let Some(validation) = reports.check {
             print_check_report(&mut stderr, validation)?;
         }
         write_refusal_command_report(
@@ -534,11 +538,9 @@ pub fn diff(
     report_path: Option<&Path>,
     force: bool,
 ) -> CommandResult<ExitCode> {
-    let left_outcome = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)
-        .map_err(classify_load_error)?;
+    let left_outcome = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)?;
     print_load_notices(&left_outcome.notices);
-    let right_outcome = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)
-        .map_err(classify_load_error)?;
+    let right_outcome = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)?;
     print_load_notices(&right_outcome.notices);
     let left = &left_outcome.document;
     let right = &right_outcome.document;

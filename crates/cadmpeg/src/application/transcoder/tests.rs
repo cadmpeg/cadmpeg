@@ -146,13 +146,12 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         matches!(refusal, ConversionRefusal::ExportLossRejected { .. }),
         "{refusal:?}"
     );
-    assert!(
-        refusal.message().contains("source-native record(s)"),
-        "{}",
-        refusal.message()
-    );
+    let message = refusal.evidence().message;
+    assert!(message.contains("source-native record(s)"), "{message}");
     let report = refusal
-        .export_report()
+        .evidence()
+        .reports
+        .export
         .expect("the refusal retains the completed export plan report");
     assert!(
         report
@@ -190,16 +189,16 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
 
 struct NotImplementedEncoder;
 
-impl cadmpeg_ir::codec::EncoderBackend for NotImplementedEncoder {
+impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: &'static str = "not-implemented-test";
-    const TARGET_DOMAIN: cadmpeg_ir::codec::EncoderTargetDomain =
-        cadmpeg_ir::codec::EncoderTargetDomain::DialectFree;
+    type Target = cadmpeg_ir::codec::write::DialectFree;
+    const TARGET: Self::Target = cadmpeg_ir::codec::write::DialectFree;
 
     fn plan_resolved(
         &self,
         _input: EncodeInput<'_>,
-        _target: cadmpeg_ir::codec::ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, cadmpeg_core::CodecError> {
+        _target: (),
+    ) -> Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_core::CodecError> {
         Err(cadmpeg_core::CodecError::NotImplemented(
             "writer path is not implemented".into(),
         ))
@@ -292,8 +291,8 @@ fn an_unwritable_format_is_a_typed_plan_refusal() {
         crate::application::refusal::RefusalCode::UnsupportedOutputFormat
     );
     assert_eq!(
-        refusal.stage(),
-        crate::application::refusal::RefusalStage::Plan
+        serde_json::to_value(refusal.report()).unwrap()["stage"],
+        "plan"
     );
     assert_eq!(refusal.exit_code(), 1);
 }
@@ -371,8 +370,7 @@ fn an_unknown_dialect_is_refused_by_plan_with_its_catalog() {
             EncodeInput::new(&CadIr::empty(cadmpeg_ir::units::Units::default()), None),
             target.selection.request(),
         )
-        .err()
-        .expect("a STEP alias is not an IGES target");
+        .expect_err("a STEP alias is not an IGES target");
     let message = error.to_string();
     assert!(message.contains("ap242e3"), "{message}");
     assert!(message.contains("iges:5.3-fixed-ascii"), "{message}");

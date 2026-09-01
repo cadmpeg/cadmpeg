@@ -4,7 +4,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
 

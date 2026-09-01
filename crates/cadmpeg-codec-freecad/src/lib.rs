@@ -2,7 +2,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
-//! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve
+//! [`FcstdCodec`] implements [`cadmpeg_ir::codec::Codec`] and
+//! [`cadmpeg_ir::codec::write::Encoder`]. Retained writes preserve
 //! unedited persistence records and named side entries, while checked mutation
 //! methods update typed values. [`FcstdDocumentBuilder`] creates source-less
 //! schema-4/file-1 application graphs. Other target bands and edits without a
@@ -41,14 +42,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, EncoderBackend,
-    EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget,
-};
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, DecodeOptions, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::ContainerSummary;
@@ -1043,11 +1042,9 @@ fn validate_logical_chain(
 }
 
 impl CodecBackend for FcstdCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+    const FORMAT: &'static str = dialect::FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(b"PK\x03\x04") {
             return Confidence::No;
         }
@@ -1068,11 +1065,7 @@ impl CodecBackend for FcstdCodec {
         container::scan(ctx, root).map(|scan| container::summarize(&scan))
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let options = DecodeOptions {
             container_only: ctx.container_only(),
             policy: *ctx.policy(),
@@ -1126,7 +1119,7 @@ impl CodecBackend for FcstdCodec {
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
-        ir.source = Some(SourceMeta::unclassified(dialect::FORMAT, attributes));
+        ir.source = Some(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
             ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(
@@ -1393,38 +1386,35 @@ impl CodecBackend for FcstdCodec {
             "admit FCStd entities",
         )?;
         let summary_notes = container::summary_notes(&scan);
-        Ok(DecodeResult::new(
+        Ok(Decoded {
             ir,
-            DecodeReport::classified(
-                dialects,
-                if options.container_only {
+            body: DecodeBody {
+                transfer: if options.container_only {
                     cadmpeg_ir::DecodeTransfer::ContainerOnly
                 } else {
                     cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
                 },
-                std::collections::BTreeMap::new(),
+                coverage: std::collections::BTreeMap::new(),
                 losses,
-                summary_notes,
-                cadmpeg_ir::report::TransferLedger::default(),
-            ),
+                notes: summary_notes,
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            },
             source_fidelity,
-        )?)
+        })
     }
 }
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: &'static str = dialect::FORMAT;
-    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(dialect::TARGETS);
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog(dialect::TARGETS);
 
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        target: ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, CodecError> {
-        let ResolvedEncoderTarget::Native(resolved) = target else {
-            unreachable!("a catalog encoder receives only native target resolutions")
-        };
-        writer::target::plan(input, &resolved)
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

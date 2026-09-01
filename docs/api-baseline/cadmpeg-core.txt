@@ -1,4 +1,4 @@
-# generated at 8b1cd929e
+# generated at 07d9d38f5
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -284,9 +284,10 @@ pub fn cadmpeg_core::decode::resolve_address(&[cadmpeg_core::decode::SpaceDescri
 pub mod cadmpeg_core::dialect
 pub enum cadmpeg_core::dialect::Admission
 pub cadmpeg_core::dialect::Admission::Admitted
-pub cadmpeg_core::dialect::Admission::AdmittedUnverified
-pub cadmpeg_core::dialect::Admission::AdmittedUnverified::using: core::option::Option<cadmpeg_core::dialect::DialectId>
 pub cadmpeg_core::dialect::Admission::Refused
+pub cadmpeg_core::dialect::Admission::Residual
+pub cadmpeg_core::dialect::Admission::Unverified
+pub cadmpeg_core::dialect::Admission::Unverified::using: cadmpeg_core::dialect::Grammar
 pub enum cadmpeg_core::dialect::FormatIdentity<T>
 pub cadmpeg_core::dialect::FormatIdentity::Classified(T)
 pub cadmpeg_core::dialect::FormatIdentity::Unclassified(alloc::string::String)
@@ -321,30 +322,26 @@ pub struct cadmpeg_core::dialect::DialectLayers
 impl cadmpeg_core::dialect::DialectLayers
 pub fn cadmpeg_core::dialect::DialectLayers::into_parts(self) -> (cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>)
 pub fn cadmpeg_core::dialect::DialectLayers::iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_core::dialect::DialectMatch>
-pub fn cadmpeg_core::dialect::DialectLayers::new(cadmpeg_core::dialect::DialectMatch, alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>) -> core::result::Result<Self, cadmpeg_core::dialect::DialectLayersError>
 pub fn cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch) -> Self
 pub fn cadmpeg_core::dialect::DialectLayers::primary(&self) -> &cadmpeg_core::dialect::DialectMatch
-pub fn cadmpeg_core::dialect::DialectLayers::try_push(&mut self, cadmpeg_core::dialect::DialectMatch) -> core::result::Result<(), cadmpeg_core::dialect::DialectLayersError>
+pub fn cadmpeg_core::dialect::DialectLayers::push(&mut self, cadmpeg_core::dialect::DialectMatch) -> core::option::Option<cadmpeg_core::dialect::DialectMatch>
+pub fn cadmpeg_core::dialect::DialectLayers::with(self, cadmpeg_core::dialect::DialectMatch) -> Self
 impl cadmpeg_core::dialect::FormatIdentityPayload for cadmpeg_core::dialect::DialectLayers
 pub fn cadmpeg_core::dialect::DialectLayers::format(&self) -> &str
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectLayers
 pub fn cadmpeg_core::dialect::DialectLayers::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
-pub struct cadmpeg_core::dialect::DialectLayersError
-impl core::error::Error for cadmpeg_core::dialect::DialectLayersError
-impl core::fmt::Display for cadmpeg_core::dialect::DialectLayersError
-pub fn cadmpeg_core::dialect::DialectLayersError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_core::dialect::DialectMatch
 impl cadmpeg_core::dialect::DialectMatch
-pub fn cadmpeg_core::dialect::DialectMatch::admission(&self) -> cadmpeg_core::dialect::Admission
+pub fn cadmpeg_core::dialect::DialectMatch::admission(&self) -> &cadmpeg_core::dialect::Admission
 pub fn cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect::DialectId) -> Self
 pub fn cadmpeg_core::dialect::DialectMatch::declared(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub fn cadmpeg_core::dialect::DialectMatch::dialect(&self) -> &cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectMatch::format(&self) -> &str
-pub fn cadmpeg_core::dialect::DialectMatch::from_admission(cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::Admission) -> core::result::Result<Self, cadmpeg_core::dialect::DialectMatchError>
 pub fn cadmpeg_core::dialect::DialectMatch::instance(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::dialect::DialectMatch::refused(cadmpeg_core::dialect::DialectId) -> Self
 pub fn cadmpeg_core::dialect::DialectMatch::residual(cadmpeg_core::dialect::DialectId) -> Self
-pub fn cadmpeg_core::dialect::DialectMatch::unverified(cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::DialectId) -> core::result::Result<Self, cadmpeg_core::dialect::DialectMatchError>
+pub fn cadmpeg_core::dialect::DialectMatch::unverified(cadmpeg_core::dialect::DialectId, cadmpeg_core::dialect::Grammar) -> Self
+pub fn cadmpeg_core::dialect::DialectMatch::using(&self) -> core::option::Option<cadmpeg_core::dialect::DialectId>
 pub fn cadmpeg_core::dialect::DialectMatch::with_declared(self, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
 pub fn cadmpeg_core::dialect::DialectMatch::with_instance(self, impl core::convert::Into<alloc::string::String>) -> Self
 impl cadmpeg_core::dialect::FormatIdentityPayload for cadmpeg_core::dialect::DialectMatch
@@ -353,11 +350,16 @@ impl serde_core::ser::Serialize for cadmpeg_core::dialect::DialectMatch
 pub fn cadmpeg_core::dialect::DialectMatch::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::dialect::DialectMatch
 pub fn cadmpeg_core::dialect::DialectMatch::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
-pub struct cadmpeg_core::dialect::DialectMatchError
-impl core::error::Error for cadmpeg_core::dialect::DialectMatchError
-impl core::fmt::Display for cadmpeg_core::dialect::DialectMatchError
-pub fn cadmpeg_core::dialect::DialectMatchError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct cadmpeg_core::dialect::FormatIdentityError
+pub struct cadmpeg_core::dialect::Grammar(_)
+impl cadmpeg_core::dialect::Grammar
+pub fn cadmpeg_core::dialect::Grammar::as_str(&self) -> &str
+pub fn cadmpeg_core::dialect::Grammar::local(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_core::dialect::GrammarError>
+pub fn cadmpeg_core::dialect::Grammar::of(&cadmpeg_core::dialect::DialectId) -> Self
+pub struct cadmpeg_core::dialect::GrammarError(_)
+impl core::error::Error for cadmpeg_core::dialect::GrammarError
+impl core::fmt::Display for cadmpeg_core::dialect::GrammarError
+pub fn cadmpeg_core::dialect::GrammarError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait cadmpeg_core::dialect::FormatIdentityPayload: cadmpeg_core::dialect::format_identity_sealed::Sealed
 pub fn cadmpeg_core::dialect::FormatIdentityPayload::format(&self) -> &str
 impl cadmpeg_core::dialect::FormatIdentityPayload for cadmpeg_core::dialect::DialectId
@@ -368,11 +370,6 @@ impl cadmpeg_core::dialect::FormatIdentityPayload for cadmpeg_core::dialect::Dia
 pub fn cadmpeg_core::dialect::DialectMatch::format(&self) -> &str
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
-pub cadmpeg_core::error::CodecError::ContractViolation
-pub cadmpeg_core::error::CodecError::ContractViolation::codec: &'static str
-pub cadmpeg_core::error::CodecError::ContractViolation::expected: alloc::string::String
-pub cadmpeg_core::error::CodecError::ContractViolation::operation: &'static str
-pub cadmpeg_core::error::CodecError::ContractViolation::reported: alloc::string::String
 pub cadmpeg_core::error::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::error::CodecError::Io(core::io::error::Error)
 pub cadmpeg_core::error::CodecError::Malformed(alloc::string::String)
@@ -413,13 +410,10 @@ pub cadmpeg_core::target::TargetRefusalKind::InheritedUnavailable
 pub cadmpeg_core::target::TargetRefusalKind::InheritedUnavailable::reason: alloc::string::String
 pub cadmpeg_core::target::TargetRefusalKind::InheritedUnavailable::source: cadmpeg_core::dialect::DialectId
 pub cadmpeg_core::target::TargetRefusalKind::NoDefault
-pub cadmpeg_core::target::TargetRefusalKind::NoDefault::format: alloc::string::String
 pub cadmpeg_core::target::TargetRefusalKind::NoDefault::source: cadmpeg_core::target::DefaultSource
 pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit
-pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit::format: alloc::string::String
 pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit::requested: cadmpeg_core::target::TargetToken
 pub cadmpeg_core::target::TargetRefusalKind::UnrecordedSource
-pub cadmpeg_core::target::TargetRefusalKind::UnrecordedSource::format: alloc::string::String
 pub struct cadmpeg_core::target::TargetDescriptor
 pub cadmpeg_core::target::TargetDescriptor::aliases: &'static [&'static str]
 pub cadmpeg_core::target::TargetDescriptor::default: bool
@@ -431,7 +425,7 @@ impl cadmpeg_core::target::TargetRefusal
 pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_core::target::TargetRefusal::format(&self) -> &str
 pub const fn cadmpeg_core::target::TargetRefusal::kind(&self) -> &cadmpeg_core::target::TargetRefusalKind
-pub const fn cadmpeg_core::target::TargetRefusal::new(cadmpeg_core::target::TargetRefusalKind, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
+pub fn cadmpeg_core::target::TargetRefusal::new(impl core::convert::Into<alloc::string::String>, cadmpeg_core::target::TargetRefusalKind, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
 pub fn cadmpeg_core::target::TargetRefusal::reason(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::target::TargetRefusal::requested(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::target::TargetRefusal::unknown_explicit(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
@@ -450,11 +444,6 @@ pub fn cadmpeg_core::target::assert_valid_target_catalog(&[cadmpeg_core::target:
 pub fn cadmpeg_core::target::default_target(&'static [cadmpeg_core::target::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_core::target::TargetDescriptor>
 pub fn cadmpeg_core::target::find_target<'a>(&'a [cadmpeg_core::target::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_core::target::TargetDescriptor>
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
-pub cadmpeg_core::CodecError::ContractViolation
-pub cadmpeg_core::CodecError::ContractViolation::codec: &'static str
-pub cadmpeg_core::CodecError::ContractViolation::expected: alloc::string::String
-pub cadmpeg_core::CodecError::ContractViolation::operation: &'static str
-pub cadmpeg_core::CodecError::ContractViolation::reported: alloc::string::String
 pub cadmpeg_core::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::CodecError::Io(core::io::error::Error)
 pub cadmpeg_core::CodecError::Malformed(alloc::string::String)

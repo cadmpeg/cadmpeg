@@ -568,7 +568,13 @@ impl SourceMeta {
         }
     }
 
-    /// Returns the source format id.
+    /// The complete source identity: format plus classified layers, if any.
+    #[must_use]
+    pub(crate) fn classification(&self) -> &FormatIdentity<DialectLayers> {
+        &self.classification
+    }
+
+    /// Registry format namespace of this source's primary layer.
     #[must_use]
     pub fn format(&self) -> &str {
         self.classification.format()

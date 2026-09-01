@@ -13,7 +13,7 @@
 //! every declared stream to frame under the selected grammars. A stream that
 //! declares schema 31 and metadata version 8 therefore keeps
 //! `inventor:cfb3-rse31-meta8` when its body is malformed, with
-//! [`Admission::AdmittedUnverified`](cadmpeg_core::dialect::Admission::AdmittedUnverified).
+//! [`Admission::Unverified`](cadmpeg_core::dialect::Admission::Unverified).
 //! [`DialectClassification::loss`] is `None` exactly when admission is
 //! [`Admission::Admitted`](cadmpeg_core::dialect::Admission::Admitted).
 //!
@@ -23,7 +23,7 @@
 //! the segment registry unavailable, and a Meta Stream other than version 8
 //! leaves that segment's metadata unread; decode continues in both cases and
 //! degrades. That is
-//! [`Admission::AdmittedUnverified`](cadmpeg_core::dialect::Admission::AdmittedUnverified)
+//! [`Admission::Unverified`](cadmpeg_core::dialect::Admission::Unverified)
 //! exactly, and `using` names `inventor:cfb3-rse31-meta8` because the schema-31
 //! registry grammar and the version-8 metadata grammar are the only ones this
 //! codec implements — they are the strategy it applied, in the parts it could
@@ -63,7 +63,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::DialectLayers;
-use cadmpeg_core::dialect::{DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
 use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
@@ -259,8 +259,10 @@ impl DialectRecovery {
             matched: if admitted {
                 DialectMatch::admitted(dialect.id())
             } else {
-                DialectMatch::unverified(dialect.id(), InventorDialect::Cfb3Rse31Meta8.id())
-                    .expect("Inventor dialect and grammar ids share one format namespace")
+                DialectMatch::unverified(
+                    dialect.id(),
+                    Grammar::of(&InventorDialect::Cfb3Rse31Meta8.id()),
+                )
             }
             .with_declared(declared),
             loss,
@@ -390,11 +392,11 @@ pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<D
 /// The complete host and optional kernel identity reported by both inspection
 /// and decode.
 pub(crate) fn layers(primary: DialectMatch, carrier: &ActiveCarrierState<'_>) -> DialectLayers {
-    DialectLayers::new(
-        primary,
-        kernel_layer_for_state(carrier).into_iter().collect(),
-    )
-    .expect("Inventor and ACIS are distinct registry formats")
+    let mut layers = DialectLayers::of(primary);
+    if let Some(kernel) = kernel_layer_for_state(carrier) {
+        layers.push(kernel);
+    }
+    layers
 }
 
 /// The recovery loss the kernel layer charges, if it recovered.

@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use cadmpeg_codec_freecad::{
     validate_native, FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
 };
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{CadIr, Severity};

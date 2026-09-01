@@ -64,7 +64,7 @@ is uneven:
   `rhino:archive-2`, `rhino:archive-5`, and `rhino:archive-90` have none.
   `rhino:archive-5` is admitted under its declared four-byte chunk grammar.
   `rhino:unknown` runs the full chunked route under
-  `Admission::AdmittedUnverified`, so the gates apply to it, but no fixture
+`Admission::Residual`, so the gates apply to it, but no fixture
   measures either route.
 - **CATIA admission.** Every declared `catia:` row carries a fixture, so this
   is the one route measured across its format's whole declared space.

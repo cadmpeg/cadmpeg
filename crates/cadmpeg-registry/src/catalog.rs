@@ -36,22 +36,28 @@ impl InputDescriptor {
 }
 
 /// Result of content-based detection.
+///
+/// A detected candidate carries its codec directly: only descriptors that
+/// have one take part in detection, so a detection without a codec cannot
+/// be expressed.
 pub enum DetectionOutcome<'a> {
     /// No decoder recognized the prefix.
     None,
-    /// One descriptor won by confidence.
+    /// One codec won by confidence.
     Detected {
-        /// Winning descriptor.
-        descriptor: &'a InputDescriptor,
+        /// Winning codec.
+        codec: &'a dyn Codec,
+        /// Stable format id of the winning codec.
+        format_id: &'static str,
         /// Winning confidence.
         confidence: Confidence,
     },
-    /// Multiple descriptors tied at the strongest confidence.
+    /// Multiple codecs tied at the strongest confidence.
     Ambiguous {
         /// Shared strongest confidence.
         confidence: Confidence,
-        /// Candidate descriptors in catalog order.
-        candidates: Vec<&'a InputDescriptor>,
+        /// Candidate format ids in catalog order.
+        candidates: Vec<&'static str>,
     },
 }
 
@@ -123,13 +129,14 @@ impl InputCatalog {
     /// strongest candidate or tied candidates because loading and inspection
     /// need one resolution tier; [`crate::identify`] exposes that detected
     /// outcome without discarding a strongest-tier ambiguity.
-    pub fn candidates(&self, prefix: &[u8]) -> Vec<(&InputDescriptor, Confidence)> {
+    pub fn candidates(&self, prefix: &[u8]) -> Vec<(&dyn Codec, Confidence)> {
         let mut matches = self
             .descriptors
             .iter()
             .filter_map(|descriptor| {
-                let confidence = descriptor.codec.as_deref()?.detect(prefix);
-                (confidence > Confidence::No).then_some((descriptor, confidence))
+                let codec = descriptor.codec.as_deref()?;
+                let confidence = codec.detect(prefix);
+                (confidence > Confidence::No).then_some((codec, confidence))
             })
             .collect::<Vec<_>>();
         matches.sort_by(|(_, left), (_, right)| right.cmp(left));
@@ -144,17 +151,16 @@ impl InputCatalog {
         };
         matches.retain(|(_, confidence)| *confidence == best_confidence);
         if matches.len() == 1 {
+            let codec = matches[0].0;
             DetectionOutcome::Detected {
-                descriptor: matches[0].0,
+                codec,
+                format_id: codec.id(),
                 confidence: best_confidence,
             }
         } else {
             DetectionOutcome::Ambiguous {
                 confidence: best_confidence,
-                candidates: matches
-                    .into_iter()
-                    .map(|(descriptor, _)| descriptor)
-                    .collect(),
+                candidates: matches.into_iter().map(|(codec, _)| codec.id()).collect(),
             }
         }
     }
@@ -201,29 +207,20 @@ impl InputCatalog {
                 DetectionOutcome::None if is_cadir_prefix(prefix) => Ok(ResolvedSource::Cadir),
                 DetectionOutcome::None => Ok(ResolvedSource::Unrecognized),
                 DetectionOutcome::Detected {
-                    descriptor,
+                    codec,
+                    format_id,
                     confidence,
-                } => {
-                    let codec = descriptor
-                        .codec
-                        .as_deref()
-                        .expect("detected descriptor has codec");
-                    Ok(ResolvedSource::Native {
-                        codec,
-                        format_id: descriptor.format_id(),
-                        confidence: Some(confidence),
-                    })
-                }
+                } => Ok(ResolvedSource::Native {
+                    codec,
+                    format_id,
+                    confidence: Some(confidence),
+                }),
                 DetectionOutcome::Ambiguous {
                     confidence,
                     candidates,
                 } => Err(ResolveSourceError::Ambiguous {
                     confidence,
-                    candidates: candidates
-                        .iter()
-                        .map(|candidate| candidate.format_id())
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    candidates: candidates.join(", "),
                 }),
             },
         }
@@ -276,13 +273,7 @@ mod tests {
         } else {
             vec!["fcstd", "f3d"]
         };
-        assert_eq!(
-            candidates
-                .iter()
-                .map(|value| value.format_id())
-                .collect::<Vec<_>>(),
-            expected
-        );
+        assert_eq!(candidates, expected);
     }
 
     #[cfg(feature = "step")]

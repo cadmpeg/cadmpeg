@@ -140,9 +140,7 @@
         "dialects": {
           "extra": [
             {
-              "admission": {
-                "admitted_unverified": {}
-              },
+              "admission": "residual",
               "declared": {
                 "carrier": "stream@148",
                 "schema": "SCH_test"
@@ -175,9 +173,7 @@
       "dialects": {
         "extra": [
           {
-            "admission": {
-              "admitted_unverified": {}
-            },
+            "admission": "residual",
             "declared": {
               "carrier": "stream@148",
               "schema": "SCH_test"
@@ -218,7 +214,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 6, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
@@ -296,9 +292,7 @@
     "dialects": {
       "extra": [
         {
-          "admission": {
-            "admitted_unverified": {}
-          },
+          "admission": "residual",
           "declared": {
             "carrier": "stream@148",
             "schema": "SCH_test"
@@ -370,7 +364,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: version 6, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

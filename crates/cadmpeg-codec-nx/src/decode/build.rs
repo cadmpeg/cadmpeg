@@ -33,6 +33,7 @@ use crate::geometry;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -44,7 +45,6 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -121,7 +121,7 @@ pub(crate) fn ordered_fixed_candidates<T>(
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 pub(crate) type GeometryDecode = (
     CadIr,
-    DecodeReport,
+    DecodeBody,
     cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
 );
