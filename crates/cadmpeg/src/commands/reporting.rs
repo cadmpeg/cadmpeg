@@ -7,7 +7,8 @@ use std::path::Path;
 use anyhow::Result;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
-use serde::Serialize;
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
 use crate::application::transcoder::{EmittedArtifact, ExportEmission};
 use crate::application::{ArtifactStore, ConversionRefusal, SidecarPersistOutcome};
@@ -73,24 +74,53 @@ pub(super) enum FidelitySummary {
     Both(FidelityDiff),
 }
 
+#[derive(Serialize)]
 pub(super) struct FidelityDiff {
-    version: Option<(String, String)>,
     annotations_changed: bool,
     retained_records_changed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<(String, String)>,
 }
 
 impl FidelityDiff {
     fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
         Self {
-            version: (left.version() != right.version())
-                .then(|| (left.version().to_owned(), right.version().to_owned())),
             annotations_changed: left.annotations != right.annotations,
             retained_records_changed: left.retained_records != right.retained_records,
+            version: (left.version() != right.version())
+                .then(|| (left.version().to_owned(), right.version().to_owned())),
         }
     }
 
     fn is_empty(&self) -> bool {
         self.version.is_none() && !self.annotations_changed && !self.retained_records_changed
+    }
+}
+
+impl Serialize for FidelitySummary {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            Self::None => serializer.serialize_none(),
+            Self::OnlyLeft | Self::OnlyRight => {
+                let mut state = serializer.serialize_struct("FidelityPresence", 1)?;
+                state.serialize_field(
+                    "present",
+                    if matches!(self, Self::OnlyLeft) {
+                        "left_only"
+                    } else {
+                        "right_only"
+                    },
+                )?;
+                state.end()
+            }
+            Self::Both(diff) => {
+                let mut state = serializer.serialize_struct("FidelityComparison", 3)?;
+                state.serialize_field("present", "both")?;
+                state.serialize_field("different", &!diff.is_empty())?;
+                state.serialize_field("diff", diff)?;
+                state.end()
+            }
+        }
     }
 }
 
@@ -112,30 +142,6 @@ pub(super) fn fidelity_differs(summary: &FidelitySummary) -> bool {
         FidelitySummary::OnlyLeft | FidelitySummary::OnlyRight => true,
         FidelitySummary::Both(diff) => !diff.is_empty(),
     }
-}
-
-pub(super) fn fidelity_json(summary: &FidelitySummary) -> serde_json::Value {
-    match summary {
-        FidelitySummary::None => serde_json::Value::Null,
-        FidelitySummary::OnlyLeft => serde_json::json!({ "present": "left_only" }),
-        FidelitySummary::OnlyRight => serde_json::json!({ "present": "right_only" }),
-        FidelitySummary::Both(diff) => serde_json::json!({
-            "present": "both",
-            "different": !diff.is_empty(),
-            "diff": fidelity_delta_json(diff),
-        }),
-    }
-}
-
-fn fidelity_delta_json(diff: &FidelityDiff) -> serde_json::Value {
-    let mut value = serde_json::json!({
-        "annotations_changed": diff.annotations_changed,
-        "retained_records_changed": diff.retained_records_changed,
-    });
-    if let Some(version) = &diff.version {
-        value["version"] = serde_json::json!(version);
-    }
-    value
 }
 
 pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
@@ -390,4 +396,58 @@ pub(super) fn print_check_report(
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FidelityDiff, FidelitySummary};
+
+    #[test]
+    fn fidelity_summary_serializes_the_v7_diff_shape_without_value_glue() {
+        assert_eq!(
+            serde_json::to_value(FidelitySummary::None).unwrap(),
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            serde_json::to_value(FidelitySummary::OnlyLeft).unwrap(),
+            serde_json::json!({ "present": "left_only" })
+        );
+        assert_eq!(
+            serde_json::to_value(FidelitySummary::OnlyRight).unwrap(),
+            serde_json::json!({ "present": "right_only" })
+        );
+        assert_eq!(
+            serde_json::to_value(FidelitySummary::Both(FidelityDiff {
+                annotations_changed: false,
+                retained_records_changed: false,
+                version: None,
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "present": "both",
+                "different": false,
+                "diff": {
+                    "annotations_changed": false,
+                    "retained_records_changed": false
+                }
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(FidelitySummary::Both(FidelityDiff {
+                annotations_changed: true,
+                retained_records_changed: false,
+                version: Some(("1".to_owned(), "2".to_owned())),
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "present": "both",
+                "different": true,
+                "diff": {
+                    "annotations_changed": true,
+                    "retained_records_changed": false,
+                    "version": ["1", "2"]
+                }
+            })
+        );
+    }
 }
