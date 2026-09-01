@@ -124,15 +124,15 @@ jobs:
           python3 scripts/convergence-ratchet.py
           python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
           python3 scripts/check-golden-coverage-floors.py
-          python3 -m unittest -v scripts/test_check_public_api_ledger.py
+          python3 scripts/check-public-api-ledger.py --self-test
           python3 scripts/check-public-api-ledger.py --skip-git-objects
           python3 -m unittest -v scripts/test_check_codec_facade.py
           python3 scripts/check-codec-facade.py
-          python3 -m unittest -v scripts/test_check_dialects.py
+          python3 scripts/check-dialects.py --self-test
           python3 scripts/check-dialects.py
-          python3 -m unittest -v scripts/test_check_dialect_support.py
+          python3 scripts/check-dialect-support.py --self-test
           python3 scripts/check-dialect-support.py
-          python3 -m unittest -v scripts/test_render_format_support.py
+          python3 scripts/render-format-support.py --self-test
           python3 scripts/render-format-support.py --check
 
       - name: Cargo gate
