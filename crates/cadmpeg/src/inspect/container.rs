@@ -244,15 +244,13 @@ pub fn render_json(listing: &Listing) -> String {
                 .collect(),
         ),
     };
-    let envelope = serde_json::json!({
-        "schema_version": crate::commands::CLI_SCHEMA_VERSION,
-        "command": "inspect container",
-        "status": "ok",
-        "refusal": null,
+    let payload = serde_json::json!({
         "container_kind": container_kind,
         "entries": entries,
     });
-    let mut rendered = serde_json::to_string_pretty(&envelope).expect("the envelope serializes");
+    let mut rendered =
+        crate::commands::reporting::command_report_json("inspect container", &payload, None)
+            .expect("the command report serializes");
     rendered.push('\n');
     rendered
 }
