@@ -26,3 +26,27 @@ pub(crate) fn classify(schema_version: Option<&str>) -> Admission {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{classify, Admission};
+
+    #[test]
+    fn admission_matches_the_verbatim_declaration() {
+        assert_eq!(classify(Some("1")), Admission::Schema1);
+        for declaration in ["01", "2", "not-an-integer"] {
+            assert_eq!(
+                classify(Some(declaration)),
+                Admission::Unverified {
+                    declaration: declaration.to_owned(),
+                }
+            );
+        }
+        assert_eq!(
+            classify(None),
+            Admission::Unverified {
+                declaration: "missing".to_string(),
+            }
+        );
+    }
+}
