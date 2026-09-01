@@ -117,7 +117,7 @@ pub enum RhinoLossCode {
     /// The taxonomy family below is still the right one.
     SourceWriterStampUnverified,
     /// The archive-version word is outside the declared set, so the document
-    /// was read with the grammar another row declares.
+    /// was read by the residual chunk-width route without a declared identity.
     ///
     /// Document level, and the counterpart of the per-record code above:
     /// charged exactly when the primary-layer `crate::dialect` match is

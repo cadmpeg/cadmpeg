@@ -2,6 +2,10 @@
 #![allow(dead_code, clippy::disallowed_methods)]
 
 use super::*;
+use crate::brep::{
+    body_kind as brep_body_kind, body_kind_rests_on_missing_stamp,
+    serialized_body_kind as serialized_brep_body_kind, BrepBodyKind,
+};
 use crate::test_support::test_dump::*;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -730,35 +734,35 @@ fn polymorphic_object_geometry_starts_with_v2() {
 fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
     assert_eq!(
         serialized_brep_body_kind(2, Some(1), Some(200_210_020), false),
-        BodyKind::Solid
+        BrepBodyKind::Solid
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(2), Some(200_210_020), false),
-        BodyKind::Solid
+        BrepBodyKind::Solid
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(3), Some(200_210_020), false),
-        BodyKind::Sheet
+        BrepBodyKind::Sheet
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(3), Some(200_210_020), true),
-        BodyKind::Solid
+        BrepBodyKind::Solid
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(0), Some(200_210_020), true),
-        BodyKind::Solid
+        BrepBodyKind::Solid
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(0), Some(200_210_020), false),
-        BodyKind::Sheet
+        BrepBodyKind::Sheet
     );
     assert_eq!(
         serialized_brep_body_kind(1, Some(1), Some(200_210_020), true),
-        BodyKind::Solid
+        BrepBodyKind::Solid
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(1), Some(200_210_019), false),
-        BodyKind::Sheet
+        BrepBodyKind::Sheet
     );
 }
 
@@ -771,7 +775,7 @@ fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
 fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
     assert_eq!(
         serialized_brep_body_kind(2, Some(1), None, false),
-        BodyKind::Solid
+        BrepBodyKind::Solid
     );
     assert!(body_kind_rests_on_missing_stamp(2, Some(1), None, false));
     assert!(body_kind_rests_on_missing_stamp(2, Some(2), None, false));
@@ -805,7 +809,7 @@ fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
         source_range: 0..0,
     }];
     let (kind, substituted) = brep_body_kind(&raw, None);
-    assert_eq!(kind, BodyKind::Solid);
+    assert_eq!(kind, BrepBodyKind::Solid);
     assert_eq!(
         substituted.as_ref().map(|loss| &loss.code),
         Some(&RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
