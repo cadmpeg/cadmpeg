@@ -97,6 +97,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     .expect("explicit transcode plans");
 
     assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
+    assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Synthesized);
     let displacement = plan
         .report()
         .losses
@@ -112,6 +113,11 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .losses
         .iter()
         .all(|loss| loss.code.code != "source.preserved-image-unavailable"));
+    assert!(plan
+        .report()
+        .notes
+        .iter()
+        .any(|note| note == "source container regenerated from IR"));
 }
 
 #[test]
