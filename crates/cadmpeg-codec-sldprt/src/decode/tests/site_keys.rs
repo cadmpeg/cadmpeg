@@ -14,9 +14,7 @@ fn site_keys_use_outer_container_identity() {
         section: Some("Contents/Config-0-Partition".into()),
         family: "parasolid",
         payload: Vec::new(),
-        ps_stream: None,
         ps_streams: Vec::new(),
-        ps_stream_offsets: Vec::new(),
     };
     let second = Block {
         offset: 200,
@@ -35,7 +33,6 @@ fn site_keys_use_outer_container_identity() {
         payload: Vec::new(),
         decoded_payload: None,
         ps_streams: Vec::new(),
-        ps_stream_offsets: Vec::new(),
     };
     assert_eq!(
         super::super::BodyOrigin::Compound(&compound).site_key(),

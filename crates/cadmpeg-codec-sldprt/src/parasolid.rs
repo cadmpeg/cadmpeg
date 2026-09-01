@@ -13,7 +13,6 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use flate2::{Decompress, FlushDecompress, Status};
 
-use crate::container::parasolid_offset;
 use crate::layout::{
     parasolid_chain_frame_header as chain_frame_hdr,
     parasolid_chain_section_header as chain_section_hdr, zlb_wrapper_header as zlb_hdr,
@@ -29,27 +28,35 @@ const WRAPPED_MAGIC_PREFIX: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 const WRAPPED_FRAME_HEADER_LEN: usize = chain_frame_hdr::LEN;
 const MAX_WRAPPED_FRAME_UNCOMPRESSED: usize = 512 * 1024 * 1024;
 
-/// Extract every valid direct or nested Parasolid stream in one block payload.
-pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
-    extract_streams_with_offsets(payload)
-        .into_iter()
-        .map(|(_, stream)| stream)
-        .collect()
+/// One extracted stream with the location and header proven during extraction.
+#[derive(Debug, Clone)]
+pub(crate) struct ExtractedStream {
+    /// Direct-stream or wrapper offset in the outer payload.
+    pub(crate) offset: usize,
+    /// Complete extracted Parasolid stream bytes.
+    pub(crate) payload: Vec<u8>,
+    /// Header parsed from `payload` at extraction time.
+    pub(crate) header: StreamHeader,
 }
 
 /// Extract every stream with its direct or wrapper offset in the outer payload.
-pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
+pub(crate) fn extract_streams_with_offsets(payload: &[u8]) -> Vec<ExtractedStream> {
     let mut out = Vec::new();
     let wrapped_prefix = has_wrapped_prefix(payload);
     let starts = if wrapped_prefix {
         Vec::new()
     } else {
-        direct_stream_starts(payload)
+        direct_stream_headers(payload)
     };
-    for (index, start) in starts.iter().copied().enumerate() {
-        let end = starts.get(index + 1).copied().unwrap_or(payload.len());
-        let candidate = payload[start..end].to_vec();
-        out.push((start, candidate));
+    for (index, (start, header)) in starts.iter().enumerate() {
+        let end = starts
+            .get(index + 1)
+            .map_or(payload.len(), |(offset, _)| *offset);
+        out.push(ExtractedStream {
+            offset: *start,
+            payload: payload[*start..end].to_vec(),
+            header: header.clone(),
+        });
     }
     if !out.is_empty() {
         return out;
@@ -70,13 +77,16 @@ pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
             chained_wrapped_stream(payload, magic_at)
         };
         if let Some(stream) = stream {
-            if !out.iter().any(|(_, existing)| existing == &stream.1) {
+            if !out
+                .iter()
+                .any(|existing| existing.payload == stream.payload)
+            {
                 out.push(stream);
             }
         }
     }
     if !out.is_empty() {
-        out.sort_by_key(|(offset, _)| *offset);
+        out.sort_by_key(|stream| stream.offset);
         return out;
     }
 
@@ -95,11 +105,13 @@ pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
     while i + 2 <= payload.len() {
         if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
             if let Some(inner) = inflate_zlib_candidate(&payload[i..]) {
-                if inner.starts_with(&[b'P', b'S', 0x00, 0x00])
-                    && stream_header(&inner).is_some()
-                    && !out.iter().any(|(_, stream)| stream == &inner)
-                {
-                    out.push((i, inner));
+                if let Some(stream) = extracted_stream(i, inner) {
+                    if !out
+                        .iter()
+                        .any(|existing| existing.payload == stream.payload)
+                    {
+                        out.push(stream);
+                    }
                 }
             }
         }
@@ -115,7 +127,7 @@ fn has_wrapped_prefix(payload: &[u8]) -> bool {
             == Some(&WRAPPED_MAGIC_PREFIX)
 }
 
-fn single_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<(usize, Vec<u8>)> {
+fn single_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<ExtractedStream> {
     let frame_at = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len())?;
     let uncompressed_size = View::u32_le_at(
         payload,
@@ -130,11 +142,10 @@ fn single_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<(usize, Vec<
     let member_start = frame_at.checked_add(WRAPPED_FRAME_HEADER_LEN)?;
     let member_end = member_start.checked_add(member_size)?;
     let member = payload.get(member_start..member_end)?;
-    let stream = inflate_zlib_frame(member, uncompressed_size)?;
-    is_parasolid_stream(&stream).then_some((magic_at, stream))
+    extracted_stream(magic_at, inflate_zlib_frame(member, uncompressed_size)?)
 }
 
-fn chained_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<(usize, Vec<u8>)> {
+fn chained_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<ExtractedStream> {
     let chain_len_at = magic_at.checked_sub(chain_section_hdr::MAGIC)?;
     let chain_len = View::u32_le_at(payload, chain_len_at).and_then(as_usize)?;
     if chain_len < WRAPPED_MAGIC_PREFIX.len() + WRAPPED_FRAME_HEADER_LEN {
@@ -181,10 +192,22 @@ fn chained_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<(usize, Vec
         frames = frames.checked_add(1)?;
         frame_at = member_end;
     }
-    if frames == 0 || !is_parasolid_stream(&stream) {
+    if frames == 0 {
         return None;
     }
-    Some((chain_len_at, stream))
+    extracted_stream(chain_len_at, stream)
+}
+
+fn extracted_stream(offset: usize, payload: Vec<u8>) -> Option<ExtractedStream> {
+    if !payload.starts_with(b"PS\0\0") {
+        return None;
+    }
+    let header = stream_header(&payload)?;
+    Some(ExtractedStream {
+        offset,
+        payload,
+        header,
+    })
 }
 
 fn as_usize(value: u32) -> Option<usize> {
@@ -232,49 +255,13 @@ fn inflate_zlib_candidate(bytes: &[u8]) -> Option<Vec<u8>> {
     inflate_zlib_probe(bytes, cap)
 }
 
-/// Direct (uncompressed) Parasolid streams with their block-payload offsets.
-pub fn direct_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
-    let starts = direct_stream_starts(payload);
-    starts
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(index, start)| {
-            let end = starts.get(index + 1).copied().unwrap_or(payload.len());
-            (start, payload[start..end].to_vec())
-        })
-        .collect()
-}
-
-fn direct_stream_starts(payload: &[u8]) -> Vec<usize> {
+fn direct_stream_headers(payload: &[u8]) -> Vec<(usize, StreamHeader)> {
     payload
         .windows(4)
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == b"PS\0\0").then_some(at))
-        .filter(|start| stream_header(&payload[*start..]).is_some())
+        .filter_map(|start| stream_header(&payload[start..]).map(|header| (start, header)))
         .collect()
-}
-
-/// Offsets of candidate wrapped zlib members in a block payload.
-pub fn wrapped_member_offsets(payload: &[u8]) -> Vec<usize> {
-    if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
-        return Vec::new();
-    }
-    let mut offsets = Vec::new();
-    let mut i = 0usize;
-    while i + 2 <= payload.len() {
-        if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
-            offsets.push(i);
-        }
-        i += 1;
-    }
-    offsets
-}
-
-/// Whether inflated bytes frame a valid Parasolid stream (`PS\0\0` plus a
-/// parsable header).
-pub fn is_parasolid_stream(bytes: &[u8]) -> bool {
-    bytes.starts_with(&[b'P', b'S', 0x00, 0x00]) && stream_header(bytes).is_some()
 }
 
 /// Parsed framing fields for one Parasolid stream.
@@ -319,19 +306,27 @@ pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     })
 }
 
+fn parasolid_offset(payload: &[u8]) -> Option<usize> {
+    const SIGNATURE: &[u8] = b"PS\0\0";
+    let window = payload.len().min(64);
+    cadmpeg_core::bytes::find(&payload[..window], SIGNATURE)
+}
+
 /// Test whether the description identifies a partition or deltas body stream.
 pub fn is_body_stream(header: &StreamHeader) -> bool {
     let d = header.description.to_ascii_lowercase();
     d.contains("partition") || d.contains("deltas")
 }
 
-/// Decode the unique counted XYZ polyline carried by a mesh stream.
+/// Decode the unique counted XYZ polyline carried by a classified mesh stream.
 ///
 /// Mesh coordinate arrays use a big-endian scalar count followed by the
 /// `0x0022` array tag and consecutive f64 values. The scalar count is three
 /// times the point count.
-pub(crate) fn mesh_polyline(payload: &[u8]) -> Option<Vec<Point3>> {
-    let header = stream_header(payload)?;
+pub(crate) fn mesh_polyline_from_header(
+    payload: &[u8],
+    header: &StreamHeader,
+) -> Option<Vec<Point3>> {
     let schema = header.schema.to_ascii_lowercase();
     if !schema.ends_with("_13006") {
         return None;

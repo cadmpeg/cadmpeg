@@ -86,9 +86,11 @@ pub(crate) fn project_helix_axes(
                 continue;
             };
             meshes.extend(
-                crate::parasolid::extract_streams(object)
+                crate::parasolid::extract_streams_with_offsets(object)
                     .into_iter()
-                    .filter_map(|stream| crate::parasolid::mesh_polyline(&stream)),
+                    .filter_map(|stream| {
+                        crate::parasolid::mesh_polyline_from_header(&stream.payload, &stream.header)
+                    }),
             );
         }
         let [points] = meshes.as_slice() else {

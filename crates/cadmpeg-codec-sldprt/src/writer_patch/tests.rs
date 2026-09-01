@@ -124,6 +124,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .iter()
         .flat_map(|block| block.ps_streams.iter())
         .any(|stream| stream
+            .payload
             .windows(DIRTY_TERMINAL_KNOT.len())
             .any(|window| { window == DIRTY_TERMINAL_KNOT })));
     let regenerated = SldprtCodec
