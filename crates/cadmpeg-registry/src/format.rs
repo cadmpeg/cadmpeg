@@ -109,6 +109,9 @@ mod tests {
             "fcstd",
             "f3d",
             "sldprt",
+            "ipt",
+            "iam",
+            "catpart",
             "rhino",
             "3dm",
             "iges",
@@ -118,12 +121,16 @@ mod tests {
             "creo",
             "nx",
             "sat",
+            "smt",
+            "smb",
+            "sab",
             "acis",
             "parasolid",
         ] {
             assert!(Format::is_known_name(name), "{name}");
         }
         assert!(!Format::is_known_name("5.1"));
+        assert!(!Format::is_known_name("f3z"));
     }
 
     #[cfg(feature = "step")]
