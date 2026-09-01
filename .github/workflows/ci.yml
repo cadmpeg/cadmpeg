@@ -94,7 +94,7 @@ jobs:
         # missing nightly API tooling or a stale snapshot fails this job.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_check_public_api_ledger.py
+          python3 scripts/check-public-api-ledger.py --self-test
           python3 scripts/check-public-api-ledger.py --skip-git-objects --diff --require-tooling
 
       - name: Codec facade
@@ -109,7 +109,7 @@ jobs:
         # docs/dialects.toml. Ids are pinned from the commit that adds them.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_check_dialects.py
+          python3 scripts/check-dialects.py --self-test
           python3 scripts/check-dialects.py
 
       - name: Dialect capability registry
@@ -119,7 +119,7 @@ jobs:
         # here: a row with no fixture cannot claim a read score.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_check_dialect_support.py
+          python3 scripts/check-dialect-support.py --self-test
           python3 scripts/check-dialect-support.py
 
       - name: Rendered capability tables
@@ -129,7 +129,7 @@ jobs:
         # a registry edit without a re-render fails here.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_render_format_support.py
+          python3 scripts/render-format-support.py --self-test
           python3 scripts/render-format-support.py --check
 
       - name: Format check
