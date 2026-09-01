@@ -1,4 +1,4 @@
-# generated at 3b458dbbb
+# generated at 7229bc5a4
 pub mod cadmpeg_parasolid
 pub enum cadmpeg_parasolid::KnownSchemaAdmission
 pub cadmpeg_parasolid::KnownSchemaAdmission::Unverified
@@ -15,4 +15,5 @@ pub fn cadmpeg_parasolid::classify_layer(&str, &str, bool, cadmpeg_parasolid::Kn
 pub fn cadmpeg_parasolid::extra_layers(alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, cadmpeg_parasolid::KnownSchemaAdmission) -> alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
 pub fn cadmpeg_parasolid::find_schema_token(&[u8]) -> core::option::Option<cadmpeg_parasolid::SchemaToken<'_>>
 pub fn cadmpeg_parasolid::find_u8_length_prefixed_schema_token(&[u8]) -> core::option::Option<cadmpeg_parasolid::SchemaToken<'_>>
+pub fn cadmpeg_parasolid::push_extras(&mut cadmpeg_core::dialect::DialectLayers, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_core::dialect::DialectMatch>) -> alloc::vec::Vec<alloc::string::String>
 pub fn cadmpeg_parasolid::unverified_message(&cadmpeg_core::dialect::DialectMatch) -> core::option::Option<alloc::string::String>
