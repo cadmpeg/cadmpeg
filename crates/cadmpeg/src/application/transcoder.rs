@@ -4,14 +4,14 @@
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result as AnyResult};
 use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
-use crate::application::refusal::classify_decode_failure;
+use crate::application::refusal::{classify_load_error, ApplicationError};
 use crate::application::validators::validate_ir;
 use crate::application::{
     ArtifactStore, ConversionRefusal, LoadedDocument, NativeValidatorCatalog, SidecarPersistOutcome,
@@ -59,7 +59,7 @@ impl TargetSelection {
 
     /// Resolves the format half of the `--to` grammar against the output path.
     /// The encoder admits the dialect half during planning.
-    pub fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self> {
+    pub fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self, ApplicationError> {
         let inferred = format_from_path(out);
         Ok(match to {
             None => Self::new(
@@ -72,7 +72,7 @@ impl TargetSelection {
         })
     }
 
-    fn resolve_value(value: &str, inferred: Option<Format>) -> Result<Self> {
+    fn resolve_value(value: &str, inferred: Option<Format>) -> Result<Self, ApplicationError> {
         if let Some((left, right)) = value.split_once(':') {
             let format = Format::from_name(left).ok_or_else(|| {
                 ConversionRefusal::UnsupportedOutputFormat {
@@ -83,9 +83,10 @@ impl TargetSelection {
                 }
             })?;
             if right.is_empty() {
-                bail!(
+                return Err(anyhow!(
                     "--to {value}: nothing after the colon; write --to {left} for the format alone"
-                );
+                )
+                .into());
             }
             warn_on_extension_disagreement(format, inferred);
             return Ok(Self::new(format, Some(right.to_owned())));
@@ -247,7 +248,7 @@ impl DestinationPolicy {
     }
 
     /// Applies format-only destination admission before input decode.
-    fn admit_format(&self, format: Format) -> Result<()> {
+    fn admit_format(&self, format: Format) -> Result<(), ApplicationError> {
         match self {
             Self::Stdout {
                 allow_binary: false,
@@ -267,7 +268,7 @@ impl DestinationPolicy {
     /// Resolves filesystem-dependent destination rules. A missing source is
     /// left for the loader; an existing destination still refuses before the
     /// potentially expensive decode.
-    fn resolve(&self, source: &Path) -> Result<ResolvedDestination> {
+    fn resolve(&self, source: &Path) -> AnyResult<ResolvedDestination> {
         match self {
             Self::Stdout { .. } => Ok(ResolvedDestination::Stdout),
             Self::File { path, overwrite } => {
@@ -334,24 +335,26 @@ impl<'a> Transcoder<'a> {
 
     /// Loads and validates a conversion without planning or writing it.
     ///
-    /// Typed refusals are returned as [`ConversionRefusal`] inside `anyhow`.
-    /// Operational load failures are plain `anyhow` errors. Pure with respect
-    /// to presentation and destination artifact writes; an explicitly requested
-    /// command `--report` may still be written by the CLI after a
+    /// Typed refusals and operational failures remain distinct. Pure with
+    /// respect to presentation and destination artifact writes; an explicitly
+    /// requested command `--report` may still be written by the CLI after a
     /// loss/validation/empty-geometry refusal.
     pub fn prepare(
         &self,
         source: &SourceRequest<'_>,
         target: ExportTarget,
         policy: &ConversionPolicy,
-    ) -> Result<PreparedConversion> {
+    ) -> Result<PreparedConversion, ApplicationError> {
         let format = target.selection.format;
         policy.destination.admit_format(format)?;
-        let destination = policy.destination.resolve(source.path)?;
+        let destination = policy
+            .destination
+            .resolve(source.path)
+            .map_err(ApplicationError::from)?;
 
         let outcome =
             loader::load_artifact(self.inputs, source.path, source.options, source.forced)
-                .map_err(classify_decode_failure)?;
+                .map_err(classify_load_error)?;
         let loaded = outcome.document;
         let notices = outcome.notices;
         let decode_report = loaded.decode_report().cloned();
@@ -412,7 +415,7 @@ impl<'a> Transcoder<'a> {
 
 impl PreparedConversion {
     /// Plans the export and applies the plan-time refusals.
-    pub fn plan(self) -> Result<PlannedConversion> {
+    pub fn plan(self) -> Result<PlannedConversion, ApplicationError> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
@@ -470,7 +473,7 @@ impl PlannedConversion {
     }
 
     /// Writes the destination artifact and optional CADIR sidecar.
-    pub fn write(self) -> Result<ExportEmission> {
+    pub fn write(self) -> AnyResult<ExportEmission> {
         emit_export_plan(
             self.plan,
             self.prepared.selection.format,
@@ -508,7 +511,7 @@ fn plan_refusal(
     error: cadmpeg_core::CodecError,
     decode_report: Option<DecodeReport>,
     validation: Option<ValidationReport>,
-) -> anyhow::Error {
+) -> ApplicationError {
     match error {
         cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
             ConversionRefusal::UnsupportedTarget {
@@ -518,7 +521,7 @@ fn plan_refusal(
             }
             .into()
         }
-        _ => error.into(),
+        _ => ApplicationError::Operational(error.into()),
     }
 }
 
@@ -557,7 +560,7 @@ pub(crate) fn emit_export_plan(
     out: Option<&Path>,
     decode_report: Option<&DecodeReport>,
     source_fidelity: Option<&SourceFidelity>,
-) -> Result<ExportEmission> {
+) -> AnyResult<ExportEmission> {
     let needs_sidecar_digest =
         format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
     if let Some(path) = out {

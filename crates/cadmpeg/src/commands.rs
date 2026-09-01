@@ -15,7 +15,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 use serde::Serialize;
 
@@ -24,7 +24,8 @@ use cadmpeg_registry::{
     ResolveInspectionError, ResolvedInspection,
 };
 
-use crate::application::refusal::classify_decode_failure;
+use crate::application::refusal::classify_load_error;
+use crate::application::refusal::ApplicationError;
 use crate::application::transcoder::{emit_export_plan, TargetSelection};
 use crate::application::validators::validate_ir;
 use crate::application::{
@@ -42,6 +43,8 @@ use crate::DecodeArgs;
 /// source metadata block. Version 6 added top-level `status` (`ok` | `refused`)
 /// and `refusal` (`{ stage, code, message }` or null).
 pub(crate) const CLI_SCHEMA_VERSION: u32 = 7;
+
+type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
 /// Catalogs required by CLI command handlers.
 pub struct AppCatalogs {
@@ -157,9 +160,9 @@ pub fn inspect(
     report_path: Option<&Path>,
     force: bool,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<()> {
+) -> CommandResult<()> {
     if matches!(forced, Some(ForcedInput::Cadir)) {
-        bail!("inspect requires a container input, not cadir");
+        return Err(anyhow!("inspect requires a container input, not cadir").into());
     }
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let resolved = resolve_and_inspect_with(
@@ -178,7 +181,7 @@ pub fn inspect(
         ..
     } = resolved
     else {
-        return Err(inspect_unrecognized(path));
+        return Err(inspect_unrecognized(path).into());
     };
     let summary = match inspection {
         Ok(summary) => summary,
@@ -201,7 +204,9 @@ pub fn inspect(
             return Err(refusal.into());
         }
         Err(error) => {
-            return Err(anyhow::Error::new(error).context(format!("inspecting {}", path.display())))
+            return Err(anyhow::Error::new(error)
+                .context(format!("inspecting {}", path.display()))
+                .into())
         }
     };
     let payload = InspectReportPayload {
@@ -273,7 +278,7 @@ pub fn dump(
     report_path: Option<&Path>,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
-) -> Result<()> {
+) -> CommandResult<()> {
     if let Some(out) = out {
         ArtifactStore::check_output_path(path, out, force)?;
     }
@@ -291,14 +296,13 @@ pub fn dump(
     let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
         Ok(outcome) => outcome,
         Err(error) => {
-            let error = classify_decode_failure(error);
+            let error = classify_load_error(error);
             let Some(report_path) = report_path else {
                 return Err(error);
             };
-            let Some(refusal) = error.downcast_ref::<ConversionRefusal>() else {
-                return Err(error);
-            };
-            write_refusal_command_report(path, Some(report_path), force, "dump", refusal);
+            if let Some(refusal) = error.refusal() {
+                write_refusal_command_report(path, Some(report_path), force, "dump", refusal);
+            }
             return Err(error);
         }
     };
@@ -347,12 +351,12 @@ pub fn check_cmd(
     json: bool,
     report_path: Option<&Path>,
     force: bool,
-) -> Result<()> {
+) -> CommandResult<()> {
     let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
         Ok(outcome) => outcome,
         Err(error) => {
-            let error = classify_decode_failure(error);
-            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
+            let error = classify_load_error(error);
+            if let Some(refusal) = error.refusal() {
                 write_refusal_command_report(path, report_path, force, "check", refusal);
             }
             return Err(error);
@@ -409,11 +413,11 @@ pub fn convert(
     to: Option<&str>,
     conversion: &ConversionArgs,
     args: &DecodeArgs,
-) -> Result<()> {
+) -> CommandResult<()> {
     let selection = match TargetSelection::resolve(to, conversion.policy.destination.path()) {
         Ok(selection) => selection,
         Err(error) => {
-            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
+            if let Some(refusal) = error.refusal() {
                 write_refusal_command_report(
                     path,
                     conversion.report.as_deref(),
@@ -447,10 +451,7 @@ pub fn convert(
     // A refusal from either stage renders the same way: it carries whatever
     // reports it has, and the command report is written only where the refusal
     // admits one.
-    let render_refusal = |error: &anyhow::Error| -> Result<()> {
-        let Some(refusal) = error.downcast_ref::<ConversionRefusal>() else {
-            return Ok(());
-        };
+    let render_refusal = |refusal: &ConversionRefusal| -> Result<()> {
         let mut stderr = io::stderr();
         if let Some(report) = refusal.decode_report() {
             print_decode_report(&mut stderr, report)?;
@@ -472,7 +473,9 @@ pub fn convert(
     let prepared = match transcoder.prepare(&source, target, &conversion.policy) {
         Ok(prepared) => prepared,
         Err(error) => {
-            render_refusal(&error)?;
+            if let Some(refusal) = error.refusal() {
+                render_refusal(refusal)?;
+            }
             return Err(error);
         }
     };
@@ -480,7 +483,9 @@ pub fn convert(
     let planned = match prepared.plan() {
         Ok(planned) => planned,
         Err(error) => {
-            render_refusal(&error)?;
+            if let Some(refusal) = error.refusal() {
+                render_refusal(refusal)?;
+            }
             return Err(error);
         }
     };
@@ -531,10 +536,12 @@ pub fn diff(
     json: bool,
     report_path: Option<&Path>,
     force: bool,
-) -> Result<ExitCode> {
-    let left_outcome = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)?;
+) -> CommandResult<ExitCode> {
+    let left_outcome = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)
+        .map_err(classify_load_error)?;
     print_load_notices(&left_outcome.notices);
-    let right_outcome = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)?;
+    let right_outcome = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)
+        .map_err(classify_load_error)?;
     print_load_notices(&right_outcome.notices);
     let left = &left_outcome.document;
     let right = &right_outcome.document;
