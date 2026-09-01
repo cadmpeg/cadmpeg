@@ -566,8 +566,15 @@ fn root_f3d_members<'a>(entries: &'a BTreeMap<String, View<'_>>) -> Vec<&'a str>
     entries
         .keys()
         .map(String::as_str)
-        .filter(|name| !name.contains('/') && name.to_ascii_lowercase().ends_with(".f3d"))
+        .filter(|name| !name.contains('/') && is_f3d_name(name))
         .collect()
+}
+
+/// Whether an archive path names an F3D document by extension.
+pub(crate) fn is_f3d_name(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("f3d"))
 }
 
 /// Iterate over every BREP whose parsed header sets the history-partition bit.
@@ -645,5 +652,18 @@ fn asm_magic_label(bytes: &[u8]) -> String {
         String::from_utf8_lossy(&bytes[..15]).to_string()
     } else {
         "absent".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_f3d_name;
+
+    #[test]
+    fn f3d_name_requires_a_nonempty_stem_and_case_insensitive_extension() {
+        assert!(is_f3d_name("part.f3d"));
+        assert!(is_f3d_name("folder/part.F3D"));
+        assert!(!is_f3d_name(".f3d"));
+        assert!(!is_f3d_name("part.f3d.tmp"));
     }
 }
