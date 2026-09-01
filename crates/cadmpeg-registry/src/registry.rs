@@ -346,26 +346,24 @@ mod tests {
 
     /// `dialects` and `support` answer from the same joined table the renderer
     /// prints, and neither reads a file.
-    #[cfg(feature = "rhino")]
     #[test]
     fn the_lookups_serve_the_embedded_tables() {
-        let rows = dialects("rhino");
-        assert!(!rows.is_empty());
-        assert!(rows.iter().all(|row| row.id.as_str().starts_with("rhino:")));
+        let registries = registries();
+        for entry in registries.rows_all() {
+            assert_eq!(support(&entry.id), Some(entry.disposition), "{}", entry.id);
+        }
+        for format in &registries.formats {
+            let rows = dialects(format);
+            let expected = registries.rows_of(format).collect::<Vec<_>>();
+            assert_eq!(rows, expected, "{format}");
+            assert!(
+                rows.iter().all(|row| row.id.namespace() == format),
+                "{format}"
+            );
+        }
 
-        let archive_50 = DialectId::pinned("rhino:archive-50");
-        let disposition = support(&archive_50).expect("a declared dialect has a disposition");
-        assert!(matches!(disposition.read, ReadDisposition::Level(_)));
-        assert_eq!(disposition.write, WriteDisposition::Emitted);
-
-        assert_eq!(
-            support(&DialectId::pinned("rhino:unknown")),
-            Some(Disposition {
-                read: ReadDisposition::UnclassifiedRecovered,
-                write: WriteDisposition::None,
-            })
-        );
-        assert!(support(&DialectId::pinned("rhino:nonesuch")).is_none());
+        let absent = DialectId::parse("test:nonesuch").expect("the absent id is grammatical");
+        assert!(support(&absent).is_none());
         assert!(dialects("nonesuch").is_empty());
     }
 }
