@@ -307,6 +307,15 @@ pub(crate) struct ValidatedRawBrep {
     warnings: Vec<String>,
 }
 
+/// Body kind selected from one validated serialized Brep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BrepBodyKind {
+    /// A closed volumetric body.
+    Solid,
+    /// An open sheet body.
+    Sheet,
+}
+
 impl ValidatedRawBrep {
     /// Validates and normalizes one structurally decoded Brep.
     pub(crate) fn try_new(mut raw: RawBrep) -> Result<Self, GeometryError> {
@@ -555,6 +564,84 @@ impl ValidatedRawBrep {
     /// Returns warnings produced while validation normalized optional data.
     pub(crate) fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+
+    /// Selects the serialized body kind and reports an unverified stamp-dependent gauge.
+    pub(crate) fn body_kind(
+        &self,
+        writer_version: Option<i64>,
+    ) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
+        body_kind(&self.raw, writer_version)
+    }
+}
+
+/// Classifies one B-rep body, reporting whether a missing stamp decided it.
+pub(crate) fn body_kind(
+    raw: &RawBrep,
+    writer_version: Option<i64>,
+) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
+    let closed = !raw.faces.is_empty()
+        && raw.edges.iter().enumerate().all(|(edge, _)| {
+            raw.trims
+                .iter()
+                .filter(|trim| trim.edge == edge as i32)
+                .count()
+                == 2
+        });
+    let kind = serialized_body_kind(raw.minor, raw.is_solid, writer_version, closed);
+    let loss = body_kind_rests_on_missing_stamp(raw.minor, raw.is_solid, writer_version, closed)
+        .then(|| {
+            crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(format!(
+                "Brep body kind gauge substituted: stored solid flag {} was trusted over the \
+                 closed-shell gauge because the writer-version stamp is absent",
+                raw.is_solid.unwrap_or(-1)
+            ))
+        });
+    (kind, loss)
+}
+
+/// First openNURBS writer version whose `ON_Brep` stores a meaningful solid flag.
+const SOLID_FLAG_WRITER_VERSION: i64 = 200_210_020;
+
+/// True when a missing writer stamp is what decided the body kind.
+///
+/// The stored solid flag is trusted when the stamp is absent and ignored when
+/// the stamp is older than [`SOLID_FLAG_WRITER_VERSION`], so an unstamped
+/// archive is classified on an assumption the archive does not carry. This
+/// compares the two readings of the same bytes and reports only a disagreement:
+/// where both readings pick the same body kind nothing was substituted.
+pub(crate) fn body_kind_rests_on_missing_stamp(
+    minor: u8,
+    is_solid: Option<i32>,
+    writer_version: Option<i64>,
+    closed: bool,
+) -> bool {
+    writer_version.is_none()
+        && serialized_body_kind(minor, is_solid, None, closed)
+            != serialized_body_kind(minor, is_solid, Some(SOLID_FLAG_WRITER_VERSION - 1), closed)
+}
+
+pub(crate) fn serialized_body_kind(
+    minor: u8,
+    is_solid: Option<i32>,
+    writer_version: Option<i64>,
+    closed: bool,
+) -> BrepBodyKind {
+    let stored = (minor >= 2
+        && writer_version.is_none_or(|version| version >= SOLID_FLAG_WRITER_VERSION))
+    .then_some(is_solid)
+    .flatten();
+    match stored {
+        Some(1 | 2) => BrepBodyKind::Solid,
+        Some(0) => {
+            if closed {
+                BrepBodyKind::Solid
+            } else {
+                BrepBodyKind::Sheet
+            }
+        }
+        _ if closed => BrepBodyKind::Solid,
+        _ => BrepBodyKind::Sheet,
     }
 }
 
