@@ -127,7 +127,10 @@ pub(in crate::writer) fn resolve<'a>(
 /// source's own dialect. A `SchemaVersion` of `"04"` classifies as
 /// `fcstd:unknown`, so it is preserved as residual identity rather than being
 /// rewritten as `"4"`.
-fn retained_baseline<'a>(ir: &'a CadIr, source_dialect: &DialectId) -> Option<Resolution<'a>> {
+pub(in crate::writer) fn retained_baseline<'a>(
+    ir: &'a CadIr,
+    source_dialect: &DialectId,
+) -> Option<Resolution<'a>> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
     let [document] = documents.as_slice() else {

@@ -79,7 +79,7 @@ pub mod validate;
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, StreamProvenance};
 pub use codec::{
     CadirEncoder, Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult,
-    Encoder, EncoderBackend,
+    Encoder,
 };
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};

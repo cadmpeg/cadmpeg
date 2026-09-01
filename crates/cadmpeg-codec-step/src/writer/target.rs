@@ -35,10 +35,8 @@ pub(crate) fn plan(
         .map_err(CodecError::from)?;
     let target = schema.descriptor().id;
     let mut losses = outcome.losses;
-    if let Some(source) = resolved.displaced_source() {
-        losses.push(StepLossCode::SourceDialectDisplaced.note(
-            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
-        ));
+    if let Some(message) = resolved.displacement_message() {
+        losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }
     let report = ExportReport::native(
         target,

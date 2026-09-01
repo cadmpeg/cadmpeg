@@ -37,7 +37,7 @@ pub(crate) fn plan(
     Ok(finish(
         input,
         target,
-        resolved.displaced_source(),
+        resolved.displacement_message(),
         &written,
         bytes,
     ))
@@ -97,7 +97,7 @@ fn check_honesty(resolved: &ResolvedWrite, written: &Written) -> Result<(), Code
 fn finish(
     input: EncodeInput<'_>,
     target: DialectId,
-    displaced: Option<&DialectId>,
+    displacement: Option<String>,
     written: &Written,
     bytes: Vec<u8>,
 ) -> ExportPlan {
@@ -117,10 +117,8 @@ fn finish(
         })
         .into_iter()
         .collect();
-    if let Some(source) = displaced {
-        losses.push(SldprtLossCode::SourceDialectDisplaced.note(
-            cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),
-        ));
+    if let Some(message) = displacement {
+        losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
     ExportPlan::buffered(
         ExportReport::native(

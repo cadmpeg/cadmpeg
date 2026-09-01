@@ -18,6 +18,27 @@ api_baseline_dir = "docs/api-baseline"
 measured_at = "c3715792f902b844417f96f76e7925642924f28f"
 
 [[change]]
+commit = "6891cb0d706278d9102e97a3a3153d7b9a9fc6f2"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::codec::resolve_write_request"
+reason = "the sealed Encoder plan is the only production resolution door; exposing the raw resolver let callers bypass that contract"
+
+[[change]]
+commit = "6891cb0d706278d9102e97a3a3153d7b9a9fc6f2"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::source_dialect_displaced_message"
+reason = "ResolvedWrite now derives the displacement message from its internally consistent source and target identities"
+
+[[change]]
+commit = "6891cb0d706278d9102e97a3a3153d7b9a9fc6f2"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::EncoderBackend"
+reason = "the backend implementation trait remains available from its owning cadmpeg_ir::codec module and is no longer duplicated on the product facade"
+
+[[change]]
 commit = "3b458dbbb52cd610617aa56018e35c9915fbc58a"
 crate = "cadmpeg-parasolid"
 kind = "signature"
