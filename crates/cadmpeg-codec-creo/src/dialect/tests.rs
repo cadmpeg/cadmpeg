@@ -281,9 +281,9 @@ fn the_totality_row_never_carries_a_verified_admission() {
 
 #[test]
 fn the_layout_token_vocabulary_is_not_the_registry_vocabulary() {
-    // The `layout` source attribute and the inspect note are pinned on
-    // `Layout::token`; the registry ids are pinned here. They are separate
-    // contracts and neither may be derived from the other by string surgery.
+    // The inspect note is pinned on `Layout::token`; the registry ids are
+    // pinned here. They are separate contracts and neither may be derived from
+    // the other by string surgery.
     for layout in [
         Layout::Nd,
         Layout::Depdb,

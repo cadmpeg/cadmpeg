@@ -3,8 +3,8 @@
 //!
 //! Decode transfers standard datum planes as derived plane surfaces and
 //! preserves each geometry section as an [`UnknownRecord`]. Source metadata
-//! records the layout, namespace census, active units, and counts of decoded
-//! structural rows.
+//! records the namespace census, active units, and counts of decoded structural
+//! rows. The typed dialect match owns layout identity.
 //!
 //! Surface and curve namespaces contain useful topology and prototype data, but
 //! the placed body model is incomplete. The report therefore records blocking
