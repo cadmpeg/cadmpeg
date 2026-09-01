@@ -87,18 +87,7 @@ pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> O
     while bytes.get(next) == Some(&0x11) {
         next += 1;
     }
-    exact_identifier_at(bytes, next, "delta_state").then_some(next)
-}
-
-fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bool {
-    let Some((&0x0d, rest)) = bytes.get(at..).and_then(|tail| tail.split_first()) else {
-        return false;
-    };
-    let Some((&length, payload)) = rest.split_first() else {
-        return false;
-    };
-    usize::from(length) == expected.len()
-        && payload.get(..usize::from(length)) == Some(expected.as_bytes())
+    crate::sab::exact_identifier_at(bytes, next, "delta_state").then_some(next)
 }
 
 #[cfg(test)]

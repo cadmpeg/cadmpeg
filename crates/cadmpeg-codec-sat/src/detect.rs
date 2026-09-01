@@ -178,7 +178,7 @@ pub(crate) fn inspect(
             crate::dialect::layers(&evidence)
         }
         StreamKind::Unknown => {
-            return Err(CodecError::Malformed(
+            return Err(CodecError::WrongFormat(
                 "not an ASM stream: no binary magic and no text header lines".to_string(),
             ))
         }
