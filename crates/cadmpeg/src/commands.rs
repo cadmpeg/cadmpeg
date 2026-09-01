@@ -313,7 +313,16 @@ pub fn check_cmd(
     report_path: Option<&Path>,
     force: bool,
 ) -> Result<()> {
-    let outcome = loader::load_artifact(&catalogs.inputs, path, args.options(), forced)?;
+    let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let error = classify_decode_failure(error);
+            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
+                write_refusal_command_report(path, report_path, force, "check", refusal);
+            }
+            return Err(error);
+        }
+    };
     print_load_notices(&outcome.notices);
     let loaded = &outcome.document;
     let mut stdout = io::stdout();
