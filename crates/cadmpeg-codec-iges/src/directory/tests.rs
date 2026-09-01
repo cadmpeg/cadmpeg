@@ -60,7 +60,7 @@ fn early_dialects_left_pad_right_justified_status_numbers() {
         assert_eq!(status.hierarchy, 1);
     }
 
-    assert!(status(*b"     201", GlobalTable::V5_1).is_err());
+    assert!(status(*b"     201", GlobalTable::V5Later).is_err());
 }
 
 #[test]

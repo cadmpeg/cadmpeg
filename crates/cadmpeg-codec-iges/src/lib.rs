@@ -28,6 +28,7 @@ mod parameter;
 mod profile;
 mod reader;
 mod representation;
+mod version;
 mod writer;
 
 #[doc(hidden)]
@@ -106,11 +107,11 @@ impl IgesVersion {
     }
 
     pub(crate) const fn name(self) -> &'static str {
-        global::VersionFlag::from_write_version(self).name()
+        version::VersionFlag::from_write_version(self).name()
     }
 
     pub(crate) const fn global_flag(self) -> u8 {
-        global::VersionFlag::from_write_version(self).value() as u8
+        version::VersionFlag::from_write_version(self).value() as u8
     }
 }
 

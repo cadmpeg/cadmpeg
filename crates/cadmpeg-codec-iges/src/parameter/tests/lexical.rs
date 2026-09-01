@@ -19,7 +19,7 @@ fn numeric_parameter_and_delimiter_must_share_a_card() {
     bytes.extend_from_slice(b",2,3,0;");
 
     assert!(matches!(
-        tokenize(&bytes, &[64], b',', b';', GlobalTable::V5_3, None),
+        tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later, None),
         Err(TokenizeFailure::Defect(
             ParameterDefect::NumericCrossesCard,
             4
@@ -30,7 +30,14 @@ fn numeric_parameter_and_delimiter_must_share_a_card() {
 #[test]
 fn a_zero_hollerith_count_is_not_a_null_string() {
     assert!(matches!(
-        tokenize(b"116,0H,2,3,0;", &[64], b',', b';', GlobalTable::V5_3, None),
+        tokenize(
+            b"116,0H,2,3,0;",
+            &[64],
+            b',',
+            b';',
+            GlobalTable::V5Later,
+            None
+        ),
         Err(TokenizeFailure::Defect(
             ParameterDefect::HollerithCountZero,
             4
@@ -43,14 +50,21 @@ fn a_zero_hollerith_count_is_not_a_null_string() {
 
 #[test]
 fn numeric_fields_may_have_leading_but_not_embedded_or_trailing_blanks() {
-    let (tokens, _) = tokenize(b"116, 1,2,3,0;", &[64], b',', b';', GlobalTable::V5_3, None)
-        .unwrap_or_else(|_| panic!("leading blanks are ignored"));
+    let (tokens, _) = tokenize(
+        b"116, 1,2,3,0;",
+        &[64],
+        b',',
+        b';',
+        GlobalTable::V5Later,
+        None,
+    )
+    .unwrap_or_else(|_| panic!("leading blanks are ignored"));
     assert_eq!(tokens[1].value, TokenValue::Integer(1));
 
     for field in [b"1  ".as_slice(), b"1 2".as_slice()] {
         let bytes = [b"116,".as_slice(), field, b",2,3,0;".as_slice()].concat();
         assert!(matches!(
-            tokenize(&bytes, &[64], b',', b';', GlobalTable::V5_3, None),
+            tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later, None),
             Err(TokenizeFailure::Defect(
                 ParameterDefect::NumericContainsBlanks,
                 4
@@ -156,8 +170,15 @@ fn a_hollerith_payload_may_cross_a_card_but_its_header_may_not() {
     payload_crosses.extend(std::iter::repeat_n(b'0', 56));
     payload_crosses.push(b'1');
     payload_crosses.extend_from_slice(b",4Habcd,;");
-    let (tokens, _) = tokenize(&payload_crosses, &[64], b',', b';', GlobalTable::V5_3, None)
-        .unwrap_or_else(|_| panic!("a Hollerith payload may cross its card boundary"));
+    let (tokens, _) = tokenize(
+        &payload_crosses,
+        &[64],
+        b',',
+        b';',
+        GlobalTable::V5Later,
+        None,
+    )
+    .unwrap_or_else(|_| panic!("a Hollerith payload may cross its card boundary"));
     assert!(matches!(tokens[2].value, TokenValue::String(ref value) if value == b"abcd"));
 
     let mut header_crosses = b"116,".to_vec();
@@ -165,7 +186,14 @@ fn a_hollerith_payload_may_cross_a_card_but_its_header_may_not() {
     header_crosses.push(b'1');
     header_crosses.extend_from_slice(b",4Habcd,;");
     assert!(matches!(
-        tokenize(&header_crosses, &[64], b',', b';', GlobalTable::V5_3, None),
+        tokenize(
+            &header_crosses,
+            &[64],
+            b',',
+            b';',
+            GlobalTable::V5Later,
+            None
+        ),
         Err(TokenizeFailure::Defect(
             ParameterDefect::HollerithHeaderCrossesCard,
             63
@@ -184,7 +212,7 @@ fn hollerith_string_bytes_follow_the_declared_dialect() {
     ));
 
     assert!(matches!(
-        tokenize(bytes, &[64], b',', b';', GlobalTable::V5_3, None),
+        tokenize(bytes, &[64], b',', b';', GlobalTable::V5Later, None),
         Err(TokenizeFailure::Defect(
             ParameterDefect::HollerithForbiddenByte,
             4

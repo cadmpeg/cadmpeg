@@ -190,11 +190,15 @@ fn v4_flow_uses_only_the_v4_target_classes() {
         GlobalTable::V4_0
     ));
     assert!(!flow_connection_target_valid(&group, 18, GlobalTable::V4_0));
-    assert!(flow_connection_target_valid(&group, 18, GlobalTable::V5_3));
+    assert!(flow_connection_target_valid(
+        &group,
+        18,
+        GlobalTable::V5Later
+    ));
 
     assert!(flow_display_target_valid(&template, 18, GlobalTable::V4_0));
     assert!(!flow_display_target_valid(&note, 18, GlobalTable::V4_0));
-    assert!(flow_display_target_valid(&note, 18, GlobalTable::V5_3));
+    assert!(flow_display_target_valid(&note, 18, GlobalTable::V5Later));
 
     assert!(flow_continuation_target_valid(&flow, 18, GlobalTable::V4_0));
     assert!(!flow_continuation_target_valid(
@@ -205,7 +209,7 @@ fn v4_flow_uses_only_the_v4_target_classes() {
     assert!(flow_continuation_target_valid(
         &old_connect_node,
         18,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
 }
 

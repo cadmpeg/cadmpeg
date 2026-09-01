@@ -479,13 +479,13 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
+            general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5Later),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
+            !general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5Later),
             "font code {value}"
         );
     }
@@ -537,7 +537,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         240, 244, 246, 252, 254, 256, 262, 264, 265, 266, 268,
     ] {
         assert!(
-            fill_pattern_valid_for_global_table(value, GlobalTable::V5_3),
+            fill_pattern_valid_for_global_table(value, GlobalTable::V5Later),
             "admitted fill pattern {value}"
         );
     }
@@ -545,7 +545,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         21, 23, 24, 25, 27, 30, 31, 33, 35, 37, 39, 43, 44, 45, 47, 48, 49, 51, 269,
     ] {
         assert!(
-            !fill_pattern_valid_for_global_table(value, GlobalTable::V5_3),
+            !fill_pattern_valid_for_global_table(value, GlobalTable::V5Later),
             "reserved fill pattern {value}"
         );
     }
@@ -556,8 +556,14 @@ fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
     assert!(fill_pattern_valid_for_global_table(19, GlobalTable::V4_0));
     assert!(!fill_pattern_valid_for_global_table(20, GlobalTable::V4_0));
     assert!(fill_pattern_valid_for_global_table(20, GlobalTable::V5_0));
-    assert!(fill_pattern_valid_for_global_table(268, GlobalTable::V5_3));
-    assert!(!fill_pattern_valid_for_global_table(269, GlobalTable::V5_3));
+    assert!(fill_pattern_valid_for_global_table(
+        268,
+        GlobalTable::V5Later
+    ));
+    assert!(!fill_pattern_valid_for_global_table(
+        269,
+        GlobalTable::V5Later
+    ));
 }
 
 #[test]
@@ -864,7 +870,7 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
     assert!(!leader_valid_for_global_table(
         &entry,
         &record,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
 
     let record = leader_record(1.0, 2.0);
@@ -877,7 +883,7 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
     assert!(!leader_valid_for_global_table(
         &entry,
         &record,
-        GlobalTable::V5_3
+        GlobalTable::V5Later
     ));
 }
 

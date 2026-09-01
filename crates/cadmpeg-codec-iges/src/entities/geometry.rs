@@ -194,9 +194,7 @@ pub(crate) fn point_display_symbol_type_allowed(
     match global_table {
         GlobalTable::Legacy => matches!(entity_type, 308 | 408),
         GlobalTable::V4_0 => entity_type == 408,
-        GlobalTable::V5_0 | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
-            entity_type == 308
-        }
+        GlobalTable::V5_0 | GlobalTable::V5Later => entity_type == 308,
     }
 }
 

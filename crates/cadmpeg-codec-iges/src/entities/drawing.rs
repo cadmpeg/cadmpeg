@@ -60,7 +60,7 @@ fn drawing_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) ->
         && entry.status.subordinate == 0
         && match global_table {
             GlobalTable::V4_0 | GlobalTable::Legacy => entry.status.use_flag != 0,
-            GlobalTable::V5_0 | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
+            GlobalTable::V5_0 | GlobalTable::V5Later => {
                 entry.status.use_flag == 1
                     && entry.structure == 0
                     && entry.line_font == 0
@@ -75,9 +75,7 @@ fn view_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bo
         && matches!(entry.form, 0 | 1)
         && match global_table {
             GlobalTable::V4_0 | GlobalTable::Legacy => entry.status.use_flag != 0,
-            GlobalTable::V5_0 | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3 => {
-                entry.status.use_flag == 1
-            }
+            GlobalTable::V5_0 | GlobalTable::V5Later => entry.status.use_flag == 1,
         }
 }
 
@@ -88,10 +86,8 @@ fn views_visible_directory_valid(entry: &DirectoryEntry, global_table: GlobalTab
             _ => matches!(entry.form, 3 | 4 | 19),
         }
         && entry.status.subordinate == 0
-        && (!matches!(
-            global_table,
-            GlobalTable::V5_0 | GlobalTable::V5_1 | GlobalTable::V5_2 | GlobalTable::V5_3
-        ) || entry.status.use_flag == 1)
+        && (!matches!(global_table, GlobalTable::V5_0 | GlobalTable::V5Later)
+            || entry.status.use_flag == 1)
 }
 
 fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {

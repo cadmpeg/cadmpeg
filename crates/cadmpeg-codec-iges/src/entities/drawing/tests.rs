@@ -88,13 +88,13 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     view.status.use_flag = 2;
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
     assert!(!view_directory_valid(&view, GlobalTable::V5_0));
-    assert!(!view_directory_valid(&view, GlobalTable::V5_3));
+    assert!(!view_directory_valid(&view, GlobalTable::V5Later));
     view.status.use_flag = 1;
     view.status.blank = 1;
     view.status.hierarchy = 3;
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
     assert!(view_directory_valid(&view, GlobalTable::V5_0));
-    assert!(view_directory_valid(&view, GlobalTable::V5_3));
+    assert!(view_directory_valid(&view, GlobalTable::V5Later));
     for field in 0..4 {
         let mut candidate = directory_entry(410, 1);
         match field {
@@ -104,13 +104,13 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             _ => candidate.color = 1,
         }
         assert!(view_directory_valid(&candidate, GlobalTable::V4_0));
-        assert!(view_directory_valid(&candidate, GlobalTable::V5_3));
+        assert!(view_directory_valid(&candidate, GlobalTable::V5Later));
     }
     view.level = 2;
     view.view = 3;
     view.label_display = 5;
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
-    assert!(view_directory_valid(&view, GlobalTable::V5_3));
+    assert!(view_directory_valid(&view, GlobalTable::V5Later));
 
     for form in [3, 4] {
         let mut visible = directory_entry(402, form);
@@ -156,7 +156,10 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         GlobalTable::V4_0
     ));
     assert!(views_visible_directory_valid(&segmented, GlobalTable::V5_0));
-    assert!(views_visible_directory_valid(&segmented, GlobalTable::V5_3));
+    assert!(views_visible_directory_valid(
+        &segmented,
+        GlobalTable::V5Later
+    ));
 }
 
 #[test]

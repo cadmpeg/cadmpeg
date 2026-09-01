@@ -126,13 +126,13 @@ fn presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
+            general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5Later),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5_3),
+            !general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5Later),
             "font code {value}"
         );
     }
@@ -177,7 +177,7 @@ fn general_note_font_codes_follow_the_declared_dialect() {
     assert!(general_note_font_valid_for_global_table(
         3001,
         &entries,
-        GlobalTable::V5_1
+        GlobalTable::V5Later
     ));
 }
 

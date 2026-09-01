@@ -53,7 +53,11 @@ fn tabulated_directrix_types_follow_the_declared_dialect() {
     assert!(!tabulated_directrix_type_allowed(112, 3, GlobalTable::V5_0));
     assert!(!tabulated_directrix_type_allowed(130, 0, GlobalTable::V4_0));
     assert!(tabulated_directrix_type_allowed(130, 0, GlobalTable::V5_0));
-    assert!(tabulated_directrix_type_allowed(142, 0, GlobalTable::V5_3));
+    assert!(tabulated_directrix_type_allowed(
+        142,
+        0,
+        GlobalTable::V5Later
+    ));
 }
 
 #[test]
