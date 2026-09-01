@@ -39,13 +39,13 @@ fn inherit_replays_a_non_default_version_verbatim() {
         .unwrap();
     let plan = inherit(decoded.ir(), Some(decoded.source_fidelity())).unwrap();
 
-    assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
+    assert_eq!(plan.report().write_path, WritePath::VerbatimReplay);
     assert_eq!(
         plan.report().target().map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
     assert!(matches!(
-        plan.fidelity_resolution(),
+        &plan.report().fidelity,
         FidelityResolution::Replayed
     ));
     let mut written = Vec::new();
@@ -65,7 +65,7 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
         .unwrap();
     let plan = inherit(decoded.ir(), None).unwrap();
 
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    assert_eq!(plan.report().write_path, WritePath::Synthesized);
     assert_eq!(
         plan.report().target().map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
@@ -131,12 +131,12 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         .unwrap();
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
 
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    assert_eq!(plan.report().write_path, WritePath::Synthesized);
     assert_eq!(
         plan.report().target().map(ToString::to_string),
         Some("iges:5.3-fixed-ascii".to_owned())
     );
-    assert_eq!(plan.fidelity_resolution(), &FidelityResolution::NotProvided);
+    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotProvided);
     assert!(plan
         .report()
         .losses

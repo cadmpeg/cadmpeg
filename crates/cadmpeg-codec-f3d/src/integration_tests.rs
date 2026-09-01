@@ -329,7 +329,10 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     let result = decode(source.clone());
     let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
 
-    assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::VerbatimReplay);
+    assert_eq!(
+        plan.report().write_path,
+        cadmpeg_ir::WritePath::VerbatimReplay
+    );
     assert_eq!(named_target(&plan), "f3d:unknown");
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -378,7 +381,7 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     )
     .expect("the catalog row is synthesizable");
 
-    assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Synthesized);
+    assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Synthesized);
     assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -398,7 +401,10 @@ fn a_same_dialect_request_replays_under_both_spellings() {
         TargetRequest::Explicit("3-2-0-0"),
     ] {
         let plan = plan(&result, true, request).expect("the source's own dialect is writable");
-        assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::VerbatimReplay);
+        assert_eq!(
+            plan.report().write_path,
+            cadmpeg_ir::WritePath::VerbatimReplay
+        );
         assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
@@ -428,7 +434,7 @@ fn the_patch_path_names_the_preserved_dialect() {
             TargetRequest::Inherit,
         )
         .expect("an edited archive still preserves its dialect");
-    assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Patched);
+    assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Patched);
     assert_eq!(named_target(&plan), "f3d:unknown");
 
     let mut written = Vec::new();
@@ -480,7 +486,7 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
     ] {
         let plan = plan(result, fidelity, TargetRequest::Inherit)
             .unwrap_or_else(|error| panic!("{label} must plan, got {error}"));
-        assert_eq!(plan.write_path(), expected_path, "{label}");
+        assert_eq!(plan.report().write_path, expected_path, "{label}");
         let claimed = named_target(&plan);
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();

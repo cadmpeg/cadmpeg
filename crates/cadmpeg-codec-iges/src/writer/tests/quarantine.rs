@@ -60,7 +60,7 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    assert_eq!(plan.report().write_path, WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
 
