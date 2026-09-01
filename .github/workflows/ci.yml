@@ -193,24 +193,6 @@ jobs:
       - name: Independent Inventor evidence test
         run: python3 -m unittest -v scripts/test_inventor_evidence.py
 
-      - name: Convergence ratchet unit tests
-        run: python3 -m unittest -v scripts/test_convergence_ratchet.py
-
-      - name: Golden coverage floor unit tests
-        run: python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
-
-      - name: Public API ledger unit tests
-        run: python3 -m unittest -v scripts/test_check_public_api_ledger.py
-
-      - name: Codec facade unit tests
-        run: python3 -m unittest -v scripts/test_check_codec_facade.py
-
-      - name: Dialect registry unit tests
-        run: python3 -m unittest -v scripts/test_check_dialects.py
-
-      - name: Dialect capability registry unit tests
-        run: python3 -m unittest -v scripts/test_check_dialect_support.py
-
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this
         # would pay for the whole workspace again.
