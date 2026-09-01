@@ -1,4 +1,4 @@
-# generated at 58532625f
+# generated at f9f336db6
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -383,6 +383,7 @@ pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
 pub cadmpeg_core::error::CodecError::ContractViolation
 pub cadmpeg_core::error::CodecError::ContractViolation::codec: &'static str
+pub cadmpeg_core::error::CodecError::ContractViolation::expected: alloc::string::String
 pub cadmpeg_core::error::CodecError::ContractViolation::operation: &'static str
 pub cadmpeg_core::error::CodecError::ContractViolation::reported: alloc::string::String
 pub cadmpeg_core::error::CodecError::InvalidInput(alloc::string::String)
@@ -462,6 +463,7 @@ pub fn cadmpeg_core::target::find_target<'a>(&'a [cadmpeg_core::target::TargetDe
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
 pub cadmpeg_core::CodecError::ContractViolation
 pub cadmpeg_core::CodecError::ContractViolation::codec: &'static str
+pub cadmpeg_core::CodecError::ContractViolation::expected: alloc::string::String
 pub cadmpeg_core::CodecError::ContractViolation::operation: &'static str
 pub cadmpeg_core::CodecError::ContractViolation::reported: alloc::string::String
 pub cadmpeg_core::CodecError::InvalidInput(alloc::string::String)

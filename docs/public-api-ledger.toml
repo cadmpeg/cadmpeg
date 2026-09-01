@@ -1968,3 +1968,10 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::codec::ExportPlan::{fidelity_resolution,write_path}"
 reason = "both methods mirrored public fields of ExportPlan::report() without adding an invariant; callers now read the owning ExportReport directly"
+
+[[change]]
+commit = "f9f336db677ca170326a5de20639938b9f80443b"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::CodecError::ContractViolation::expected"
+reason = "sealed codec wrappers report both selected and backend-returned identities so a same-format target mismatch remains explicit"

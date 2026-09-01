@@ -21,19 +21,19 @@ pub enum CodecError {
     /// The document supplied to an encoder violates its input contract.
     #[error("invalid encoder input: {0}")]
     InvalidInput(String),
-    /// A codec backend returned a result for a format other than its own id.
+    /// A codec backend returned an identity other than the sealed wrapper selected.
     ///
     /// This is an implementation contract failure, not a statement about the
     /// input bytes. Public codec wrappers construct it after a backend returns.
-    #[error(
-        "codec {codec:?} {operation} returned format {reported:?}; the backend must report its own format"
-    )]
+    #[error("codec {codec:?} {operation} returned identity {reported:?}; expected {expected:?}")]
     ContractViolation {
         /// Codec id whose backend ran.
         codec: &'static str,
         /// Sealed operation that detected the violation.
         operation: &'static str,
-        /// Format returned by the backend.
+        /// Identity selected by the sealed wrapper.
+        expected: String,
+        /// Identity returned by the backend.
         reported: String,
     },
     /// A required read extended past the end of its window after commitment.
