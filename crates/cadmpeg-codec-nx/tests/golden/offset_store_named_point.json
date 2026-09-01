@@ -174,13 +174,16 @@
           "plain_streams": "0",
           "unclassified_offset_store_control_count": "1"
         },
-        "dialect": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },

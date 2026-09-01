@@ -63,13 +63,16 @@
           "partition_streams": "1",
           "plain_streams": "0"
         },
-        "dialect": {
-          "admission": "admitted",
-          "declared": {
-            "ugii_version": "50"
-          },
-          "dialect": "nx:legacy-cfb",
-          "format": "nx"
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "ugii_version": "50"
+            },
+            "dialect": "nx:legacy-cfb",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },

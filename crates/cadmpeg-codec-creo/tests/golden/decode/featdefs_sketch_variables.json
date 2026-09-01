@@ -249,15 +249,18 @@
         "section_count": "1",
         "version_line": "#UGC:2 P c"
       },
-      "dialect": {
-        "admission": {
-          "admitted_unverified": {}
-        },
-        "declared": {
-          "version_line": "#UGC:2 P c"
-        },
-        "dialect": "creo:unknown",
-        "format": "creo"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "admitted_unverified": {}
+          },
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },

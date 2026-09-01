@@ -194,10 +194,13 @@
         "stream_count": "2",
         "vertex_records": "3"
       },
-      "dialect": {
-        "admission": "admitted",
-        "dialect": "catia:fbb-only",
-        "format": "catia"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:fbb-only",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },

@@ -624,7 +624,7 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # The codec's pinned-id surface is `FcstdDialect` (dialect.rs), one variant per
 # row below. `FcstdDialect::classify` is the single construction path for the
 # `DialectMatch` that `ContainerSummary.dialects`, `DecodeReport.dialects`, and
-# the `SourceMeta.dialect` match mirror all carry. Its declared keys are
+# the primary `SourceMeta.dialects` match mirror all carry. Its declared keys are
 # `schema_version`, `file_version`, and `program_version`, recorded verbatim.
 #
 # `FileVersion` is read (container.rs:216-217, defaulting to "0"), but no

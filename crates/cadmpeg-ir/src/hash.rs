@@ -505,11 +505,11 @@ mod tests {
     ///     "attributes": {
     ///       "file_size": "4096"
     ///     },
-    ///     "dialect": null
+    ///     "dialects": null
     ///   },
     /// ```
     ///
-    /// `dialect` is the member the wire format makes unconditional. This is the
+    /// `dialects` is the member the wire format makes unconditional. This is the
     /// only pin this shape change moves: the other pinned documents carry no
     /// source metadata, so their normalized form still elides the whole
     /// `source` member.
@@ -518,7 +518,7 @@ mod tests {
         let ir = pinned_document_with_source();
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "6855f908b5178d4710fdd48f0e6b48d142be731d0fa28097eaf145053e897ede"
+            "0d340d38d1fc9c460368ce1b6798ff14d04444bc517325af4fa168570bcccbc6"
         );
     }
 

@@ -210,7 +210,7 @@ fn current_document_excludes_source_byte_accounting() {
     assert!(json.get("byte_ledger").is_none());
 }
 
-/// A `SourceMeta` written before the dialect match existed still reads with it
+/// A `SourceMeta` written before dialect layers existed still reads with them
 /// absent. Writing it back now states that absence explicitly,
 /// which is what moves every document digest over a document that has source
 /// metadata.
@@ -226,7 +226,7 @@ fn pre_migration_source_metadata_reads_back_and_gains_the_dialect_keys() {
     assert_eq!(
         rewritten,
         "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\
-         \"dialect\":null}"
+         \"dialects\":null}"
     );
     assert_eq!(
         serde_json::from_str::<SourceMeta>(&rewritten).unwrap(),
@@ -239,17 +239,19 @@ fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() 
     let matched = cadmpeg_core::dialect::DialectMatch::admitted(
         cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
     );
+    let layers = cadmpeg_core::dialect::DialectLayers::of(matched.clone());
     let source = SourceMeta::classified(
-        matched.clone(),
+        layers.clone(),
         std::collections::BTreeMap::from([("object_count".into(), "3".into())]),
     );
 
     assert_eq!(source.format(), "rhino");
     assert_eq!(source.dialect(), Some(&matched));
+    assert_eq!(source.dialects(), Some(&layers));
     let rendered = serde_json::to_string(&source).unwrap();
     assert_eq!(
         rendered,
-        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\"dialect\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}}"
+        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\"dialects\":{\"primary\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"},\"extra\":[]}}"
     );
     assert_eq!(
         serde_json::from_str::<SourceMeta>(&rendered).unwrap(),
@@ -265,4 +267,45 @@ fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() 
             .contains("format \"step\" does not match classified payload format \"rhino\""),
         "{error}"
     );
+}
+
+#[test]
+fn legacy_singular_source_dialect_migrates_to_current_layers() {
+    let stored = "{\"format\":\"rhino\",\"attributes\":{},\"dialect\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}}";
+    let source: SourceMeta = serde_json::from_str(stored).unwrap();
+
+    assert_eq!(
+        source.dialect().unwrap().dialect().as_str(),
+        "rhino:archive-80"
+    );
+    let rewritten = serde_json::to_string(&source).unwrap();
+    let current: serde_json::Value = serde_json::from_str(&rewritten).unwrap();
+    assert!(current.get("dialects").is_some(), "{rewritten}");
+    assert!(current.get("dialect").is_none(), "{rewritten}");
+}
+
+#[test]
+fn source_metadata_rejects_current_and_legacy_identity_together() {
+    let stored = "{\"format\":\"rhino\",\"attributes\":{},\"dialects\":{\"primary\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"},\"extra\":[]},\"dialect\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}}";
+    let error = serde_json::from_str::<SourceMeta>(stored).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("cannot contain both dialects and legacy dialect fields"),
+        "{error}"
+    );
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn current_source_metadata_schema_requires_dialects_and_omits_legacy_dialect() {
+    let schema = serde_json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
+    let required = schema["required"].as_array().unwrap();
+
+    assert!(
+        required.iter().any(|field| field == "dialects"),
+        "{schema:#}"
+    );
+    assert!(schema["properties"].get("dialect").is_none(), "{schema:#}");
 }

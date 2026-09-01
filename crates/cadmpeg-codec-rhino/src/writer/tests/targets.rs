@@ -12,8 +12,8 @@ use crate::RhinoCodec;
 fn source_in(dialect: &'static str) -> CadIr {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
-        cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect::DialectId::pinned(
-            dialect,
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::pinned(dialect),
         )),
         std::collections::BTreeMap::new(),
     ));

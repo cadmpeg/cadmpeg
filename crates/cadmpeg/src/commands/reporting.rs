@@ -19,26 +19,11 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
     if let Some((before, after)) = &source.format_change {
         println!("  source format: {before} → {after}");
     }
-    if let Some((before, after)) = &source.dialect_change {
-        if before == after {
-            println!(
-                "  source dialect metadata changed: {}",
-                render_attribute(before.as_deref())
-            );
-        } else {
-            println!(
-                "  source dialect: {} → {}",
-                render_attribute(before.as_deref()),
-                render_attribute(after.as_deref())
-            );
-        }
-    }
-    for change in &source.declared {
+    if let Some((before, after)) = &source.dialects_change {
         println!(
-            "  source declaration {}: {} → {}",
-            change.key,
-            render_attribute(change.left.as_deref()),
-            render_attribute(change.right.as_deref())
+            "  source dialect layers: {} → {}",
+            render_dialect_layers(before.as_ref()),
+            render_dialect_layers(after.as_ref())
         );
     }
     for change in &source.attributes {
@@ -61,6 +46,13 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
             render_attribute(change.right.as_deref())
         );
     }
+}
+
+fn render_dialect_layers(layers: Option<&cadmpeg_core::dialect::DialectLayers>) -> String {
+    layers.map_or_else(
+        || "<absent>".to_owned(),
+        |layers| serde_json::to_string(layers).expect("dialect layers always serialize"),
+    )
 }
 
 fn render_attribute(value: Option<&str>) -> String {

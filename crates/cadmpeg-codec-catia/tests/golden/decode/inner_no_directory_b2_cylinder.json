@@ -169,10 +169,13 @@
         "preview_count": "0",
         "stream_count": "2"
       },
-      "dialect": {
-        "admission": "admitted",
-        "dialect": "catia:inner-no-directory",
-        "format": "catia"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:inner-no-directory",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },

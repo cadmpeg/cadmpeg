@@ -1013,19 +1013,22 @@
         "representation": "fixed-ascii",
         "sender_product": "product"
       },
-      "dialect": {
-        "admission": {
-          "admitted_unverified": {
-            "using": "iges:5.3-fixed-ascii"
-          }
-        },
-        "declared": {
-          "effective_version": "2.0",
-          "representation": "fixed-ascii",
-          "version_flag": "3"
-        },
-        "dialect": "iges:2.0-fixed-ascii",
-        "format": "iges"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "admitted_unverified": {
+              "using": "iges:5.3-fixed-ascii"
+            }
+          },
+          "declared": {
+            "effective_version": "2.0",
+            "representation": "fixed-ascii",
+            "version_flag": "3"
+          },
+          "dialect": "iges:2.0-fixed-ascii",
+          "format": "iges"
+        }
       },
       "format": "iges"
     },

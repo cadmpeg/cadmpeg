@@ -98,7 +98,22 @@ impl JsonSchema for ExportReport {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ExportReportWire::json_schema(generator)
+        let mut schema = ExportReportWire::json_schema(generator);
+        crate::schema::require_object_fields(&mut schema, ["target"]);
+        schema
+    }
+}
+
+#[cfg(all(test, feature = "schema"))]
+mod schema_tests {
+    #[test]
+    fn current_export_report_schema_requires_target() {
+        let schema = serde_json::to_value(schemars::schema_for!(super::ExportReport))
+            .expect("export report schema serializes");
+        let required = schema["required"]
+            .as_array()
+            .expect("export report schema has required fields");
+        assert!(required.iter().any(|field| field == "target"), "{schema:#}");
     }
 }
 

@@ -405,7 +405,7 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
 }
 
 #[test]
-fn a_decode_result_accepts_dialects_with_one_primary_layer() {
+fn a_decode_result_preserves_every_report_dialect_layer_on_the_source() {
     let mut ir = unit_cube();
     ir.source = Some(crate::SourceMeta::unclassified("test", BTreeMap::new()));
     let report = DecodeReport::classified(
@@ -424,6 +424,10 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
         .expect("the test source and report formats agree");
 
     assert_eq!(result.report().dialects().unwrap().iter().count(), 2);
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().dialects(),
+        result.report().dialects()
+    );
 
     let unclassified = DecodeResult::new(
         ir,
@@ -442,7 +446,7 @@ fn a_decode_result_accepts_dialects_with_one_primary_layer() {
 }
 
 #[test]
-fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
+fn a_decode_result_projects_source_mirrors_from_all_layers() {
     let mut ir = unit_cube();
     ir.source = Some(crate::SourceMeta::unclassified(
         "test",
@@ -450,8 +454,13 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
     ));
     let primary = dialect_layer("test:only")
         .with_declared(BTreeMap::from([("version".into(), "only".into())]));
+    let layers = DialectLayers::new(
+        primary.clone(),
+        vec![dialect_layer("acis:save-format-217").with_instance("body.sab")],
+    )
+    .unwrap();
     let report = DecodeReport::classified(
-        DialectLayers::new(primary.clone(), Vec::new()).unwrap(),
+        layers.clone(),
         DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
@@ -467,6 +476,7 @@ fn a_decode_result_projects_source_mirrors_from_the_primary_layer() {
         .as_ref()
         .expect("source metadata remains");
     assert_eq!(source.dialect(), Some(&primary));
+    assert_eq!(source.dialects(), Some(&layers));
     assert_eq!(source.attributes["attribute"], "retained");
 }
 
@@ -495,7 +505,7 @@ fn a_decode_result_rejects_a_classified_report_without_source_metadata() {
 fn a_decode_result_rejects_same_format_dialect_disagreement() {
     let mut ir = unit_cube();
     ir.source = Some(crate::SourceMeta::classified(
-        dialect_layer("test:wrong"),
+        DialectLayers::of(dialect_layer("test:wrong")),
         BTreeMap::new(),
     ));
     let report = DecodeReport::classified(
@@ -511,15 +521,46 @@ fn a_decode_result_rejects_same_format_dialect_disagreement() {
         .expect_err("same-format dialect disagreement must not be overwritten");
     assert_eq!(
         error.to_string(),
-        "decode source dialect metadata (dialect test:wrong, admission Admitted, instance None, declared {}) disagrees with report primary dialect metadata (dialect test:only, admission Admitted, instance None, declared {})"
+        "decode source dialect layers (dialect test:wrong, admission Admitted, instance None, declared {}) disagree with report dialect layers (dialect test:only, admission Admitted, instance None, declared {})"
     );
+}
+
+#[test]
+fn a_decode_result_rejects_extra_layer_disagreement() {
+    let mut ir = unit_cube();
+    ir.source = Some(crate::SourceMeta::classified(
+        DialectLayers::new(
+            dialect_layer("test:only"),
+            vec![dialect_layer("acis:save-format-217").with_instance("body-a.sab")],
+        )
+        .unwrap(),
+        BTreeMap::new(),
+    ));
+    let report = DecodeReport::classified(
+        DialectLayers::new(
+            dialect_layer("test:only"),
+            vec![dialect_layer("acis:save-format-217").with_instance("body-b.sab")],
+        )
+        .unwrap(),
+        DecodeTransfer::full(true),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+
+    let error = DecodeResult::new(ir, report, SourceFidelity::default())
+        .expect_err("extra dialect layers are part of source identity");
+    let rendered = error.to_string();
+    assert!(rendered.contains("body-a.sab"), "{rendered}");
+    assert!(rendered.contains("body-b.sab"), "{rendered}");
 }
 
 #[test]
 fn a_decode_result_explains_same_id_admission_disagreement() {
     let mut ir = unit_cube();
     ir.source = Some(crate::SourceMeta::classified(
-        DialectMatch::admitted(DialectId::pinned("test:only")),
+        DialectLayers::of(DialectMatch::admitted(DialectId::pinned("test:only"))),
         BTreeMap::new(),
     ));
     let report = DecodeReport::classified(
@@ -543,7 +584,7 @@ fn a_decode_result_rejects_a_source_and_report_format_mismatch_before_stamping()
     let mut ir = unit_cube();
     let original = DialectMatch::admitted(DialectId::pinned("step:ap242e3"));
     ir.source = Some(crate::SourceMeta::classified(
-        original.clone(),
+        DialectLayers::of(original.clone()),
         BTreeMap::new(),
     ));
     let report = DecodeReport::classified(
@@ -587,7 +628,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.source = source.map(|(format, dialect)| match dialect {
         Some(id) => crate::document::SourceMeta::classified(
-            DialectMatch::admitted(DialectId::pinned(id)),
+            DialectLayers::of(DialectMatch::admitted(DialectId::pinned(id))),
             BTreeMap::new(),
         ),
         None => crate::document::SourceMeta::unclassified(format, BTreeMap::new()),

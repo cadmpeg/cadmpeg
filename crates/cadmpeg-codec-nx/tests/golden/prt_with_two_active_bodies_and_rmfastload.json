@@ -4740,13 +4740,41 @@
           "rmfastload_active_object_count": "100",
           "rmfastload_hits": "100"
         },
-        "dialect": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+        "dialects": {
+          "extra": [
+            {
+              "admission": {
+                "admitted_unverified": {}
+              },
+              "declared": {
+                "carrier": "stream@121",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid",
+              "instance": "stream@121"
+            },
+            {
+              "admission": {
+                "admitted_unverified": {}
+              },
+              "declared": {
+                "carrier": "stream@1658",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid",
+              "instance": "stream@1658"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },

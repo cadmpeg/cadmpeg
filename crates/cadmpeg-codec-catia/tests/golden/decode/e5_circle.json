@@ -212,10 +212,13 @@
         "stream_count": "2",
         "vertex_records": "2"
       },
-      "dialect": {
-        "admission": "admitted",
-        "dialect": "catia:e5-stream",
-        "format": "catia"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:e5-stream",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },

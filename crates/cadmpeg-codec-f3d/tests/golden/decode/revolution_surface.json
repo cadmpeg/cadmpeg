@@ -14,13 +14,28 @@
         "solved_record_len": "2885",
         "zip_entry_count": "3"
       },
-      "dialect": {
-        "format": "f3d",
-        "dialect": "f3d:manifest-3-2-0-0",
-        "declared": {
-          "top_level_manifest_version": "3-2-0-0"
+      "dialects": {
+        "primary": {
+          "format": "f3d",
+          "dialect": "f3d:manifest-3-2-0-0",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "admission": "admitted"
         },
-        "admission": "admitted"
+        "extra": [
+          {
+            "format": "acis",
+            "dialect": "acis:asm-binaryfile-8",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+              "reference_width": "8",
+              "save_format_major": "231",
+              "save_format_minor": "0"
+            },
+            "admission": "admitted"
+          }
+        ]
       }
     },
     "units": {

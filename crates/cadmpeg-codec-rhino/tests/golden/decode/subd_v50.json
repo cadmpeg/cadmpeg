@@ -239,13 +239,16 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "50"
-        },
-        "dialect": "rhino:archive-50",
-        "format": "rhino"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "50"
+          },
+          "dialect": "rhino:archive-50",
+          "format": "rhino"
+        }
       },
       "format": "rhino"
     },

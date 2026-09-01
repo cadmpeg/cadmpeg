@@ -2115,3 +2115,17 @@ crate = "cadmpeg-registry"
 kind = "signature"
 item = "cadmpeg_registry::{Inspection::Classified,ResolvedInspection::Native::inspection}"
 reason = "registry inspection results now retain the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "2ad988338eb9842b415bdf2b0a679c9d7779e16d"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::document::SourceMeta::classified"
+reason = "source metadata now retains the complete validated DialectLayers set instead of discarding every non-primary source identity"
+
+[[change]]
+commit = "2ad988338eb9842b415bdf2b0a679c9d7779e16d"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::diff::{SourceDiff::dialect_change,SourceDiff::declared}"
+reason = "the replacement dialects_change field carries complete typed layers, including admission, instance, declarations, and extras, without a lossy duplicate declaration projection"

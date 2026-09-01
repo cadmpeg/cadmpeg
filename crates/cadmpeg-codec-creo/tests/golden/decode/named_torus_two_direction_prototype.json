@@ -747,13 +747,16 @@
         "srf_array_count": "1",
         "version_line": "#UGC:2 P c"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "version_line": "#UGC:2 P c"
-        },
-        "dialect": "creo:nd",
-        "format": "creo"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:nd",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },

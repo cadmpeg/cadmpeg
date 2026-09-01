@@ -140,10 +140,13 @@
         "outer_dir_offset": "0",
         "preview_count": "0"
       },
-      "dialect": {
-        "admission": "admitted",
-        "dialect": "catia:zero-entity",
-        "format": "catia"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:zero-entity",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },

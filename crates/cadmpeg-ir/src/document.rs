@@ -5,10 +5,9 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::ser::SerializeStruct;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 
-use cadmpeg_core::dialect::{DialectMatch, FormatIdentity};
+use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -470,19 +469,28 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
 /// [`cadmpeg_ir::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceMeta {
-    classification: FormatIdentity<DialectMatch>,
+    classification: FormatIdentity<DialectLayers>,
     /// Format-specific attributes.
     pub attributes: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SourceMetaWire {
+struct SourceMetaReadWire {
     format: String,
     #[serde(default)]
     attributes: BTreeMap<String, String>,
     #[serde(default)]
+    dialects: Option<DialectLayers>,
+    #[serde(default)]
     dialect: Option<DialectMatch>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SourceMetaWriteWire<'a> {
+    format: &'a str,
+    attributes: &'a BTreeMap<String, String>,
+    dialects: Option<&'a DialectLayers>,
 }
 
 impl Default for SourceMeta {
@@ -493,19 +501,30 @@ impl Default for SourceMeta {
 
 impl Serialize for SourceMeta {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("SourceMeta", 3)?;
-        state.serialize_field("format", self.format())?;
-        state.serialize_field("attributes", &self.attributes)?;
-        state.serialize_field("dialect", &self.dialect())?;
-        state.end()
+        SourceMetaWriteWire {
+            format: self.format(),
+            attributes: &self.attributes,
+            dialects: self.dialects(),
+        }
+        .serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for SourceMeta {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = SourceMetaWire::deserialize(deserializer)?;
-        let classification = FormatIdentity::from_wire(wire.format, wire.dialect)
-            .map_err(serde::de::Error::custom)?;
+        let wire = SourceMetaReadWire::deserialize(deserializer)?;
+        let dialects = match (wire.dialects, wire.dialect) {
+            (Some(_), Some(_)) => {
+                return Err(serde::de::Error::custom(
+                    "source metadata cannot contain both dialects and legacy dialect fields",
+                ));
+            }
+            (Some(dialects), None) => Some(dialects),
+            (None, Some(dialect)) => Some(DialectLayers::of(dialect)),
+            (None, None) => None,
+        };
+        let classification =
+            FormatIdentity::from_wire(wire.format, dialects).map_err(serde::de::Error::custom)?;
         Ok(Self {
             classification,
             attributes: wire.attributes,
@@ -524,16 +543,18 @@ impl JsonSchema for SourceMeta {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        SourceMetaWire::json_schema(generator)
+        let mut schema = SourceMetaWriteWire::json_schema(generator);
+        crate::schema::require_object_fields(&mut schema, ["dialects"]);
+        schema
     }
 }
 
 impl SourceMeta {
-    /// Constructs metadata with a primary dialect whose format is authoritative.
+    /// Constructs metadata with dialect layers whose primary format is authoritative.
     #[must_use]
-    pub fn classified(dialect: DialectMatch, attributes: BTreeMap<String, String>) -> Self {
+    pub fn classified(dialects: DialectLayers, attributes: BTreeMap<String, String>) -> Self {
         Self {
-            classification: FormatIdentity::classified(dialect),
+            classification: FormatIdentity::classified(dialects),
             attributes,
         }
     }
@@ -553,6 +574,12 @@ impl SourceMeta {
         self.classification.format()
     }
 
+    /// Returns every source dialect layer when the source was classified.
+    #[must_use]
+    pub fn dialects(&self) -> Option<&DialectLayers> {
+        self.classification.classified_payload()
+    }
+
     /// Returns the primary source dialect match when the source was classified.
     ///
     /// The match contains the registry dialect id, source declarations,
@@ -560,7 +587,7 @@ impl SourceMeta {
     /// source format returned by [`Self::format`].
     #[must_use]
     pub fn dialect(&self) -> Option<&DialectMatch> {
-        self.classification.classified_payload()
+        self.dialects().map(DialectLayers::primary)
     }
 }
 
