@@ -74,19 +74,30 @@ pub enum RhinoArchiveVersion {
     V8,
 }
 
-impl RhinoArchiveVersion {
-    /// Every archive version this writer can emit, in registry order.
-    pub(crate) const ALL: [Self; 4] = [Self::V5, Self::V6, Self::V7, Self::V8];
+macro_rules! writer_vocabulary {
+    ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
+        $(#[$all_meta])*
+        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        /// The generic encoder view projected from [`Self::ALL`].
+        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+            $(Self::$variant.descriptor()),+
+        ];
+    };
+}
 
-    /// The generic encoder view, projected from this typed write vocabulary.
-    /// Archive words and Rhino majors are aliases; archive 80 is the
-    /// cross-format default.
-    pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
-        Self::V5.descriptor(),
-        Self::V6.descriptor(),
-        Self::V7.descriptor(),
-        Self::V8.descriptor(),
-    ];
+impl RhinoArchiveVersion {
+    writer_vocabulary!(
+        /// Every archive version this writer can emit, in registry order.
+        ///
+        /// The same invocation projects the generic encoder catalog, so adding
+        /// a typed version cannot omit its target descriptor. Archive words and
+        /// Rhino majors are aliases; archive 80 is the cross-format default.
+        4;
+        V5,
+        V6,
+        V7,
+        V8
+    );
 
     pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
         Self::ALL

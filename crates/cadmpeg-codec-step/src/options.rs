@@ -67,30 +67,32 @@ pub enum StepSchema {
     Ap242Edition3,
 }
 
-impl StepSchema {
-    /// Every schema the Part 21 writer can emit, and so every row of the
-    /// synthesis catalog. Resolution maps a typed dialect identity back to a
-    /// schema through this list.
-    pub(crate) const ALL: [Self; 6] = [
-        Self::Ap203Edition1,
-        Self::Ap203Edition2,
-        Self::Ap214,
-        Self::Ap242Edition1,
-        Self::Ap242Edition2,
-        Self::Ap242Edition3,
-    ];
+macro_rules! writer_vocabulary {
+    ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
+        $(#[$all_meta])*
+        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        /// The generic encoder view projected from [`Self::ALL`].
+        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+            $(Self::$variant.descriptor()),+
+        ];
+    };
+}
 
-    /// The generic encoder view, projected from this typed write vocabulary.
-    /// Every row names the exact `FILE_SCHEMA` declaration this enum writes;
-    /// AP214 is the cross-format default.
-    pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
-        Self::Ap203Edition1.descriptor(),
-        Self::Ap203Edition2.descriptor(),
-        Self::Ap214.descriptor(),
-        Self::Ap242Edition1.descriptor(),
-        Self::Ap242Edition2.descriptor(),
-        Self::Ap242Edition3.descriptor(),
-    ];
+impl StepSchema {
+    writer_vocabulary!(
+        /// Every schema the Part 21 writer can emit, and so every row of the
+        /// synthesis catalog. The same invocation projects the generic encoder
+        /// catalog, so adding a typed schema cannot omit its target descriptor.
+        /// Every row names the exact `FILE_SCHEMA` declaration this enum writes;
+        /// AP214 is the cross-format default.
+        6;
+        Ap203Edition1,
+        Ap203Edition2,
+        Ap214,
+        Ap242Edition1,
+        Ap242Edition2,
+        Ap242Edition3,
+    );
 
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {

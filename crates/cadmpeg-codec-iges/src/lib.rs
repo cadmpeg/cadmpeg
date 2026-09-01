@@ -63,20 +63,32 @@ pub enum IgesVersion {
     V4_0,
 }
 
-impl IgesVersion {
-    /// Every version this writer can emit, in registry order.
-    pub(crate) const ALL: [Self; 5] = [Self::V4_0, Self::V5_0, Self::V5_1, Self::V5_2, Self::V5_3];
+macro_rules! writer_vocabulary {
+    ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
+        $(#[$all_meta])*
+        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        /// The generic encoder view projected from [`Self::ALL`].
+        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+            $(Self::$variant.descriptor()),+
+        ];
+    };
+}
 
-    /// The generic encoder view, projected from this typed write vocabulary.
-    /// The writer emits only the five verified Fixed ASCII rows. Each bare
-    /// version is an alias, and 5.3 is the cross-format default.
-    pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
-        Self::V4_0.descriptor(),
-        Self::V5_0.descriptor(),
-        Self::V5_1.descriptor(),
-        Self::V5_2.descriptor(),
-        Self::V5_3.descriptor(),
-    ];
+impl IgesVersion {
+    writer_vocabulary!(
+        /// Every version this writer can emit, in registry order.
+        ///
+        /// The same invocation projects the generic encoder catalog, so adding
+        /// a typed version cannot omit its target descriptor. The writer emits
+        /// only the verified Fixed ASCII rows. Each bare version is an alias,
+        /// and 5.3 is the cross-format default.
+        5;
+        V4_0,
+        V5_0,
+        V5_1,
+        V5_2,
+        V5_3
+    );
 
     pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
         Self::ALL
