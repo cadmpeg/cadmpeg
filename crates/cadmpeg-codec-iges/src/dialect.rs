@@ -29,7 +29,7 @@
 
 use crate::global::ResolvedGlobal;
 use crate::representation::Representation;
-use crate::version::{DialectRecovery, VersionFlag};
+use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
@@ -40,37 +40,33 @@ pub(crate) const FORMAT: &str = "iges";
 
 /// The dialect-unverified loss required by a classified Global declaration.
 pub(crate) fn dialect_loss(matched: &DialectMatch, global: &ResolvedGlobal) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { .. } = matched.admission() else {
+    let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
+        debug_assert_eq!(matched.admission(), Admission::Admitted);
         return None;
     };
+    debug_assert!(matches!(
+        matched.admission(),
+        Admission::AdmittedUnverified { .. }
+    ));
     let declared = global.declared_version_flag();
     let version = global.version_name();
-    let recovery = global.dialect_recovery();
-    debug_assert_ne!(
-        recovery,
-        DialectRecovery::Verified,
-        "a verified Global declaration cannot produce an unverified admission"
-    );
     let (declaration, clamp) = match recovery {
-        DialectRecovery::UnreadableDeclaration(declaration) => (
+        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => (
             format!(
                 "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared}",
             ),
             String::new(),
         ),
-        DialectRecovery::Clamped => (
+        UnverifiedDialectRecovery::Clamped => (
             format!("IGES Global version flag {declared}"),
             format!(
                 " after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor",
                 global.effective_version_flag()
             ),
         ),
-        DialectRecovery::UnverifiedVersion => (
+        UnverifiedDialectRecovery::UnverifiedVersion => (
             format!("IGES Global version flag {declared}"),
             String::new(),
-        ),
-        DialectRecovery::Verified => unreachable!(
-            "verified Global recovery cannot accompany an unverified dialect admission"
         ),
     };
     Some(crate::loss::IgesLossCode::SourceDialectUnverified.note(format!(
@@ -300,7 +296,7 @@ impl IgesDialect {
     ) -> DialectMatch {
         let dialect =
             Self::from_representation_and_version(representation, global.declared_version());
-        let verified = global.dialect_recovery() == DialectRecovery::Verified;
+        let recovery = global.dialect_recovery();
         let mut declared = BTreeMap::new();
         declared.insert(
             DECLARED_REPRESENTATION.into(),
@@ -314,7 +310,10 @@ impl IgesDialect {
             DECLARED_EFFECTIVE_VERSION.into(),
             global.version_name().to_owned(),
         );
-        if global.dialect_recovery() == DialectRecovery::Clamped {
+        if matches!(
+            recovery,
+            DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped)
+        ) {
             declared.insert(
                 DECLARED_EFFECTIVE_VERSION_FLAG.into(),
                 global.effective_version_flag().to_string(),
@@ -323,7 +322,7 @@ impl IgesDialect {
         if let Some(text) = global.unreadable_version_declaration() {
             declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());
         }
-        if verified {
+        if matches!(recovery, DialectRecovery::Verified) {
             DialectMatch::admitted(dialect.id())
         } else {
             DialectMatch::unverified(dialect.id(), Self::nearest_verified(representation).id())

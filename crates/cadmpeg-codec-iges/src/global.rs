@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
-use crate::version::{DialectRecovery, VersionFlag};
+use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use crate::IgesVersion;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
@@ -1418,13 +1418,15 @@ impl ResolvedGlobal {
         if let Some(declaration) = self.unreadable_version_declaration() {
             // A malformed field 23 is replaced by the specification default, so
             // it never also reads as clamped; the arms stay disjoint.
-            DialectRecovery::UnreadableDeclaration(declaration)
+            DialectRecovery::Unverified(UnverifiedDialectRecovery::UnreadableDeclaration(
+                declaration,
+            ))
         } else if self.declared_version().is_none() {
-            DialectRecovery::Clamped
+            DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped)
         } else if self.version().is_some() {
             DialectRecovery::Verified
         } else {
-            DialectRecovery::UnverifiedVersion
+            DialectRecovery::Unverified(UnverifiedDialectRecovery::UnverifiedVersion)
         }
     }
 
@@ -1492,7 +1494,7 @@ impl ResolvedGlobal {
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
         }
-        if self.dialect_recovery() == DialectRecovery::Verified {
+        if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
             notes.push(format!("iges_version={}", self.version_name()));
         } else {
             notes.push("iges_version=unverified".into());
