@@ -125,10 +125,11 @@ fn the_legacy_arm_declares_the_ugii_payload_version_verbatim() {
 
 #[test]
 fn the_version_byte_is_evidence_and_never_moves_the_resolved_id() {
-    // The byte is read with `unwrap_or(0)` and compared to nothing, so every
-    // value lands on the same row as every other. A consumer that parsed a
-    // version out of the id, or expected the id to agree with the declaration
-    // beside it, would be reading a field this codec does not branch on.
+    // The scanner requires the byte and classification compares it to nothing,
+    // so every value lands on the same row as every other. A consumer that
+    // parsed a version out of the id, or expected the id to agree with the
+    // declaration beside it, would be reading a field this codec does not
+    // branch on.
     for version in [0_u8, 1, 6, 255] {
         let matched = NxDialect::classify(&container(false, version));
         assert_eq!(matched.dialect().as_str(), "nx:splmsstr");

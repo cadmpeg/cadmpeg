@@ -814,7 +814,6 @@ pub struct Container<'a> {
     pub data: Cow<'a, [u8]>,
     /// Modern version byte at file offset 8, or the legacy UGII payload
     /// version when the source is a CFB wrapper.
-    ///
     pub version: u8,
     /// Modern file-specific 24-bit little-endian value at offset 9; zero for
     /// a legacy CFB wrapper.

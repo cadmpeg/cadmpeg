@@ -1179,8 +1179,7 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
     }
 }
 
-/// Builds source metadata from the container scan.
-///
+/// Builds non-identity source metadata from the container scan.
 pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     let legacy_cfb = scan.container.is_legacy_cfb();
@@ -1196,9 +1195,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         "header_entry_count".to_string(),
         scan.container.header_entry_count.to_string(),
     );
-    if legacy_cfb {
-        attributes.insert("container_kind".to_string(), "cfb".to_string());
-    } else {
+    if !legacy_cfb {
         attributes.insert(
             "footer_offset".to_string(),
             scan.container.footer_offset.to_string(),
@@ -1239,9 +1236,6 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         "plain_streams".to_string(),
         scan.count(StreamKind::Plain).to_string(),
     );
-    if let Some(schema) = scan.streams.iter().find_map(|s| s.schema.as_deref()) {
-        attributes.insert("parasolid_schema".to_string(), schema.to_string());
-    }
     for (index, path) in scan
         .container
         .external_reference_paths()
