@@ -148,14 +148,27 @@
         "save_date": "Synthetic",
         "scale": "1"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "encoding": "text",
-          "terminator": "End-of-ASM-data"
-        },
-        "dialect": "sat:text",
-        "format": "sat"
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "save_format_major": "232",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:text-asm",
+            "format": "acis"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "encoding": "text",
+            "terminator": "End-of-ASM-data"
+          },
+          "dialect": "sat:text",
+          "format": "sat"
+        }
       },
       "format": "sat"
     },

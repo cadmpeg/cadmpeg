@@ -97,7 +97,9 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         .any(|matched| matched.format() == "f3d" && matched.instance() == Some("root.f3d")));
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect(), Some(&inspected));
-    let primary = decoded.report().dialects().unwrap().primary();
+    let report_layers = decoded.report().dialects().unwrap();
+    assert_eq!(source.dialects(), Some(report_layers));
+    let primary = report_layers.primary();
     assert_eq!(source.dialect(), Some(primary));
 }
 

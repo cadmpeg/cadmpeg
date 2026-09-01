@@ -99,12 +99,15 @@
         "outer_dir_offset": "36",
         "preview_count": "0"
       },
-      "dialect": {
-        "admission": {
-          "admitted_unverified": {}
-        },
-        "dialect": "catia:unknown",
-        "format": "catia"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "admitted_unverified": {}
+          },
+          "dialect": "catia:unknown",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },

@@ -68,15 +68,18 @@
         "entity_instances": "2",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
-          "implementation_level": "2;1",
-          "long_form_arcs": " 1 0 10303 442 3 1 4 "
-        },
-        "dialect": "step:ap242-e2",
-        "format": "step"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
+            "implementation_level": "2;1",
+            "long_form_arcs": " 1 0 10303 442 3 1 4 "
+          },
+          "dialect": "step:ap242-e2",
+          "format": "step"
+        }
       },
       "format": "step"
     },

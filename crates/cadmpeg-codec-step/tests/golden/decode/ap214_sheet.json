@@ -359,14 +359,17 @@
         "entity_instances": "59",
         "schema": "AUTOMOTIVE_DESIGN"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AUTOMOTIVE_DESIGN",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap214",
-        "format": "step"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap214",
+          "format": "step"
+        }
       },
       "format": "step"
     },

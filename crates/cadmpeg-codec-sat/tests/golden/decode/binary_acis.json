@@ -147,13 +147,27 @@
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "encoding": "binary"
-        },
-        "dialect": "sat:acis-binary",
-        "format": "sat"
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "reference_width": "4",
+              "save_format_major": "218",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:save-format-218",
+            "format": "acis"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "encoding": "binary"
+          },
+          "dialect": "sat:acis-binary",
+          "format": "sat"
+        }
       },
       "format": "sat"
     },

@@ -28,7 +28,7 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         .expect("decode classifies the source")
         .attributes;
     ir.source = Some(SourceMeta::classified(
-        SldprtDialect::classify(None),
+        cadmpeg_core::dialect::DialectLayers::of(SldprtDialect::classify(None)),
         attributes,
     ));
     let records = crate::source_records(&ir, &fidelity).expect("source records join");
@@ -70,7 +70,7 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
         ))
     };
     ir.source = Some(SourceMeta::classified(
-        matched,
+        cadmpeg_core::dialect::DialectLayers::of(matched),
         std::collections::BTreeMap::new(),
     ));
     ir

@@ -729,10 +729,13 @@
         "stream_count": "2",
         "vertex_records": "4"
       },
-      "dialect": {
-        "admission": "admitted",
-        "dialect": "catia:standard-nested",
-        "format": "catia"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:standard-nested",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },

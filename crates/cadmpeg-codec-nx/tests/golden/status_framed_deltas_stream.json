@@ -116,13 +116,28 @@
           "partition_streams": "0",
           "plain_streams": "0"
         },
-        "dialect": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+        "dialects": {
+          "extra": [
+            {
+              "admission": {
+                "admitted_unverified": {}
+              },
+              "declared": {
+                "carrier": "stream@76",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },

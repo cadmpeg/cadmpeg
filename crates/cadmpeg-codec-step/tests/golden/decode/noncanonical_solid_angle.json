@@ -58,18 +58,21 @@
         "entity_instances": "1",
         "schema": "AUTOMOTIVE_DESIGN_CC2"
       },
-      "dialect": {
-        "admission": {
-          "admitted_unverified": {
-            "using": "step:ap242-e3"
-          }
-        },
-        "declared": {
-          "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:unknown",
-        "format": "step"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "admitted_unverified": {
+              "using": "step:ap242-e3"
+            }
+          },
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:unknown",
+          "format": "step"
+        }
       },
       "format": "step"
     },

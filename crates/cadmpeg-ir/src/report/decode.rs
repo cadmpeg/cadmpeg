@@ -162,17 +162,7 @@ impl JsonSchema for DecodeReport {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let mut schema = DecodeReportWire::json_schema(generator);
-        let fields = schema
-            .as_object_mut()
-            .expect("a derived struct schema is an object");
-        let required = fields
-            .entry("required")
-            .or_insert_with(|| serde_json::Value::Array(Vec::new()))
-            .as_array_mut()
-            .expect("a derived struct schema has an array of required fields");
-        if !required.iter().any(|field| field == "dialects") {
-            required.push(serde_json::Value::String("dialects".to_owned()));
-        }
+        crate::schema::require_object_fields(&mut schema, ["dialects"]);
         schema
     }
 }

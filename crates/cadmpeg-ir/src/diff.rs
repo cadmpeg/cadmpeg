@@ -9,10 +9,9 @@
 //! every verdict here concerns exactly the two documents passed in.
 //!
 //! The comparison covers units, tolerances, every model and native arena, and
-//! [`crate::document::SourceMeta`] — the source format id, its primary-layer
-//! dialect, the version fields that layer declared, and its attributes, where a
-//! codec records the program version, the object count, and the rest of what it
-//! read out of the container.
+//! [`crate::document::SourceMeta`] — the source format id, all dialect layers,
+//! and its attributes, where a codec records the program version, the object
+//! count, and the rest of what it read out of the container.
 //!
 //! One class of attribute is carved out. A machine-local digest, named by the
 //! [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
@@ -32,6 +31,7 @@
 use std::collections::BTreeMap;
 
 use crate::compare::{floats_agree, is_local_digest_attribute, values_agree};
+use cadmpeg_core::dialect::DialectLayers;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -61,20 +61,9 @@ pub struct AttributeChange {
 pub struct SourceDiff {
     /// `(left, right)` source format ids, present only when they differ.
     pub format_change: Option<(String, String)>,
-    /// `(left, right)` primary-layer dialect ids, present when the complete
-    /// matches differ.
-    ///
-    /// Rendered as the plain ids; an absent dialect renders as `None`. The ids
-    /// can be equal when admission or the report-local instance differs.
+    /// `(left, right)` complete dialect-layer sets, present when they differ.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dialect_change: Option<(Option<String>, Option<String>)>,
-    /// Differing declared version fields, each a difference.
-    ///
-    /// Declarations are read verbatim out of the source, so two decodes of one
-    /// file agree here exactly. A difference means the two documents came from
-    /// sources that declared different things.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub declared: Vec<AttributeChange>,
+    pub dialects_change: Option<(Option<DialectLayers>, Option<DialectLayers>)>,
     /// Differing attributes, each a difference.
     pub attributes: Vec<AttributeChange>,
     /// Differing machine-local digest attributes, reported for information and
@@ -91,10 +80,7 @@ impl SourceDiff {
     /// [`Self::local_digests`] is not consulted.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.format_change.is_none()
-            && self.dialect_change.is_none()
-            && self.declared.is_empty()
-            && self.attributes.is_empty()
+        self.format_change.is_none() && self.dialects_change.is_none() && self.attributes.is_empty()
     }
 }
 
@@ -284,30 +270,11 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let absent = SourceMeta::default();
     let left = left.source.as_ref().unwrap_or(&absent);
     let right = right.source.as_ref().unwrap_or(&absent);
-    let empty_declared = BTreeMap::new();
-    let left_dialect = left
-        .dialect()
-        .map(cadmpeg_core::dialect::DialectMatch::dialect)
-        .map(|id| id.as_str().to_owned());
-    let right_dialect = right
-        .dialect()
-        .map(cadmpeg_core::dialect::DialectMatch::dialect)
-        .map(|id| id.as_str().to_owned());
     let mut result = SourceDiff {
         format_change: (left.format() != right.format())
             .then(|| (left.format().to_owned(), right.format().to_owned())),
-        dialect_change: (left.dialect() != right.dialect())
-            .then(|| (left_dialect.clone(), right_dialect.clone())),
-        declared: attribute_changes(
-            left.dialect().map_or(
-                &empty_declared,
-                cadmpeg_core::dialect::DialectMatch::declared,
-            ),
-            right.dialect().map_or(
-                &empty_declared,
-                cadmpeg_core::dialect::DialectMatch::declared,
-            ),
-        ),
+        dialects_change: (left.dialects() != right.dialects())
+            .then(|| (left.dialects().cloned(), right.dialects().cloned())),
         ..SourceDiff::default()
     };
     for change in attribute_changes(&left.attributes, &right.attributes) {
@@ -550,7 +517,7 @@ mod tests {
             .take()
             .expect("the test document has source metadata");
         ir.source = Some(crate::document::SourceMeta::classified(
-            dialect,
+            cadmpeg_core::dialect::DialectLayers::of(dialect),
             source.attributes,
         ));
     }
@@ -680,10 +647,10 @@ mod tests {
         let result = diff(&left, &right);
         assert!(!result.is_empty());
         assert_eq!(
-            result.source.dialect_change,
+            result.source.dialects_change,
             Some((
-                Some("rhino:archive-70".to_owned()),
-                Some("rhino:archive-80".to_owned())
+                left.source.as_ref().unwrap().dialects().cloned(),
+                right.source.as_ref().unwrap().dialects().cloned(),
             ))
         );
 
@@ -707,26 +674,18 @@ mod tests {
         let declared = diff(&declared_left, &declared_right);
         assert!(!declared.is_empty());
         assert_eq!(
-            declared.source.dialect_change,
+            declared.source.dialects_change,
             Some((
-                Some("rhino:archive-70".into()),
-                Some("rhino:archive-70".into())
+                declared_left.source.as_ref().unwrap().dialects().cloned(),
+                declared_right.source.as_ref().unwrap().dialects().cloned(),
             ))
-        );
-        assert_eq!(
-            declared.source.declared,
-            [super::AttributeChange {
-                key: "archive_version".into(),
-                left: Some("70".into()),
-                right: Some("80".into()),
-            }]
         );
         assert!(declared.source.attributes.is_empty());
     }
 
     #[test]
     fn admission_and_instance_divergence_are_differences() {
-        use cadmpeg_core::dialect::{DialectId, DialectMatch};
+        use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
         let mut left = with_source(&[]);
         let mut right = left.clone();
@@ -746,6 +705,32 @@ mod tests {
                 .with_instance("embedded/model.3dm"),
         );
         assert!(!diff(&left, &right).is_empty());
+
+        let source = right.source.take().unwrap();
+        right.source = Some(crate::document::SourceMeta::classified(
+            DialectLayers::new(
+                DialectMatch::admitted(DialectId::pinned("rhino:archive-80")),
+                vec![DialectMatch::residual(DialectId::pinned("acis:text-acis"))
+                    .with_instance("body.sat")],
+            )
+            .unwrap(),
+            source.attributes,
+        ));
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            result
+                .source
+                .dialects_change
+                .as_ref()
+                .unwrap()
+                .1
+                .as_ref()
+                .unwrap()
+                .iter()
+                .count(),
+            2
+        );
     }
 
     /// The staged fields add nothing to the serialized diff while they are
@@ -755,7 +740,6 @@ mod tests {
         let ir = with_source(&[]);
         let rendered = serde_json::to_string(&diff(&ir, &ir).source).unwrap();
 
-        assert!(!rendered.contains("dialect_change"), "{rendered}");
-        assert!(!rendered.contains("declared"), "{rendered}");
+        assert!(!rendered.contains("dialects_change"), "{rendered}");
     }
 }

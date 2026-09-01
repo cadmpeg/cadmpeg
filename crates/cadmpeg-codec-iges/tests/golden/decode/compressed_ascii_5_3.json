@@ -1522,15 +1522,18 @@
         "representation": "compressed-ascii",
         "sender_product": "product"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "compressed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-compressed-ascii",
-        "format": "iges"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "effective_version": "5.3",
+            "representation": "compressed-ascii",
+            "version_flag": "11"
+          },
+          "dialect": "iges:5.3-compressed-ascii",
+          "format": "iges"
+        }
       },
       "format": "iges"
     },

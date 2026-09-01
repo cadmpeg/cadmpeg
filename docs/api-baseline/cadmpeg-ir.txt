@@ -1,4 +1,4 @@
-# generated at 8b1cd929e
+# generated at 2ad988338
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -290,8 +290,7 @@ pub cadmpeg_ir::diff::ModifiedEntity::fields: alloc::vec::Vec<alloc::string::Str
 pub cadmpeg_ir::diff::ModifiedEntity::id: alloc::string::String
 pub struct cadmpeg_ir::diff::SourceDiff
 pub cadmpeg_ir::diff::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
-pub cadmpeg_ir::diff::SourceDiff::declared: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
-pub cadmpeg_ir::diff::SourceDiff::dialect_change: core::option::Option<(core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>)>
+pub cadmpeg_ir::diff::SourceDiff::dialects_change: core::option::Option<(core::option::Option<cadmpeg_core::dialect::DialectLayers>, core::option::Option<cadmpeg_core::dialect::DialectLayers>)>
 pub cadmpeg_ir::diff::SourceDiff::format_change: core::option::Option<(alloc::string::String, alloc::string::String)>
 pub cadmpeg_ir::diff::SourceDiff::local_digests: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 impl cadmpeg_ir::diff::SourceDiff
@@ -368,8 +367,9 @@ pub fn cadmpeg_ir::document::Model::visit_references(&self, &mut dyn core::ops::
 pub struct cadmpeg_ir::document::SourceMeta
 pub cadmpeg_ir::document::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 impl cadmpeg_ir::document::SourceMeta
-pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::DialectMatch, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
+pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::DialectLayers, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
 pub fn cadmpeg_ir::document::SourceMeta::dialect(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectMatch>
+pub fn cadmpeg_ir::document::SourceMeta::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::document::SourceMeta::format(&self) -> &str
 pub fn cadmpeg_ir::document::SourceMeta::unclassified(impl core::convert::Into<alloc::string::String>, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
 impl core::default::Default for cadmpeg_ir::document::SourceMeta
@@ -7570,8 +7570,7 @@ pub cadmpeg_ir::SketchSolverScalar::key: u32
 pub cadmpeg_ir::SketchSolverScalar::variable_type: u32
 pub struct cadmpeg_ir::SourceDiff
 pub cadmpeg_ir::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
-pub cadmpeg_ir::SourceDiff::declared: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
-pub cadmpeg_ir::SourceDiff::dialect_change: core::option::Option<(core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>)>
+pub cadmpeg_ir::SourceDiff::dialects_change: core::option::Option<(core::option::Option<cadmpeg_core::dialect::DialectLayers>, core::option::Option<cadmpeg_core::dialect::DialectLayers>)>
 pub cadmpeg_ir::SourceDiff::format_change: core::option::Option<(alloc::string::String, alloc::string::String)>
 pub cadmpeg_ir::SourceDiff::local_digests: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 impl cadmpeg_ir::diff::SourceDiff
@@ -7593,8 +7592,9 @@ pub fn cadmpeg_ir::source_fidelity::SourceFidelity::default() -> Self
 pub struct cadmpeg_ir::SourceMeta
 pub cadmpeg_ir::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 impl cadmpeg_ir::document::SourceMeta
-pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::DialectMatch, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
+pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::DialectLayers, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
 pub fn cadmpeg_ir::document::SourceMeta::dialect(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectMatch>
+pub fn cadmpeg_ir::document::SourceMeta::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::document::SourceMeta::format(&self) -> &str
 pub fn cadmpeg_ir::document::SourceMeta::unclassified(impl core::convert::Into<alloc::string::String>, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>) -> Self
 impl core::default::Default for cadmpeg_ir::document::SourceMeta

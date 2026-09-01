@@ -40,7 +40,7 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["source"]["format"], "fcstd");
         assert_eq!(
-            value["source"]["dialect"]["declared"]["schema_version"],
+            value["source"]["dialects"]["primary"]["declared"]["schema_version"],
             "4"
         );
     }

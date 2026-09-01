@@ -62,18 +62,21 @@
         "entity_instances": "1",
         "schema": "AP214"
       },
-      "dialect": {
-        "admission": {
-          "admitted_unverified": {
-            "using": "step:ap242-e3"
-          }
-        },
-        "declared": {
-          "file_schema_identifier": "AP214",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:unknown",
-        "format": "step"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "admitted_unverified": {
+              "using": "step:ap242-e3"
+            }
+          },
+          "declared": {
+            "file_schema_identifier": "AP214",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:unknown",
+          "format": "step"
+        }
       },
       "format": "step"
     },

@@ -110,10 +110,13 @@
         "stream_count": "2",
         "vertex_records": "3"
       },
-      "dialect": {
-        "admission": "admitted",
-        "dialect": "catia:float-packed-inner-no-fbb",
-        "format": "catia"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:float-packed-inner-no-fbb",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },

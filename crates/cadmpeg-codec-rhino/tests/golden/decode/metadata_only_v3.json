@@ -99,13 +99,16 @@
         "archive_version": "3",
         "container_kind": "3dm-chunks"
       },
-      "dialect": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "3"
-        },
-        "dialect": "rhino:archive-3",
-        "format": "rhino"
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "3"
+          },
+          "dialect": "rhino:archive-3",
+          "format": "rhino"
+        }
       },
       "format": "rhino"
     },
