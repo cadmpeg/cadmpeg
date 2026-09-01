@@ -1,4 +1,4 @@
-# generated at c3ce43fbc
+# generated at f5852b431
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -367,7 +367,7 @@ pub cadmpeg_core::error::CodecError::Truncated
 pub cadmpeg_core::error::CodecError::Truncated::context: cadmpeg_core::decode::ErrorContext
 pub cadmpeg_core::error::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation
 pub cadmpeg_core::error::CodecError::UnsupportedDialect
-pub cadmpeg_core::error::CodecError::UnsupportedDialect::dialect_match: alloc::boxed::Box<cadmpeg_core::dialect::DialectMatch>
+pub cadmpeg_core::error::CodecError::UnsupportedDialect::dialects: alloc::boxed::Box<cadmpeg_core::dialect::DialectLayers>
 pub cadmpeg_core::error::CodecError::UnsupportedDialect::message: alloc::string::String
 pub cadmpeg_core::error::CodecError::UnsupportedTarget(alloc::boxed::Box<cadmpeg_core::target::TargetRefusal>)
 pub cadmpeg_core::error::CodecError::WrongFormat(alloc::string::String)
@@ -445,7 +445,7 @@ pub cadmpeg_core::CodecError::Truncated
 pub cadmpeg_core::CodecError::Truncated::context: cadmpeg_core::decode::ErrorContext
 pub cadmpeg_core::CodecError::Truncated::location: cadmpeg_core::decode::SourceLocation
 pub cadmpeg_core::CodecError::UnsupportedDialect
-pub cadmpeg_core::CodecError::UnsupportedDialect::dialect_match: alloc::boxed::Box<cadmpeg_core::dialect::DialectMatch>
+pub cadmpeg_core::CodecError::UnsupportedDialect::dialects: alloc::boxed::Box<cadmpeg_core::dialect::DialectLayers>
 pub cadmpeg_core::CodecError::UnsupportedDialect::message: alloc::string::String
 pub cadmpeg_core::CodecError::UnsupportedTarget(alloc::boxed::Box<cadmpeg_core::target::TargetRefusal>)
 pub cadmpeg_core::CodecError::WrongFormat(alloc::string::String)

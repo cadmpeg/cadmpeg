@@ -165,9 +165,12 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
 /// frame. Inspection reports the same primary match.
 fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String>) -> CodecError {
-    let (matched, _) = layers(evidence);
+    let (matched, kernel) = layers(evidence);
     CodecError::UnsupportedDialect {
-        dialect_match: Box::new(matched),
+        dialects: Box::new(
+            cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
+                .expect("SAT host and ACIS kernel layer keys are distinct"),
+        ),
         message: message.into(),
     }
 }

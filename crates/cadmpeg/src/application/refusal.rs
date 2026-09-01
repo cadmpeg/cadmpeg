@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use serde_json::{json, Value};
@@ -26,13 +26,12 @@ pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
         unreachable!("downcast_ref established the codec error type");
     };
     match codec_error {
-        cadmpeg_core::CodecError::UnsupportedDialect {
-            dialect_match,
-            message,
-        } => ConversionRefusal::UnsupportedDialect {
-            dialect_match,
-            reason: message,
-        },
+        cadmpeg_core::CodecError::UnsupportedDialect { dialects, message } => {
+            ConversionRefusal::UnsupportedDialect {
+                dialects,
+                reason: message,
+            }
+        }
         _ => ConversionRefusal::DecodeFailed {
             message: fallback_message,
         },
@@ -129,8 +128,8 @@ pub enum ConversionRefusal {
     },
     /// Input identity was recovered before the codec refused its dialect.
     UnsupportedDialect {
-        /// Identification made before refusal.
-        dialect_match: Box<DialectMatch>,
+        /// Every format layer identified before refusal.
+        dialects: Box<DialectLayers>,
         /// Codec-owned reason no decode grammar can admit it.
         reason: String,
     },
@@ -226,13 +225,10 @@ impl ConversionRefusal {
             | Self::ExportLossRejected { message, .. }
             | Self::EmptyGeometry { message, .. }
             | Self::BinaryStdoutRejected { message } => Cow::Borrowed(message),
-            Self::UnsupportedDialect {
-                dialect_match,
-                reason,
-            } => Cow::Owned(format!(
+            Self::UnsupportedDialect { dialects, reason } => Cow::Owned(format!(
                 "unsupported {} dialect {}: {reason}",
-                dialect_match.format(),
-                dialect_match.dialect()
+                dialects.primary().format(),
+                dialects.primary().dialect()
             )),
             Self::UnsupportedTarget { refusal, .. } => Cow::Owned(refusal.to_string()),
         }
@@ -332,7 +328,7 @@ impl std::error::Error for ConversionRefusal {}
 mod tests {
     use std::collections::BTreeMap;
 
-    use cadmpeg_core::dialect::{DialectId, DialectMatch};
+    use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
     use cadmpeg_core::target::TargetDescriptor;
 
     use super::*;
@@ -369,14 +365,14 @@ mod tests {
     fn unsupported_decode_keeps_the_identification() {
         let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
         let refusal = ConversionRefusal::UnsupportedDialect {
-            dialect_match: Box::new(matched.clone()),
+            dialects: Box::new(DialectLayers::of(matched.clone())),
             reason: "the XML encoding has no decode grammar".into(),
         };
 
-        let ConversionRefusal::UnsupportedDialect { dialect_match, .. } = &refusal else {
+        let ConversionRefusal::UnsupportedDialect { dialects, .. } = &refusal else {
             panic!("the variant just constructed is preserved");
         };
-        assert_eq!(dialect_match.as_ref(), &matched);
+        assert_eq!(dialects.primary(), &matched);
         assert_eq!(refusal.code(), RefusalCode::UnsupportedDialect);
         assert_eq!(refusal.stage(), RefusalStage::Decode);
         assert_eq!(refusal.exit_code(), 1);
@@ -391,7 +387,7 @@ mod tests {
         let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
         let classified = classify_decode_failure(
             cadmpeg_core::CodecError::UnsupportedDialect {
-                dialect_match: Box::new(matched.clone()),
+                dialects: Box::new(DialectLayers::of(matched.clone())),
                 message: "the XML encoding has no decode grammar".into(),
             }
             .into(),
@@ -400,10 +396,10 @@ mod tests {
             .downcast_ref::<ConversionRefusal>()
             .expect("codec refusal becomes an application refusal");
 
-        let ConversionRefusal::UnsupportedDialect { dialect_match, .. } = refusal else {
+        let ConversionRefusal::UnsupportedDialect { dialects, .. } = refusal else {
             panic!("unsupported identity must not be flattened to DecodeFailed");
         };
-        assert_eq!(dialect_match.as_ref(), &matched);
+        assert_eq!(dialects.primary(), &matched);
     }
 
     #[test]

@@ -178,10 +178,14 @@ fn unframed_binary_header_has_the_same_refused_match_at_inspect_and_decode() {
             &cadmpeg_ir::codec::DecodeOptions::default(),
         )
         .unwrap_err();
-    let CodecError::UnsupportedDialect { dialect_match, .. } = error else {
+    let CodecError::UnsupportedDialect {
+        dialects: refused_layers,
+        ..
+    } = error
+    else {
         panic!("expected identified dialect refusal, got {error:?}");
     };
-    assert_eq!(dialect_match.as_ref(), inspected);
+    assert_eq!(refused_layers.as_ref(), layers);
 }
 
 #[test]
@@ -214,10 +218,14 @@ fn unframed_discriminant_has_the_same_refused_match_at_inspect_and_decode() {
             &cadmpeg_ir::codec::DecodeOptions::default(),
         )
         .expect_err("the unframed identified stream is refused");
-    let CodecError::UnsupportedDialect { dialect_match, .. } = error else {
+    let CodecError::UnsupportedDialect {
+        dialects: refused_layers,
+        ..
+    } = error
+    else {
         panic!("expected identified dialect refusal, got {error:?}");
     };
-    assert_eq!(dialect_match.as_ref(), inspected);
+    assert_eq!(refused_layers.as_ref(), layers);
 }
 
 #[test]
