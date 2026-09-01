@@ -41,11 +41,14 @@ const WRAPPED_MAGIC: [u8; 16] = [
 fn parasolid_stream_header_is_parsed() {
     let f = synthetic_sldprt();
     let scan = container::scan_bytes(&f);
-    let (block, header) = container::select_active_parasolid(&scan).expect("active parasolid");
-    assert_eq!(header.schema, "SCH_SW_33103_11000");
-    assert!(header.description.contains("partition"));
+    let site = container::select_active_parasolid_site(&scan).expect("active parasolid");
+    assert_eq!(site.header.schema, "SCH_SW_33103_11000");
+    assert!(site.header.description.contains("partition"));
+    let container::Section::Block(block) = site.section else {
+        panic!("synthetic native block selected as compound stream");
+    };
     assert_eq!(block.family, "parasolid");
-    assert!(crate::parasolid::is_body_stream(header));
+    assert!(crate::parasolid::is_body_stream(site.header));
 }
 
 #[test]

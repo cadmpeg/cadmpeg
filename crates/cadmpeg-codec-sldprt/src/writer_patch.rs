@@ -43,7 +43,11 @@ fn patch_partition_inner(
         .find(|record| record.id.0 == "sldprt:file:source-image#0")?
         .data?;
     let scan = crate::container::scan_bytes(source);
-    let (block, header) = crate::container::select_active_parasolid(&scan)?;
+    let selected = crate::container::select_active_parasolid_site(&scan)?;
+    let crate::container::Section::Block(block) = selected.section else {
+        return None;
+    };
+    let header = selected.header;
     if block
         .ps_streams
         .first()

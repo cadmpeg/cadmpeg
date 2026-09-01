@@ -247,10 +247,9 @@ pub(crate) fn write_semantic_with_records(
         &active_partition_section,
         retain_native_brep,
     )?;
-    let has_document_envelope = crate::container::first_solidworks_envelope(
+    let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
-    )
-    .is_some();
+    );
     if let Some(active) = ir
         .model
         .configurations
@@ -260,7 +259,7 @@ pub(crate) fn write_semantic_with_records(
         let active_name = active.name.resolved().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
-        if !has_document_envelope {
+        if document_envelope.is_none() {
             sections.push((
                 "Contents/SolidWorks".into(),
                 generated_solidworks_xml(ir, active_name),
@@ -270,10 +269,7 @@ pub(crate) fn write_semantic_with_records(
     for (section, payload) in opaque {
         sections.push((section, payload));
     }
-    let written_declaration = crate::container::first_solidworks_envelope(
-        sections.iter().map(|(_, payload)| payload.as_slice()),
-    )
-    .and_then(|envelope| envelope.sw_version);
+    let written_declaration = document_envelope.and_then(|envelope| envelope.sw_version);
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
@@ -512,13 +508,10 @@ fn retained_partition(
         return None;
     }
     let scan = source_scan?;
-    let (block, _) = crate::container::select_active_parasolid(scan)?;
-    let original_section = block
-        .section
-        .clone()
-        .unwrap_or_else(|| format!("block@{}", block.offset));
+    let site = crate::container::select_active_parasolid_site(scan)?;
+    let original_section = site.name();
     let section = remapped_partition_section(ir, &original_section).unwrap_or(original_section);
-    Some((section, block.payload.clone()))
+    Some((section, site.section.payload().to_vec()))
 }
 
 fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {

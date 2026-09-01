@@ -17,7 +17,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -120,7 +119,8 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
-    let dialects = crate::dialect::classify_layers(&scan);
+    let classification = crate::dialect::classify_layers(&scan);
+    let dialects = classification.layers();
     let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
         .and_then(crate::dialect::SldprtDialect::form_code_padding);
     // Charge container cardinality before BREP/IR construction so max_entities
@@ -133,7 +133,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if ctx.container_only() {
         let (ir, annotations, unknowns, mut pmi_losses) =
             build_metadata_ir(ctx, &scan, form_padding, &mut admitted_entities)?;
-        let mut report = build_container_report(&scan, &dialects, true);
+        let mut report = build_container_report(&scan, &classification, true);
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
     }
@@ -141,7 +141,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &dialects) {
+        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &classification) {
             let source_header = decoded
                 .metadata_stream
                 .and_then(|index| streams.get(index).map(|stream| stream.header));
@@ -163,7 +163,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let (ir, annotations, unknowns, mut pmi_losses) =
         build_metadata_ir(ctx, &scan, form_padding, &mut admitted_entities)?;
-    let mut report = build_container_report(&scan, &dialects, false);
+    let mut report = build_container_report(&scan, &classification, false);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
     decode_result(ir, report, annotations, unknowns)
@@ -2010,7 +2010,7 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
 fn try_decode_brep(
     scan: &ContainerScan,
     streams: &[BodyStream<'_>],
-    dialects: &DialectLayers,
+    classification: &crate::dialect::LayerClassification,
 ) -> Option<(DecodedBrep, DecodeReport)> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
@@ -2130,7 +2130,7 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate);
     }
-    let report = build_geometry_report(scan, &decoded, dialects);
+    let report = build_geometry_report(scan, &decoded, classification);
     Some((
         DecodedBrep {
             metadata_stream,
@@ -3184,8 +3184,9 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
 fn build_geometry_report(
     scan: &ContainerScan,
     decoded: &Brep,
-    dialects: &DialectLayers,
+    classification: &crate::dialect::LayerClassification,
 ) -> DecodeReport {
+    let dialects = classification.layers();
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -3257,7 +3258,7 @@ fn build_geometry_report(
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    append_dialect_losses(dialects, &mut losses);
+    classification.append_losses(&mut losses);
     DecodeReport::classified(
         dialects.clone(),
         cadmpeg_ir::DecodeTransfer::full(true),
@@ -3316,12 +3317,12 @@ fn build_metadata_ir(
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
         let name = site.name();
-        let (id, offset) = match site.origin {
-            container::ActiveParasolidOrigin::Block(block) => (
+        let (id, offset) = match site.section {
+            container::Section::Block(block) => (
                 format!("sldprt:file:block#{}", block.offset),
                 block.offset as u64,
             ),
-            container::ActiveParasolidOrigin::Compound(stream) => (
+            container::Section::Compound(stream) => (
                 format!("sldprt:file:compound-stream#{}", stream.directory_id),
                 0,
             ),
@@ -4532,22 +4533,14 @@ fn preserve_source_image(
     });
 }
 
-/// Appends the dialect-unverified loss each classified layer charges.
-///
-/// Takes the same `dialects` the report carries, so the note and the reported
-/// admission cannot describe different classifications.
-fn append_dialect_losses(
-    dialects: &cadmpeg_core::dialect::DialectLayers,
-    losses: &mut Vec<cadmpeg_ir::LossNote>,
-) {
-    losses.extend(crate::dialect::dialect_losses(dialects));
-}
-
+/// Builds the metadata-only report from the same classification the report
+/// carries, including recoverable layer-identity collisions.
 fn build_container_report(
     scan: &ContainerScan,
-    dialects: &DialectLayers,
+    classification: &crate::dialect::LayerClassification,
     container_only: bool,
 ) -> DecodeReport {
+    let dialects = classification.layers();
     let summary = container::summarize(scan, dialects.clone());
     let parasolid_sources = scan
         .blocks
@@ -4587,7 +4580,7 @@ fn build_container_report(
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    append_dialect_losses(dialects, &mut losses);
+    classification.append_losses(&mut losses);
 
     DecodeReport::classified(
         dialects.clone(),

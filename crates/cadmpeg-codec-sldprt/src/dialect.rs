@@ -112,35 +112,54 @@ pub(crate) enum SldprtDialect {
     Unknown,
 }
 
+/// Dialect layers admitted from one container and classification damage that
+/// could not be represented in the unique layer identity set.
+pub(crate) struct LayerClassification {
+    layers: DialectLayers,
+    losses: Vec<LossNote>,
+}
+
+impl LayerClassification {
+    pub(crate) fn layers(&self) -> &DialectLayers {
+        &self.layers
+    }
+
+    pub(crate) fn append_losses(&self, losses: &mut Vec<LossNote>) {
+        losses.extend(dialect_losses(&self.layers));
+        losses.extend(self.losses.iter().cloned());
+    }
+
+    pub(crate) fn collision_losses(&self) -> &[LossNote] {
+        &self.losses
+    }
+}
+
 /// Classify the host document and every framed Parasolid stream it carries.
-pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> DialectLayers {
+pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
     let kernels = scan
-        .blocks
-        .iter()
-        .flat_map(|block| {
-            block.ps_streams.iter().map(move |stream| {
-                let section = block.section.as_deref().unwrap_or("unnamed");
+        .sections()
+        .flat_map(|section| {
+            section.ps_streams().iter().map(move |stream| {
+                let name = section.name().unwrap_or("unnamed");
                 (
                     stream.header.schema.clone(),
-                    format!("block@{}:{section}+{}", block.offset, stream.offset),
+                    format!("{}:{name}+{}", section.site_key(), stream.offset),
                 )
             })
         })
-        .chain(scan.compound_streams.iter().flat_map(|stream| {
-            stream.ps_streams.iter().map(move |kernel| {
-                (
-                    kernel.header.schema.clone(),
-                    format!(
-                        "compound@{}:{}+{}",
-                        stream.directory_id, stream.path, kernel.offset
-                    ),
-                )
-            })
-        }))
         .collect::<Vec<_>>();
-    let extra = cadmpeg_parasolid::extra_layers(kernels);
-    DialectLayers::new(SldprtDialect::classify_scan(scan), extra)
-        .expect("SLDPRT carrier locations produce unique Parasolid layer instances")
+    let mut layers = DialectLayers::of(SldprtDialect::classify_scan(scan));
+    let mut losses = Vec::new();
+    for layer in cadmpeg_parasolid::extra_layers(kernels) {
+        let format = layer.format().to_owned();
+        let instance = layer.instance().unwrap_or("unidentified").to_owned();
+        if layers.try_push(layer).is_err() {
+            losses.push(SldprtLossCode::DialectLayerCollision.note(format!(
+                "the container produced a duplicate {format} dialect layer at carrier {instance}; the later classification was omitted"
+            )));
+        }
+    }
+    LayerClassification { layers, losses }
 }
 
 impl SldprtDialect {

@@ -220,6 +220,13 @@ impl<'a> Section<'a> {
         }
     }
 
+    pub(crate) fn site_key(self) -> String {
+        match self {
+            Self::Block(block) => format!("block@{}", block.offset),
+            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
+        }
+    }
+
     pub(crate) fn payload(self) -> &'a [u8] {
         match self {
             Self::Block(block) => &block.payload,
@@ -844,60 +851,20 @@ pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
         .any(|stream| crate::parasolid::is_body_stream(&stream.header))
 }
 
-/// Select the unique Parasolid partition block for the active configuration.
-///
-/// An explicit active configuration index is authoritative. Without one, the
-/// available body sites must contain exactly one non-ghost partition candidate.
-/// This compatibility API returns only a block-envelope site; the decoder uses
-/// [`select_active_parasolid_site`] so both envelopes retain their source site.
-pub fn select_active_parasolid<'a>(
-    scan: &'a ContainerScan<'_>,
-) -> Option<(&'a Block, &'a crate::parasolid::StreamHeader)> {
-    let selected = select_active_parasolid_site(scan)?;
-    match selected.origin {
-        ActiveParasolidOrigin::Block(block) => Some((block, selected.header)),
-        ActiveParasolidOrigin::Compound(_) => None,
-    }
-}
-
-/// The source site of one selected Parasolid partition stream.
-#[derive(Clone, Copy)]
-pub(crate) enum ActiveParasolidOrigin<'a> {
-    /// A native block-envelope block.
-    Block(&'a Block),
-    /// A Compound File Binary stream.
-    Compound(&'a CompoundStream),
-}
-
-impl ActiveParasolidOrigin<'_> {
-    fn site_key(self) -> String {
-        match self {
-            Self::Block(block) => format!("block@{}", block.offset),
-            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
-        }
-    }
-}
-
 /// One selected Parasolid partition stream and its source site.
 pub(crate) struct ActiveParasolidSite<'a> {
-    pub(crate) origin: ActiveParasolidOrigin<'a>,
+    pub(crate) section: Section<'a>,
     pub(crate) payload: &'a [u8],
     pub(crate) header: &'a crate::parasolid::StreamHeader,
 }
 
 impl ActiveParasolidSite<'_> {
     pub(crate) fn name(&self) -> String {
-        match self.origin {
-            ActiveParasolidOrigin::Block(block) => block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-            ActiveParasolidOrigin::Compound(stream) => stream.path.clone(),
-        }
+        self.section.display_name()
     }
 
     pub(crate) fn site_key(&self) -> String {
-        self.origin.site_key()
+        self.section.site_key()
     }
 }
 
@@ -912,17 +879,17 @@ pub(crate) fn select_active_parasolid_site<'a>(
 ) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
     let mut candidates = Vec::new();
-    for block in &scan.blocks {
-        let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
-        let section_is_partition = section.contains("partition")
-            && !section.contains("ghost")
-            && !section.contains("deltas")
-            && !section.contains("resolvedfeatures");
-        let section_is_admissible = !section.contains("ghost")
-            && !section.contains("deltas")
-            && !section.contains("resolvedfeatures");
-        let body_streams = block
-            .ps_streams
+    for section in scan.sections() {
+        let name = section.name().unwrap_or("").to_ascii_lowercase();
+        let section_is_partition = name.contains("partition")
+            && !name.contains("ghost")
+            && !name.contains("deltas")
+            && !name.contains("resolvedfeatures");
+        let section_is_admissible = !name.contains("ghost")
+            && !name.contains("deltas")
+            && !name.contains("resolvedfeatures");
+        let body_streams = section
+            .ps_streams()
             .iter()
             .filter_map(|stream| {
                 crate::parasolid::is_body_stream(&stream.header)
@@ -937,49 +904,13 @@ pub(crate) fn select_active_parasolid_site<'a>(
                 || description.contains("deltas")
                 || !(description.contains("partition") || sole_body_stream && section_is_partition)
                 || active_configuration.is_some_and(|active| {
-                    block.section.as_deref().and_then(configuration_index) != Some(active)
+                    section.name().and_then(configuration_index) != Some(active)
                 })
             {
                 continue;
             }
             candidates.push(ActiveParasolidSite {
-                origin: ActiveParasolidOrigin::Block(block),
-                payload,
-                header,
-            });
-        }
-    }
-    for stream in &scan.compound_streams {
-        let path = stream.path.to_ascii_lowercase();
-        let section_is_partition = path.contains("partition")
-            && !path.contains("ghost")
-            && !path.contains("deltas")
-            && !path.contains("resolvedfeatures");
-        let section_is_admissible = !path.contains("ghost")
-            && !path.contains("deltas")
-            && !path.contains("resolvedfeatures");
-        let body_streams = stream
-            .ps_streams
-            .iter()
-            .filter_map(|stream| {
-                crate::parasolid::is_body_stream(&stream.header)
-                    .then_some((stream.payload.as_slice(), &stream.header))
-            })
-            .collect::<Vec<_>>();
-        let sole_body_stream = body_streams.len() == 1;
-        for (payload, header) in body_streams {
-            let description = header.description.to_ascii_lowercase();
-            if !section_is_admissible
-                || description.contains("ghost")
-                || description.contains("deltas")
-                || !(description.contains("partition") || sole_body_stream && section_is_partition)
-                || active_configuration
-                    .is_some_and(|active| configuration_index(&stream.path) != Some(active))
-            {
-                continue;
-            }
-            candidates.push(ActiveParasolidSite {
-                origin: ActiveParasolidOrigin::Compound(stream),
+                section,
                 payload,
                 header,
             });
