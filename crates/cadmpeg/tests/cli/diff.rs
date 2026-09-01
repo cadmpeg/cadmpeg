@@ -66,6 +66,40 @@ fn diff_reports_a_source_attribute_change_and_exits_one() {
         .stderr(predicate::str::is_empty());
 }
 
+#[test]
+fn diff_reports_dialect_admission_and_declaration_changes() {
+    use cadmpeg_core::dialect::{DialectId, DialectMatch};
+    use std::collections::BTreeMap;
+
+    let dir = tempdir().unwrap();
+    let mut left = unit_cube();
+    left.source = Some(cadmpeg_ir::SourceMeta::classified(
+        DialectMatch::admitted(DialectId::pinned("synthetic:v1"))
+            .with_declared(BTreeMap::from([("version".into(), "1".into())])),
+        BTreeMap::new(),
+    ));
+    let mut right = unit_cube();
+    right.source = Some(cadmpeg_ir::SourceMeta::classified(
+        DialectMatch::residual(DialectId::pinned("synthetic:v1"))
+            .with_declared(BTreeMap::from([("version".into(), "2".into())])),
+        BTreeMap::new(),
+    ));
+    let a = fixture(dir.path(), "a.json", &left);
+    let b = fixture(dir.path(), "b.json", &right);
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .code(1)
+        .stdout(
+            predicate::str::contains("source dialect metadata changed: synthetic:v1").and(
+                predicate::str::contains("source declaration version: 1 → 2"),
+            ),
+        )
+        .stderr(predicate::str::is_empty());
+}
+
 /// A machine-local digest cannot agree across platforms, so a difference in one
 /// alone is reported without making the documents different.
 #[test]

@@ -17,6 +17,28 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
     if let Some((before, after)) = &source.format_change {
         println!("  source format: {before} → {after}");
     }
+    if let Some((before, after)) = &source.dialect_change {
+        if before == after {
+            println!(
+                "  source dialect metadata changed: {}",
+                render_attribute(before.as_deref())
+            );
+        } else {
+            println!(
+                "  source dialect: {} → {}",
+                render_attribute(before.as_deref()),
+                render_attribute(after.as_deref())
+            );
+        }
+    }
+    for change in &source.declared {
+        println!(
+            "  source declaration {}: {} → {}",
+            change.key,
+            render_attribute(change.left.as_deref()),
+            render_attribute(change.right.as_deref())
+        );
+    }
     for change in &source.attributes {
         println!(
             "  source {}: {} → {}",
