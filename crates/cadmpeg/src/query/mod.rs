@@ -298,9 +298,31 @@ enum LossCodeProbe {
 impl LossCodeProbe {
     fn display(&self) -> String {
         match self {
-            Self::Legacy(code) => code.clone(),
+            Self::Legacy(code) => cadmpeg_ir::LossKind::from_v1_str(code)
+                .map_or_else(|| code.clone(), |kind| kind.to_string()),
             Self::Namespaced { namespace, code } => format!("{namespace}/{code}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LossCodeProbe;
+
+    #[test]
+    fn legacy_loss_codes_use_the_shared_migration_spelling() {
+        assert_eq!(
+            LossCodeProbe::Legacy("metadata_not_transferred".to_owned()).display(),
+            "shared/metadata_not_transferred"
+        );
+    }
+
+    #[test]
+    fn unknown_legacy_loss_codes_remain_visible_in_lenient_queries() {
+        assert_eq!(
+            LossCodeProbe::Legacy("future_loss".to_owned()).display(),
+            "future_loss"
+        );
     }
 }
 

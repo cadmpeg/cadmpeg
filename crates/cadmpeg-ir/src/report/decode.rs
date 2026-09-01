@@ -84,6 +84,23 @@ struct DecodeReportWire {
     dialects: Option<DialectLayers>,
 }
 
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "schema")]
+    #[test]
+    fn current_decode_report_schema_requires_dialects() {
+        let schema = serde_json::to_value(schemars::schema_for!(super::DecodeReport))
+            .expect("decode report schema serializes");
+        let required = schema["required"]
+            .as_array()
+            .expect("decode report schema has required fields");
+        assert!(
+            required.iter().any(|field| field == "dialects"),
+            "{schema:#}"
+        );
+    }
+}
+
 impl From<DecodeReport> for DecodeReportWire {
     fn from(report: DecodeReport) -> Self {
         let DecodeReport {
@@ -144,7 +161,19 @@ impl JsonSchema for DecodeReport {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DecodeReportWire::json_schema(generator)
+        let mut schema = DecodeReportWire::json_schema(generator);
+        let fields = schema
+            .as_object_mut()
+            .expect("a derived struct schema is an object");
+        let required = fields
+            .entry("required")
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+            .as_array_mut()
+            .expect("a derived struct schema has an array of required fields");
+        if !required.iter().any(|field| field == "dialects") {
+            required.push(serde_json::Value::String("dialects".to_owned()));
+        }
+        schema
     }
 }
 
