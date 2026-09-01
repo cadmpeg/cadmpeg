@@ -60,7 +60,7 @@ mod tests {
 }
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 22;
+pub const VERSION: u32 = 23;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,8 +132,8 @@ pub struct AttachmentRecord {
 pub struct GuiDocumentRecord {
     /// Stable GUI document identity.
     pub id: String,
-    /// Persisted GUI schema version when declared.
-    pub schema_version: Option<u32>,
+    /// Exact persisted GUI schema declaration when present.
+    pub schema_version: Option<String>,
     /// Exact root attributes.
     pub attributes: BTreeMap<String, String>,
     /// Ordered camera, active-view, clipping, and other document state.
