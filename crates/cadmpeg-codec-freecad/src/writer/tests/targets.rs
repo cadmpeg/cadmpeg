@@ -178,6 +178,48 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
     );
 }
 
+/// A declaration outside the registry remains writable when the retained
+/// document graph proves the exact residual identity. Preservation does not
+/// reinterpret `"04"` as the registered schema-4 declaration.
+#[test]
+fn inherit_preserves_an_unknown_schema_declaration_exactly() {
+    let source = rewrite_schema_version(CORE_DESIGN_PRODUCT, "04");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("decode the residual declaration");
+    assert_eq!(
+        decoded
+            .report()
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "fcstd:unknown"
+    );
+    assert_eq!(
+        decoded.report().dialects().unwrap().primary().declared()["schema_version"],
+        "04"
+    );
+
+    let plan = inherit(decoded.ir()).expect("the retained residual dialect is preservable");
+    assert_eq!(
+        plan.report().target().map(ToString::to_string),
+        Some("fcstd:unknown".to_owned())
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written)
+        .expect("write the retained graph");
+    assert_eq!(entry_payloads(&written), entry_payloads(&source));
+
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("decode the preserved residual declaration");
+    let primary = round_trip.report().dialects().unwrap().primary();
+    assert_eq!(primary.dialect().as_str(), "fcstd:unknown");
+    assert_eq!(primary.declared()["schema_version"], "04");
+}
+
 /// The canonical §8.2 case, in its refusing half: a schema-2 source whose
 /// retained document graph cannot be written back is refused, not quietly
 /// rewritten as schema 4.
