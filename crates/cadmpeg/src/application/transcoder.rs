@@ -472,7 +472,7 @@ impl PlannedConversion {
     }
 
     /// Writes the destination artifact and optional CADIR sidecar.
-    pub fn write(self) -> Result<ExportReport> {
+    pub fn write(self) -> Result<ExportEmission> {
         emit_export_plan(
             self.plan,
             self.prepared.selection.format,
@@ -481,6 +481,25 @@ impl PlannedConversion {
             self.prepared.document.fidelity(),
         )
     }
+}
+
+/// Artifact state produced by one completed export emission.
+pub(crate) struct ExportEmission {
+    pub(crate) report: ExportReport,
+    pub(crate) artifact: EmittedArtifact,
+}
+
+/// Destination-specific facts needed by the presentation layer.
+pub(crate) enum EmittedArtifact {
+    /// A file and its CADIR sidecar disposition.
+    File {
+        path: PathBuf,
+        sidecar: SidecarPersistOutcome,
+    },
+    /// Standard output with no sidecar requirement.
+    Stdout,
+    /// CADIR on standard output, where the required sidecar cannot travel.
+    StdoutWithoutSidecar,
 }
 
 /// Restates an unsupported target as a typed refusal.
@@ -531,62 +550,52 @@ fn decode_lossy_refusal(
 }
 
 /// Emits one built plan to its destination and maintains CADIR sidecars.
+///
+/// This operation performs artifact I/O only. The returned outcome carries
+/// every fact the command layer needs for presentation.
 pub(crate) fn emit_export_plan(
     plan: ExportPlan,
     format: Format,
     out: Option<&Path>,
     decode_report: Option<&DecodeReport>,
     source_fidelity: Option<&SourceFidelity>,
-) -> Result<ExportReport> {
+) -> Result<ExportEmission> {
     let needs_sidecar_digest =
         format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
-    let report = if let Some(path) = out {
+    if let Some(path) = out {
         let (report, cadir_sha256) =
             ArtifactStore::write_plan_atomic(path, plan, needs_sidecar_digest)?;
-        if format == Format::Cadir {
-            match ArtifactStore::persist_decode_sidecar(
+        let sidecar = if format == Format::Cadir {
+            ArtifactStore::persist_decode_sidecar(
                 path,
                 cadir_sha256.as_deref(),
                 decode_report,
                 source_fidelity,
-            )? {
-                SidecarPersistOutcome::Wrote(sidecar) => {
-                    eprintln!("wrote decode sidecar {}", sidecar.display());
-                }
-                SidecarPersistOutcome::RemovedStale(sidecar) => {
-                    eprintln!("removed stale decode sidecar {}", sidecar.display());
-                }
-                SidecarPersistOutcome::Absent => {}
-            }
-        }
-        eprintln!(
-            "wrote {} ({} entities)",
-            path.display(),
-            report.census.total()
-        );
-        report
+            )?
+        } else {
+            SidecarPersistOutcome::Absent
+        };
+        Ok(ExportEmission {
+            report,
+            artifact: EmittedArtifact::File {
+                path: path.to_owned(),
+                sidecar,
+            },
+        })
     } else {
         let stdout = io::stdout().lock();
         let mut writer = BufWriter::with_capacity(64 * 1024, stdout);
         let report = plan.write_to(&mut writer)?;
         writer.flush()?;
-        if format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some() {
-            eprintln!("note: CADIR written to stdout cannot carry its decode-fidelity sidecar");
-        }
-        report
-    };
-    if !report.losses.is_empty() {
-        eprintln!("{} export losses:", report.format());
-        for loss in &report.losses {
-            eprintln!(
-                "  [{}/{}] {}",
-                loss.severity,
-                loss.code.category(),
-                loss.message
-            );
-        }
+        Ok(ExportEmission {
+            report,
+            artifact: if needs_sidecar_digest {
+                EmittedArtifact::StdoutWithoutSidecar
+            } else {
+                EmittedArtifact::Stdout
+            },
+        })
     }
-    Ok(report)
 }
 
 /// Builds an [`ExportTarget`] from the command-line selection.
