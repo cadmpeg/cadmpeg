@@ -499,13 +499,14 @@ fn container_identity_reaches_only_the_dialect_declaration() {
     let modern = decode(prt_with_indexed_om_section());
     let declared = &modern.report().dialects().unwrap().primary().declared();
     assert_eq!(declared["splmsstr_version"], "6");
-    assert_eq!(declared["product_version"], "NX 2027.3102");
     assert!(!declared.contains_key("ugii_version"));
+    assert_eq!(declared.len(), 1);
 
     let legacy = decode(legacy_cfb_with_ug_part());
     let declared = &legacy.report().dialects().unwrap().primary().declared();
     assert!(declared.contains_key("ugii_version"));
     assert!(!declared.contains_key("splmsstr_version"));
+    assert_eq!(declared.len(), 1);
 }
 
 #[test]

@@ -369,7 +369,6 @@
         "dialect": {
           "admission": "admitted",
           "declared": {
-            "product_version": "NX 2027.3102",
             "splmsstr_version": "6"
           },
           "dialect": "nx:splmsstr",
@@ -404,7 +403,6 @@
         "primary": {
           "admission": "admitted",
           "declared": {
-            "product_version": "NX 2027.3102",
             "splmsstr_version": "6"
           },
           "dialect": "nx:splmsstr",
@@ -443,9 +441,8 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 6, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999",
         "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
       ]
     },
@@ -616,7 +613,6 @@
       "primary": {
         "admission": "admitted",
         "declared": {
-          "product_version": "NX 2027.3102",
           "splmsstr_version": "6"
         },
         "dialect": "nx:splmsstr",
@@ -666,10 +662,10 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 6, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999",
-      "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
+      "NX object model: 1 indexed section(s), 2 bounded entity record(s)",
+      "dialect classification loss: The Parasolid stream at stream@357 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream."
     ]
   }
 }

@@ -292,13 +292,15 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
-    let (dialects, notes) = decode::summarize(scan);
-    ContainerSummary::classified(
-        dialects,
-        dialect::NxDialect::of_container(&scan.container).container_kind(),
-        entries,
-        notes,
-    )
+    let (classification, mut notes) = decode::summarize(scan);
+    let container_kind = classification.container_kind();
+    let (dialects, dialect_losses) = classification.into_report_parts();
+    notes.extend(
+        dialect_losses
+            .into_iter()
+            .map(|loss| format!("dialect classification loss: {}", loss.message)),
+    );
+    ContainerSummary::classified(dialects, container_kind, entries, notes)
 }
 
 #[cfg(test)]

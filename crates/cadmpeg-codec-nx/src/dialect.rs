@@ -3,7 +3,7 @@
 //! admitted.
 //!
 //! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`NxDialect::classify`] is the one construction
+//! strings are the boundary, [`classify_layers`] is the one construction
 //! path, and the vocabulary is closed. Tests close it directly against the
 //! reportable rows in `docs/dialects.toml`.
 //!
@@ -29,11 +29,14 @@
 //! `Container::version` is a `u8` — file offset 8 on the modern arm, byte 8 of
 //! the UGII payload prefix on the legacy arm. No branch in this codec reads it.
 //! Its consumers are report notes and [`DialectMatch::declared`]. It is
-//! recorded verbatim under the key the arm that read it already used, and it
-//! never moves the resolved id.
+//! rendered as one canonical decimal value under the key the arm that read it
+//! already used, and it never moves the resolved id.
 //!
 //! A successful scan always reads the version byte, so the value used by decode
 //! and the declaration recorded here cannot diverge.
+//!
+//! Product/version text belongs to each indexed object-model store and remains
+//! on the native `StoreHeader` records. It is not a host-container declaration.
 //!
 //! # `nx:unknown` is a registry-only row this codec never emits
 //!
@@ -61,10 +64,6 @@ const PARASOLID_FORMAT: &str = "parasolid";
 ///
 /// A successful modern scan always reads this byte from the source.
 const DECLARED_SPLMSSTR_VERSION: &str = "splmsstr_version";
-/// Key of the first object-model store's version in [`DialectMatch::declared`].
-///
-/// Absent when no indexed store section carries a `store_version` record.
-const DECLARED_PRODUCT_VERSION: &str = "product_version";
 /// Key of the legacy UGII payload version byte in [`DialectMatch::declared`].
 const DECLARED_UGII_VERSION: &str = "ugii_version";
 
@@ -77,8 +76,27 @@ pub(crate) enum NxDialect {
     LegacyCfb,
 }
 
+/// The host and kernel identities admitted from one scan, plus recoverable
+/// damage to the unique layer set.
+pub(crate) struct LayerClassification {
+    host: NxDialect,
+    layers: DialectLayers,
+    losses: Vec<LossNote>,
+}
+
+impl LayerClassification {
+    pub(crate) fn container_kind(&self) -> &'static str {
+        self.host.container_kind()
+    }
+
+    pub(crate) fn into_report_parts(mut self) -> (DialectLayers, Vec<LossNote>) {
+        self.losses.extend(dialect_losses(&self.layers));
+        (self.layers, self.losses)
+    }
+}
+
 /// Classify the host container and every schema-bearing Parasolid stream.
-pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
+pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassification {
     let streams = scan
         .streams
         .iter()
@@ -96,15 +114,50 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> DialectLayers {
             .map(|(stream, schema)| (schema.to_owned(), format!("stream@{}", stream.file_offset)))
             .collect(),
     );
-    DialectLayers::new(NxDialect::classify(&scan.container), extra)
-        .expect("Parasolid stream offsets have unique instances")
+    let (host, matched) = classify_host(&scan.container);
+    let mut layers = DialectLayers::of(matched);
+    let mut losses = Vec::new();
+    for layer in extra {
+        let format = layer.format().to_owned();
+        let instance = layer.instance().unwrap_or("unidentified").to_owned();
+        if layers.try_push(layer).is_err() {
+            losses.push(NxLossCode::DialectLayerCollision.note(format!(
+                "the container produced a duplicate {format} dialect layer at carrier {instance}; the later classification was omitted"
+            )));
+        }
+    }
+    LayerClassification {
+        host,
+        layers,
+        losses,
+    }
+}
+
+/// Construct the host row and its arm-owned declaration from one dispatch fact.
+fn classify_host(container: &Container<'_>) -> (NxDialect, DialectMatch) {
+    let dialect = NxDialect::of_container(container);
+    let (key, value) = match dialect {
+        NxDialect::LegacyCfb => (
+            DECLARED_UGII_VERSION,
+            format_version_byte(container.version),
+        ),
+        NxDialect::Splmsstr => (
+            DECLARED_SPLMSSTR_VERSION,
+            format_version_byte(container.version),
+        ),
+    };
+    let declared = BTreeMap::from([(key.to_owned(), value)]);
+    (
+        dialect,
+        DialectMatch::admitted(dialect.id()).with_declared(declared),
+    )
 }
 
 /// Losses charged by every unverified layer in a classified document.
 ///
 /// This walks the complete layer set rather than assuming the host primary is
 /// the only identity that can affect decode policy.
-pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
+fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
     layers
         .iter()
         .filter_map(cadmpeg_parasolid::unverified_message)
@@ -148,33 +201,11 @@ impl NxDialect {
             Self::Splmsstr
         }
     }
+}
 
-    /// Classifies one document. The single construction path for a
-    /// [`DialectMatch`] in this codec, so a classification bug and the report
-    /// can never disagree.
-    ///
-    /// The declared keys are the version fields the arm that ran actually read.
-    /// They are evidence: the resolved id comes from the container dispatch and
-    /// never from them.
-    pub(crate) fn classify(container: &Container<'_>) -> DialectMatch {
-        let dialect = Self::of_container(container);
-        let mut declared = BTreeMap::new();
-        match dialect {
-            Self::LegacyCfb => {
-                declared.insert(DECLARED_UGII_VERSION.into(), container.version.to_string());
-            }
-            Self::Splmsstr => {
-                declared.insert(
-                    DECLARED_SPLMSSTR_VERSION.into(),
-                    container.version.to_string(),
-                );
-                if let Some(header) = crate::native::store_headers(container).first() {
-                    declared.insert(DECLARED_PRODUCT_VERSION.into(), header.version.clone());
-                }
-            }
-        }
-        DialectMatch::admitted(dialect.id()).with_declared(declared)
-    }
+/// Canonical report rendering of the version byte read by either container arm.
+pub(crate) fn format_version_byte(version: u8) -> String {
+    version.to_string()
 }
 
 #[cfg(test)]

@@ -37,6 +37,10 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
     }
 }
 
+fn classify(container: &Container<'_>) -> DialectMatch {
+    classify_host(container).1
+}
+
 #[test]
 fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
@@ -44,7 +48,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
         container: crate::container::scan_bytes(bytes.clone()).unwrap(),
         streams: extract_streams(&bytes),
     };
-    let layers = classify_layers(&scan);
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -58,7 +62,6 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
         Admission::AdmittedUnverified { using: None }
     );
 
-    let losses = dialect_losses(&layers);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
     assert_eq!(
@@ -66,6 +69,34 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
         cadmpeg_ir::report::StrictConsequence::Reject
     );
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
+}
+
+#[test]
+fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
+    let bytes = single_part_prt();
+    let mut streams = extract_streams(&bytes);
+    streams.push(streams[0].clone());
+    let scan = crate::decode::Scan {
+        container: crate::container::scan_bytes(bytes).unwrap(),
+        streams,
+    };
+
+    let summary = crate::summarize(&scan);
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
+    assert_eq!(
+        layers
+            .iter()
+            .filter(|matched| matched.format() == PARASOLID_FORMAT)
+            .count(),
+        1
+    );
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::DialectLayerCollision.kind()));
+    assert!(summary.notes.iter().any(|note| {
+        note.starts_with("dialect classification loss:")
+            && note.contains("duplicate parasolid dialect layer")
+    }));
 }
 
 #[test]
@@ -96,31 +127,33 @@ fn both_container_rows_are_admitted_because_classification_is_structural() {
     // another's, so no unverified admission and no dialect-unverified loss
     // exist. Anything else here would be an invented path.
     for legacy_cfb in [false, true] {
-        let matched = NxDialect::classify(&container(legacy_cfb, 0x06));
+        let container = container(legacy_cfb, 0x06);
+        let matched = classify(&container);
         assert_eq!(matched.admission(), Admission::Admitted);
     }
 }
 
 #[test]
-fn the_modern_arm_declares_the_container_version_byte_verbatim() {
-    let matched = NxDialect::classify(&container(false, 0x06));
+fn the_modern_arm_declares_the_container_version_byte_as_canonical_decimal() {
+    let container = container(false, 0x06);
+    let matched = classify(&container);
 
     assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
     assert_eq!(matched.format(), "nx");
     assert_eq!(matched.declared()[DECLARED_SPLMSSTR_VERSION], "6");
     assert!(!matched.declared().contains_key(DECLARED_UGII_VERSION));
-    // No indexed store section, so no `store_version` record is available.
-    assert!(!matched.declared().contains_key(DECLARED_PRODUCT_VERSION));
+    assert_eq!(matched.declared().len(), 1);
 }
 
 #[test]
-fn the_legacy_arm_declares_the_ugii_payload_version_verbatim() {
-    let matched = NxDialect::classify(&container(true, 0x0a));
+fn the_legacy_arm_declares_the_ugii_payload_version_as_canonical_decimal() {
+    let container = container(true, 0x0a);
+    let matched = classify(&container);
 
     assert_eq!(matched.dialect().as_str(), "nx:legacy-cfb");
     assert_eq!(matched.declared()[DECLARED_UGII_VERSION], "10");
     assert!(!matched.declared().contains_key(DECLARED_SPLMSSTR_VERSION));
-    assert!(!matched.declared().contains_key(DECLARED_PRODUCT_VERSION));
+    assert_eq!(matched.declared().len(), 1);
 }
 
 #[test]
@@ -131,7 +164,8 @@ fn the_version_byte_is_evidence_and_never_moves_the_resolved_id() {
     // declaration beside it, would be reading a field this codec does not
     // branch on.
     for version in [0_u8, 1, 6, 255] {
-        let matched = NxDialect::classify(&container(false, version));
+        let container = container(false, version);
+        let matched = classify(&container);
         assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
         assert_eq!(
             matched.declared()[DECLARED_SPLMSSTR_VERSION],
