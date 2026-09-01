@@ -1,4 +1,4 @@
-# generated at 9e72f09dd
+# generated at 12ebff198
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -77,7 +77,6 @@ pub fn cadmpeg_registry::WriteDisposition::fmt(&self, &mut core::fmt::Formatter<
 pub struct cadmpeg_registry::DialectEntry
 pub cadmpeg_registry::DialectEntry::disposition: cadmpeg_registry::Disposition
 pub cadmpeg_registry::DialectEntry::id: cadmpeg_core::dialect::DialectId
-pub cadmpeg_registry::DialectEntry::target: bool
 pub cadmpeg_registry::DialectEntry::title: alloc::string::String
 pub struct cadmpeg_registry::DialectProvenance
 pub cadmpeg_registry::DialectProvenance::id: cadmpeg_core::dialect::DialectId

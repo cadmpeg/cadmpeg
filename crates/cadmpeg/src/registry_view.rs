@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rendering of the registry tables for the terminal.
 //!
-//! `cadmpeg-registry` joins the identity registry, the capability registry,
-//! and this build's encoder catalogs, and returns rows. The column widths, the
+//! `cadmpeg-registry` joins the identity registry and capability registry and
+//! returns rows beside this build's encoder catalog. The column widths, the
 //! word "yes", and the trailing pointer to another command are this crate's,
 //! because they are what a terminal reader sees and nothing a library caller
 //! should have to parse back out of a string.
@@ -56,11 +56,14 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
         }
         println!("  DIALECT                            READ                     WRITE                    TITLE");
         for row in &section.rows {
+            let is_target = section
+                .catalog
+                .is_some_and(|targets| targets.iter().any(|target| target.id == row.id));
             println!(
                 "  {:<34} {:<24} {:<24} {}",
                 row.id.as_str(),
                 row.disposition.read,
-                if row.target {
+                if is_target {
                     format!("{} (target)", row.disposition.write)
                 } else {
                     row.disposition.write.to_string()

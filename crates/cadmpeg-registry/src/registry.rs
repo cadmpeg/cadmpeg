@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_core::target::{find_target, TargetDescriptor};
+use cadmpeg_core::target::TargetDescriptor;
 use serde::Deserialize;
 
 use crate::disposition::{Disposition, ReadDisposition, WriteDisposition};
@@ -23,8 +23,6 @@ pub struct DialectEntry {
     pub title: String,
     /// The capability row for this id.
     pub disposition: Disposition,
-    /// Whether this build's encoder carries the dialect as a target.
-    pub target: bool,
 }
 
 /// One `[[dialect]]` row of the identity registry.
@@ -32,24 +30,30 @@ pub struct DialectEntry {
 /// Only the fields this view renders are read. The checkers own the rest. The
 /// id deserializes straight into [`DialectId`], which is the one construction
 /// path open to a producer that did not pin the string itself.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct IdentityRow {
     id: DialectId,
     title: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct FormatIdentity {
     #[serde(default)]
     aliases: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct Identity {
     #[serde(default)]
     format: BTreeMap<String, FormatIdentity>,
     #[serde(default)]
     dialect: Vec<IdentityRow>,
+}
+
+/// The identity-only half needed to resolve format words.
+struct IdentityRegistry {
+    identity: Identity,
+    format_names: BTreeMap<String, String>,
 }
 
 /// One `[[support]]` row of the capability registry.
@@ -70,12 +74,8 @@ struct Support {
 pub(crate) struct Registries {
     /// Format ids the identity registry declares, in alphabetical order.
     pub(crate) formats: Vec<String>,
-    /// Canonical format ids and aliases mapped to their canonical registry id.
-    format_names: BTreeMap<String, String>,
     /// Joined rows in identity-registry order.
     entries: Vec<DialectEntry>,
-    /// Encoder catalogs constructed once per writable format.
-    catalogs: BTreeMap<&'static str, &'static [TargetDescriptor]>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -90,6 +90,39 @@ enum RegistryLoadError {
     SupportWithoutIdentity(String),
     #[error("identity row for dialect {0} has no support row")]
     IdentityWithoutSupport(DialectId),
+    #[error("format word {name:?} belongs to both {first:?} and {second:?}")]
+    DuplicateFormatName {
+        name: String,
+        first: String,
+        second: String,
+    },
+}
+
+impl IdentityRegistry {
+    fn load() -> Result<Self, RegistryLoadError> {
+        Self::load_from(IDENTITY_TOML)
+    }
+
+    fn load_from(identity_toml: &str) -> Result<Self, RegistryLoadError> {
+        let identity: Identity =
+            toml::from_str(identity_toml).map_err(RegistryLoadError::Identity)?;
+        let mut format_names = BTreeMap::new();
+        for (id, row) in &identity.format {
+            for name in std::iter::once(id).chain(&row.aliases) {
+                if let Some(first) = format_names.insert(name.clone(), id.clone()) {
+                    return Err(RegistryLoadError::DuplicateFormatName {
+                        name: name.clone(),
+                        first,
+                        second: id.clone(),
+                    });
+                }
+            }
+        }
+        Ok(Self {
+            identity,
+            format_names,
+        })
+    }
 }
 
 impl Registries {
@@ -100,29 +133,22 @@ impl Registries {
     /// forbid. Runtime loading validates only the parse and total join needed
     /// by this view; the Python checkers own fields that the view does not read.
     fn load() -> Result<Self, RegistryLoadError> {
-        Self::load_from(IDENTITY_TOML, SUPPORT_TOML)
+        Self::join(identity_registry().identity.clone(), SUPPORT_TOML)
     }
 
+    #[cfg(test)]
     fn load_from(identity_toml: &str, support_toml: &str) -> Result<Self, RegistryLoadError> {
-        let identity: Identity =
-            toml::from_str(identity_toml).map_err(RegistryLoadError::Identity)?;
+        let identity = IdentityRegistry::load_from(identity_toml)?.identity;
+        Self::join(identity, support_toml)
+    }
+
+    fn join(identity: Identity, support_toml: &str) -> Result<Self, RegistryLoadError> {
         let support: Support = toml::from_str(support_toml).map_err(RegistryLoadError::Support)?;
         let identity_ids = identity
             .dialect
             .iter()
             .map(|row| row.id.as_str())
             .collect::<std::collections::BTreeSet<_>>();
-        let catalogs = Format::all()
-            .map(|format| (format.name(), build_encoder(format).targets()))
-            .collect::<BTreeMap<_, _>>();
-        let format_names = identity
-            .format
-            .iter()
-            .flat_map(|(id, row)| {
-                std::iter::once((id.clone(), id.clone()))
-                    .chain(row.aliases.iter().cloned().map(|alias| (alias, id.clone())))
-            })
-            .collect();
         let mut dispositions = BTreeMap::new();
         for row in support.support {
             let dialect = row.dialect;
@@ -139,7 +165,6 @@ impl Registries {
         }
         Ok(Self {
             formats: identity.format.keys().cloned().collect(),
-            format_names,
             entries: identity
                 .dialect
                 .into_iter()
@@ -149,19 +174,11 @@ impl Registries {
                         .ok_or_else(|| RegistryLoadError::IdentityWithoutSupport(row.id.clone()))?;
                     Ok(DialectEntry {
                         disposition,
-                        target: row
-                            .id
-                            .as_str()
-                            .split_once(':')
-                            .and_then(|(format, _)| catalogs.get(format).copied())
-                            .and_then(|targets| find_target(targets, row.id.as_str()))
-                            .is_some(),
                         id: row.id,
                         title: row.title,
                     })
                 })
                 .collect::<Result<_, RegistryLoadError>>()?,
-            catalogs,
         })
     }
 
@@ -179,6 +196,15 @@ impl Registries {
     }
 }
 
+fn identity_registry() -> &'static IdentityRegistry {
+    static IDENTITIES: OnceLock<IdentityRegistry> = OnceLock::new();
+    IDENTITIES.get_or_init(|| {
+        IdentityRegistry::load().expect(
+            "embedded dialect identity registry invariant failed: the registry must parse and every format word must have one owner",
+        )
+    })
+}
+
 /// The parsed registries, parsed once.
 pub(crate) fn registries() -> &'static Registries {
     static REGISTRIES: OnceLock<Registries> = OnceLock::new();
@@ -190,15 +216,30 @@ pub(crate) fn registries() -> &'static Registries {
 }
 
 pub(crate) fn catalog_of(format: &str) -> Option<&'static [TargetDescriptor]> {
-    registries().catalogs.get(format).copied()
+    Format::from_name(format).map(|format| build_encoder(format).targets())
 }
 
 pub(crate) fn is_format_name(name: &str) -> bool {
-    registries().format_names.contains_key(name)
+    identity_registry().format_names.contains_key(name)
 }
 
 pub(crate) fn canonical_format_name(name: &str) -> Option<&'static str> {
-    registries().format_names.get(name).map(String::as_str)
+    identity_registry()
+        .format_names
+        .get(name)
+        .map(String::as_str)
+}
+
+/// Canonical name and identity aliases for one format.
+pub(crate) fn format_words(format: &str) -> impl Iterator<Item = &'static str> {
+    identity_registry()
+        .identity
+        .format
+        .get_key_value(format)
+        .into_iter()
+        .flat_map(|(id, row)| {
+            std::iter::once(id.as_str()).chain(row.aliases.iter().map(String::as_str))
+        })
 }
 
 /// Every dialect the identity registry declares for `format`, in registry
@@ -279,6 +320,18 @@ mod tests {
         .err()
         .expect("the duplicate support row is rejected");
         assert!(matches!(error, RegistryLoadError::DuplicateSupport(id) if id == "step:ap203"));
+    }
+
+    #[test]
+    fn the_identity_registry_rejects_a_format_word_with_two_owners() {
+        let error = IdentityRegistry::load_from(
+            "[format.step]\naliases = [\"cad\"]\n[format.iges]\naliases = [\"cad\"]\n",
+        )
+        .err()
+        .expect("a format word must have one owner");
+        assert!(
+            matches!(error, RegistryLoadError::DuplicateFormatName { name, .. } if name == "cad")
+        );
     }
 
     /// Compiled catalogs and write-policy rows describe the same synthesis
