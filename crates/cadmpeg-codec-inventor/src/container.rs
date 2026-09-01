@@ -76,7 +76,15 @@ impl<'a> InventorContainer<'a> {
                         .attributes
                         .insert("display_name".into(), meta.display_name.clone());
                 }
-                SegmentMetaState::Malformed { detail, .. } => {
+                SegmentMetaState::Malformed { declared, detail } => {
+                    if let Some(declared) = declared {
+                        entry
+                            .attributes
+                            .insert("meta_marker".into(), declared.marker.clone());
+                        entry
+                            .attributes
+                            .insert("meta_stream_version".into(), declared.version.to_string());
+                    }
                     entry
                         .attributes
                         .insert("framing_error".into(), detail.clone());
