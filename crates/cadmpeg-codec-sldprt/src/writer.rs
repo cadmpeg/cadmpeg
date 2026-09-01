@@ -76,7 +76,8 @@ pub(crate) fn write_semantic_with_records(
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
-    let retained_partition = retained_partition(&normalized, retained_records);
+    let source_scan = source_image(retained_records).map(crate::container::scan_bytes);
+    let retained_partition = retained_partition(&normalized, source_scan.as_ref());
     let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
         && crate::history::native_parameters_match_source(&normalized, native.as_ref());
@@ -246,9 +247,10 @@ pub(crate) fn write_semantic_with_records(
         &active_partition_section,
         retain_native_brep,
     )?;
-    let has_document_envelope = opaque
-        .iter()
-        .any(|(_, payload)| payload.windows(12).any(|window| window == b"swSolidWorks"));
+    let has_document_envelope = crate::container::first_solidworks_envelope(
+        opaque.iter().map(|(_, payload)| payload.as_slice()),
+    )
+    .is_some();
     if let Some(active) = ir
         .model
         .configurations
@@ -275,15 +277,15 @@ pub(crate) fn write_semantic_with_records(
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
-    let type_ids = section_type_ids(retained_records, &sections)?;
+    let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
     writer.write_all(&outer_header(retained_records))?;
     for ((section, payload), type_id) in sections.iter().zip(&type_ids) {
         writer.write_all(&block(payload, section, *type_id)?)?;
     }
-    for cell in retained_cache_cells(retained_records, &sections) {
+    for cell in retained_cache_cells(source_scan.as_ref(), &sections) {
         writer.write_all(&cell)?;
     }
-    for entry in section_directory_entries(retained_records, &sections, &type_ids)? {
+    for entry in section_directory_entries(source_scan.as_ref(), &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
     Ok(written_dialect)
@@ -412,13 +414,11 @@ fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
 }
 
 fn section_directory_entries(
-    records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let source = source_image(records);
-    let source_scan = source.map(crate::container::scan_bytes);
-    let source_trailer = if let Some(scan) = source_scan.as_ref() {
+    let source_trailer = if let Some(scan) = source_scan {
         let mut trailers = scan.directory.iter().map(|entry| entry.trailer);
         if let Some(first) = trailers.next() {
             if trailers.any(|trailer| trailer != first) {
@@ -439,14 +439,15 @@ fn section_directory_entries(
         .map(|((section, payload), type_id)| {
             let size = u32::try_from(payload.len())
                 .map_err(|_| CodecError::Malformed("SLDPRT section exceeds 4 GiB".into()))?;
-            let source_entry = source_scan.as_ref().and_then(|scan| {
+            let source_entry = source_scan.and_then(|scan| {
                 scan.directory
                     .iter()
                     .find(|entry| entry.name == *section && entry.type_id == *type_id)
             });
-            if let (Some(entry), Some(source)) =
-                (source_entry.filter(|entry| entry.size == size), source)
-            {
+            if let (Some(entry), Some(source)) = (
+                source_entry.filter(|entry| entry.size == size),
+                source_scan.map(|scan| scan.source_image),
+            ) {
                 let end = entry
                     .offset
                     .checked_add(46 + entry.name.len())
@@ -469,13 +470,12 @@ fn section_directory_entries(
 }
 
 fn retained_cache_cells(
-    records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
 ) -> Vec<Vec<u8>> {
-    let Some(source) = source_image(records) else {
+    let Some(scan) = source_scan else {
         return Vec::new();
     };
-    let scan = crate::container::scan_bytes(source);
     scan.cache_cells
         .iter()
         .filter(|cell| {
@@ -489,7 +489,7 @@ fn retained_cache_cells(
         })
         .filter_map(|cell| {
             let end = cell.offset.checked_add(26 + cell.name.len())?;
-            source.get(cell.offset..end).map(<[u8]>::to_vec)
+            scan.source_image.get(cell.offset..end).map(<[u8]>::to_vec)
         })
         .collect()
 }
@@ -502,15 +502,17 @@ fn retained_cache_cells(
 /// [`crate::decode::brep_local_sha256`]. A document without the baseline — one
 /// synthesized rather than decoded, or decoded by a binary that named the
 /// attribute differently — has no partition to replay and is written out in full.
-fn retained_partition(ir: &CadIr, records: &[SourceRecord<'_>]) -> Option<(String, Vec<u8>)> {
+fn retained_partition(
+    ir: &CadIr,
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
+) -> Option<(String, Vec<u8>)> {
     let source = ir.source.as_ref()?;
     let expected = source.attributes.get("brep_local_sha256")?;
     if crate::decode::brep_local_sha256(ir) != *expected {
         return None;
     }
-    let source_image = source_image(records)?;
-    let scan = crate::container::scan_bytes(source_image);
-    let (block, _) = crate::container::select_active_parasolid(&scan)?;
+    let scan = source_scan?;
+    let (block, _) = crate::container::select_active_parasolid(scan)?;
     let original_section = block
         .section
         .clone()
@@ -551,15 +553,15 @@ fn outer_header(records: &[SourceRecord<'_>]) -> [u8; 8] {
 }
 
 fn section_type_ids(
-    records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
 ) -> Result<Vec<u32>, CodecError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
-    if let Some(source) = source_image(records) {
-        for block in crate::container::scan_bytes(source).blocks {
-            if let Some(section) = block.section {
+    if let Some(scan) = source_scan {
+        for block in &scan.blocks {
+            if let Some(section) = &block.section {
                 source_ids
-                    .entry(section)
+                    .entry(section.clone())
                     .or_default()
                     .push_back(block.type_id);
             }
@@ -1269,13 +1271,12 @@ fn patch_active_configuration_xml(
     payload: &[u8],
     name: &str,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    if !payload.windows(12).any(|window| window == b"swSolidWorks") {
+    let Some(text) = crate::container::xml_text(payload) else {
         return Ok(None);
-    }
-    let text = std::str::from_utf8(payload)
-        .map_err(|_| CodecError::Malformed("invalid retained SolidWorks XML".into()))?;
-    let document = roxmltree::Document::parse(text)
-        .map_err(|_| CodecError::Malformed("invalid retained SolidWorks XML".into()))?;
+    };
+    let Ok(document) = roxmltree::Document::parse(&text) else {
+        return Ok(None);
+    };
     if document.root_element().tag_name().name() != "swSolidWorks" {
         return Ok(None);
     }

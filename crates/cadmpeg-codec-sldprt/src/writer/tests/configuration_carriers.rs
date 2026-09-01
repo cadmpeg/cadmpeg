@@ -13,6 +13,25 @@ use crate::test_support::*;
 use crate::SldprtCodec;
 
 #[test]
+fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
+    let xml =
+        r#"<swSolidWorks swVersion="34000"><swModel swConfigurationName="Old"/></swSolidWorks>"#;
+    let mut payload = vec![0xff, 0xfe];
+    for unit in xml.encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+
+    assert!(container::first_solidworks_envelope([payload.as_slice()]).is_some());
+    let patched = super::super::patch_active_configuration_xml(&payload, "New")
+        .unwrap()
+        .expect("the UTF-16 envelope is recognized");
+    let envelope = container::first_solidworks_envelope([patched.as_slice()])
+        .expect("the rewritten envelope remains recognizable");
+    assert_eq!(envelope.sw_version.as_deref(), Some("34000"));
+    assert_eq!(envelope.configuration_name.as_deref(), Some("New"));
+}
+
+#[test]
 fn encoder_writes_source_less_datum_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point3, Vector3};
