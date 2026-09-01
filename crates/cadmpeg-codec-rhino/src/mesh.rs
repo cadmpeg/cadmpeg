@@ -1660,6 +1660,7 @@ mod tests {
         bytes.extend([0_u8; 16]);
         bytes.extend(0_u32.to_le_bytes());
         bytes.extend(0_i32.to_le_bytes());
+        bytes.push(0);
         let decoded = with_expand(&bytes, |expand| {
             decode(
                 expand,
@@ -1676,7 +1677,10 @@ mod tests {
                 &mut MeshBudget::new(),
             )
         });
-        assert!(decoded.is_ok(), "{decoded:?}");
+        let decoded = decoded.expect("unstamped post-2006 fields are recoverable");
+        assert!(decoded.losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()
+        }));
     }
 
     #[test]

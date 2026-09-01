@@ -3378,10 +3378,8 @@ fn mesh_payload(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     archive_version: RhinoArchiveVersion,
 ) -> MeshPayload {
-    let (payload_version, writes_modern_fields) = match archive_version {
-        RhinoArchiveVersion::V5 => (0x35, false),
-        RhinoArchiveVersion::V6 | RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8 => (0x38, true),
-    };
+    let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
+    let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
     payload.extend((mesh.vertices.len() as i32).to_le_bytes());
     payload.extend((mesh.triangles.len() as i32).to_le_bytes());
@@ -3447,7 +3445,7 @@ fn mesh_payload(
     payload.extend(mesh_mapping_tag());
     payload.extend([0_u8; 3]);
     direct.extend([0_u8; 3]);
-    if writes_modern_fields {
+    if writes_double_vertices {
         payload.push(0);
         direct.push(0);
         payload.push(1);

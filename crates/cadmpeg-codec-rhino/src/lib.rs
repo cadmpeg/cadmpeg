@@ -90,6 +90,7 @@ impl RhinoArchiveVersion {
         Self::V8.descriptor(),
     ];
 
+    #[cfg(test)]
     const fn target(self) -> &'static str {
         self.pinned()
     }
@@ -131,6 +132,10 @@ impl RhinoArchiveVersion {
 
     const fn uses_face_array_v2(self) -> bool {
         matches!(self, Self::V7 | Self::V8)
+    }
+
+    const fn stores_mesh_vertices_as_f64(self) -> bool {
+        !matches!(self, Self::V5)
     }
 }
 
@@ -208,7 +213,7 @@ impl Encoder for RhinoCodec {
         })?;
         let mut bytes = Vec::new();
         writer::write(input.ir, version, &mut bytes)?;
-        let vertex_quantization = version == RhinoArchiveVersion::V5
+        let vertex_quantization = !version.stores_mesh_vertices_as_f64()
             && input
                 .ir
                 .model
@@ -232,7 +237,7 @@ impl Encoder for RhinoCodec {
                     || f64::from(normal.z as f32) != normal.z
             });
         let mut losses = Vec::new();
-        let target = cadmpeg_core::dialect::DialectId::pinned(version.target());
+        let target = version.descriptor().id;
         if let Some(source) = resolved.displaced_source() {
             losses.push(loss::RhinoLossCode::SourceDialectDisplaced.note(
                 cadmpeg_ir::codec::source_dialect_displaced_message(source, &target),

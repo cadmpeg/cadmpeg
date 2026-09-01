@@ -279,7 +279,8 @@
         "code": {
           "code": "source.writer-stamp-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "strict_floor": null
         },
         "message": "rhino:object:record#record-000000-offset-177: ON_Mesh dropped 3 bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp",
         "severity": "warning"

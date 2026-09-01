@@ -75,7 +75,7 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
     // chunked grammar, so a word no row claims still selects a scan. It names
     // the newest declared row with the width the word selected, and the charge
     // comes from the admission itself.
-    for (word, nearest) in [(49, ArchiveVersion::V4), (51, ArchiveVersion::V9)] {
+    for (word, nearest) in [(49, ArchiveVersion::LegacyV5), (51, ArchiveVersion::V9)] {
         let matched = classify_word(word);
         assert_eq!(
             matched.admission(),
