@@ -880,13 +880,14 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 #
 # The container version byte is provenance. It is a u8 at file offset 8
 # (`splmsstr_header::VERSION_TAG`, crates/cadmpeg-codec-nx/src/layout.rs:74),
-# read with `unwrap_or(0)` (container.rs:957) and stored on
-# `Container::version` (container.rs:815-817). Its consumers are all
-# formatting and identity: two report notes (decode.rs:511, :522), the
-# legacy-arm `ugii_version` attribute (decode/emit.rs:1206-1209), and the
-# modern-arm `splmsstr_version` and `product_version` attributes
-# (decode/emit.rs:1211-1217, the latter from the first OM store section
-# carrying a `store_version` record). It is never compared to anything.
+# read fail-closed by `scan_bytes`; a truncated modern header is malformed.
+# The legacy arm reads the corresponding byte from the validated UGII payload
+# prefix. Both arms store the byte on `Container::version`. It appears in the
+# human summary and in the primary `DialectMatch.declared` map as
+# `splmsstr_version` or `ugii_version`. The modern declaration also records
+# `product_version` from the first OM store section carrying a `store_version`
+# record. None of these keys remains in `SourceMeta.attributes`, and no decode
+# branch compares the container version byte.
 #
 # The product string is provenance too. `product_record_layout`
 # (om.rs:8992-9011) requires the text to start with `NX ` (om.rs:9001) and
