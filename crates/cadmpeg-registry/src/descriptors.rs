@@ -7,16 +7,73 @@ use crate::{ForcedInput, Format};
 
 pub(crate) type DecoderConstructor = fn() -> Box<dyn Codec>;
 pub(crate) type EncoderConstructor = fn() -> Box<dyn Encoder>;
+
+/// Delivery and semantic-admission physics of a writable format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OutputPhysics {
+    /// Dialect-free textual CADIR; empty geometry is a valid document state.
+    NeutralText,
+    /// A textual native geometry format.
+    #[cfg(any(feature = "step", feature = "iges"))]
+    GeometryText,
+    /// A binary native geometry container.
+    #[cfg(any(
+        feature = "fcstd",
+        feature = "f3d",
+        feature = "sldprt",
+        feature = "rhino"
+    ))]
+    GeometryBinary,
+}
+
+impl OutputPhysics {
+    pub(crate) const fn transfers_geometry(self) -> bool {
+        match self {
+            Self::NeutralText => false,
+            #[cfg(any(feature = "step", feature = "iges"))]
+            Self::GeometryText => true,
+            #[cfg(any(
+                feature = "fcstd",
+                feature = "f3d",
+                feature = "sldprt",
+                feature = "rhino"
+            ))]
+            Self::GeometryBinary => true,
+        }
+    }
+
+    pub(crate) const fn is_binary(self) -> bool {
+        match self {
+            Self::NeutralText => false,
+            #[cfg(any(feature = "step", feature = "iges"))]
+            Self::GeometryText => false,
+            #[cfg(any(
+                feature = "fcstd",
+                feature = "f3d",
+                feature = "sldprt",
+                feature = "rhino"
+            ))]
+            Self::GeometryBinary => true,
+        }
+    }
+}
+
+/// Facts that exist together only when a format is writable.
+pub(crate) struct OutputDescriptor {
+    pub format: Format,
+    pub order: u8,
+    pub extensions: &'static [&'static str],
+    pub physics: OutputPhysics,
+    pub encoder: EncoderConstructor,
+}
+
 /// One compiled format and all registration facts owned by the registry.
 pub(crate) struct FormatDescriptor {
     pub id: &'static str,
     pub input_names: &'static [&'static str],
     pub input_extensions: &'static [&'static str],
     pub decoder: Option<DecoderConstructor>,
-    pub output: Option<Format>,
-    pub output_order: Option<u8>,
-    pub output_extensions: &'static [&'static str],
-    pub encoder: Option<EncoderConstructor>,
+    pub output: Option<OutputDescriptor>,
 }
 
 #[cfg(any(
@@ -40,21 +97,21 @@ macro_rules! descriptor {
             input_extensions: $input_exts,
             decoder: Some($decoder),
             output: None,
-            output_order: None,
-            output_extensions: &[],
-            encoder: None,
         }
     };
-    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $encoder:expr) => {
+    ($id:literal, $inputs:expr, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
         FormatDescriptor {
             id: $id,
             input_names: $inputs,
             input_extensions: $input_exts,
             decoder: Some($decoder),
-            output: Some($format),
-            output_order: Some($order),
-            output_extensions: $output_exts,
-            encoder: Some($encoder),
+            output: Some(OutputDescriptor {
+                format: $format,
+                order: $order,
+                extensions: $output_exts,
+                physics: $physics,
+                encoder: $encoder,
+            }),
         }
     };
 }
@@ -69,6 +126,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         Format::Fcstd,
         2,
         &["fcstd"],
+        OutputPhysics::GeometryBinary,
         || Box::new(cadmpeg_codec_freecad::FcstdCodec)
     ),
     #[cfg(feature = "f3d")]
@@ -80,6 +138,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         Format::F3d,
         3,
         &["f3d"],
+        OutputPhysics::GeometryBinary,
         || Box::new(cadmpeg_codec_f3d::F3dCodec)
     ),
     #[cfg(feature = "inventor")]
@@ -98,6 +157,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         Format::Sldprt,
         4,
         &["sldprt"],
+        OutputPhysics::GeometryBinary,
         || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
     ),
     #[cfg(feature = "catia")]
@@ -121,6 +181,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         Format::Rhino,
         5,
         &["3dm"],
+        OutputPhysics::GeometryBinary,
         || Box::new(cadmpeg_codec_rhino::RhinoEncoder)
     ),
     #[cfg(feature = "step")]
@@ -132,6 +193,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         Format::Step,
         1,
         &["step", "stp"],
+        OutputPhysics::GeometryText,
         || Box::new(cadmpeg_codec_step::StepCodec::default())
     ),
     #[cfg(feature = "iges")]
@@ -143,6 +205,7 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         Format::Iges,
         6,
         &["iges", "igs"],
+        OutputPhysics::GeometryText,
         || Box::new(cadmpeg_codec_iges::IgesEncoder)
     ),
     #[cfg(feature = "sat")]
@@ -157,26 +220,41 @@ pub(crate) static FORMAT_DESCRIPTORS: &[FormatDescriptor] = &[
         input_names: &["cadir"],
         input_extensions: &["cadir", "json"],
         decoder: None,
-        output: Some(Format::Cadir),
-        output_order: Some(0),
-        output_extensions: &["cadir", "json"],
-        encoder: Some(|| Box::new(CadirEncoder)),
+        output: Some(OutputDescriptor {
+            format: Format::Cadir,
+            order: 0,
+            extensions: &["cadir", "json"],
+            physics: OutputPhysics::NeutralText,
+            encoder: || Box::new(CadirEncoder),
+        }),
     },
 ];
 
-pub(crate) fn by_output(format: Format) -> &'static FormatDescriptor {
+pub(crate) fn by_output(format: Format) -> (&'static FormatDescriptor, &'static OutputDescriptor) {
     FORMAT_DESCRIPTORS
         .iter()
-        .find(|descriptor| descriptor.output == Some(format))
+        .find_map(|descriptor| {
+            descriptor
+                .output
+                .as_ref()
+                .filter(|output| output.format == format)
+                .map(|output| (descriptor, output))
+        })
         .expect("every Format has one descriptor")
 }
 
-pub(crate) fn writable() -> impl Iterator<Item = &'static FormatDescriptor> {
+pub(crate) fn writable(
+) -> impl Iterator<Item = (&'static FormatDescriptor, &'static OutputDescriptor)> {
     let mut descriptors = FORMAT_DESCRIPTORS
         .iter()
-        .filter(|descriptor| descriptor.encoder.is_some())
+        .filter_map(|descriptor| {
+            descriptor
+                .output
+                .as_ref()
+                .map(|output| (descriptor, output))
+        })
         .collect::<Vec<_>>();
-    descriptors.sort_by_key(|descriptor| descriptor.output_order);
+    descriptors.sort_by_key(|(_, output)| output.order);
     descriptors.into_iter()
 }
 
@@ -224,14 +302,9 @@ mod tests {
                 "{} has no input extension",
                 descriptor.id
             );
-            assert_eq!(descriptor.output.is_some(), descriptor.encoder.is_some());
-            assert_eq!(
-                descriptor.output.is_some(),
-                descriptor.output_order.is_some()
-            );
-            if let Some(format) = descriptor.output {
-                assert_eq!(format.name(), descriptor.id);
-                assert!(!descriptor.output_extensions.is_empty());
+            if let Some(output) = &descriptor.output {
+                assert_eq!(output.format.name(), descriptor.id);
+                assert!(!output.extensions.is_empty());
                 assert_eq!(
                     crate::registry::canonical_format_name(descriptor.id),
                     Some(descriptor.id),
