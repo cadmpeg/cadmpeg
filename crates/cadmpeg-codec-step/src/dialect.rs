@@ -290,15 +290,10 @@ impl StepDialect {
 /// the string and reading the exchange with the AP242 entity vocabulary
 /// anyway, which is a recovery, not a verified read.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let strategy = match matched.admission() {
-        Admission::AdmittedUnverified { using: Some(using) } => {
-            format!("with the entity vocabulary verified for {using}")
-        }
-        Admission::AdmittedUnverified { using: None } => {
-            "without substituting a declared STEP entity vocabulary".to_owned()
-        }
-        Admission::Admitted | Admission::Refused => return None,
+    let Admission::AdmittedUnverified { using } = matched.admission() else {
+        return None;
     };
+    let using = using.expect("the STEP unverified classifier always names its AP242 strategy");
     let declaration = matched
         .declared()
         .get(DECLARED_FILE_SCHEMA_IDENTIFIER)
@@ -308,7 +303,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         );
     Some(StepLossCode::SourceDialectUnverified.note(format!(
         "{declaration}; it satisfies no declared STEP dialect, so this decode read the exchange \
-{strategy}"
+with the entity vocabulary verified for {using}"
     )))
 }
 
