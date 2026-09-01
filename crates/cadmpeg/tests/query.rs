@@ -138,7 +138,8 @@ fn summary_exposes_document_and_decode_dialect_identity() {
               "extra": [{
                 "format": "acis",
                 "dialect": "acis:sab-22300",
-                "admission": {"admitted_unverified": {"using": "acis:sab-22200"}}
+                "admission": {"admitted_unverified": {"using": "acis:sab-22200"}},
+                "instance": "member:model.sab"
               }]
             }
           }
@@ -153,6 +154,15 @@ fn summary_exposes_document_and_decode_dialect_identity() {
                 .and(predicate::str::contains("decode_dialect\tf3d:archive-2"))
                 .and(predicate::str::contains(
                     "decode_dialect_admission\tadmitted",
+                ))
+                .and(predicate::str::contains(
+                    "decode_extra_1_dialect\tacis:sab-22300",
+                ))
+                .and(predicate::str::contains(
+                    "decode_extra_1_dialect_admission\t{\"admitted_unverified\":{\"using\":\"acis:sab-22200\"}}",
+                ))
+                .and(predicate::str::contains(
+                    "decode_extra_1_dialect_instance\tmember:model.sab",
                 )),
         );
 }

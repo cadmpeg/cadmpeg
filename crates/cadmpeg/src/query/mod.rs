@@ -246,6 +246,8 @@ struct DialectMatchProbe {
     dialect: Option<String>,
     #[serde(default)]
     admission: Option<Value>,
+    #[serde(default)]
+    instance: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -307,7 +309,7 @@ impl LossCodeProbe {
 
 #[cfg(test)]
 mod tests {
-    use super::LossCodeProbe;
+    use super::{push_decode_dialect_summary, DecodeReportProbe, LossCodeProbe};
 
     #[test]
     fn legacy_loss_codes_use_the_shared_migration_spelling() {
@@ -322,6 +324,48 @@ mod tests {
         assert_eq!(
             LossCodeProbe::Legacy("future_loss".to_owned()).display(),
             "future_loss"
+        );
+    }
+
+    #[test]
+    fn decode_summary_names_every_extra_dialect_layer() {
+        let decode: DecodeReportProbe = serde_json::from_value(serde_json::json!({
+            "dialects": {
+                "primary": {
+                    "dialect": "f3d:archive-2",
+                    "admission": "admitted"
+                },
+                "extra": [{
+                    "dialect": "acis:sab-22300",
+                    "admission": {"admitted_unverified": {"using": "acis:sab-22200"}},
+                    "instance": "member:model.sab"
+                }]
+            }
+        }))
+        .unwrap();
+        let mut rows = Vec::new();
+
+        push_decode_dialect_summary(&mut rows, &decode);
+
+        assert_eq!(
+            rows,
+            [
+                ("decode_dialect_layers".to_owned(), "2".to_owned()),
+                ("decode_dialect".to_owned(), "f3d:archive-2".to_owned()),
+                ("decode_dialect_admission".to_owned(), "admitted".to_owned()),
+                (
+                    "decode_extra_1_dialect".to_owned(),
+                    "acis:sab-22300".to_owned()
+                ),
+                (
+                    "decode_extra_1_dialect_admission".to_owned(),
+                    r#"{"admitted_unverified":{"using":"acis:sab-22200"}}"#.to_owned()
+                ),
+                (
+                    "decode_extra_1_dialect_instance".to_owned(),
+                    "member:model.sab".to_owned()
+                ),
+            ]
         );
     }
 }
@@ -679,6 +723,9 @@ fn push_decode_dialect_summary(rows: &mut Vec<(String, String)>, decode: &Decode
                 (1 + layers.extra.len()).to_string(),
             ));
             push_dialect_summary(rows, "decode", Some(&layers.primary));
+            for (index, matched) in layers.extra.iter().enumerate() {
+                push_dialect_summary(rows, &format!("decode_extra_{}", index + 1), Some(matched));
+            }
         }
         None => push_dialect_summary(rows, "decode", None),
     }
@@ -705,6 +752,9 @@ fn push_dialect_summary(
             .as_str()
             .map_or_else(|| admission.to_string(), cell);
         rows.push((format!("{prefix}_dialect_admission"), value));
+    }
+    if let Some(instance) = &matched.instance {
+        rows.push((format!("{prefix}_dialect_instance"), cell(instance)));
     }
 }
 
