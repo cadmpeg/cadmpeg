@@ -35,7 +35,7 @@
 //!
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 use crate::loss::F3dLossCode;
@@ -204,12 +204,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
                 "the top-level manifest declares version {version:?}, which no dialect row of \
                  this codec names, so no declared identity was verified. {strategy}"
             );
-            let message = matched
-                .declared()
-                .get(DECLARED_ARCHIVE_MEMBER)
-                .map_or(message.clone(), |member| {
-                    format!("archive member {member}: {message}")
-                });
+            let message = archive_member_message(matched, &message);
             Some(F3dLossCode::SourceDialectUnverified.note(message))
         }
     }
@@ -278,12 +273,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
                 "kernel carrier {carrier} could not be framed for dialect inspection; its retained \
                  source bytes remain available"
             );
-            let message = matched
-                .declared()
-                .get(DECLARED_ARCHIVE_MEMBER)
-                .map_or(message.clone(), |member| {
-                    format!("archive member {member}: {message}")
-                });
+            let message = archive_member_message(matched, &message);
             return Some(F3dLossCode::KernelCarrierUnparseable.note(message));
         }
         Admission::Admitted | Admission::AdmittedUnverified { .. } => {}
@@ -296,108 +286,15 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         &format!("the kernel carrier {carrier}"),
         matched,
     )?;
-    let message = matched
-        .declared()
-        .get(DECLARED_ARCHIVE_MEMBER)
-        .map_or(message.clone(), |member| {
-            format!("archive member {member}: {message}")
-        });
+    let message = archive_member_message(matched, &message);
     Some(F3dLossCode::KernelDialectUnverified.note(message))
 }
 
-/// Identity owner of a decoded F3D member.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReportScope {
-    /// The member is the decoded document and owns its classified layers.
-    Standalone,
-    /// The containing F3Z archive owns identity and classifies every member.
-    ArchiveMember,
-}
-
-/// Dialect-derived losses implied by a report's final classified layers.
-pub(crate) fn report_dialect_losses(
-    layers: &cadmpeg_core::dialect::DialectLayers,
-) -> Vec<LossNote> {
-    let mut losses = layers
-        .iter()
-        .filter(|matched| matched.format() == FORMAT)
-        .filter_map(dialect_loss)
-        .collect::<Vec<_>>();
-    losses.extend(
-        layers
-            .iter()
-            .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-            .filter_map(kernel_dialect_loss),
-    );
-    losses
-}
-
-/// Build a decode report from the dialect summary and route-owned losses.
-pub(crate) fn build_report(
-    scan: &crate::container::ContainerScan,
-    container_only: bool,
-    geometry_transferred: bool,
-    mut losses: Vec<LossNote>,
-    scope: ReportScope,
-) -> DecodeReport {
-    let transfer = if container_only {
-        cadmpeg_ir::DecodeTransfer::ContainerOnly
-    } else {
-        cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
-    };
-    match scope {
-        ReportScope::Standalone => {
-            let summary = crate::container::summarize(scan, &kernel_layers(scan));
-            let dialects = summary
-                .dialects()
-                .expect("standalone F3D summary is classified")
-                .clone();
-            losses.extend(report_dialect_losses(&dialects));
-            DecodeReport::classified(
-                dialects,
-                transfer,
-                std::collections::BTreeMap::new(),
-                losses,
-                report_notes(summary.notes, container_only),
-                cadmpeg_ir::report::TransferLedger::default(),
-            )
-        }
-        ReportScope::ArchiveMember => {
-            let summary = crate::container::summarize(scan, &[]);
-            DecodeReport::unclassified(
-                FORMAT,
-                transfer,
-                std::collections::BTreeMap::new(),
-                losses,
-                report_notes(summary.notes, container_only),
-                cadmpeg_ir::report::TransferLedger::default(),
-            )
-        }
+fn archive_member_message(matched: &DialectMatch, message: &str) -> String {
+    match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
+        Some(member) => format!("archive member {member}: {message}"),
+        None => message.to_owned(),
     }
-}
-
-fn report_notes(notes: Vec<String>, container_only: bool) -> Vec<String> {
-    notes
-        .into_iter()
-        .filter(|note| container_only || !note.starts_with("container-level inspection only"))
-        .collect()
-}
-
-/// Build a single-document inspection summary with the same dialect facts that
-/// decode projects into losses.
-pub(crate) fn build_inspection_summary(
-    scan: &crate::container::ContainerScan<'_>,
-) -> cadmpeg_core::ContainerSummary {
-    let kernel_layers = kernel_layers(scan);
-    let mut summary = crate::container::summarize(scan, &kernel_layers);
-    let classification_notes = summary
-        .dialects()
-        .into_iter()
-        .flat_map(report_dialect_losses)
-        .map(|loss| format!("dialect classification loss: {}", loss.message))
-        .collect::<Vec<_>>();
-    summary.notes.extend(classification_notes);
-    summary
 }
 
 #[cfg(test)]

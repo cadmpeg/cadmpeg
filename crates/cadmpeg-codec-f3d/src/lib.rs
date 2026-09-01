@@ -107,6 +107,7 @@ mod native;
 mod paramesh;
 #[allow(dead_code)] // Native record surface remains behind the codec facade.
 pub(crate) mod records;
+mod report;
 mod tsm;
 pub(crate) mod validate;
 mod value_tree;
@@ -220,10 +221,12 @@ impl CodecBackend for F3dCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        if f3z::is_f3z(&scan) {
-            return f3z::inspect(ctx, &scan);
+        match &scan.kind {
+            container::F3dContainerKind::MultiDocument => f3z::inspect(ctx, &scan),
+            container::F3dContainerKind::Document { .. } => {
+                Ok(report::build_inspection_summary(&scan))
+            }
         }
-        Ok(dialect::build_inspection_summary(&scan))
     }
 
     fn decode_impl(

@@ -2157,7 +2157,7 @@ struct GeometryIndex {
 #[derive(Debug, Clone, Copy)]
 struct DecodeSessionState {
     admitted_entities: u64,
-    report_scope: crate::dialect::ReportScope,
+    report_scope: crate::report::ReportScope,
 }
 
 /// Private decode accumulator for one `.f3d` document.
@@ -2197,8 +2197,13 @@ impl<'a> F3dDecodeSession<'a> {
             mut admitted_entities,
             report_scope,
         } = session_state;
-        let mut report =
-            crate::dialect::build_report(scan, false, true, geometry_losses(&brep), report_scope);
+        let mut report = crate::report::build_decode_report(
+            scan,
+            false,
+            true,
+            geometry_losses(&brep),
+            report_scope,
+        );
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2273,7 +2278,7 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_materials: None,
             native: F3dNative::default(),
             ir,
-            report: crate::dialect::build_report(
+            report: crate::report::build_decode_report(
                 scan,
                 false,
                 false,
@@ -2982,7 +2987,7 @@ pub(crate) fn decode_member<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<DecodeResult, CodecError> {
-    decode_document(ctx, root, crate::dialect::ReportScope::Standalone)
+    decode_document(ctx, root, crate::report::ReportScope::Standalone)
 }
 
 /// Decode one already-scanned F3Z member under archive-owned identity.
@@ -2990,25 +2995,27 @@ pub(crate) fn decode_archive_member<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
 ) -> Result<DecodeResult, CodecError> {
-    decode_scanned_document(ctx, scan, crate::dialect::ReportScope::ArchiveMember)
+    decode_scanned_document(ctx, scan, crate::report::ReportScope::ArchiveMember)
 }
 
 fn decode_document<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-    report_scope: crate::dialect::ReportScope,
+    report_scope: crate::report::ReportScope,
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
-    if crate::f3z::is_f3z(&scan) {
-        return crate::f3z::decode(ctx, &scan);
+    match &scan.kind {
+        container::F3dContainerKind::MultiDocument => crate::f3z::decode(ctx, &scan),
+        container::F3dContainerKind::Document { .. } => {
+            decode_scanned_document(ctx, &scan, report_scope)
+        }
     }
-    decode_scanned_document(ctx, &scan, report_scope)
 }
 
 fn decode_scanned_document<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
-    report_scope: crate::dialect::ReportScope,
+    report_scope: crate::report::ReportScope,
 ) -> Result<DecodeResult, CodecError> {
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
@@ -3022,8 +3029,13 @@ fn decode_scanned_document<'a>(
         annotate_docstruct(&mut ir, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(scan);
-        let mut report =
-            crate::dialect::build_report(scan, true, false, container_losses(scan), report_scope);
+        let mut report = crate::report::build_decode_report(
+            scan,
+            true,
+            false,
+            container_losses(scan),
+            report_scope,
+        );
         if let Ok(Some(table)) = crate::xref::decode(scan) {
             apply_assembly_classification(&mut report, scan, &table);
         }
