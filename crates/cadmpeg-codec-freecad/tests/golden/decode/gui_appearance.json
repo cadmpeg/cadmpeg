@@ -2687,12 +2687,10 @@
         "archive_entry_count": "7",
         "document_kind": "part",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "2",
         "physical_archive_bytes": "5042",
         "physical_ledger_spans": "50",
         "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4",
         "thumbnail_bytes": "955"
       },
       "dialect": {

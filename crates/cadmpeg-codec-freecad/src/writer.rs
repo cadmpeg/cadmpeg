@@ -47,11 +47,11 @@ pub(crate) fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution,
 ) -> Result<WriteOutcome, CodecError> {
-    let target = resolution.target().clone();
+    let target = resolution.dialect().id();
     let namespace = ir
         .native
         .namespace("fcstd")
-        .expect("a Resolution proves the namespace: resolve's retained_baseline required it");
+        .ok_or_else(|| CodecError::Malformed("FCStd native namespace is absent".into()))?;
     let entry_records = namespace
         .arenas
         .get("entries")
@@ -78,6 +78,13 @@ pub(crate) fn write_seekable(
             "FCStd native graph does not have exactly one document record".into(),
         ));
     };
+    if crate::dialect::FcstdDialect::from_schema_version(&document.schema_version)
+        != resolution.dialect()
+    {
+        return Err(CodecError::Malformed(
+            "FCStd document schema no longer matches the resolved target".into(),
+        ));
+    }
     validate_entry_names(&entries)?;
     let source_document_slot = entries
         .iter()
@@ -89,8 +96,7 @@ pub(crate) fn write_seekable(
     validate_entry(&source_document)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
     drop(source_document);
-    let written_graph =
-        crate::persistence::parse_with_context(&document_xml, resolution.schema(), None)?;
+    let written_graph = crate::persistence::parse_with_context(&document_xml, document, None)?;
     validate_declarations(
         &objects,
         &extensions,
@@ -135,19 +141,20 @@ pub(crate) fn write_seekable(
             CodecError::malformed(format_args!("cannot finish FCStd archive: {error}"))
         })?;
     }
+    let notes = vec![
+        format!(
+            "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
+            document.schema_version, document.file_version
+        ),
+        "unsupported retained entries and unedited XML records were preserved".into(),
+    ];
     Ok(WriteOutcome {
-        target: target.clone(),
+        target,
         census: cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: ir.census(),
         },
-        notes: vec![
-            format!(
-                "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-                document.schema_version, document.file_version
-            ),
-            "unsupported retained entries and unedited XML records were preserved".into(),
-        ],
+        notes,
     })
 }
 

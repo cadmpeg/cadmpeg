@@ -6,6 +6,17 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
+    let facts =
+        crate::container::parse_document(document.as_bytes()).map_err(|error| match error {
+            cadmpeg_core::CodecError::WrongFormat(message) => {
+                cadmpeg_core::CodecError::Malformed(message)
+            }
+            error => error,
+        })?;
+    super::parse_with_context(document.as_bytes(), &facts, None)
+}
+
 #[test]
 pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() {
     let document = r#"<Document SchemaVersion="3">
@@ -488,7 +499,7 @@ fn rejects_inconsistent_object_dependency_envelopes() {
 
     for document in cases {
         assert!(matches!(
-            crate::persistence::parse(document.as_bytes()),
+            parse_document_graph(document),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -531,7 +542,7 @@ fn binds_nested_extension_properties_to_their_enclosing_record() {
 <Extension type="Vendor::First" name="First"><Properties Count="1"><Property name="FirstValue" type="App::PropertyString"><String value="first"/></Property></Properties></Extension>
 <Extension type="Vendor::Second" name="Second"><Properties Count="1"><Property name="SecondValue" type="App::PropertyString"><String value="second"/></Property></Properties></Extension>
 </Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
-    let graph = crate::persistence::parse(document.as_bytes()).expect("extension graph");
+    let graph = parse_document_graph(document).expect("extension graph");
     let first = graph
         .extensions
         .iter()

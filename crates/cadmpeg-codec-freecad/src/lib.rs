@@ -1085,11 +1085,6 @@ impl CodecBackend for FcstdCodec {
         )?;
         let mut admitted_entities = 0_u64;
         let mut attributes = BTreeMap::new();
-        attributes.insert(
-            "schema_version".into(),
-            scan.document.schema_version.clone(),
-        );
-        attributes.insert("file_version".into(), scan.document.file_version.clone());
         attributes.insert("document_root".into(), scan.document.root_name.clone());
         attributes.insert(
             "object_count".into(),
@@ -1130,7 +1125,7 @@ impl CodecBackend for FcstdCodec {
         let mut gui_losses = Vec::new();
         // One `classify` call per run feeds `DecodeReport.dialects` and the
         // dialect-unverified loss.
-        let primary = dialect::FcstdDialect::classify(&scan.document, scan.schema);
+        let primary = dialect::FcstdDialect::classify(&scan.document);
         ir.source = Some(SourceMeta::unclassified(dialect::FORMAT, attributes));
         if let Some((name, bytes)) = thumbnail {
             ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
@@ -1160,7 +1155,7 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph = persistence::parse_with_context(document_bytes, scan.schema, Some(ctx))?;
+            let graph = persistence::parse_with_context(document_bytes, &scan.document, Some(ctx))?;
             for property in &graph.properties {
                 for side_entry in &property.side_entries {
                     if !scan.data.contains_key(side_entry) {
@@ -1206,7 +1201,9 @@ impl CodecBackend for FcstdCodec {
             let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
                 document_bytes,
-                scan.file_version,
+                scan.document.file_version.parse::<usize>().map_err(|_| {
+                    CodecError::Malformed("Document.xml FileVersion is invalid".into())
+                })?,
                 &graph.properties,
                 &entry_records,
             )?;

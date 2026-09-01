@@ -395,9 +395,8 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         source.dialect().unwrap().declared()["program_version"],
         "1.0"
     );
-    // The pre-existing attribute keys keep their duties beside the mirror.
-    assert_eq!(source.attributes["schema_version"], "4");
-    assert_eq!(source.attributes["file_version"], "1");
+    assert!(!source.attributes.contains_key("schema_version"));
+    assert!(!source.attributes.contains_key("file_version"));
 
     // A schema outside the declared rows: the totality row, admitted with the
     // schema-4 vocabulary substituted, and the loss naming the substitution.

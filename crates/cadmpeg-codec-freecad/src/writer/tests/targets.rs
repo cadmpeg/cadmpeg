@@ -221,6 +221,37 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     );
 }
 
+#[test]
+fn inherit_refuses_when_native_document_identity_disagrees_with_source_identity() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut ir = decoded.ir().clone();
+    let namespace = ir.native.namespace_mut("fcstd");
+    let mut documents = namespace
+        .arena_as::<DocumentFacts>("document")
+        .expect("document");
+    documents[0].schema_version = "3".into();
+    namespace
+        .set_arena("document", &documents)
+        .expect("replace document");
+
+    let error = inherit(&ir)
+        .err()
+        .expect("the native declaration cannot deliver schema 4");
+    let CodecError::UnsupportedTarget(refusal) = error else {
+        panic!("expected a target refusal");
+    };
+    assert!(matches!(
+        refusal.kind(),
+        TargetRefusalKind::InheritedUnavailable { source, .. }
+            if source.as_str() == "fcstd:schema-4"
+    ));
+}
+
 /// An explicit `--to` is the escape from the inherit refusal only where the
 /// retained graph can deliver the target. Where it cannot, `plan` refuses
 /// by name, with the catalog, before any byte is written.
