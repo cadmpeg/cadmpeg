@@ -61,10 +61,11 @@
 #
 #   `none` means no encoder writes the dialect on any path.
 #
-# The checker holds the two apart in both directions: a `preserved` row must
-# not appear in any `targets()` catalog, and a `verified`/`emitted` row on a
-# format that has a catalog must appear in it. It also proves each exported
-# id is a subset of that format's identity rows and is not `write = "none"`.
+# The compiled-catalog test in `cadmpeg-registry` holds the two apart in both
+# directions: a `preserved` row must not appear in any `targets()` catalog,
+# and a `verified`/`emitted` row on a format that has a catalog must appear in
+# it. It also proves each exported id is a subset of that format's identity
+# rows and is not `write = "none"`.
 #
 # `parasolid:` is owned by `cadmpeg-parasolid`. The sldprt and nx hosts classify
 # its schema tokens as extra layers from the same parsed stream headers used by
@@ -863,7 +864,8 @@ write = "none"
 reason = """
 `manifest::parse_top_level` parses any readable version with the 3-2-0-0
 layout, so a document that declares another version and fits that layout is
-admitted unverified on `f3d:manifest-3-2-0-0` and charges
+classified as residual `f3d:unknown`, admitted unverified using
+`f3d:manifest-3-2-0-0`, and charges
 `source.dialect-unverified`; a document whose layout does not fit produces a
 structural malformed error that names its declared version as the probable
 cause. No .f3d file of another generation is in the repository"""
