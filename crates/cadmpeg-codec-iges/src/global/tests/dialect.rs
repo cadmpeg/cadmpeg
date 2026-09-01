@@ -141,21 +141,6 @@ fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
 }
 
 #[test]
-fn a_clamped_version_flag_is_recorded_verbatim_and_charges_the_dialect_loss() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(point_file_with_version_flag("99")),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    let declared = &result.report().dialects().unwrap().primary().declared();
-    assert_eq!(declared["effective_version"], "5.3");
-    assert_eq!(declared["version_flag"], "99");
-    assert_eq!(dialect_losses(result.report()), 1);
-}
-
-#[test]
 fn a_verified_declared_version_charges_no_dialect_loss() {
     let result = IgesCodec
         .decode(

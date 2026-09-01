@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
-use cadmpeg_core::target::default_target;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::CadIr;
@@ -59,31 +58,12 @@ fn an_explicit_target_wins_over_the_source_archive_version() {
     );
 }
 
-/// A cross-format conversion has nothing to inherit, so the application layer
-/// asks for the catalog default outright, and `plan` writes exactly that —
-/// never the version the encoder happens to carry.
-#[test]
-fn a_cross_format_request_resolves_to_the_catalog_default() {
-    let ir = CadIr::empty(Units::default());
-    let default = default_target(crate::RhinoArchiveVersion::TARGETS)
-        .expect("the Rhino catalog has a default");
-    assert_eq!(
-        resolved(
-            &ir,
-            RhinoCodec,
-            TargetRequest::Explicit(default.id.as_str()),
-        ),
-        "rhino:archive-80"
-    );
-}
-
 /// With no Rhino source there is nothing to inherit, so `Inherit` falls back to
 /// the catalog default — never to encoder state, which no longer exists.
 ///
-/// This is the cross-format shape reached through `Inherit` instead of through
-/// the application layer's `Explicit(catalog default)`. It is a legitimate
-/// library-caller path, and it changes no existing file's identity, because
-/// there is no same-format source whose identity could change.
+/// This is the cross-format request the application and library callers send.
+/// It changes no existing file's identity because there is no same-format
+/// source whose identity could change.
 #[test]
 fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
     let ir = CadIr::empty(Units::default());
