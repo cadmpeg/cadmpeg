@@ -2,10 +2,9 @@
 //! Rhino dialect identity: which registry row a `.3dm` archive is, and how it
 //! was admitted.
 //!
-//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`ArchiveVersion::classify`] is the one construction
-//! path, and the vocabulary is closed. Tests close it directly against
-//! `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`ArchiveVersion::classify`] is
+//! the one construction path, and the vocabulary is closed.
 //!
 //! # One discriminant, read before the parse strategy is chosen
 //!
@@ -47,8 +46,7 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "rhino";
+include!("dialect/registry_ids.rs");
 
 /// Key of the archive-version word in [`DialectMatch::declared`].
 ///
@@ -90,24 +88,20 @@ impl ArchiveVersion {
         Self::Other(0),
     ];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(self.pinned())
-    }
-
-    const fn pinned(self) -> &'static str {
         match self {
-            Self::V1 => "rhino:archive-1",
-            Self::V2 => "rhino:archive-2",
-            Self::V3 => "rhino:archive-3",
-            Self::V4 => "rhino:archive-4",
-            Self::LegacyV5 => "rhino:archive-5",
-            Self::V5 => "rhino:archive-50",
-            Self::V6 => "rhino:archive-60",
-            Self::V7 => "rhino:archive-70",
-            Self::V8 => "rhino:archive-80",
-            Self::V9 => "rhino:archive-90",
-            Self::Other(_) => "rhino:unknown",
+            Self::V1 => RHINO_ARCHIVE_1,
+            Self::V2 => RHINO_ARCHIVE_2,
+            Self::V3 => RHINO_ARCHIVE_3,
+            Self::V4 => RHINO_ARCHIVE_4,
+            Self::LegacyV5 => RHINO_ARCHIVE_5,
+            Self::V5 => RHINO_ARCHIVE_50,
+            Self::V6 => RHINO_ARCHIVE_60,
+            Self::V7 => RHINO_ARCHIVE_70,
+            Self::V8 => RHINO_ARCHIVE_80,
+            Self::V9 => RHINO_ARCHIVE_90,
+            Self::Other(_) => RHINO_UNKNOWN,
         }
     }
 

@@ -13,9 +13,9 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
-import re
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -53,10 +53,6 @@ class RegistryCase(unittest.TestCase):
             )
             if text is not None:
                 (root / "docs" / "dialects.toml").write_text(text, encoding="utf-8")
-                ids = re.findall(r'^id = "([^"]+)"$', text, re.MULTILINE)
-                source = root / "crates" / "demo" / "src" / "dialect.rs"
-                source.parent.mkdir(parents=True)
-                source.write_text("\n".join(f'const _: &str = "{value}";' for value in ids), encoding="utf-8")
             for rel in files or []:
                 target = root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -182,6 +178,9 @@ class TestRowShape(RegistryCase):
     def test_unknown_key(self):
         self.assertFires(_registry(GOOD_ROW + 'grammar = "chunked"\n'), "unknown key grammar")
 
+    def test_pinned_escape_hatch_does_not_exist(self):
+        self.assertFires(_registry(GOOD_ROW + "pinned = false\n"), "unknown key pinned")
+
     def test_id_not_a_string(self):
         self.assertFires(
             _registry('[[dialect]]\nid = 7\ntitle = "t"\ndiscriminants = { a = "b" }\nwitness = "spec:s"\n'),
@@ -220,12 +219,6 @@ class TestRowShape(RegistryCase):
 
     def test_seam_must_be_a_string(self):
         self.assertFires(_registry(GOOD_ROW + "seam = 3\n"), "seam must be a string")
-
-    def test_pinned_must_be_a_boolean(self):
-        self.assertFires(_registry(GOOD_ROW + 'pinned = "no"\n'), "pinned must be a boolean")
-
-    def test_pinned_false_is_valid(self):
-        self.assertClean(_registry(GOOD_ROW + "pinned = false\n"))
 
     def test_unknown_row_requires_kind(self):
         self.assertFires(
@@ -396,56 +389,82 @@ class TestSupersedes(RegistryCase):
         self.assertClean(text)
 
 
-class TestExtensionPoints(unittest.TestCase):
-    def emitted_id_failures(
-        self,
-        row: str,
-        source: str = "",
-    ):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "docs").mkdir()
-            (root / "docs" / "dialects.toml").write_text(
-                _registry(row), encoding="utf-8"
-            )
-            source_path = root / "crates" / "demo" / "src" / "dialect.rs"
-            source_path.parent.mkdir(parents=True)
-            source_path.write_text(source, encoding="utf-8")
-            return checker.check_codec_emitted_ids(root)
+class TestGeneratedIds(unittest.TestCase):
+    OWNER = {
+        "demo": checker.GeneratedIdOwner(
+            Path("crates/demo/src/dialect/registry_ids.rs"), "pub(crate)"
+        )
+    }
 
-    def test_present_codec_id_passes(self):
-        self.assertEqual(self.emitted_id_failures(GOOD_ROW, 'const ID: &str = "demo:one";'), [])
+    def rows(self, body: str = GOOD_ROW) -> list[dict]:
+        return tomllib.loads(_registry(body))["dialect"]
 
-    def test_dead_codec_id_fails(self):
+    def test_constant_names_are_derived_from_the_complete_id(self):
         self.assertEqual(
-            self.emitted_id_failures(GOOD_ROW.replace("demo:one", "demo:fabricated")),
-            ["demo:fabricated: no string literal under crates/*/src"],
+            checker.rust_constant_name("iges:5.3-fixed-ascii"),
+            "IGES_5_3_FIXED_ASCII",
         )
 
-    def test_detect_unreachable_id_needs_no_code_anchor(self):
-        row = GOOD_ROW.replace("demo:one", "nx:unknown")
-        row += 'unknown_kind = "detect-unreachable"\n'
-        self.assertEqual(self.emitted_id_failures(row), [])
+    def test_generated_module_owns_the_registry_literal(self):
+        outputs, failures = checker.generated_id_modules(self.rows(), self.OWNER)
+        self.assertEqual(failures, [])
+        content = outputs[self.OWNER["demo"].path]
+        self.assertIn('pub(crate) const FORMAT: &str = "demo";', content)
+        self.assertIn(
+            'pub(crate) const DEMO_ONE: DialectId = DialectId::pinned("demo:one");',
+            content,
+        )
 
-    def test_id_present_only_in_line_comment_fails(self):
-        for source in ('// "demo:one"', '/// "demo:one"'):
-            with self.subTest(source=source):
-                self.assertEqual(
-                    self.emitted_id_failures(GOOD_ROW, source),
-                    ["demo:one: no string literal under crates/*/src"],
-                )
+    def test_detect_unreachable_rows_are_still_generated(self):
+        unknown = GOOD_ROW.replace('id = "demo:one"', 'id = "demo:unknown"')
+        unknown += 'unknown_kind = "detect-unreachable"\n'
+        outputs, failures = checker.generated_id_modules(self.rows(unknown), self.OWNER)
+        self.assertEqual(failures, [])
+        self.assertIn("DEMO_UNKNOWN", outputs[self.OWNER["demo"].path])
 
-    def test_id_present_only_in_block_comment_fails(self):
-        for source in ('/* "demo:one" */', '/* first line\n"demo:one"\nlast line */'):
-            with self.subTest(source=source):
-                self.assertEqual(
-                    self.emitted_id_failures(GOOD_ROW, source),
-                    ["demo:one: no string literal under crates/*/src"],
-                )
+    def test_stale_generated_module_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / self.OWNER["demo"].path
+            path.parent.mkdir(parents=True)
+            path.write_text("stale\n", encoding="utf-8")
+            failures = checker.check_generated_id_modules(
+                root, self.rows(), self.OWNER
+            )
+        self.assertEqual(
+            failures,
+            [
+                "crates/demo/src/dialect/registry_ids.rs: generated dialect ids differ; "
+                "run python3 scripts/check-dialects.py --write-generated"
+            ],
+        )
 
-    def test_explicitly_unpinned_row_is_exempt(self):
-        self.assertEqual(self.emitted_id_failures(GOOD_ROW + "pinned = false\n"), [])
+    def test_each_row_format_requires_one_owner(self):
+        _, failures = checker.generated_id_modules(self.rows(), {})
+        self.assertEqual(failures, ["format demo: no generated dialect-id owner"])
 
+    def test_owner_without_rows_fails(self):
+        owners = dict(self.OWNER)
+        owners["unused"] = checker.GeneratedIdOwner(Path("unused.rs"), "pub(crate)")
+        _, failures = checker.generated_id_modules(self.rows(), owners)
+        self.assertEqual(
+            failures,
+            ["format unused: generated dialect-id owner has no registry rows"],
+        )
+
+    def test_normalized_constant_names_must_not_collide(self):
+        second = GOOD_ROW.replace("demo:one", "demo:one.two")
+        third = GOOD_ROW.replace("demo:one", "demo:one-two")
+        _, failures = checker.generated_id_modules(
+            self.rows(second + third), self.OWNER
+        )
+        self.assertEqual(
+            failures,
+            ["demo:one-two: generated constant DEMO_ONE_TWO collides with demo:one.two"],
+        )
+
+
+class TestExtensionPoints(unittest.TestCase):
     def test_support_tables_moved_to_the_renderer(self):
         """The stub is gone because the rule is enforced, not deferred."""
         self.assertFalse(hasattr(checker, "check_support_tables"))

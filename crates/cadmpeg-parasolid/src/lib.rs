@@ -9,8 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 
-/// Dialect namespace owned by the Parasolid stream classifier.
-pub const FORMAT: &str = "parasolid";
+include!("registry_ids.rs");
 
 /// Declared-key name for the source schema token.
 pub const DECLARED_SCHEMA: &str = "schema";
@@ -120,26 +119,24 @@ pub fn classify_layer(
     known_admission: KnownSchemaAdmission,
 ) -> DialectMatch {
     let id = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
-        "parasolid:sch-sw-33103"
+        PARASOLID_SCH_SW_33103
     } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
-        "parasolid:sch-sw-32001"
+        PARASOLID_SCH_SW_32001
     } else if schema
         .rsplit_once('_')
         .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("13006"))
     {
-        "parasolid:format-13006"
+        PARASOLID_FORMAT_13006
     } else {
-        "parasolid:unknown"
+        PARASOLID_UNKNOWN
     };
     let declared = BTreeMap::from([
         (DECLARED_SCHEMA.to_owned(), schema.to_owned()),
         (DECLARED_CARRIER.to_owned(), carrier.to_owned()),
     ]);
-    let matched = match (id, known_admission) {
-        ("parasolid:unknown", _) | (_, KnownSchemaAdmission::Unverified) => {
-            DialectMatch::residual(DialectId::pinned(id))
-        }
-        (_, KnownSchemaAdmission::Verified) => DialectMatch::admitted(DialectId::pinned(id)),
+    let matched = match (id == PARASOLID_UNKNOWN, known_admission) {
+        (true, _) | (_, KnownSchemaAdmission::Unverified) => DialectMatch::residual(id),
+        (false, KnownSchemaAdmission::Verified) => DialectMatch::admitted(id),
     }
     .with_declared(declared);
     if instance_tagged {
@@ -189,7 +186,7 @@ pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
         .declared()
         .get(DECLARED_CARRIER)
         .map_or("<unrecorded>", String::as_str);
-    if matched.dialect().as_str() == "parasolid:unknown" {
+    if matched.dialect() == &PARASOLID_UNKNOWN {
         return Some(format!(
             "The Parasolid stream at {carrier} declares schema {schema:?}, which has no declared \
              grammar. It was admitted as the `{}` residual layer without substituting another \

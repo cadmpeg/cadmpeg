@@ -2,12 +2,10 @@
 //! CATIA V5 dialect identity: which registry row a `.CATPart` is, and how it
 //! was admitted.
 //!
-//! The `*LossCode` template: the enum is internal to the crate, [`DialectId`]
-//! strings are the boundary, [`classify`] is the one construction path, and the
-//! vocabulary is closed. The enum is [`Variant`] itself, so this module gives
-//! that existing enum a pinned-id surface instead of standing up a second enum
-//! that would have to be kept in step with it by hand. Tests close that enum
-//! directly against `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal to the crate, generated
+//! [`DialectId`] constants are the boundary, [`classify`] is the one
+//! construction path, and the vocabulary is closed. The enum is [`Variant`]
+//! itself, so this module does not add a second enum that could drift from it.
 //!
 //! # Identity is structural here, and there is no declaration to disagree with
 //!
@@ -34,8 +32,7 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "catia";
+include!("dialect/registry_ids.rs");
 
 /// Key of the `LastSaveVersion` generation number in [`DialectMatch::declared`].
 const DECLARED_VERSION: &str = "last_save_version";
@@ -61,21 +58,21 @@ impl Variant {
         Self::Unknown,
     ];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     ///
     /// This is the sole serialized spelling of the storage family. Human
     /// descriptions remain prose; source metadata and annotations do not carry
     /// a second bare variant token.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
-            Self::StandardNested => "catia:standard-nested",
-            Self::FbbOnly => "catia:fbb-only",
-            Self::ZeroEntity => "catia:zero-entity",
-            Self::FloatPackedInnerNoFbb => "catia:float-packed-inner-no-fbb",
-            Self::E5Stream => "catia:e5-stream",
-            Self::InnerNoDirectory => "catia:inner-no-directory",
-            Self::Unknown => "catia:unknown",
-        })
+        match self {
+            Self::StandardNested => CATIA_STANDARD_NESTED,
+            Self::FbbOnly => CATIA_FBB_ONLY,
+            Self::ZeroEntity => CATIA_ZERO_ENTITY,
+            Self::FloatPackedInnerNoFbb => CATIA_FLOAT_PACKED_INNER_NO_FBB,
+            Self::E5Stream => CATIA_E5_STREAM,
+            Self::InnerNoDirectory => CATIA_INNER_NO_DIRECTORY,
+            Self::Unknown => CATIA_UNKNOWN,
+        }
     }
 }
 

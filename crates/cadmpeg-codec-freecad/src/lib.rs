@@ -1044,7 +1044,7 @@ fn validate_logical_chain(
 
 impl CodecBackend for FcstdCodec {
     fn id(&self) -> &'static str {
-        "fcstd"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

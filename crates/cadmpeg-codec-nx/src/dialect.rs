@@ -2,10 +2,9 @@
 //! NX dialect identity: which registry row a document is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`classify_layers`] is the one construction
-//! path, and the vocabulary is closed. Tests close it directly against the
-//! reportable rows in `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`classify_layers`] is the one
+//! construction path, and the vocabulary is closed.
 //!
 //! # Host classification is structural
 //!
@@ -55,8 +54,8 @@ use cadmpeg_ir::LossNote;
 
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "nx";
+include!("dialect/registry_ids.rs");
+
 #[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";
 
@@ -171,12 +170,12 @@ impl NxDialect {
     #[cfg(test)]
     pub(crate) const ALL: [Self; 2] = [Self::Splmsstr, Self::LegacyCfb];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
-            Self::Splmsstr => "nx:splmsstr",
-            Self::LegacyCfb => "nx:legacy-cfb",
-        })
+        match self {
+            Self::Splmsstr => NX_SPLMSSTR,
+            Self::LegacyCfb => NX_LEGACY_CFB,
+        }
     }
 
     /// The `ContainerSummary::container_kind` label for this row.

@@ -2,10 +2,9 @@
 //! F3D dialect identity: which registry row a Fusion archive is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`] strings
-//! are the boundary, `F3dDialect::matched` is the one construction path, and
-//! the vocabulary is closed. Tests close it directly against
-//! `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, `F3dDialect::matched` is the one
+//! construction path, and the vocabulary is closed.
 //!
 //! # Two grammars, one enum, and one recovery row
 //!
@@ -41,8 +40,7 @@ use std::collections::BTreeMap;
 use crate::loss::F3dLossCode;
 use crate::manifest::TOP_LEVEL_MANIFEST_VERSION;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "f3d";
+include!("dialect/registry_ids.rs");
 
 /// The one dialect this writer synthesizes.
 ///
@@ -115,16 +113,12 @@ impl F3dDialect {
     #[cfg(test)]
     pub(crate) const ALL: [Self; 3] = [Self::Manifest3200, Self::F3zMultiDocument, Self::Unknown];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(self.pinned())
-    }
-
-    const fn pinned(self) -> &'static str {
         match self {
-            Self::Manifest3200 => "f3d:manifest-3-2-0-0",
-            Self::F3zMultiDocument => "f3d:f3z-multi-document",
-            Self::Unknown => "f3d:unknown",
+            Self::Manifest3200 => F3D_MANIFEST_3_2_0_0,
+            Self::F3zMultiDocument => F3D_F3Z_MULTI_DOCUMENT,
+            Self::Unknown => F3D_UNKNOWN,
         }
     }
 

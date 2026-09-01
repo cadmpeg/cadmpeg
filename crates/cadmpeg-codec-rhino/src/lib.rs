@@ -147,7 +147,7 @@ impl RhinoArchiveVersion {
 
 impl CodecBackend for RhinoCodec {
     fn id(&self) -> &'static str {
-        "rhino"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

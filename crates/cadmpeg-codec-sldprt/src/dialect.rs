@@ -2,10 +2,9 @@
 //! SLDPRT dialect identity: which registry row a document is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`SldprtDialect::classify`] is the one
-//! construction path, and the vocabulary is closed. Tests close it directly
-//! against `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`SldprtDialect::classify`] is the
+//! one construction path, and the vocabulary is closed.
 //!
 //! # The axis is `swVersion`, and it is the only one that selects a layout
 //!
@@ -74,8 +73,8 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::LossNote;
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "sldprt";
+include!("dialect/registry_ids.rs");
+
 #[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";
 
@@ -168,16 +167,12 @@ impl SldprtDialect {
         Self::Unknown,
     ];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(self.pinned())
-    }
-
-    const fn pinned(self) -> &'static str {
         match self {
-            Self::SwVersionPre12000 => "sldprt:sw-version-pre-12000",
-            Self::SwVersion12000Plus => "sldprt:sw-version-12000-plus",
-            Self::Unknown => "sldprt:unknown",
+            Self::SwVersionPre12000 => SLDPRT_SW_VERSION_PRE_12000,
+            Self::SwVersion12000Plus => SLDPRT_SW_VERSION_12000_PLUS,
+            Self::Unknown => SLDPRT_UNKNOWN,
         }
     }
 

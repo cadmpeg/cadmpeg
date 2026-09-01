@@ -2,10 +2,9 @@
 //! `FCStd` dialect identity: which registry row a document is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, [`DialectId::pinned`]
-//! strings are the boundary, [`FcstdDialect::classify`] is the one construction
-//! path, and the vocabulary is closed. Tests close it directly against
-//! `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`FcstdDialect::classify`] is the
+//! one construction path, and the vocabulary is closed.
 //!
 //! The discriminant is `Document.xml`'s `SchemaVersion`, read by
 //! [`crate::container::parse_document`] before any element vocabulary is
@@ -40,8 +39,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "fcstd";
+include!("dialect/registry_ids.rs");
 
 /// The synthesis catalog: the dialects this encoder produces for an input whose
 /// retained document graph already declares them.
@@ -98,17 +96,13 @@ impl FcstdDialect {
     #[cfg(test)]
     pub(crate) const ALL: [Self; 4] = [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(self.pinned())
-    }
-
-    const fn pinned(self) -> &'static str {
         match self {
-            Self::Schema2 => "fcstd:schema-2",
-            Self::Schema3 => "fcstd:schema-3",
-            Self::Schema4 => "fcstd:schema-4",
-            Self::Unknown => "fcstd:unknown",
+            Self::Schema2 => FCSTD_SCHEMA_2,
+            Self::Schema3 => FCSTD_SCHEMA_3,
+            Self::Schema4 => FCSTD_SCHEMA_4,
+            Self::Unknown => FCSTD_UNKNOWN,
         }
     }
 

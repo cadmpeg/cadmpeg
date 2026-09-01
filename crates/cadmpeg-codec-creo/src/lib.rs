@@ -98,7 +98,7 @@ pub struct CreoCodec;
 
 impl CodecBackend for CreoCodec {
     fn id(&self) -> &'static str {
-        "creo"
+        dialect::FORMAT
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {

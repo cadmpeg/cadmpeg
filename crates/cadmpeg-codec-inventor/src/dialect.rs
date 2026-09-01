@@ -2,10 +2,9 @@
 //! Inventor dialect identity: which registry row a document is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
-//! are the boundary, [`DialectRecovery::classify`] is the one
-//! construction path, and the vocabulary is closed. Tests close it directly
-//! against `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`DialectRecovery::classify`] is
+//! the one construction path, and the vocabulary is closed.
 //!
 //! # Declarations select identity; framing selects admission
 //!
@@ -73,8 +72,7 @@ use crate::kernel::{ActiveCarrierState, KernelFamily};
 use crate::loss::InventorLossCode;
 use crate::rse::{MetaStreamDeclaration, ParsedState};
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "inventor";
+include!("dialect/registry_ids.rs");
 
 /// Key of the CFB major version in [`DialectMatch::declared`].
 ///
@@ -120,12 +118,12 @@ impl InventorDialect {
     #[cfg(test)]
     pub(crate) const ALL: [Self; 2] = [Self::Cfb3Rse31Meta8, Self::Unknown];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
-        DialectId::pinned(match self {
-            Self::Cfb3Rse31Meta8 => "inventor:cfb3-rse31-meta8",
-            Self::Unknown => "inventor:unknown",
-        })
+        match self {
+            Self::Cfb3Rse31Meta8 => INVENTOR_CFB3_RSE31_META8,
+            Self::Unknown => INVENTOR_UNKNOWN,
+        }
     }
 }
 

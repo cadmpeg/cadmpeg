@@ -2,10 +2,9 @@
 //! STEP dialect identity: which registry row a document is, and how it was
 //! admitted.
 //!
-//! The `*LossCode` template: the enum is internal, `DialectId::pinned` strings
-//! are the boundary, [`StepDialect::classify`] is the one construction path for
-//! a [`DialectMatch`], and the vocabulary is closed. Tests close it directly
-//! against `docs/dialects.toml`.
+//! The `*LossCode` template: the enum is internal, registry-generated
+//! [`DialectId`] constants are the boundary, [`StepDialect::classify`] is the
+//! one construction path for a [`DialectMatch`], and the vocabulary is closed.
 //!
 //! # The identity axis is the `FILE_SCHEMA` identifier
 //!
@@ -54,8 +53,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
-/// The format layer every match here classifies.
-pub(crate) const FORMAT: &str = "step";
+include!("dialect/registry_ids.rs");
 
 /// Key of the `FILE_SCHEMA` identifier the row keys on, in
 /// [`DialectMatch::declared`].
@@ -122,15 +120,15 @@ impl StepDialect {
         Self::Unknown,
     ];
 
-    /// The pinned registry id. The only string boundary this enum has.
+    /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
         match self {
             Self::Schema(schema) => schema.id(),
-            Self::Ap242 => DialectId::pinned("step:ap242"),
-            Self::Part28Xml => DialectId::pinned("step:part28-xml"),
-            Self::Ap242BoModelXml => DialectId::pinned("step:ap242-bo-model-xml"),
-            Self::Part26Hdf5 => DialectId::pinned("step:part26-hdf5"),
-            Self::Unknown => DialectId::pinned("step:unknown"),
+            Self::Ap242 => STEP_AP242,
+            Self::Part28Xml => STEP_PART28_XML,
+            Self::Ap242BoModelXml => STEP_AP242_BO_MODEL_XML,
+            Self::Part26Hdf5 => STEP_PART26_HDF5,
+            Self::Unknown => STEP_UNKNOWN,
         }
     }
 
