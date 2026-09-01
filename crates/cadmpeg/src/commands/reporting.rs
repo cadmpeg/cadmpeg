@@ -4,9 +4,10 @@
 use std::io::{self, Write};
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
+use serde::Serialize;
 
 use crate::application::transcoder::{EmittedArtifact, ExportEmission};
 use crate::application::{ArtifactStore, ConversionRefusal, SidecarPersistOutcome};
@@ -172,11 +173,12 @@ pub(super) fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote>
         .unwrap_or_default()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize)]
 pub(super) struct CommandReportBody<'a> {
     pub(super) decode_report: Option<&'a DecodeReport>,
     pub(super) check_report: Option<&'a ValidationReport>,
     pub(super) export: Option<&'a ExportReport>,
+    #[serde(skip)]
     pub(super) refusal: Option<&'a ConversionRefusal>,
 }
 
@@ -187,18 +189,7 @@ pub(super) fn write_command_report(
     command: &'static str,
     body: CommandReportBody<'_>,
 ) -> Result<()> {
-    write_json_report(
-        input,
-        output,
-        force,
-        command,
-        &serde_json::json!({
-            "decode_report": body.decode_report,
-            "check_report": body.check_report,
-            "export": body.export,
-        }),
-        body.refusal,
-    )
+    write_json_report(input, output, force, command, &body, body.refusal)
 }
 
 fn generator() -> String {
@@ -254,39 +245,67 @@ pub(super) fn print_export_emission(
     Ok(())
 }
 
-pub(super) fn write_json_report(
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CommandStatus {
+    Ok,
+    Refused,
+}
+
+#[derive(Serialize)]
+pub(super) struct CommandReport<'a, P> {
+    schema_version: u32,
+    command: &'static str,
+    generator: String,
+    status: CommandStatus,
+    refusal: Option<crate::application::refusal::RefusalReport<'a>>,
+    #[serde(flatten)]
+    payload: P,
+}
+
+impl<'a, P> CommandReport<'a, P> {
+    pub(super) fn new(
+        command: &'static str,
+        payload: P,
+        refusal: Option<&'a ConversionRefusal>,
+    ) -> Self {
+        Self {
+            schema_version: CLI_SCHEMA_VERSION,
+            command,
+            generator: generator(),
+            status: if refusal.is_some() {
+                CommandStatus::Refused
+            } else {
+                CommandStatus::Ok
+            },
+            refusal: refusal.map(ConversionRefusal::report),
+            payload,
+        }
+    }
+}
+
+pub(super) fn command_report_json<P: Serialize>(
+    command: &'static str,
+    payload: P,
+    refusal: Option<&ConversionRefusal>,
+) -> Result<String> {
+    Ok(serde_json::to_string_pretty(&CommandReport::new(
+        command, payload, refusal,
+    ))?)
+}
+
+pub(super) fn write_json_report<P: Serialize>(
     input: &Path,
     output: Option<&Path>,
     force: bool,
     command: &'static str,
-    payload: &serde_json::Value,
+    payload: &P,
     refusal: Option<&ConversionRefusal>,
 ) -> Result<()> {
     let Some(output) = output else {
         return Ok(());
     };
-    let mut object = payload
-        .as_object()
-        .cloned()
-        .ok_or_else(|| anyhow!("command report payload must be a JSON object"))?;
-    object.insert(
-        "schema_version".to_string(),
-        serde_json::json!(CLI_SCHEMA_VERSION),
-    );
-    object.insert("command".to_string(), serde_json::json!(command));
-    object.insert("generator".to_string(), serde_json::json!(generator()));
-    match refusal {
-        Some(refusal) => {
-            let fields = refusal.report_fields();
-            object.insert("status".to_string(), fields["status"].clone());
-            object.insert("refusal".to_string(), fields["refusal"].clone());
-        }
-        None => {
-            object.insert("status".to_string(), serde_json::json!("ok"));
-            object.insert("refusal".to_string(), serde_json::Value::Null);
-        }
-    }
-    let mut bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(object))?;
+    let mut bytes = serde_json::to_vec_pretty(&CommandReport::new(command, payload, refusal))?;
     bytes.push(b'\n');
     ArtifactStore::write_output(input, output, &bytes, force)?;
     eprintln!("wrote report {}", output.display());

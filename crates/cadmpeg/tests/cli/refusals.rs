@@ -252,7 +252,7 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
         .code(1);
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["stage"], "plan");
-    assert_eq!(value["refusal"]["code"], "unsupported_target");
+    assert_eq!(value["refusal"]["code"], "unsupported_output_format");
     assert!(value["decode_report"].is_null());
 
     let missing_report = dir.path().join("missing-input-report.json");

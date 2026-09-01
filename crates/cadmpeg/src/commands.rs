@@ -4,9 +4,9 @@
 mod reporting;
 
 use reporting::{
-    fidelity_diff, fidelity_differs, fidelity_json, losses, print_check_report,
-    print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
-    print_source_diff, write_command_report, write_json_report, CommandReportBody,
+    command_report_json, fidelity_diff, fidelity_differs, fidelity_json, losses,
+    print_check_report, print_decode_report, print_export_emission, print_fidelity_summary,
+    print_id_delta, print_source_diff, write_command_report, write_json_report, CommandReportBody,
 };
 
 use cadmpeg_ir::codec::TargetRequest;
@@ -17,6 +17,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
+use serde::Serialize;
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog,
@@ -96,12 +97,22 @@ fn write_refusal_command_report(
     command: &'static str,
     refusal: &ConversionRefusal,
 ) {
+    let body = refusal_report_body(refusal);
+    write_refusal_report(input, output, force, command, &body, refusal);
+}
+
+fn write_refusal_report<P: Serialize>(
+    input: &Path,
+    output: Option<&Path>,
+    force: bool,
+    command: &'static str,
+    payload: &P,
+    refusal: &ConversionRefusal,
+) {
     if !refusal.may_write_report() {
         return;
     }
-    if let Err(error) =
-        write_command_report(input, output, force, command, refusal_report_body(refusal))
-    {
+    if let Err(error) = write_json_report(input, output, force, command, payload, Some(refusal)) {
         eprintln!(
             "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
             refusal.code()
@@ -116,6 +127,25 @@ pub(crate) struct DiffInput<'a> {
     pub(crate) path: &'a Path,
     /// Explicit reader selection for this input.
     pub(crate) forced: Option<ForcedInput>,
+}
+
+#[derive(Serialize)]
+struct InspectReportPayload<'a> {
+    confidence: Option<cadmpeg_ir::codec::Confidence>,
+    summary: Option<&'a cadmpeg_core::ContainerSummary>,
+}
+
+#[derive(Serialize)]
+struct CheckReportPayload<'a> {
+    decode_report: Option<&'a cadmpeg_ir::DecodeReport>,
+    check_report: &'a cadmpeg_ir::ValidationReport,
+}
+
+#[derive(Serialize)]
+struct DiffReportPayload<'a> {
+    different: bool,
+    diff: &'a cadmpeg_ir::IrDiff,
+    source_fidelity: serde_json::Value,
 }
 
 /// Inspect a native container and print its entries.
@@ -150,32 +180,37 @@ pub fn inspect(
     else {
         return Err(inspect_unrecognized(path));
     };
-    let summary = inspection
-        .map_err(anyhow::Error::new)
-        .with_context(|| format!("inspecting {}", path.display()))?;
-    write_json_report(
-        path,
-        report_path,
-        force,
-        "inspect",
-        &serde_json::json!({
-            "confidence": confidence,
-            "summary": summary,
-        }),
-        None,
-    )?;
+    let summary = match inspection {
+        Ok(summary) => summary,
+        Err(cadmpeg_core::CodecError::UnsupportedDialect { dialects, message }) => {
+            let refusal = ConversionRefusal::UnsupportedDialect {
+                dialects,
+                reason: message,
+            };
+            let payload = InspectReportPayload {
+                confidence,
+                summary: None,
+            };
+            write_refusal_report(path, report_path, force, "inspect", &payload, &refusal);
+            if json {
+                println!(
+                    "{}",
+                    command_report_json("inspect", &payload, Some(&refusal))?
+                );
+            }
+            return Err(refusal.into());
+        }
+        Err(error) => {
+            return Err(anyhow::Error::new(error).context(format!("inspecting {}", path.display())))
+        }
+    };
+    let payload = InspectReportPayload {
+        confidence,
+        summary: Some(&summary),
+    };
+    write_json_report(path, report_path, force, "inspect", &payload, None)?;
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": CLI_SCHEMA_VERSION,
-                "command": "inspect",
-                "status": "ok",
-                "refusal": null,
-                "confidence": confidence,
-                "summary": summary,
-            }))?
-        );
+        println!("{}", command_report_json("inspect", &payload, None)?);
         return Ok(());
     }
     println!(
@@ -340,36 +375,24 @@ pub fn check_cmd(
         decode_report: loaded.decode_report().cloned(),
         validation: report.clone(),
     });
+    let payload = CheckReportPayload {
+        decode_report: loaded.decode_report(),
+        check_report: &report,
+    };
     write_json_report(
         path,
         report_path,
         force,
         "check",
-        &serde_json::json!({
-            "decode_report": loaded.decode_report(),
-            "check_report": report,
-        }),
+        &payload,
         check_refusal.as_ref(),
     )?;
     if json {
-        let mut payload = serde_json::json!({
-            "schema_version": CLI_SCHEMA_VERSION,
-            "command": "check",
-            "decode_report": loaded.decode_report(),
-            "check_report": report,
-        });
-        match &check_refusal {
-            Some(refusal) => {
-                let fields = refusal.report_fields();
-                payload["status"] = fields["status"].clone();
-                payload["refusal"] = fields["refusal"].clone();
-            }
-            None => {
-                payload["status"] = serde_json::json!("ok");
-                payload["refusal"] = serde_json::Value::Null;
-            }
-        }
-        writeln!(stdout, "{}", serde_json::to_string_pretty(&payload)?)?;
+        writeln!(
+            stdout,
+            "{}",
+            command_report_json("check", &payload, check_refusal.as_ref())?
+        )?;
     } else {
         print_check_report(&mut stdout, &report)?;
     }
@@ -518,31 +541,14 @@ pub fn diff(
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
     let different = !result.is_empty() || fidelity_differs(&fidelity);
-    write_json_report(
-        a.path,
-        report_path,
-        force,
-        "diff",
-        &serde_json::json!({
-            "different": different,
-            "diff": result,
-            "source_fidelity": fidelity_json(&fidelity),
-        }),
-        None,
-    )?;
+    let payload = DiffReportPayload {
+        different,
+        diff: &result,
+        source_fidelity: fidelity_json(&fidelity),
+    };
+    write_json_report(a.path, report_path, force, "diff", &payload, None)?;
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": CLI_SCHEMA_VERSION,
-                "command": "diff",
-                "status": "ok",
-                "refusal": null,
-                "different": different,
-                "diff": result,
-                "source_fidelity": fidelity_json(&fidelity),
-            }))?
-        );
+        println!("{}", command_report_json("diff", &payload, None)?);
         return Ok(if different {
             ExitCode::from(1)
         } else {

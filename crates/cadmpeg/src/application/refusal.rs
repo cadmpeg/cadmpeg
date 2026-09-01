@@ -12,7 +12,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
 use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use serde_json::{json, Value};
+use serde::Serialize;
 
 /// Classifies codec decode failures while preserving operational I/O errors.
 pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
@@ -75,7 +75,8 @@ pub(crate) fn classify_decode_failure(error: anyhow::Error) -> anyhow::Error {
 }
 
 /// Stable refusal code written into v7 command reports and used by tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RefusalCode {
     /// Native input decoding failed with a classified codec error.
     DecodeFailed,
@@ -93,6 +94,8 @@ pub enum RefusalCode {
     EmptyGeometry,
     /// The encoder cannot write the dialect `--to` named.
     UnsupportedTarget,
+    /// The selected format has no encoder in this build.
+    UnsupportedOutputFormat,
     /// Binary container would stream to stdout without `--binary-stdout`.
     BinaryStdoutRejected,
 }
@@ -110,6 +113,7 @@ impl RefusalCode {
             Self::ExportLossRejected => "export_loss_rejected",
             Self::EmptyGeometry => "empty_geometry",
             Self::UnsupportedTarget => "unsupported_target",
+            Self::UnsupportedOutputFormat => "unsupported_output_format",
             Self::BinaryStdoutRejected => "binary_stdout_rejected",
         }
     }
@@ -122,7 +126,8 @@ impl fmt::Display for RefusalCode {
 }
 
 /// Workflow stage that produced the refusal (`refusal.stage` on the wire).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RefusalStage {
     /// Input resolved but conversion planning rejected the request.
     Plan,
@@ -156,7 +161,7 @@ impl fmt::Display for RefusalStage {
 /// Typed refusal from the conversion workflow.
 ///
 /// Presentation messages stay on the variant; codes and stages reach the v7
-/// report envelope through [`ConversionRefusal::report_fields`].
+/// report envelope through [`ConversionRefusal::report`].
 #[derive(Debug)]
 pub enum ConversionRefusal {
     /// Native input decoding failed before a document could be produced.
@@ -237,6 +242,16 @@ pub enum ConversionRefusal {
     },
 }
 
+/// Stable typed contents of the v7 `refusal` object.
+#[derive(Debug, Serialize)]
+pub(crate) struct RefusalReport<'a> {
+    stage: RefusalStage,
+    code: RefusalCode,
+    message: Cow<'a, str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dialects: Option<&'a DialectLayers>,
+}
+
 impl ConversionRefusal {
     /// Stable code for tests and the v7 report envelope.
     #[must_use]
@@ -249,7 +264,7 @@ impl ConversionRefusal {
             Self::DecodeLossRejected { .. } => RefusalCode::DecodeLossRejected,
             Self::ExportLossRejected { .. } => RefusalCode::ExportLossRejected,
             Self::EmptyGeometry { .. } => RefusalCode::EmptyGeometry,
-            Self::UnsupportedOutputFormat { .. } => RefusalCode::UnsupportedTarget,
+            Self::UnsupportedOutputFormat { .. } => RefusalCode::UnsupportedOutputFormat,
             Self::UnsupportedTarget { .. } => RefusalCode::UnsupportedTarget,
             Self::BinaryStdoutRejected { .. } => RefusalCode::BinaryStdoutRejected,
         }
@@ -288,27 +303,44 @@ impl ConversionRefusal {
                 loss_message,
                 ..
             } => Cow::Owned(format!("strict mode rejects {loss_code}: {loss_message}")),
-            Self::UnsupportedDialect { dialects, reason } => Cow::Owned(format!(
-                "unsupported {} dialect {}: {reason}",
-                dialects.primary().format(),
-                dialects.primary().dialect()
-            )),
+            Self::UnsupportedDialect { dialects, reason } => {
+                let primary = dialects.primary();
+                let carried = dialects
+                    .iter()
+                    .skip(1)
+                    .map(|layer| layer.dialect().as_str())
+                    .collect::<Vec<_>>();
+                if carried.is_empty() {
+                    Cow::Owned(format!(
+                        "unsupported {} dialect {}: {reason}",
+                        primary.format(),
+                        primary.dialect()
+                    ))
+                } else {
+                    Cow::Owned(format!(
+                        "unsupported {} dialect {}; carried layers: {}; {reason}",
+                        primary.format(),
+                        primary.dialect(),
+                        carried.join(", ")
+                    ))
+                }
+            }
             Self::UnsupportedTarget { refusal, .. } => Cow::Owned(refusal.to_string()),
         }
     }
 
-    /// `status` / `refusal` object fields for a v7 command report.
+    /// Typed `refusal` object for a v7 command report.
     #[must_use]
-    pub fn report_fields(&self) -> Value {
-        let message = self.message();
-        json!({
-            "status": "refused",
-            "refusal": {
-                "stage": self.stage().as_str(),
-                "code": self.code().as_str(),
-                "message": message.as_ref(),
+    pub(crate) fn report(&self) -> RefusalReport<'_> {
+        RefusalReport {
+            stage: self.stage(),
+            code: self.code(),
+            message: self.message(),
+            dialects: match self {
+                Self::UnsupportedDialect { dialects, .. } => Some(dialects),
+                _ => None,
             },
-        })
+        }
     }
 
     /// Whether an explicitly requested `--report` may still be written.
@@ -411,6 +443,10 @@ mod tests {
         default: true,
     }];
 
+    fn report_value(refusal: &ConversionRefusal) -> serde_json::Value {
+        serde_json::to_value(refusal.report()).expect("serialize refusal report")
+    }
+
     #[test]
     fn refusal_codes_are_stable_for_tests_and_absent_from_display() {
         let refusal = ConversionRefusal::UnsupportedTarget {
@@ -427,10 +463,9 @@ mod tests {
         assert_eq!(refusal.exit_code(), 1);
         assert!(refusal.may_write_report());
         assert_eq!(refusal.to_string(), "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii");
-        let fields = refusal.report_fields();
-        assert_eq!(fields["status"], "refused");
-        assert_eq!(fields["refusal"]["code"], "unsupported_target");
-        assert_eq!(fields["refusal"]["stage"], "plan");
+        let report = report_value(&refusal);
+        assert_eq!(report["code"], "unsupported_target");
+        assert_eq!(report["stage"], "plan");
     }
 
     #[test]
@@ -448,10 +483,40 @@ mod tests {
         assert_eq!(refusal.code(), RefusalCode::UnsupportedDialect);
         assert_eq!(refusal.stage(), RefusalStage::Decode);
         assert_eq!(refusal.exit_code(), 1);
+        assert_eq!(report_value(&refusal)["code"], "unsupported_dialect");
+    }
+
+    #[test]
+    fn unsupported_decode_serializes_every_identified_layer() {
+        let layers = DialectLayers::new(
+            DialectMatch::refused(DialectId::pinned("sldprt:sw-2024")),
+            vec![DialectMatch::residual(DialectId::pinned(
+                "parasolid:unknown",
+            ))],
+        )
+        .expect("host and kernel layers are distinct");
+        let refusal = ConversionRefusal::UnsupportedDialect {
+            dialects: Box::new(layers),
+            reason: "no decoder admits the host dialect".into(),
+        };
+
+        let report = report_value(&refusal);
+        assert_eq!(report["dialects"]["primary"]["dialect"], "sldprt:sw-2024");
         assert_eq!(
-            refusal.report_fields()["refusal"]["code"],
-            "unsupported_dialect"
+            report["dialects"]["extra"][0]["dialect"],
+            "parasolid:unknown"
         );
+        assert!(refusal.to_string().contains("parasolid:unknown"));
+    }
+
+    #[test]
+    fn unwritable_format_has_its_own_wire_code() {
+        let refusal = ConversionRefusal::UnsupportedOutputFormat {
+            message: "catia is not writable".into(),
+        };
+
+        assert_eq!(refusal.code(), RefusalCode::UnsupportedOutputFormat);
+        assert_eq!(report_value(&refusal)["code"], "unsupported_output_format");
     }
 
     #[test]
@@ -499,10 +564,7 @@ mod tests {
         assert_eq!(refusal.code(), RefusalCode::StrictDecodeRejected);
         assert_eq!(refusal.stage(), RefusalStage::Decode);
         assert_eq!(refusal.exit_code(), 1);
-        assert_eq!(
-            refusal.report_fields()["refusal"]["code"],
-            "strict_decode_rejected"
-        );
+        assert_eq!(report_value(refusal)["code"], "strict_decode_rejected");
         assert_eq!(
             refusal.decode_report().expect("completed report").notes,
             ["decode completed"]
@@ -531,9 +593,9 @@ mod tests {
         assert!(refusal.may_write_report());
         assert!(refusal.decode_report().is_none());
         assert!(refusal.check_report().is_none());
-        let fields = refusal.report_fields();
-        assert_eq!(fields["refusal"]["code"], "decode_failed");
-        assert_eq!(fields["refusal"]["stage"], "decode");
+        let report = report_value(&refusal);
+        assert_eq!(report["code"], "decode_failed");
+        assert_eq!(report["stage"], "decode");
     }
 
     #[test]
