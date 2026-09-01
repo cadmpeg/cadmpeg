@@ -711,8 +711,7 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 #   sw_version band -- the identity axis, because it is the only one that
 #     selects a byte layout. It is not read from the container header: it is
 #     the `swVersion` attribute of a `swSolidWorks` XML payload extracted after
-#     the scan into `SourceMeta.attributes["sw_version"]`
-#     and, verbatim, into the match's `sw_version` declared key.
+#     the scan and retained verbatim in the match's `sw_version` declared key.
 #
 # `crates/cadmpeg-codec-sldprt/src/dialect.rs` pins one enum variant per row
 # below and derives the row from `form_code_padding` itself, so the
@@ -1009,8 +1008,8 @@ witness = "code:crates/cadmpeg-codec-creo/src/container.rs:946"
 
 [[dialect]]
 # Mandatory `unknown` row (B4), and the majority of the fixture set.
-# Two distinct causes collapse into it, which is worth recording because the
-# inspect note cannot tell them apart:
+# Two distinct causes share this identity row. `Layout::Unknown` retains which
+# cause occurred so the dialect loss can report it without rescanning bytes:
 #   container.rs:941-943  a `DEPDB_DATA` section IS present but its payload
 #                         does not start with the root record. This is a hard
 #                         Unknown: it does not fall through to the ND or
@@ -1019,9 +1018,8 @@ witness = "code:crates/cadmpeg-codec-creo/src/container.rs:946"
 #   container.rs:948-949  none of the three signatures matched.
 # Disposition: admitted-unverified. `Layout::Unknown` is an error nowhere;
 # decode proceeds and every layout-conditional path is a positive gate on a
-# known variant, so Unknown simply skips them. The value is recorded as the
-# `layout` source attribute (decode/build/meta.rs:26-29) and an inspect note
-# (container.rs:2817-2820).
+# known variant, so Unknown simply skips them. Inspect reports the layout token;
+# the decode loss reports the retained cause (dialect.rs).
 id = "creo:unknown"
 unknown_kind = "recovered-residual"
 title = "Creo PSB part with no layout discriminator"
