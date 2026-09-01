@@ -246,7 +246,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             };
             Some(SldprtLossCode::SourceDialectUnverified.note(format!(
                 "{declaration}, so no declared identity was verified. The document is read on \
-the `{}` residual path without substituting a declared dialect grammar: the \
+                 the `{}` residual path without substituting a declared dialect grammar: the \
                  feature-operation form-code padding filter is not applied, and an \
                  operation code binds only where the four- and eight-byte candidates agree. \
                  Agreement is consistency, not a declaration.",
