@@ -293,7 +293,7 @@ fn an_unwritable_format_is_a_typed_plan_refusal() {
     ));
     assert_eq!(
         refusal.code(),
-        crate::application::refusal::RefusalCode::UnsupportedTarget
+        crate::application::refusal::RefusalCode::UnsupportedOutputFormat
     );
     assert_eq!(
         refusal.stage(),

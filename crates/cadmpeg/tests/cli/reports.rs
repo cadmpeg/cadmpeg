@@ -302,8 +302,48 @@ fn check_classifies_and_reports_an_unsupported_dialect() {
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "decode");
     assert_eq!(value["refusal"]["code"], "unsupported_dialect");
+    assert_eq!(
+        value["refusal"]["dialects"]["primary"]["dialect"],
+        "step:part28-xml"
+    );
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_null());
+}
+
+#[test]
+fn inspect_classifies_and_reports_an_unsupported_dialect() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("part28.xml");
+    fs::write(&input, b"<iso_10303_28/>").unwrap();
+    let report = dir.path().join("inspect-unsupported-dialect-report.json");
+
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "inspect",
+            input.to_str().unwrap(),
+            "--input-format",
+            "step",
+            "--json",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+
+    let report_bytes = fs::read(&report).unwrap();
+    for bytes in [output.stdout.as_slice(), report_bytes.as_slice()] {
+        let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(value["command"], "inspect");
+        assert_eq!(value["status"], "refused");
+        assert_eq!(value["refusal"]["code"], "unsupported_dialect");
+        assert_eq!(
+            value["refusal"]["dialects"]["primary"]["dialect"],
+            "step:part28-xml"
+        );
+        assert!(value["generator"].as_str().is_some());
+    }
 }
 
 #[test]
