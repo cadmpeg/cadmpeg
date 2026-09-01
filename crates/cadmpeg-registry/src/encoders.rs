@@ -103,22 +103,22 @@ mod tests {
         }
     }
 
-    /// No target alias collides with an output-format name.
+    /// No accepted target token collides with an output-format name.
     ///
     /// The Rust half of the checker rule that keeps `--to VALUE` unambiguous:
     /// a bare value is read as a format first and as a dialect alias second,
-    /// so an alias that is also a format name would be unreachable.
+    /// so a local id or alias that is also a format name would be unreachable.
     /// `registry::tests::compiled_write_catalogs_match_registry_policy` applies
     /// the same rule to every catalog compiled into the current build.
     #[test]
-    fn no_target_alias_is_an_output_format_name() {
+    fn no_target_token_is_an_output_format_name() {
         for format in Format::all() {
             let encoder = build_encoder(format);
             for target in encoder.targets() {
-                for alias in target.aliases {
+                for token in target.accepted_tokens() {
                     assert!(
-                        !Format::is_known_name(alias),
-                        "{}: alias {alias} of {} is also an output format name",
+                        !Format::is_known_name(token),
+                        "{}: accepted token {token} of {} is also an output format name",
                         encoder.id(),
                         target.id
                     );

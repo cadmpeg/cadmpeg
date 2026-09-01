@@ -368,10 +368,10 @@ mod tests {
                     target.id,
                     disposition.write
                 );
-                for alias in target.aliases {
+                for token in target.accepted_tokens() {
                     assert!(
-                        !is_format_name(alias),
-                        "{}: alias {alias:?} is also an output-format word",
+                        !is_format_name(token),
+                        "{}: accepted target token {token:?} is also an output-format word",
                         target.id
                     );
                 }
