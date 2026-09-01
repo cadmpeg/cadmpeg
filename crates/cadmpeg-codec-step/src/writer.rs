@@ -7,6 +7,8 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+pub(crate) mod target;
+
 /// A STEP instance name such as `#42`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ref(pub u64);
