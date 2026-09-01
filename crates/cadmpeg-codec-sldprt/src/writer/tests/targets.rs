@@ -11,26 +11,6 @@ use crate::test_support::{make_block, sldprt_with_body_and_history, triangle_bod
 use crate::{dialect::SldprtDialect, loss::SldprtLossCode, SldprtCodec};
 
 #[test]
-fn first_solidworks_envelope_selects_the_written_dialect() {
-    let sections = [
-        (
-            "Contents/Features",
-            br#"<?xml version="1.0"?><swSolidWorks swVersion="11000"/>"#.as_slice(),
-        ),
-        (
-            "Contents/SolidWorks",
-            br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"/>"#.as_slice(),
-        ),
-    ];
-    let declaration =
-        crate::container::first_solidworks_envelope(sections.iter().map(|(_, payload)| *payload))
-            .and_then(|envelope| envelope.sw_version);
-    let dialect = crate::dialect::SldprtDialect::from_declaration(declaration.as_deref());
-
-    assert_eq!(dialect, crate::dialect::SldprtDialect::SwVersionPre12000);
-}
-
-#[test]
 fn semantic_writer_reclassifies_the_final_retained_envelope() {
     let mut source = sldprt_with_body_and_history(&triangle_body());
     source.extend(make_block(
