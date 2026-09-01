@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
 use serde::de::{IgnoredAny, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::commands::CLI_SCHEMA_VERSION;
@@ -41,7 +41,9 @@ pub use schema::SchemaArgs;
 pub enum QueryView {
     /// What this JSON file is.
     ///
-    /// Accepts every artifact kind.
+    /// Accepts every artifact kind. Each source, decode, inspect, or refusal
+    /// identity is one `*_dialects` JSON value; export identity is
+    /// `export_target`. Sidecar summaries state whether fidelity validation ran.
     Summary(QueryArgs),
     /// Decode coverage counts.
     ///
@@ -123,6 +125,9 @@ pub enum QueryView {
     Join(JoinArgs),
     /// Retained source bytes.
     ///
+    /// Loads versions 1 and 2 through the supported migrations and validates
+    /// the current sidecar before listing or extracting anything.
+    ///
     /// The bare view lists `retained_records` as a table (stream, offset,
     /// bytes, whether the bytes are retained, id) with annotation counts
     /// on standard error. `--stream NAME` reassembles that stream's
@@ -162,7 +167,7 @@ impl QueryView {
 /// Which artifact kind a JSON file turned out to be.
 enum Artifact {
     /// A versioned CLI command report (`--report`/`-o`).
-    Report(ReportProbe),
+    Report(Box<ReportProbe>),
     /// A decoded CADIR document.
     Cadir(CadirProbe),
     /// A `<stem>.fidelity.json` decode sidecar.
@@ -205,9 +210,13 @@ struct ReportProbe {
     #[serde(default)]
     refusal: Option<RefusalProbe>,
     #[serde(default)]
+    summary: Option<ContainerSummaryProbe>,
+    #[serde(default)]
     decode_report: Option<DecodeReportProbe>,
     #[serde(default)]
     check_report: Option<CheckReportProbe>,
+    #[serde(default)]
+    export: Option<ExportReportProbe>,
 }
 
 #[derive(Deserialize)]
@@ -218,6 +227,26 @@ struct RefusalProbe {
     code: Option<String>,
     #[serde(default)]
     message: Option<String>,
+    #[serde(default)]
+    dialects: Option<DialectLayersProbe>,
+}
+
+#[derive(Deserialize)]
+struct ContainerSummaryProbe {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    dialects: Option<DialectLayersProbe>,
+    #[serde(default)]
+    losses: Vec<LossProbe>,
+}
+
+#[derive(Deserialize)]
+struct ExportReportProbe {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    target: Option<String>,
 }
 
 /// Lenient decode report: enum-valued fields read as strings so future
@@ -240,17 +269,25 @@ struct DecodeReportProbe {
 
 /// Lenient dialect identity. Admission stays as JSON so a future admission
 /// variant does not make an otherwise projectable artifact unreadable.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct DialectMatchProbe {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    format: Option<String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     dialect: Option<String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declared: Option<Value>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     admission: Option<Value>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     instance: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct DialectLayersProbe {
     primary: DialectMatchProbe,
     #[serde(default)]
@@ -309,7 +346,7 @@ impl LossCodeProbe {
 
 #[cfg(test)]
 mod tests {
-    use super::{push_decode_dialect_summary, DecodeReportProbe, LossCodeProbe};
+    use super::{push_decode_dialect_summary, DecodeReportProbe, LossCodeProbe, SourceProbe};
 
     #[test]
     fn legacy_loss_codes_use_the_shared_migration_spelling() {
@@ -332,11 +369,15 @@ mod tests {
         let decode: DecodeReportProbe = serde_json::from_value(serde_json::json!({
             "dialects": {
                 "primary": {
+                    "format": "f3d",
                     "dialect": "f3d:archive-2",
+                    "declared": {"manifest_version": "2"},
                     "admission": "admitted"
                 },
                 "extra": [{
+                    "format": "acis",
                     "dialect": "acis:sab-22300",
+                    "declared": {"save_format": "22300"},
                     "admission": {"admitted_unverified": {"using": "acis:sab-22200"}},
                     "instance": "member:model.sab"
                 }]
@@ -351,21 +392,51 @@ mod tests {
             rows,
             [
                 ("decode_dialect_layers".to_owned(), "2".to_owned()),
+                (
+                    "decode_dialects".to_owned(),
+                    r#"{"primary":{"format":"f3d","dialect":"f3d:archive-2","declared":{"manifest_version":"2"},"admission":"admitted"},"extra":[{"format":"acis","dialect":"acis:sab-22300","declared":{"save_format":"22300"},"admission":{"admitted_unverified":{"using":"acis:sab-22200"}},"instance":"member:model.sab"}]}"#.to_owned()
+                ),
+                ("decode_dialect_format".to_owned(), "f3d".to_owned()),
                 ("decode_dialect".to_owned(), "f3d:archive-2".to_owned()),
                 ("decode_dialect_admission".to_owned(), "admitted".to_owned()),
                 (
-                    "decode_extra_1_dialect".to_owned(),
-                    "acis:sab-22300".to_owned()
-                ),
-                (
-                    "decode_extra_1_dialect_admission".to_owned(),
-                    r#"{"admitted_unverified":{"using":"acis:sab-22200"}}"#.to_owned()
-                ),
-                (
-                    "decode_extra_1_dialect_instance".to_owned(),
-                    "member:model.sab".to_owned()
+                    "decode_dialect_declared".to_owned(),
+                    r#"{"manifest_version":"2"}"#.to_owned()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn source_probe_migrates_legacy_identity_and_rejects_two_identity_fields() {
+        let legacy: SourceProbe = serde_json::from_value(serde_json::json!({
+            "format": "rhino",
+            "dialect": {
+                "format": "rhino",
+                "dialect": "rhino:archive-80",
+                "admission": "admitted"
+            }
+        }))
+        .unwrap();
+        let layers = legacy.dialects.unwrap();
+        assert_eq!(layers.primary.dialect.as_deref(), Some("rhino:archive-80"));
+        assert!(layers.extra.is_empty());
+
+        let error = serde_json::from_value::<SourceProbe>(serde_json::json!({
+            "format": "rhino",
+            "dialects": {
+                "primary": {"dialect": "rhino:archive-80"},
+                "extra": []
+            },
+            "dialect": {"dialect": "rhino:archive-80"}
+        }))
+        .err()
+        .expect("two source identity fields are ambiguous");
+        assert!(
+            error
+                .to_string()
+                .contains("cannot contain both dialects and legacy dialect fields"),
+            "{error}"
         );
     }
 }
@@ -384,12 +455,42 @@ struct CadirProbe {
     native: BTreeMap<String, NativeNamespaceProbe>,
 }
 
-#[derive(Deserialize)]
 struct SourceProbe {
+    format: Option<String>,
+    dialects: Option<DialectLayersProbe>,
+}
+
+#[derive(Deserialize)]
+struct SourceProbeWire {
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
+    dialects: Option<DialectLayersProbe>,
+    #[serde(default)]
     dialect: Option<DialectMatchProbe>,
+}
+
+impl<'de> Deserialize<'de> for SourceProbe {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = SourceProbeWire::deserialize(deserializer)?;
+        let dialects = match (wire.dialects, wire.dialect) {
+            (Some(_), Some(_)) => {
+                return Err(serde::de::Error::custom(
+                    "source metadata cannot contain both dialects and legacy dialect fields",
+                ));
+            }
+            (Some(dialects), None) => Some(dialects),
+            (None, Some(primary)) => Some(DialectLayersProbe {
+                primary,
+                extra: Vec::new(),
+            }),
+            (None, None) => None,
+        };
+        Ok(Self {
+            format: wire.format,
+            dialects,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -398,13 +499,31 @@ struct NativeNamespaceProbe {
     arenas: BTreeMap<String, ArenaLen>,
 }
 
-/// Lenient decode sidecar probe. Deliberately not `DecodeSidecar::from_json`,
-/// which rejects unknown sidecar versions; query projects whatever it can.
+/// Bounded decode-sidecar projection. Versions 1 and 2 are projected through
+/// their version-3 meaning without materializing retained payload bytes.
 #[derive(Deserialize)]
 struct SidecarProbe {
     version: String,
+    #[serde(skip)]
+    input_version: Option<String>,
     #[serde(default)]
     report: Option<DecodeReportProbe>,
+}
+
+impl SidecarProbe {
+    fn migrate_projection(&mut self) -> Result<()> {
+        match self.version.as_str() {
+            cadmpeg_ir::DECODE_SIDECAR_VERSION => Ok(()),
+            cadmpeg_ir::DECODE_SIDECAR_VERSION_V1 | cadmpeg_ir::DECODE_SIDECAR_VERSION_V2 => {
+                self.input_version = Some(std::mem::replace(
+                    &mut self.version,
+                    cadmpeg_ir::DECODE_SIDECAR_VERSION.to_owned(),
+                ));
+                Ok(())
+            }
+            found => bail!("unsupported decode-sidecar version: {found}"),
+        }
+    }
 }
 
 /// Length of a JSON array, counted without materializing its elements.
@@ -530,7 +649,7 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
     if sniff.schema_version.is_some() && sniff.command.is_some() {
         let report: ReportProbe = serde_json::from_slice(bytes)
             .with_context(|| format!("parsing the command report {}", path.display()))?;
-        return Ok(Artifact::Report(report));
+        return Ok(Artifact::Report(Box::new(report)));
     }
     if sniff.ir_version.is_some() {
         let cadir: CadirProbe = serde_json::from_slice(bytes)
@@ -538,7 +657,10 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
         return Ok(Artifact::Cadir(cadir));
     }
     if sniff.version.is_some() && sniff.ir_sha256.is_some() {
-        let sidecar: SidecarProbe = serde_json::from_slice(bytes)
+        let mut sidecar: SidecarProbe = serde_json::from_slice(bytes)
+            .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
+        sidecar
+            .migrate_projection()
             .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
         return Ok(Artifact::Sidecar(sidecar));
     }
@@ -599,9 +721,16 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 if let Some(message) = &refusal.message {
                     rows.push(("refusal_message".to_owned(), cell(message)));
                 }
+                push_dialect_layers_summary(&mut rows, "refusal", refusal.dialects.as_ref());
             }
             if let Some(generator) = &report.generator {
                 rows.push(("generator".to_owned(), cell(generator)));
+            }
+            if let Some(summary) = &report.summary {
+                if let Some(format) = &summary.format {
+                    rows.push(("inspect_format".to_owned(), cell(format)));
+                }
+                push_dialect_layers_summary(&mut rows, "inspect", summary.dialects.as_ref());
             }
             match &report.decode_report {
                 Some(decode) => {
@@ -645,6 +774,18 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 }
                 None => rows.push(("check_report".to_owned(), "null".to_owned())),
             }
+            if let Some(export) = &report.export {
+                if let Some(format) = &export.format {
+                    rows.push(("export_format".to_owned(), cell(format)));
+                }
+                rows.push((
+                    "export_target".to_owned(),
+                    export
+                        .target
+                        .as_ref()
+                        .map_or_else(|| "null".to_owned(), |target| cell(target)),
+                ));
+            }
         }
         Artifact::Cadir(cadir) => {
             rows.push(("ir_version".to_owned(), cell(&cadir.ir_version)));
@@ -653,7 +794,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                     if let Some(format) = &source.format {
                         rows.push(("source_format".to_owned(), cell(format)));
                     }
-                    push_dialect_summary(&mut rows, "source", source.dialect.as_ref());
+                    push_dialect_layers_summary(&mut rows, "source", source.dialects.as_ref());
                 }
                 None => rows.push(("source".to_owned(), "null".to_owned())),
             }
@@ -685,6 +826,13 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
         }
         Artifact::Sidecar(sidecar) => {
             rows.push(("sidecar_version".to_owned(), cell(&sidecar.version)));
+            if let Some(input_version) = &sidecar.input_version {
+                rows.push(("sidecar_input_version".to_owned(), cell(input_version)));
+            }
+            rows.push((
+                "sidecar_fidelity_validation".to_owned(),
+                "not_run".to_owned(),
+            ));
             match &sidecar.report {
                 Some(decode) => {
                     if let Some(format) = &decode.format {
@@ -704,7 +852,16 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
     if args.json {
         let map: serde_json::Map<String, serde_json::Value> = rows
             .into_iter()
-            .map(|(field, value)| (field, serde_json::Value::String(value)))
+            .map(|(field, value)| {
+                let value = if field.ends_with("_dialects") || field.ends_with("_dialect_declared")
+                {
+                    serde_json::from_str(&value)
+                        .expect("structured identity summary cells contain JSON")
+                } else {
+                    serde_json::Value::String(value)
+                };
+                (field, value)
+            })
             .collect();
         print_json("summary", &serde_json::Value::Object(map));
     } else {
@@ -716,19 +873,28 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
 }
 
 fn push_decode_dialect_summary(rows: &mut Vec<(String, String)>, decode: &DecodeReportProbe) {
-    match &decode.dialects {
-        Some(layers) => {
-            rows.push((
-                "decode_dialect_layers".to_owned(),
-                (1 + layers.extra.len()).to_string(),
-            ));
-            push_dialect_summary(rows, "decode", Some(&layers.primary));
-            for (index, matched) in layers.extra.iter().enumerate() {
-                push_dialect_summary(rows, &format!("decode_extra_{}", index + 1), Some(matched));
-            }
-        }
-        None => push_dialect_summary(rows, "decode", None),
-    }
+    push_dialect_layers_summary(rows, "decode", decode.dialects.as_ref());
+}
+
+fn push_dialect_layers_summary(
+    rows: &mut Vec<(String, String)>,
+    prefix: &str,
+    layers: Option<&DialectLayersProbe>,
+) {
+    let Some(layers) = layers else {
+        rows.push((format!("{prefix}_dialects"), "null".to_owned()));
+        push_dialect_summary(rows, prefix, None);
+        return;
+    };
+    rows.push((
+        format!("{prefix}_dialect_layers"),
+        (1 + layers.extra.len()).to_string(),
+    ));
+    rows.push((
+        format!("{prefix}_dialects"),
+        serde_json::to_string(layers).expect("dialect-layer probes always serialize"),
+    ));
+    push_dialect_summary(rows, prefix, Some(&layers.primary));
 }
 
 fn push_dialect_summary(
@@ -740,6 +906,9 @@ fn push_dialect_summary(
         rows.push((format!("{prefix}_dialect"), "null".to_owned()));
         return;
     };
+    if let Some(format) = &matched.format {
+        rows.push((format!("{prefix}_dialect_format"), cell(format)));
+    }
     rows.push((
         format!("{prefix}_dialect"),
         matched
@@ -756,6 +925,9 @@ fn push_dialect_summary(
     if let Some(instance) = &matched.instance {
         rows.push((format!("{prefix}_dialect_instance"), cell(instance)));
     }
+    if let Some(declared) = &matched.declared {
+        rows.push((format!("{prefix}_dialect_declared"), declared.to_string()));
+    }
 }
 
 fn count_severity(findings: &[FindingProbe], severities: &[&str]) -> usize {
@@ -771,6 +943,7 @@ fn count_severity(findings: &[FindingProbe], severities: &[&str]) -> usize {
 }
 
 fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    note_unvalidated_sidecar_fidelity(artifact);
     let decode = match artifact {
         Artifact::Report(report) => report.decode_report.as_ref(),
         Artifact::Sidecar(sidecar) => sidecar.report.as_ref(),
@@ -855,12 +1028,19 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
 }
 
 fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    note_unvalidated_sidecar_fidelity(artifact);
     let (rows, note): (&[LossProbe], Option<&str>) = match artifact {
-        Artifact::Report(report) => match (&report.check_report, &report.decode_report) {
-            (Some(validation), _) => (&validation.losses, None),
-            (None, Some(decode)) => (&decode.losses, None),
-            (None, None) => (&[], Some("(this report has no decode or check stage)")),
-        },
+        Artifact::Report(report) => {
+            match (&report.check_report, &report.decode_report, &report.summary) {
+                (Some(validation), _, _) => (&validation.losses, None),
+                (None, Some(decode), _) => (&decode.losses, None),
+                (None, None, Some(summary)) => (&summary.losses, None),
+                (None, None, None) => (
+                    &[],
+                    Some("(this report has no inspect, decode, or check stage)"),
+                ),
+            }
+        }
         Artifact::Sidecar(sidecar) => match &sidecar.report {
             Some(decode) => (&decode.losses, None),
             None => (&[], Some("(this sidecar has no decode report)")),
@@ -900,6 +1080,14 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         eprintln!("{note}");
     }
     Ok(())
+}
+
+fn note_unvalidated_sidecar_fidelity(artifact: &Artifact) {
+    if matches!(artifact, Artifact::Sidecar(_)) {
+        eprintln!(
+            "(sidecar fidelity validation: not run; `cadmpeg query fidelity FILE` validates it)"
+        );
+    }
 }
 
 fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
