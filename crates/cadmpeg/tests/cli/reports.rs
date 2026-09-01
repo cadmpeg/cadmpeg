@@ -247,6 +247,38 @@ fn validate_report_writes_versioned_result_to_file() {
 }
 
 #[test]
+fn check_classifies_and_reports_an_unsupported_dialect() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("part28.xml");
+    fs::write(&input, b"<iso_10303_28/>").unwrap();
+    let report = dir.path().join("unsupported-dialect-report.json");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "check",
+            input.to_str().unwrap(),
+            "--input-format",
+            "step",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "unsupported step dialect step:part28-xml",
+        ));
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["command"], "check");
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["refusal"]["stage"], "decode");
+    assert_eq!(value["refusal"]["code"], "unsupported_dialect");
+    assert!(value["decode_report"].is_null());
+    assert!(value["check_report"].is_null());
+}
+
+#[test]
 fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
