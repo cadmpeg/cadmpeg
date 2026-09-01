@@ -70,18 +70,15 @@ fn the_totality_row_absorbs_every_word_the_registry_omits() {
 }
 
 #[test]
-fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
+fn the_totality_row_records_no_substituted_declared_strategy() {
     // The residual row is admitted, not refused: words 2 through 90 are one
-    // chunked grammar, so a word no row claims still selects a scan. It names
-    // the newest declared row with the width the word selected, and the charge
-    // comes from the admission itself.
-    for (word, nearest) in [(49, ArchiveVersion::LegacyV5), (51, ArchiveVersion::V9)] {
+    // chunked grammar, so a word no row claims still selects a scan. The parser
+    // retains that word and does not substitute any declared row.
+    for word in [49, 51] {
         let matched = classify_word(word);
         assert_eq!(
             matched.admission(),
-            Admission::AdmittedUnverified {
-                using: Some(nearest.id()),
-            },
+            Admission::AdmittedUnverified { using: None },
             "archive word {word}"
         );
         let note = admission_loss(&matched).expect("an unverified admission charges its loss");
@@ -94,6 +91,7 @@ fn the_totality_row_names_the_declared_strategy_with_the_selected_width() {
             note.message.contains(&word.to_string()),
             "archive word {word}: the observed word is reported"
         );
+        assert!(note.message.contains("residual chunked route"));
     }
 }
 

@@ -635,11 +635,11 @@ read = "unclassified-recovered"
 write = "none"
 reason = """
 an archive word outside the declared set is read with the chunked scan words 2
-through 90 share, on the strategy `rhino:archive-5` or `rhino:archive-90`
-declares according to the selected chunk width;
-`Admission::AdmittedUnverified` and the `source.dialect-unverified` charge. No
-frozen fixture exists, so the recovery is witnessed by a synthesized archive in
-the codec's own suite, not by this table"""
+through 90 share. Chunk width and version-conditioned record branches follow
+the observed word directly; no declared row is substituted.
+`Admission::AdmittedUnverified` has no `using` value and charges
+`source.dialect-unverified`. No frozen fixture exists, so the recovery is
+witnessed by a synthesized archive in the codec's own suite, not by this table"""
 
 # --------------------------------------------------------------------------
 # fcstd

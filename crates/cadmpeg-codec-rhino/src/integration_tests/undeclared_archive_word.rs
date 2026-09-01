@@ -8,8 +8,8 @@ use crate::test_support as support;
 fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission() {
     // Archive word 100 has no row. Its chunks are the same grammar words 2
     // through 90 write, so the document is read rather than refused: the point
-    // reaches the model, the report names `rhino:archive-90` as the strategy
-    // that was substituted, and the dialect-unverified loss is charged.
+    // reaches the model, the report records that no declared strategy was
+    // substituted, and the dialect-unverified loss is charged.
     let object = support::object_record(
         1,
         support::POINT_CLASS,
@@ -32,9 +32,7 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
     assert_eq!(matched.dialect().as_str(), "rhino:unknown");
     assert_eq!(
         matched.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned("rhino:archive-90",)),
-        }
+        cadmpeg_core::dialect::Admission::AdmittedUnverified { using: None }
     );
     assert_eq!(matched.declared()["archive_version"], "100");
     assert_eq!(

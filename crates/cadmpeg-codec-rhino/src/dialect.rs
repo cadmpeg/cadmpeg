@@ -24,14 +24,15 @@
 //! reads with the grammar declared for it. Archive-level admission is
 //! orthogonal to that census and must never be derived from it.
 //!
-//! # Admission follows the selected chunk width
+//! # Residual admission follows the observed archive word
 //!
-//! Archive words 2 through 90 are one chunked grammar: the value alone selects
-//! the chunk value width and the begin-chunk form, so a word no row claims
-//! still selects a scan. The totality row is therefore read, not refused. It
-//! is read with the strategy selected by its chunk width: `rhino:archive-5`
-//! below word 50 and `rhino:archive-90` at or above word 50. Admission is
-//! [`Admission::AdmittedUnverified`] with that row as `using`, and
+//! Every positive archive word other than 1 selects the chunked route. The
+//! value selects the chunk width and version-conditioned record branches, so a
+//! word no row claims still selects a scan. The totality row is therefore read,
+//! not refused. It is read directly as [`ArchiveVersion::Other`], and record
+//! branches continue to read the observed word. No declared archive row is
+//! substituted, so admission is [`Admission::AdmittedUnverified`] with no
+//! `using` value, and
 //! [`admission_loss`] charges
 //! [`crate::loss::RhinoLossCode::SourceDialectUnverified`] for it.
 //!
@@ -136,15 +137,7 @@ impl ArchiveVersion {
             declared.insert(DECLARED_OPENNURBS_WRITER_VERSION.into(), stamp.to_string());
         }
         if matches!(self, Self::Other(_)) {
-            DialectMatch::unverified(
-                self.id(),
-                if self.uses_eight_byte_values() {
-                    Self::V9.id()
-                } else {
-                    Self::LegacyV5.id()
-                },
-            )
-            .expect("Rhino dialect and grammar ids share one format namespace")
+            DialectMatch::residual(self.id())
         } else {
             DialectMatch::admitted(self.id())
         }
@@ -160,21 +153,19 @@ impl ArchiveVersion {
 /// structural: the note charged and the admission reported come from one value,
 /// not from two authors agreeing.
 pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let using = match matched.admission() {
-        Admission::AdmittedUnverified { using } => using,
+    match matched.admission() {
+        Admission::AdmittedUnverified { .. } => {}
         Admission::Admitted | Admission::Refused => return None,
-    };
+    }
     let word = matched
         .declared()
         .get(DECLARED_ARCHIVE_VERSION)
         .map_or("absent", String::as_str);
-    let using = using
-        .as_ref()
-        .expect("Rhino residual classification always names its selected grammar");
     let message = format!(
-        "archive version word {word} has no declared row, so no declared identity was \
-         verified. The document is read using {using}, which uses the chunk value width \
-         selected by the archive word."
+        "archive version word {word} has no declared row, so no declared identity or \
+         substituted declared grammar was verified. The document is read by the residual \
+         chunked route, with chunk width and version-conditioned record branches selected \
+         directly from the observed word."
     );
     Some(crate::loss::RhinoLossCode::SourceDialectUnverified.note(message))
 }
