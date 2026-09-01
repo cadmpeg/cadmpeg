@@ -150,7 +150,9 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
         .collect::<Vec<_>>();
     let mut layers = DialectLayers::of(SldprtDialect::classify_scan(scan));
     let mut losses = Vec::new();
-    for layer in cadmpeg_parasolid::extra_layers(kernels) {
+    for layer in
+        cadmpeg_parasolid::extra_layers(kernels, cadmpeg_parasolid::KnownSchemaAdmission::Verified)
+    {
         let format = layer.format().to_owned();
         let instance = layer.instance().unwrap_or("unidentified").to_owned();
         if layers.try_push(layer).is_err() {
