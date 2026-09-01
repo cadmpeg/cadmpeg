@@ -44,7 +44,12 @@ fn patch_partition_inner(
         .data?;
     let scan = crate::container::scan_bytes(source);
     let (block, header) = crate::container::select_active_parasolid(&scan)?;
-    if block.ps_stream.as_deref() != Some(block.payload.as_slice()) {
+    if block
+        .ps_streams
+        .first()
+        .map(|stream| stream.payload.as_slice())
+        != Some(block.payload.as_slice())
+    {
         return None;
     }
     let site = site_key(block);
@@ -53,9 +58,12 @@ fn patch_partition_inner(
         .iter()
         .filter(|candidate| site_key(candidate) == site)
         .flat_map(|candidate| {
-            candidate.ps_streams.iter().filter_map(move |payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((candidate, payload, header))
+            candidate.ps_streams.iter().filter_map(move |stream| {
+                crate::parasolid::is_body_stream(&stream.header).then_some((
+                    candidate,
+                    &stream.payload,
+                    &stream.header,
+                ))
             })
         })
         .collect::<Vec<_>>();
@@ -75,7 +83,7 @@ fn patch_partition_inner(
     });
     let bodies = streams
         .iter()
-        .map(|(_, payload, header)| (payload.as_slice(), header))
+        .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
     let native = crate::brep::decode_bodies(&bodies, "native-patch-baseline");
     if !same_graph(ir, &native) {

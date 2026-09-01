@@ -45,7 +45,7 @@ fn parasolid_stream_header_is_parsed() {
     assert_eq!(header.schema, "SCH_SW_33103_11000");
     assert!(header.description.contains("partition"));
     assert_eq!(block.family, "parasolid");
-    assert!(crate::parasolid::is_body_stream(&header));
+    assert!(crate::parasolid::is_body_stream(header));
 }
 
 #[test]
@@ -56,16 +56,10 @@ fn parasolid_extracts_every_direct_stream_in_block() {
         "SCH_SW_33103_11000",
         &world_point(60, [2.0, 0.0, 0.0]),
     ));
-    let streams = crate::parasolid::extract_streams(&payload);
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload);
     assert_eq!(streams.len(), 2);
-    assert!(crate::parasolid::stream_header(&streams[0])
-        .unwrap()
-        .description
-        .contains("partition"));
-    assert!(crate::parasolid::stream_header(&streams[1])
-        .unwrap()
-        .description
-        .contains("deltas"));
+    assert!(streams[0].header.description.contains("partition"));
+    assert!(streams[1].header.description.contains("deltas"));
 }
 
 #[test]
@@ -87,8 +81,10 @@ fn parasolid_reassembles_chained_sections_before_header_parsing() {
 
     let streams = crate::parasolid::extract_streams_with_offsets(&payload);
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0], (offsets[0], partition));
-    assert_eq!(streams[1], (offsets[1], deltas));
+    assert_eq!(streams[0].offset, offsets[0]);
+    assert_eq!(streams[0].payload, partition);
+    assert_eq!(streams[1].offset, offsets[1]);
+    assert_eq!(streams[1].payload, deltas);
 }
 
 #[test]
@@ -101,10 +97,23 @@ fn parasolid_reassembles_the_degenerate_one_frame_wrapper() {
     payload.extend_from_slice(&member);
     payload.extend_from_slice(b"trailer!");
 
-    assert_eq!(
-        crate::parasolid::extract_streams_with_offsets(&payload),
-        vec![(0, stream)]
-    );
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload);
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].offset, 0);
+    assert_eq!(streams[0].payload, stream);
+}
+
+#[test]
+fn wrapped_member_requires_the_parasolid_header_at_byte_zero() {
+    let mut stream = b"prefix".to_vec();
+    stream.extend(parasolid_payload("partition body", "SCH_SW_33103_11000"));
+    let member = zlib_member(&stream);
+    let mut payload = WRAPPED_MAGIC.to_vec();
+    payload.extend_from_slice(&(stream.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&member);
+
+    assert!(crate::parasolid::extract_streams_with_offsets(&payload).is_empty());
 }
 
 #[test]
@@ -119,12 +128,14 @@ fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
     let mut payload = (section.len() as u32).to_le_bytes().to_vec();
     payload.extend_from_slice(&section);
 
-    assert!(crate::parasolid::extract_streams(&payload).is_empty());
+    assert!(crate::parasolid::extract_streams_with_offsets(&payload).is_empty());
 }
 
 #[test]
 fn parasolid_does_not_split_at_an_unframed_interior_signature() {
-    assert!(crate::parasolid::extract_streams(b"PS\0\0not-a-stream-header").is_empty());
+    assert!(
+        crate::parasolid::extract_streams_with_offsets(b"PS\0\0not-a-stream-header").is_empty()
+    );
 
     let mut first = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
     first.extend_from_slice(b"PS\0\0not-a-stream-header");
@@ -138,9 +149,9 @@ fn parasolid_does_not_split_at_an_unframed_interior_signature() {
 
     let streams = crate::parasolid::extract_streams_with_offsets(&first);
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].0, 0);
-    assert_eq!(streams[1].0, second_offset);
-    assert!(streams[0].1.ends_with(b"PS\0\0not-a-stream-header"));
+    assert_eq!(streams[0].offset, 0);
+    assert_eq!(streams[1].offset, second_offset);
+    assert!(streams[0].payload.ends_with(b"PS\0\0not-a-stream-header"));
 }
 
 #[test]
@@ -158,8 +169,9 @@ fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
     for value in [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
         stream.extend(value.to_be_bytes());
     }
+    let header = crate::parasolid::stream_header(&stream).unwrap();
     assert_eq!(
-        crate::parasolid::mesh_polyline(&stream),
+        crate::parasolid::mesh_polyline_from_header(&stream, &header),
         Some(vec![
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0),

@@ -807,31 +807,26 @@ fn edit_stream(
     stream_ordinal: usize,
     edit: impl FnOnce(&mut [u8]) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let stream = crate::parasolid::extract_streams(payload)
+    let stream = crate::parasolid::extract_streams_with_offsets(payload)
         .get(stream_ordinal)
         .cloned()
         .ok_or_else(|| {
             cadmpeg_core::CodecError::Malformed("SLDPRT sketch stream is missing".into())
         })?;
+    let body_offset = stream.header.body_offset;
     if let Some(start) = payload
-        .windows(stream.len())
-        .position(|candidate| candidate == stream.as_slice())
+        .windows(stream.payload.len())
+        .position(|candidate| candidate == stream.payload.as_slice())
     {
-        let header = crate::parasolid::stream_header(&stream).ok_or_else(|| {
-            cadmpeg_core::CodecError::Malformed("invalid retained SLDPRT sketch stream".into())
-        })?;
-        return edit(&mut payload[start + header.body_offset..start + stream.len()]);
+        return edit(&mut payload[start + body_offset..start + stream.payload.len()]);
     }
-    let (start, end) = compressed_member(payload, &stream).ok_or_else(|| {
+    let (start, end) = compressed_member(payload, &stream.payload).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
             "compressed retained SLDPRT sketch stream is missing".into(),
         )
     })?;
-    let mut inflated = stream;
-    let header = crate::parasolid::stream_header(&inflated).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed("invalid retained SLDPRT sketch stream".into())
-    })?;
-    edit(&mut inflated[header.body_offset..])?;
+    let mut inflated = stream.payload;
+    edit(&mut inflated[body_offset..])?;
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(&inflated)?;
     payload.splice(start..end, encoder.finish()?);

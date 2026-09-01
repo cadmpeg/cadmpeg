@@ -42,7 +42,7 @@ use crate::parasolid::StreamHeader;
 struct BodyStream<'a> {
     origin: BodyOrigin<'a>,
     payload: &'a [u8],
-    header: StreamHeader,
+    header: &'a StreamHeader,
 }
 
 #[derive(Clone, Copy)]
@@ -144,7 +144,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &dialects) {
             let source_header = decoded
                 .metadata_stream
-                .and_then(|index| streams.get(index).map(|stream| &stream.header));
+                .and_then(|index| streams.get(index).map(|stream| stream.header));
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &scan,
@@ -1960,17 +1960,16 @@ fn multiply_projected_sketch_relation_records(
 /// Collect the available Parasolid body streams, excluding auxiliary sites.
 fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
     let block_streams = scan.blocks.iter().flat_map(|block| {
-        block.ps_streams.iter().filter_map(move |payload| {
-            let header = crate::parasolid::stream_header(payload)?;
+        block.ps_streams.iter().filter_map(move |stream| {
             let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
-            if crate::parasolid::is_body_stream(&header)
+            if crate::parasolid::is_body_stream(&stream.header)
                 && !section.contains("ghost")
                 && !section.contains("resolvedfeatures")
             {
                 Some(BodyStream {
                     origin: BodyOrigin::Block(block),
-                    payload,
-                    header,
+                    payload: &stream.payload,
+                    header: &stream.header,
                 })
             } else {
                 None
@@ -1978,16 +1977,15 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
         })
     });
     let compound_streams = scan.compound_streams.iter().flat_map(|stream| {
-        stream.ps_streams.iter().filter_map(move |payload| {
-            let header = crate::parasolid::stream_header(payload)?;
+        stream.ps_streams.iter().filter_map(move |kernel| {
             let section = stream.path.to_ascii_lowercase();
-            (crate::parasolid::is_body_stream(&header)
+            (crate::parasolid::is_body_stream(&kernel.header)
                 && !section.contains("ghost")
                 && !section.contains("resolvedfeatures"))
             .then_some(BodyStream {
                 origin: BodyOrigin::Compound(stream),
-                payload,
-                header,
+                payload: &kernel.payload,
+                header: &kernel.header,
             })
         })
     });
@@ -2027,7 +2025,7 @@ fn try_decode_brep(
         let name = streams[first].origin.name();
         let bodies: Vec<_> = indices
             .iter()
-            .map(|index| (streams[*index].payload, &streams[*index].header))
+            .map(|index| (streams[*index].payload, streams[*index].header))
             .collect();
         let decoded = brep::decode_bodies(&bodies, &name);
         decoded_sites.push((site.clone(), first, decoded));
@@ -2092,11 +2090,11 @@ fn try_decode_brep(
     let active_stream = resolved_active_site.map(|site| decoded_sites[site].1);
     let metadata_stream = active_stream.or_else(|| {
         let first = decoded_sites.first()?.1;
-        let first_header = &streams[first].header;
+        let first_header = streams[first].header;
         decoded_sites
             .iter()
             .all(|(_, representative, _)| {
-                let header = &streams[*representative].header;
+                let header = streams[*representative].header;
                 header.schema == first_header.schema
                     && header.description == first_header.description
             })

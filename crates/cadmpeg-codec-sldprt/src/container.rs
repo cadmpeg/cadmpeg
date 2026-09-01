@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_container::compression::{inflate_bounded_probe, inflate_deflate, inflate_zlib_member};
-use cadmpeg_core::bytes::{contains, find};
+use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
@@ -81,13 +81,6 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
 }
 
-/// Find a Parasolid `PS\0\0` signature in the first 64 payload bytes.
-pub fn parasolid_offset(payload: &[u8]) -> Option<usize> {
-    const SIG: &[u8] = &[b'P', b'S', 0x00, 0x00];
-    let window = payload.len().min(64);
-    find(&payload[..window], SIG)
-}
-
 /// Decode a nibble-swapped section name.
 ///
 /// Returns `None` when any decoded byte falls outside printable ASCII.
@@ -120,12 +113,8 @@ pub struct Block {
     pub family: &'static str,
     /// The decompressed payload bytes.
     pub payload: Vec<u8>,
-    /// First direct or nested Parasolid stream in this block.
-    pub ps_stream: Option<Vec<u8>>,
-    /// Every Parasolid stream carried by this block.
-    pub ps_streams: Vec<Vec<u8>>,
-    /// Outer-payload offset of each entry in `ps_streams`.
-    pub ps_stream_offsets: Vec<usize>,
+    /// Every located and header-validated Parasolid stream carried by this block.
+    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 /// One tail-directory entry naming a section.
@@ -169,10 +158,8 @@ pub struct CompoundStream {
     pub payload: Vec<u8>,
     /// Inflated semantic bytes when the stream uses the `__ZLB` wrapper.
     pub decoded_payload: Option<Vec<u8>>,
-    /// Every Parasolid stream carried by this compound stream.
-    pub ps_streams: Vec<Vec<u8>>,
-    /// Raw compound-stream offset of each entry in `ps_streams`.
-    pub ps_stream_offsets: Vec<usize>,
+    /// Every located and header-validated Parasolid stream carried here.
+    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 /// Complete result of an outer-container scan.
@@ -240,17 +227,10 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub(crate) fn ps_streams(self) -> &'a [Vec<u8>] {
+    pub(crate) fn ps_streams(self) -> &'a [crate::parasolid::ExtractedStream] {
         match self {
             Self::Block(block) => &block.ps_streams,
             Self::Compound(stream) => &stream.ps_streams,
-        }
-    }
-
-    pub(crate) fn ps_stream_offsets(self) -> &'a [usize] {
-        match self {
-            Self::Block(block) => &block.ps_stream_offsets,
-            Self::Compound(stream) => &stream.ps_stream_offsets,
         }
     }
 }
@@ -406,12 +386,7 @@ fn compound_stream(
     bytes: Vec<u8>,
     decoded_bytes: Option<Vec<u8>>,
 ) -> CompoundStream {
-    let located_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
-    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
-    let ps_streams = located_streams
-        .into_iter()
-        .map(|(_, payload)| payload)
-        .collect();
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
     CompoundStream {
         path,
         directory_id,
@@ -419,7 +394,6 @@ fn compound_stream(
         payload: bytes,
         decoded_payload: decoded_bytes,
         ps_streams,
-        ps_stream_offsets,
     }
 }
 
@@ -542,9 +516,7 @@ struct RawBlock {
     section: Option<String>,
     family: &'static str,
     payload: Vec<u8>,
-    ps_stream: Option<Vec<u8>>,
-    ps_streams: Vec<Vec<u8>>,
-    ps_stream_offsets: Vec<usize>,
+    ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 impl RawBlock {
@@ -557,9 +529,7 @@ impl RawBlock {
             section: self.section,
             family: self.family,
             payload: self.payload,
-            ps_stream: self.ps_stream,
             ps_streams: self.ps_streams,
-            ps_stream_offsets: self.ps_stream_offsets,
         }
     }
 }
@@ -623,13 +593,7 @@ fn block_from_inflated(
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let located_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
-    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
-    let ps_streams = located_streams
-        .into_iter()
-        .map(|(_, stream)| stream)
-        .collect::<Vec<_>>();
-    let ps_stream = ps_streams.first().cloned();
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
     let family = if ps_streams.is_empty() {
         payload_family(&inflated)
     } else {
@@ -645,9 +609,7 @@ fn block_from_inflated(
         section,
         family,
         payload: inflated,
-        ps_stream,
         ps_streams,
-        ps_stream_offsets,
     })
 }
 
@@ -760,11 +722,12 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         attributes.insert("type_id".to_string(), format!("0x{:08x}", b.type_id));
         attributes.insert("family".to_string(), b.family.to_string());
         attributes.insert("sha256".to_string(), sha256_hex(&b.payload));
-        if let Some(ps) = &b.ps_stream {
-            if let Some(sch) = crate::parasolid::stream_header(ps) {
-                attributes.insert("parasolid_schema".to_string(), sch.schema.clone());
-                attributes.insert("parasolid_description".to_string(), sch.description.clone());
-            }
+        if let Some(stream) = b.ps_streams.first() {
+            attributes.insert("parasolid_schema".to_string(), stream.header.schema.clone());
+            attributes.insert(
+                "parasolid_description".to_string(),
+                stream.header.description.clone(),
+            );
         }
         entries.push(ContainerEntry {
             name: b
@@ -861,9 +824,9 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
     )
 }
 
-pub(crate) fn active_parasolid_summary(
-    scan: &ContainerScan,
-) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
+pub(crate) fn active_parasolid_summary<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Option<(String, usize, &'a crate::parasolid::StreamHeader)> {
     let selected = select_active_parasolid_site(scan)?;
     Some((selected.name(), selected.payload.len(), selected.header))
 }
@@ -878,8 +841,7 @@ pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
                 .iter()
                 .flat_map(|stream| &stream.ps_streams),
         )
-        .filter_map(|payload| crate::parasolid::stream_header(payload))
-        .any(|header| crate::parasolid::is_body_stream(&header))
+        .any(|stream| crate::parasolid::is_body_stream(&stream.header))
 }
 
 /// Select the unique Parasolid partition block for the active configuration.
@@ -890,7 +852,7 @@ pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 /// [`select_active_parasolid_site`] so both envelopes retain their source site.
 pub fn select_active_parasolid<'a>(
     scan: &'a ContainerScan<'_>,
-) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
+) -> Option<(&'a Block, &'a crate::parasolid::StreamHeader)> {
     let selected = select_active_parasolid_site(scan)?;
     match selected.origin {
         ActiveParasolidOrigin::Block(block) => Some((block, selected.header)),
@@ -920,7 +882,7 @@ impl ActiveParasolidOrigin<'_> {
 pub(crate) struct ActiveParasolidSite<'a> {
     pub(crate) origin: ActiveParasolidOrigin<'a>,
     pub(crate) payload: &'a [u8],
-    pub(crate) header: crate::parasolid::StreamHeader,
+    pub(crate) header: &'a crate::parasolid::StreamHeader,
 }
 
 impl ActiveParasolidSite<'_> {
@@ -962,9 +924,9 @@ pub(crate) fn select_active_parasolid_site<'a>(
         let body_streams = block
             .ps_streams
             .iter()
-            .filter_map(|payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((payload, header))
+            .filter_map(|stream| {
+                crate::parasolid::is_body_stream(&stream.header)
+                    .then_some((stream.payload.as_slice(), &stream.header))
             })
             .collect::<Vec<_>>();
         let sole_body_stream = body_streams.len() == 1;
@@ -999,9 +961,9 @@ pub(crate) fn select_active_parasolid_site<'a>(
         let body_streams = stream
             .ps_streams
             .iter()
-            .filter_map(|payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((payload, header))
+            .filter_map(|stream| {
+                crate::parasolid::is_body_stream(&stream.header)
+                    .then_some((stream.payload.as_slice(), &stream.header))
             })
             .collect::<Vec<_>>();
         let sole_body_stream = body_streams.len() == 1;

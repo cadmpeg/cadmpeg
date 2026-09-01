@@ -35,19 +35,15 @@ pub fn sketches(
             "sldprt:feature-input:resolved-features#{}",
             source.ordinal()
         );
-        for (stream_ordinal, payload) in source.ps_streams().iter().enumerate() {
-            let stream_offset = source.ps_stream_offsets()[stream_ordinal];
-            let Some(header) = crate::parasolid::stream_header(payload) else {
-                continue;
-            };
-            let brep = crate::brep::decode(payload, &header, section);
+        for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
+            let brep = crate::brep::decode(&stream.payload, &stream.header, section);
             project_brep(
                 &brep,
                 source.ordinal(),
                 stream_ordinal,
-                stream_offset,
+                stream.offset,
                 section,
-                &header.description,
+                &stream.header.description,
                 configuration(section).as_deref(),
                 &native_ref,
                 annotations,

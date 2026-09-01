@@ -119,31 +119,24 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<DialectLayers,
         .blocks
         .iter()
         .flat_map(|block| {
-            block
-                .ps_streams
-                .iter()
-                .zip(&block.ps_stream_offsets)
-                .filter_map(move |(payload, offset)| {
-                    let header = crate::parasolid::stream_header(payload)?;
-                    let section = block.section.as_deref().unwrap_or("unnamed");
-                    Some((
-                        header.schema,
-                        format!("block@{}:{section}+{offset}", block.offset),
-                    ))
-                })
+            block.ps_streams.iter().map(move |stream| {
+                let section = block.section.as_deref().unwrap_or("unnamed");
+                (
+                    stream.header.schema.clone(),
+                    format!("block@{}:{section}+{}", block.offset, stream.offset),
+                )
+            })
         })
         .chain(scan.compound_streams.iter().flat_map(|stream| {
-            stream
-                .ps_streams
-                .iter()
-                .zip(&stream.ps_stream_offsets)
-                .filter_map(move |(payload, offset)| {
-                    let header = crate::parasolid::stream_header(payload)?;
-                    Some((
-                        header.schema,
-                        format!("compound@{}:{}+{offset}", stream.directory_id, stream.path),
-                    ))
-                })
+            stream.ps_streams.iter().map(move |kernel| {
+                (
+                    kernel.header.schema.clone(),
+                    format!(
+                        "compound@{}:{}+{}",
+                        stream.directory_id, stream.path, kernel.offset
+                    ),
+                )
+            })
         }))
         .collect::<Vec<_>>();
     let extra = cadmpeg_parasolid::extra_layers(kernels);
