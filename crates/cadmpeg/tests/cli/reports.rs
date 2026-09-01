@@ -124,6 +124,34 @@ fn report_write_failure_does_not_replace_a_typed_refusal() {
 }
 
 #[test]
+fn report_write_failure_does_not_reclassify_a_completed_conversion() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let output = dir.path().join("cube.step");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "--to",
+            "step",
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            dir.path().to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "CAD output was written, but the convert report could not be written",
+        ));
+
+    assert!(fs::read(output).unwrap().starts_with(b"ISO-10303-21"));
+}
+
+#[test]
 fn f3d_export_report_identifies_regenerated_output() {
     let dir = tempdir().unwrap();
     let cube = fixture(dir.path(), "cube.json", &unit_cube());

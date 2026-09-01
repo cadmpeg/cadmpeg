@@ -5,8 +5,8 @@ mod reporting;
 
 use reporting::{
     fidelity_diff, fidelity_differs, fidelity_json, losses, print_check_report,
-    print_decode_report, print_fidelity_summary, print_id_delta, print_source_diff,
-    write_command_report, write_json_report, CommandReportBody,
+    print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
+    print_source_diff, write_command_report, write_json_report, CommandReportBody,
 };
 
 use cadmpeg_ir::codec::TargetRequest;
@@ -275,13 +275,14 @@ pub fn dump(
         cadmpeg_ir::codec::EncodeInput::new(&loaded.ir, loaded.fidelity()),
         TargetRequest::Inherit,
     )?;
-    emit_export_plan(
+    let emission = emit_export_plan(
         plan,
         Format::Cadir,
         out,
         loaded.decode_report(),
         loaded.fidelity(),
     )?;
+    print_export_emission(&mut io::stderr(), &emission)?;
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
@@ -492,8 +493,9 @@ pub fn convert(
             prepared.validation.clone(),
         )
     };
-    let report = planned.write()?;
-    write_command_report(
+    let emission = planned.write()?;
+    print_export_emission(&mut io::stderr(), &emission)?;
+    if let Err(error) = write_command_report(
         path,
         conversion.report.as_deref(),
         conversion.report_overwrite,
@@ -501,10 +503,15 @@ pub fn convert(
         CommandReportBody {
             decode_report: decode_report.as_ref(),
             check_report: validation.as_ref(),
-            export: Some(&report),
+            export: Some(&emission.report),
             refusal: None,
         },
-    )
+    ) {
+        eprintln!(
+            "warning: CAD output was written, but the convert report could not be written: {error:#}"
+        );
+    }
+    Ok(())
 }
 
 /// Compare two CAD files.

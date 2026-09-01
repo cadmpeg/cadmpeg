@@ -8,7 +8,8 @@ use anyhow::{anyhow, Result};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 
-use crate::application::{ArtifactStore, ConversionRefusal};
+use crate::application::transcoder::{EmittedArtifact, ExportEmission};
+use crate::application::{ArtifactStore, ConversionRefusal, SidecarPersistOutcome};
 
 use super::CLI_SCHEMA_VERSION;
 
@@ -184,6 +185,51 @@ fn generator() -> String {
         env!("CARGO_PKG_VERSION"),
         env!("CADMPEG_BUILD_GIT")
     )
+}
+
+pub(super) fn print_export_emission(
+    writer: &mut impl Write,
+    emission: &ExportEmission,
+) -> io::Result<()> {
+    match &emission.artifact {
+        EmittedArtifact::File { path, sidecar } => {
+            match sidecar {
+                SidecarPersistOutcome::Wrote(sidecar) => {
+                    writeln!(writer, "wrote decode sidecar {}", sidecar.display())?;
+                }
+                SidecarPersistOutcome::RemovedStale(sidecar) => {
+                    writeln!(writer, "removed stale decode sidecar {}", sidecar.display())?;
+                }
+                SidecarPersistOutcome::Absent => {}
+            }
+            writeln!(
+                writer,
+                "wrote {} ({} entities)",
+                path.display(),
+                emission.report.census.total()
+            )?;
+        }
+        EmittedArtifact::StdoutWithoutSidecar => {
+            writeln!(
+                writer,
+                "note: CADIR written to stdout cannot carry its decode-fidelity sidecar"
+            )?;
+        }
+        EmittedArtifact::Stdout => {}
+    }
+    if !emission.report.losses.is_empty() {
+        writeln!(writer, "{} export losses:", emission.report.format())?;
+        for loss in &emission.report.losses {
+            writeln!(
+                writer,
+                "  [{}/{}] {}",
+                loss.severity,
+                loss.code.category(),
+                loss.message
+            )?;
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn write_json_report(
