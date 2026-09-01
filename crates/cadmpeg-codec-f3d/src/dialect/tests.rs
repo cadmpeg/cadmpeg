@@ -12,6 +12,28 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
 }
 
 #[test]
+fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
+    let bytes = crate::test_support::synthetic_f3d(true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut scan = crate::container::scan(&ctx, root).unwrap();
+    scan.breps.push(scan.breps[0].clone());
+
+    let (layers, losses) = classify_layers(&scan).into_parts();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, F3dLossCode::DialectLayerCollision.kind());
+    assert_eq!(
+        layers
+            .iter()
+            .filter(|layer| layer.format() == cadmpeg_asm::dialect::FORMAT)
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn a_document_match_names_its_row_and_records_the_version_the_parse_read() {
     let matched = F3dDialect::classify_document("3-2-0-0");
 

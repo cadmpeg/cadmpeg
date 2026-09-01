@@ -85,28 +85,13 @@ mod tests {
     use crate::test_support::synthetic_f3d;
 
     #[test]
-    fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
+    fn decode_report_includes_a_kernel_identity_collision_loss() {
         let bytes = synthetic_f3d(true);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let mut scan = crate::container::scan(&ctx, root).unwrap();
         scan.breps.push(scan.breps[0].clone());
-
-        let classification = crate::dialect::classify_layers(&scan);
-        let (layers, losses) = classification.into_parts();
-        assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::DialectLayerCollision.kind()
-        );
-        assert_eq!(
-            layers
-                .iter()
-                .filter(|layer| layer.format() == cadmpeg_asm::dialect::FORMAT)
-                .count(),
-            2
-        );
 
         let report = build_decode_report(&scan, false, true, Vec::new(), ReportScope::Standalone);
         assert!(report
