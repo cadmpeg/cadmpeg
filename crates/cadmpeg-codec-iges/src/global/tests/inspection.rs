@@ -10,7 +10,7 @@ use crate::test_support::point_file_with_global;
 use crate::IgesCodec;
 
 #[test]
-fn inspect_reports_the_resolution_losses_it_charges_as_census_notes() {
+fn inspect_reports_the_resolution_losses_it_charges_as_typed_losses() {
     let mut fields = valid_global_fields();
     fields[11] = "7Hproduct".into();
     fields[16] = String::new();
@@ -26,13 +26,14 @@ fn inspect_reports_the_resolution_losses_it_charges_as_census_notes() {
         .unwrap();
 
     assert!(summary.notes.contains(&"iges_version=4.0".into()));
-    assert!(!summary
-        .notes
-        .iter()
-        .any(|note| note == "loss.iges/source.dialect-unverified=1"));
     assert!(summary
-        .notes
-        .contains(&"loss.iges/presentation.line-weight-scale-unavailable=1".into()));
+        .losses
+        .iter()
+        .all(|loss| loss.code != crate::loss::IgesLossCode::SourceDialectUnverified.kind()));
+    assert!(summary
+        .losses
+        .iter()
+        .any(|loss| { loss.code == crate::loss::IgesLossCode::LineWeightScaleUnavailable.kind() }));
 }
 
 #[test]

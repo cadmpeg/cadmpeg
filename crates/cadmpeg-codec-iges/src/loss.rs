@@ -19,27 +19,6 @@
 //! geometry, writer) have no honest common default.
 
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
-use std::collections::BTreeMap;
-
-/// One `loss.<namespace>/<code>=<count>` census line per distinct loss code.
-///
-/// A [`cadmpeg_core::ContainerSummary`] has no loss channel, so a container
-/// inspection reports the losses it resolves as census notes. The census covers
-/// only the losses that inspection computes; a complete loss report needs a
-/// decode.
-pub(crate) fn census(losses: &[LossNote]) -> Vec<String> {
-    let mut counts = BTreeMap::<(&str, &str), usize>::new();
-    for loss in losses {
-        *counts
-            .entry((loss.code.namespace.as_str(), loss.code.code.as_str()))
-            .or_default() += 1;
-    }
-    counts
-        .into_iter()
-        .map(|((namespace, code), count)| format!("loss.{namespace}/{code}={count}"))
-        .collect()
-}
-
 /// A stable, machine-readable identifier for one IGES transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The

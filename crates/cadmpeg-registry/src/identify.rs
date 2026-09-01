@@ -4,10 +4,10 @@
 use std::io::SeekFrom;
 
 use cadmpeg_container::compound::read_detection_prefix;
-use cadmpeg_core::container::ContainerSummary;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::{DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource};
 

@@ -38,6 +38,17 @@
     }
   ],
   "format": "sldprt",
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "sldprt"
+      },
+      "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
+      "severity": "warning"
+    }
+  ],
   "notes": [
     "outer version word: 0x00000004; 1 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
     "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",

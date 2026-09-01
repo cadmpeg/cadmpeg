@@ -45,6 +45,26 @@
     }
   ],
   "format": "step",
+  "losses": [
+    {
+      "code": {
+        "code": "geometry.document-length-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    }
+  ],
   "notes": [
     "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242"
   ]

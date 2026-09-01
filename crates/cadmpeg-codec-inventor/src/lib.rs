@@ -36,8 +36,9 @@ mod validate;
 
 use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, Finding};
 
 pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {

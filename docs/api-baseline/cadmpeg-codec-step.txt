@@ -1,4 +1,4 @@
-# generated at 985fbb18d
+# generated at 8b1cd929e
 pub mod cadmpeg_codec_step
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
@@ -16,7 +16,7 @@ impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_step::StepCodec
 pub fn cadmpeg_codec_step::StepCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_step::StepCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::write::EncoderBackend for cadmpeg_codec_step::StepCodec
 pub const cadmpeg_codec_step::StepCodec::FORMAT: &'static str
 pub const cadmpeg_codec_step::StepCodec::TARGET_DOMAIN: cadmpeg_ir::codec::write::EncoderTargetDomain

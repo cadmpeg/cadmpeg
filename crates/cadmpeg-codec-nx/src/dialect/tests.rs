@@ -118,9 +118,9 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == NxLossCode::DialectLayerCollision.kind()));
-    assert!(summary.notes.iter().any(|note| {
-        note.starts_with("dialect classification loss:")
-            && note.contains("duplicate parasolid dialect layer")
+    assert!(summary.losses.iter().any(|loss| {
+        loss.code == NxLossCode::DialectLayerCollision.kind()
+            && loss.message.contains("duplicate parasolid dialect layer")
     }));
 }
 

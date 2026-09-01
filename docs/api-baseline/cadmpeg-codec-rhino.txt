@@ -1,4 +1,4 @@
-# generated at 985fbb18d
+# generated at 8b1cd929e
 pub mod cadmpeg_codec_rhino
 pub enum cadmpeg_codec_rhino::RhinoArchiveVersion
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V5
@@ -12,7 +12,7 @@ impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_rhino::RhinoCodec
 pub fn cadmpeg_codec_rhino::RhinoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_rhino::RhinoCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_rhino::RhinoCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_rhino::RhinoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_rhino::RhinoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::write::EncoderBackend for cadmpeg_codec_rhino::RhinoCodec
 pub const cadmpeg_codec_rhino::RhinoCodec::FORMAT: &'static str
 pub const cadmpeg_codec_rhino::RhinoCodec::TARGET_DOMAIN: cadmpeg_ir::codec::write::EncoderTargetDomain

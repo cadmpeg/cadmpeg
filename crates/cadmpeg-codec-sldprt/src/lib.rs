@@ -128,7 +128,8 @@ mod writer_transform;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
 use cadmpeg_ir::codec::{
@@ -376,12 +377,7 @@ impl CodecBackend for SldprtCodec {
         let scan = container::scan(ctx, root)?;
         let classification = dialect::classify_layers(&scan);
         let mut summary = container::summarize(&scan, classification.layers().clone());
-        summary.notes.extend(
-            classification
-                .collision_losses()
-                .iter()
-                .map(|loss| format!("dialect classification loss: {}", loss.message)),
-        );
+        classification.append_losses(&mut summary.losses);
         Ok(summary)
     }
 

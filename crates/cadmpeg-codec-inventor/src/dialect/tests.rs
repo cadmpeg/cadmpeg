@@ -272,7 +272,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
 fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
     for case in CASES {
         let bytes = case.bytes();
-        let (matched, _) = decoded(&bytes);
+        let (matched, decoded_losses) = decoded(&bytes);
 
         let summary = InventorCodec
             .inspect(
@@ -284,6 +284,28 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
             .dialects()
             .expect("Inventor inspection reports dialect layers");
         assert_eq!(layers.primary(), &matched, "{}", case.label);
+        let inspected_classification = summary
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == InventorLossCode::SourceDialectUnverified.kind()
+                    || loss.code == InventorLossCode::KernelDialectUnverified.kind()
+                    || loss.code == InventorLossCode::KernelCarrierUnparseable.kind()
+            })
+            .collect::<Vec<_>>();
+        let decoded_classification = decoded_losses
+            .iter()
+            .filter(|loss| {
+                loss.code == InventorLossCode::SourceDialectUnverified.kind()
+                    || loss.code == InventorLossCode::KernelDialectUnverified.kind()
+                    || loss.code == InventorLossCode::KernelCarrierUnparseable.kind()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            inspected_classification, decoded_classification,
+            "{}: inspect and decode must report the same classification losses",
+            case.label
+        );
 
         let decoded = InventorCodec
             .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())

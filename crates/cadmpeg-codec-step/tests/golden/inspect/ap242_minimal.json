@@ -35,6 +35,44 @@
     }
   ],
   "format": "step",
+  "losses": [
+    {
+      "code": {
+        "code": "geometry.document-length-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step"
+      },
+      "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step"
+      },
+      "message": "preserved 1 OPAQUE_TARGET instance(s) as named opaque STEP records",
+      "severity": "warning"
+    }
+  ],
   "notes": [
     "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }; dialect step:ap242-e2"
   ]

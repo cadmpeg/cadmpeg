@@ -1,4 +1,4 @@
-# generated at 6891cb0d7
+# generated at 8b1cd929e
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -221,15 +221,15 @@ pub fn cadmpeg_ir::codec::ResolvedWrite::source_preservation_eligible(&self) -> 
 pub fn cadmpeg_ir::codec::ResolvedWrite::unavailable(&self, impl core::convert::Into<alloc::string::String>) -> cadmpeg_core::error::CodecError
 pub trait cadmpeg_ir::codec::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure>
-pub fn cadmpeg_ir::codec::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 impl<C: cadmpeg_ir::codec::CodecBackend + ?core::marker::Sized> cadmpeg_ir::codec::Codec for C
 pub fn C::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure>
-pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::codec::CodecBackend
 pub fn cadmpeg_ir::codec::CodecBackend::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::CodecBackend::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::codec::CodecBackend::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::codec::Encoder: cadmpeg_ir::codec::write::encoder_sealed::Sealed
 pub fn cadmpeg_ir::codec::Encoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::Encoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>
@@ -253,6 +253,21 @@ pub fn cadmpeg_ir::compare::floats_agree(f64, f64) -> bool
 pub fn cadmpeg_ir::compare::is_local_digest_attribute(&str) -> bool
 pub fn cadmpeg_ir::compare::texts_agree(&str, &str) -> bool
 pub fn cadmpeg_ir::compare::values_agree(&serde_json::value::Value, &serde_json::value::Value) -> core::result::Result<(), alloc::string::String>
+pub mod cadmpeg_ir::container
+pub struct cadmpeg_ir::container::ContainerSummary
+pub cadmpeg_ir::container::ContainerSummary::container_kind: alloc::string::String
+pub cadmpeg_ir::container::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
+pub cadmpeg_ir::container::ContainerSummary::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
+pub cadmpeg_ir::container::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
+impl cadmpeg_ir::container::ContainerSummary
+pub fn cadmpeg_ir::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_ir::container::ContainerSummary::format(&self) -> &str
+pub fn cadmpeg_ir::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::container::ContainerSummary
+pub fn cadmpeg_ir::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::container::ContainerSummary
+pub fn cadmpeg_ir::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub mod cadmpeg_ir::diff
 pub struct cadmpeg_ir::diff::ArenaDiff
 pub cadmpeg_ir::diff::ArenaDiff::added: alloc::vec::Vec<alloc::string::String>
@@ -7087,6 +7102,20 @@ pub cadmpeg_ir::CoilConstruction::section: cadmpeg_ir::features::CoilSection
 pub cadmpeg_ir::CoilConstruction::section_placement: cadmpeg_ir::features::CoilSectionPlacement
 pub cadmpeg_ir::CoilConstruction::taper: cadmpeg_ir::features::Angle
 pub struct cadmpeg_ir::ConfigurationId(pub alloc::string::String)
+pub struct cadmpeg_ir::ContainerSummary
+pub cadmpeg_ir::ContainerSummary::container_kind: alloc::string::String
+pub cadmpeg_ir::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
+pub cadmpeg_ir::ContainerSummary::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
+pub cadmpeg_ir::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
+impl cadmpeg_ir::container::ContainerSummary
+pub fn cadmpeg_ir::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
+pub fn cadmpeg_ir::container::ContainerSummary::format(&self) -> &str
+pub fn cadmpeg_ir::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::container::ContainerSummary
+pub fn cadmpeg_ir::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::container::ContainerSummary
+pub fn cadmpeg_ir::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::CoverageKey(pub &'static str)
 pub struct cadmpeg_ir::DatumReference
 pub cadmpeg_ir::DatumReference::common_group: core::option::Option<u32>
@@ -7764,15 +7793,15 @@ pub const cadmpeg_ir::SLDPRT_EXPORT_PRECONDITION_CHECKS: &[cadmpeg_ir::Check]
 pub const cadmpeg_ir::SOURCE_FIDELITY_VERSION: &str
 pub trait cadmpeg_ir::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure>
-pub fn cadmpeg_ir::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 impl<C: cadmpeg_ir::codec::CodecBackend + ?core::marker::Sized> cadmpeg_ir::codec::Codec for C
 pub fn C::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure>
-pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::CodecBackend
 pub fn cadmpeg_ir::CodecBackend::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::CodecBackend::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::CodecBackend::id(&self) -> &'static str
-pub fn cadmpeg_ir::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::Encoder: cadmpeg_ir::codec::write::encoder_sealed::Sealed
 pub fn cadmpeg_ir::Encoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::Encoder::plan(&self, cadmpeg_ir::codec::EncodeInput<'_>, cadmpeg_ir::codec::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan, cadmpeg_core::error::CodecError>

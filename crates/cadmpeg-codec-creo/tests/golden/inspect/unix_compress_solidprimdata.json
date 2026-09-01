@@ -27,6 +27,17 @@
     }
   ],
   "format": "creo",
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "creo"
+      },
+      "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+      "severity": "warning"
+    }
+  ],
   "notes": [
     "PSB container: #UGC:2 P test",
     "layout: unknown; 1 section(s) enumerated",

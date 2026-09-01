@@ -3,7 +3,8 @@
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
 use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
@@ -117,11 +118,21 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        let primary = crate::dialect::DialectRecovery::of(self).classify().matched;
+        let classification = crate::dialect::DialectRecovery::of(self).classify();
+        let dialects = crate::dialect::layers(classification.matched, &self.rse.active_carrier);
+        let mut losses = Vec::new();
+        losses.extend(classification.loss);
+        losses.extend(
+            dialects
+                .iter()
+                .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+                .and_then(crate::dialect::kernel_dialect_loss),
+        );
         ContainerSummary::classified(
-            crate::dialect::layers(primary, &self.rse.active_carrier),
+            dialects,
             "cfb",
             entries,
+            losses,
             vec![format!(
                 "CFB v{} with {} RSe segment pair(s) and {} versioned database(s)",
                 self.snapshot.major_version(),

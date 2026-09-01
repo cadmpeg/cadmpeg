@@ -34,6 +34,17 @@
     }
   ],
   "format": "step",
+  "losses": [
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    }
+  ],
   "notes": [
     "schema CONFIG_CONTROL_DESIGN; dialect step:ap203-e1"
   ]

@@ -249,8 +249,9 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
-    assert!(inspected.notes.iter().any(|note| {
-        note.contains("dialect classification loss") && note.contains(corrupt_path)
+    assert!(inspected.losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::KernelCarrierUnparseable.kind()
+            && loss.message.contains(corrupt_path)
     }));
 
     let decoded = F3dCodec

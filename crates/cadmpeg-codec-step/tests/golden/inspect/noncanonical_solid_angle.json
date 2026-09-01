@@ -38,6 +38,50 @@
     }
   ],
   "format": "step",
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "step"
+      },
+      "message": "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "parse.noncanonical-syntax",
+        "kind": "noncanonical_source_syntax",
+        "namespace": "step"
+      },
+      "message": "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)",
+      "provenance": {
+        "format": "step",
+        "offset": 190,
+        "stream": "",
+        "tag": "complex_entity"
+      },
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "geometry.document-length-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    }
+  ],
   "notes": [
     "schema AUTOMOTIVE_DESIGN_CC2; dialect step:unknown",
     "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)"

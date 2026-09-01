@@ -105,8 +105,9 @@ pub use evaluation::{saved_body_census_evidence, BodyCensusEvidence};
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_ir::ContainerSummary;
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -292,15 +293,10 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         });
     }
 
-    let (classification, mut notes) = decode::summarize(scan);
+    let (classification, notes) = decode::summarize(scan);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
-    notes.extend(
-        dialect_losses
-            .into_iter()
-            .map(|loss| format!("dialect classification loss: {}", loss.message)),
-    );
-    ContainerSummary::classified(dialects, container_kind, entries, notes)
+    ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)
 }
 
 #[cfg(test)]

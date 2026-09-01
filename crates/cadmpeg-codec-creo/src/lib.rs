@@ -88,8 +88,9 @@ pub(crate) mod vecmath;
 pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_ir::ContainerSummary;
 
 /// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]

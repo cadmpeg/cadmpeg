@@ -2010,3 +2010,108 @@ crate = "cadmpeg-core"
 kind = "field"
 item = "cadmpeg_core::CodecError::ContractViolation::expected"
 reason = "sealed codec wrappers report both selected and backend-returned identities so a same-format target mismatch remains explicit"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-core"
+kind = "move"
+item = "cadmpeg_core::ContainerSummary -> cadmpeg_ir::ContainerSummary"
+reason = "container inspection reports carry typed LossNote values, so the report belongs to the IR layer while cadmpeg-core retains only the byte-level ContainerEntry"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ContainerSummary::losses"
+reason = "inspection exposes resolved losses through the same typed machine-readable vocabulary as decode instead of codec-specific informational strings"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::ContainerSummary::{classified,unclassified}"
+reason = "summary construction requires the complete typed inspection loss set so codecs cannot silently omit a computed classification loss"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-catia"
+kind = "signature"
+item = "cadmpeg_codec_catia::CatiaCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-creo"
+kind = "signature"
+item = "cadmpeg_codec_creo::CreoCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-f3d"
+kind = "signature"
+item = "cadmpeg_codec_f3d::F3dCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-freecad"
+kind = "signature"
+item = "cadmpeg_codec_freecad::FcstdCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-iges"
+kind = "signature"
+item = "cadmpeg_codec_iges::IgesCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-inventor"
+kind = "signature"
+item = "cadmpeg_codec_inventor::InventorCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-nx"
+kind = "signature"
+item = "cadmpeg_codec_nx::NxCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-rhino"
+kind = "signature"
+item = "cadmpeg_codec_rhino::RhinoCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-sat"
+kind = "signature"
+item = "cadmpeg_codec_sat::SatCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-sldprt"
+kind = "signature"
+item = "cadmpeg_codec_sldprt::SldprtCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-codec-step"
+kind = "signature"
+item = "cadmpeg_codec_step::StepCodec::inspect_impl"
+reason = "the codec inspection boundary now returns the IR-owned typed-loss ContainerSummary"
+
+[[change]]
+commit = "8b1cd929e558b8b5cee12a9ecf393cdf46e77a56"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::{Inspection::Classified,ResolvedInspection::Native::inspection}"
+reason = "registry inspection results now retain the IR-owned typed-loss ContainerSummary"

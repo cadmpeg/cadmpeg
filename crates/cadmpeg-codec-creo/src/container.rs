@@ -18,7 +18,8 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_from as find;
-use cadmpeg_core::{ContainerEntry, ContainerSummary};
+use cadmpeg_core::ContainerEntry;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
@@ -2894,6 +2895,7 @@ pub fn summarize(
         cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
         "psb",
         entries,
+        classification.loss().into_iter().collect(),
         notes,
     )
 }

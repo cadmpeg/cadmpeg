@@ -1,4 +1,4 @@
-# generated at 12ebff198
+# generated at 8b1cd929e
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -29,7 +29,7 @@ pub fn cadmpeg_registry::Format::name(self) -> &'static str
 pub fn cadmpeg_registry::Format::transfers_geometry(self) -> bool
 pub fn cadmpeg_registry::Format::vocabulary() -> alloc::string::String
 pub enum cadmpeg_registry::Inspection
-pub cadmpeg_registry::Inspection::Classified(cadmpeg_core::container::ContainerSummary)
+pub cadmpeg_registry::Inspection::Classified(cadmpeg_ir::container::ContainerSummary)
 pub cadmpeg_registry::Inspection::Failed(cadmpeg_core::error::CodecError)
 pub cadmpeg_registry::Inspection::Skipped
 pub enum cadmpeg_registry::ReadDisposition
@@ -55,7 +55,7 @@ pub cadmpeg_registry::ResolvedInspection::Cadir
 pub cadmpeg_registry::ResolvedInspection::Native
 pub cadmpeg_registry::ResolvedInspection::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
 pub cadmpeg_registry::ResolvedInspection::Native::format: &'static str
-pub cadmpeg_registry::ResolvedInspection::Native::inspection: core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub cadmpeg_registry::ResolvedInspection::Native::inspection: core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub cadmpeg_registry::ResolvedInspection::Unrecognized
 pub enum cadmpeg_registry::ResolvedSource<'a>
 pub cadmpeg_registry::ResolvedSource::Cadir

@@ -16,6 +16,9 @@ use crate::container::scan_bytes;
 use crate::test_support::{
     make_block, outer_header, sldprt_with_colliding_sites, synthetic_sldprt,
 };
+use crate::SldprtCodec;
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
@@ -137,11 +140,28 @@ fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
         .count();
 
     assert_eq!(kernel_count, 2);
-    assert_eq!(classification.collision_losses().len(), 1);
+    let mut losses = Vec::new();
+    classification.append_losses(&mut losses);
     assert_eq!(
-        classification.collision_losses()[0].code,
-        SldprtLossCode::DialectLayerCollision.kind()
+        losses
+            .iter()
+            .filter(|loss| loss.code == SldprtLossCode::DialectLayerCollision.kind())
+            .count(),
+        1
     );
+}
+
+#[test]
+fn inspect_exposes_the_same_host_admission_loss_as_decode() {
+    let bytes = synthetic_sldprt();
+    let summary = SldprtCodec
+        .inspect(&mut std::io::Cursor::new(bytes), &InspectOptions::default())
+        .expect("the synthetic part inspects");
+
+    assert!(summary
+        .losses
+        .iter()
+        .any(|loss| loss.code == SldprtLossCode::SourceDialectUnverified.kind()));
 }
 
 /// One `swVersion` declaration and the row it selects.

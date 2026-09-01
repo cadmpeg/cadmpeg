@@ -1,4 +1,4 @@
-# generated at eea176852
+# generated at 8b1cd929e
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -26,19 +26,6 @@ pub cadmpeg_core::container::ContainerEntry::compression: alloc::string::String
 pub cadmpeg_core::container::ContainerEntry::name: alloc::string::String
 pub cadmpeg_core::container::ContainerEntry::role: alloc::string::String
 pub cadmpeg_core::container::ContainerEntry::uncompressed_size: u64
-pub struct cadmpeg_core::container::ContainerSummary
-pub cadmpeg_core::container::ContainerSummary::container_kind: alloc::string::String
-pub cadmpeg_core::container::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
-pub cadmpeg_core::container::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
-impl cadmpeg_core::container::ContainerSummary
-pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
-pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
-pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
-pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
-impl serde_core::ser::Serialize for cadmpeg_core::container::ContainerSummary
-pub fn cadmpeg_core::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::container::ContainerSummary
-pub fn cadmpeg_core::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub mod cadmpeg_core::decode
 pub enum cadmpeg_core::decode::AddressStepKind
 pub cadmpeg_core::decode::AddressStepKind::ExpandedMember
@@ -495,18 +482,5 @@ pub cadmpeg_core::ContainerEntry::compression: alloc::string::String
 pub cadmpeg_core::ContainerEntry::name: alloc::string::String
 pub cadmpeg_core::ContainerEntry::role: alloc::string::String
 pub cadmpeg_core::ContainerEntry::uncompressed_size: u64
-pub struct cadmpeg_core::ContainerSummary
-pub cadmpeg_core::ContainerSummary::container_kind: alloc::string::String
-pub cadmpeg_core::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
-pub cadmpeg_core::ContainerSummary::notes: alloc::vec::Vec<alloc::string::String>
-impl cadmpeg_core::container::ContainerSummary
-pub fn cadmpeg_core::container::ContainerSummary::classified(cadmpeg_core::dialect::DialectLayers, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
-pub fn cadmpeg_core::container::ContainerSummary::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
-pub fn cadmpeg_core::container::ContainerSummary::format(&self) -> &str
-pub fn cadmpeg_core::container::ContainerSummary::unclassified(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>, alloc::vec::Vec<alloc::string::String>) -> Self
-impl serde_core::ser::Serialize for cadmpeg_core::container::ContainerSummary
-pub fn cadmpeg_core::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_core::container::ContainerSummary
-pub fn cadmpeg_core::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub trait cadmpeg_core::ReadSeek: std::io::Read + core::io::seek::Seek
 impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T

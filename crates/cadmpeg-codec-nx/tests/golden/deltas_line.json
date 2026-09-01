@@ -577,11 +577,29 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@340 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SPLMSSTR container: version 6, file tag 0, footer offset 483, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "dialect classification loss: The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
-      "dialect classification loss: The Parasolid stream at stream@340 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream."
+      "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
 }

@@ -32,7 +32,7 @@ fn primary(dialects: Option<&DialectLayers>) -> &DialectMatch {
     layers.primary()
 }
 
-fn inspect(bytes: Vec<u8>) -> cadmpeg_core::ContainerSummary {
+fn inspect(bytes: Vec<u8>) -> cadmpeg_ir::ContainerSummary {
     NxCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("synthesized NX part should inspect")

@@ -10,6 +10,28 @@ use serde::ser::{
 };
 use serde::{Serialize, Serializer};
 
+/// Marks fields that current writers always serialize as required while their
+/// deserializers remain omission-tolerant for older artifacts.
+#[cfg(feature = "schema")]
+pub(crate) fn require_object_fields(
+    schema: &mut schemars::Schema,
+    names: impl IntoIterator<Item = &'static str>,
+) {
+    let object = schema
+        .as_object_mut()
+        .expect("a derived struct schema is an object");
+    let required = object
+        .entry("required")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .expect("a derived struct schema has an array of required fields");
+    for name in names {
+        if !required.iter().any(|field| field == name) {
+            required.push(serde_json::Value::String(name.to_owned()));
+        }
+    }
+}
+
 const REFERENCE_ID_MARKER: &str = "cadmpeg::reference_id";
 
 thread_local! {

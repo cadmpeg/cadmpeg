@@ -28,8 +28,9 @@ mod dialect;
 mod loss;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_ir::ContainerSummary;
 
 /// The stable format identifier and native namespace.
 pub(crate) const FORMAT: &str = "sat";

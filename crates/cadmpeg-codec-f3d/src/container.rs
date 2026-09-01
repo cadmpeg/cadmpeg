@@ -16,8 +16,9 @@ use std::io::Read;
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ContainerSummary;
 
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{acis_header, asm_header};
@@ -502,7 +503,13 @@ pub fn summarize(
     scan: &ContainerScan<'_>,
     dialects: cadmpeg_core::dialect::DialectLayers,
 ) -> ContainerSummary {
-    ContainerSummary::classified(dialects, "zip", scan.entries.clone(), summary_notes(scan))
+    ContainerSummary::classified(
+        dialects,
+        "zip",
+        scan.entries.clone(),
+        Vec::new(),
+        summary_notes(scan),
+    )
 }
 
 /// Container notes shared by inspection and decode report construction.
