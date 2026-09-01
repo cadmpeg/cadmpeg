@@ -186,7 +186,7 @@ mod tests {
     /// so with null rather than by omitting the key. A summary written
     /// before the field existed still reads back.
     #[test]
-    fn an_unclassified_summary_serializes_an_empty_dialects_key() {
+    fn an_unclassified_summary_serializes_a_null_dialects_key() {
         let summary = ContainerSummary::unclassified("rhino", "flat", Vec::new(), Vec::new());
 
         let bare = serde_json::to_string(&summary).expect("a summary serializes");

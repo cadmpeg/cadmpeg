@@ -122,9 +122,9 @@ pub enum RhinoLossCode {
     /// Document level, and the counterpart of the per-record code above:
     /// charged exactly when the primary-layer `crate::dialect` match is
     /// `Admission::AdmittedUnverified`, from the same predicate that decides
-    /// the admission. Words 2 through 90 share one chunked grammar, so a word
-    /// no row claims is read with the newest declared chunked row's strategy
-    /// rather than refused; nothing verified that the word means that grammar.
+    /// the admission. A word no row claims still selects its own chunk width
+    /// and checksum mechanics. No declared archive row is substituted, and
+    /// nothing verified that the observed word means those mechanics.
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,

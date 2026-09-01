@@ -125,9 +125,9 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     Some(CatiaLossCode::SourceDialectUnverified.note(format!(
         "This container matched no CATIA V5 storage family's structural invariants, so it \
          is `{}`. No decode route declares a grammar for that row, and no declared \
-                 dialect grammar was substituted; the file was \
-                 admitted under the metadata-IR fallback, which enumerates the container and \
-                 retains the source bytes without applying any family's record grammar.",
+         dialect grammar was substituted; the file was admitted under the metadata-IR \
+         fallback, which enumerates the container and retains the source bytes without applying \
+         any family's record grammar.",
         matched.dialect()
     )))
 }
