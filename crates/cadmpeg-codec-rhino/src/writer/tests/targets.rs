@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::units::Units;
 
-use crate::RhinoEncoder;
+use crate::RhinoCodec;
 
 /// An empty document that a Rhino decode of `dialect` would have produced.
 fn source_in(dialect: &'static str) -> CadIr {
@@ -22,7 +22,7 @@ fn source_in(dialect: &'static str) -> CadIr {
 }
 
 /// The resolved target `plan` reports for one request.
-fn resolved(ir: &CadIr, encoder: RhinoEncoder, request: TargetRequest<'_>) -> String {
+fn resolved(ir: &CadIr, encoder: RhinoCodec, request: TargetRequest<'_>) -> String {
     Encoder::plan(&encoder, EncodeInput::new(ir, None), request)
         .expect("the request resolves")
         .report()
@@ -43,7 +43,7 @@ fn resolved(ir: &CadIr, encoder: RhinoEncoder, request: TargetRequest<'_>) -> St
 fn inherit_resolves_to_the_source_archive_version() {
     let ir = source_in("rhino:archive-50");
     assert_eq!(
-        resolved(&ir, RhinoEncoder, TargetRequest::Inherit),
+        resolved(&ir, RhinoCodec, TargetRequest::Inherit),
         "rhino:archive-50"
     );
 }
@@ -54,11 +54,7 @@ fn inherit_resolves_to_the_source_archive_version() {
 fn an_explicit_target_wins_over_the_source_archive_version() {
     let ir = source_in("rhino:archive-50");
     assert_eq!(
-        resolved(
-            &ir,
-            RhinoEncoder,
-            TargetRequest::Explicit("rhino:archive-70"),
-        ),
+        resolved(&ir, RhinoCodec, TargetRequest::Explicit("rhino:archive-70"),),
         "rhino:archive-70"
     );
 }
@@ -74,7 +70,7 @@ fn a_cross_format_request_resolves_to_the_catalog_default() {
     assert_eq!(
         resolved(
             &ir,
-            RhinoEncoder,
+            RhinoCodec,
             TargetRequest::Explicit(default.id.as_str()),
         ),
         "rhino:archive-80"
@@ -92,7 +88,7 @@ fn a_cross_format_request_resolves_to_the_catalog_default() {
 fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
     let ir = CadIr::empty(Units::default());
     assert_eq!(
-        resolved(&ir, RhinoEncoder, TargetRequest::Inherit),
+        resolved(&ir, RhinoCodec, TargetRequest::Inherit),
         "rhino:archive-80"
     );
 }
@@ -113,7 +109,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         std::collections::BTreeMap::new(),
     ));
     let error = Encoder::plan(
-        &RhinoEncoder,
+        &RhinoCodec,
         EncodeInput::new(&ir, None),
         TargetRequest::Inherit,
     )
@@ -140,7 +136,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
 fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     let ir = source_in("rhino:archive-50");
     let plan = Encoder::plan(
-        &RhinoEncoder,
+        &RhinoCodec,
         EncodeInput::new(&ir, None),
         TargetRequest::Explicit("rhino:archive-70"),
     )
@@ -165,7 +161,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
 fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     let ir = source_in("rhino:archive-50");
     let plan = Encoder::plan(
-        &RhinoEncoder,
+        &RhinoCodec,
         EncodeInput::new(&ir, None),
         TargetRequest::Explicit("rhino:archive-50"),
     )
@@ -186,7 +182,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
 #[test]
 fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
     let ir = source_in("rhino:archive-3");
-    let encoder = RhinoEncoder;
+    let encoder = RhinoCodec;
     let error = Encoder::plan(
         &encoder,
         EncodeInput::new(&ir, None),
@@ -238,7 +234,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         crate::RhinoArchiveVersion::V8,
     ] {
         let plan = Encoder::plan(
-            &RhinoEncoder,
+            &RhinoCodec,
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(version.target()),
         )

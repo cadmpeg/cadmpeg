@@ -15,7 +15,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
-use super::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use super::{RhinoArchiveVersion, RhinoCodec};
 
 /// Extension of the committed fixture inputs.
 const FIXTURE_EXTENSION: &str = "3dm";
@@ -82,7 +82,7 @@ const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
     ("v8", RhinoArchiveVersion::V8),
 ];
 
-/// The archive [`RhinoEncoder`] produces for one target, or the refusal it
+/// The archive [`RhinoCodec`] produces for one target, or the refusal it
 /// reports.
 ///
 /// The request is [`TargetRequest::Explicit`], which is what the golden name
@@ -96,7 +96,7 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
         .ok()?;
     let mut encoded = Vec::new();
     let written = Encoder::plan(
-        &RhinoEncoder,
+        &RhinoCodec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
         TargetRequest::Explicit(version.target()),
     )

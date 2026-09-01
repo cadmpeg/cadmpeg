@@ -105,7 +105,7 @@ fn main() {
             codec
                 .plan(
                     EncodeInput::new(black_box(&ir), None),
-                    TargetRequest::Explicit(StepSchema::default().target()),
+                    TargetRequest::Explicit(StepSchema::default().descriptor().id.as_str()),
                 )
                 .and_then(|plan| plan.write_to(&mut output))
                 .expect("required invariant"),

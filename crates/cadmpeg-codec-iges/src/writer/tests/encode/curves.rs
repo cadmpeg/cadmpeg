@@ -12,7 +12,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
             &DecodeOptions::default(),
         )
         .expect("the ellipse fixture decodes");
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(IgesVersion::V5_0.target()),

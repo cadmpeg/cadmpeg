@@ -78,22 +78,19 @@ impl IgesVersion {
         Self::V5_3.descriptor(),
     ];
 
-    /// The registry dialect id this version writes.
-    ///
-    /// The spelling a caller passes as `TargetRequest::Explicit`, and the
-    /// value `ExportReport::target` carries after a synthesis at this version.
-    #[must_use]
-    pub const fn target(self) -> &'static str {
+    const fn target(self) -> &'static str {
         dialect::IgesDialect::fixed_ascii(self).pinned()
     }
 
     pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
         Self::ALL
             .into_iter()
-            .find(|version| version.target() == target.id.as_str())
+            .find(|version| version.descriptor().id == target.id)
     }
 
-    const fn descriptor(self) -> TargetDescriptor {
+    /// The typed write-target catalog row for this version.
+    #[must_use]
+    pub const fn descriptor(self) -> TargetDescriptor {
         let (aliases, default) = match self {
             Self::V4_0 => (&["4.0"].as_slice(), false),
             Self::V5_0 => (&["5.0"].as_slice(), false),
@@ -189,17 +186,7 @@ impl CodecBackend for IgesCodec {
     }
 }
 
-/// IGES encoder.
-///
-/// Carries no target state. Which dialect an export writes is
-/// [`TargetRequest`]'s answer, resolved against the source: an explicit target
-/// names it, `Inherit` preserves the source's own, and a document with nothing
-/// to inherit falls to the catalog default. An encoder-held version would be a
-/// fourth answer, and the one that used to override the other three.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct IgesEncoder;
-
-impl Encoder for IgesEncoder {
+impl Encoder for IgesCodec {
     fn id(&self) -> &'static str {
         "iges"
     }

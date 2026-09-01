@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::layout::file_header;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn source_less_points_round_trip_across_target_versions() {
@@ -33,7 +33,7 @@ fn source_less_points_round_trip_across_target_versions() {
         (RhinoArchiveVersion::V8, "80"),
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -68,7 +68,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     });
 
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -99,7 +99,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         ir.tolerances.linear = linear;
         ir.tolerances.angular = angular;
         let mut output = vec![0xaa];
-        let error = RhinoEncoder
+        let error = RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -122,7 +122,7 @@ fn rejection_occurs_before_output() {
         source_object: None,
     });
     let mut output = vec![0xaa];
-    assert!(RhinoEncoder
+    assert!(RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target())
@@ -146,7 +146,7 @@ fn source_less_circle_round_trips_with_its_frame() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -194,7 +194,7 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -282,7 +282,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -335,7 +335,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -368,7 +368,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         },
     );
     assert!(matches!(
-        RhinoEncoder.plan(
+        RhinoCodec.plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target())
         ),
@@ -402,7 +402,7 @@ fn mesh_precision_is_target_specific_and_reported() {
             channels: Vec::new(),
         });
     let mut v5 = Vec::new();
-    let v5_report = RhinoEncoder
+    let v5_report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V5.target()),
@@ -415,7 +415,7 @@ fn mesh_precision_is_target_specific_and_reported() {
         .expect("required invariant");
     assert_ne!(decoded_v5.ir().model.tessellations[0].vertices[0].x, 0.1);
     let mut v8 = Vec::new();
-    let v8_report = RhinoEncoder
+    let v8_report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -475,7 +475,7 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
             channels: channels.clone(),
         });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -532,7 +532,7 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
         });
 
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -601,7 +601,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         });
     }
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -631,7 +631,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -645,7 +645,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     decoded.ir_mut().model.points[0].position = Point3::new(4.0, 5.0, 6.0);
 
     let mut output = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -670,7 +670,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -693,7 +693,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
         ));
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -723,7 +723,7 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
         source_object: None,
     });
     let mut output = vec![0xaa];
-    assert!(RhinoEncoder
+    assert!(RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target())

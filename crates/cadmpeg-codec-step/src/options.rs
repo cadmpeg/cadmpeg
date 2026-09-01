@@ -92,11 +92,7 @@ impl StepSchema {
         Self::Ap242Edition3.descriptor(),
     ];
 
-    /// The registry dialect id this schema writes.
-    ///
-    /// The spelling a caller passes as `TargetRequest::Explicit`.
-    #[must_use]
-    pub const fn target(self) -> &'static str {
+    pub(crate) const fn target(self) -> &'static str {
         self.pinned()
     }
 
@@ -115,7 +111,7 @@ impl StepSchema {
     pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
         Self::ALL
             .into_iter()
-            .find(|schema| schema.target() == target.id.as_str())
+            .find(|schema| schema.descriptor().id == target.id)
     }
 
     const fn pinned(self) -> &'static str {
@@ -129,7 +125,9 @@ impl StepSchema {
         }
     }
 
-    const fn descriptor(self) -> TargetDescriptor {
+    /// The typed write-target catalog row for this schema.
+    #[must_use]
+    pub const fn descriptor(self) -> TargetDescriptor {
         let (aliases, default) = match self {
             Self::Ap203Edition1 => (&["ap203e1"].as_slice(), false),
             Self::Ap203Edition2 => (&["ap203e2"].as_slice(), false),

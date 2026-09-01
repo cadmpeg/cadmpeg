@@ -20,10 +20,9 @@ pub struct DialectProvenance {
     pub id: DialectId,
     /// The declared read disposition for that id, when the registry has one.
     pub read: Option<ReadDisposition>,
-    /// The target ids this build can synthesize for the format, in catalog
-    /// order. Empty when the build has no encoder for it, or the encoder has
-    /// no catalog.
-    pub write_targets: Vec<&'static str>,
+    /// The typed targets this build can synthesize for the format, in catalog
+    /// order. Empty when the build has no encoder or the encoder has no catalog.
+    pub write_targets: &'static [TargetDescriptor],
 }
 
 /// The provenance of the primary dialect the codec matched.
@@ -36,11 +35,7 @@ pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectPro
     Some(DialectProvenance {
         id: entry.dialect().clone(),
         read: support(entry.dialect()).map(|disposition| disposition.read),
-        write_targets: catalog_of(entry.format())
-            .unwrap_or(&[])
-            .iter()
-            .map(|target| target.id.as_str())
-            .collect(),
+        write_targets: catalog_of(entry.format()).unwrap_or(&[]),
     })
 }
 
@@ -154,8 +149,14 @@ mod tests {
         let provenance = dialect_provenance(Some(&dialects)).expect("a primary layer exists");
         assert_eq!(provenance.id.as_str(), "rhino:archive-50");
         assert!(provenance.read.is_some());
-        assert!(provenance.write_targets.contains(&"rhino:archive-50"));
-        assert!(provenance.write_targets.contains(&"rhino:archive-80"));
+        assert!(provenance
+            .write_targets
+            .iter()
+            .any(|target| target.id.as_str() == "rhino:archive-50"));
+        assert!(provenance
+            .write_targets
+            .iter()
+            .any(|target| target.id.as_str() == "rhino:archive-80"));
     }
 
     #[test]

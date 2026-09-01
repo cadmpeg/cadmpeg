@@ -11,7 +11,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
 
 use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn planar_triangle_sheet_round_trips_connected_topology() {
@@ -56,7 +56,7 @@ fn planar_sheet_round_trips_object_attributes() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -103,7 +103,7 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -171,7 +171,7 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -245,7 +245,7 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -314,7 +314,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder
+        RhinoCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -350,7 +350,7 @@ fn open_planar_solid_is_rejected_before_output() {
     let mut ir = adjacent_quad_sheet();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),

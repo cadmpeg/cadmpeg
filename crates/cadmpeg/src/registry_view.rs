@@ -96,7 +96,7 @@ pub fn dialect_lines(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) ->
     if !write_targets.is_empty() {
         let targets = write_targets
             .iter()
-            .map(|id| suffix(id))
+            .map(|target| suffix(target.id.as_str()))
             .collect::<Vec<_>>()
             .join(", ");
         clauses.push(format!("write targets {targets}"));

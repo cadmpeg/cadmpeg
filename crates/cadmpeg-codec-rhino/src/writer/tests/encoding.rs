@@ -13,7 +13,7 @@ use cadmpeg_ir::topology::{Color, Point};
 use cadmpeg_ir::units::Units;
 
 use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn empty_utf16_string_has_zero_count_and_no_terminator() {
@@ -62,7 +62,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -91,7 +91,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -111,7 +111,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -140,7 +140,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -160,7 +160,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder
+    RhinoCodec
         .plan(
             EncodeInput::new(&source, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),
@@ -193,7 +193,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder
+    let error = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.target()),

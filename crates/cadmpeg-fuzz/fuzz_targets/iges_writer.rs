@@ -5,7 +5,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_codec_iges::{IgesCodec, IgesEncoder, IgesVersion};
+use cadmpeg_codec_iges::{IgesCodec, IgesVersion};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::WritePath;
@@ -32,7 +32,7 @@ fuzz_target!(|data: &[u8]| {
         1 => IgesVersion::V5_2,
         _ => IgesVersion::V5_3,
     };
-    let encoder = IgesEncoder;
+    let encoder = IgesCodec;
 
     if control & 0x80 != 0 {
         ir.set_native_unknowns_owned(
@@ -47,12 +47,18 @@ fuzz_target!(|data: &[u8]| {
             }],
         );
         assert!(encoder
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit(version.target()))
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .is_err());
         return;
     }
 
-    let Ok(plan) = encoder.plan(EncodeInput::new(&ir, None), TargetRequest::Explicit(version.target())) else {
+        let Ok(plan) = encoder.plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
+        ) else {
         return;
     };
     let mut encoded = Vec::new();
@@ -86,7 +92,10 @@ fuzz_target!(|data: &[u8]| {
     }
 
     let replay = encoder
-        .plan(EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())), TargetRequest::Explicit(version.target()))
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
         .expect("writer output must plan after the optional source edit");
     if control & 0x40 == 0 {
         assert_eq!(replay.write_path(), WritePath::VerbatimReplay);

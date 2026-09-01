@@ -1863,3 +1863,45 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::DecodeReport::{classified,unclassified}"
 reason = "report construction accepts one typed DecodeTransfer instead of two independent booleans that could encode a contradictory transfer state"
+
+[[change]]
+commit = "9e72f09dd8e26ac9e64c67f2e9849ed545fb82cc"
+crate = "cadmpeg-codec-iges"
+kind = "deletion"
+item = "cadmpeg_codec_iges::IgesEncoder"
+reason = "IgesEncoder carried no state or invariant; IgesCodec now implements Encoder directly as the one codec descriptor"
+
+[[change]]
+commit = "9e72f09dd8e26ac9e64c67f2e9849ed545fb82cc"
+crate = "cadmpeg-codec-rhino"
+kind = "deletion"
+item = "cadmpeg_codec_rhino::RhinoEncoder"
+reason = "RhinoEncoder carried no state or invariant; RhinoCodec now implements Encoder directly as the one codec descriptor"
+
+[[change]]
+commit = "9e72f09dd8e26ac9e64c67f2e9849ed545fb82cc"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::DialectProvenance::write_targets"
+reason = "dialect provenance retains the registry-owned TargetDescriptor catalog instead of demoting typed target identities to strings"
+
+[[change]]
+commit = "9e72f09dd8e26ac9e64c67f2e9849ed545fb82cc"
+crate = "cadmpeg-codec-iges"
+kind = "signature"
+item = "cadmpeg_codec_iges::IgesVersion::target -> descriptor"
+reason = "the public writer vocabulary exposes its typed TargetDescriptor row instead of an unvalidated dialect string"
+
+[[change]]
+commit = "9e72f09dd8e26ac9e64c67f2e9849ed545fb82cc"
+crate = "cadmpeg-codec-rhino"
+kind = "signature"
+item = "cadmpeg_codec_rhino::RhinoArchiveVersion::target -> descriptor"
+reason = "the public writer vocabulary exposes its typed TargetDescriptor row instead of an unvalidated dialect string"
+
+[[change]]
+commit = "9e72f09dd8e26ac9e64c67f2e9849ed545fb82cc"
+crate = "cadmpeg-codec-step"
+kind = "signature"
+item = "cadmpeg_codec_step::StepSchema::target -> descriptor"
+reason = "the public writer vocabulary exposes its typed TargetDescriptor row instead of an unvalidated dialect string"

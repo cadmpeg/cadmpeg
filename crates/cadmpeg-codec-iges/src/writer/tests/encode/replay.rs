@@ -27,7 +27,7 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .dialect()
         .cloned()
         .unwrap();
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Explicit(IgesVersion::V5_2.target()),
@@ -60,7 +60,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         format,
         source.attributes,
     ));
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(&unclassified, Some(decoded.source_fidelity())),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),
@@ -76,7 +76,7 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),
@@ -113,7 +113,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
             source_object: None,
             position: Point3::new(1.0, 2.0, 3.0),
         });
-        let plan = IgesEncoder
+        let plan = IgesCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit(version.target()),
@@ -136,7 +136,7 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         source_object: None,
         position: Point3::new(7.0, 8.0, 9.0),
     });
-    let plan = IgesEncoder
+    let plan = IgesCodec
         .plan(
             EncodeInput::new(&edited, Some(decoded.source_fidelity())),
             TargetRequest::Explicit(IgesVersion::V5_3.target()),

@@ -90,21 +90,19 @@ impl RhinoArchiveVersion {
         Self::V8.descriptor(),
     ];
 
-    /// The registry dialect id this version writes.
-    ///
-    /// The spelling a caller passes as `TargetRequest::Explicit`.
-    #[must_use]
-    pub const fn target(self) -> &'static str {
+    const fn target(self) -> &'static str {
         self.pinned()
     }
 
     pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
         Self::ALL
             .into_iter()
-            .find(|version| version.target() == target.id.as_str())
+            .find(|version| version.descriptor().id == target.id)
     }
 
-    const fn descriptor(self) -> TargetDescriptor {
+    /// The typed write-target catalog row for this archive version.
+    #[must_use]
+    pub const fn descriptor(self) -> TargetDescriptor {
         let (aliases, default) = match self {
             Self::V5 => (&["50"].as_slice(), false),
             Self::V6 => (&["6", "60"].as_slice(), false),
@@ -135,17 +133,6 @@ impl RhinoArchiveVersion {
         matches!(self, Self::V7 | Self::V8)
     }
 }
-
-/// Native 3DM encoder.
-///
-/// Carries no target state. Which archive version an export writes is
-/// [`TargetRequest`]'s answer, resolved against the source: an explicit target
-/// names it, `Inherit` synthesizes the source's own, and a document with
-/// nothing to inherit falls to the catalog default — the `default: true` row of
-/// [`Encoder::targets`], which is also what a cross-format conversion into 3DM
-/// resolves to.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RhinoEncoder;
 
 impl CodecBackend for RhinoCodec {
     fn id(&self) -> &'static str {
@@ -188,7 +175,7 @@ const OFF_CATALOG_SOURCE_REASON: &str =
     "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
 
-impl Encoder for RhinoEncoder {
+impl Encoder for RhinoCodec {
     fn id(&self) -> &'static str {
         "rhino"
     }
