@@ -48,25 +48,22 @@ pub(crate) fn plan(
 fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<u8>), CodecError> {
     let mut bytes = Vec::new();
     let written = match input.fidelity {
-        Some(value) => {
+        Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
-            if replay_eligible {
-                SldprtCodec::write_preserved_with_annotations(
-                    input.ir,
-                    &value.annotations,
-                    &records,
-                    &mut bytes,
-                )?
-            } else {
-                SldprtCodec::write_semantic(
-                    input.ir,
-                    &value.annotations,
-                    &records,
-                    SemanticFidelity::Resolution(FidelityResolution::NotConsumed),
-                    &mut bytes,
-                )?
-            }
+            SldprtCodec::write_preserved_with_annotations(
+                input.ir,
+                &value.annotations,
+                &records,
+                &mut bytes,
+            )?
         }
+        Some(_) => SldprtCodec::write_semantic(
+            input.ir,
+            &Annotations::default(),
+            &[],
+            SemanticFidelity::Resolution(FidelityResolution::NotConsumed),
+            &mut bytes,
+        )?,
         None => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
