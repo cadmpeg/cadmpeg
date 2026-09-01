@@ -95,10 +95,11 @@ impl RhinoArchiveVersion {
         self.pinned()
     }
 
-    pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
+    pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
         Self::ALL
             .into_iter()
             .find(|version| version.descriptor().id == target.id)
+            .expect("Rhino target catalog is projected from RhinoArchiveVersion::ALL")
     }
 
     /// The typed write-target catalog row for this archive version.
@@ -205,12 +206,7 @@ impl Encoder for RhinoCodec {
         let Some(entry) = resolved.catalog_entry() else {
             return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
         };
-        let version = RhinoArchiveVersion::from_target(entry).ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "Rhino target catalog entry {} has no typed archive version",
-                entry.id
-            ))
-        })?;
+        let version = RhinoArchiveVersion::from_catalog_entry(entry);
         let mut bytes = Vec::new();
         writer::write(input.ir, version, &mut bytes)?;
         let vertex_quantization = !version.stores_mesh_vertices_as_f64()

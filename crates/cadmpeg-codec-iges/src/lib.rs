@@ -83,10 +83,11 @@ impl IgesVersion {
         dialect::IgesDialect::fixed_ascii(self).pinned()
     }
 
-    pub(crate) fn from_target(target: &TargetDescriptor) -> Option<Self> {
+    pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
         Self::ALL
             .into_iter()
             .find(|version| version.descriptor().id == target.id)
+            .expect("IGES target catalog is projected from IgesVersion::ALL")
     }
 
     /// The typed write-target catalog row for this version.
