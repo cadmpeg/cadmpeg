@@ -374,7 +374,7 @@ impl CodecBackend for SldprtCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        let dialects = dialect::classify_layers(&scan)?;
+        let dialects = dialect::classify_layers(&scan);
         Ok(container::summarize(&scan, dialects))
     }
 
