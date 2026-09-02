@@ -21,8 +21,6 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CreoLossCode {
-    /// Container-only decode skipped entity transfer.
-    ContainerOnlyDecode,
     /// PSB section census and prototype/instance transfer summary.
     ContainerCensus,
     /// No persistence-layout discriminant matched, so no layout-specific
@@ -159,7 +157,6 @@ pub enum CreoLossCode {
 impl CreoLossCode {
     /// Every code, in declaration order.
     pub const ALL: &'static [CreoLossCode] = &[
-        Self::ContainerOnlyDecode,
         Self::ContainerCensus,
         Self::SourceDialectUnverified,
         Self::LegacyRealValueUnresolved,
@@ -231,7 +228,6 @@ impl CreoLossCode {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
-            Self::ContainerOnlyDecode => "container.decode-skipped",
             Self::ContainerCensus => "container.census",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
@@ -306,8 +302,7 @@ impl CreoLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::ContainerOnlyDecode
-            | Self::ContainerCensus
+            Self::ContainerCensus
             | Self::VisibGeomSurfaceAmbiguous
             | Self::VisibGeomCurveAmbiguous
             | Self::CarrierVisibGeomPlanes
@@ -339,7 +334,6 @@ impl CreoLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ContainerOnlyDecode => LossTaxonomy::ContainerOnly,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerCensus
             | Self::CarrierVisibGeomPlanes
@@ -437,7 +431,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "container.decode-skipped",
                 "container.census",
                 "source.dialect-unverified",
                 "legacy.real-value-unresolved",

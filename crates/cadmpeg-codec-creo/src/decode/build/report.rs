@@ -102,13 +102,6 @@ pub(in super::super) fn build_report(
     // `ir.source`; the report body carries only the charge.
     losses.extend(classification.loss());
 
-    if container_only {
-        losses.push(
-            CreoLossCode::ContainerOnlyDecode
-                .note("Container-only decode requested; entity transfer was skipped."),
-        );
-    }
-
     // The namespace census: what is byte-backed and readable.
     let srf = scan
         .framing

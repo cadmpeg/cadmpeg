@@ -80,8 +80,6 @@ pub enum NxLossCode {
     AssemblyComponentsExternal,
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred,
-    /// Container-only decode skipped entity transfer.
-    ContainerOnly,
 }
 
 impl NxLossCode {
@@ -113,7 +111,6 @@ impl NxLossCode {
         Self::NonParasolidStreamOmitted,
         Self::AssemblyComponentsExternal,
         Self::GeometryNotTransferred,
-        Self::ContainerOnly,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -146,7 +143,6 @@ impl NxLossCode {
             Self::NonParasolidStreamOmitted => "stream.non-parasolid-omitted",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::GeometryNotTransferred => "geometry.not-transferred",
-            Self::ContainerOnly => "decode.container-only",
         }
     }
 
@@ -158,8 +154,7 @@ impl NxLossCode {
             | Self::CarrierTessellationCensus
             | Self::DeltasApplied
             | Self::ContainerStreamOpaque
-            | Self::NonParasolidStreamOmitted
-            | Self::ContainerOnly => Severity::Info,
+            | Self::NonParasolidStreamOmitted => Severity::Info,
             Self::TopologyGraphNotReconstructed
             | Self::AssemblyComponentsExternal
             | Self::GeometryNotTransferred => Severity::Blocking,
@@ -214,7 +209,6 @@ impl NxLossCode {
             Self::NonParasolidStreamOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::AssemblyComponentsExternal => LossTaxonomy::AssemblyComponentsExternal,
             Self::GeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::ContainerOnly => LossTaxonomy::ContainerOnly,
         }
     }
 
@@ -272,7 +266,6 @@ mod tests {
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
                 "geometry.not-transferred",
-                "decode.container-only",
             ]
         );
     }

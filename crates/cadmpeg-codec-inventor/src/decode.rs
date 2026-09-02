@@ -1412,11 +1412,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut losses = Vec::new();
     losses.extend(classification.loss);
     losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
-    if ctx.container_only() {
-        losses.push(
-            InventorLossCode::ContainerOnlyDecode.note("Container-only decode was requested."),
-        );
-    } else if !matches!(document_kind, DocumentKind::Assembly) && !geometry_transferred {
+    if !ctx.container_only()
+        && !matches!(document_kind, DocumentKind::Assembly)
+        && !geometry_transferred
+    {
         let detail = geometry_failure.unwrap_or_else(|| match &container.rse.active_carrier {
             ActiveCarrierState::Selected(_) => {
                 "The typed active kernel carrier has not been transferred.".into()
