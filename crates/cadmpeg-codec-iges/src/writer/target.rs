@@ -3,10 +3,10 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    Consumption, EncodeInput, ExportBody, ResolvedTarget, ResolvedWrite, SourceIdentity,
+    Consumption, EncodeInput, ExportBody, ResolvedTarget, ResolvedWrite, SourceIdentity, WritePath,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::{CadIr, SourceFidelity, WritePath};
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
 
@@ -68,7 +68,6 @@ fn replay_or_synthesize(
 fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
     super::body(
         bytes,
-        Consumption::Replayed,
         WritePath::VerbatimReplay,
         Vec::new(),
         "preserved source container replayed verbatim",
@@ -114,8 +113,7 @@ fn synthesized_body(
     };
     Ok(super::body(
         synthesis.bytes,
-        consumption,
-        WritePath::Synthesized,
+        WritePath::Synthesized { consumption },
         losses,
         "IGES Fixed ASCII container regenerated from supported neutral geometry",
         synthesis.counts,

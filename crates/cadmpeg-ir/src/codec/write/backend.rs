@@ -11,7 +11,8 @@ use std::io::Write;
 
 use crate::document::CadIr;
 use crate::report::{
-    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, WritePath,
+    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote,
+    WritePath as ReportWritePath,
 };
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::dialect::DialectId;
@@ -169,18 +170,14 @@ impl<E: EncoderBackend> Encoder for E {
     ) -> Result<ExportPlan, CodecError> {
         let (target, identity) = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let body = self.plan_resolved(input, target)?;
-        let fidelity = match input.fidelity {
-            None => FidelityResolution::NotProvided,
-            Some(_) => body.consumption.into(),
-        };
         let ExportBody {
             bytes,
             census,
             write_path,
             losses,
             notes,
-            consumption: _,
         } = body;
+        let (write_path, fidelity) = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => {
                 ExportReport::dialect_free(E::FORMAT, census, fidelity, write_path, losses, notes)
@@ -212,12 +209,11 @@ impl<'a> EncodeInput<'a> {
 
 /// What a backend did with the source fidelity it was given.
 ///
-/// Reported for every plan; the wrapper maps it onto
-/// [`FidelityResolution`] and discards it when the input carried no fidelity.
+/// Carried only by synthesized writes and patches that did not replay source
+/// content. The wrapper maps it onto [`FidelityResolution`] and discards it
+/// when the input carried no fidelity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Consumption {
-    /// Preserved source content was consumed successfully.
-    Replayed,
     /// This backend does not consume source fidelity.
     NotConsumed,
     /// Fidelity was available but could not be consumed.
@@ -230,9 +226,64 @@ pub enum Consumption {
 impl From<Consumption> for FidelityResolution {
     fn from(consumption: Consumption) -> Self {
         match consumption {
-            Consumption::Replayed => Self::Replayed,
             Consumption::NotConsumed => Self::NotConsumed,
             Consumption::Degraded { reason } => Self::Degraded { reason },
+        }
+    }
+}
+
+/// How a patched write handled the source fidelity supplied to it.
+///
+/// Some patchers edit retained sidecar bytes. Others patch native records
+/// already stored in the IR and either do not consume the sidecar or report
+/// why an eligible sidecar path was unavailable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchConsumption {
+    /// Retained source content was consumed successfully.
+    Replayed,
+    /// The patch did not replay retained source content.
+    Independent(Consumption),
+}
+
+/// Structurally valid backend write paths and their fidelity consumption.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WritePath {
+    /// The writer authored every output byte from neutral IR.
+    Synthesized {
+        /// How the synthesized write handled available source fidelity.
+        consumption: Consumption,
+    },
+    /// The writer rewrote part of a container it did not author in full.
+    Patched {
+        /// How the patch handled available source fidelity.
+        consumption: PatchConsumption,
+    },
+    /// Retained source bytes were copied unchanged.
+    VerbatimReplay,
+}
+
+impl WritePath {
+    pub(super) fn into_report(
+        self,
+        fidelity_provided: bool,
+    ) -> (ReportWritePath, FidelityResolution) {
+        let (write_path, fidelity) = match self {
+            Self::Synthesized { consumption } => (ReportWritePath::Synthesized, consumption.into()),
+            Self::Patched {
+                consumption: PatchConsumption::Replayed,
+            } => (ReportWritePath::Patched, FidelityResolution::Replayed),
+            Self::Patched {
+                consumption: PatchConsumption::Independent(consumption),
+            } => (ReportWritePath::Patched, consumption.into()),
+            Self::VerbatimReplay => (
+                ReportWritePath::VerbatimReplay,
+                FidelityResolution::Replayed,
+            ),
+        };
+        if fidelity_provided {
+            (write_path, fidelity)
+        } else {
+            (write_path, FidelityResolution::NotProvided)
         }
     }
 }
@@ -253,8 +304,6 @@ pub struct ExportBody {
     pub losses: Vec<LossNote>,
     /// Free-form notes.
     pub notes: Vec<String>,
-    /// What the backend did with the fidelity it was given.
-    pub consumption: Consumption,
 }
 
 impl ExportBody {
@@ -267,10 +316,11 @@ impl ExportBody {
                 basis: CensusBasis::IrArenas,
                 counts: ir.census(),
             },
-            write_path: WritePath::Synthesized,
+            write_path: WritePath::Synthesized {
+                consumption: Consumption::NotConsumed,
+            },
             losses: Vec::new(),
             notes: Vec::new(),
-            consumption: Consumption::NotConsumed,
         }
     }
 }

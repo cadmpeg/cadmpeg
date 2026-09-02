@@ -2,12 +2,13 @@
 //! F3D target resolution, preservation dispatch, and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    Consumption, EncodeInput, ExportBody, PatchConsumption, ResolvedWrite, WritePath,
+};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::WritePath;
 
 use crate::loss::F3dLossCode;
-use crate::{ids, F3dCodec};
+use crate::{ids, F3dCodec, PreservedWritePath};
 
 /// Plan the export the resolved request names.
 ///
@@ -56,7 +57,7 @@ pub(crate) fn plan(
 enum Preservation {
     Written {
         bytes: Vec<u8>,
-        write_path: WritePath,
+        write_path: PreservedWritePath,
     },
     Declined,
 }
@@ -84,8 +85,14 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     Ok(Preservation::Written { bytes, write_path })
 }
 
-fn preserved_body(ir: &CadIr, write_path: WritePath, bytes: Vec<u8>) -> ExportBody {
-    body(ir, Consumption::Replayed, write_path, Vec::new(), bytes)
+fn preserved_body(ir: &CadIr, write_path: PreservedWritePath, bytes: Vec<u8>) -> ExportBody {
+    let write_path = match write_path {
+        PreservedWritePath::Patched => WritePath::Patched {
+            consumption: PatchConsumption::Replayed,
+        },
+        PreservedWritePath::VerbatimReplay => WritePath::VerbatimReplay,
+    };
+    body(ir, write_path, Vec::new(), bytes)
 }
 
 fn synthesized_body(
@@ -118,8 +125,7 @@ fn synthesized_body(
     }
     Ok(body(
         input.ir,
-        consumption,
-        WritePath::Synthesized,
+        WritePath::Synthesized { consumption },
         losses,
         bytes,
     ))
@@ -127,11 +133,15 @@ fn synthesized_body(
 
 fn body(
     ir: &CadIr,
-    consumption: Consumption,
     write_path: WritePath,
     losses: Vec<cadmpeg_ir::LossNote>,
     bytes: Vec<u8>,
 ) -> ExportBody {
+    let path_note = match &write_path {
+        WritePath::VerbatimReplay => "preserved source container replayed verbatim",
+        WritePath::Patched { .. } => "preserved source container replayed with semantic patches",
+        WritePath::Synthesized { .. } => "source container regenerated from IR",
+    };
     ExportBody {
         bytes,
         census: cadmpeg_ir::EntityCensus {
@@ -141,14 +151,8 @@ fn body(
         write_path,
         losses,
         notes: vec![
-            match write_path {
-                WritePath::VerbatimReplay => "preserved source container replayed verbatim",
-                WritePath::Patched => "preserved source container replayed with semantic patches",
-                WritePath::Synthesized => "source container regenerated from IR",
-            }
-            .into(),
+            path_note.into(),
             "entity counts are derived from the IR".into(),
         ],
-        consumption,
     }
 }

@@ -1,4 +1,4 @@
-# generated at dc0657d0f
+# generated at 8e28e283d
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -162,9 +162,11 @@ pub enum cadmpeg_ir::codec::write::Consumption
 pub cadmpeg_ir::codec::write::Consumption::Degraded
 pub cadmpeg_ir::codec::write::Consumption::Degraded::reason: alloc::string::String
 pub cadmpeg_ir::codec::write::Consumption::NotConsumed
-pub cadmpeg_ir::codec::write::Consumption::Replayed
 impl core::convert::From<cadmpeg_ir::codec::write::Consumption> for cadmpeg_ir::FidelityResolution
 pub fn cadmpeg_ir::FidelityResolution::from(cadmpeg_ir::codec::write::Consumption) -> Self
+pub enum cadmpeg_ir::codec::write::PatchConsumption
+pub cadmpeg_ir::codec::write::PatchConsumption::Independent(cadmpeg_ir::codec::write::Consumption)
+pub cadmpeg_ir::codec::write::PatchConsumption::Replayed
 pub enum cadmpeg_ir::codec::write::ResolvedTarget<'a>
 pub cadmpeg_ir::codec::write::ResolvedTarget::Default
 pub cadmpeg_ir::codec::write::ResolvedTarget::Default::entry: &'static cadmpeg_core::target::TargetDescriptor
@@ -188,6 +190,12 @@ pub cadmpeg_ir::codec::write::SourceIdentity::Unrecorded
 pub enum cadmpeg_ir::codec::write::TargetRequest<'a>
 pub cadmpeg_ir::codec::write::TargetRequest::Explicit(&'a str)
 pub cadmpeg_ir::codec::write::TargetRequest::Inherit
+pub enum cadmpeg_ir::codec::write::WritePath
+pub cadmpeg_ir::codec::write::WritePath::Patched
+pub cadmpeg_ir::codec::write::WritePath::Patched::consumption: cadmpeg_ir::codec::write::PatchConsumption
+pub cadmpeg_ir::codec::write::WritePath::Synthesized
+pub cadmpeg_ir::codec::write::WritePath::Synthesized::consumption: cadmpeg_ir::codec::write::Consumption
+pub cadmpeg_ir::codec::write::WritePath::VerbatimReplay
 pub struct cadmpeg_ir::codec::write::CadirEncoder
 impl cadmpeg_ir::codec::write::EncoderBackend for cadmpeg_ir::codec::write::CadirEncoder
 pub type cadmpeg_ir::codec::write::CadirEncoder::Target = cadmpeg_ir::codec::write::DialectFree
@@ -210,10 +218,9 @@ pub const fn cadmpeg_ir::codec::write::EncodeInput<'a>::new(&'a cadmpeg_ir::docu
 pub struct cadmpeg_ir::codec::write::ExportBody
 pub cadmpeg_ir::codec::write::ExportBody::bytes: alloc::vec::Vec<u8>
 pub cadmpeg_ir::codec::write::ExportBody::census: cadmpeg_ir::EntityCensus
-pub cadmpeg_ir::codec::write::ExportBody::consumption: cadmpeg_ir::codec::write::Consumption
 pub cadmpeg_ir::codec::write::ExportBody::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::codec::write::ExportBody::notes: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::codec::write::ExportBody::write_path: cadmpeg_ir::WritePath
+pub cadmpeg_ir::codec::write::ExportBody::write_path: cadmpeg_ir::codec::write::WritePath
 impl cadmpeg_ir::codec::write::ExportBody
 pub fn cadmpeg_ir::codec::write::ExportBody::synthesized(alloc::vec::Vec<u8>, &cadmpeg_ir::document::CadIr) -> Self
 pub struct cadmpeg_ir::codec::write::ExportPlan

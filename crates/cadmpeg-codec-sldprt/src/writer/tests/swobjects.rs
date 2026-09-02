@@ -35,7 +35,10 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
     let path = SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
-    assert_eq!(path, cadmpeg_ir::WritePath::Patched);
+    assert!(matches!(
+        path,
+        cadmpeg_ir::codec::write::WritePath::Patched { .. }
+    ));
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

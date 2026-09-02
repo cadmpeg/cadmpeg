@@ -2,8 +2,7 @@
 //! Rhino target resolution and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
-use cadmpeg_ir::WritePath;
+use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
 
 use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
@@ -79,9 +78,10 @@ pub(crate) fn plan(
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: input.ir.census(),
         },
-        write_path: WritePath::Synthesized,
+        write_path: WritePath::Synthesized {
+            consumption: Consumption::NotConsumed,
+        },
         losses,
         notes: vec![format!("3DM archive version {}", version.value())],
-        consumption: Consumption::NotConsumed,
     })
 }

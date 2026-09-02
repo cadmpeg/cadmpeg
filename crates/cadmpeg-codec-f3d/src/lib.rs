@@ -143,6 +143,21 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 #[derive(Debug, Default, Clone, Copy)]
 pub struct F3dCodec;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PreservedWritePath {
+    Patched,
+    VerbatimReplay,
+}
+
+impl PreservedWritePath {
+    const fn report_path(self) -> WritePath {
+        match self {
+            Self::Patched => WritePath::Patched,
+            Self::VerbatimReplay => WritePath::VerbatimReplay,
+        }
+    }
+}
+
 impl F3dCodec {
     /// Write a decoded F3D document using its source-fidelity sidecar.
     #[cfg_attr(not(test), allow(dead_code))] // Crate-owned replay tests exercise this write door.
@@ -162,6 +177,7 @@ impl F3dCodec {
             CodecError::Malformed("retained F3D source image has no bytes".into())
         })?;
         Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
+            .map(PreservedWritePath::report_path)
     }
 
     /// Replay retained source bytes when the document baseline still matches;
@@ -172,7 +188,7 @@ impl F3dCodec {
         byte_len: u64,
         sha256: &str,
         writer: &mut dyn Write,
-    ) -> Result<WritePath, CodecError> {
+    ) -> Result<PreservedWritePath, CodecError> {
         let expected = ir
             .source
             .as_ref()
@@ -186,10 +202,10 @@ impl F3dCodec {
         }
         if decode::document_local_sha256(ir) != *expected {
             writer::patch::write_semantic(ir, data, writer)?;
-            return Ok(WritePath::Patched);
+            return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;
-        Ok(WritePath::VerbatimReplay)
+        Ok(PreservedWritePath::VerbatimReplay)
     }
 }
 
