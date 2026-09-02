@@ -1,4 +1,4 @@
-# generated at 16f57b50b
+# generated at 87a3bb910
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4472,10 +4472,8 @@ pub cadmpeg_ir::report::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNo
 pub cadmpeg_ir::report::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::report::ExportReport::write_path: cadmpeg_ir::WritePath
 impl cadmpeg_ir::ExportReport
-pub fn cadmpeg_ir::ExportReport::cadir(cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::ExportReport::format(&self) -> &str
-pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
 impl serde_core::ser::Serialize for cadmpeg_ir::ExportReport
 pub fn cadmpeg_ir::ExportReport::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
@@ -7278,10 +7276,8 @@ pub cadmpeg_ir::ExportReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::ExportReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::ExportReport::write_path: cadmpeg_ir::WritePath
 impl cadmpeg_ir::ExportReport
-pub fn cadmpeg_ir::ExportReport::cadir(cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::ExportReport::format(&self) -> &str
-pub fn cadmpeg_ir::ExportReport::native(cadmpeg_core::dialect::DialectId, cadmpeg_ir::EntityCensus, cadmpeg_ir::FidelityResolution, cadmpeg_ir::WritePath, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::ExportReport::target(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectId>
 impl serde_core::ser::Serialize for cadmpeg_ir::ExportReport
 pub fn cadmpeg_ir::ExportReport::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>

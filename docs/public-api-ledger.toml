@@ -2486,3 +2486,10 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::report::DecodeReport::{classified,unclassified}"
 reason = "production decode reports are constructed only by the sealed Codec wrapper or deserialization; test-only constructors no longer bypass that author"
+
+[[change]]
+commit = "87a3bb910d8f36570cab813a67b9051433eca0a9"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::report::ExportReport::{native,cadir}"
+reason = "production export reports are stamped only by the sealed Encoder wrapper; direct constructors remain internal to report tests and wrapper implementation"

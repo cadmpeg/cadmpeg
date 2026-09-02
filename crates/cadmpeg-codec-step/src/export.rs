@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
+#[cfg(test)]
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -22,8 +24,6 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
-#[cfg(test)]
-use cadmpeg_ir::{FidelityResolution, WritePath};
 
 use crate::geometry;
 use crate::loss::StepLossCode;
@@ -48,19 +48,19 @@ const EPS_IDENTITY: f64 = 1.0e-12;
 #[cfg(test)]
 pub(crate) fn write_step(
     ir: &CadIr,
-    w: &mut (impl Write + ?Sized),
+    w: &mut impl Write,
     schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> std::io::Result<ExportReport> {
-    let outcome = write_step_outcome(ir, w, schema, opts)?;
-    Ok(ExportReport::native(
-        schema.descriptor().id,
-        outcome.census,
-        FidelityResolution::NotProvided,
-        WritePath::Synthesized,
-        outcome.losses,
-        outcome.notes,
-    ))
+    let plan = crate::StepCodec {
+        options: opts.clone(),
+    }
+    .plan(
+        EncodeInput::new(ir, None),
+        TargetRequest::Explicit(schema.descriptor().id.as_str()),
+    )
+    .map_err(std::io::Error::other)?;
+    plan.write_to(w).map_err(std::io::Error::other)
 }
 
 /// Report components produced by the STEP writer before the caller fixes its
