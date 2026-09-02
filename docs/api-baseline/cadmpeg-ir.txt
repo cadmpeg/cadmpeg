@@ -1,4 +1,4 @@
-# generated at e27f6adec
+# generated at dc0657d0f
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4434,6 +4434,16 @@ pub cadmpeg_ir::report::TransferDisposition::Approximated
 pub cadmpeg_ir::report::TransferDisposition::Emitted
 pub cadmpeg_ir::report::TransferDisposition::Omitted
 pub cadmpeg_ir::report::TransferDisposition::Retained
+pub enum cadmpeg_ir::report::TransferOutcome
+pub cadmpeg_ir::report::TransferOutcome::Approximated
+pub cadmpeg_ir::report::TransferOutcome::Approximated::note: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::report::TransferOutcome::Approximated::target: alloc::string::String
+pub cadmpeg_ir::report::TransferOutcome::Emitted(alloc::string::String)
+pub cadmpeg_ir::report::TransferOutcome::Omitted
+pub cadmpeg_ir::report::TransferOutcome::Omitted::note: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::report::TransferOutcome::Retained
+pub cadmpeg_ir::report::TransferOutcome::Retained::note: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::report::TransferOutcome::Retained::target: alloc::string::String
 pub enum cadmpeg_ir::report::WritePath
 pub cadmpeg_ir::report::WritePath::Patched
 pub cadmpeg_ir::report::WritePath::Synthesized
@@ -4519,13 +4529,15 @@ pub struct cadmpeg_ir::report::TransferLedger
 pub cadmpeg_ir::report::TransferLedger::entries: alloc::vec::Vec<cadmpeg_ir::report::TransferRecord>
 impl cadmpeg_ir::report::TransferLedger
 pub fn cadmpeg_ir::report::TransferLedger::is_empty(&self) -> bool
-pub fn cadmpeg_ir::report::TransferLedger::record(&mut self, impl core::convert::Into<alloc::string::String>, core::option::Option<alloc::string::String>, cadmpeg_ir::report::TransferDisposition, core::option::Option<alloc::string::String>)
+pub fn cadmpeg_ir::report::TransferLedger::record(&mut self, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::TransferOutcome)
 pub fn cadmpeg_ir::report::TransferLedger::verify(&self, &cadmpeg_ir::index::ModelIndex<'_>) -> core::result::Result<(), alloc::string::String>
 pub struct cadmpeg_ir::report::TransferRecord
-pub cadmpeg_ir::report::TransferRecord::disposition: cadmpeg_ir::report::TransferDisposition
-pub cadmpeg_ir::report::TransferRecord::note: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::report::TransferRecord::outcome: cadmpeg_ir::report::TransferOutcome
 pub cadmpeg_ir::report::TransferRecord::source: alloc::string::String
-pub cadmpeg_ir::report::TransferRecord::target: core::option::Option<alloc::string::String>
+impl cadmpeg_ir::report::TransferRecord
+pub const fn cadmpeg_ir::report::TransferRecord::disposition(&self) -> cadmpeg_ir::report::TransferDisposition
+pub fn cadmpeg_ir::report::TransferRecord::note(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::report::TransferRecord::target(&self) -> core::option::Option<&str>
 pub struct cadmpeg_ir::report::ValidationReport
 pub cadmpeg_ir::report::ValidationReport::entity_counts: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub cadmpeg_ir::report::ValidationReport::findings: alloc::vec::Vec<cadmpeg_ir::Finding>

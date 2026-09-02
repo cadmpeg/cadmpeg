@@ -321,7 +321,7 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
     let transfer = &result.report().transfer_ledger.entries[0];
     assert_eq!(transfer.source, "D1");
     assert_eq!(
-        transfer.note.as_deref(),
+        transfer.note(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
 }
@@ -443,7 +443,7 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
     assert_eq!(
-        witness.report().transfer_ledger.entries[0].note.as_deref(),
+        witness.report().transfer_ledger.entries[0].note(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
     let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new());
