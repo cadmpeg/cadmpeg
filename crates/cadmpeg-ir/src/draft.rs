@@ -190,14 +190,25 @@ pub enum DraftError {
 ///
 /// Plan prose calls this stage `DocumentDraft`. Prefer that name in docs; this
 /// type remains the runtime draft that commits into [`CadIr`].
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ModelDraft {
     model: Model,
-    identity_index: IdentityIndex,
-    identities_synced: bool,
+    identity_index: Option<IdentityIndex>,
     exactness: BTreeMap<String, ExactnessNote>,
     notes: Vec<LossNote>,
     ledger: TransferLedger,
+}
+
+impl Default for ModelDraft {
+    fn default() -> Self {
+        Self {
+            model: Model::default(),
+            identity_index: Some(IdentityIndex::new()),
+            exactness: BTreeMap::new(),
+            notes: Vec::new(),
+            ledger: TransferLedger::default(),
+        }
+    }
 }
 
 /// Plan name for [`ModelDraft`] in the
@@ -207,21 +218,19 @@ pub type DocumentDraft = ModelDraft;
 impl ModelDraft {
     /// Creates an empty draft.
     pub fn new() -> Self {
-        Self {
-            identities_synced: true,
-            ..Self::default()
-        }
+        Self::default()
     }
 
     /// Inserts one entity, rejecting draft-local identity collisions immediately.
     pub fn insert<T: ArenaEntity>(&mut self, entity: T) -> Result<(), DraftError> {
-        self.synchronize_identities()?;
+        let mut identity_index = self.take_identity_index()?;
         let identity = entity.identity();
-        if identity_index_contains(&self.model, &self.identity_index, identity) {
+        if identity_index_contains(&self.model, &identity_index, identity) {
+            self.identity_index = Some(identity_index);
             return Err(DraftError::IdentityCollision(identity.to_owned()));
         }
         let index = T::arena(&self.model).len();
-        self.identity_index
+        identity_index
             .entry(identity_hash(identity))
             .or_default()
             .push(IdentitySlot {
@@ -229,6 +238,7 @@ impl ModelDraft {
                 index,
             });
         T::arena_mut(&mut self.model).push(entity);
+        self.identity_index = Some(identity_index);
         Ok(())
     }
 
@@ -239,7 +249,7 @@ impl ModelDraft {
 
     /// Returns the mutable staged arena for one entity type.
     pub fn arena_mut<T: ArenaEntity>(&mut self) -> &mut Vec<T> {
-        self.identities_synced = false;
+        self.identity_index = None;
         T::arena_mut(&mut self.model)
     }
 
@@ -253,7 +263,7 @@ impl ModelDraft {
     /// Commit still checks all identities and references, including entities inserted
     /// through this lower-level surface.
     pub fn model_mut(&mut self) -> &mut Model {
-        self.identities_synced = false;
+        self.identity_index = None;
         &mut self.model
     }
 
@@ -332,13 +342,11 @@ impl ModelDraft {
         self.validate_with_contains(|identity| identities.contains(identity))
     }
 
-    fn synchronize_identities(&mut self) -> Result<(), DraftError> {
-        if self.identities_synced {
-            return Ok(());
+    fn take_identity_index(&mut self) -> Result<IdentityIndex, DraftError> {
+        match self.identity_index.take() {
+            Some(identity_index) => Ok(identity_index),
+            None => index_model_identities(&self.model),
         }
-        self.identity_index = index_model_identities(&self.model)?;
-        self.identities_synced = true;
-        Ok(())
     }
 
     /// Validates staged identities and references against one identity universe.
@@ -351,7 +359,7 @@ impl ModelDraft {
         &mut self,
         contains: impl Fn(&str) -> bool,
     ) -> Result<(), DraftError> {
-        self.synchronize_identities()?;
+        let identity_index = self.take_identity_index()?;
         macro_rules! check_external_identities {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
                 $(for entity in &self.model.$field {
@@ -370,11 +378,7 @@ impl ModelDraft {
                     entity.visit_references(&mut |reference| {
                         if missing.is_none()
                             && !contains(&reference.target)
-                            && !identity_index_contains(
-                                &self.model,
-                                &self.identity_index,
-                                &reference.target,
-                            )
+                            && !identity_index_contains(&self.model, &identity_index, &reference.target)
                         {
                             missing = Some(reference.target);
                         }
@@ -389,6 +393,7 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(validate_arenas);
+        self.identity_index = Some(identity_index);
         Ok(())
     }
 
@@ -423,8 +428,7 @@ impl ModelDraft {
         let identity_index = index_model_identities(&self.model)?;
         self.exactness
             .retain(|identity, _| identity_index_contains(&self.model, &identity_index, identity));
-        self.identity_index = identity_index;
-        self.identities_synced = true;
+        self.identity_index = Some(identity_index);
         self.commit(base, annotations, notes, ledger)
     }
 
@@ -438,7 +442,6 @@ impl ModelDraft {
         let Self {
             mut model,
             identity_index: _,
-            identities_synced: _,
             exactness,
             notes: staged_notes,
             ledger: staged_ledger,
