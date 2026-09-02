@@ -244,10 +244,13 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
 #[test]
 fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(SourceMeta::unclassified(
-        crate::dialect::FORMAT,
-        std::collections::BTreeMap::new(),
-    ));
+    ir.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "format": crate::dialect::FORMAT,
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
 
     let error = inherit(&StepCodec::default(), &ir)
         .expect_err("a STEP source with no dialect has nothing to preserve");

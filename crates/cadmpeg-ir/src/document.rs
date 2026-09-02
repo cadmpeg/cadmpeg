@@ -495,7 +495,10 @@ struct SourceMetaWriteWire<'a> {
 
 impl Default for SourceMeta {
     fn default() -> Self {
-        Self::unclassified(String::new(), BTreeMap::new())
+        Self {
+            classification: FormatIdentity::unclassified(String::new()),
+            attributes: BTreeMap::new(),
+        }
     }
 }
 
@@ -555,15 +558,6 @@ impl SourceMeta {
     pub fn classified(dialects: DialectLayers, attributes: BTreeMap<String, String>) -> Self {
         Self {
             classification: FormatIdentity::classified(dialects),
-            attributes,
-        }
-    }
-
-    /// Constructs metadata for a known source format without a dialect match.
-    #[must_use]
-    pub fn unclassified(format: impl Into<String>, attributes: BTreeMap<String, String>) -> Self {
-        Self {
-            classification: FormatIdentity::unclassified(format),
             attributes,
         }
     }

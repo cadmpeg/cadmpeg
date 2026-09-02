@@ -177,7 +177,11 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
             DialectLayers::of(DialectMatch::admitted(DialectId::pinned(id))),
             BTreeMap::new(),
         ),
-        None => crate::document::SourceMeta::unclassified(format, BTreeMap::new()),
+        None => serde_json::from_value(serde_json::json!({
+            "format": format,
+            "attributes": {},
+        }))
+        .unwrap(),
     });
     ir
 }

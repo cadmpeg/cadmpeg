@@ -451,8 +451,10 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
             == "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot."
     }));
 
-    ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
-        "sldprt",
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+        )),
         BTreeMap::from([("sw_configuration_0_needs_update".into(), "YES".into())]),
     ));
     report.losses.clear();

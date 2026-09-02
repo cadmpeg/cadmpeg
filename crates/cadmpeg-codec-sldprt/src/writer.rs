@@ -3699,8 +3699,12 @@ mod nurbs_write_tests {
             },
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
-        ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
-            "sldprt",
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(
+                    cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+                ),
+            ),
             std::collections::BTreeMap::from([(PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash)]),
         ));
         assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
