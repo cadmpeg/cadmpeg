@@ -137,8 +137,8 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         .iter()
         .find(|entry| entry.source == "D3")
         .expect("quarantined directory ledger row");
-    assert_eq!(row.target.as_deref(), Some("iges:quarantine:directory#3"));
-    assert_eq!(row.disposition, TransferDisposition::Retained);
+    assert_eq!(row.target(), Some("iges:quarantine:directory#3"));
+    assert_eq!(row.disposition(), TransferDisposition::Retained);
 
     let summary = IgesCodec
         .inspect(

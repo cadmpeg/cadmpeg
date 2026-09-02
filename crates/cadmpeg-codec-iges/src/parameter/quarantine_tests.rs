@@ -117,23 +117,17 @@ fn a_token_that_is_not_a_number_quarantines_only_that_parameter_data() {
         .iter()
         .find(|entry| entry.source == "D1")
         .expect("typed entity ledger row");
+    assert_eq!(entity_row.target(), Some("iges:entity:directory#1"));
     assert_eq!(
-        entity_row.target.as_deref(),
-        Some("iges:entity:directory#1")
-    );
-    assert_eq!(
-        entity_row.note.as_deref(),
+        entity_row.note(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
     let quarantine_row = ledger
         .iter()
         .find(|entry| entry.source == "D1:parameter")
         .expect("quarantined parameter ledger row");
-    assert_eq!(
-        quarantine_row.target.as_deref(),
-        Some("iges:quarantine:parameter#1")
-    );
-    assert_eq!(quarantine_row.disposition, TransferDisposition::Retained);
+    assert_eq!(quarantine_row.target(), Some("iges:quarantine:parameter#1"));
+    assert_eq!(quarantine_row.disposition(), TransferDisposition::Retained);
 }
 
 #[test]
@@ -196,7 +190,7 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
         .entries
         .iter()
         .any(|entry| entry.source == "D3:parameter"
-            && entry.target.as_deref() == Some("iges:quarantine:parameter#3")));
+            && entry.target() == Some("iges:quarantine:parameter#3")));
 }
 
 #[test]

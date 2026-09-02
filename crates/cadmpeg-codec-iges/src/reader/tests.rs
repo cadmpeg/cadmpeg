@@ -53,7 +53,7 @@ fn transfer_ledger_reports_an_unprojected_native_only_direction() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityRetainedUnprojected.kind()));
     assert_eq!(
-        result.report().transfer_ledger.entries[0].note.as_deref(),
+        result.report().transfer_ledger.entries[0].note(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
 }

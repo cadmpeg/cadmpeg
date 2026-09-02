@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
 use cadmpeg_ir::hash::{
     document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
 };
-use cadmpeg_ir::report::{LossNote, Severity, TransferDisposition, TransferLedger};
+use cadmpeg_ir::report::{LossNote, Severity, TransferLedger, TransferOutcome};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
@@ -509,28 +509,31 @@ fn decode_with_occurrence_limits(
         };
         transfer_ledger.record(
             format!("D{}", entry.sequence),
-            Some(format!("iges:entity:directory#{}", entry.sequence)),
-            TransferDisposition::Retained,
-            Some(note.into()),
+            TransferOutcome::Retained {
+                target: format!("iges:entity:directory#{}", entry.sequence),
+                note: Some(note.into()),
+            },
         );
     }
     for record in &parse.quarantined_directory {
         transfer_ledger.record(
             format!("D{}", record.sequence),
-            Some(record.identity()),
-            TransferDisposition::Retained,
-            Some(
-                "quarantined directory record retained; typed Directory fields were not recovered"
-                    .into(),
-            ),
+            TransferOutcome::Retained {
+                target: record.identity(),
+                note: Some(
+                    "quarantined directory record retained; typed Directory fields were not recovered"
+                        .into(),
+                ),
+            },
         );
     }
     for record in &parse.quarantined_parameters {
         transfer_ledger.record(
             format!("D{}:parameter", record.sequence),
-            Some(record.identity()),
-            TransferDisposition::Retained,
-            Some("quarantined parameter data retained; tokens were not recovered".into()),
+            TransferOutcome::Retained {
+                target: record.identity(),
+                note: Some("quarantined parameter data retained; tokens were not recovered".into()),
+            },
         );
     }
     transfer_ledger
