@@ -322,8 +322,8 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
             .decode(&mut Cursor::new(bytes), &strict_options(false))
             .unwrap_err();
         match error {
-            cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
-                loss_code,
+            cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+                rejection.loss().code.as_str(),
                 IgesLossCode::GlobalSemanticContextSubstituted
                     .kind()
                     .as_str()

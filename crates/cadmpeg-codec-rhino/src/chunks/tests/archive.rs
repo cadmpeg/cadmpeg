@@ -500,21 +500,20 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
         .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)
         .expect_err("strict mode refuses an undecodable framed object record");
 
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected {
-        loss_code, message, ..
-    } = &error
-    else {
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
         panic!("a strict refusal is a policy class, not a container defect: {error:?}");
     };
     assert_eq!(
-        loss_code,
-        &crate::loss::RhinoLossCode::ObjectFramingUndecodable
-            .kind()
-            .to_string()
+        rejection.loss().code,
+        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
     );
     assert!(
-        message.starts_with("1 framed object record(s)"),
-        "the refusal carries the loss message alone: {message}"
+        rejection
+            .loss()
+            .message
+            .starts_with("1 framed object record(s)"),
+        "the refusal carries the loss message alone: {}",
+        rejection.loss().message
     );
 }
 

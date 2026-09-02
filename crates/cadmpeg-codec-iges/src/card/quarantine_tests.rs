@@ -154,8 +154,8 @@ fn strict_decode_refuses_recovered_framing_that_salvage_admits() {
             .decode(&mut Cursor::new(bytes.clone()), &strict_options())
             .unwrap_err();
         match error {
-            cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
-                loss_code,
+            cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+                rejection.loss().code.as_str(),
                 IgesLossCode::CardFramingRecovered.kind().as_str()
             ),
             other => panic!("expected a strict refusal, got {other:?}"),

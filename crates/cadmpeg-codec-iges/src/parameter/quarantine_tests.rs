@@ -421,8 +421,8 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         .decode(&mut Cursor::new(bytes), &strict_options())
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
-            loss_code,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.as_str(),
             IgesLossCode::ParameterDataQuarantined.kind().as_str()
         ),
         other => panic!("expected a strict refusal, got {other:?}"),

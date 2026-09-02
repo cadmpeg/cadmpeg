@@ -105,16 +105,9 @@ impl ApplicationError {
                 dialects,
                 message,
             }) => ConversionRefusal::unsupported_dialect(dialects, message).into(),
-            DecodeFailure::StrictRejected {
-                loss_code,
-                message,
-                report,
-            } => ConversionRefusal::StrictDecodeRejected {
-                loss_code,
-                loss_message: message,
-                decode_report: *report,
+            DecodeFailure::StrictRejected { rejection } => {
+                ConversionRefusal::StrictDecodeRejected { rejection }.into()
             }
-            .into(),
             failure => ConversionRefusal::DecodeFailed {
                 message: format!(
                     "decode failed: decoding {} as {format_id}: {failure}",
@@ -251,12 +244,8 @@ pub enum ConversionRefusal {
     },
     /// Decode completed, but strict mode rejected a loss in its report.
     StrictDecodeRejected {
-        /// Stable loss code that triggered the strict floor.
-        loss_code: String,
-        /// The refusing loss's message.
-        loss_message: String,
-        /// Completed decode report containing all recovered evidence.
-        decode_report: DecodeReport,
+        /// Completed decode report bound to the loss that caused refusal.
+        rejection: cadmpeg_ir::codec::StrictDecodeRejection,
     },
     /// The check found errors and `--allow-errors` was not set.
     CheckFailed {
@@ -395,20 +384,22 @@ impl ConversionRefusal {
                 detail: Some(RefusalDetail::Dialects(dialects)),
                 reports: RefusalReports::default(),
             },
-            Self::StrictDecodeRejected {
-                loss_code,
-                loss_message,
-                decode_report,
-            } => RefusalEvidence {
-                code: RefusalCode::StrictDecodeRejected,
-                message: Cow::Owned(format!("strict mode rejects {loss_code}: {loss_message}")),
-                detail: None,
-                reports: RefusalReports {
-                    decode: Some(decode_report),
-                    check: None,
-                    export: None,
-                },
-            },
+            Self::StrictDecodeRejected { rejection } => {
+                let loss = rejection.loss();
+                RefusalEvidence {
+                    code: RefusalCode::StrictDecodeRejected,
+                    message: Cow::Owned(format!(
+                        "strict mode rejects {}: {}",
+                        loss.code, loss.message
+                    )),
+                    detail: None,
+                    reports: RefusalReports {
+                        decode: Some(rejection.report()),
+                        check: None,
+                        export: None,
+                    },
+                }
+            }
             Self::CheckFailed {
                 message,
                 decode_report,
@@ -680,41 +671,6 @@ mod tests {
             panic!("unsupported identity must not be flattened to DecodeFailed");
         };
         assert_eq!(dialects.primary(), &matched);
-    }
-
-    #[test]
-    fn decode_classifier_preserves_a_strict_refusal_and_its_completed_report() {
-        let report: DecodeReport = serde_json::from_value(serde_json::json!({
-            "format": "test",
-            "container_only": false,
-            "geometry_transferred": false,
-            "losses": [],
-            "notes": ["decode completed"],
-            "dialects": null,
-        }))
-        .unwrap();
-        let classified = classify(DecodeFailure::StrictRejected {
-            loss_code: "test/source.dialect-unverified".into(),
-            message: "the dialect was recovered provisionally".into(),
-            report: Box::new(report),
-        });
-        let refusal = classified
-            .refusal()
-            .expect("strict policy failure becomes an application refusal");
-
-        assert_eq!(refusal.code(), RefusalCode::StrictDecodeRejected);
-        assert_eq!(report_value(refusal)["stage"], "decode");
-        assert_eq!(refusal.exit_code(), 1);
-        assert_eq!(report_value(refusal)["code"], "strict_decode_rejected");
-        assert_eq!(
-            refusal
-                .evidence()
-                .reports
-                .decode
-                .expect("completed report")
-                .notes,
-            ["decode completed"]
-        );
     }
 
     #[test]

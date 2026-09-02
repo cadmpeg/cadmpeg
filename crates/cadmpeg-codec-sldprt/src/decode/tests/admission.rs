@@ -131,13 +131,12 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     // is that unrepresentable *geometry* is what refuses.
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. }) => {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
             assert_eq!(
-                loss_code,
-                SldprtLossCode::GeometryParasolidNotTransferred
-                    .kind()
-                    .to_string(),
-                "unexpected loss code: {loss_code}"
+                rejection.loss().code,
+                SldprtLossCode::GeometryParasolidNotTransferred.kind(),
+                "unexpected loss code: {}",
+                rejection.loss().code
             );
         }
         other => panic!("strict decode must reject unrepresentable geometry, got {other:?}"),
@@ -189,9 +188,9 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. }) => assert_eq!(
-            loss_code,
-            SldprtLossCode::KernelDialectUnverified.kind().to_string()
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => assert_eq!(
+            rejection.loss().code,
+            SldprtLossCode::KernelDialectUnverified.kind()
         ),
         other => panic!("strict decode must reject the residual kernel layer, got {other:?}"),
     }

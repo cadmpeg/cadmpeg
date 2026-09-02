@@ -152,13 +152,14 @@ fn the_strict_gate_refuses_a_full_decode_on_a_reject_floor_loss() {
         .unwrap_err();
 
     match error {
-        DecodeFailure::StrictRejected {
-            loss_code, report, ..
-        } => {
-            assert_eq!(loss_code, reject_floor_kind().to_string());
-            assert_eq!(report.losses.len(), 1);
-            assert_eq!(report.losses[0].code, reject_floor_kind());
-            assert_eq!(report.losses[0].message, "synthetic reject floor");
+        DecodeFailure::StrictRejected { rejection } => {
+            assert_eq!(rejection.loss().code, reject_floor_kind());
+            assert_eq!(rejection.report().losses.len(), 1);
+            assert_eq!(rejection.report().losses[0].code, reject_floor_kind());
+            assert_eq!(
+                rejection.report().losses[0].message,
+                "synthetic reject floor"
+            );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

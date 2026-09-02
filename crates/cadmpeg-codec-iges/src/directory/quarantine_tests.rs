@@ -249,8 +249,11 @@ fn a_pointer_into_a_quarantined_record_does_not_resolve() {
         .decode(&mut Cursor::new(bytes), &strict_options())
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => {
-            assert_eq!(loss_code, IgesLossCode::PointerUnresolved.kind().as_str());
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            assert_eq!(
+                rejection.loss().code.as_str(),
+                IgesLossCode::PointerUnresolved.kind().as_str()
+            );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }
@@ -307,8 +310,8 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         .decode(&mut Cursor::new(bytes), &strict_options())
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
-            loss_code,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.as_str(),
             IgesLossCode::DirectoryRecordQuarantined.kind().as_str()
         ),
         other => panic!("expected a strict refusal, got {other:?}"),
