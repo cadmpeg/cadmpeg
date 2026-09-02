@@ -44,7 +44,7 @@ fn cadir_encoder_census_matches_validation_counts() {
 struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
-    const FORMAT: &'static str = "selected";
+    const FORMAT: &'static str = "cadir";
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -56,12 +56,12 @@ impl EncoderBackend for NeutralEncoder {
 }
 
 #[test]
-fn the_wrapper_stamps_the_backend_format_on_a_dialect_free_plan() {
+fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
     let ir = CadIr::empty(crate::units::Units::default());
     let plan = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert_eq!(plan.report().format(), "selected");
+    assert_eq!(plan.report().format(), "cadir");
     assert_eq!(plan.report().target(), None);
     assert_eq!(plan.report().fidelity, FidelityResolution::NotProvided);
 }

@@ -179,9 +179,7 @@ impl<E: EncoderBackend> Encoder for E {
         } = body;
         let (write_path, fidelity) = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
-            None => {
-                ExportReport::dialect_free(E::FORMAT, census, fidelity, write_path, losses, notes)
-            }
+            None => ExportReport::cadir(census, fidelity, write_path, losses, notes),
             Some(target) => {
                 ExportReport::native(target, census, fidelity, write_path, losses, notes)
             }

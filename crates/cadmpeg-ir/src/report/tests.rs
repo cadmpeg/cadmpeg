@@ -249,7 +249,7 @@ fn export_report_wire_rejects_a_foreign_target_namespace() {
 }
 
 #[test]
-fn legacy_native_export_without_a_target_stays_unclassified() {
+fn native_export_without_a_target_is_rejected() {
     let legacy = serde_json::json!({
         "format": "rhino",
         "census": { "basis": "target_records", "counts": {} },
@@ -259,16 +259,13 @@ fn legacy_native_export_without_a_target_stays_unclassified() {
         "notes": [],
     });
 
-    let report = serde_json::from_value::<ExportReport>(legacy)
-        .expect("a report written before target existed remains readable");
-    assert_eq!(report.format(), "rhino");
-    assert_eq!(report.target(), None);
-    let migrated = serde_json::to_value(&report).unwrap();
-    assert_eq!(migrated["format"], "rhino");
-    assert!(migrated["target"].is_null());
-    assert_eq!(
-        serde_json::from_value::<ExportReport>(migrated).unwrap(),
-        report
+    let error = serde_json::from_value::<ExportReport>(legacy)
+        .expect_err("a native export report requires a target");
+    assert!(
+        error
+            .to_string()
+            .contains("native export report for format \"rhino\" requires a target"),
+        "{error}"
     );
 }
 
