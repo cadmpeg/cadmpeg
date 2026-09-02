@@ -17,6 +17,7 @@ use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point_with_budget;
@@ -1179,8 +1180,8 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
     }
 }
 
-/// Builds non-identity source metadata from the container scan.
-pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
+/// Builds source metadata from classified layers and the container scan.
+pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     let legacy_cfb = scan.container.is_legacy_cfb();
     attributes.insert(
@@ -1349,10 +1350,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
             );
         }
     }
-    SourceMeta::classified(
-        crate::dialect::classify_layers(scan).into_layers(),
-        attributes,
-    )
+    SourceMeta::classified(dialects.clone(), attributes)
 }
 
 #[cfg(test)]

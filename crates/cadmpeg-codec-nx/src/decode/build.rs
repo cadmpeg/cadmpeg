@@ -32,6 +32,7 @@ use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
@@ -45,6 +46,7 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -130,13 +132,15 @@ pub(crate) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     scan: &Scan,
+    dialects: &DialectLayers,
+    dialect_losses: &[LossNote],
+    notes: &[String],
     admitted_entities: &mut u64,
 ) -> Result<Option<GeometryDecode>, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     let mut stream_unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::ParsedStreams::parse(scan);
@@ -1029,6 +1033,8 @@ pub(crate) fn try_decode_geometry(
         return Ok(None);
     }
 
+    ir.source = Some(source_meta(scan, dialects));
+
     ctx.admit_entities(
         ir.model.entity_count() as u64,
         admitted_entities,
@@ -1114,6 +1120,8 @@ pub(crate) fn try_decode_geometry(
         &model,
         completion_budget,
         adaptive_geometry_budget.exhausted(),
+        dialect_losses,
+        notes,
     );
     report_untransferred_streams(scan, &mut report, true);
     Ok(Some((ir, report, annotations, unknowns)))

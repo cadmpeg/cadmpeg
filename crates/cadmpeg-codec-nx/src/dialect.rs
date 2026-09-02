@@ -92,16 +92,6 @@ impl LayerClassification {
         self.losses.extend(dialect_losses(&self.layers));
         (self.layers, self.losses)
     }
-
-    /// The classified layers; authored once onto `SourceMeta`.
-    pub(crate) fn into_layers(self) -> DialectLayers {
-        self.layers
-    }
-
-    /// The classification losses the decode body reports.
-    pub(crate) fn into_losses(self) -> Vec<LossNote> {
-        self.into_report_parts().1
-    }
 }
 
 /// Classify the host container and every schema-bearing Parasolid stream.

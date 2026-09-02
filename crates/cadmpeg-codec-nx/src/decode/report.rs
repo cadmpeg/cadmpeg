@@ -28,7 +28,7 @@ use super::geometry_work::{
 };
 use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
 use super::support_uv::pcurve_requires_completion;
-use super::{summarize, Counts, Scan};
+use super::{Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
 use cadmpeg_ir::codec::DecodeBody;
@@ -73,6 +73,8 @@ pub(crate) fn build_geometry_report(
     model: &crate::native::NativeModel,
     completion_budget: CompletionBudgetStatus,
     adaptive_geometry_exhausted: bool,
+    dialect_losses: &[LossNote],
+    notes: &[String],
 ) -> DecodeBody {
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
@@ -276,13 +278,12 @@ pub(crate) fn build_geometry_report(
         ));
     }
 
-    let (classification, notes) = summarize(scan);
-    losses.extend(classification.into_losses());
+    losses.extend_from_slice(dialect_losses);
     DecodeBody {
         transfer: cadmpeg_ir::DecodeTransfer::full(true),
         coverage: std::collections::BTreeMap::new(),
         losses,
-        notes,
+        notes: notes.to_vec(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
