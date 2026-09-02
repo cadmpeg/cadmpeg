@@ -481,9 +481,10 @@ fn decode_extracts_pmi_semantic_dimension() {
         &pmi_semantic_payload(),
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let native = sldprt_native(decoded.ir());
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one PMI dimension");
@@ -718,9 +719,10 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         ));
     }
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(sldprt_native(decoded.ir()).pmi_dimensions.len(), 2);
     assert_eq!(decoded.ir().model.parameters.len(), 1);
     assert!(decoded.report().losses.iter().all(|loss| !loss
@@ -798,9 +800,10 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
     );
     source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let ordinate = ir

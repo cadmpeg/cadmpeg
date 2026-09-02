@@ -112,12 +112,13 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     t_long(&mut parameter_tail, 0);
     append_generated_record_tail(&mut smbh, "coedge", &parameter_tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
-    let mut decoded = F3dCodec
+    let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
             &DecodeOptions::default(),
         )
         .expect("generated tolerant coedges must decode");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
 
     assert_eq!(decoded.ir().model.coedges.len(), 3);
     assert_eq!(decoded.ir().model.edges.len(), 3);

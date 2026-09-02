@@ -8,7 +8,7 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::examples::unit_cube;
 use crate::report::{LossKind, LossNote, LossTaxonomy};
-use crate::source_fidelity::{RetainedSourceRecord, SourceFidelity};
+use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
 use super::*;
@@ -23,65 +23,6 @@ fn decoded(ir: CadIr) -> Decoded {
 
 fn decode_result(ir: CadIr) -> DecodeResult {
     DecodeResult::new(decoded(ir), "test", false)
-}
-
-fn retained_record(id: &str, offset: u64) -> RetainedSourceRecord {
-    RetainedSourceRecord {
-        id: id.into(),
-        stream: "test".into(),
-        offset,
-        byte_len: 0,
-        sha256: String::new(),
-        data: None,
-    }
-}
-
-#[test]
-fn decode_result_edit_guards_restore_finalization() {
-    let mut result = decode_result(unit_cube());
-    {
-        let mut ir = result.ir_mut();
-        ir.model.points.reverse();
-    }
-    assert!(result
-        .ir()
-        .model
-        .points
-        .windows(2)
-        .all(|pair| pair[0].id < pair[1].id));
-
-    {
-        let mut fidelity = result.source_fidelity_mut();
-        fidelity
-            .retained_records
-            .extend([retained_record("b", 2), retained_record("a", 1)]);
-    }
-    assert_eq!(
-        result
-            .source_fidelity()
-            .retained_records
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<Vec<_>>(),
-        ["a", "b"]
-    );
-}
-
-#[test]
-fn decode_result_edit_guard_finalizes_during_unwind() {
-    let mut result = decode_result(unit_cube());
-    let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut ir = result.ir_mut();
-        ir.model.points.reverse();
-        panic!("abort edit");
-    }));
-    assert!(unwind.is_err());
-    assert!(result
-        .ir()
-        .model
-        .points
-        .windows(2)
-        .all(|pair| pair[0].id < pair[1].id));
 }
 
 struct RejectFloorCodec;

@@ -26,9 +26,10 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             <Mirror Name="Reflect" Type="Mirror" id="20" Seeds="7" PlaneOrigin="5mm,0mm,0mm" PlaneNormal="1,0,0"/>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let seed = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
@@ -164,9 +165,10 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Curve Pattern1" Type="CrvPattern" id="169"><Dimension Name="D3">397.6</Dimension><Dimension Name="D1">16</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
@@ -243,9 +245,10 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
@@ -348,9 +351,10 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         ),
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameter_index = decoded
         .ir()
         .model
@@ -426,9 +430,10 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         &resolved_feature_classes_with_ids(&[("moLPattern_c", "Unknown pattern", 132)]),
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
@@ -474,9 +479,10 @@ fn semantic_writer_round_trips_generic_pattern_type() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Seed" Type="NativeSeed" id="61"/><Pattern Name="Rows" Type="CustomPattern" id="62" PatternType="Linear" Seeds="61" Direction="1,0,0"><Dimension Name="Count">2</Dimension><Dimension Name="Spacing">4mm</Dimension></Pattern></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let FeatureDefinition::Pattern {
@@ -519,9 +525,10 @@ fn semantic_writer_round_trips_typed_sweep() {
             <Sweep Name="Pipe" Type="Sweep" id="24" Profile="21" Path="22" Operation="NewBody"><Dimension Name="Scale">1.5</Dimension><Dimension Name="Twist">90deg</Dimension></Sweep>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_a = decoded.ir().model.features[0].id.clone();
     let path = decoded.ir().model.features[1].native_ref.clone().unwrap();
     let profile_b = decoded.ir().model.features[2].id.clone();
@@ -615,9 +622,10 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moSweep_c", "Surface-Sweep1", 137)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
@@ -681,9 +689,10 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
         &resolved_feature_classes_with_ids(&[("moSweep_c", "Operacion1", 137)]),
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
@@ -734,9 +743,10 @@ fn semantic_writer_round_trips_typed_loft() {
             <Loft Name="Transition" Type="Loft" id="35" Profiles="31,32,33" Guides="34" Operation="NewBody" Closed="false"/>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let native_refs = decoded.ir().model.features[..5]
         .iter()
         .map(|feature| feature.native_ref.clone().unwrap())
@@ -809,9 +819,10 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
         br#"<Keywords><Loft Name="Unknown loft" Type="Custom" id="151"/></Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Loft {
@@ -859,9 +870,10 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
             <Boundary Name="Pocket" Type="BoundaryCut" id="44" Profiles="41,42"/>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let refs = decoded.ir().model.features[..2]
         .iter()
         .map(|feature| feature.id.clone())
@@ -935,9 +947,10 @@ fn semantic_writer_retains_partial_native_rib_construction() {
         br#"<Keywords><Rib Name="Unknown web" Type="Rib" id="42" Direction="0,1,0"><Dimension Name="Thickness">NaNmm</Dimension><Dimension Name="Draft">NaNrad</Dimension></Rib></Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Rib {
@@ -993,9 +1006,10 @@ fn semantic_writer_round_trips_typed_rib() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="RibProfile" Type="Sketch" id="41"/><Rib Name="Web" Type="Rib" id="42" Profile="41" Direction="0,1,0" BothSides="false" Operation="Join"><Dimension Name="Thickness">2mm</Dimension><Dimension Name="Draft">5deg</Dimension></Rib></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_ref = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
@@ -1042,12 +1056,13 @@ fn semantic_writer_round_trips_typed_rib() {
 
 #[test]
 fn semantic_writer_preserves_parametric_history() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
@@ -1076,12 +1091,13 @@ fn semantic_writer_preserves_parametric_history() {
 
 #[test]
 fn semantic_writer_applies_neutral_feature_edits() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.points[0].position.z += 1.0;
@@ -1131,12 +1147,13 @@ fn semantic_writer_applies_neutral_feature_edits() {
 
 #[test]
 fn semantic_writer_rejects_conflicting_feature_edits() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
@@ -1183,9 +1200,10 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_features_payload(&[0]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
@@ -1249,9 +1267,10 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     );
 
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1, 2, 3, 9]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let native = sldprt_native(decoded.ir());
     assert_eq!(native.feature_input_lanes.len(), 1);
     let lane = &native.feature_input_lanes[0];
@@ -1413,9 +1432,10 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
 #[test]
 fn semantic_writer_rejects_edited_feature_input_class_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
     });
@@ -1436,9 +1456,10 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
 #[test]
 fn semantic_writer_rewrites_feature_input_name_values() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].names[1].value = "Depth".into();
     });
@@ -1460,9 +1481,10 @@ fn semantic_writer_rewrites_feature_input_name_values() {
 #[test]
 fn semantic_writer_rejects_edited_feature_input_scalar_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].scalars[0].value = 0.050;
     });
@@ -1493,9 +1515,10 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_features_payload(&[0]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = ir_edit
@@ -1549,9 +1572,10 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_features_payload(&[0]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
@@ -1610,9 +1634,10 @@ fn semantic_writer_types_resolved_relation_scalar() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_features_payload_with_names(&[0], &["Sketch1", "D1"]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = ir_edit

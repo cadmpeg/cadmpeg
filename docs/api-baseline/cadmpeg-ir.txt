@@ -1,4 +1,4 @@
-# generated at 87a3bb910
+# generated at e27f6adec
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -288,11 +288,8 @@ pub cadmpeg_ir::codec::DecodeOptions::policy: cadmpeg_core::decode::policy::Deco
 impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
-pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::codec::Decoded, &str, bool) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
-pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 pub struct cadmpeg_ir::codec::Decoded
 pub cadmpeg_ir::codec::Decoded::body: cadmpeg_ir::codec::DecodeBody
 pub cadmpeg_ir::codec::Decoded::ir: cadmpeg_ir::document::CadIr
@@ -7201,11 +7198,8 @@ pub fn cadmpeg_ir::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de
 impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
-pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::codec::Decoded, &str, bool) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
-pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
 pub struct cadmpeg_ir::DecodeSidecar
 pub cadmpeg_ir::DecodeSidecar::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::DecodeSidecar::ir_sha256: alloc::string::String

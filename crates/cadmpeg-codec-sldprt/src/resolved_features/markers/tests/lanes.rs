@@ -105,9 +105,10 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
 #[test]
 fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
     });
@@ -128,9 +129,10 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
 #[test]
 fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
     });
@@ -150,7 +152,7 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
 
 #[test]
 fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -159,6 +161,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });
@@ -181,7 +184,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
 
 #[test]
 fn native_validation_rejects_duplicate_sketch_marker_offsets() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -190,6 +193,7 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
         native.feature_input_lanes[0].sketch_entities[1].offset = offset;
@@ -201,7 +205,7 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
 
 #[test]
 fn native_validation_requires_complete_ordered_sketch_markers() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -210,6 +214,7 @@ fn native_validation_requires_complete_ordered_sketch_markers() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
         native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;

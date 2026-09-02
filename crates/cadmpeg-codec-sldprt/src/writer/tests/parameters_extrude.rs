@@ -18,9 +18,10 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Base" EquationId="D1@Equations">2mm</Dimension><Dimension Name="Wall Thickness">4mm</Dimension><Dimension Name="Datum &quot;A&quot;">1mm</Dimension><Dimension Name="Driven" EquationId="D2@Equations">&quot;Wall Thickness&quot; + &quot;Datum &quot;&quot;A&quot;&quot;&quot; + D1@Equations + &quot;Wall Thickness&quot;</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.parameters.len(), 4);
     assert_eq!(
         decoded.ir().model.parameters[3].dependencies,
@@ -39,9 +40,10 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut renamed)
         .unwrap();
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(
         decoded.ir().model.parameters[3].expression,
         "\"Wall Gauge\" + \"Datum \"\"A\"\"\" + D1@Renamed + \"Wall Gauge\""
@@ -79,9 +81,10 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Result">Input + 1</Dimension><Dimension Name="Input">2</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let mut parameter_order = decoded
         .ir()
         .model
@@ -142,9 +145,10 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let sketch1 = decoded
         .ir()
         .model
@@ -206,9 +210,10 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1">2mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="11"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let width = ir_edit
@@ -224,9 +229,10 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
-    let mut regenerated = SldprtCodec
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
     let result = regenerated
         .ir()
         .model
@@ -289,9 +295,10 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1@Sketch1">2mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="11"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let sketch = ir_edit
@@ -352,9 +359,10 @@ fn semantic_writer_preserves_empty_dimensions() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth">12mm</Dimension><Dimension Name="External" Driven="true"/></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let empty = decoded
         .ir()
         .model
@@ -398,9 +406,10 @@ fn semantic_writer_preserves_keywords_attributes() {
         "Contents/Keywords",
         br#"<Keywords Name="Bracket" Schema="34000" Revision="12"><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
@@ -432,9 +441,10 @@ fn semantic_writer_preserves_keywords_child_order() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="First" Type="Custom" id="1"/>between<Configuration Name="Default" SourceIndex="0"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let depth = ir_edit
@@ -476,9 +486,10 @@ fn semantic_writer_applies_history_root_ordinals() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="First" Type="Custom" id="1"/><Configuration Name="A" SourceIndex="0"/><Feature Name="Second" Type="Custom" id="2"/><Configuration Name="B" SourceIndex="1"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
         feature.ordinal = u64::from(feature.name.as_deref() == Some("First"));
     }
@@ -524,9 +535,10 @@ fn semantic_writer_applies_neutral_parameter_order() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Ordered" Type="EquationDriven" id="41"><Dimension Name="First">1</Dimension><Child Name="Nested" Type="Folder" id="42"/><Dimension Name="Second">2</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for parameter in &mut decoded.ir_mut().model.parameters {
         parameter.ordinal = match parameter.name.as_str() {
             "First" => 1,
@@ -572,12 +584,13 @@ fn semantic_writer_applies_neutral_parameter_order() {
 fn semantic_writer_rejects_conflicting_parameter_edits() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = ir_edit
@@ -615,9 +628,10 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Equation" Type="EquationDriven" id="41"><Dimension Name="Depth" Driven="false">12mm</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.parameters[0]
         .properties
         .insert("Driven".into(), "neutral".into());
@@ -658,9 +672,10 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             <Extrusion Name="Custom operation" id="11"><Dimension Name="D1">4</Dimension></Extrusion>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let first_definition = &decoded.ir().model.features[0].definition;
     assert!(
         matches!(
@@ -761,9 +776,10 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
-    let mut regenerated = SldprtCodec
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].parameters["D1"], "250");
     assert_eq!(native[1].parameters["D1"], "4.5");
@@ -876,9 +892,10 @@ fn semantic_writer_round_trips_feature_output_scope() {
         .unwrap()
         .payload
         .clone();
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(
         decoded.ir().model.features[0].outputs,
         vec![decoded.ir().model.bodies[0].id.clone()]
@@ -924,9 +941,10 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Profile" Type="Sketch" id="30"/><Extrusion Name="Blind" Type="BossExtrude" id="31" Profile="30" EndCondition="Blind" Operation="Join"><Dimension Name="Depth">2mm</Dimension></Extrusion><Extrusion Name="Symmetric" Type="BossExtrude" id="32" Profile="30" EndCondition="Symmetric" Direction="0,0,1" Operation="NewBody"><Dimension Name="Depth">4mm</Dimension><Dimension Name="Draft">5deg</Dimension></Extrusion><Extrusion Name="Two" Type="CutExtrude" id="33" Profile="30" EndCondition="TwoSided" Operation="Cut"><Dimension Name="Depth">3mm</Dimension><Dimension Name="Depth2">7mm</Dimension></Extrusion><Extrusion Name="Through" Type="CutExtrude" id="34" Profile="30" EndCondition="ThroughAll" Direction="0,1,0" Operation="Cut"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_feature = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
@@ -1076,9 +1094,10 @@ fn semantic_writer_round_trips_extrusion_to_face() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Profile" Type="Sketch" id="30"/><Extrusion Name="UpTo" Type="BossExtrude" id="31" Profile="30" EndCondition="ToFace" Face="face:12" Operation="Join"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let FeatureDefinition::Extrude { extent, .. } = &mut ir_edit.model.features[1].definition
@@ -1158,9 +1177,10 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         ]),
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
@@ -1222,9 +1242,10 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
         "Contents/Keywords",
         br#"<Keywords><Fillet Name="Round" Type="Fillet" id="10" Edges="edge:1,edge:2"><Dimension Name="Radius">2mm</Dimension></Fillet></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
@@ -1303,9 +1324,10 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             ("Chamfer_c", "Bevel", 11),
         ]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
@@ -1407,9 +1429,10 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         "Contents/Keywords",
         br#"<Keywords><Fillet Name="Blend" Type="Fillet" id="61"><Dimension Name="Position0">0</Dimension><Dimension Name="Radius0">2mm</Dimension><Dimension Name="Position1">0.5</Dimension><Dimension Name="Radius1">4mm</Dimension><Dimension Name="Position2">1</Dimension><Dimension Name="Radius2">3mm</Dimension></Fillet></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
@@ -1439,9 +1462,10 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
-    let mut regenerated = SldprtCodec
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
     let native = sldprt_native(regenerated.ir());
     assert_eq!(
         native.feature_histories[0].features[0].parameters["Position1"],
@@ -1493,9 +1517,10 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
             <Chamfer Name="Angled" Type="Chamfer" id="13" Edges="edge:3"><Dimension Name="Distance">4mm</Dimension><Dimension Name="Angle">45deg</Dimension></Chamfer>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Chamfer {
@@ -1595,9 +1620,10 @@ fn semantic_writer_retains_partial_native_wall_operations() {
         br#"<Keywords><Shell Name="Unknown shell" Type="Shell" id="14" RemovedFaces="face:1"><Dimension Name="Thickness">NaNmm</Dimension></Shell><Thicken Name="Unknown thicken" Type="Thicken" id="15" Faces="face:2" BothSides="invalid"><Dimension Name="Thickness">NaNmm</Dimension></Thicken></Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Shell {

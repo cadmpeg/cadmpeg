@@ -47,9 +47,10 @@ fn decode_and_validate_compact_delete_body_selection() {
         &payload,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(!decoded
         .report()
         .losses

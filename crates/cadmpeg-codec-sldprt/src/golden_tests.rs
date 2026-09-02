@@ -60,7 +60,8 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(mut result) => {
+            Ok(result) => {
+                let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
                 if let Some(source) = result.ir_mut().source.as_mut() {
                     // The `native` lane digests cover retained source bytes and
                     // stay pinned; a `_local_sha256` digest covers decoded
@@ -366,11 +367,12 @@ fn an_edited_depth_survives_the_semantic_write_path() {
             },
             |outcome| match outcome {
                 MutationOutcome::Written { edited, bytes, .. } => {
-                    let mut written = SldprtCodec
+                    let written = SldprtCodec
                         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
                         .unwrap_or_else(|error| {
                             panic!("fixture `{name}`: written container does not decode: {error}")
                         });
+                    let mut written = cadmpeg_test_support::EditableDecodeResult::from(written);
                     let mut expected = edited.clone();
                     let moved = depths(&mut expected);
                     let returned = depths(&mut written.ir_mut());

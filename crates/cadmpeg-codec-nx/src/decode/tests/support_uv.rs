@@ -22,7 +22,8 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let validated_id = result.ir().model.procedural_curves[0].id.clone();
     let unvalidated_id = ProceduralCurveId("synthetic:unvalidated-support-uv".into());
     let mut unvalidated = result.ir().model.procedural_curves[0].clone();
@@ -167,7 +168,8 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let (procedural_id, curve_id, surface, pcurve, parameter_range) = {
         let procedural = &result.ir().model.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {

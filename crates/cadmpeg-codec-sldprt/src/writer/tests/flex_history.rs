@@ -1236,9 +1236,10 @@ fn semantic_writer_round_trips_flex_operations() {
         "Contents/Keywords",
         br#"<Keywords><Flex Name="Bend" Type="Flex" id="44" Mode="Bending" Axis="0,1,0"><Dimension Name="Angle">30deg</Dimension></Flex></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let FeatureDefinition::Flex { axis, mode } = &mut ir_edit.model.features[0].definition
@@ -1290,9 +1291,10 @@ fn semantic_writer_round_trips_all_flex_modes() {
             <Flex Name="Stretch" Type="Flex" id="4" Mode="Stretching" Axis="1,1,0"><Dimension Name="Distance">8mm</Dimension></Flex>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
         if let FeatureDefinition::Flex { mode, .. } = &mut feature.definition {
             *mode = match feature.name.as_deref().unwrap() {
@@ -1352,9 +1354,10 @@ fn semantic_writer_retains_partial_native_flex_construction() {
             <Flex Name="Stretch" Type="Flex" id="4" Mode="Stretching" Axis="1,0,0"><Dimension Name="Distance">infmm</Dimension></Flex>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.features.len(), 4);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
@@ -1422,9 +1425,10 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
         "Contents/Keywords",
         br#"<Keywords><MacroFeature Name="Custom" Type="Macro" id="70">prefix<Dimension Name="A">1</Dimension><Definition Name="Payload" Type="Definition" Language="expr">a &amp; b &lt; c</Definition>suffix<Dimension Name="B">2</Dimension></MacroFeature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let native = sldprt_native(decoded.ir());
     let definition = native.feature_histories[0]
         .features
@@ -1534,9 +1538,10 @@ fn semantic_writer_removes_deleted_history_records() {
         "Contents/Keywords",
         br#"<Keywords><Configuration Name="Keep" SourceIndex="0"/><Configuration Name="Delete" SourceIndex="1"/><Feature Name="Keep" Type="Custom" id="80"/><Feature Name="Delete" Type="Custom" id="81"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .model
@@ -1574,9 +1579,10 @@ fn semantic_writer_reorders_nested_history_records() {
         "Contents/Keywords",
         br#"<Keywords><Folder Name="Parent" Type="Folder" id="90">prefix<Item Name="A" Type="Custom" id="91"/>middle<Item Name="B" Type="Custom" id="92"/></Folder></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
         match feature.name.as_deref() {
             Some("A") => feature.ordinal = 2,

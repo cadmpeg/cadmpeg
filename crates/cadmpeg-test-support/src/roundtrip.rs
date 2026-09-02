@@ -132,14 +132,14 @@ pub fn semantic_roundtrip<C>(
 ) where
     C: Codec + Encoder,
 {
-    let mut decoded = Codec::decode(
+    let decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
-    let removed = decoded
-        .ir_mut()
+    let (mut ir, _decode_report, source_fidelity) = decoded.into_parts();
+    let removed = ir
         .source
         .as_mut()
         .and_then(|source| source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
@@ -151,7 +151,7 @@ pub fn semantic_roundtrip<C>(
     // Plan borrows the document until write completes.
     let written = match Encoder::plan(
         codec,
-        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        EncodeInput::new(&ir, Some(&source_fidelity)),
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
@@ -173,7 +173,7 @@ pub fn semantic_roundtrip<C>(
                  describe this document, yet it replayed them"
             );
             SemanticOutcome::Written {
-                ir: Box::new(decoded.into_parts().0),
+                ir: Box::new(ir),
                 report: Box::new(report),
                 bytes,
             }
@@ -235,24 +235,24 @@ where
         "{label}: this helper edits the document, so replaying the retained bytes would discard the edit; \
          no caller may name that path as expected"
     );
-    let mut decoded = Codec::decode(
+    let decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
-    let baseline = decoded.ir().clone();
-    if !mutate(&mut decoded.ir_mut()) {
+    let (mut edited, _decode_report, source_fidelity) = decoded.into_parts();
+    let baseline = edited.clone();
+    if !mutate(&mut edited) {
         return false;
     }
     assert!(
-        decoded.ir() != &baseline,
+        edited != baseline,
         "{label}: the mutation reported an edit but left the document equal to the decode, so the encoder \
          would still be free to replay its retained bytes and this test would describe nothing"
     );
     assert!(
-        decoded
-            .ir()
+        edited
             .source
             .as_ref()
             .is_some_and(|source| source.attributes.contains_key(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)),
@@ -262,7 +262,7 @@ where
     // Plan borrows the document until write completes.
     let written = match Encoder::plan(
         codec,
-        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        EncodeInput::new(&edited, Some(&source_fidelity)),
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
@@ -284,7 +284,7 @@ where
             );
             MutationOutcome::Written {
                 baseline: Box::new(baseline),
-                edited: Box::new(decoded.into_parts().0),
+                edited: Box::new(edited),
                 report: Box::new(report),
                 bytes,
             }

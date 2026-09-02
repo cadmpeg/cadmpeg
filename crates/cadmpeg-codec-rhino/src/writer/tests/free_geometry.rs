@@ -639,9 +639,10 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(decoded.ir().native.namespace("rhino").is_some());
     decoded.ir_mut().model.points[0].position = Point3::new(4.0, 5.0, 6.0);
 
@@ -678,9 +679,10 @@ fn unsupported_retained_native_records_are_refused_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .native

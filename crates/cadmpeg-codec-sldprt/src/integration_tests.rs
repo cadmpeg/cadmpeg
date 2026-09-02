@@ -177,7 +177,8 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 
 #[test]
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
-    let mut decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
+    let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.tessellations[0].body = None;
     decoded.ir_mut().model.tessellations[0].faces.clear();
     let mut coincident = decoded.ir().model.faces[0].clone();

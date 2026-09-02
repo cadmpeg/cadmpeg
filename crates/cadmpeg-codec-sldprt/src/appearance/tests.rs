@@ -307,9 +307,10 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
     materials.extend(material_payload("Aluminum", [160, 170, 180]));
     source.extend(make_block(0x40, "SWObjects", &materials));
 
-    let mut result = SldprtCodec
+    let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     assert_eq!(result.ir().model.appearances.len(), 2);
     assert!(result.ir().model.appearance_bindings.is_empty());
     assert!(result

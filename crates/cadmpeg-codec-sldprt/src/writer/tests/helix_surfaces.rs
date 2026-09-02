@@ -20,9 +20,10 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         "Contents/Keywords",
         br#"<Keywords><CoordinateSystem Name="Fixture" Type="ReferenceCoordinateSystem" id="28" Origin="1mm,2mm,3mm" XAxis="1,0,0" YAxis="0,1,0" ZAxis="0,0,1"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumCoordinateSystem {
@@ -117,9 +118,10 @@ fn semantic_writer_round_trips_equation_driven_curve() {
         "Contents/Keywords",
         br#"<Keywords><EquationDrivenCurve Name="Spiral" Type="EquationDrivenCurve" id="29" Parameter="t" XEquation="10*cos(t)" YEquation="10*sin(t)" ZEquation="t" Start="0" End="6.283185307179586" Closed="false"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::EquationCurve {
@@ -202,9 +204,10 @@ fn semantic_writer_round_trips_helix() {
         "Contents/Keywords",
         br#"<Keywords><Helix Name="Coil" Type="HelixSpiral" id="30" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1" Clockwise="true" Taper="none"><Dimension Name="Radius">4mm</Dimension><Dimension Name="Pitch">-2mm</Dimension><Dimension Name="Revolutions">3.5</Dimension></Helix></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Helix {
@@ -303,9 +306,10 @@ fn semantic_writer_round_trips_slash_named_helix() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moHelix_c", "Coil", 30)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Helix {
@@ -371,9 +375,10 @@ fn semantic_writer_round_trips_native_axis_helix() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moHelix_c", "Helix/Spiral1", 30)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let feature = &decoded.ir().model.features[0];
     let native_ref = feature.native_ref.as_deref().unwrap();
     assert!(matches!(
@@ -457,9 +462,10 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moHelix_c", "Helix/Spiral1", 30)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {
@@ -531,9 +537,10 @@ fn semantic_writer_round_trips_wrap() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
@@ -584,7 +591,8 @@ fn semantic_writer_round_trips_wrap() {
         }
     ));
 
-    let mut scribed = regenerated;
+    let scribed = regenerated;
+    let mut scribed = cadmpeg_test_support::EditableDecodeResult::from(scribed);
     {
         let mut ir_edit = scribed.ir_mut();
         let FeatureDefinition::Wrap { mode, depth, .. } = &mut ir_edit.model.features[0].definition
@@ -632,9 +640,10 @@ fn semantic_writer_round_trips_move_copy_body() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let body_id = decoded.ir().model.bodies[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
@@ -688,7 +697,8 @@ fn semantic_writer_round_trips_move_copy_body() {
     assert_eq!(native.properties["Frame"], "model");
     assert_eq!(native.parameters["Rotation"], "0.25rad");
 
-    let mut translated = regenerated;
+    let translated = regenerated;
+    let mut translated = cadmpeg_test_support::EditableDecodeResult::from(translated);
     {
         let mut ir_edit = translated.ir_mut();
         let FeatureDefinition::MoveBody {
@@ -743,9 +753,10 @@ fn semantic_writer_round_trips_offset_surface() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
@@ -803,9 +814,10 @@ fn semantic_writer_round_trips_knit_surface() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
@@ -876,9 +888,10 @@ fn semantic_writer_round_trips_cut_with_surface() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let body_id = decoded.ir().model.bodies[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
@@ -992,9 +1005,10 @@ fn semantic_writer_round_trips_filled_surface() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
@@ -1072,9 +1086,10 @@ fn semantic_writer_round_trips_trim_surface() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
@@ -1138,9 +1153,10 @@ fn semantic_writer_round_trips_extend_surface() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
@@ -1209,9 +1225,10 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
@@ -1250,9 +1267,10 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
-    let mut regenerated = SldprtCodec
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Mode"], "Normal");
     assert!(!native.properties.contains_key("Direction"));
@@ -1311,9 +1329,10 @@ fn semantic_writer_round_trips_projected_curve() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
@@ -1388,9 +1407,10 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let first_id = decoded.ir().model.edges[0].id.clone();
     let second_id = decoded.ir().model.edges[1].id.clone();
     assert!(matches!(
@@ -1451,9 +1471,10 @@ fn semantic_writer_round_trips_typed_revolution() {
         "Contents/Keywords",
         br#"<Keywords><Revolve Name="Turn" Type="Revolve" id="17" AxisOrigin="10mm,20mm,30mm" AxisDirection="0,1,0" Operation="Join"><Dimension Name="Angle">180deg</Dimension></Revolve></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
@@ -1521,9 +1542,10 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
         br#"<Keywords><Revolve Name="Unknown turn" Type="Revolve" id="17" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1"/></Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
@@ -1597,9 +1619,10 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="TurnProfile" Type="Sketch" id="40"/><Revolve Name="One" Type="Revolve" id="41" Profile="40" AxisOrigin="0mm,0mm,0mm" AxisDirection="0,0,1" EndCondition="OneSided" Operation="Join"><Dimension Name="Angle">90deg</Dimension></Revolve><Revolve Name="Sym" Type="Revolve" id="42" Profile="40" AxisOrigin="0mm,0mm,0mm" AxisDirection="0,1,0" EndCondition="Symmetric" Operation="NewBody"><Dimension Name="Angle">180deg</Dimension></Revolve><Revolve Name="Two" Type="Revolve" id="43" Profile="40" AxisOrigin="0mm,0mm,0mm" AxisDirection="1,0,0" EndCondition="TwoSided" Operation="Cut"><Dimension Name="Angle">30deg</Dimension><Dimension Name="Angle2">60deg</Dimension></Revolve></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_feature = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.features[1].definition,

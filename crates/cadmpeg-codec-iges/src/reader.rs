@@ -597,17 +597,57 @@ pub(crate) fn decode_with_test_occurrence_limits(
     options: DecodeOptions,
     output_limit: usize,
     depth_limit: usize,
-) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
-    decode_with_occurrence_limits(
-        bytes,
-        bytes,
-        Representation::FixedAscii,
-        options,
-        output_limit,
-        depth_limit,
-        None,
+) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+
+    struct OccurrenceLimitCodec {
+        output_limit: usize,
+        depth_limit: usize,
+    }
+
+    impl CodecBackend for OccurrenceLimitCodec {
+        const FORMAT: &'static str = crate::dialect::FORMAT;
+
+        fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
+            Confidence::High
+        }
+
+        fn inspect_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _root: cadmpeg_core::decode::View<'_>,
+        ) -> Result<cadmpeg_ir::ContainerSummary, CodecError> {
+            unreachable!("test backend is decode-only")
+        }
+
+        fn decode_impl(
+            &self,
+            ctx: &DecodeContext<'_>,
+            root: cadmpeg_core::decode::View<'_>,
+        ) -> Result<Decoded, CodecError> {
+            decode_with_occurrence_limits(
+                root.window(),
+                root.window(),
+                Representation::FixedAscii,
+                DecodeOptions {
+                    container_only: ctx.container_only(),
+                    policy: *ctx.policy(),
+                },
+                self.output_limit,
+                self.depth_limit,
+                Some(ctx),
+            )
+        }
+    }
+
+    Codec::decode(
+        &OccurrenceLimitCodec {
+            output_limit,
+            depth_limit,
+        },
+        &mut std::io::Cursor::new(bytes),
+        &options,
     )
-    .map(|decoded| cadmpeg_ir::codec::DecodeResult::new(decoded, crate::dialect::FORMAT, false))
 }
 
 fn charge_entities(

@@ -68,12 +68,13 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
 
 #[test]
 fn native_version_one_migrates_the_body_selection_arena() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
     legacy.version = 1;
     legacy.arenas.remove("feature_input_body_selections");
@@ -217,12 +218,13 @@ fn native_future_version_remains_rejected() {
 
 #[test]
 fn native_store_rejects_mismatched_nested_owners_atomically() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].parent = "missing-history".into();
     let before = decoded.ir().native.namespace("sldprt").unwrap().clone();

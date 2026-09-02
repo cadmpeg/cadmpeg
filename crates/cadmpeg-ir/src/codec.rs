@@ -14,7 +14,6 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::ops::{Deref, DerefMut};
 
 use crate::document::CadIr;
 use crate::report::{DecodeReport, LossNote, StrictConsequence, TransferLedger};
@@ -68,13 +67,12 @@ pub struct DecodeOptions {
 
 /// A decoded document plus its loss report.
 ///
-/// Construct only through [`DecodeResult::new`], which stamps the source
+/// The sealed [`Codec`] wrapper constructs this value after it stamps the source
 /// classification onto the report and finalizes the IR and source fidelity.
 /// `#[non_exhaustive]` blocks external struct literals so callers cannot skip
 /// finalization. Read through [`Self::ir`], [`Self::report`], and
-/// [`Self::source_fidelity`]. Consume with [`Self::into_parts`]. The edit guards
-/// returned by [`Self::ir_mut`] and [`Self::source_fidelity_mut`] restore
-/// canonical order before the result can be read again.
+/// [`Self::source_fidelity`]. Consume with [`Self::into_parts`] before editing
+/// either document.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct DecodeResult {
@@ -159,7 +157,7 @@ impl DecodeResult {
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
     #[must_use]
-    pub fn new(decoded: Decoded, format: &str, container_only: bool) -> Self {
+    pub(crate) fn new(decoded: Decoded, format: &str, container_only: bool) -> Self {
         let Decoded {
             mut ir,
             body,
@@ -183,11 +181,6 @@ impl DecodeResult {
         &self.ir
     }
 
-    /// Edits the IR and finalizes it when the returned guard is dropped.
-    pub fn ir_mut(&mut self) -> impl DerefMut<Target = CadIr> + '_ {
-        FinalizingEdit::new(&mut self.ir, CadIr::finalize)
-    }
-
     /// Borrow the transfer report.
     pub fn report(&self) -> &DecodeReport {
         &self.report
@@ -198,46 +191,9 @@ impl DecodeResult {
         &self.source_fidelity
     }
 
-    /// Edits source fidelity and finalizes it when the returned guard is dropped.
-    pub fn source_fidelity_mut(&mut self) -> impl DerefMut<Target = SourceFidelity> + '_ {
-        FinalizingEdit::new(&mut self.source_fidelity, SourceFidelity::finalize)
-    }
-
     /// Consume into IR, report, and source fidelity.
     pub fn into_parts(self) -> (CadIr, DecodeReport, SourceFidelity) {
         (self.ir, self.report, self.source_fidelity)
-    }
-}
-
-#[must_use = "the guard keeps the DecodeResult mutably borrowed until the edit is finalized"]
-struct FinalizingEdit<'a, T> {
-    value: &'a mut T,
-    finalize: fn(&mut T),
-}
-
-impl<'a, T> FinalizingEdit<'a, T> {
-    fn new(value: &'a mut T, finalize: fn(&mut T)) -> Self {
-        Self { value, finalize }
-    }
-}
-
-impl<T> Deref for FinalizingEdit<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-impl<T> DerefMut for FinalizingEdit<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.value
-    }
-}
-
-impl<T> Drop for FinalizingEdit<'_, T> {
-    fn drop(&mut self) {
-        (self.finalize)(self.value);
     }
 }
 

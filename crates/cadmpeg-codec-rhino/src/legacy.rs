@@ -2920,10 +2920,9 @@ mod tests {
 
     #[test]
     fn v1_flat_points_decode_to_neutral_points() {
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&archive(&[[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]]))
                 .expect("valid V1 point archive"),
-            crate::dialect::FORMAT,
             false,
         );
         assert_eq!(result.ir().model.points.len(), 2);
@@ -2936,9 +2935,8 @@ mod tests {
 
     #[test]
     fn v1_settings_presentation_records_are_opaque_and_table_end_is_structural() {
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
-            crate::dialect::FORMAT,
             false,
         );
         assert_eq!(result.ir().tolerances.linear, 10.0);
@@ -2966,9 +2964,8 @@ mod tests {
         let record = chunk(0x0020_0004, b"legacy annotation payload");
         bytes.extend(&record);
 
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&bytes).expect("framed malformed direct V1 record"),
-            crate::dialect::FORMAT,
             false,
         );
         assert_eq!(result.ir().model.points.len(), 1);
@@ -2996,9 +2993,8 @@ mod tests {
         bytes.extend(rhinoio_surface_object());
         bytes.extend(rhinoio_brep_object());
 
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&bytes).expect("valid V1 direct records"),
-            crate::dialect::FORMAT,
             false,
         );
         let namespace = result
@@ -3058,9 +3054,8 @@ mod tests {
 
     #[test]
     fn v1_legacy_face_decodes_complete_brep_topology() {
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&legacy_face_archive()).expect("valid V1 face archive"),
-            crate::dialect::FORMAT,
             false,
         );
         let model = &result.ir().model;
@@ -3078,9 +3073,8 @@ mod tests {
 
     #[test]
     fn v1_legacy_shell_decodes_nested_faces() {
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&legacy_shell_archive()).expect("valid V1 shell archive"),
-            crate::dialect::FORMAT,
             false,
         );
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
@@ -3098,10 +3092,9 @@ mod tests {
             [0.0005, 0.0, 0.0],
             [0.0, 1.0, 0.0],
         ];
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&legacy_face_archive_with(&corners, &[1, 1, 1, 1], &[]))
                 .expect("nearby but topologically distinct V1 vertices are valid"),
-            crate::dialect::FORMAT,
             false,
         );
         assert_eq!(result.ir().model.vertices.len(), 4);
@@ -3125,14 +3118,13 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 1.0, 0.0],
         ];
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&legacy_face_archive_with(
                 &corners,
                 &[3, 3, 3, 3],
                 &[1, 0, 3, 2],
             ))
             .expect("explicit seam edge curves are valid"),
-            crate::dialect::FORMAT,
             false,
         );
         assert_eq!(result.ir().model.edges.len(), 4);
@@ -3153,14 +3145,13 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 1.0, 0.0],
         ];
-        let result = cadmpeg_ir::codec::DecodeResult::new(
+        let result = crate::decode::seal_for_test(
             decode_v1(&legacy_face_archive_with(
                 &corners,
                 &[3, 2, 3, 2],
                 &[1, 0, 3, 2],
             ))
             .expect("curve-less seam partners are valid"),
-            crate::dialect::FORMAT,
             false,
         );
         assert_eq!(result.ir().model.edges.len(), 2);
