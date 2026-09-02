@@ -47,8 +47,8 @@ pub(crate) fn write_semantic_with_records(
         .native
         .namespace("sldprt")
         .map(|namespace| {
-            if !crate::native::native_version_supported(namespace.version) {
-                let version = namespace.version;
+            if !crate::native::native_version_supported(namespace.version()) {
+                let version = namespace.version();
                 return Err(CodecError::malformed(format_args!(
                     "unsupported SLDPRT native namespace version {version}"
                 )));

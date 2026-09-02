@@ -1082,7 +1082,9 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     legacy
         .store(&mut namespace)
         .expect("store legacy chart links");
-    namespace.version = crate::native::CATIA_OWNER_CHART_ALIAS_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_OWNER_CHART_ALIAS_VERSION - 1).unwrap(),
+    );
     crate::native::CatiaNative::load(&namespace).expect("load legacy chart links");
 
     let mut invalid = native;

@@ -1240,7 +1240,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         "retain Inventor native structural records",
     )?;
     let namespace = ir.native.namespace_mut("inventor");
-    namespace.version = INVENTOR_NATIVE_VERSION;
+    namespace.set_version(std::num::NonZeroU32::new(INVENTOR_NATIVE_VERSION).unwrap());
     namespace.set_arena("storage_bands", &storage_bands)?;
     namespace.set_arena("databases", &databases)?;
     namespace.set_arena("database_issues", &database_issues)?;
@@ -1345,7 +1345,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx,
         &mut ir,
         "inventor",
-        INVENTOR_NATIVE_VERSION,
+        std::num::NonZeroU32::new(INVENTOR_NATIVE_VERSION).unwrap(),
         kernel_brep.unwrap_or_else(AsmBrep::default),
     )?;
     ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;

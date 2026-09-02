@@ -2,6 +2,7 @@
 //! Exhaustive transfer from an ASM graph into neutral and native IR arenas.
 
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -48,7 +49,7 @@ pub fn transfer_into_ir(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     native_format: &str,
-    native_version: u32,
+    native_version: NonZeroU32,
     brep: AsmBrep,
 ) -> Result<AsmTransferRemainder, CodecError> {
     if ir.native.namespace(native_format).is_some_and(|namespace| {
@@ -121,7 +122,7 @@ pub fn transfer_into_ir(
     )?;
 
     let namespace = ir.native.namespace_mut(native_format);
-    namespace.version = native_version;
+    namespace.set_version(native_version);
     namespace.set_arena("edge_continuities", &edge_continuities)?;
     namespace.set_arena("edge_ownerships", &edge_ownerships)?;
     namespace.set_arena("vertex_ownerships", &vertex_ownerships)?;
@@ -158,14 +159,20 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::default())
             .expect("test root fits policy");
         let mut ir = CadIr::empty(Units::default());
-        let remainder = transfer_into_ir(&ctx, &mut ir, "test", 7, AsmBrep::default())
-            .expect("empty ASM transfer succeeds");
+        let remainder = transfer_into_ir(
+            &ctx,
+            &mut ir,
+            "test",
+            std::num::NonZeroU32::new(7).unwrap(),
+            AsmBrep::default(),
+        )
+        .expect("empty ASM transfer succeeds");
         assert!(remainder.body_keys.is_empty());
         assert!(remainder.face_keys.is_empty());
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         let namespace = ir.native.namespace("test").expect("namespace exists");
-        assert_eq!(namespace.version, 7);
+        assert_eq!(namespace.version(), 7);
         assert_eq!(namespace.arenas.len(), 12);
     }
 
@@ -185,7 +192,14 @@ mod tests {
             .namespace_mut("test")
             .set_arena("body_native_keys", &[HeldRecord { id: "held".into() }])
             .expect("test native record serializes");
-        assert!(transfer_into_ir(&ctx, &mut ir, "test", 7, AsmBrep::default()).is_err());
+        assert!(transfer_into_ir(
+            &ctx,
+            &mut ir,
+            "test",
+            std::num::NonZeroU32::new(7).unwrap(),
+            AsmBrep::default()
+        )
+        .is_err());
         let held: Vec<HeldRecord> = ir
             .native
             .namespace("test")

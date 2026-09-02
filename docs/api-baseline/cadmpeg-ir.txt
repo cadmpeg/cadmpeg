@@ -1,4 +1,4 @@
-# generated at 7e85ce15d
+# generated at 63dec9120
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -3981,12 +3981,17 @@ pub fn cadmpeg_ir::native::Native::namespace(&self, &str) -> core::option::Optio
 pub fn cadmpeg_ir::native::Native::namespace_mut(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut cadmpeg_ir::native::NativeNamespace
 pub struct cadmpeg_ir::native::NativeNamespace
 pub cadmpeg_ir::native::NativeNamespace::arenas: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
-pub cadmpeg_ir::native::NativeNamespace::version: u32
 impl cadmpeg_ir::native::NativeNamespace
 pub fn cadmpeg_ir::native::NativeNamespace::arena_as<T: serde_core::de::DeserializeOwned>(&self, &str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::arena_iter_as<'a, T: serde_core::de::DeserializeOwned + 'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<T, cadmpeg_ir::native::NativeConvertError>> + 'a
+pub fn cadmpeg_ir::native::NativeNamespace::ensure_version_at_least(&mut self, core::num::nonzero::NonZeroU32)
+pub fn cadmpeg_ir::native::NativeNamespace::new(core::num::nonzero::NonZeroU32) -> Self
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena<T: serde_core::ser::Serialize>(&mut self, impl core::convert::Into<alloc::string::String>, &[T]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, impl core::convert::Into<alloc::string::String>, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
+pub fn cadmpeg_ir::native::NativeNamespace::set_version(&mut self, core::num::nonzero::NonZeroU32)
+pub const fn cadmpeg_ir::native::NativeNamespace::version(&self) -> u32
+impl core::default::Default for cadmpeg_ir::native::NativeNamespace
+pub fn cadmpeg_ir::native::NativeNamespace::default() -> Self
 pub struct cadmpeg_ir::native::NativeRecord
 impl cadmpeg_ir::native::NativeRecord
 pub fn cadmpeg_ir::native::NativeRecord::field(&self, &str) -> core::option::Option<serde_json::value::Value>
@@ -7465,12 +7470,17 @@ pub fn cadmpeg_ir::native::Native::namespace(&self, &str) -> core::option::Optio
 pub fn cadmpeg_ir::native::Native::namespace_mut(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut cadmpeg_ir::native::NativeNamespace
 pub struct cadmpeg_ir::NativeNamespace
 pub cadmpeg_ir::NativeNamespace::arenas: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
-pub cadmpeg_ir::NativeNamespace::version: u32
 impl cadmpeg_ir::native::NativeNamespace
 pub fn cadmpeg_ir::native::NativeNamespace::arena_as<T: serde_core::de::DeserializeOwned>(&self, &str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::arena_iter_as<'a, T: serde_core::de::DeserializeOwned + 'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<T, cadmpeg_ir::native::NativeConvertError>> + 'a
+pub fn cadmpeg_ir::native::NativeNamespace::ensure_version_at_least(&mut self, core::num::nonzero::NonZeroU32)
+pub fn cadmpeg_ir::native::NativeNamespace::new(core::num::nonzero::NonZeroU32) -> Self
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena<T: serde_core::ser::Serialize>(&mut self, impl core::convert::Into<alloc::string::String>, &[T]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, impl core::convert::Into<alloc::string::String>, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
+pub fn cadmpeg_ir::native::NativeNamespace::set_version(&mut self, core::num::nonzero::NonZeroU32)
+pub const fn cadmpeg_ir::native::NativeNamespace::version(&self) -> u32
+impl core::default::Default for cadmpeg_ir::native::NativeNamespace
+pub fn cadmpeg_ir::native::NativeNamespace::default() -> Self
 pub struct cadmpeg_ir::NativeRecord
 impl cadmpeg_ir::native::NativeRecord
 pub fn cadmpeg_ir::native::NativeRecord::field(&self, &str) -> core::option::Option<serde_json::value::Value>

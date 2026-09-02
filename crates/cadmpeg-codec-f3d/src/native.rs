@@ -1512,7 +1512,7 @@ impl F3dNative {
         #[cfg(test)]
         LOAD_COUNT.set(LOAD_COUNT.get() + 1);
         let mut native = Self {
-            version: namespace.version,
+            version: namespace.version(),
             act_entities: namespace.arena_as("act_entities")?,
             act_guids: namespace.arena_as("act_guids")?,
             act_registry_channels: namespace.arena_as("act_registry_channels")?,
@@ -1655,7 +1655,7 @@ impl F3dNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        namespace.version = F3D_NATIVE_VERSION;
+        namespace.set_version(std::num::NonZeroU32::new(F3D_NATIVE_VERSION).unwrap());
         F3D_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(F3D_ARENA_NAMES
             .iter()

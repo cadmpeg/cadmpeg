@@ -459,7 +459,10 @@ fn native_migrates_and_validates_relation_signature_outer_whitespace() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    namespace.version = crate::native::CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION - 1)
+            .unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate signature whitespace");
     assert!(migrated.entity_records[0]
@@ -539,7 +542,10 @@ fn native_migrates_and_validates_relation_signature_parameter_symbols() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    current_namespace.version = crate::native::CATIA_RELATION_SIGNATURE_PARAMETER_VERSION - 1;
+    current_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_RELATION_SIGNATURE_PARAMETER_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&current_namespace)
         .expect("migrate relation signature parameters");
     assert_eq!(

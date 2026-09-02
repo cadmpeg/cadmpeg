@@ -179,7 +179,9 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
     legacy
         .store(&mut legacy_namespace)
         .expect("store legacy numeric-pair view");
-    legacy_namespace.version = crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION;
+    legacy_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION).unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&legacy_namespace).expect("migrate numeric-pair view");
     assert!(migrated.entity_records[0].numeric_pair.is_some());
@@ -300,7 +302,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     native
         .store(&mut stored)
         .expect("store reference-signature incidences");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION - 1)
+            .unwrap(),
+    );
     let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
@@ -325,7 +330,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     native
         .store(&mut stored)
         .expect("store resolved reference-signature incidences");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION - 1)
+            .unwrap(),
+    );
     let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
@@ -350,7 +358,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     native
         .store(&mut stored)
         .expect("store reference-signature program");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_FRAME_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_FRAME_VERSION - 1)
+            .unwrap(),
+    );
     let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
@@ -375,7 +386,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     native
         .store(&mut stored)
         .expect("store consecutive reference-signature pair");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_PAIR_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_PAIR_VERSION - 1)
+            .unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("validate reference-signature pair");
     assert_eq!(
@@ -387,7 +401,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     native
         .store(&mut stored)
         .expect("store reference-signature schema incidence");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION - 1)
+            .unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("derive reference-signature schema");
     assert_eq!(
@@ -399,7 +416,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     native
         .store(&mut stored)
         .expect("store reference-signature cohort");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION - 1)
+            .unwrap(),
+    );
     stored.arenas.remove("reference_signature_cohorts");
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("derive reference-signature cohort");
@@ -725,7 +745,10 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     stale_offsets
         .store(&mut namespace)
         .expect("store stale named parameter offsets");
-    namespace.version = crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1)
+            .unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate named parameter offsets");
     assert_eq!(
@@ -1173,7 +1196,7 @@ fn design_objects_retain_definition_chain_values_in_field_order() {
     previous_namespace
         .set_arena("design_objects", &previous_design_objects)
         .expect("store previous design objects");
-    previous_namespace.version = 195;
+    previous_namespace.set_version(std::num::NonZeroU32::new(195).unwrap());
     let migrated = crate::native::CatiaNative::load(&previous_namespace)
         .expect("migrate previous definition-chain ownership");
     assert_eq!(migrated.design_objects[0].definition_chain_values, expected);
@@ -1253,7 +1276,7 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
     previous_namespace
         .set_arena("object_graph_records", &previous_records)
         .expect("store previous object records");
-    previous_namespace.version = 197;
+    previous_namespace.set_version(std::num::NonZeroU32::new(197).unwrap());
     let migrated = crate::native::CatiaNative::load(&previous_namespace)
         .expect("migrate previous literal owner slot");
     assert_eq!(
@@ -1511,7 +1534,10 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
     stale
         .store(&mut namespace)
         .expect("store stale typed schema incidences");
-    namespace.version = crate::native::CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION - 1)
+            .unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate typed schema incidences");
     assert_eq!(

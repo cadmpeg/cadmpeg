@@ -141,7 +141,7 @@ fn assert_fem_topologies(global: &[u8], topologies: &[(i64, usize, &str)]) {
 fn assert_fem_namespace(global: &[u8]) {
     let result = decode_fem(global);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.version, 6);
+    assert_eq!(native.version(), 6);
     let fem = &native.arenas["fem_entities"];
     assert_eq!(fem.len(), 6);
 

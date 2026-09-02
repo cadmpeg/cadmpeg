@@ -516,7 +516,7 @@ mod tests {
         let len = data.len() as u64;
         Container {
             data: Cow::Owned(data),
-            version: 0,
+            version: 0x06,
             file_tag: 0,
             footer_offset: 0,
             header_entry_count: 1,

@@ -189,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let typed_edit_round_trip =
             property_value_attribute(edited.ir(), "fcstd:native:document#0", "Label", 0, "value")
                 == Some("cadmpeg L9 edit".to_owned());
-        namespace_version = Some(namespace.version);
+        namespace_version = Some(namespace.version());
         observed.native_arenas.extend(
             namespace
                 .arenas

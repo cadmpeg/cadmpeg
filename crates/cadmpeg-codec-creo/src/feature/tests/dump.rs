@@ -309,7 +309,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .native
         .namespace("creo")
         .expect("creo namespace");
-    assert_eq!(namespace.version, 1);
+    assert_eq!(namespace.version(), 1);
     let definitions = &namespace.arenas["feature_definitions"];
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");

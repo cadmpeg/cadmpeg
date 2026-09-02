@@ -104,12 +104,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Vec::new();
     };
-    if namespace.version != native::VERSION {
+    if namespace.version() != native::VERSION {
         return vec![finding(
             Check::Version,
             format!(
                 "unsupported FCStd native namespace version {}",
-                namespace.version
+                namespace.version()
             ),
             None,
         )];
@@ -1136,7 +1136,7 @@ impl CodecBackend for FcstdCodec {
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");
-        namespace.version = native::VERSION;
+        namespace.set_version(std::num::NonZeroU32::new(native::VERSION).unwrap());
         namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena("physical_ledger", &scan.ledger)?;
         #[allow(clippy::if_not_else)]

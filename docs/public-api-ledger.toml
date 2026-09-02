@@ -2626,3 +2626,17 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::SourceProvenance::{format,stream}"
 reason = "private source-location fields admit root-stream absence only through constructors and expose it as Option instead of the empty-string sentinel"
+
+[[change]]
+commit = "63dec9120df80ec1f379162afc545b109b067de1"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::native::NativeNamespace::version"
+reason = "the private NonZeroU32 field and typed constructor and setters prevent an in-memory native namespace from representing the unstamped zero version"
+
+[[change]]
+commit = "63dec9120df80ec1f379162afc545b109b067de1"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::transfer_into_ir"
+reason = "native transfer requires a NonZeroU32 namespace version and cannot stamp an invalid zero version"

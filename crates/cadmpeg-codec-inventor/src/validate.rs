@@ -109,12 +109,12 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("inventor") else {
         return Vec::new();
     };
-    if namespace.version != INVENTOR_NATIVE_VERSION {
+    if namespace.version() != INVENTOR_NATIVE_VERSION {
         return vec![finding(
             Check::Version,
             format!(
                 "unsupported Inventor native namespace version {}",
-                namespace.version
+                namespace.version()
             ),
             None,
         )];

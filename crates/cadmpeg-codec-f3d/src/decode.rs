@@ -4781,7 +4781,13 @@ fn build_geometry_ir(
         persistent_subentity_tags,
         creation_timestamps,
     } = brep;
-    let remainder = transfer_into_ir(ctx, &mut ir, "f3d", F3D_NATIVE_VERSION, asm)?;
+    let remainder = transfer_into_ir(
+        ctx,
+        &mut ir,
+        "f3d",
+        std::num::NonZeroU32::new(F3D_NATIVE_VERSION).unwrap(),
+        asm,
+    )?;
     let mut native = F3dNative::load(
         ir.native
             .namespace("f3d")

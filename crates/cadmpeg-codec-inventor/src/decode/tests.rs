@@ -105,7 +105,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .native
             .namespace("inventor")
             .expect("Inventor native namespace exists")
-            .version,
+            .version(),
         crate::native::INVENTOR_NATIVE_VERSION
     );
 

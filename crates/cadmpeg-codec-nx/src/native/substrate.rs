@@ -415,7 +415,7 @@ mod tests {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
                 data: Vec::new().into(),
-                version: 0,
+                version: 0x06,
                 file_tag: 0,
                 footer_offset: 0,
                 header_entry_count: 0,
@@ -467,7 +467,7 @@ mod tests {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
                 data: Vec::new().into(),
-                version: 0,
+                version: 0x06,
                 file_tag: 0,
                 footer_offset: 0,
                 header_entry_count: 0,

@@ -45,7 +45,9 @@ fn entity_suffix_values_accept_8193_trailers() {
     native
         .store(&mut namespace)
         .expect("store 81 93-terminated suffix value");
-    namespace.version = crate::native::CATIA_SUFFIX_TRAILER_8193_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_SUFFIX_TRAILER_8193_VERSION - 1).unwrap(),
+    );
     namespace
         .arenas
         .get_mut("entity_records")
@@ -228,7 +230,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     stale_evaluation_offset
         .store(&mut namespace)
         .expect("store stale evaluation offset");
-    namespace.version = crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1)
+            .unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate suffix evaluation offset");
     assert_eq!(
@@ -642,7 +647,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     stale_schema_selected_atom
         .store(&mut namespace)
         .expect("store stale suffix schema offsets");
-    namespace.version = crate::native::CATIA_SUFFIX_SCHEMA_OFFSET_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_SUFFIX_SCHEMA_OFFSET_VERSION - 1).unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate suffix schema offsets");
     assert_eq!(

@@ -728,7 +728,10 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     legacy_named
         .arenas
         .insert("configuration_row_chains".to_string(), row_chains);
-    legacy_named.version = crate::native::CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION - 1;
+    legacy_named.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION - 1)
+            .unwrap(),
+    );
     let chain = legacy_named
         .arenas
         .get_mut("configuration_row_chains")
@@ -760,7 +763,10 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     native
         .store(&mut older)
         .expect("store configuration namespace");
-    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION - 1;
+    older.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION - 1)
+            .unwrap(),
+    );
     for entity in older
         .arenas
         .get_mut("entity_records")
@@ -815,7 +821,10 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .as_object_mut()
         .expect("stored schema-configuration-row object")
         .remove("successor_payload_offset");
-    version_250.version = crate::native::CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION - 1;
+    version_250.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_250)
         .expect("migrate configuration payload offsets");
     assert_eq!(
@@ -833,7 +842,12 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     interval_native
         .store(&mut older)
         .expect("store pre-interval configuration namespace");
-    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION - 1;
+    older.set_version(
+        std::num::NonZeroU32::new(
+            crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION - 1,
+        )
+        .unwrap(),
+    );
     for chain in older
         .arenas
         .get_mut("schema_configuration_row_chains")
@@ -864,7 +878,10 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     native
         .store(&mut older)
         .expect("store pre-chain configuration namespace");
-    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION - 1;
+    older.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION - 1)
+            .unwrap(),
+    );
     older.arenas.remove("schema_configuration_row_chains");
     let migrated =
         crate::native::CatiaNative::load(&older).expect("migrate schema-configuration-row chains");
@@ -887,7 +904,12 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         fields.remove("links");
         *chain = cadmpeg_ir::NativeRecord::new(id, fields);
     }
-    version_254.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1;
+    version_254.set_version(
+        std::num::NonZeroU32::new(
+            crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1,
+        )
+        .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_254)
         .expect("migrate schema-configuration-row link incidences");
     assert_eq!(
@@ -916,7 +938,9 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     stale_nulls
         .store(&mut version_239)
         .expect("store pre-null-incidence namespace");
-    version_239.version = crate::native::CATIA_TYPED_INCIDENCE_NULL_VERSION - 1;
+    version_239.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_TYPED_INCIDENCE_NULL_VERSION - 1).unwrap(),
+    );
     let migrated =
         crate::native::CatiaNative::load(&version_239).expect("migrate incidence null states");
     expected_nulls.version = migrated.version;
@@ -1094,7 +1118,7 @@ fn native_store_paths_write_the_current_schema_version() {
         .store(&mut borrowed_namespace)
         .expect("store borrowed CATIA namespace");
     assert_eq!(
-        borrowed_namespace.version,
+        borrowed_namespace.version(),
         crate::native::CATIA_NATIVE_VERSION
     );
 
@@ -1106,7 +1130,10 @@ fn native_store_paths_write_the_current_schema_version() {
     owned
         .store_owned(&mut owned_namespace)
         .expect("store owned CATIA namespace");
-    assert_eq!(owned_namespace.version, crate::native::CATIA_NATIVE_VERSION);
+    assert_eq!(
+        owned_namespace.version(),
+        crate::native::CATIA_NATIVE_VERSION
+    );
 
     let rich = crate::native::CatiaNative::decode(&standard_catpart());
     let mut rich_borrowed = cadmpeg_ir::NativeNamespace::default();
@@ -1150,7 +1177,7 @@ fn native_migrates_and_validates_evaluated_value_names() {
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut previous_namespace = invalid_namespace;
-    previous_namespace.version = 223;
+    previous_namespace.set_version(std::num::NonZeroU32::new(223).unwrap());
     let migrated = crate::native::CatiaNative::load(&previous_namespace)
         .expect("migrate evaluated value name");
     assert_eq!(

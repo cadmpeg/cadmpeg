@@ -1028,7 +1028,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             ),
         ] {
             let mut namespace = stored.clone();
-            namespace.version = version;
+            namespace.set_version(std::num::NonZeroU32::new(version).unwrap());
             let mut stored_fields = namespace
                 .arenas
                 .get_mut("entity_records")
@@ -1075,7 +1075,10 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         }
 
         let mut namespace = stored.clone();
-        namespace.version = crate::native::CATIA_RELATION_REFERENCE_OFFSET_VERSION - 1;
+        namespace.set_version(
+            std::num::NonZeroU32::new(crate::native::CATIA_RELATION_REFERENCE_OFFSET_VERSION - 1)
+                .unwrap(),
+        );
         let mut stored_fields = namespace
             .arenas
             .get_mut("entity_records")
@@ -1105,7 +1108,10 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         );
 
         let mut namespace = stored.clone();
-        namespace.version = crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1;
+        namespace.set_version(
+            std::num::NonZeroU32::new(crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1)
+                .unwrap(),
+        );
         let mut stored_fields = namespace
             .arenas
             .get_mut("entity_records")
@@ -1221,7 +1227,10 @@ fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces
         native
             .store(&mut namespace)
             .expect("store paramout relation-program instance");
-        namespace.version = crate::native::CATIA_RELATION_PROGRAM_OUTPUT_VERSION - 1;
+        namespace.set_version(
+            std::num::NonZeroU32::new(crate::native::CATIA_RELATION_PROGRAM_OUTPUT_VERSION - 1)
+                .unwrap(),
+        );
         namespace
             .arenas
             .get_mut("entity_records")

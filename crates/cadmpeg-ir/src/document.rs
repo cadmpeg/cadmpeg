@@ -333,13 +333,9 @@ impl CadIr {
             .set_arena_from("unknowns", records)
     }
 
-    /// Return the `format` namespace, versioning a newly created one.
+    /// Return the `format` namespace used for version-1 unknown records.
     fn unknowns_namespace_mut(&mut self, format: &str) -> &mut crate::native::NativeNamespace {
-        let namespace = self.native.namespace_mut(format);
-        if namespace.version == 0 {
-            namespace.version = 1;
-        }
-        namespace
+        self.native.namespace_mut(format)
     }
 
     /// Construct an empty current-version document with default tolerances.
