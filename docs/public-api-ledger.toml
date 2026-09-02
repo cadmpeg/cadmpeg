@@ -15,7 +15,7 @@
 baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
 audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
 api_baseline_dir = "docs/api-baseline"
-measured_at = "c3715792f902b844417f96f76e7925642924f28f"
+measured_at = "3f11b2f410622f99c8a52ef229efd9c9a82ad7f4"
 
 [[change]]
 commit = "6891cb0d706278d9102e97a3a3153d7b9a9fc6f2"
