@@ -242,7 +242,7 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
 fn a_decode_result_keeps_the_body_it_was_given() {
     let mut body = DecodeBody::new(false);
     body.notes.push("kept".into());
-    body.coverage.insert("entities".into(), 3);
+    body.coverage.record(crate::CoverageKey::new("entities"), 3);
     let result = DecodeResult::new(
         Decoded {
             ir: unit_cube(),
@@ -255,7 +255,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
 
     assert!(result.report().container_only());
     assert_eq!(result.report().notes, ["kept"]);
-    assert_eq!(result.report().coverage["entities"], 3);
+    assert_eq!(result.report().coverage()["entities"], 3);
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {

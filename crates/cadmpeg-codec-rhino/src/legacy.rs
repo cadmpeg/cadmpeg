@@ -2436,16 +2436,18 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         body: DecodeBody {
             geometry_transferred:
                 decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
-            coverage: BTreeMap::from([
-            ("legacy_v1_points".to_string(), decoded),
-            ("legacy_v1_curve_segments".to_string(), decoded_curves),
-            ("legacy_v1_meshes".to_string(), decoded_meshes),
-            ("legacy_v1_breps".to_string(), decoded_breps),
-            ("legacy_v1_annotations".to_string(), decoded_annotations),
-            ("legacy_v1_nurbs_curves".to_string(), decoded_nurbs_curves),
-            ("legacy_v1_nurbs_surfaces".to_string(), decoded_nurbs_surfaces),
-            ("legacy_v1_nurbs_breps".to_string(), decoded_nurbs_breps),
-        ]),
+            coverage: [
+                ("legacy_v1_points".into(), decoded),
+                ("legacy_v1_curve_segments".into(), decoded_curves),
+                ("legacy_v1_meshes".into(), decoded_meshes),
+                ("legacy_v1_breps".into(), decoded_breps),
+                ("legacy_v1_annotations".into(), decoded_annotations),
+                ("legacy_v1_nurbs_curves".into(), decoded_nurbs_curves),
+                ("legacy_v1_nurbs_surfaces".into(), decoded_nurbs_surfaces),
+                ("legacy_v1_nurbs_breps".into(), decoded_nurbs_breps),
+            ]
+            .into_iter()
+            .collect(),
             losses,
             notes: std::iter::once(format!(
             "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
@@ -3045,10 +3047,10 @@ mod tests {
                 .count(),
             1
         );
-        assert_eq!(result.report().coverage["legacy_v1_annotations"], 5);
-        assert_eq!(result.report().coverage["legacy_v1_nurbs_curves"], 1);
-        assert_eq!(result.report().coverage["legacy_v1_nurbs_surfaces"], 1);
-        assert_eq!(result.report().coverage["legacy_v1_nurbs_breps"], 1);
+        assert_eq!(result.report().coverage()["legacy_v1_annotations"], 5);
+        assert_eq!(result.report().coverage()["legacy_v1_nurbs_curves"], 1);
+        assert_eq!(result.report().coverage()["legacy_v1_nurbs_surfaces"], 1);
+        assert_eq!(result.report().coverage()["legacy_v1_nurbs_breps"], 1);
         assert!(result.source_fidelity().retained_records.is_empty());
     }
 
@@ -3066,7 +3068,7 @@ mod tests {
         assert_eq!(model.edges.len(), 4);
         assert_eq!(model.pcurves.len(), 4);
         assert_eq!(model.surfaces.len(), 1);
-        assert_eq!(result.report().coverage["legacy_v1_breps"], 1);
+        assert_eq!(result.report().coverage()["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
@@ -3079,7 +3081,7 @@ mod tests {
         );
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.report().coverage["legacy_v1_breps"], 1);
+        assert_eq!(result.report().coverage()["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }

@@ -1669,7 +1669,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let body = DecodeBody {
         geometry_transferred,
-        coverage: BTreeMap::from([
+        coverage: [
             ("rse_storage_bands".into(), storage_bands.len()),
             ("rse_databases".into(), databases.len()),
             ("rse_registry_entries".into(), segment_registry.len()),
@@ -1799,7 +1799,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 "kernel_unknown_surface_faces".into(),
                 kernel_stats.unknown_surface_faces,
             ),
-        ]),
+        ]
+        .into_iter()
+        .collect(),
         losses,
         notes: Vec::new(),
         transfer_ledger: TransferLedger::default(),

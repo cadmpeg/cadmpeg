@@ -3283,7 +3283,7 @@ fn build_geometry_report(
     classification.append_losses(&mut losses);
     DecodeBody {
         geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
+        coverage: Default::default(),
         losses,
         notes: container::summarize(scan, dialects.clone()).notes,
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
@@ -4608,7 +4608,7 @@ fn build_container_report(
 
     DecodeBody {
         geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
+        coverage: Default::default(),
         losses,
         notes: summary.notes,
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

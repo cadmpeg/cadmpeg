@@ -147,10 +147,7 @@ pub(crate) fn design_constraint_transfer_coverage(
         )
 }
 
-pub(crate) fn constraint_kind_breakdown(
-    coverage: &BTreeMap<String, usize>,
-    prefix: &str,
-) -> String {
+pub(crate) fn constraint_kind_breakdown(coverage: &cadmpeg_ir::Coverage, prefix: &str) -> String {
     coverage
         .iter()
         .filter_map(|(key, count)| {

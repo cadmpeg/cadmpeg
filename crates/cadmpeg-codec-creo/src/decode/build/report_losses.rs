@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Loss notes derived from coverage counters and undecoded PSB layers.
 
-use std::collections::BTreeMap;
-
 use crate::container::ContainerScan;
 use crate::decode::surfaces::{BrepTransferDiagnostics, FaceAdmissionRejection};
 use crate::loss::CreoLossCode;
@@ -10,13 +8,13 @@ use crate::loss::CreoLossCode;
 use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::LossNote;
 
-pub(super) fn coverage_count(coverage: &BTreeMap<String, usize>, key: &str) -> usize {
+pub(super) fn coverage_count(coverage: &cadmpeg_ir::Coverage, key: &str) -> usize {
     coverage.get(key).copied().unwrap_or(0)
 }
 
 pub(super) fn push_legacy_value_losses(
     losses: &mut Vec<LossNote>,
-    coverage: &BTreeMap<String, usize>,
+    coverage: &cadmpeg_ir::Coverage,
 ) {
     let unresolved_legacy_reals = coverage_count(coverage, "unresolved_legacy_real_value_count");
     if unresolved_legacy_reals != 0 {
@@ -433,7 +431,7 @@ pub(super) fn push_brep_transfer_note(
 pub(super) fn push_carrier_transfer_notes(
     losses: &mut Vec<LossNote>,
     scan: &ContainerScan,
-    coverage: &BTreeMap<String, usize>,
+    coverage: &cadmpeg_ir::Coverage,
     container_only: bool,
     placed_plane_count: usize,
 ) {

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-coverage counters for transferred features and numeric carriers.
 
-use std::collections::BTreeMap;
-
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
@@ -20,14 +18,10 @@ use super::ir::{
 };
 
 pub(in super::super) fn record_coverage<const N: usize>(
-    coverage: &mut BTreeMap<String, usize>,
-    entries: [(&str, usize); N],
+    coverage: &mut cadmpeg_ir::Coverage,
+    entries: [(&'static str, usize); N],
 ) {
-    coverage.extend(
-        entries
-            .into_iter()
-            .map(|(key, count)| (key.to_string(), count)),
-    );
+    coverage.extend(entries.map(|(key, count)| (key.into(), count)));
 }
 
 macro_rules! record_transferred_feature_coverage {
@@ -54,7 +48,7 @@ pub(in super::super) fn collect_feature_coverage(
     geometry_generator_feature_count: usize,
     feature_result_topology_count: usize,
     feature_result_edge_count: usize,
-    coverage: &mut BTreeMap<String, usize>,
+    coverage: &mut cadmpeg_ir::Coverage,
 ) {
     let native_feature_count = ir
         .model

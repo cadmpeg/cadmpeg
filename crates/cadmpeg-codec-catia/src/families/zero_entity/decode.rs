@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Zero-entity decode route for independently complete geometry carriers.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
@@ -806,100 +806,74 @@ pub(crate) fn try_decode_zero_entity(
     };
 
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
-    let mut coverage = BTreeMap::from([
+    let mut coverage: cadmpeg_ir::Coverage = [
         (
-            "transferred_zero_entity_support_curve_count".to_string(),
+            "transferred_zero_entity_support_curve_count".into(),
             transferred_support_curves,
         ),
         (
-            "transferred_zero_entity_parametric_surface_curve_count".to_string(),
+            "transferred_zero_entity_parametric_surface_curve_count".into(),
             transferred_parametric_surface_curves,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT,
             wire_counts.bodies,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT,
             wire_counts.owned_bodies,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT,
             wire_counts.loops,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT,
             wire_counts.edges,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT,
             wire_counts.vertices,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT,
             wire_counts.points,
         ),
-    ]);
+    ]
+    .into_iter()
+    .collect();
     if let Some(counts) = topology_counts {
         coverage.extend([
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT,
                 counts.bodies,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT,
                 counts.faces,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT,
                 counts.loops,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT,
                 counts.coedges,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT,
                 counts.edges,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT,
                 counts.vertices,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT,
                 counts.points,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT,
                 counts.pcurves,
             ),
         ]);

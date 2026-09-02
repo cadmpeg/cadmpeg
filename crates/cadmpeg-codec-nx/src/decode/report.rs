@@ -281,7 +281,7 @@ pub(crate) fn build_geometry_report(
     losses.extend_from_slice(dialect_losses);
     DecodeBody {
         geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
+        coverage: Default::default(),
         losses,
         notes: notes.to_vec(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

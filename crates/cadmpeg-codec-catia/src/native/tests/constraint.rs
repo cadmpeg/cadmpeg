@@ -93,11 +93,11 @@ fn native_namespace_types_dimension_constraint_ranges() {
     );
     assert!(!decoded
         .report()
-        .coverage
+        .coverage()
         .contains_key("decoded_structurally_owned_constraint_range_count"));
     assert!(!decoded
         .report()
-        .coverage
+        .coverage()
         .contains_key("unresolved_constraint_range_owner_count"));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == crate::loss::CatiaLossCode::AttributesDimensionQuantityUnresolved.kind()

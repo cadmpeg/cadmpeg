@@ -352,7 +352,7 @@ fn an_unverified_band_recovers_the_same_solid_as_the_verified_one() {
         assert_eq!(result.ir().model.bodies.len(), 1, "{label}");
         assert_eq!(result.ir().model.faces.len(), 1, "{label}");
         assert_eq!(result.ir().model.surfaces.len(), 1, "{label}");
-        assert_eq!(result.report().coverage["unknown_records"], 0, "{label}");
+        assert_eq!(result.report().coverage()["unknown_records"], 0, "{label}");
     }
 }
 

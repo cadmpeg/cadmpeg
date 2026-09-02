@@ -38,7 +38,7 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     assert_eq!(records[0].face_id, 10);
     assert_eq!(records[0].reason, "missing_loops");
     assert_eq!(records[5].face_id, 15);
-    let mut coverage = BTreeMap::new();
+    let mut coverage = cadmpeg_ir::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
     assert_eq!(coverage["brep_candidate_face_count"], 6);
     assert_eq!(coverage["brep_admitted_face_count"], 1);
@@ -55,7 +55,7 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
     let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingSurfaceCarrier];
     assert_eq!(evidence.count, 1);
     assert_eq!(evidence.sample_ids, vec![42]);
-    let mut coverage = BTreeMap::new();
+    let mut coverage = cadmpeg_ir::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
     assert_eq!(coverage["brep_rejected_face_count"], 1);
     assert_eq!(
@@ -71,7 +71,7 @@ fn brep_diagnostics_report_component_gate_inputs() {
         selected_body_count: None,
         ..BrepTransferDiagnostics::default()
     };
-    let mut coverage = BTreeMap::new();
+    let mut coverage = cadmpeg_ir::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
 
     assert_eq!(coverage["brep_admitted_component_count"], 3);

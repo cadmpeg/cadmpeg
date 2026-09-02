@@ -269,7 +269,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         assert_eq!(
             result
                 .report()
-                .coverage
+                .coverage()
                 .get("decoded_torus_radius_override_count")
                 .copied(),
             Some(1)
@@ -277,7 +277,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         assert_eq!(
             result
                 .report()
-                .coverage
+                .coverage()
                 .get("decoded_torus_outline_extent_count")
                 .copied(),
             Some(0)

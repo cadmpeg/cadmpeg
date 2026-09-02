@@ -1784,35 +1784,35 @@ fn finish_decode(
         .count();
     report.coverage.extend([
         (
-            "decoded_appearance_packet_count".to_string(),
+            "decoded_appearance_packet_count".into(),
             appearance_transfer.decoded_packets,
         ),
         (
-            "unresolved_appearance_packet_count".to_string(),
+            "unresolved_appearance_packet_count".into(),
             appearance_transfer.unresolved_packets,
         ),
         (
-            "transferred_appearance_asset_count".to_string(),
+            "transferred_appearance_asset_count".into(),
             appearance_transfer.emitted_assets,
         ),
         (
-            "transferred_appearance_binding_count".to_string(),
+            "transferred_appearance_binding_count".into(),
             appearance_transfer.emitted_bindings,
         ),
         (
-            "decoded_consolidated_circle_count".to_string(),
+            "decoded_consolidated_circle_count".into(),
             native.consolidated_circles.len(),
         ),
         (
-            "decoded_consolidated_class61_record_count".to_string(),
+            "decoded_consolidated_class61_record_count".into(),
             native.consolidated_class61_records.len(),
         ),
         (
-            "decoded_consolidated_cone_face_count".to_string(),
+            "decoded_consolidated_cone_face_count".into(),
             native.consolidated_cone_faces.len(),
         ),
         (
-            "decoded_consolidated_cone_face_parameter_point_count".to_string(),
+            "decoded_consolidated_cone_face_parameter_point_count".into(),
             native
                 .consolidated_cone_faces
                 .iter()
@@ -1820,75 +1820,75 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_consolidated_cone_count".to_string(),
+            "decoded_consolidated_cone_count".into(),
             native.consolidated_cones.len(),
         ),
         (
-            "decoded_consolidated_cylinder_count".to_string(),
+            "decoded_consolidated_cylinder_count".into(),
             native.consolidated_cylinders.len(),
         ),
         (
-            "decoded_consolidated_group_count".to_string(),
+            "decoded_consolidated_group_count".into(),
             native.consolidated_groups.len(),
         ),
         (
-            "decoded_consolidated_line_profile_count".to_string(),
+            "decoded_consolidated_line_profile_count".into(),
             native.consolidated_line_profiles.len(),
         ),
         (
-            "transferred_consolidated_line_profile_count".to_string(),
+            "transferred_consolidated_line_profile_count".into(),
             transferred_line_profile_count,
         ),
         (
-            "decoded_consolidated_parameter_point_count".to_string(),
+            "decoded_consolidated_parameter_point_count".into(),
             native.consolidated_parameter_points.len(),
         ),
         (
-            "decoded_consolidated_plane_carrier_count".to_string(),
+            "decoded_consolidated_plane_carrier_count".into(),
             native.consolidated_plane_carriers.len(),
         ),
         (
-            "decoded_consolidated_pcurve_count".to_string(),
+            "decoded_consolidated_pcurve_count".into(),
             native.consolidated_pcurves.len(),
         ),
         (
-            "decoded_consolidated_edge_run_count".to_string(),
+            "decoded_consolidated_edge_run_count".into(),
             consolidated_edge_run_count,
         ),
         (
-            "decoded_consolidated_edge_run_support_binding_count".to_string(),
+            "decoded_consolidated_edge_run_support_binding_count".into(),
             consolidated_edge_run_support_binding_count,
         ),
         (
-            "unresolved_consolidated_edge_run_count".to_string(),
+            "unresolved_consolidated_edge_run_count".into(),
             unresolved_consolidated_edge_run_count,
         ),
         (
-            "partially_resolved_consolidated_edge_run_count".to_string(),
+            "partially_resolved_consolidated_edge_run_count".into(),
             partially_resolved_consolidated_edge_run_count,
         ),
         (
-            "fully_resolved_consolidated_edge_run_count".to_string(),
+            "fully_resolved_consolidated_edge_run_count".into(),
             fully_resolved_consolidated_edge_run_count,
         ),
         (
-            "decoded_consolidated_edge_run_shared_locus_count".to_string(),
+            "decoded_consolidated_edge_run_shared_locus_count".into(),
             consolidated_edge_run_shared_locus_count,
         ),
         (
-            "decoded_consolidated_edge_run_endpoint_locus_count".to_string(),
+            "decoded_consolidated_edge_run_endpoint_locus_count".into(),
             consolidated_edge_run_endpoint_locus_count,
         ),
         (
-            "decoded_consolidated_reference_list_count".to_string(),
+            "decoded_consolidated_reference_list_count".into(),
             native.consolidated_reference_lists.len(),
         ),
         (
-            "decoded_consolidated_revolution_count".to_string(),
+            "decoded_consolidated_revolution_count".into(),
             native.consolidated_revolutions.len(),
         ),
         (
-            "transferred_consolidated_revolution_count".to_string(),
+            "transferred_consolidated_revolution_count".into(),
             ir.model
                 .procedural_surfaces
                 .iter()
@@ -1901,19 +1901,19 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_consolidated_sphere_count".to_string(),
+            "decoded_consolidated_sphere_count".into(),
             native.consolidated_spheres.len(),
         ),
         (
-            "decoded_consolidated_torus_count".to_string(),
+            "decoded_consolidated_torus_count".into(),
             native.consolidated_tori.len(),
         ),
         (
-            "decoded_zero_entity_edge_stride_count".to_string(),
+            "decoded_zero_entity_edge_stride_count".into(),
             native.zero_entity_edge_strides.len(),
         ),
         (
-            "decoded_zero_entity_edge_stride_allocation_count".to_string(),
+            "decoded_zero_entity_edge_stride_allocation_count".into(),
             native
                 .zero_entity_edge_strides
                 .iter()
@@ -1921,7 +1921,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_edge_stride_topology_ref_count".to_string(),
+            "decoded_zero_entity_edge_stride_topology_ref_count".into(),
             native
                 .zero_entity_edge_strides
                 .iter()
@@ -1929,7 +1929,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_edge_stride_surface_support_ref_count".to_string(),
+            "decoded_zero_entity_edge_stride_surface_support_ref_count".into(),
             native
                 .zero_entity_edge_strides
                 .iter()
@@ -1937,7 +1937,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_face_bound_support_run_count".to_string(),
+            "decoded_zero_entity_face_bound_support_run_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1945,7 +1945,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_face_terminal_control_03_count".to_string(),
+            "decoded_zero_entity_face_terminal_control_03_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1954,7 +1954,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_face_terminal_control_05_count".to_string(),
+            "decoded_zero_entity_face_terminal_control_05_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1963,7 +1963,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_loop_terminal_count".to_string(),
+            "decoded_zero_entity_loop_terminal_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1972,7 +1972,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_loop_record_count".to_string(),
+            "decoded_zero_entity_loop_record_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1981,7 +1981,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_loop_class_41_count".to_string(),
+            "decoded_zero_entity_loop_class_41_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1991,7 +1991,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_loop_class_50_count".to_string(),
+            "decoded_zero_entity_loop_class_50_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2001,7 +2001,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_loop_class_c1_count".to_string(),
+            "decoded_zero_entity_loop_class_c1_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2011,7 +2011,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_forward_loop_member_count".to_string(),
+            "decoded_zero_entity_forward_loop_member_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2022,7 +2022,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_reversed_loop_member_count".to_string(),
+            "decoded_zero_entity_reversed_loop_member_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2033,7 +2033,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_oriented_loop_member_count".to_string(),
+            "decoded_zero_entity_oriented_loop_member_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2043,7 +2043,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_oriented_model_endpoint_pair_count".to_string(),
+            "decoded_zero_entity_oriented_model_endpoint_pair_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2053,7 +2053,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_bound_support_member_count".to_string(),
+            "decoded_zero_entity_bound_support_member_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2063,7 +2063,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_bound_typed_loop_reference_count".to_string(),
+            "decoded_zero_entity_bound_typed_loop_reference_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2073,11 +2073,11 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_oriented_use_pair_count".to_string(),
+            "decoded_zero_entity_oriented_use_pair_count".into(),
             native.zero_entity_oriented_use_pairs.len(),
         ),
         (
-            "decoded_zero_entity_oriented_use_count".to_string(),
+            "decoded_zero_entity_oriented_use_count".into(),
             native
                 .zero_entity_oriented_use_pairs
                 .iter()
@@ -2085,7 +2085,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_oriented_use_allocation_count".to_string(),
+            "decoded_zero_entity_oriented_use_allocation_count".into(),
             native
                 .zero_entity_oriented_use_pairs
                 .iter()
@@ -2094,23 +2094,23 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_endpoint_pair_candidate_count".to_string(),
+            "decoded_zero_entity_endpoint_pair_candidate_count".into(),
             native.zero_entity_endpoint_pair_candidates.len(),
         ),
         (
-            "decoded_zero_entity_endpoint_locus_candidate_count".to_string(),
+            "decoded_zero_entity_endpoint_locus_candidate_count".into(),
             native.zero_entity_endpoint_locus_candidates.len(),
         ),
         (
-            "decoded_zero_entity_record_count".to_string(),
+            "decoded_zero_entity_record_count".into(),
             native.zero_entity_records.len(),
         ),
         (
-            "decoded_zero_entity_support_run_count".to_string(),
+            "decoded_zero_entity_support_run_count".into(),
             native.zero_entity_support_runs.len(),
         ),
         (
-            "decoded_zero_entity_support_occurrence_count".to_string(),
+            "decoded_zero_entity_support_occurrence_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2118,7 +2118,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_support_pcurve_count".to_string(),
+            "decoded_zero_entity_support_pcurve_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2127,7 +2127,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_support_model_curve_count".to_string(),
+            "decoded_zero_entity_support_model_curve_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2136,7 +2136,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_support_model_construction_count".to_string(),
+            "decoded_zero_entity_support_model_construction_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2145,7 +2145,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_uv_endpoint_pair_count".to_string(),
+            "decoded_zero_entity_uv_endpoint_pair_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2154,7 +2154,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_model_endpoint_pair_count".to_string(),
+            "decoded_zero_entity_model_endpoint_pair_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2163,7 +2163,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_model_midpoint_count".to_string(),
+            "decoded_zero_entity_model_midpoint_count".into(),
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2172,11 +2172,11 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_vertex_incidence_count".to_string(),
+            "decoded_zero_entity_vertex_incidence_count".into(),
             native.zero_entity_vertex_incidences.len(),
         ),
         (
-            "decoded_zero_entity_vertex_incidence_allocation_count".to_string(),
+            "decoded_zero_entity_vertex_incidence_allocation_count".into(),
             native
                 .zero_entity_vertex_incidences
                 .iter()
@@ -2184,7 +2184,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_vertex_owner_binding_count".to_string(),
+            "decoded_zero_entity_vertex_owner_binding_count".into(),
             native
                 .zero_entity_vertex_incidences
                 .iter()
@@ -2192,1008 +2192,999 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_object_graph_count".to_string(),
+            "decoded_object_graph_count".into(),
             native.object_graphs.len(),
         ),
+        ("decoded_object_record_count".into(), object_record_count),
         (
-            "decoded_object_record_count".to_string(),
-            object_record_count,
-        ),
-        (
-            "modeling_object_graph_count".to_string(),
+            "modeling_object_graph_count".into(),
             modeling_graph_scope
                 .as_ref()
                 .map_or(native.object_graphs.len(), HashSet::len),
         ),
         (
-            "modeling_object_record_count".to_string(),
+            "modeling_object_record_count".into(),
             modeling_object_records.len(),
         ),
         (
-            "retained_unscoped_object_graph_count".to_string(),
+            "retained_unscoped_object_graph_count".into(),
             retained_unscoped_object_graph_count,
         ),
         (
-            "retained_unscoped_object_record_count".to_string(),
+            "retained_unscoped_object_record_count".into(),
             retained_unscoped_object_record_count,
         ),
         (
-            "decoded_storage_record_link_count".to_string(),
+            "decoded_storage_record_link_count".into(),
             resolved_storage_record_count,
         ),
         (
-            "unresolved_storage_record_count".to_string(),
+            "unresolved_storage_record_count".into(),
             unresolved_storage_record_count,
         ),
         (
-            "decoded_object_record_reference_count".to_string(),
+            "decoded_object_record_reference_count".into(),
             object_record_reference_count,
         ),
         (
-            "decoded_resolved_object_record_reference_count".to_string(),
+            "decoded_resolved_object_record_reference_count".into(),
             resolved_object_record_reference_count,
         ),
         (
-            "decoded_null_object_record_reference_count".to_string(),
+            "decoded_null_object_record_reference_count".into(),
             null_object_record_reference_count,
         ),
         (
-            "unresolved_object_record_reference_count".to_string(),
+            "unresolved_object_record_reference_count".into(),
             unresolved_object_record_reference_count,
         ),
         (
-            "decoded_repeated_reference_suffix_count".to_string(),
+            "decoded_repeated_reference_suffix_count".into(),
             repeated_reference_suffix_count,
         ),
         (
-            "decoded_repeated_reference_schema_selection_count".to_string(),
+            "decoded_repeated_reference_schema_selection_count".into(),
             repeated_reference_schema_selection_count,
         ),
         (
-            "decoded_design_object_count".to_string(),
+            "decoded_design_object_count".into(),
             native.design_objects.len(),
         ),
-        ("decoded_design_field_count".to_string(), design_field_count),
+        ("decoded_design_field_count".into(), design_field_count),
         (
-            "classified_design_object_count".to_string(),
+            "classified_design_object_count".into(),
             classified_design_object_count,
         ),
         (
-            "decoded_design_object_relation_count".to_string(),
+            "decoded_design_object_relation_count".into(),
             design_object_relation_count,
         ),
         (
-            "decoded_design_parallel_reference_table_count".to_string(),
+            "decoded_design_parallel_reference_table_count".into(),
             design_parallel_reference_table_count,
         ),
         (
-            "decoded_design_parallel_reference_row_count".to_string(),
+            "decoded_design_parallel_reference_row_count".into(),
             design_parallel_reference_row_count,
         ),
         (
-            "decoded_design_parallel_reference_column_count".to_string(),
+            "decoded_design_parallel_reference_column_count".into(),
             design_parallel_reference_column_count,
         ),
         (
-            "unclassified_design_parallel_reference_column_count".to_string(),
+            "unclassified_design_parallel_reference_column_count".into(),
             design_parallel_reference_unclassified_column_count,
         ),
         (
-            "decoded_design_parallel_reference_cell_count".to_string(),
+            "decoded_design_parallel_reference_cell_count".into(),
             design_parallel_reference_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_resolved_cell_count".to_string(),
+            "decoded_design_parallel_reference_resolved_cell_count".into(),
             design_parallel_reference_resolved_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_null_cell_count".to_string(),
+            "decoded_design_parallel_reference_null_cell_count".into(),
             design_parallel_reference_null_cell_count,
         ),
         (
-            "unresolved_design_parallel_reference_cell_count".to_string(),
+            "unresolved_design_parallel_reference_cell_count".into(),
             design_parallel_reference_unresolved_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_classified_cell_count".to_string(),
+            "decoded_design_parallel_reference_classified_cell_count".into(),
             design_parallel_reference_classified_cell_count,
         ),
         (
-            "unclassified_design_parallel_reference_cell_count".to_string(),
+            "unclassified_design_parallel_reference_cell_count".into(),
             design_parallel_reference_unclassified_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_classified_column_count".to_string(),
+            "decoded_design_parallel_reference_classified_column_count".into(),
             design_parallel_reference_classified_column_count,
         ),
         (
-            "decoded_design_parallel_reference_matched_row_count".to_string(),
+            "decoded_design_parallel_reference_matched_row_count".into(),
             design_parallel_reference_matched_row_count,
         ),
         (
-            "unmatched_design_parallel_reference_row_count".to_string(),
+            "unmatched_design_parallel_reference_row_count".into(),
             design_parallel_reference_unmatched_row_count,
         ),
         (
-            "decoded_design_unowned_field_relation_count".to_string(),
+            "decoded_design_unowned_field_relation_count".into(),
             design_unowned_field_relation_count,
         ),
         (
-            "decoded_design_same_object_relation_count".to_string(),
+            "decoded_design_same_object_relation_count".into(),
             design_same_object_relation_count,
         ),
         (
-            "decoded_design_reflexive_field_relation_count".to_string(),
+            "decoded_design_reflexive_field_relation_count".into(),
             design_reflexive_field_relation_count,
         ),
         (
-            "decoded_design_object_owner_link_count".to_string(),
+            "decoded_design_object_owner_link_count".into(),
             design_object_owner_link_count,
         ),
         (
-            "decoded_legacy_entity_run_count".to_string(),
+            "decoded_legacy_entity_run_count".into(),
             native.legacy_entity_runs.len(),
         ),
         (
-            "decoded_legacy_entity_identity_count".to_string(),
+            "decoded_legacy_entity_identity_count".into(),
             legacy_entity_identity_count,
         ),
         (
-            "decoded_legacy_schema_program_count".to_string(),
+            "decoded_legacy_schema_program_count".into(),
             legacy_schema_program_count,
         ),
         (
-            "decoded_legacy_vendor_footer_schema_program_count".to_string(),
+            "decoded_legacy_vendor_footer_schema_program_count".into(),
             legacy_vendor_footer_schema_program_count,
         ),
         (
-            "decoded_legacy_directory_bound_schema_program_count".to_string(),
+            "decoded_legacy_directory_bound_schema_program_count".into(),
             legacy_directory_bound_schema_program_count,
         ),
         (
-            "decoded_legacy_schema_identifier_count".to_string(),
+            "decoded_legacy_schema_identifier_count".into(),
             legacy_schema_identifier_count,
         ),
         (
-            "decoded_legacy_evaluated_value_name_count".to_string(),
+            "decoded_legacy_evaluated_value_name_count".into(),
             legacy_evaluated_value_name_count,
         ),
         (
-            "decoded_legacy_identity_lead_81_count".to_string(),
+            "decoded_legacy_identity_lead_81_count".into(),
             legacy_identity_lead_81_count,
         ),
         (
-            "decoded_legacy_identity_lead_82_count".to_string(),
+            "decoded_legacy_identity_lead_82_count".into(),
             legacy_identity_lead_82_count,
         ),
         (
-            "decoded_legacy_identity_lead_e5_count".to_string(),
+            "decoded_legacy_identity_lead_e5_count".into(),
             legacy_identity_lead_e5_count,
         ),
         (
-            "decoded_legacy_identity_lead_fd_count".to_string(),
+            "decoded_legacy_identity_lead_fd_count".into(),
             legacy_identity_lead_fd_count,
         ),
         (
-            "decoded_legacy_text_field_count".to_string(),
+            "decoded_legacy_text_field_count".into(),
             legacy_text_field_count,
         ),
         (
-            "decoded_legacy_e3_role_tail_text_field_count".to_string(),
+            "decoded_legacy_e3_role_tail_text_field_count".into(),
             legacy_e3_role_tail_text_field_count,
         ),
         (
-            "decoded_legacy_role_selector_count".to_string(),
+            "decoded_legacy_role_selector_count".into(),
             legacy_role_selector_count,
         ),
         (
-            "decoded_legacy_selected_role_count".to_string(),
+            "decoded_legacy_selected_role_count".into(),
             legacy_selected_role_count,
         ),
         (
-            "decoded_legacy_role_field_binding_count".to_string(),
+            "decoded_legacy_role_field_binding_count".into(),
             legacy_role_field_binding_count,
         ),
         (
-            "decoded_legacy_role_text_field_count".to_string(),
+            "decoded_legacy_role_text_field_count".into(),
             legacy_role_text_field_count,
         ),
         (
-            "decoded_legacy_schema_field_count".to_string(),
+            "decoded_legacy_schema_field_count".into(),
             legacy_schema_field_count,
         ),
         (
-            "decoded_legacy_relation_count".to_string(),
+            "decoded_legacy_relation_count".into(),
             legacy_relation_count,
         ),
         (
-            "decoded_legacy_parameter_relation_count".to_string(),
+            "decoded_legacy_parameter_relation_count".into(),
             legacy_parameter_relation_count,
         ),
         (
-            "decoded_legacy_synchronous_state_count".to_string(),
+            "decoded_legacy_synchronous_state_count".into(),
             legacy_synchronous_state_count,
         ),
         (
-            "decoded_legacy_synchronous_relation_count".to_string(),
+            "decoded_legacy_synchronous_relation_count".into(),
             legacy_synchronous_relation_count,
         ),
         (
-            "decoded_legacy_asynchronous_relation_count".to_string(),
+            "decoded_legacy_asynchronous_relation_count".into(),
             legacy_asynchronous_relation_count,
         ),
         (
-            "decoded_legacy_type_descriptor_count".to_string(),
+            "decoded_legacy_type_descriptor_count".into(),
             legacy_type_descriptor_count,
         ),
         (
-            "decoded_legacy_literal_type_descriptor_count".to_string(),
+            "decoded_legacy_literal_type_descriptor_count".into(),
             legacy_literal_type_descriptor_count,
         ),
         (
-            "decoded_legacy_scalar_value_count".to_string(),
+            "decoded_legacy_scalar_value_count".into(),
             legacy_scalar_value_count,
         ),
         (
-            "decoded_legacy_named_scalar_value_count".to_string(),
+            "decoded_legacy_named_scalar_value_count".into(),
             legacy_named_scalar_value_count,
         ),
         (
-            "decoded_legacy_string_value_count".to_string(),
+            "decoded_legacy_string_value_count".into(),
             legacy_string_value_count,
         ),
         (
-            "decoded_legacy_named_string_value_count".to_string(),
+            "decoded_legacy_named_string_value_count".into(),
             legacy_named_string_value_count,
         ),
         (
-            "decoded_legacy_integer_value_count".to_string(),
+            "decoded_legacy_integer_value_count".into(),
             legacy_integer_value_count,
         ),
         (
-            "decoded_legacy_named_integer_value_count".to_string(),
+            "decoded_legacy_named_integer_value_count".into(),
             legacy_named_integer_value_count,
         ),
         (
-            "decoded_definition_schema_selection_count".to_string(),
+            "decoded_definition_schema_selection_count".into(),
             definition_schema_selection_count,
         ),
         (
-            "decoded_entity_value_field_count".to_string(),
+            "decoded_entity_value_field_count".into(),
             entity_value_field_count,
         ),
         (
-            "decoded_entity_value_schema_selection_count".to_string(),
+            "decoded_entity_value_schema_selection_count".into(),
             entity_value_schema_selection_count,
         ),
         (
-            "decoded_numeric_entity_value_packet_count".to_string(),
+            "decoded_numeric_entity_value_packet_count".into(),
             numeric_entity_value_packet_count,
         ),
         (
-            "decoded_numeric_entity_value_pair_count".to_string(),
+            "decoded_numeric_entity_value_pair_count".into(),
             numeric_entity_value_pair_count,
         ),
         (
-            "decoded_reference_signature_count".to_string(),
+            "decoded_reference_signature_count".into(),
             reference_signature_count,
         ),
         (
-            "decoded_reference_signature_prefix_atom_2_count".to_string(),
+            "decoded_reference_signature_prefix_atom_2_count".into(),
             reference_signature_prefix_atom_2_count,
         ),
         (
-            "decoded_reference_signature_prefix_atom_35_count".to_string(),
+            "decoded_reference_signature_prefix_atom_35_count".into(),
             reference_signature_prefix_atom_35_count,
         ),
         (
-            "decoded_reference_signature_cohort_count".to_string(),
+            "decoded_reference_signature_cohort_count".into(),
             reference_signature_cohort_count,
         ),
         (
-            "decoded_multi_member_reference_signature_cohort_count".to_string(),
+            "decoded_multi_member_reference_signature_cohort_count".into(),
             multi_member_reference_signature_cohort_count,
         ),
         (
-            "decoded_reference_signature_cohort_member_count".to_string(),
+            "decoded_reference_signature_cohort_member_count".into(),
             reference_signature_cohort_member_count,
         ),
         (
-            "decoded_schema_selected_reference_signature_cohort_count".to_string(),
+            "decoded_schema_selected_reference_signature_cohort_count".into(),
             schema_selected_reference_signature_cohort_count,
         ),
         (
-            "decoded_reference_signature_instruction_count".to_string(),
+            "decoded_reference_signature_instruction_count".into(),
             reference_signature_instruction_count,
         ),
         (
-            "decoded_reference_signature_token_count".to_string(),
+            "decoded_reference_signature_token_count".into(),
             reference_signature_token_count,
         ),
         (
-            "decoded_resolved_reference_signature_entity_count".to_string(),
+            "decoded_resolved_reference_signature_entity_count".into(),
             resolved_reference_signature_entity_count,
         ),
         (
-            "decoded_null_reference_signature_entity_count".to_string(),
+            "decoded_null_reference_signature_entity_count".into(),
             null_reference_signature_entity_count,
         ),
         (
-            "decoded_unresolved_reference_signature_entity_count".to_string(),
+            "decoded_unresolved_reference_signature_entity_count".into(),
             unresolved_reference_signature_entity_count,
         ),
         (
-            "decoded_classified_reference_signature_entity_count".to_string(),
+            "decoded_classified_reference_signature_entity_count".into(),
             classified_reference_signature_entity_count,
         ),
         (
-            "decoded_compact_entity_value_packet_count".to_string(),
+            "decoded_compact_entity_value_packet_count".into(),
             compact_entity_value_packet_count,
         ),
         (
-            "decoded_layout_entity_value_packet_count".to_string(),
+            "decoded_layout_entity_value_packet_count".into(),
             layout_entity_value_packet_count,
         ),
         (
-            "decoded_relation_expression_count".to_string(),
+            "decoded_relation_expression_count".into(),
             relation_expression_count,
         ),
         (
-            "decoded_placeholder_state_relation_expression_count".to_string(),
+            "decoded_placeholder_state_relation_expression_count".into(),
             placeholder_state_relation_expression_count,
         ),
         (
-            "decoded_parser_version_relation_expression_count".to_string(),
+            "decoded_parser_version_relation_expression_count".into(),
             parser_version_relation_expression_count,
         ),
         (
-            "decoded_boolean_parser_version_relation_expression_count".to_string(),
+            "decoded_boolean_parser_version_relation_expression_count".into(),
             boolean_parser_version_relation_expression_count,
         ),
         (
-            "decoded_opened_boolean_parser_version_relation_expression_count".to_string(),
+            "decoded_opened_boolean_parser_version_relation_expression_count".into(),
             opened_boolean_parser_version_relation_expression_count,
         ),
         (
-            "decoded_typed_relation_expression_count".to_string(),
+            "decoded_typed_relation_expression_count".into(),
             typed_relation_expression_count,
         ),
         (
-            "decoded_untyped_relation_expression_count".to_string(),
+            "decoded_untyped_relation_expression_count".into(),
             relation_expression_count - typed_relation_expression_count,
         ),
         (
-            "decoded_referenced_relation_expression_count".to_string(),
+            "decoded_referenced_relation_expression_count".into(),
             referenced_relation_expression_count,
         ),
         (
-            "decoded_formula_referenced_relation_expression_count".to_string(),
+            "decoded_formula_referenced_relation_expression_count".into(),
             formula_referenced_relation_expression_count,
         ),
         (
-            "decoded_program_referenced_relation_expression_count".to_string(),
+            "decoded_program_referenced_relation_expression_count".into(),
             program_referenced_relation_expression_count,
         ),
         (
-            "decoded_relation_program_instance_count".to_string(),
+            "decoded_relation_program_instance_count".into(),
             relation_program_instance_count,
         ),
         (
-            "decoded_relation_program_output_count".to_string(),
+            "decoded_relation_program_output_count".into(),
             relation_program_output_count,
         ),
         (
-            "decoded_resolved_relation_program_output_count".to_string(),
+            "decoded_resolved_relation_program_output_count".into(),
             resolved_relation_program_output_count,
         ),
         (
-            "decoded_null_relation_program_output_count".to_string(),
+            "decoded_null_relation_program_output_count".into(),
             null_relation_program_output_count,
         ),
         (
-            "unresolved_relation_program_output_count".to_string(),
+            "unresolved_relation_program_output_count".into(),
             unresolved_relation_program_output_count,
         ),
         (
-            "decoded_relation_program_reference_incidence_count".to_string(),
+            "decoded_relation_program_reference_incidence_count".into(),
             relation_program_reference_incidence_count,
         ),
         (
-            "decoded_resolved_relation_program_reference_incidence_count".to_string(),
+            "decoded_resolved_relation_program_reference_incidence_count".into(),
             resolved_relation_program_reference_incidence_count,
         ),
         (
-            "decoded_null_relation_program_reference_incidence_count".to_string(),
+            "decoded_null_relation_program_reference_incidence_count".into(),
             null_relation_program_reference_incidence_count,
         ),
         (
-            "unresolved_relation_program_reference_incidence_count".to_string(),
+            "unresolved_relation_program_reference_incidence_count".into(),
             unresolved_relation_program_reference_incidence_count,
         ),
         (
-            "decoded_classified_relation_program_reference_incidence_count".to_string(),
+            "decoded_classified_relation_program_reference_incidence_count".into(),
             classified_relation_program_reference_incidence_count,
         ),
         (
-            "unclassified_relation_program_reference_incidence_count".to_string(),
+            "unclassified_relation_program_reference_incidence_count".into(),
             relation_program_reference_incidence_count
                 - classified_relation_program_reference_incidence_count,
         ),
         (
-            "decoded_lead12_relation_program_instance_count".to_string(),
+            "decoded_lead12_relation_program_instance_count".into(),
             lead12_relation_program_instance_count,
         ),
         (
-            "decoded_lead54_relation_program_instance_count".to_string(),
+            "decoded_lead54_relation_program_instance_count".into(),
             lead54_relation_program_instance_count,
         ),
         (
-            "decoded_resolved_lead12_relation_program_context_entity_count".to_string(),
+            "decoded_resolved_lead12_relation_program_context_entity_count".into(),
             resolved_lead12_relation_program_context_entity_count,
         ),
         (
-            "decoded_null_lead12_relation_program_context_entity_count".to_string(),
+            "decoded_null_lead12_relation_program_context_entity_count".into(),
             null_lead12_relation_program_context_entity_count,
         ),
         (
-            "unresolved_lead12_relation_program_context_entity_count".to_string(),
+            "unresolved_lead12_relation_program_context_entity_count".into(),
             unresolved_lead12_relation_program_context_entity_count,
         ),
         (
-            "decoded_lead12_relation_program_paramout_context_entity_count".to_string(),
+            "decoded_lead12_relation_program_paramout_context_entity_count".into(),
             lead12_relation_program_paramout_context_entity_count,
         ),
         (
-            "decoded_other_lead12_relation_program_context_class_count".to_string(),
+            "decoded_other_lead12_relation_program_context_class_count".into(),
             other_lead12_relation_program_context_class_count,
         ),
         (
-            "unclassified_lead12_relation_program_context_entity_count".to_string(),
+            "unclassified_lead12_relation_program_context_entity_count".into(),
             unclassified_lead12_relation_program_context_entity_count,
         ),
         (
-            "decoded_resolved_lead54_relation_program_trailing_entity_count".to_string(),
+            "decoded_resolved_lead54_relation_program_trailing_entity_count".into(),
             resolved_lead54_relation_program_trailing_entity_count,
         ),
         (
-            "decoded_null_lead54_relation_program_trailing_entity_count".to_string(),
+            "decoded_null_lead54_relation_program_trailing_entity_count".into(),
             null_lead54_relation_program_trailing_entity_count,
         ),
         (
-            "unresolved_lead54_relation_program_trailing_entity_count".to_string(),
+            "unresolved_lead54_relation_program_trailing_entity_count".into(),
             unresolved_lead54_relation_program_trailing_entity_count,
         ),
         (
-            "decoded_resolved_relation_program_instance_count".to_string(),
+            "decoded_resolved_relation_program_instance_count".into(),
             resolved_relation_program_instance_count,
         ),
         (
-            "decoded_null_relation_program_instance_count".to_string(),
+            "decoded_null_relation_program_instance_count".into(),
             null_relation_program_instance_count,
         ),
         (
-            "unresolved_relation_program_instance_count".to_string(),
+            "unresolved_relation_program_instance_count".into(),
             unresolved_relation_program_instance_count,
         ),
         (
-            "decoded_resolved_relation_program_repeated_reference_count".to_string(),
+            "decoded_resolved_relation_program_repeated_reference_count".into(),
             resolved_relation_program_repeated_reference_count,
         ),
         (
-            "decoded_null_relation_program_repeated_reference_count".to_string(),
+            "decoded_null_relation_program_repeated_reference_count".into(),
             null_relation_program_repeated_reference_count,
         ),
         (
-            "unresolved_relation_program_repeated_reference_count".to_string(),
+            "unresolved_relation_program_repeated_reference_count".into(),
             unresolved_relation_program_repeated_reference_count,
         ),
         (
-            "decoded_classified_relation_program_entity_count".to_string(),
+            "decoded_classified_relation_program_entity_count".into(),
             classified_relation_program_entity_count,
         ),
         (
-            "unclassified_relation_program_entity_count".to_string(),
+            "unclassified_relation_program_entity_count".into(),
             relation_program_instance_count - classified_relation_program_entity_count,
         ),
         (
-            "decoded_classified_relation_program_repeated_entity_count".to_string(),
+            "decoded_classified_relation_program_repeated_entity_count".into(),
             classified_relation_program_repeated_entity_count,
         ),
         (
-            "unclassified_relation_program_repeated_entity_count".to_string(),
+            "unclassified_relation_program_repeated_entity_count".into(),
             relation_program_instance_count - classified_relation_program_repeated_entity_count,
         ),
         (
-            "decoded_relation_expression_program_instance_count".to_string(),
+            "decoded_relation_expression_program_instance_count".into(),
             relation_expression_instance_count,
         ),
         (
-            "decoded_other_relation_program_instance_count".to_string(),
+            "decoded_other_relation_program_instance_count".into(),
             other_relation_program_instance_count,
         ),
         (
-            "decoded_typed_relation_program_instance_count".to_string(),
+            "decoded_typed_relation_program_instance_count".into(),
             typed_relation_program_instance_count,
         ),
         (
-            "decoded_resolved_relation_program_input_instance_count".to_string(),
+            "decoded_resolved_relation_program_input_instance_count".into(),
             resolved_relation_program_input_instance_count,
         ),
         (
-            "unresolved_relation_program_input_instance_count".to_string(),
+            "unresolved_relation_program_input_instance_count".into(),
             unresolved_relation_program_input_instance_count,
         ),
         (
-            "decoded_resolved_relation_program_input_count".to_string(),
+            "decoded_resolved_relation_program_input_count".into(),
             resolved_relation_program_input_count,
         ),
         (
-            "decoded_distinct_relation_program_input_entity_count".to_string(),
+            "decoded_distinct_relation_program_input_entity_count".into(),
             distinct_relation_program_input_entity_count,
         ),
         (
-            "decoded_relation_program_parameter_dependency_count".to_string(),
+            "decoded_relation_program_parameter_dependency_count".into(),
             relation_program_parameter_dependency_count,
         ),
         (
-            "decoded_resolved_relation_program_parameter_dependency_count".to_string(),
+            "decoded_resolved_relation_program_parameter_dependency_count".into(),
             resolved_relation_program_parameter_dependency_count,
         ),
         (
-            "unresolved_relation_program_parameter_dependency_count".to_string(),
+            "unresolved_relation_program_parameter_dependency_count".into(),
             unresolved_relation_program_parameter_dependency_count,
         ),
         (
-            "ambiguous_relation_program_parameter_dependency_count".to_string(),
+            "ambiguous_relation_program_parameter_dependency_count".into(),
             ambiguous_relation_program_parameter_dependency_count,
         ),
         (
-            "decoded_schema_configuration_record_count".to_string(),
+            "decoded_schema_configuration_record_count".into(),
             schema_configuration_record_count,
         ),
         (
-            "decoded_schema_configuration_selector_count".to_string(),
+            "decoded_schema_configuration_selector_count".into(),
             schema_configuration_record_count,
         ),
         (
-            "decoded_resolved_schema_configuration_entity_reference_count".to_string(),
+            "decoded_resolved_schema_configuration_entity_reference_count".into(),
             resolved_schema_configuration_reference_count,
         ),
         (
-            "decoded_null_schema_configuration_entity_reference_count".to_string(),
+            "decoded_null_schema_configuration_entity_reference_count".into(),
             null_schema_configuration_reference_count,
         ),
         (
-            "unresolved_schema_configuration_entity_reference_count".to_string(),
+            "unresolved_schema_configuration_entity_reference_count".into(),
             unresolved_schema_configuration_reference_count,
         ),
         (
-            "decoded_classified_schema_configuration_entity_reference_count".to_string(),
+            "decoded_classified_schema_configuration_entity_reference_count".into(),
             classified_schema_configuration_entity_reference_count,
         ),
         (
-            "unclassified_schema_configuration_entity_reference_count".to_string(),
+            "unclassified_schema_configuration_entity_reference_count".into(),
             schema_configuration_record_count
                 - classified_schema_configuration_entity_reference_count,
         ),
         (
-            "decoded_schema_configuration_row_link_count".to_string(),
+            "decoded_schema_configuration_row_link_count".into(),
             schema_configuration_row_link_count,
         ),
         (
-            "decoded_resolved_schema_configuration_row_class_count".to_string(),
+            "decoded_resolved_schema_configuration_row_class_count".into(),
             resolved_schema_configuration_row_class_count,
         ),
         (
-            "decoded_null_schema_configuration_row_class_count".to_string(),
+            "decoded_null_schema_configuration_row_class_count".into(),
             null_schema_configuration_row_class_count,
         ),
         (
-            "unresolved_schema_configuration_row_class_count".to_string(),
+            "unresolved_schema_configuration_row_class_count".into(),
             schema_configuration_row_link_count
                 - resolved_schema_configuration_row_class_count
                 - null_schema_configuration_row_class_count,
         ),
         (
-            "decoded_resolved_schema_configuration_row_successor_count".to_string(),
+            "decoded_resolved_schema_configuration_row_successor_count".into(),
             resolved_schema_configuration_row_successor_count,
         ),
         (
-            "decoded_null_schema_configuration_row_successor_count".to_string(),
+            "decoded_null_schema_configuration_row_successor_count".into(),
             null_schema_configuration_row_successor_count,
         ),
         (
-            "unresolved_schema_configuration_row_successor_count".to_string(),
+            "unresolved_schema_configuration_row_successor_count".into(),
             schema_configuration_row_link_count
                 - resolved_schema_configuration_row_successor_count
                 - null_schema_configuration_row_successor_count,
         ),
         (
-            "decoded_complete_schema_configuration_row_chain_count".to_string(),
+            "decoded_complete_schema_configuration_row_chain_count".into(),
             complete_schema_configuration_row_chain_count,
         ),
         (
-            "decoded_ordered_schema_configuration_row_link_count".to_string(),
+            "decoded_ordered_schema_configuration_row_link_count".into(),
             ordered_schema_configuration_row_link_count,
         ),
         (
-            "decoded_resolved_schema_configuration_row_chain_terminal_count".to_string(),
+            "decoded_resolved_schema_configuration_row_chain_terminal_count".into(),
             resolved_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "decoded_null_schema_configuration_row_chain_terminal_count".to_string(),
+            "decoded_null_schema_configuration_row_chain_terminal_count".into(),
             null_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unresolved_schema_configuration_row_chain_terminal_count".to_string(),
+            "unresolved_schema_configuration_row_chain_terminal_count".into(),
             unresolved_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "decoded_classified_schema_configuration_row_chain_terminal_count".to_string(),
+            "decoded_classified_schema_configuration_row_chain_terminal_count".into(),
             classified_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unclassified_schema_configuration_row_chain_terminal_count".to_string(),
+            "unclassified_schema_configuration_row_chain_terminal_count".into(),
             complete_schema_configuration_row_chain_count
                 - classified_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unresolved_schema_configuration_row_order_count".to_string(),
+            "unresolved_schema_configuration_row_order_count".into(),
             unordered_schema_configuration_row_link_count,
         ),
         (
-            "decoded_schema_configuration_row_intervening_entity_count".to_string(),
+            "decoded_schema_configuration_row_intervening_entity_count".into(),
             schema_configuration_row_intervening_entity_count,
         ),
         (
-            "decoded_schema_configuration_row_source_interval_chain_count".to_string(),
+            "decoded_schema_configuration_row_source_interval_chain_count".into(),
             schema_configuration_row_source_interval_chain_count,
         ),
         (
-            "decoded_schema_configuration_row_intervening_schema_configuration_count".to_string(),
+            "decoded_schema_configuration_row_intervening_schema_configuration_count".into(),
             schema_configuration_row_intervening_schema_configuration_count,
         ),
         (
-            "decoded_instanced_relation_expression_count".to_string(),
+            "decoded_instanced_relation_expression_count".into(),
             instanced_relation_expression_count,
         ),
         (
-            "unresolved_unreferenced_relation_expression_count".to_string(),
+            "unresolved_unreferenced_relation_expression_count".into(),
             unreferenced_relation_expression_count,
         ),
         (
-            "decoded_parameter_value_count".to_string(),
+            "decoded_parameter_value_count".into(),
             parameter_value_count,
         ),
+        ("decoded_range_interval_count".into(), range_interval_count),
         (
-            "decoded_range_interval_count".to_string(),
-            range_interval_count,
-        ),
-        (
-            "decoded_range_interval_no_slot_count".to_string(),
+            "decoded_range_interval_no_slot_count".into(),
             range_interval_no_slot_count,
         ),
         (
-            "decoded_range_interval_nominal_count".to_string(),
+            "decoded_range_interval_nominal_count".into(),
             range_interval_nominal_count,
         ),
         (
-            "decoded_range_interval_finite_slot_count".to_string(),
+            "decoded_range_interval_finite_slot_count".into(),
             range_interval_finite_slot_count,
         ),
         (
-            "decoded_range_interval_unset_slot_count".to_string(),
+            "decoded_range_interval_unset_slot_count".into(),
             range_interval_unset_slot_count,
         ),
         (
-            "decoded_range_interval_incoming_reference_count".to_string(),
+            "decoded_range_interval_incoming_reference_count".into(),
             range_interval_incoming_reference_count,
         ),
         (
-            "decoded_range_interval_incoming_payload_reference_count".to_string(),
+            "decoded_range_interval_incoming_payload_reference_count".into(),
             range_interval_incoming_payload_reference_count,
         ),
         (
-            "decoded_range_interval_incoming_storage_reference_count".to_string(),
+            "decoded_range_interval_incoming_storage_reference_count".into(),
             range_interval_incoming_storage_reference_count,
         ),
         (
-            "decoded_classified_range_interval_source_entity_count".to_string(),
+            "decoded_classified_range_interval_source_entity_count".into(),
             classified_range_interval_source_entity_count,
         ),
         (
-            "unclassified_range_interval_source_entity_count".to_string(),
+            "unclassified_range_interval_source_entity_count".into(),
             range_interval_incoming_reference_count - classified_range_interval_source_entity_count,
         ),
         (
-            "unreferenced_range_interval_count".to_string(),
+            "unreferenced_range_interval_count".into(),
             unreferenced_range_interval_count,
         ),
         (
-            "uniquely_referenced_range_interval_count".to_string(),
+            "uniquely_referenced_range_interval_count".into(),
             uniquely_referenced_range_interval_count,
         ),
         (
-            "multiply_referenced_range_interval_count".to_string(),
+            "multiply_referenced_range_interval_count".into(),
             multiply_referenced_range_interval_count,
         ),
         (
-            "decoded_constraint_range_count".to_string(),
+            "decoded_constraint_range_count".into(),
             constraint_range_count,
         ),
         (
-            "decoded_dimension_constraint_range_count".to_string(),
+            "decoded_dimension_constraint_range_count".into(),
             dimension_constraint_range_count,
         ),
         (
-            "decoded_complex_constraint_range_count".to_string(),
+            "decoded_complex_constraint_range_count".into(),
             complex_constraint_range_count,
         ),
         (
-            "decoded_evaluated_constraint_range_count".to_string(),
+            "decoded_evaluated_constraint_range_count".into(),
             evaluated_constraint_range_count,
         ),
         (
-            "decoded_unset_constraint_range_count".to_string(),
+            "decoded_unset_constraint_range_count".into(),
             unset_constraint_range_count,
         ),
         (
-            "decoded_constraint_range_incoming_reference_count".to_string(),
+            "decoded_constraint_range_incoming_reference_count".into(),
             constraint_range_incoming_reference_count,
         ),
         (
-            "decoded_constraint_range_incoming_payload_reference_count".to_string(),
+            "decoded_constraint_range_incoming_payload_reference_count".into(),
             constraint_range_incoming_payload_reference_count,
         ),
         (
-            "decoded_constraint_range_incoming_storage_reference_count".to_string(),
+            "decoded_constraint_range_incoming_storage_reference_count".into(),
             constraint_range_incoming_storage_reference_count,
         ),
         (
-            "decoded_classified_constraint_range_source_entity_count".to_string(),
+            "decoded_classified_constraint_range_source_entity_count".into(),
             classified_constraint_range_source_entity_count,
         ),
         (
-            "unclassified_constraint_range_source_entity_count".to_string(),
+            "unclassified_constraint_range_source_entity_count".into(),
             constraint_range_incoming_reference_count
                 - classified_constraint_range_source_entity_count,
         ),
         (
-            "unreferenced_constraint_range_count".to_string(),
+            "unreferenced_constraint_range_count".into(),
             unreferenced_constraint_range_count,
         ),
         (
-            "uniquely_referenced_constraint_range_count".to_string(),
+            "uniquely_referenced_constraint_range_count".into(),
             uniquely_referenced_constraint_range_count,
         ),
         (
-            "multiply_referenced_constraint_range_count".to_string(),
+            "multiply_referenced_constraint_range_count".into(),
             multiply_referenced_constraint_range_count,
         ),
         (
-            "decoded_definition_value_count".to_string(),
+            "decoded_definition_value_count".into(),
             definition_value_count,
         ),
         (
-            "decoded_owned_definition_value_count".to_string(),
+            "decoded_owned_definition_value_count".into(),
             owned_definition_value_count,
         ),
         (
-            "unresolved_definition_value_owner_count".to_string(),
+            "unresolved_definition_value_owner_count".into(),
             unowned_definition_value_count,
         ),
         (
-            "decoded_definition_chain_value_count".to_string(),
+            "decoded_definition_chain_value_count".into(),
             definition_chain_value_count,
         ),
         (
-            "decoded_structurally_owned_definition_chain_value_count".to_string(),
+            "decoded_structurally_owned_definition_chain_value_count".into(),
             structurally_owned_definition_chain_value_count,
         ),
         (
-            "unresolved_definition_chain_value_owner_count".to_string(),
+            "unresolved_definition_chain_value_owner_count".into(),
             unowned_definition_chain_value_count,
         ),
         (
-            "decoded_unassigned_definition_chain_value_count".to_string(),
+            "decoded_unassigned_definition_chain_value_count".into(),
             unassigned_definition_chain_value_count,
         ),
         (
-            "decoded_definition_chain_evaluation_count".to_string(),
+            "decoded_definition_chain_evaluation_count".into(),
             definition_chain_evaluation_count,
         ),
         (
-            "decoded_evaluated_definition_chain_count".to_string(),
+            "decoded_evaluated_definition_chain_count".into(),
             evaluated_definition_chain_count,
         ),
         (
-            "decoded_unset_definition_chain_count".to_string(),
+            "decoded_unset_definition_chain_count".into(),
             unset_definition_chain_count,
         ),
         (
-            "decoded_definition_chain_atom_count".to_string(),
+            "decoded_definition_chain_atom_count".into(),
             definition_chain_atom_count,
         ),
         (
-            "decoded_definition_chain_control_count".to_string(),
+            "decoded_definition_chain_control_count".into(),
             definition_chain_control_count,
         ),
         (
-            "decoded_definition_chain_separator_count".to_string(),
+            "decoded_definition_chain_separator_count".into(),
             definition_chain_separator_count,
         ),
         (
-            "decoded_definition_chain_schema_selector_count".to_string(),
+            "decoded_definition_chain_schema_selector_count".into(),
             definition_chain_schema_selector_count,
         ),
         (
-            "decoded_structurally_owned_definition_chain_evaluation_count".to_string(),
+            "decoded_structurally_owned_definition_chain_evaluation_count".into(),
             structurally_owned_definition_chain_evaluation_count,
         ),
         (
-            "unresolved_definition_chain_evaluation_owner_count".to_string(),
+            "unresolved_definition_chain_evaluation_owner_count".into(),
             unowned_definition_chain_evaluation_count,
         ),
         (
-            "decoded_unassigned_definition_chain_evaluation_count".to_string(),
+            "decoded_unassigned_definition_chain_evaluation_count".into(),
             unassigned_definition_chain_evaluation_count,
         ),
         (
-            "decoded_unassigned_object_owner_slot_count".to_string(),
+            "decoded_unassigned_object_owner_slot_count".into(),
             unassigned_owner_slot_count,
         ),
         (
-            "decoded_formula_relation_count".to_string(),
+            "decoded_formula_relation_count".into(),
             formula_relation_count,
         ),
         (
-            "decoded_resolved_formula_output_count".to_string(),
+            "decoded_resolved_formula_output_count".into(),
             resolved_formula_output_count,
         ),
         (
-            "decoded_null_formula_output_count".to_string(),
+            "decoded_null_formula_output_count".into(),
             null_formula_output_count,
         ),
         (
-            "decoded_classified_formula_output_entity_count".to_string(),
+            "decoded_classified_formula_output_entity_count".into(),
             classified_formula_output_entity_count,
         ),
         (
-            "unclassified_formula_output_entity_count".to_string(),
+            "unclassified_formula_output_entity_count".into(),
             formula_relation_count - classified_formula_output_entity_count,
         ),
         (
-            "decoded_classified_formula_expression_entity_count".to_string(),
+            "decoded_classified_formula_expression_entity_count".into(),
             classified_formula_expression_entity_count,
         ),
         (
-            "unclassified_formula_expression_entity_count".to_string(),
+            "unclassified_formula_expression_entity_count".into(),
             formula_relation_count - classified_formula_expression_entity_count,
         ),
         (
-            "unresolved_formula_output_count".to_string(),
+            "unresolved_formula_output_count".into(),
             unresolved_formula_output_count,
         ),
         (
-            "decoded_formula_parameter_dependency_count".to_string(),
+            "decoded_formula_parameter_dependency_count".into(),
             formula_parameter_dependency_count,
         ),
         (
-            "decoded_formula_parameter_dependency_candidate_count".to_string(),
+            "decoded_formula_parameter_dependency_candidate_count".into(),
             formula_parameter_dependency_candidate_count,
         ),
         (
-            "decoded_classified_formula_parameter_dependency_candidate_count".to_string(),
+            "decoded_classified_formula_parameter_dependency_candidate_count".into(),
             classified_formula_parameter_dependency_candidate_count,
         ),
         (
-            "unclassified_formula_parameter_dependency_candidate_count".to_string(),
+            "unclassified_formula_parameter_dependency_candidate_count".into(),
             formula_parameter_dependency_candidate_count
                 - classified_formula_parameter_dependency_candidate_count,
         ),
         (
-            "decoded_resolved_formula_parameter_dependency_count".to_string(),
+            "decoded_resolved_formula_parameter_dependency_count".into(),
             resolved_formula_parameter_dependency_count,
         ),
         (
-            "unresolved_formula_parameter_dependency_count".to_string(),
+            "unresolved_formula_parameter_dependency_count".into(),
             unresolved_formula_parameter_dependency_count,
         ),
         (
-            "ambiguous_formula_parameter_dependency_count".to_string(),
+            "ambiguous_formula_parameter_dependency_count".into(),
             ambiguous_formula_parameter_dependency_count,
         ),
         (
-            "decoded_escaped_word_entity_suffix_count".to_string(),
+            "decoded_escaped_word_entity_suffix_count".into(),
             escaped_word_entity_suffix_count,
         ),
         (
-            "decoded_token_8149_entity_suffix_count".to_string(),
+            "decoded_token_8149_entity_suffix_count".into(),
             token_8149_entity_suffix_count,
         ),
         (
-            "decoded_fixed_fe_f6_entity_suffix_count".to_string(),
+            "decoded_fixed_fe_f6_entity_suffix_count".into(),
             fixed_fe_f6_entity_suffix_count,
         ),
         (
-            "decoded_paged_atom_state_01_entity_suffix_count".to_string(),
+            "decoded_paged_atom_state_01_entity_suffix_count".into(),
             paged_atom_state_01_entity_suffix_count,
         ),
         (
-            "decoded_scalar_entity_suffix_value_count".to_string(),
+            "decoded_scalar_entity_suffix_value_count".into(),
             scalar_entity_suffix_value_count,
         ),
         (
-            "decoded_unset_entity_suffix_value_count".to_string(),
+            "decoded_unset_entity_suffix_value_count".into(),
             unset_entity_suffix_value_count,
         ),
         (
-            "decoded_control_entity_suffix_value_count".to_string(),
+            "decoded_control_entity_suffix_value_count".into(),
             control_entity_suffix_value_count,
         ),
         (
-            "decoded_control_e8_entity_suffix_value_count".to_string(),
+            "decoded_control_e8_entity_suffix_value_count".into(),
             control_e8_entity_suffix_value_count,
         ),
         (
-            "decoded_control_e9_entity_suffix_value_count".to_string(),
+            "decoded_control_e9_entity_suffix_value_count".into(),
             control_e9_entity_suffix_value_count,
         ),
         (
-            "decoded_separator_entity_suffix_value_count".to_string(),
+            "decoded_separator_entity_suffix_value_count".into(),
             separator_entity_suffix_value_count,
         ),
         (
-            "decoded_atom_entity_suffix_value_count".to_string(),
+            "decoded_atom_entity_suffix_value_count".into(),
             atom_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_atom_entity_suffix_value_count".to_string(),
+            "decoded_schema_selected_atom_entity_suffix_value_count".into(),
             schema_selected_atom_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_evaluation_entity_suffix_value_count".to_string(),
+            "decoded_schema_selected_evaluation_entity_suffix_value_count".into(),
             schema_selected_evaluation_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_control_entity_suffix_value_count".to_string(),
+            "decoded_schema_selected_control_entity_suffix_value_count".into(),
             schema_selected_control_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_separator_entity_suffix_value_count".to_string(),
+            "decoded_schema_selected_separator_entity_suffix_value_count".into(),
             schema_selected_separator_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_schema_entity_suffix_value_count".to_string(),
+            "decoded_schema_selected_schema_entity_suffix_value_count".into(),
             schema_selected_schema_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_entity_suffix_value_count".to_string(),
+            "decoded_schema_selected_entity_suffix_value_count".into(),
             schema_selected_entity_suffix_value_count,
         ),
         (
-            "decoded_wide_prefix_entity_suffix_value_count".to_string(),
+            "decoded_wide_prefix_entity_suffix_value_count".into(),
             wide_prefix_entity_suffix_value_count,
         ),
         (
-            "unresolved_design_owner_count".to_string(),
+            "unresolved_design_owner_count".into(),
             unresolved_design_owner_count,
         ),
         (
-            "decoded_value_block_count".to_string(),
+            "decoded_value_block_count".into(),
             native.value_blocks.len(),
         ),
-        ("decoded_value_field_count".to_string(), value_field_count),
+        ("decoded_value_field_count".into(), value_field_count),
         (
-            "decoded_value_schema_selection_count".to_string(),
+            "decoded_value_schema_selection_count".into(),
             value_selection_count,
         ),
+        ("transferred_feature_count".into(), ir.model.features.len()),
         (
-            "transferred_feature_count".to_string(),
-            ir.model.features.len(),
-        ),
-        (
-            "transferred_feature_parent_count".to_string(),
+            "transferred_feature_parent_count".into(),
             ir.model
                 .features
                 .iter()
@@ -3201,85 +3192,82 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "transferred_parameter_count".to_string(),
+            "transferred_parameter_count".into(),
             ir.model.parameters.len(),
         ),
         (
-            "transferred_relation_program_input_parameter_count".to_string(),
+            "transferred_relation_program_input_parameter_count".into(),
             formula_transfer.relation_program_parameter_count,
         ),
         (
-            "transferred_legacy_parameter_count".to_string(),
+            "transferred_legacy_parameter_count".into(),
             formula_transfer.legacy_parameter_count,
         ),
         (
-            "transferred_legacy_selector_parameter_count".to_string(),
+            "transferred_legacy_selector_parameter_count".into(),
             formula_transfer.legacy_selector_parameter_count,
         ),
         (
-            "transferred_legacy_formula_count".to_string(),
+            "transferred_legacy_formula_count".into(),
             formula_transfer.legacy_formula_count,
         ),
         (
-            "transferred_formula_design_record_count".to_string(),
+            "transferred_formula_design_record_count".into(),
             transferred_formula_design_records.len(),
         ),
         (
-            "transferred_definition_chain_parameter_count".to_string(),
+            "transferred_definition_chain_parameter_count".into(),
             formula_transfer.definition_chain_parameter_count,
         ),
         (
-            "transferred_principal_plane_record_count".to_string(),
+            "transferred_principal_plane_record_count".into(),
             transferred_principal_plane_records.len(),
         ),
         (
-            "transferred_native_operation_count".to_string(),
+            "transferred_native_operation_count".into(),
             design_feature_transfer.native_operation_records.len(),
         ),
         (
-            "transferred_native_operation_definition_value_count".to_string(),
+            "transferred_native_operation_definition_value_count".into(),
             design_feature_transfer.native_operation_definition_value_count,
         ),
         (
-            "transferred_native_operation_definition_chain_value_count".to_string(),
+            "transferred_native_operation_definition_chain_value_count".into(),
             design_feature_transfer.native_operation_definition_chain_value_count,
         ),
         (
-            "transferred_native_operation_range_count".to_string(),
+            "transferred_native_operation_range_count".into(),
             design_feature_transfer.native_operation_range_count,
         ),
         (
-            "transferred_native_operation_parameter_count".to_string(),
+            "transferred_native_operation_parameter_count".into(),
             transferred_native_operation_parameter_count,
         ),
         (
-            "unresolved_design_record_count".to_string(),
+            "unresolved_design_record_count".into(),
             unresolved_object_record_count,
         ),
+        ("transferred_sketch_count".into(), ir.model.sketches.len()),
         (
-            "transferred_sketch_count".to_string(),
-            ir.model.sketches.len(),
-        ),
-        (
-            "transferred_sketch_entity_count".to_string(),
+            "transferred_sketch_entity_count".into(),
             ir.model.sketch_entities.len(),
         ),
         (
-            "transferred_native_sketch_entity_count".to_string(),
+            "transferred_native_sketch_entity_count".into(),
             transferred_native_sketch_entity_count,
         ),
         (
-            "transferred_sketch_constraint_count".to_string(),
+            "transferred_sketch_constraint_count".into(),
             ir.model.sketch_constraints.len(),
         ),
         (
-            "transferred_configuration_count".to_string(),
+            "transferred_configuration_count".into(),
             ir.model.configurations.len(),
         ),
     ]);
     if transferred_pmi_dimension_count != 0 {
-        report.coverage.insert(
-            "transferred_pmi_dimension_count".to_string(),
+        report.coverage.record(
+            "transferred_pmi_dimension_count".into(),
             transferred_pmi_dimension_count,
         );
     }

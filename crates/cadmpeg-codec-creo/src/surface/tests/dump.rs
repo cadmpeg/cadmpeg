@@ -85,7 +85,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
     assert_eq!(
         result
             .report()
-            .coverage
+            .coverage()
             .get("decoded_positional_extrusion_direction_count")
             .copied(),
         Some(1)
@@ -160,7 +160,7 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
     assert_eq!(
         result
             .report()
-            .coverage
+            .coverage()
             .get("decoded_positional_extrusion_direction_count")
             .copied(),
         Some(1)

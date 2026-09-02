@@ -508,7 +508,7 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         1
     );
     assert!(!coverage
-        .coverage
+        .coverage()
         .contains_key("decoded_feature_segment_count"));
     assert_eq!(
         coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT)

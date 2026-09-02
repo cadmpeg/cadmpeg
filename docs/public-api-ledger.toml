@@ -2535,3 +2535,38 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::codec::write::ExportBody::{write_path,consumption}"
 reason = "one backend WritePath now carries every applicable consumption state, so path and fidelity consumption cannot be supplied independently"
+
+[[change]]
+commit = "a54e545a42135700a4d647de9e91c35bf98a5560"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::codec::DecodeBody::coverage"
+reason = "codec coverage is accumulated through CoverageKey and cannot admit an untyped map entry"
+
+[[change]]
+commit = "a54e545a42135700a4d647de9e91c35bf98a5560"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::DecodeReport::coverage"
+reason = "the report exposes a read-only Coverage view while keeping the mutable string map private"
+
+[[change]]
+commit = "a54e545a42135700a4d647de9e91c35bf98a5560"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::report::DecodeReport::record_coverage"
+reason = "coverage is complete before the sealed wrapper stamps a DecodeReport and cannot be mutated afterward"
+
+[[change]]
+commit = "a54e545a42135700a4d647de9e91c35bf98a5560"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::CoverageKey::0"
+reason = "coverage key storage is private; static and generated names enter through typed constructors"
+
+[[change]]
+commit = "a54e545a42135700a4d647de9e91c35bf98a5560"
+crate = "cadmpeg-ir"
+kind = "trait"
+item = "impl Copy for cadmpeg_ir::report::CoverageKey"
+reason = "a coverage key can own a generated name, so the key remains cloneable but is not copyable"

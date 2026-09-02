@@ -90,7 +90,7 @@ fn decode_types_class_911_as_unresolved_hole() {
         "transferred_incomplete_hole_termination_feature_count",
     ] {
         assert_eq!(
-            result.report().coverage.get(key).copied().unwrap_or(0),
+            result.report().coverage().get(key).copied().unwrap_or(0),
             1,
             "{key}"
         );
@@ -444,7 +444,7 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
         "transferred_unresolved_draft_outward_feature_count",
     ] {
         assert_eq!(
-            result.report().coverage.get(key).copied().unwrap_or(0),
+            result.report().coverage().get(key).copied().unwrap_or(0),
             1,
             "{key}"
         );

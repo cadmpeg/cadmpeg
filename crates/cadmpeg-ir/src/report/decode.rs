@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode reports, coverage, and source-transfer disposition.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
@@ -16,8 +17,8 @@ use super::{LossNote, Severity};
 pub struct DecodeReport {
     classification: FormatIdentity<DialectLayers>,
     transfer: DecodeTransfer,
-    /// Decode coverage counts keyed by measure name.
-    pub coverage: BTreeMap<String, usize>,
+    /// Decode coverage counts keyed by declared measure name.
+    coverage: Coverage,
     /// Explicit loss notes.
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
@@ -183,7 +184,7 @@ impl From<DecodeReport> for DecodeReportWire {
             format,
             container_only: transfer.container_only(),
             geometry_transferred: transfer.geometry_transferred(),
-            coverage,
+            coverage: coverage.into_wire(),
             losses,
             notes,
             transfer_ledger,
@@ -209,7 +210,7 @@ impl<'de> Deserialize<'de> for DecodeReport {
         Ok(Self {
             classification,
             transfer,
-            coverage: wire.coverage,
+            coverage: Coverage::from_wire(wire.coverage),
             losses: wire.losses,
             notes: wire.notes,
             transfer_ledger: wire.transfer_ledger,
@@ -435,9 +436,92 @@ impl TransferLedger {
     }
 }
 
-/// A statically declared decode-coverage measure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CoverageKey(pub &'static str);
+/// A typed decode-coverage measure name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CoverageKey(Cow<'static, str>);
+
+impl CoverageKey {
+    /// Declares a coverage key with a static wire name.
+    #[must_use]
+    pub const fn new(name: &'static str) -> Self {
+        Self(Cow::Borrowed(name))
+    }
+
+    /// Returns the coverage key's wire name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl From<&'static str> for CoverageKey {
+    fn from(value: &'static str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for CoverageKey {
+    fn from(value: String) -> Self {
+        Self(Cow::Owned(value))
+    }
+}
+
+/// Decode coverage whose entries can be written only through declared keys.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Coverage {
+    entries: BTreeMap<String, usize>,
+}
+
+impl Coverage {
+    /// Records an observed count. A repeated key replaces its prior value.
+    pub fn record(&mut self, key: CoverageKey, count: usize) {
+        self.entries.insert(key.0.into_owned(), count);
+    }
+
+    /// Returns an observed count, or zero when the measure was not recorded.
+    #[must_use]
+    fn count(&self, key: CoverageKey) -> usize {
+        self.entries.get(key.as_str()).copied().unwrap_or(0)
+    }
+
+    /// Returns all recorded counts by their wire names.
+    #[must_use]
+    fn as_map(&self) -> &BTreeMap<String, usize> {
+        &self.entries
+    }
+
+    fn from_wire(entries: BTreeMap<String, usize>) -> Self {
+        Self { entries }
+    }
+
+    fn into_wire(self) -> BTreeMap<String, usize> {
+        self.entries
+    }
+}
+
+impl Extend<(CoverageKey, usize)> for Coverage {
+    fn extend<T: IntoIterator<Item = (CoverageKey, usize)>>(&mut self, iter: T) {
+        for (key, count) in iter {
+            self.record(key, count);
+        }
+    }
+}
+
+impl FromIterator<(CoverageKey, usize)> for Coverage {
+    fn from_iter<T: IntoIterator<Item = (CoverageKey, usize)>>(iter: T) -> Self {
+        let mut coverage = Self::default();
+        coverage.extend(iter);
+        coverage
+    }
+}
+
+impl std::ops::Deref for Coverage {
+    type Target = BTreeMap<String, usize>;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_map()
+    }
+}
 
 impl DecodeReport {
     /// Stamps a classification onto a report body.
@@ -477,7 +561,7 @@ impl DecodeReport {
         Self {
             classification: FormatIdentity::classified(dialects),
             transfer,
-            coverage,
+            coverage: Coverage::from_wire(coverage),
             losses,
             notes,
             transfer_ledger,
@@ -498,7 +582,7 @@ impl DecodeReport {
         Self {
             classification: FormatIdentity::unclassified(format),
             transfer,
-            coverage,
+            coverage: Coverage::from_wire(coverage),
             losses,
             notes,
             transfer_ledger,
@@ -535,17 +619,15 @@ impl DecodeReport {
         self.transfer.geometry_transferred()
     }
 
-    /// Records a coverage measure count for a statically declared key.
-    ///
-    /// Producers pass the observed count (not an implied +1). Repeated calls
-    /// for the same key replace the prior value.
-    pub fn record_coverage(&mut self, key: CoverageKey, count: usize) {
-        self.coverage.insert(key.0.to_owned(), count);
+    /// Returns the recorded decode coverage by measure name.
+    #[must_use]
+    pub fn coverage(&self) -> &BTreeMap<String, usize> {
+        self.coverage.as_map()
     }
 
     /// Returns a coverage measure, treating an unobserved measure as zero.
     pub fn coverage_count(&self, key: CoverageKey) -> usize {
-        self.coverage.get(key.0).copied().unwrap_or(0)
+        self.coverage.count(key)
     }
 
     /// Count loss notes at or above [`Severity::Error`].

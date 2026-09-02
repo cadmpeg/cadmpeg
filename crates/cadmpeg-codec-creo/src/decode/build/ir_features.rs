@@ -422,7 +422,7 @@ pub(super) fn finish_feature_transfers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    coverage: &mut BTreeMap<String, usize>,
+    coverage: &mut cadmpeg_ir::Coverage,
 ) -> (usize, usize) {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     link_feature_sketch_history(scan, ir);
@@ -544,68 +544,68 @@ pub(super) fn finish_feature_transfers(
                 .filter(|assignment| assignment.activation == activation)
                 .count()
         };
-        coverage.insert(
-            "decoded_active_curve_expression_assignment_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_assignment_count".into(),
             decoded_curve_expression_assignment_count,
         );
-        coverage.insert(
-            "transferred_curve_expression_parameter_count".to_string(),
+        coverage.record(
+            "transferred_curve_expression_parameter_count".into(),
             transferred_curve_expression_parameter_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_table_cell_assignment_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_table_cell_assignment_count".into(),
             decoded_curve_expression_table_cell_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_scoped_symbol_assignment_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_scoped_symbol_assignment_count".into(),
             decoded_curve_expression_scoped_symbol_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_system_symbol_assignment_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_system_symbol_assignment_count".into(),
             decoded_curve_expression_system_symbol_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_function_write_assignment_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_function_write_assignment_count".into(),
             decoded_curve_expression_function_write_assignment_count,
         );
-        coverage.insert(
-            "evaluated_active_curve_expression_assignment_count".to_string(),
+        coverage.record(
+            "evaluated_active_curve_expression_assignment_count".into(),
             evaluated_curve_expression_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_solve_block_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_solve_block_count".into(),
             decoded_curve_expression_solve_block_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_simultaneous_equation_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_simultaneous_equation_count".into(),
             decoded_curve_expression_simultaneous_equation_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_solve_assignment_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_solve_assignment_count".into(),
             decoded_curve_expression_solve_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_solve_variable_count".to_string(),
+        coverage.record(
+            "decoded_active_curve_expression_solve_variable_count".into(),
             decoded_curve_expression_solve_variable_count,
         );
-        coverage.insert(
-            "evaluated_active_curve_expression_solve_block_count".to_string(),
+        coverage.record(
+            "evaluated_active_curve_expression_solve_block_count".into(),
             evaluated_curve_expression_solve_block_count,
         );
-        coverage.insert(
-            "evaluated_active_curve_expression_solve_variable_count".to_string(),
+        coverage.record(
+            "evaluated_active_curve_expression_solve_variable_count".into(),
             evaluated_curve_expression_solve_variable_count,
         );
-        coverage.insert(
-            "unresolved_active_curve_expression_solve_control_count".to_string(),
+        coverage.record(
+            "unresolved_active_curve_expression_solve_control_count".into(),
             unresolved_curve_expression_solve_control_count,
         );
-        coverage.insert(
-            "prohibited_active_curve_expression_record_count".to_string(),
+        coverage.record(
+            "prohibited_active_curve_expression_record_count".into(),
             prohibited_curve_expression_record_count,
         );
-        coverage.insert(
-            "prohibited_active_curve_expression_kind_count".to_string(),
+        coverage.record(
+            "prohibited_active_curve_expression_kind_count".into(),
             prohibited_curve_expression_kind_count,
         );
         for (name, activation) in [
@@ -619,8 +619,8 @@ pub(super) fn finish_feature_transfers(
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            coverage.insert(
-                format!("{name}_curve_expression_assignment_count"),
+            coverage.record(
+                format!("{name}_curve_expression_assignment_count").into(),
                 activation_count(activation),
             );
         }
@@ -636,20 +636,20 @@ pub(super) fn finish_feature_transfers(
                     resolved + usize::from(dimension.value.is_some()),
                 )
             });
-        coverage.insert(
-            "decoded_feature_dimension_count".to_string(),
+        coverage.record(
+            "decoded_feature_dimension_count".into(),
             decoded_dimension_count,
         );
-        coverage.insert(
-            "transferred_feature_dimension_parameter_count".to_string(),
+        coverage.record(
+            "transferred_feature_dimension_parameter_count".into(),
             transferred_feature_dimension_count,
         );
-        coverage.insert(
-            "resolved_feature_dimension_value_count".to_string(),
+        coverage.record(
+            "resolved_feature_dimension_value_count".into(),
             resolved_dimension_count,
         );
-        coverage.insert(
-            "unresolved_feature_dimension_value_count".to_string(),
+        coverage.record(
+            "unresolved_feature_dimension_value_count".into(),
             decoded_dimension_count.saturating_sub(resolved_dimension_count),
         );
     }

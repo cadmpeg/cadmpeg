@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Coverage-drop and incomplete-feature loss notes.
 
-use std::collections::BTreeMap;
-
 use crate::loss::CreoLossCode;
 
 use super::super::coverage::{constraint_kind_breakdown, surface_family, SURFACE_KINDS};
@@ -11,7 +9,7 @@ use cadmpeg_ir::report::LossNote;
 
 pub(super) fn push_coverage_drop_losses(
     losses: &mut Vec<LossNote>,
-    coverage: &BTreeMap<String, usize>,
+    coverage: &cadmpeg_ir::Coverage,
 ) {
     let untransferred_surface_rows =
         coverage_count(coverage, "untransferred_visible_surface_row_count");
