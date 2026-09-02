@@ -307,17 +307,19 @@ fn transfer_schema_one(
                 ))
             })
             .collect::<HashMap<_, _>>();
-        let property_provenance = |property_name: &str, type_name: &str| SourceProvenance {
-            format: "fcstd".into(),
-            stream: "GuiDocument.xml".into(),
-            offset: property_nodes
-                .iter()
-                .find(|property| {
-                    property.attribute("name") == Some(property_name)
-                        && property.attribute("type") == Some(type_name)
-                })
-                .map_or(0, |property| property.range().start as u64),
-            tag: Some(format!("ViewProvider {name} property {property_name}")),
+        let property_provenance = |property_name: &str, type_name: &str| {
+            SourceProvenance::in_stream(
+                "fcstd",
+                "GuiDocument.xml",
+                property_nodes
+                    .iter()
+                    .find(|property| {
+                        property.attribute("name") == Some(property_name)
+                            && property.attribute("type") == Some(type_name)
+                    })
+                    .map_or(0, |property| property.range().start as u64),
+            )
+            .with_tag(format!("ViewProvider {name} property {property_name}"))
         };
         let visibility = values
             .get("Visibility")
@@ -3487,12 +3489,14 @@ fn transfer_shape_appearances(
                             materials.len(),
                             mapped_count
                         ))
-                        .with_provenance(SourceProvenance {
-                            format: "fcstd".into(),
-                            stream: "GuiDocument.xml".into(),
-                            offset: property.byte_start,
-                            tag: Some(property.id.clone()),
-                        }),
+                .with_provenance(
+                    SourceProvenance::in_stream(
+                        "fcstd",
+                        "GuiDocument.xml",
+                        property.byte_start,
+                    )
+                    .with_tag(property.id.clone()),
+                ),
                 );
                 continue;
             }

@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::annotated_entity_json;
-use crate::annotations::{ExactnessNote, StreamProvenance};
+use crate::annotations::ExactnessNote;
 use crate::provenance::Exactness;
 use crate::report::Check;
 use crate::validate::validate_neutral;
@@ -34,17 +34,13 @@ fn model_entity_wins_when_native_id_collides() {
 }
 
 #[test]
-fn annotation_keys_streams_and_field_paths_are_checked() {
+fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube();
     let mut source_fidelity = crate::SourceFidelity::default();
-    source_fidelity.annotations.provenance.insert(
-        "missing".into(),
-        StreamProvenance {
-            stream: u32::MAX,
-            offset: 0,
-            tag: None,
-        },
-    );
+    let mut annotations = crate::AnnotationBuilder::new();
+    let stream = annotations.stream("test:source");
+    annotations.note("missing", stream, 0);
+    source_fidelity.annotations = annotations.build();
     source_fidelity.annotations.exactness.insert(
         ir.model.edges[0].id.0.clone(),
         ExactnessNote {

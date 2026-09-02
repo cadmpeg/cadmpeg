@@ -85,7 +85,7 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
                 .collect();
             let value = serde_json::json!({
                 "annotations": {
-                    "streams": payload.annotations.streams.len(),
+                    "streams": payload.annotations.stream_count(),
                     "provenance": payload.annotations.provenance.len(),
                     "exactness": payload.annotations.exactness.len(),
                 },
@@ -113,7 +113,7 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
                 "annotations: {} streams, {} provenance entries, {} exactness \
                  notes; extract retained bytes with `cadmpeg query fidelity \
                  FILE --stream NAME -o OUT`",
-                payload.annotations.streams.len(),
+                payload.annotations.stream_count(),
                 payload.annotations.provenance.len(),
                 payload.annotations.exactness.len(),
             );

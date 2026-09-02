@@ -1455,13 +1455,14 @@ fn semantic_losses(
                 )
             };
             Some(
-                code.note(message)
-                    .with_provenance(cadmpeg_ir::SourceProvenance {
-                        format: "fcstd".into(),
-                        stream: "Document.xml".into(),
-                        offset: 0,
-                        tag: feature.native_ref.clone(),
-                    }),
+                    code.note(message).with_provenance(
+                        cadmpeg_ir::SourceProvenance::in_stream(
+                            "fcstd",
+                            "Document.xml",
+                            0,
+                        )
+                        .with_optional_tag(feature.native_ref.clone()),
+                    ),
             )
         })
         .collect::<Vec<_>>());
@@ -1474,12 +1475,14 @@ fn semantic_losses(
                 .note(format!(
                     "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
                 ))
-                .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "fcstd".into(),
-                    stream: "Document.xml".into(),
-                    offset: 0,
-                    tag: entity.native_ref.clone(),
-                }),
+                    .with_provenance(
+                        cadmpeg_ir::SourceProvenance::in_stream(
+                            "fcstd",
+                            "Document.xml",
+                            0,
+                        )
+                        .with_optional_tag(entity.native_ref.clone()),
+                    ),
         )
     }));
     losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
@@ -1493,12 +1496,14 @@ fn semantic_losses(
                 .note(format!(
                     "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
                 ))
-                .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "fcstd".into(),
-                    stream: "Document.xml".into(),
-                    offset: 0,
-                    tag: constraint.native_ref.clone(),
-                }),
+                    .with_provenance(
+                        cadmpeg_ir::SourceProvenance::in_stream(
+                            "fcstd",
+                            "Document.xml",
+                            0,
+                        )
+                        .with_optional_tag(constraint.native_ref.clone()),
+                    ),
         )
     }));
     losses

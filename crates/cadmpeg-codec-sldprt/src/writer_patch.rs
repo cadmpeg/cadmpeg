@@ -188,14 +188,7 @@ fn annotation_offset(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
     })?;
-    let stream = usize::try_from(provenance.stream)
-        .ok()
-        .and_then(|index| annotations.streams.get(index))
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "SLDPRT mutation provenance for {id} references a missing stream"
-            ))
-        })?;
+    let stream = provenance.stream();
     if stream != section {
         return Err(CodecError::malformed(format_args!(
             "SLDPRT mutation provenance for {id} references {stream}, not {section}"

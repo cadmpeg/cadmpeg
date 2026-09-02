@@ -307,12 +307,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
 fn tagged_loss(tag: &str) -> LossNote {
     IgesLossCode::EntityRetainedUnprojected
         .note("attribution fixture")
-        .with_provenance(SourceProvenance {
-            format: "iges".into(),
-            stream: "iges".into(),
-            offset: 0,
-            tag: Some(tag.to_owned()),
-        })
+        .with_provenance(SourceProvenance::in_stream("iges", "iges", 0).with_tag(tag.to_owned()))
 }
 
 #[test]

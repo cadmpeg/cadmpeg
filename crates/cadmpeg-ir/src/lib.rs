@@ -77,7 +77,7 @@ pub mod transform;
 pub mod units;
 pub mod validate;
 
-pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, StreamProvenance};
+pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
 pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
 pub use container::ContainerSummary;
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
@@ -107,7 +107,10 @@ pub use products::{
     Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
-pub use provenance::{Exactness, SourceObjectAssociation, SourceProvenance};
+pub use provenance::{
+    AnnotationLocation, AnnotationProvenance, Exactness, Provenance, SourceLocation,
+    SourceObjectAssociation, SourceProvenance,
+};
 
 pub use report::{
     CensusBasis, Check, Coverage, CoverageKey, DecodeReport, DecodeTransfer, EntityCensus,

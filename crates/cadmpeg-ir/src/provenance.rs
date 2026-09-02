@@ -8,6 +8,7 @@
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::topology::Color;
 
@@ -43,22 +44,172 @@ pub struct SourceObjectAssociation {
     pub instance_path: Vec<String>,
 }
 
-/// Source location for an entity's bytes.
+/// Provenance for bytes identified by a typed location.
 ///
-/// `offset` is relative to `stream`; `tag` identifies the source record class
-/// when known.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SourceProvenance {
-    /// Source container format.
-    pub format: String,
-    /// Named stream within the container (a decompressed entry name, or empty).
-    pub stream: String,
-    /// Byte offset of the record within `stream`.
+/// The location type distinguishes report provenance from an interned
+/// annotation stream. Both forms share byte-offset and source-tag semantics
+/// without admitting one form where the other is required.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provenance<Location> {
+    location: Location,
+    /// Byte offset of the record within its source stream.
     pub offset: u64,
     /// Source record/class name/tag, when the decoder can attribute one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+}
+
+/// Source format and optional named stream used by a report loss.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceLocation {
+    format: String,
+    stream: Option<String>,
+}
+
+/// Source provenance attached to a report loss.
+pub type SourceProvenance = Provenance<SourceLocation>;
+
+/// Opaque owned reference to an annotation stream.
+///
+/// The referenced name travels with the provenance. A stream-table index is
+/// created only by the annotation wire adapter, so an in-memory provenance
+/// cannot dangle after annotations are moved or merged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnotationLocation {
+    stream: Arc<str>,
+}
+
+/// Provenance attached to an entity in [`crate::Annotations`].
+pub type AnnotationProvenance = Provenance<AnnotationLocation>;
+
+impl Provenance<AnnotationLocation> {
+    pub(crate) fn annotation(stream: Arc<str>, offset: u64, tag: Option<String>) -> Self {
+        Self {
+            location: AnnotationLocation { stream },
+            offset,
+            tag,
+        }
+    }
+
+    /// Return the owned source stream name.
+    #[must_use]
+    pub fn stream(&self) -> &str {
+        &self.location.stream
+    }
+
+    pub(crate) fn stream_ref(&self) -> &Arc<str> {
+        &self.location.stream
+    }
+
+    pub(crate) fn rebind_stream(&mut self, stream: Arc<str>) {
+        self.location.stream = stream;
+    }
+}
+
+impl Provenance<SourceLocation> {
+    /// Construct provenance relative to a format's root source stream.
+    pub fn root(format: impl Into<String>, offset: u64) -> Self {
+        Self {
+            location: SourceLocation {
+                format: format.into(),
+                stream: None,
+            },
+            offset,
+            tag: None,
+        }
+    }
+
+    /// Construct provenance relative to a named container stream.
+    ///
+    /// An empty stream is normalized to the typed root-stream state.
+    pub fn in_stream(format: impl Into<String>, stream: impl Into<String>, offset: u64) -> Self {
+        let stream = stream.into();
+        Self {
+            location: SourceLocation {
+                format: format.into(),
+                stream: (!stream.is_empty()).then_some(stream),
+            },
+            offset,
+            tag: None,
+        }
+    }
+
+    /// Attach a source record or class name.
+    #[must_use]
+    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
+        self.tag = Some(tag.into());
+        self
+    }
+
+    /// Attach an optional source record or class name.
+    #[must_use]
+    pub fn with_optional_tag(mut self, tag: Option<String>) -> Self {
+        self.tag = tag;
+        self
+    }
+
+    /// Return the source format identifier.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        &self.location.format
+    }
+
+    /// Return the named container stream, or `None` for the root stream.
+    #[must_use]
+    pub fn stream(&self) -> Option<&str> {
+        self.location.stream.as_deref()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SourceProvenanceWire {
+    format: String,
+    stream: String,
+    offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tag: Option<String>,
+}
+
+impl Serialize for Provenance<SourceLocation> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SourceProvenanceWire {
+            format: self.location.format.clone(),
+            stream: self.location.stream.clone().unwrap_or_default(),
+            offset: self.offset,
+            tag: self.tag.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Provenance<SourceLocation> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SourceProvenanceWire::deserialize(deserializer)?;
+        let mut provenance = if wire.stream.is_empty() {
+            Self::root(wire.format, wire.offset)
+        } else {
+            Self::in_stream(wire.format, wire.stream, wire.offset)
+        };
+        provenance.tag = wire.tag;
+        Ok(provenance)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for Provenance<SourceLocation> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SourceProvenance".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SourceProvenanceWire::json_schema(generator)
+    }
 }
 
 /// How an entity or field value was established from its source.

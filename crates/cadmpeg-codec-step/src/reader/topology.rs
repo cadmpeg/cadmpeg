@@ -234,12 +234,13 @@ pub(super) fn decode(
                  read the shell element from positional slot 1",
                     record.id
                 ))
-                .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: crate::dialect::FORMAT.into(),
-                    stream: String::new(),
-                    offset: record.span.start as u64,
-                    tag: Some("oriented_shell".into()),
-                }),
+                .with_provenance(
+                    cadmpeg_ir::SourceProvenance::root(
+                        crate::dialect::FORMAT,
+                        record.span.start as u64,
+                    )
+                    .with_tag("oriented_shell"),
+                ),
         );
     }
     let vertices = vertex_defs(exchange);
@@ -2027,12 +2028,15 @@ fn build_one(
                 let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
                     "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier and retaining the source face, bounds, loops, and enclosing records as opaque"
                 ));
-                losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: crate::dialect::FORMAT.into(),
-                    stream: String::new(),
-                    offset: fr.span.start as u64,
-                    tag: Some("face".into()),
-                }));
+                losses.push(
+                    note.with_provenance(
+                        cadmpeg_ir::SourceProvenance::root(
+                            crate::dialect::FORMAT,
+                            fr.span.start as u64,
+                        )
+                        .with_tag("face"),
+                    ),
+                );
                 note_failure(failure, face_step, "face with multiple outer bounds");
                 return None;
             }
@@ -2532,12 +2536,15 @@ fn build_one(
                     components.len(),
                     face_ids.len(),
                 ));
-            losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
-                format: crate::dialect::FORMAT.into(),
-                stream: String::new(),
-                offset: sr.span.start as u64,
-                tag: Some(shell_type.to_ascii_lowercase()),
-            }));
+            losses.push(
+                note.with_provenance(
+                    cadmpeg_ir::SourceProvenance::root(
+                        crate::dialect::FORMAT,
+                        sr.span.start as u64,
+                    )
+                    .with_tag(shell_type.to_ascii_lowercase()),
+                ),
+            );
         }
         for (component_index, component) in components.into_iter().enumerate() {
             if has_type(root, "BREP_WITH_VOIDS")

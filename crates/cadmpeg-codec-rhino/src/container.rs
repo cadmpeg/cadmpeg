@@ -1182,12 +1182,10 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
         crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
             .note(diagnostic.message.clone())
-            .with_provenance(cadmpeg_ir::SourceProvenance {
-                format: "rhino".to_string(),
-                stream: String::new(),
-                offset: diagnostic.source_range.start as u64,
-                tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-            })
+            .with_provenance(
+                cadmpeg_ir::SourceProvenance::root("rhino", diagnostic.source_range.start as u64)
+                    .with_tag("INSTANCE_DEFINITION_TABLE"),
+            )
     }));
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));

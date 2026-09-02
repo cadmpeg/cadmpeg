@@ -130,14 +130,10 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
         "geometry was retained as metadata",
     )
     .with_severity(Severity::Warning)
-    .with_provenance(SourceProvenance {
-        format: "rhino".into(),
-        stream: String::new(),
-        offset: 42,
-        tag: Some(
-            "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020".into(),
-        ),
-    });
+    .with_provenance(
+        SourceProvenance::root("rhino", 42)
+            .with_tag("OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"),
+    );
     let json = serde_json::to_value(&note).unwrap();
     assert_eq!(json["provenance"]["format"], "rhino");
     assert_eq!(json["provenance"]["stream"], "");

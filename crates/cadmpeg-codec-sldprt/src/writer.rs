@@ -187,11 +187,7 @@ pub(crate) fn write_semantic_with_records(
         true
     };
     if replay_swobjects {
-        sections.extend(
-            retained_swobjects
-                .into_iter()
-                .map(|(_, section, payload)| (section, payload)),
-        );
+        sections.extend(retained_swobjects);
     } else {
         if !materials.is_empty() {
             sections.push(("SWObjects".into(), materials));
@@ -217,8 +213,7 @@ pub(crate) fn write_semantic_with_records(
         let section = annotations
             .provenance
             .get(&history.id)
-            .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
-            .cloned()
+            .map(|provenance| provenance.stream().to_owned())
             .unwrap_or_else(|| format!("Contents/Keywords-{index}"));
         sections.push((section, history_payload(history)?));
     }
@@ -228,9 +223,7 @@ pub(crate) fn write_semantic_with_records(
                 annotations
                     .provenance
                     .get(&lane.id)
-                    .and_then(|provenance| {
-                        annotations.streams.get(provenance.stream as usize).cloned()
-                    })
+                    .map(|provenance| provenance.stream().to_owned())
                     .unwrap_or_else(|| "Contents/ResolvedFeatures".into())
             },
             |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
@@ -930,10 +923,7 @@ fn opaque_blocks(
         .filter(|record| record.id.0.starts_with("sldprt:file:block#"))
         .filter_map(|record| {
             let provenance = annotations.provenance.get(&record.id.0)?;
-            let section = annotations
-                .streams
-                .get(usize::try_from(provenance.stream).ok()?)?
-                .as_str();
+            let section = provenance.stream();
             let lower = section.to_ascii_lowercase();
             if section == active_partition {
                 return None;
@@ -990,34 +980,31 @@ fn opaque_blocks(
 fn retained_swobjects_sections(
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-) -> Result<Vec<(u32, String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let mut sections = records
         .iter()
         .filter_map(|record| {
             let provenance = annotations.provenance.get(&record.id.0)?;
-            let section = annotations
-                .streams
-                .get(usize::try_from(provenance.stream).ok()?)?
-                .as_str();
+            let section = provenance.stream();
             section
                 .to_ascii_lowercase()
                 .contains("swobjects")
-                .then_some((provenance.stream, section, record))
+                .then_some((section, record))
         })
         .collect::<Vec<_>>();
-    sections.sort_by_key(|(stream, _, _)| *stream);
+    sections.sort_by_key(|(section, _)| *section);
     let mut seen = HashSet::new();
     sections
         .into_iter()
-        .filter_map(|(stream, section, record)| {
+        .filter_map(|(section, record)| {
             seen.insert((section, record.sha256))
-                .then_some((stream, section, record))
+                .then_some((section, record))
         })
-        .map(|(stream, section, record)| {
+        .map(|(section, record)| {
             let data = record.data.ok_or_else(|| {
                 CodecError::Malformed("retained SLDPRT SWObjects section has no bytes".into())
             })?;
-            Ok((stream, section.to_string(), data.to_vec()))
+            Ok((section.to_string(), data.to_vec()))
         })
         .collect()
 }
@@ -1025,7 +1012,7 @@ fn retained_swobjects_sections(
 fn patch_retained_swobjects_metadata(
     ir: &CadIr,
     annotations: &Annotations,
-    sections: &mut [(u32, String, Vec<u8>)],
+    sections: &mut [(String, Vec<u8>)],
     length_scale: f64,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeValue;
@@ -1041,15 +1028,15 @@ fn patch_retained_swobjects_metadata(
                     attribute.id
                 ))
             })?;
-            Ok((provenance.stream, provenance.offset, attribute))
+            Ok((provenance.stream().to_owned(), provenance.offset, attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    attributes.sort_by_key(|(stream, offset, _)| (*stream, Reverse(*offset)));
+    attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
 
     for (stream, offset, attribute) in attributes {
         let payload = sections
             .iter_mut()
-            .find_map(|(candidate, _, payload)| (*candidate == stream).then_some(payload))
+            .find_map(|(candidate, payload)| (*candidate == stream).then_some(payload))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT metadata attribute {} references a missing SWObjects section",

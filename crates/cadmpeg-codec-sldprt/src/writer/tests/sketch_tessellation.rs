@@ -504,14 +504,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
                 .annotations
                 .provenance
                 .get(record.id())
-                .and_then(|note| {
-                    regenerated
-                        .source_fidelity()
-                        .annotations
-                        .streams
-                        .get(note.stream as usize)
-                })
-                .is_some_and(|stream| stream == "Contents/CustomData")
+                .is_some_and(|note| note.stream() == "Contents/CustomData")
                 && record.data() == Some(payload.as_slice())
         }));
 }
@@ -586,14 +579,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
                 .annotations
                 .provenance
                 .get(record.id())
-                .and_then(|note| {
-                    regenerated
-                        .source_fidelity()
-                        .annotations
-                        .streams
-                        .get(note.stream as usize)
-                })
-                .is_some_and(|stream| stream == "Contents/CustomData")
+                .is_some_and(|note| note.stream() == "Contents/CustomData")
                 && record.data() == Some(b"opaque-state".as_slice())
         }));
 

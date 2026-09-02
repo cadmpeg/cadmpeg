@@ -537,10 +537,9 @@ Co 1001000 +2 0 *
         assert_eq!(loss.code.code, "appearance.topology-color-count-mismatch");
         assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
         assert!(loss.message.contains(kind));
-        assert!(loss
-            .provenance
-            .as_ref()
-            .is_some_and(|source| source.stream == "GuiDocument.xml" && source.offset > 0));
+        assert!(loss.provenance.as_ref().is_some_and(|source| {
+            source.stream() == Some("GuiDocument.xml") && source.offset > 0
+        }));
         assert_eq!(
             result
                 .ir()

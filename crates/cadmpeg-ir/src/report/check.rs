@@ -39,7 +39,7 @@ pub enum Check {
     ShellTopology,
     /// A geometry carrier cannot be reached from topology or retained construction data.
     CarrierReachability,
-    /// An annotation key, stream index, or field path is invalid.
+    /// An annotation key or field path is invalid.
     Annotations,
     /// A source-native namespace record has an unresolved link.
     NativeLinks,

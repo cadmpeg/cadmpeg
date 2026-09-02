@@ -2,7 +2,6 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
@@ -23,6 +22,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::SourceProvenance;
+use cadmpeg_ir::{Annotations, ExactnessNote};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -92,9 +92,7 @@ struct ArenaLengths {
 
 #[derive(Debug)]
 struct AnnotationCheckpoint {
-    stream_count: usize,
-    provenance: BTreeMap<String, StreamProvenance>,
-    exactness: BTreeMap<String, ExactnessNote>,
+    annotations: Annotations,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -130,16 +128,12 @@ impl ReportBuckets {
 impl AnnotationCheckpoint {
     fn capture(annotations: &cadmpeg_ir::Annotations) -> Self {
         Self {
-            stream_count: annotations.streams.len(),
-            provenance: annotations.provenance.clone(),
-            exactness: annotations.exactness.clone(),
+            annotations: annotations.clone(),
         }
     }
 
     fn rollback(self, annotations: &mut cadmpeg_ir::Annotations) {
-        annotations.streams.truncate(self.stream_count);
-        annotations.provenance = self.provenance;
-        annotations.exactness = self.exactness;
+        *annotations = self.annotations;
     }
 }
 
@@ -2477,12 +2471,10 @@ impl<'a> DecodeContext<'a> {
                         self.scan.definitions.diagnostics.len(),
                         first.message
                     ))
-                    .with_provenance(SourceProvenance {
-                        format: "rhino".to_string(),
-                        stream: String::new(),
-                        offset: first.source_range.start as u64,
-                        tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-                    }),
+                .with_provenance(
+                    SourceProvenance::root("rhino", first.source_range.start as u64)
+                        .with_tag("INSTANCE_DEFINITION_TABLE"),
+                ),
             );
         }
         losses.append(&mut self.report.typed_losses);
@@ -5460,15 +5452,10 @@ fn body(
 }
 
 fn loss_provenance(class: &str, outcome: &ClassOutcome) -> SourceProvenance {
-    SourceProvenance {
-        format: "rhino".to_string(),
-        stream: String::new(),
-        offset: outcome.first_offset,
-        tag: Some(format!(
-            "OBJECT_RECORD/class={class}/type=0x{:08x}",
-            outcome.first_object_type
-        )),
-    }
+    SourceProvenance::root("rhino", outcome.first_offset).with_tag(format!(
+        "OBJECT_RECORD/class={class}/type=0x{:08x}",
+        outcome.first_object_type
+    ))
 }
 
 /// Builds the metadata-only Rhino decode transaction.

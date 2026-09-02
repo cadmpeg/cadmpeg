@@ -507,12 +507,9 @@ pub(crate) fn losses(
                         edge.kind, edge.raw_pointer, edge.resolution, edge.expected
                     ));
                     if let Some((offset, tag)) = location {
-                        note = note.with_provenance(SourceProvenance {
-                            format: "iges".into(),
-                            stream: "iges".into(),
-                            offset,
-                            tag: Some(tag),
-                        });
+        note = note.with_provenance(
+            SourceProvenance::in_stream("iges", "iges", offset).with_tag(tag),
+        );
                     }
                     note
                 })

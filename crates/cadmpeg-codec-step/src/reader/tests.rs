@@ -642,7 +642,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
         "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
     );
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
-    assert_eq!(provenance.format, "step");
+    assert_eq!(provenance.format(), "step");
     assert_eq!(
         provenance.offset,
         source.find("FILE_SCHEMA").unwrap() as u64
@@ -728,8 +728,8 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
-    assert_eq!(provenance.format, "step");
-    assert_eq!(provenance.stream, "");
+    assert_eq!(provenance.format(), "step");
+    assert_eq!(provenance.stream(), None);
     assert_eq!(
         provenance.offset,
         bytes.windows(2).position(|window| window == b"#1").unwrap() as u64

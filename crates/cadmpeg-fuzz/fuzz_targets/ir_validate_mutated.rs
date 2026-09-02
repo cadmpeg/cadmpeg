@@ -115,14 +115,10 @@ fuzz_target!(|data: &[u8]| {
         }
         13 => {
             // Add an annotation for an entity that does not exist.
-            source_fidelity.annotations.provenance.insert(
-                "nonexistent".to_string(),
-                cadmpeg_ir::annotations::StreamProvenance {
-                    stream: u32::MAX,
-                    offset: u64::MAX,
-                    tag: None,
-                },
-            );
+            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+            let stream = annotations.stream("fuzz:nonexistent");
+            annotations.note("nonexistent", stream, u64::MAX);
+            source_fidelity.annotations.append(annotations.build());
         }
         14 => {
             // Put an invalid range on a canonical curve parameterization.

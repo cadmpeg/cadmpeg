@@ -197,12 +197,10 @@ impl FramingRecoveries {
                         recovery.count,
                         defect.unit(),
                     ))
-                    .with_provenance(SourceProvenance {
-                        format: "iges".into(),
-                        stream: "iges".into(),
-                        offset: recovery.offset,
-                        tag: Some(format!("{}:framing", section.name())),
-                    })
+                .with_provenance(
+                    SourceProvenance::in_stream("iges", "iges", recovery.offset)
+                        .with_tag(format!("{}:framing", section.name())),
+                )
             })
             .collect()
     }

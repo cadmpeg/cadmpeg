@@ -2174,22 +2174,7 @@ fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
 fn merge_brep(target: &mut Brep, mut source: Brep) {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
-    let stream_base = target.annotations.streams.len() as u32;
-    target
-        .annotations
-        .streams
-        .append(&mut source.annotations.streams);
-    for provenance in source.annotations.provenance.values_mut() {
-        provenance.stream += stream_base;
-    }
-    target
-        .annotations
-        .provenance
-        .append(&mut source.annotations.provenance);
-    target
-        .annotations
-        .exactness
-        .append(&mut source.annotations.exactness);
+    target.annotations.append(source.annotations);
     target.bodies.append(&mut source.bodies);
     target.regions.append(&mut source.regions);
     target.shells.append(&mut source.shells);
