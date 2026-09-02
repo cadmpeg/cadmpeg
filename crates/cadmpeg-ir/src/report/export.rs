@@ -233,7 +233,8 @@ impl ExportReport {
     /// Constructs a report for the neutral CADIR document, which has no native
     /// dialect target.
     #[must_use]
-    pub fn cadir(
+    #[cfg(test)]
+    pub(crate) fn cadir(
         census: EntityCensus,
         fidelity: FidelityResolution,
         write_path: WritePath,
@@ -266,7 +267,7 @@ impl ExportReport {
     /// Constructs a native-format report with its required dialect target.
     ///
     #[must_use]
-    pub fn native(
+    pub(crate) fn native(
         target: DialectId,
         census: EntityCensus,
         fidelity: FidelityResolution,
