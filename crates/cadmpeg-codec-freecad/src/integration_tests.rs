@@ -429,7 +429,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
             .admission()
             .clone(),
         cadmpeg_core::dialect::Admission::Unverified {
-            using: cadmpeg_core::dialect::Grammar::local("schema-4").unwrap(),
+            using: cadmpeg_core::dialect::Grammar::of(&crate::dialect::FcstdDialect::Schema4.id(),),
         }
     );
 
@@ -515,7 +515,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
             .admission()
             .clone(),
         cadmpeg_core::dialect::Admission::Unverified {
-            using: cadmpeg_core::dialect::Grammar::local("schema-4").unwrap(),
+            using: cadmpeg_core::dialect::Grammar::of(&crate::dialect::FcstdDialect::Schema4.id(),),
         }
     );
 

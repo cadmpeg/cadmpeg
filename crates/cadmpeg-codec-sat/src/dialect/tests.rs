@@ -276,7 +276,7 @@ fn cases() -> Vec<Case> {
             id: "sat:acis-binary",
             kernel_id: "acis:save-format-binary-other",
             kernel_admission: Admission::Unverified {
-                using: Grammar::local("save-format-218").unwrap(),
+                using: Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
             },
         },
         Case {

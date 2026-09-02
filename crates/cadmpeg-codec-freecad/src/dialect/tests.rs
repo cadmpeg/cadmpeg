@@ -96,7 +96,7 @@ fn each_declaration_classifies_into_the_row_its_discriminant_matches() {
             Admission::Admitted
         } else {
             Admission::Unverified {
-                using: Grammar::local("schema-4").unwrap(),
+                using: Grammar::of(&FcstdDialect::Schema4.id()),
             }
         };
         assert_eq!(*matched.admission(), expected_admission, "{context}");
