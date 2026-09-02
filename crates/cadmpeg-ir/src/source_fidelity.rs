@@ -78,7 +78,7 @@ struct DecodeSidecarWriteWire<'a> {
 #[derive(Deserialize)]
 struct DecodeSidecarWire {
     ir_sha256: String,
-    report: SidecarDecodeReport,
+    report: DecodeReport,
     fidelity: SourceFidelityReadWire,
 }
 
@@ -106,26 +106,6 @@ impl JsonSchema for DecodeSidecar {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         DecodeSidecarWriteWire::json_schema(generator)
-    }
-}
-
-/// A decode report inside a current sidecar, where `dialects` is required even
-/// though the reusable [`DecodeReport`] wire remains omission-tolerant.
-struct SidecarDecodeReport(DecodeReport);
-
-impl<'de> Deserialize<'de> for SidecarDecodeReport {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        let Some(fields) = value.as_object() else {
-            return Err(serde::de::Error::custom(
-                "decode-sidecar report must be a JSON object",
-            ));
-        };
-        if !fields.contains_key("dialects") {
-            return Err(serde::de::Error::missing_field("dialects"));
-        }
-        let report = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-        Ok(Self(report))
     }
 }
 
@@ -166,7 +146,7 @@ impl DecodeSidecar {
             .map_err(DecodeSidecarParseError::Fidelity)?;
         Ok(Self {
             ir_sha256: wire.ir_sha256,
-            report: wire.report.0,
+            report: wire.report,
             fidelity,
         })
     }
@@ -910,21 +890,21 @@ mod tests {
     }
 
     #[test]
-    fn current_decode_sidecar_requires_its_dialect_field() {
+    fn current_decode_sidecar_uses_decode_report_dialect_omission_policy() {
         let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
         let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
         let v4 = migrated.to_canonical_json().expect("serialize sidecar");
         let truncated = v4.replace(",\"dialects\":null", "");
         assert!(!truncated.contains("dialects"), "{truncated}");
 
-        let error = DecodeSidecar::from_json(&truncated)
-            .expect_err("a current sidecar cannot silently lose its dialect classification");
-        assert!(
-            matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("missing field `dialects`")),
-            "{error}"
+        let parsed = DecodeSidecar::from_json(&truncated)
+            .expect("the reusable decode-report wire accepts omitted dialects");
+        assert!(parsed.report.dialects().is_none());
+        assert_eq!(
+            serde_json::from_str::<DecodeSidecar>(&truncated)
+                .expect("direct sidecar deserialization uses the same policy"),
+            parsed
         );
-        serde_json::from_str::<DecodeSidecar>(&truncated)
-            .expect_err("the sidecar wire itself requires report.dialects");
     }
 
     #[test]
