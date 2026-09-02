@@ -4,20 +4,6 @@
 
 use super::*;
 
-pub(super) fn check_version(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if ir.ir_version() != IR_VERSION {
-        findings.push(Finding {
-            check: Check::Version,
-            severity: Severity::Error,
-            message: format!(
-                "unsupported ir_version {:?}; expected {IR_VERSION}",
-                ir.ir_version()
-            ),
-            entity: None,
-        });
-    }
-}
-
 fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &str) {
     if !crate::ids::is_valid_identity(id) {
         findings.push(Finding {

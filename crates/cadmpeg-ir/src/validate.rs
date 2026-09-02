@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural and numeric validation for [`CadIr`].
 //!
-//! Validation checks schema version, identity and arena order, references,
-//! topology rings, carrier reachability, annotations, native links, parameter
+//! Validation checks identity and arena order, references, topology rings,
+//! carrier reachability, annotations, native links, parameter
 //! domains, payload integrity, tessellation, numeric bounds, and geometric
 //! consistency (edge-curve endpoints and pcurve surface images against vertex
 //! positions). It does not evaluate interior surface membership or solid
@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::document::{CadIr, IR_VERSION};
+use crate::document::CadIr;
 use crate::features::Feature;
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -51,7 +51,7 @@ use geometry_consistency::{
     check_procedural_support_consistency,
 };
 use geometry_payloads::{check_bounds, check_tessellations};
-use identity_order::{check_identity_and_order, check_version, collect_native_ids};
+use identity_order::{check_identity_and_order, collect_native_ids};
 use pmi::check_pmi;
 use presentation::check_presentation;
 use products::check_products;
@@ -91,7 +91,6 @@ fn validate_model_with_index(
 ) -> ValidationReport {
     let mut findings = Vec::new();
 
-    check_version(ir, &mut findings);
     check_assets(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.

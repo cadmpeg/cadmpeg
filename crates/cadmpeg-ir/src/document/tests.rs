@@ -3,7 +3,6 @@
 
 use crate::document::{Model, SourceMeta};
 use crate::examples::unit_cube;
-use crate::report::Check;
 use crate::validate::validate_neutral;
 use crate::{diff, CadIr};
 
@@ -147,16 +146,6 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
             before.position.x
         );
     }
-}
-
-#[test]
-fn wrong_document_version_is_flagged() {
-    let mut ir = unit_cube();
-    ir.set_ir_version_for_test("1");
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::Version));
 }
 
 #[test]

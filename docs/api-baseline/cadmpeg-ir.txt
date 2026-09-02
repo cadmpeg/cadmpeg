@@ -1,4 +1,4 @@
-# generated at 63dec9120
+# generated at 4fee14438
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -393,6 +393,10 @@ pub fn cadmpeg_ir::document::CadIr::native_unknowns_iter<'a>(&'a self, &str) -> 
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns(&mut self, &str, &[cadmpeg_ir::unknown::NativeUnknownRecord]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, &str, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
+impl serde_core::ser::Serialize for cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::document::CadIr::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::document::CadIr::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::document::Model
 pub cadmpeg_ir::document::Model::appearance_bindings: alloc::vec::Vec<cadmpeg_ir::appearance::AppearanceBinding>
 pub cadmpeg_ir::document::Model::appearances: alloc::vec::Vec<cadmpeg_ir::appearance::Appearance>
@@ -5437,6 +5441,8 @@ pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::resu
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::version(&self) -> &str
+impl serde_core::ser::Serialize for cadmpeg_ir::source_fidelity::DecodeSidecar
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::source_fidelity::RetainedSourceRecord
@@ -5465,6 +5471,10 @@ pub fn cadmpeg_ir::source_fidelity::SourceFidelity::version(&self) -> &str
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::with_annotations(cadmpeg_ir::annotations::Annotations) -> Self
 impl core::default::Default for cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::default() -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION: &str
 pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V1: &str
 pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V2: &str
@@ -7200,6 +7210,10 @@ pub fn cadmpeg_ir::document::CadIr::native_unknowns_iter<'a>(&'a self, &str) -> 
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns(&mut self, &str, &[cadmpeg_ir::unknown::NativeUnknownRecord]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, &str, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
+impl serde_core::ser::Serialize for cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::document::CadIr::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::document::CadIr::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::CameraState
 pub cadmpeg_ir::CameraState::orientation: core::option::Option<[f64; 4]>
 pub cadmpeg_ir::CameraState::position: core::option::Option<[f64; 3]>
@@ -7285,6 +7299,8 @@ pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::resu
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::version(&self) -> &str
+impl serde_core::ser::Serialize for cadmpeg_ir::source_fidelity::DecodeSidecar
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::DesignConfiguration
@@ -7734,6 +7750,10 @@ pub fn cadmpeg_ir::source_fidelity::SourceFidelity::version(&self) -> &str
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::with_annotations(cadmpeg_ir::annotations::Annotations) -> Self
 impl core::default::Default for cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::default() -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::SourceLocation
 pub struct cadmpeg_ir::SourceMeta
 pub cadmpeg_ir::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>

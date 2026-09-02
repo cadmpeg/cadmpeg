@@ -35,12 +35,25 @@ pub const DECODE_SIDECAR_VERSION_V2: &str = "2";
 /// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
 pub const DECODE_SIDECAR_VERSION_V3: &str = "3";
 
+#[cfg(feature = "schema")]
+fn decode_sidecar_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "string",
+        "const": DECODE_SIDECAR_VERSION
+    })
+}
+
+#[cfg(feature = "schema")]
+fn source_fidelity_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "string",
+        "const": SOURCE_FIDELITY_VERSION
+    })
+}
+
 /// A decode report and source fidelity bound to exact CADIR bytes.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DecodeSidecar {
-    /// Serialized sidecar format version.
-    version: String,
     /// SHA-256 of the exact CADIR bytes this sidecar describes.
     pub ir_sha256: String,
     /// Native decode transfer report.
@@ -49,12 +62,51 @@ pub struct DecodeSidecar {
     pub fidelity: SourceFidelity,
 }
 
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DecodeSidecarWriteWire<'a> {
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "decode_sidecar_version_schema")
+    )]
+    version: &'static str,
+    ir_sha256: &'a str,
+    report: &'a DecodeReport,
+    fidelity: &'a SourceFidelity,
+}
+
 #[derive(Deserialize)]
 struct DecodeSidecarWire {
-    version: String,
     ir_sha256: String,
     report: SidecarDecodeReport,
-    fidelity: SourceFidelity,
+    fidelity: SourceFidelityReadWire,
+}
+
+impl Serialize for DecodeSidecar {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DecodeSidecarWriteWire {
+            version: DECODE_SIDECAR_VERSION,
+            ir_sha256: &self.ir_sha256,
+            report: &self.report,
+            fidelity: &self.fidelity,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for DecodeSidecar {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "DecodeSidecar".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::DecodeSidecar").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        DecodeSidecarWriteWire::json_schema(generator)
+    }
 }
 
 /// A decode report inside a current sidecar, where `dialects` is required even
@@ -107,14 +159,15 @@ impl DecodeSidecar {
         }
         let wire: DecodeSidecarWire =
             serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
-        wire.fidelity
+        let fidelity =
+            SourceFidelity::from_wire(wire.fidelity).map_err(DecodeSidecarParseError::Fidelity)?;
+        fidelity
             .validate()
             .map_err(DecodeSidecarParseError::Fidelity)?;
         Ok(Self {
-            version: wire.version,
             ir_sha256: wire.ir_sha256,
             report: wire.report.0,
-            fidelity: wire.fidelity,
+            fidelity,
         })
     }
 
@@ -131,16 +184,15 @@ impl DecodeSidecar {
     ) -> Self {
         fidelity.finalize();
         Self {
-            version: DECODE_SIDECAR_VERSION.into(),
             ir_sha256: ir_sha256.into(),
             report,
             fidelity,
         }
     }
 
-    /// Sidecar format version stamped by constructors.
+    /// Sidecar format version emitted by serialization.
     pub fn version(&self) -> &str {
-        &self.version
+        DECODE_SIDECAR_VERSION
     }
 
     /// Returns whether this sidecar is bound to the supplied CADIR bytes.
@@ -398,7 +450,7 @@ impl<'de> Deserialize<'de> for RetainedSourceRecord {
 /// Validation failure in source metadata.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FidelityError {
-    /// The sidecar declares an unsupported schema version.
+    /// The source-fidelity wire declares an unsupported schema version.
     #[error("unsupported source-fidelity version: {found}")]
     Version {
         /// The version found in the sidecar.
@@ -429,23 +481,72 @@ pub enum FidelityError {
 }
 
 /// Decode-time source annotations and retained native records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFidelity {
-    /// Serialized representation version.
-    version: String,
     /// Sparse source locations and conversion exactness.
-    #[serde(default)]
     pub annotations: Annotations,
     /// Native records retained for recovery or replay.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub retained_records: Vec<RetainedSourceRecord>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SourceFidelityWriteWire<'a> {
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "source_fidelity_version_schema")
+    )]
+    version: &'static str,
+    annotations: &'a Annotations,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    retained_records: &'a Vec<RetainedSourceRecord>,
+}
+
+#[derive(Deserialize)]
+struct SourceFidelityReadWire {
+    version: String,
+    #[serde(default)]
+    annotations: Annotations,
+    #[serde(default)]
+    retained_records: Vec<RetainedSourceRecord>,
+}
+
+impl Serialize for SourceFidelity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        SourceFidelityWriteWire {
+            version: SOURCE_FIDELITY_VERSION,
+            annotations: &self.annotations,
+            retained_records: &self.retained_records,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceFidelity {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::from_wire(SourceFidelityReadWire::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SourceFidelity {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SourceFidelity".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::SourceFidelity").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SourceFidelityWriteWire::json_schema(generator)
+    }
 }
 
 impl Default for SourceFidelity {
     fn default() -> Self {
         Self {
-            version: SOURCE_FIDELITY_VERSION.into(),
             annotations: Annotations::default(),
             retained_records: Vec::new(),
         }
@@ -453,15 +554,14 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
-    /// Representation version stamped by constructors and `Default`.
+    /// Representation version emitted by serialization.
     pub fn version(&self) -> &str {
-        &self.version
+        SOURCE_FIDELITY_VERSION
     }
 
     /// Current-version fidelity carrying only the given annotations.
     pub fn with_annotations(annotations: Annotations) -> Self {
         Self {
-            version: SOURCE_FIDELITY_VERSION.into(),
             annotations,
             retained_records: Vec::new(),
         }
@@ -511,7 +611,6 @@ impl SourceFidelity {
         let Self {
             annotations,
             retained_records,
-            ..
         } = self;
         ir.set_native_unknowns_from(
             format,
@@ -547,11 +646,6 @@ impl SourceFidelity {
 
     /// Validates retained record identity and payload integrity.
     pub fn validate(&self) -> Result<(), FidelityError> {
-        if self.version != SOURCE_FIDELITY_VERSION {
-            return Err(FidelityError::Version {
-                found: self.version.clone(),
-            });
-        }
         let mut ids = std::collections::BTreeSet::new();
         for record in &self.retained_records {
             if !ids.insert(&record.id) {
@@ -580,11 +674,25 @@ impl SourceFidelity {
 
     /// Parses and validates a sidecar.
     pub fn from_json(text: &str) -> Result<Self, SourceFidelityParseError> {
-        let sidecar: Self = serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
+        let wire: SourceFidelityReadWire =
+            serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
+        let sidecar = Self::from_wire(wire).map_err(SourceFidelityParseError::Fidelity)?;
         sidecar
             .validate()
             .map_err(SourceFidelityParseError::Fidelity)?;
         Ok(sidecar)
+    }
+
+    fn from_wire(wire: SourceFidelityReadWire) -> Result<Self, FidelityError> {
+        if wire.version != SOURCE_FIDELITY_VERSION {
+            return Err(FidelityError::Version {
+                found: wire.version,
+            });
+        }
+        Ok(Self {
+            annotations: wire.annotations,
+            retained_records: wire.retained_records,
+        })
     }
 }
 
@@ -628,6 +736,41 @@ mod tests {
             sidecar.validate(),
             Err(FidelityError::Digest { .. })
         ));
+    }
+
+    #[test]
+    fn source_fidelity_version_is_constant_and_rejected_at_the_read_boundary() {
+        let fidelity = SourceFidelity::default();
+        let mut wire = serde_json::to_value(&fidelity).unwrap();
+        assert_eq!(wire["version"], SOURCE_FIDELITY_VERSION);
+        assert_eq!(
+            serde_json::from_value::<SourceFidelity>(wire.clone()).unwrap(),
+            fidelity
+        );
+
+        wire["version"] = "9".into();
+        assert!(matches!(
+            SourceFidelity::from_json(&wire.to_string()),
+            Err(SourceFidelityParseError::Fidelity(FidelityError::Version {
+                found
+            })) if found == "9"
+        ));
+        serde_json::from_value::<SourceFidelity>(wire)
+            .expect_err("direct deserialization rejects an unsupported fidelity version");
+    }
+
+    #[cfg(feature = "schema")]
+    #[test]
+    fn decode_sidecar_schema_constrains_both_constant_versions() {
+        let schema = serde_json::to_value(crate::decode_sidecar_json_schema()).unwrap();
+        assert_eq!(
+            schema.pointer("/properties/version/const"),
+            Some(&serde_json::json!(DECODE_SIDECAR_VERSION))
+        );
+        assert_eq!(
+            schema.pointer("/$defs/SourceFidelity/properties/version/const"),
+            Some(&serde_json::json!(SOURCE_FIDELITY_VERSION))
+        );
     }
 
     #[test]
