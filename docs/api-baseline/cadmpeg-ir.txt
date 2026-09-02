@@ -1,4 +1,4 @@
-# generated at 097e65f3e
+# generated at 46350bc4d
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -437,8 +437,6 @@ pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::Diale
 pub fn cadmpeg_ir::document::SourceMeta::dialect(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectMatch>
 pub fn cadmpeg_ir::document::SourceMeta::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::document::SourceMeta::format(&self) -> &str
-impl core::default::Default for cadmpeg_ir::document::SourceMeta
-pub fn cadmpeg_ir::document::SourceMeta::default() -> Self
 impl serde_core::ser::Serialize for cadmpeg_ir::document::SourceMeta
 pub fn cadmpeg_ir::document::SourceMeta::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::document::SourceMeta
@@ -7661,8 +7659,6 @@ pub fn cadmpeg_ir::document::SourceMeta::classified(cadmpeg_core::dialect::Diale
 pub fn cadmpeg_ir::document::SourceMeta::dialect(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectMatch>
 pub fn cadmpeg_ir::document::SourceMeta::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::document::SourceMeta::format(&self) -> &str
-impl core::default::Default for cadmpeg_ir::document::SourceMeta
-pub fn cadmpeg_ir::document::SourceMeta::default() -> Self
 impl serde_core::ser::Serialize for cadmpeg_ir::document::SourceMeta
 pub fn cadmpeg_ir::document::SourceMeta::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::document::SourceMeta

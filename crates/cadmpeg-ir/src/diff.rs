@@ -23,10 +23,9 @@
 //! [`IrDiff::is_empty`] and outside the exit code derived from it, while every
 //! other source attribute counts.
 //!
-//! A document with no `source` compares as one whose source is
-//! [`SourceMeta::default`]: an empty format id and no attributes. Two documents
-//! that both lack source metadata therefore agree, and a document that gained a
-//! populated one differs.
+//! A document with no `source` compares with an absent format, dialect set, and
+//! attribute map. Two documents that both lack source metadata therefore agree,
+//! and a document that gained populated source metadata differs.
 
 use std::collections::BTreeMap;
 
@@ -38,7 +37,6 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::document::SourceMeta;
 use crate::CadIr;
 
 /// One differing source attribute.
@@ -267,17 +265,27 @@ fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Toleran
 /// Compare the source metadata of two documents, classifying each differing
 /// attribute as a difference or as an informational machine-local digest.
 fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
-    let absent = SourceMeta::default();
-    let left = left.source.as_ref().unwrap_or(&absent);
-    let right = right.source.as_ref().unwrap_or(&absent);
+    let empty_attributes = BTreeMap::new();
+    let left_format = left.source.as_ref().map_or("", |source| source.format());
+    let right_format = right.source.as_ref().map_or("", |source| source.format());
+    let left_dialects = left.source.as_ref().and_then(|source| source.dialects());
+    let right_dialects = right.source.as_ref().and_then(|source| source.dialects());
+    let left_attributes = left
+        .source
+        .as_ref()
+        .map_or(&empty_attributes, |source| &source.attributes);
+    let right_attributes = right
+        .source
+        .as_ref()
+        .map_or(&empty_attributes, |source| &source.attributes);
     let mut result = SourceDiff {
-        format_change: (left.format() != right.format())
-            .then(|| (left.format().to_owned(), right.format().to_owned())),
-        dialects_change: (left.dialects() != right.dialects())
-            .then(|| (left.dialects().cloned(), right.dialects().cloned())),
+        format_change: (left_format != right_format)
+            .then(|| (left_format.to_owned(), right_format.to_owned())),
+        dialects_change: (left_dialects != right_dialects)
+            .then(|| (left_dialects.cloned(), right_dialects.cloned())),
         ..SourceDiff::default()
     };
-    for change in attribute_changes(&left.attributes, &right.attributes) {
+    for change in attribute_changes(left_attributes, right_attributes) {
         if is_local_digest_attribute(&change.key) {
             result.local_digests.push(change);
         } else {
@@ -603,8 +611,7 @@ mod tests {
     }
 
     /// A document with no source metadata compares against one that has some
-    /// without panicking, in either order, and an absent source equals an empty
-    /// one.
+    /// without panicking in either order.
     #[test]
     fn absent_source_metadata_compares_without_panicking() {
         let mut bare = unit_cube();
@@ -618,9 +625,7 @@ mod tests {
             assert_eq!(result.source.attributes.len(), 1);
         }
 
-        let mut empty_source = unit_cube();
-        empty_source.source = Some(crate::document::SourceMeta::default());
-        assert!(diff(&bare, &empty_source).is_empty());
+        assert!(diff(&bare, &bare).is_empty());
     }
 
     #[test]

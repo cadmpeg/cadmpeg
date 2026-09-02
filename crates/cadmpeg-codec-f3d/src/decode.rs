@@ -2976,15 +2976,13 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 
 /// Decode an F3D or F3Z reader.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
-    decode_member(ctx, root)
-}
-
-/// Decode one archive member with its document-local dialect losses.
-pub(crate) fn decode_member<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
-) -> Result<Decoded, CodecError> {
-    decode_document(ctx, root, crate::report::ReportScope::Standalone)
+    let scan = container::scan(ctx, root)?;
+    match &scan.kind {
+        container::F3dContainerKind::MultiDocument => crate::f3z::decode(ctx, &scan),
+        container::F3dContainerKind::Document { .. } => {
+            decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)
+        }
+    }
 }
 
 /// Decode one already-scanned F3Z member under archive-owned identity.
@@ -2998,20 +2996,6 @@ pub(crate) fn decode_archive_member<'a>(
         scan,
         crate::report::ReportScope::ArchiveMember(dialects.clone()),
     )
-}
-
-fn decode_document<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
-    report_scope: crate::report::ReportScope,
-) -> Result<Decoded, CodecError> {
-    let scan = container::scan(ctx, root)?;
-    match &scan.kind {
-        container::F3dContainerKind::MultiDocument => crate::f3z::decode(ctx, &scan),
-        container::F3dContainerKind::Document { .. } => {
-            decode_scanned_document(ctx, &scan, report_scope)
-        }
-    }
 }
 
 fn decode_scanned_document<'a>(

@@ -44,7 +44,12 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
             visible: None,
         },
     ]);
-    ir.source = Some(cadmpeg_ir::document::SourceMeta::default());
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            crate::dialect::NxDialect::Splmsstr.id(),
+        )),
+        BTreeMap::new(),
+    ));
     let body_node_ids = BTreeMap::from([
         (first.clone(), BTreeSet::from([7])),
         (second, BTreeSet::from([8])),

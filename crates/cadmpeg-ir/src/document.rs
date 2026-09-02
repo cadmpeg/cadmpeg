@@ -493,15 +493,6 @@ struct SourceMetaWriteWire<'a> {
     dialects: Option<&'a DialectLayers>,
 }
 
-impl Default for SourceMeta {
-    fn default() -> Self {
-        Self {
-            classification: FormatIdentity::unclassified(String::new()),
-            attributes: BTreeMap::new(),
-        }
-    }
-}
-
 impl Serialize for SourceMeta {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         SourceMetaWriteWire {
