@@ -1390,7 +1390,7 @@ impl CodecBackend for FcstdCodec {
             ir,
             body: DecodeBody {
                 geometry_transferred,
-                coverage: std::collections::BTreeMap::new(),
+                coverage: Default::default(),
                 losses,
                 notes: summary_notes,
                 transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

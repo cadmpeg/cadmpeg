@@ -424,7 +424,7 @@ fn coverage(bytes: &[u8]) -> std::collections::BTreeMap<String, usize> {
         )
         .expect("both version gates degrade rather than refuse")
         .report()
-        .coverage
+        .coverage()
         .clone()
 }
 

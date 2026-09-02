@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-report assembly from coverage counters and container census.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -64,7 +64,7 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
 pub(in super::super) fn build_report(
     scan: &ContainerScan,
     ir: &CadIr,
-    coverage: BTreeMap<String, usize>,
+    coverage: cadmpeg_ir::Coverage,
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> DecodeBody {

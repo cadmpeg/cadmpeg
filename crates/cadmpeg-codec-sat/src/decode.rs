@@ -218,12 +218,9 @@ fn build_result(
             stats.unknown_surface_faces
         )));
     }
-    let mut coverage = BTreeMap::new();
-    coverage.insert("unknown_records".to_string(), unknowns.len());
-    coverage.insert(
-        "unknown_surface_faces".to_string(),
-        stats.unknown_surface_faces,
-    );
+    let mut coverage = cadmpeg_ir::Coverage::default();
+    coverage.record("unknown_records".into(), unknowns.len());
+    coverage.record("unknown_surface_faces".into(), stats.unknown_surface_faces);
     let body = DecodeBody {
         coverage,
         losses,

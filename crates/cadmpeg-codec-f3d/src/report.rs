@@ -30,7 +30,7 @@ pub(crate) fn build_decode_report(
 ) -> DecodeBody {
     DecodeBody {
         geometry_transferred,
-        coverage: std::collections::BTreeMap::new(),
+        coverage: Default::default(),
         losses,
         notes: report_notes(crate::container::summary_notes(scan), container_only),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

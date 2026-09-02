@@ -235,87 +235,81 @@ impl BrepTransferDiagnostics {
             .collect()
     }
 
-    pub(in super::super) fn record_coverage(&self, coverage: &mut BTreeMap<String, usize>) {
-        coverage.insert(
-            "brep_candidate_face_count".to_string(),
+    pub(in super::super) fn record_coverage(&self, coverage: &mut cadmpeg_ir::Coverage) {
+        coverage.record(
+            "brep_candidate_face_count".into(),
             self.candidate_face_count,
         );
-        coverage.insert(
-            "brep_admitted_face_count".to_string(),
-            self.admitted_face_count,
-        );
-        coverage.insert(
-            "brep_emitted_face_count".to_string(),
-            self.emitted_face_count,
-        );
-        coverage.insert(
-            "brep_boundary_curve_count".to_string(),
+        coverage.record("brep_admitted_face_count".into(), self.admitted_face_count);
+        coverage.record("brep_emitted_face_count".into(), self.emitted_face_count);
+        coverage.record(
+            "brep_boundary_curve_count".into(),
             self.boundary_curve_count,
         );
-        coverage.insert(
-            "brep_boundary_curve_missing_incidence_count".to_string(),
+        coverage.record(
+            "brep_boundary_curve_missing_incidence_count".into(),
             self.boundary_curve_missing_incidence_count,
         );
-        coverage.insert(
-            "brep_boundary_curve_unsolved_vertex_count".to_string(),
+        coverage.record(
+            "brep_boundary_curve_unsolved_vertex_count".into(),
             self.boundary_curve_unsolved_vertex_count,
         );
         if self.legacy_nonvisible_face_reference_count > 0 {
-            coverage.insert(
-                "brep_legacy_nonvisible_face_reference_count".to_string(),
+            coverage.record(
+                "brep_legacy_nonvisible_face_reference_count".into(),
                 self.legacy_nonvisible_face_reference_count,
             );
         }
-        coverage.insert(
-            "brep_vertex_topological_count".to_string(),
+        coverage.record(
+            "brep_vertex_topological_count".into(),
             self.vertex_solve.topological_vertices,
         );
-        coverage.insert(
-            "brep_vertex_carrier_incident_count".to_string(),
+        coverage.record(
+            "brep_vertex_carrier_incident_count".into(),
             self.vertex_solve.carrier_incident_vertices,
         );
-        coverage.insert(
-            "brep_vertex_carrier_pair_intersection_candidate_count".to_string(),
+        coverage.record(
+            "brep_vertex_carrier_pair_intersection_candidate_count".into(),
             self.vertex_solve.carrier_pair_candidates,
         );
-        coverage.insert(
-            "brep_vertex_carrier_triple_intersection_candidate_count".to_string(),
+        coverage.record(
+            "brep_vertex_carrier_triple_intersection_candidate_count".into(),
             self.vertex_solve.carrier_triple_candidates,
         );
-        coverage.insert(
-            "brep_vertex_carrier_valid_intersection_candidate_count".to_string(),
+        coverage.record(
+            "brep_vertex_carrier_valid_intersection_candidate_count".into(),
             self.vertex_solve.carrier_valid_candidates,
         );
-        coverage.insert(
-            "brep_vertex_carrier_zero_candidate_count".to_string(),
+        coverage.record(
+            "brep_vertex_carrier_zero_candidate_count".into(),
             self.vertex_solve.carrier_zero_candidate_vertices,
         );
         if self.vertex_solve.carrier_no_geometric_candidate_vertices != 0 {
-            coverage.insert(
-                "brep_vertex_carrier_no_geometric_candidate_count".to_string(),
+            coverage.record(
+                "brep_vertex_carrier_no_geometric_candidate_count".into(),
                 self.vertex_solve.carrier_no_geometric_candidate_vertices,
             );
         }
         if self.vertex_solve.carrier_no_valid_candidate_vertices != 0 {
-            coverage.insert(
-                "brep_vertex_carrier_no_valid_candidate_count".to_string(),
+            coverage.record(
+                "brep_vertex_carrier_no_valid_candidate_count".into(),
                 self.vertex_solve.carrier_no_valid_candidate_vertices,
             );
         }
-        coverage.insert(
-            "brep_vertex_carrier_ambiguous_candidate_count".to_string(),
+        coverage.record(
+            "brep_vertex_carrier_ambiguous_candidate_count".into(),
             self.vertex_solve.carrier_ambiguous_candidate_vertices,
         );
-        coverage.insert(
-            "brep_vertex_carrier_point_count".to_string(),
+        coverage.record(
+            "brep_vertex_carrier_point_count".into(),
             self.vertex_solve.carrier_points,
         );
-        coverage.insert(
-            "brep_pcurve_record_count".to_string(),
+        coverage.record(
+            "brep_pcurve_record_count".into(),
             self.vertex_solve.pcurve.records,
         );
-        coverage.insert(
-            "brep_pcurve_path_count".to_string(),
+        coverage.record(
+            "brep_pcurve_path_count".into(),
             self.vertex_solve.pcurve.paths,
         );
         let pcurve = &self.vertex_solve.pcurve;
@@ -324,33 +318,33 @@ impl BrepTransferDiagnostics {
             || pcurve.partial_records > 0
             || pcurve.topology_mismatch_records > 0
         {
-            coverage.insert(
-                "brep_pcurve_inactive_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_inactive_path_count".into(),
                 pcurve.inactive_paths,
             );
-            coverage.insert(
-                "brep_pcurve_inactive_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_inactive_record_count".into(),
                 pcurve.inactive_records,
             );
-            coverage.insert(
-                "brep_pcurve_partial_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_partial_record_count".into(),
                 pcurve.partial_records,
             );
-            coverage.insert(
-                "brep_pcurve_topology_mismatch_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_topology_mismatch_record_count".into(),
                 pcurve.topology_mismatch_records,
             );
         }
-        coverage.insert(
-            "brep_pcurve_missing_surface_path_count".to_string(),
+        coverage.record(
+            "brep_pcurve_missing_surface_path_count".into(),
             self.vertex_solve.pcurve.missing_surfaces,
         );
-        coverage.insert(
-            "brep_pcurve_unevaluable_path_count".to_string(),
+        coverage.record(
+            "brep_pcurve_unevaluable_path_count".into(),
             self.vertex_solve.pcurve.unevaluable_paths,
         );
-        coverage.insert(
-            "brep_pcurve_mapped_path_count".to_string(),
+        coverage.record(
+            "brep_pcurve_mapped_path_count".into(),
             self.vertex_solve.pcurve.mapped_paths,
         );
         if pcurve.carrier_validated_paths > 0
@@ -358,182 +352,182 @@ impl BrepTransferDiagnostics {
             || pcurve.carrier_unknown_paths > 0
             || pcurve.carrier_rejected_records > 0
         {
-            coverage.insert(
-                "brep_pcurve_carrier_validated_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_validated_path_count".into(),
                 pcurve.carrier_validated_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_rejected_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_rejected_path_count".into(),
                 pcurve.carrier_rejected_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_unknown_path_count".into(),
                 pcurve.carrier_unknown_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_missing_surface_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_unknown_missing_surface_path_count".into(),
                 pcurve.carrier_unknown_missing_surface_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_missing_carrier_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_unknown_missing_carrier_path_count".into(),
                 pcurve.carrier_unknown_missing_carrier_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_unsupported_pair_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_unknown_unsupported_pair_path_count".into(),
                 pcurve.carrier_unknown_unsupported_pair_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_parallel_plane_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_unknown_parallel_plane_path_count".into(),
                 pcurve.carrier_unknown_parallel_plane_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_unsupported_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_unknown_unsupported_path_count".into(),
                 pcurve.carrier_unknown_unsupported_path_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_rejected_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_carrier_rejected_record_count".into(),
                 pcurve.carrier_rejected_records,
             );
         }
-        coverage.insert(
-            "brep_pcurve_unmapped_record_count".to_string(),
+        coverage.record(
+            "brep_pcurve_unmapped_record_count".into(),
             self.vertex_solve.pcurve.unmapped_records,
         );
-        coverage.insert(
-            "brep_pcurve_inconsistent_record_count".to_string(),
+        coverage.record(
+            "brep_pcurve_inconsistent_record_count".into(),
             self.vertex_solve.pcurve.inconsistent_records,
         );
-        coverage.insert(
-            "brep_pcurve_accepted_record_count".to_string(),
+        coverage.record(
+            "brep_pcurve_accepted_record_count".into(),
             self.vertex_solve.pcurve.accepted_records,
         );
-        coverage.insert(
-            "brep_pcurve_complete_record_count".to_string(),
+        coverage.record(
+            "brep_pcurve_complete_record_count".into(),
             self.vertex_solve.pcurve.complete_records,
         );
         if self.vertex_solve.pcurve.two_chart_records > 0 {
-            coverage.insert(
-                "brep_pcurve_two_chart_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_record_count".into(),
                 self.vertex_solve.pcurve.two_chart_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_mapped_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_mapped_record_count".into(),
                 self.vertex_solve.pcurve.two_chart_mapped_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_complete_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_complete_record_count".into(),
                 self.vertex_solve.pcurve.two_chart_complete_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_partial_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_partial_record_count".into(),
                 self.vertex_solve.pcurve.two_chart_partial_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_missing_surface_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_missing_surface_path_count".into(),
                 self.vertex_solve.pcurve.two_chart_missing_surface_paths,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_unevaluable_path_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_unevaluable_path_count".into(),
                 self.vertex_solve.pcurve.two_chart_unevaluable_paths,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_surface_mismatch_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_surface_mismatch_record_count".into(),
                 self.vertex_solve.pcurve.two_chart_surface_mismatch_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_no_sample_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_no_sample_record_count".into(),
                 self.vertex_solve.pcurve.two_chart_no_sample_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_unmapped_record_count".to_string(),
+            coverage.record(
+                "brep_pcurve_two_chart_unmapped_record_count".into(),
                 self.vertex_solve.pcurve.two_chart_unmapped_records,
             );
         }
-        coverage.insert(
-            "brep_pcurve_conflicting_curve_count".to_string(),
+        coverage.record(
+            "brep_pcurve_conflicting_curve_count".into(),
             self.vertex_solve.pcurve.conflicting_curves,
         );
-        coverage.insert(
-            "brep_vertex_pcurve_endpoint_evidence_count".to_string(),
+        coverage.record(
+            "brep_vertex_pcurve_endpoint_evidence_count".into(),
             self.vertex_solve.pcurve.evidence,
         );
-        coverage.insert(
-            "brep_vertex_complete_pcurve_endpoint_evidence_count".to_string(),
+        coverage.record(
+            "brep_vertex_complete_pcurve_endpoint_evidence_count".into(),
             self.vertex_solve.pcurve.complete_evidence,
         );
-        coverage.insert(
-            "brep_vertex_pcurve_constraint_count".to_string(),
+        coverage.record(
+            "brep_vertex_pcurve_constraint_count".into(),
             self.vertex_solve.pcurve_constraints,
         );
         if self.vertex_solve.pcurve_fixed_endpoint_conflicts > 0 {
-            coverage.insert(
-                "brep_vertex_pcurve_fixed_endpoint_conflict_count".to_string(),
+            coverage.record(
+                "brep_vertex_pcurve_fixed_endpoint_conflict_count".into(),
                 self.vertex_solve.pcurve_fixed_endpoint_conflicts,
             );
         }
         if self.vertex_solve.pcurve_ambiguous_endpoint_vertices > 0 {
-            coverage.insert(
-                "brep_vertex_pcurve_ambiguous_endpoint_vertex_count".to_string(),
+            coverage.record(
+                "brep_vertex_pcurve_ambiguous_endpoint_vertex_count".into(),
                 self.vertex_solve.pcurve_ambiguous_endpoint_vertices,
             );
         }
-        coverage.insert(
-            "brep_vertex_directed_endpoint_assignment_count".to_string(),
+        coverage.record(
+            "brep_vertex_directed_endpoint_assignment_count".into(),
             self.vertex_solve.directed_endpoint_assignments,
         );
-        coverage.insert(
-            "brep_vertex_directed_endpoint_conflict_count".to_string(),
+        coverage.record(
+            "brep_vertex_directed_endpoint_conflict_count".into(),
             self.vertex_solve.directed_endpoint_conflicts,
         );
-        coverage.insert(
-            "brep_vertex_nurbs_endpoint_constraint_count".to_string(),
+        coverage.record(
+            "brep_vertex_nurbs_endpoint_constraint_count".into(),
             self.vertex_solve.nurbs_endpoint_constraints,
         );
-        coverage.insert(
-            "brep_vertex_analytic_domain_count".to_string(),
+        coverage.record(
+            "brep_vertex_analytic_domain_count".into(),
             self.vertex_solve.analytic_domain_vertices,
         );
-        coverage.insert(
-            "brep_vertex_solved_count".to_string(),
+        coverage.record(
+            "brep_vertex_solved_count".into(),
             self.vertex_solve.solved_vertices,
         );
-        coverage.insert(
-            "brep_rejected_face_count".to_string(),
+        coverage.record(
+            "brep_rejected_face_count".into(),
             self.rejected_faces
                 .values()
                 .map(|evidence| evidence.count)
                 .sum(),
         );
         for reason in FaceAdmissionRejection::ALL {
-            coverage.insert(
-                format!("brep_rejected_face_{}_count", reason.key()),
+            coverage.record(
+                format!("brep_rejected_face_{}_count", reason.key()).into(),
                 self.rejected_faces
                     .get(&reason)
                     .map_or(0, |evidence| evidence.count),
             );
         }
-        coverage.insert(
-            "brep_body_count_mismatch_count".to_string(),
+        coverage.record(
+            "brep_body_count_mismatch_count".into(),
             usize::from(self.body_count_mismatch),
         );
-        coverage.insert(
-            "brep_legacy_body_ownership_ambiguous_count".to_string(),
+        coverage.record(
+            "brep_legacy_body_ownership_ambiguous_count".into(),
             usize::from(self.legacy_body_ownership_ambiguous),
         );
-        coverage.insert(
-            "brep_empty_component_count".to_string(),
+        coverage.record(
+            "brep_empty_component_count".into(),
             self.empty_component_count,
         );
-        coverage.insert(
-            "brep_admitted_component_count".to_string(),
+        coverage.record(
+            "brep_admitted_component_count".into(),
             self.admitted_component_count,
         );
-        coverage.insert(
-            "brep_selected_body_count".to_string(),
+        coverage.record(
+            "brep_selected_body_count".into(),
             self.selected_body_count.unwrap_or_default(),
         );
-        coverage.insert(
-            "brep_selected_body_count_unresolved".to_string(),
+        coverage.record(
+            "brep_selected_body_count_unresolved".into(),
             usize::from(self.selected_body_count.is_none()),
         );
     }

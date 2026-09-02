@@ -601,177 +601,183 @@ pub(crate) fn try_decode_freeform_surfaces(
     insert_unresolved_carrier_loss(&ir, &mut losses);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
-    let mut coverage = std::collections::BTreeMap::new();
-    coverage.insert(
-        "decoded_object_stream_run_count".to_string(),
+    let mut coverage = cadmpeg_ir::Coverage::default();
+    coverage.record(
+        "decoded_object_stream_run_count".into(),
         object_stream_run_count,
     );
-    coverage.insert(
-        "selected_object_stream_run_count".to_string(),
+    coverage.record(
+        "selected_object_stream_run_count".into(),
         selected_object_stream_run_count,
     );
-    coverage.insert(
-        "unselected_object_stream_run_count".to_string(),
+    coverage.record(
+        "unselected_object_stream_run_count".into(),
         object_stream_run_count - selected_object_stream_run_count,
     );
-    coverage.insert(
-        "exhausted_object_stream_selection_count".to_string(),
+    coverage.record(
+        "exhausted_object_stream_selection_count".into(),
         usize::from(object_stream_selection_exhausted),
     );
-    coverage.insert(
-        "decoded_b2_nurbs_curve_count".to_string(),
-        b2_nurbs_curve_count,
-    );
-    coverage.insert(
-        "decoded_a5_nurbs_curve_count".to_string(),
-        a5_nurbs_curve_count,
-    );
-    coverage.insert(
-        "decoded_b2_spatial_circle_count".to_string(),
+    coverage.record("decoded_b2_nurbs_curve_count".into(), b2_nurbs_curve_count);
+    coverage.record("decoded_a5_nurbs_curve_count".into(), a5_nurbs_curve_count);
+    coverage.record(
+        "decoded_b2_spatial_circle_count".into(),
         b2_spatial_circle_count,
     );
-    coverage.insert(
-        "attached_standalone_wire_edge_count".to_string(),
+    coverage.record(
+        "attached_standalone_wire_edge_count".into(),
         usize::from(wire_topology_transferred) * standalone_wires.len(),
     );
     if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
-        coverage.insert(
-            "resolved_object_stream_face_terminal_control_03_count".to_string(),
+        coverage.record(
+            "resolved_object_stream_face_terminal_control_03_count".into(),
             control_03,
         );
-        coverage.insert(
-            "resolved_object_stream_face_terminal_control_05_count".to_string(),
+        coverage.record(
+            "resolved_object_stream_face_terminal_control_05_count".into(),
             control_05,
         );
-        coverage.insert(
-            "resolved_object_stream_uncounted_face_count".to_string(),
+        coverage.record(
+            "resolved_object_stream_uncounted_face_count".into(),
             uncounted,
         );
     }
     if topology_transferred {
-        coverage.insert(
-            "transferred_object_stream_face_count".to_string(),
+        coverage.record(
+            "transferred_object_stream_face_count".into(),
             ir.model.faces.len(),
         );
-        coverage.insert(
-            "transferred_object_stream_loop_count".to_string(),
+        coverage.record(
+            "transferred_object_stream_loop_count".into(),
             ir.model.loops.len(),
         );
     }
     if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
-        coverage.insert(
-            "typed_object_stream_face_terminal_control_03_count".to_string(),
+        coverage.record(
+            "typed_object_stream_face_terminal_control_03_count".into(),
             control_03,
         );
-        coverage.insert(
-            "typed_object_stream_face_terminal_control_05_count".to_string(),
+        coverage.record(
+            "typed_object_stream_face_terminal_control_05_count".into(),
             control_05,
         );
-        coverage.insert(
-            "typed_object_stream_uncounted_face_count".to_string(),
-            uncounted,
-        );
-        coverage.insert(
-            "typed_unresolved_object_stream_face_count".to_string(),
+        coverage.record("typed_object_stream_uncounted_face_count".into(), uncounted);
+        coverage.record(
+            "typed_unresolved_object_stream_face_count".into(),
             unresolved,
         );
     }
     if typed_multi_surface_face_count != 0 {
-        coverage.insert(
-            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT
-                .0
-                .to_string(),
+        coverage.record(
+            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT,
             typed_multi_surface_face_count,
         );
     }
     if let Some(counts) = edge_terminal_controls {
-        for (control, count) in [0x01, 0x02, 0x21, 0x22, 0x25, 0x26, 0x29, 0x2a]
-            .into_iter()
-            .zip(counts)
+        for (key, count) in [
+            "typed_object_stream_edge_terminal_control_01_count",
+            "typed_object_stream_edge_terminal_control_02_count",
+            "typed_object_stream_edge_terminal_control_21_count",
+            "typed_object_stream_edge_terminal_control_22_count",
+            "typed_object_stream_edge_terminal_control_25_count",
+            "typed_object_stream_edge_terminal_control_26_count",
+            "typed_object_stream_edge_terminal_control_29_count",
+            "typed_object_stream_edge_terminal_control_2a_count",
+        ]
+        .into_iter()
+        .zip(counts)
         {
-            coverage.insert(
-                format!("typed_object_stream_edge_terminal_control_{control:02x}_count"),
-                count,
-            );
+            coverage.record(key.into(), count);
         }
     }
     if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
-        coverage.insert(
-            "typed_object_stream_vertex_incidence_terminal_control_00_count".to_string(),
+        coverage.record(
+            "typed_object_stream_vertex_incidence_terminal_control_00_count".into(),
             control_00,
         );
-        coverage.insert(
-            "typed_object_stream_vertex_incidence_terminal_control_04_count".to_string(),
+        coverage.record(
+            "typed_object_stream_vertex_incidence_terminal_control_04_count".into(),
             control_04,
         );
     }
     if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
         resolved_loop_metadata_counts
     {
-        for (controls, count) in [
-            ("03_03", controls_03_03),
-            ("03_05", controls_03_05),
-            ("05_03", controls_05_03),
-            ("05_05", controls_05_05),
+        for (key, count) in [
+            (
+                "resolved_object_stream_loop_framing_controls_03_03_count",
+                controls_03_03,
+            ),
+            (
+                "resolved_object_stream_loop_framing_controls_03_05_count",
+                controls_03_05,
+            ),
+            (
+                "resolved_object_stream_loop_framing_controls_05_03_count",
+                controls_05_03,
+            ),
+            (
+                "resolved_object_stream_loop_framing_controls_05_05_count",
+                controls_05_05,
+            ),
         ] {
-            coverage.insert(
-                format!("resolved_object_stream_loop_framing_controls_{controls}_count"),
-                count,
-            );
+            coverage.record(key.into(), count);
         }
-        coverage.insert(
-            "resolved_object_stream_extended_loop_metadata_count".to_string(),
+        coverage.record(
+            "resolved_object_stream_extended_loop_metadata_count".into(),
             extended,
         );
     }
     if let Some((counts, unresolved)) = typed_loop_metadata_counts {
-        for (controls, count) in ["03_03", "03_05", "05_03", "05_05"]
-            .into_iter()
-            .zip(counts[..4].iter().copied())
+        for (key, count) in [
+            "typed_object_stream_loop_framing_controls_03_03_count",
+            "typed_object_stream_loop_framing_controls_03_05_count",
+            "typed_object_stream_loop_framing_controls_05_03_count",
+            "typed_object_stream_loop_framing_controls_05_05_count",
+        ]
+        .into_iter()
+        .zip(counts[..4].iter().copied())
         {
-            coverage.insert(
-                format!("typed_object_stream_loop_framing_controls_{controls}_count"),
-                count,
-            );
+            coverage.record(key.into(), count);
         }
-        coverage.insert(
-            "typed_object_stream_extended_loop_metadata_count".to_string(),
+        coverage.record(
+            "typed_object_stream_extended_loop_metadata_count".into(),
             counts[4],
         );
-        coverage.insert(
-            "typed_unresolved_object_stream_loop_count".to_string(),
+        coverage.record(
+            "typed_unresolved_object_stream_loop_count".into(),
             unresolved,
         );
     }
     if let Some(count) = class_21_suffix_scalar_count {
-        coverage.insert(
-            "resolved_object_stream_class_21_pcurve_suffix_scalar_count".to_string(),
+        coverage.record(
+            "resolved_object_stream_class_21_pcurve_suffix_scalar_count".into(),
             count,
         );
     }
     if typed_class_21_pcurve_count != 0 {
-        coverage.insert(
-            "typed_object_stream_class_21_pcurve_suffix_scalar_count".to_string(),
+        coverage.record(
+            "typed_object_stream_class_21_pcurve_suffix_scalar_count".into(),
             typed_class_21_pcurve_count,
         );
     }
     if !typed_parameter_incidences.is_empty() {
-        coverage.insert(
-            "typed_object_stream_parameter_incidence_count".to_string(),
+        coverage.record(
+            "typed_object_stream_parameter_incidence_count".into(),
             typed_parameter_incidences.len(),
         );
-        coverage.insert(
-            "typed_object_stream_parameter_incidence_member_count".to_string(),
+        coverage.record(
+            "typed_object_stream_parameter_incidence_member_count".into(),
             typed_parameter_incidence_member_count,
         );
     }
     if !typed_vertex_incidence_rosters.is_empty() {
-        coverage.insert(
-            "typed_object_stream_vertex_incidence_roster_count".to_string(),
+        coverage.record(
+            "typed_object_stream_vertex_incidence_roster_count".into(),
             typed_vertex_incidence_rosters.len(),
         );
-        coverage.insert(
-            "typed_object_stream_vertex_incidence_roster_member_count".to_string(),
+        coverage.record(
+            "typed_object_stream_vertex_incidence_roster_member_count".into(),
             typed_vertex_incidence_roster_member_count,
         );
     }

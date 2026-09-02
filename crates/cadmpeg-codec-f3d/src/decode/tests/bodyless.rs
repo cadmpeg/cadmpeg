@@ -19,7 +19,7 @@ use crate::loss::F3dLossCode;
 fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
         geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
+        coverage: Default::default(),
         losses: vec![
             F3dLossCode::GeometryNotTransferred.note("stated before classification"),
             F3dLossCode::TopologyNotTransferred.note("stated before classification"),

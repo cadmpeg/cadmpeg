@@ -529,7 +529,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
     assert_eq!(cylinders[0].fields()["datum_id"], 8);
     assert_eq!(cylinders[0].fields()["radius"], 0.75);
     assert_eq!(
-        result.report().coverage["transferred_active_datum_cylinder_count"],
+        result.report().coverage()["transferred_active_datum_cylinder_count"],
         1
     );
 }

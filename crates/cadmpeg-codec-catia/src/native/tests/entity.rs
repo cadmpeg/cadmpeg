@@ -945,7 +945,7 @@ fn native_namespace_binds_two_definition_value_chains() {
         assert_eq!(
             decoded
                 .report()
-                .coverage
+                .coverage()
                 .get(coverage)
                 .copied()
                 .unwrap_or(0),

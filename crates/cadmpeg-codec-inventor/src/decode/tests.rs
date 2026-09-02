@@ -152,13 +152,13 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("synthetic primary Inventor envelope decodes");
     assert_eq!(decoded.report().format(), "inventor");
-    assert_eq!(decoded.report().coverage["rse_storage_bands"], 1);
-    assert_eq!(decoded.report().coverage["rse_databases"], 1);
-    assert_eq!(decoded.report().coverage["rse_registry_entries"], 1);
-    assert_eq!(decoded.report().coverage["rse_segment_pairs"], 1);
-    assert_eq!(decoded.report().coverage["rse_segment_meta"], 1);
-    assert_eq!(decoded.report().coverage["rse_records"], 1);
-    assert_eq!(decoded.report().coverage["active_kernel_carriers"], 1);
+    assert_eq!(decoded.report().coverage()["rse_storage_bands"], 1);
+    assert_eq!(decoded.report().coverage()["rse_databases"], 1);
+    assert_eq!(decoded.report().coverage()["rse_registry_entries"], 1);
+    assert_eq!(decoded.report().coverage()["rse_segment_pairs"], 1);
+    assert_eq!(decoded.report().coverage()["rse_segment_meta"], 1);
+    assert_eq!(decoded.report().coverage()["rse_records"], 1);
+    assert_eq!(decoded.report().coverage()["active_kernel_carriers"], 1);
     assert!(decoded
         .report()
         .losses

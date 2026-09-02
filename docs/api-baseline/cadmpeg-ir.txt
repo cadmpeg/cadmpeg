@@ -1,4 +1,4 @@
-# generated at 8e28e283d
+# generated at a54e545a4
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -281,7 +281,7 @@ pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::loss_code: alloc::string::
 pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::message: alloc::string::String
 pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::report: alloc::boxed::Box<cadmpeg_ir::DecodeReport>
 pub struct cadmpeg_ir::codec::DecodeBody
-pub cadmpeg_ir::codec::DecodeBody::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub cadmpeg_ir::codec::DecodeBody::coverage: cadmpeg_ir::Coverage
 pub cadmpeg_ir::codec::DecodeBody::geometry_transferred: bool
 pub cadmpeg_ir::codec::DecodeBody::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::codec::DecodeBody::notes: alloc::vec::Vec<alloc::string::String>
@@ -4457,20 +4457,36 @@ pub cadmpeg_ir::report::WritePath::Synthesized
 pub cadmpeg_ir::report::WritePath::VerbatimReplay
 impl core::fmt::Display for cadmpeg_ir::WritePath
 pub fn cadmpeg_ir::WritePath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct cadmpeg_ir::report::CoverageKey(pub &'static str)
+pub struct cadmpeg_ir::report::Coverage
+impl cadmpeg_ir::Coverage
+pub fn cadmpeg_ir::Coverage::record(&mut self, cadmpeg_ir::CoverageKey, usize)
+impl core::iter::traits::collect::Extend<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
+pub fn cadmpeg_ir::Coverage::extend<T: core::iter::traits::collect::IntoIterator<Item = (cadmpeg_ir::CoverageKey, usize)>>(&mut self, T)
+impl core::iter::traits::collect::FromIterator<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
+pub fn cadmpeg_ir::Coverage::from_iter<T: core::iter::traits::collect::IntoIterator<Item = (cadmpeg_ir::CoverageKey, usize)>>(T) -> Self
+impl core::ops::deref::Deref for cadmpeg_ir::Coverage
+pub type cadmpeg_ir::Coverage::Target = alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub fn cadmpeg_ir::Coverage::deref(&self) -> &Self::Target
+pub struct cadmpeg_ir::report::CoverageKey(_)
+impl cadmpeg_ir::CoverageKey
+pub fn cadmpeg_ir::CoverageKey::as_str(&self) -> &str
+pub const fn cadmpeg_ir::CoverageKey::new(&'static str) -> Self
+impl core::convert::From<&'static str> for cadmpeg_ir::CoverageKey
+pub fn cadmpeg_ir::CoverageKey::from(&'static str) -> Self
+impl core::convert::From<alloc::string::String> for cadmpeg_ir::CoverageKey
+pub fn cadmpeg_ir::CoverageKey::from(alloc::string::String) -> Self
 pub struct cadmpeg_ir::report::DecodeReport
-pub cadmpeg_ir::report::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::report::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::report::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedger
 impl cadmpeg_ir::DecodeReport
 pub const fn cadmpeg_ir::DecodeReport::container_only(&self) -> bool
+pub fn cadmpeg_ir::DecodeReport::coverage(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub fn cadmpeg_ir::DecodeReport::coverage_count(&self, cadmpeg_ir::CoverageKey) -> usize
 pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::DecodeReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
 pub const fn cadmpeg_ir::DecodeReport::geometry_transferred(&self) -> bool
-pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
 pub const fn cadmpeg_ir::DecodeReport::transfer(&self) -> cadmpeg_ir::DecodeTransfer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
@@ -7188,7 +7204,24 @@ impl serde_core::ser::Serialize for cadmpeg_ir::container::ContainerSummary
 pub fn cadmpeg_ir::container::ContainerSummary::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::container::ContainerSummary
 pub fn cadmpeg_ir::container::ContainerSummary::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
-pub struct cadmpeg_ir::CoverageKey(pub &'static str)
+pub struct cadmpeg_ir::Coverage
+impl cadmpeg_ir::Coverage
+pub fn cadmpeg_ir::Coverage::record(&mut self, cadmpeg_ir::CoverageKey, usize)
+impl core::iter::traits::collect::Extend<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
+pub fn cadmpeg_ir::Coverage::extend<T: core::iter::traits::collect::IntoIterator<Item = (cadmpeg_ir::CoverageKey, usize)>>(&mut self, T)
+impl core::iter::traits::collect::FromIterator<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
+pub fn cadmpeg_ir::Coverage::from_iter<T: core::iter::traits::collect::IntoIterator<Item = (cadmpeg_ir::CoverageKey, usize)>>(T) -> Self
+impl core::ops::deref::Deref for cadmpeg_ir::Coverage
+pub type cadmpeg_ir::Coverage::Target = alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub fn cadmpeg_ir::Coverage::deref(&self) -> &Self::Target
+pub struct cadmpeg_ir::CoverageKey(_)
+impl cadmpeg_ir::CoverageKey
+pub fn cadmpeg_ir::CoverageKey::as_str(&self) -> &str
+pub const fn cadmpeg_ir::CoverageKey::new(&'static str) -> Self
+impl core::convert::From<&'static str> for cadmpeg_ir::CoverageKey
+pub fn cadmpeg_ir::CoverageKey::from(&'static str) -> Self
+impl core::convert::From<alloc::string::String> for cadmpeg_ir::CoverageKey
+pub fn cadmpeg_ir::CoverageKey::from(alloc::string::String) -> Self
 pub struct cadmpeg_ir::DatumReference
 pub cadmpeg_ir::DatumReference::common_group: core::option::Option<u32>
 pub cadmpeg_ir::DatumReference::datum: cadmpeg_ir::ids::PmiId
@@ -7198,18 +7231,17 @@ pub struct cadmpeg_ir::DecodeOptions
 pub cadmpeg_ir::DecodeOptions::container_only: bool
 pub cadmpeg_ir::DecodeOptions::policy: cadmpeg_core::decode::policy::DecodePolicy
 pub struct cadmpeg_ir::DecodeReport
-pub cadmpeg_ir::DecodeReport::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub cadmpeg_ir::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedger
 impl cadmpeg_ir::DecodeReport
 pub const fn cadmpeg_ir::DecodeReport::container_only(&self) -> bool
+pub fn cadmpeg_ir::DecodeReport::coverage(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub fn cadmpeg_ir::DecodeReport::coverage_count(&self, cadmpeg_ir::CoverageKey) -> usize
 pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
 pub fn cadmpeg_ir::DecodeReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
 pub const fn cadmpeg_ir::DecodeReport::geometry_transferred(&self) -> bool
-pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
 pub const fn cadmpeg_ir::DecodeReport::transfer(&self) -> cadmpeg_ir::DecodeTransfer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>

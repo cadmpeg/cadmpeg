@@ -12,11 +12,10 @@
 //! [`CodecBackend`], so a codec cannot override an entry point and drop the
 //! enforcement.
 
-use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::document::CadIr;
-use crate::report::{DecodeReport, LossNote, StrictConsequence, TransferLedger};
+use crate::report::{Coverage, DecodeReport, LossNote, StrictConsequence, TransferLedger};
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
@@ -127,7 +126,7 @@ pub struct DecodeBody {
     /// Whether B-rep geometry was transferred into the IR.
     pub geometry_transferred: bool,
     /// Coverage measures keyed by their declared name.
-    pub coverage: BTreeMap<String, usize>,
+    pub coverage: Coverage,
     /// Losses resolved during decoding.
     pub losses: Vec<LossNote>,
     /// Codec-defined informational notes.
@@ -142,7 +141,7 @@ impl DecodeBody {
     pub fn new(geometry_transferred: bool) -> Self {
         Self {
             geometry_transferred,
-            coverage: BTreeMap::new(),
+            coverage: Coverage::default(),
             losses: Vec::new(),
             notes: Vec::new(),
             transfer_ledger: TransferLedger::default(),

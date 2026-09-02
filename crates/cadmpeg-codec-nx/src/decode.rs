@@ -474,7 +474,7 @@ fn build_container_body(
     losses.extend(dialect_losses);
     DecodeBody {
         geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
+        coverage: Default::default(),
         losses,
         notes,
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

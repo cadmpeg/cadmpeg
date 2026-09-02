@@ -195,7 +195,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert_eq!(
         result
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
@@ -209,7 +209,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         result
             .report()
@@ -222,7 +222,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         result
             .report()
@@ -245,7 +245,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert!(
         result
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| {
                 key.starts_with("standard_topology_mesh_rejection_")
@@ -375,7 +375,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     assert_eq!(
         decoded
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
@@ -389,7 +389,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         decoded
             .report()
@@ -402,7 +402,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         decoded
             .report()
@@ -425,7 +425,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     assert_eq!(
         decoded
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| {
                 key.starts_with("standard_topology_mesh_rejection_")

@@ -37,7 +37,7 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
     pub(in super::super) unknowns: Vec<UnknownRecord>,
-    pub(in super::super) coverage: BTreeMap<String, usize>,
+    pub(in super::super) coverage: cadmpeg_ir::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
 }
 

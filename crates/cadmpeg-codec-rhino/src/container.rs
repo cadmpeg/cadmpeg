@@ -1196,7 +1196,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
         ir,
         body: DecodeBody {
             geometry_transferred: false,
-            coverage: std::collections::BTreeMap::new(),
+            coverage: Default::default(),
             losses,
             notes,
             transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

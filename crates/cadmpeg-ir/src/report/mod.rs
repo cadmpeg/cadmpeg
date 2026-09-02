@@ -8,7 +8,7 @@ mod loss;
 
 pub use check::{Check, Finding, ValidationReport};
 pub use decode::{
-    CoverageKey, DecodeReport, DecodeTransfer, TransferDisposition, TransferLedger,
+    Coverage, CoverageKey, DecodeReport, DecodeTransfer, TransferDisposition, TransferLedger,
     TransferOutcome, TransferRecord,
 };
 pub use export::{CensusBasis, EntityCensus, ExportReport, FidelityResolution, WritePath};
