@@ -25,15 +25,6 @@ fn decode_result(ir: CadIr) -> DecodeResult {
     DecodeResult::new(decoded(ir), "test")
 }
 
-/// Reads the legacy source wire shape that predates required dialect layers.
-fn legacy_unclassified_source(format: &str) -> crate::SourceMeta {
-    serde_json::from_value(serde_json::json!({
-        "format": format,
-        "attributes": {},
-    }))
-    .unwrap()
-}
-
 fn retained_record(id: &str, offset: u64) -> RetainedSourceRecord {
     RetainedSourceRecord {
         id: id.into(),
@@ -282,7 +273,13 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
 #[test]
 fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube();
-    ir.source = Some(legacy_unclassified_source("test"));
+    ir.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "format": "test",
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
 
     let result = decode_result(ir);
 
