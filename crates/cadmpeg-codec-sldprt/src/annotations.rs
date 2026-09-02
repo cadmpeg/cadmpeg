@@ -4,8 +4,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::annotations::{Annotations, ExactnessNote, StreamProvenance};
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::annotations::{Annotations, ExactnessNote};
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 pub(crate) fn note(
     annotations: &mut Annotations,
@@ -15,24 +15,11 @@ pub(crate) fn note(
     tag: &str,
     exactness: Exactness,
 ) {
-    let stream = stream.into();
-    let stream = annotations
-        .streams
-        .iter()
-        .position(|existing| existing == &stream)
-        .unwrap_or_else(|| {
-            annotations.streams.push(stream);
-            annotations.streams.len() - 1
-        }) as u32;
     let id = id.into();
-    annotations.provenance.insert(
-        id.clone(),
-        StreamProvenance {
-            stream,
-            offset,
-            tag: Some(tag.to_string()),
-        },
-    );
+    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+    let stream = builder.stream(stream);
+    builder.note(&id, stream, offset).tag(tag);
+    *annotations = builder.build();
     if exactness == Exactness::ByteExact {
         annotations.exactness.remove(&id);
     } else {

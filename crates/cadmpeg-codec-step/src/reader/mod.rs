@@ -118,13 +118,13 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     "implementation_level",
                 ),
             };
-            code.note(diagnostic.message.clone())
-                .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: crate::dialect::FORMAT.into(),
-                    stream: String::new(),
-                    offset: diagnostic.offset as u64,
-                    tag: Some(tag.into()),
-                })
+            code.note(diagnostic.message.clone()).with_provenance(
+                cadmpeg_ir::SourceProvenance::root(
+                    crate::dialect::FORMAT,
+                    diagnostic.offset as u64,
+                )
+                .with_tag(tag),
+            )
         }));
 
         Self {

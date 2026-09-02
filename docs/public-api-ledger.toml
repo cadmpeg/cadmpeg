@@ -2598,3 +2598,31 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::codec::StrictDecodeRejection"
 reason = "the sealed decode gate binds the refusing loss index to its completed report and consumers project the loss through read-only accessors"
+
+[[change]]
+commit = "7e85ce15d6f7825324a2fdf57d07af5bc511bc68"
+crate = "cadmpeg-ir"
+kind = "type"
+item = "cadmpeg_ir::{SourceProvenance,StreamProvenance,Provenance,SourceLocation,AnnotationLocation,AnnotationProvenance}"
+reason = "one generic Provenance type now uses location types to distinguish loss attribution from annotation attribution; root-stream absence is Option and annotation provenance owns an opaque stream reference instead of a fallible index"
+
+[[change]]
+commit = "7e85ce15d6f7825324a2fdf57d07af5bc511bc68"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::annotations::Annotations::{streams,provenance}"
+reason = "the serialized stream table is private and annotation provenance stores an owned typed reference, so callers cannot insert a dangling stream index"
+
+[[change]]
+commit = "7e85ce15d6f7825324a2fdf57d07af5bc511bc68"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::annotations::{AnnotationBuilder::resume,Annotations::{stream_count,append,merge_interned}}"
+reason = "annotation construction and merging preserve valid stream references while retaining each codec's existing stream-table ordering policy"
+
+[[change]]
+commit = "7e85ce15d6f7825324a2fdf57d07af5bc511bc68"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::SourceProvenance::{format,stream}"
+reason = "private source-location fields admit root-stream absence only through constructors and expose it as Option instead of the empty-string sentinel"

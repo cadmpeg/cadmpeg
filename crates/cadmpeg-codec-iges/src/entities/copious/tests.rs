@@ -314,8 +314,8 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
         })
         .expect("copious-data projection loss");
     let provenance = loss.provenance.as_ref().expect("Directory provenance");
-    assert_eq!(provenance.format, "iges");
-    assert_eq!(provenance.stream, "iges");
+    assert_eq!(provenance.format(), "iges");
+    assert_eq!(provenance.stream(), Some("iges"));
     assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
     assert_eq!(bytes[provenance.offset as usize + 72], b'D');
     let transfer = &result.report().transfer_ledger.entries[0];

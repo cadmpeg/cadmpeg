@@ -458,7 +458,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "1 framed object record(s) for class 4ed7d4e4-e947-11d3-bfe5-0010830122f0 could not be decoded"
     ));
     let provenance = failure.provenance.as_ref().expect("failure provenance");
-    assert_eq!(provenance.format, "rhino");
+    assert_eq!(provenance.format(), "rhino");
     assert!(provenance
         .tag
         .as_deref()

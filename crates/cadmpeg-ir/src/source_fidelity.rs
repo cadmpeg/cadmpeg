@@ -527,8 +527,7 @@ impl SourceFidelity {
                 let stream = annotations
                     .provenance
                     .get(&id.0)
-                    .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
-                    .cloned()
+                    .map(|provenance| provenance.stream().to_owned())
                     .unwrap_or_else(|| "source".into());
                 let product = crate::NativeUnknownRecord {
                     id: id.clone(),

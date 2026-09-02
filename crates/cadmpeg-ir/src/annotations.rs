@@ -3,42 +3,132 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::sync::Arc;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
-use crate::provenance::Exactness;
+use crate::provenance::{AnnotationProvenance, Exactness};
 
 /// Document-wide provenance and exactness tables keyed by globally unique
 /// entity id.
 ///
 /// An entity absent from `exactness` is byte-exact.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Annotations {
-    /// Interned source stream names.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub streams: Vec<String>,
+    streams: Vec<Arc<str>>,
     /// Source location for each annotated entity.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub provenance: BTreeMap<String, StreamProvenance>,
+    pub provenance: BTreeMap<String, AnnotationProvenance>,
     /// Non-byte-exact entity or field annotations.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub exactness: BTreeMap<String, ExactnessNote>,
 }
 
-/// Source location using an index into [`Annotations::streams`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct StreamProvenance {
-    /// Index of the source stream in [`Annotations::streams`].
-    pub stream: u32,
-    /// Byte offset of the source record within the stream.
-    pub offset: u64,
-    /// Source record or class name, when known.
+struct AnnotationProvenanceWire {
+    stream: u32,
+    offset: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
+    tag: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct AnnotationsWire {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    streams: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    provenance: BTreeMap<String, AnnotationProvenanceWire>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    exactness: BTreeMap<String, ExactnessNote>,
+}
+
+impl Serialize for Annotations {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut streams = self.streams.clone();
+        let mut provenance = BTreeMap::new();
+        for (id, location) in &self.provenance {
+            let index = streams
+                .iter()
+                .position(|stream| Arc::ptr_eq(stream, location.stream_ref()))
+                .unwrap_or_else(|| {
+                    streams.push(location.stream_ref().clone());
+                    streams.len() - 1
+                });
+            let stream = u32::try_from(index).map_err(serde::ser::Error::custom)?;
+            provenance.insert(
+                id.clone(),
+                AnnotationProvenanceWire {
+                    stream,
+                    offset: location.offset,
+                    tag: location.tag.clone(),
+                },
+            );
+        }
+        AnnotationsWire {
+            streams: streams
+                .into_iter()
+                .map(|stream| stream.to_string())
+                .collect(),
+            provenance,
+            exactness: self.exactness.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Annotations {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = AnnotationsWire::deserialize(deserializer)?;
+        let streams = wire
+            .streams
+            .into_iter()
+            .map(Arc::<str>::from)
+            .collect::<Vec<_>>();
+        let provenance = wire
+            .provenance
+            .into_iter()
+            .map(|(id, location)| {
+                let stream = streams
+                    .get(location.stream as usize)
+                    .cloned()
+                    .ok_or_else(|| {
+                        D::Error::custom(format!(
+                            "annotation provenance {id:?} references missing stream {}",
+                            location.stream
+                        ))
+                    })?;
+                Ok((
+                    id,
+                    AnnotationProvenance::annotation(stream, location.offset, location.tag),
+                ))
+            })
+            .collect::<Result<_, D::Error>>()?;
+        Ok(Self {
+            streams,
+            provenance,
+            exactness: wire.exactness,
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for Annotations {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Annotations".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        AnnotationsWire::json_schema(generator)
+    }
 }
 
 /// Exactness for an entity and sparse overrides for its serialized fields.
@@ -77,6 +167,11 @@ impl AnnotationBuilder {
         Self::default()
     }
 
+    /// Continue building an existing annotation set.
+    pub fn resume(annotations: Annotations) -> Self {
+        Self { annotations }
+    }
+
     /// Intern a source stream name and return its reusable handle.
     pub fn stream(&mut self, stream: impl Into<String>) -> StreamHandle {
         let stream = stream.into();
@@ -84,15 +179,19 @@ impl AnnotationBuilder {
             .annotations
             .streams
             .iter()
-            .position(|existing| existing == &stream)
+            .position(|existing| existing.as_ref() == stream)
         {
-            return StreamHandle(index as u32);
+            return StreamHandle(
+                u32::try_from(index).expect("annotation stream count exceeds u32::MAX"),
+            );
         }
 
-        let index = u32::try_from(self.annotations.streams.len())
-            .expect("annotation stream count exceeds u32::MAX");
+        let stream = Arc::<str>::from(stream);
         self.annotations.streams.push(stream);
-        StreamHandle(index)
+        StreamHandle(
+            u32::try_from(self.annotations.streams.len() - 1)
+                .expect("annotation stream count exceeds u32::MAX"),
+        )
     }
 
     /// Record an entity's source location.
@@ -106,13 +205,15 @@ impl AnnotationBuilder {
         offset: u64,
     ) -> ProvenanceNote<'_> {
         let id = id.to_string();
+        let stream = self
+            .annotations
+            .streams
+            .get(stream.0 as usize)
+            .cloned()
+            .expect("stream handle was minted by this annotation builder");
         self.annotations.provenance.insert(
             id.clone(),
-            StreamProvenance {
-                stream: stream.0,
-                offset,
-                tag: None,
-            },
+            AnnotationProvenance::annotation(stream, offset, None),
         );
         ProvenanceNote {
             provenance: self
@@ -193,9 +294,57 @@ impl AnnotationBuilder {
     }
 }
 
+impl Annotations {
+    /// Return the number of streams retained for wire serialization.
+    #[must_use]
+    pub fn stream_count(&self) -> usize {
+        self.streams.len()
+    }
+
+    /// Append another annotation set without rebasing provenance indices.
+    ///
+    /// Provenance owns its stream reference. The wire adapter assigns the
+    /// corresponding index after the two stream catalogs are combined.
+    pub fn append(&mut self, mut other: Self) {
+        self.streams.append(&mut other.streams);
+        self.provenance.append(&mut other.provenance);
+        self.exactness.append(&mut other.exactness);
+    }
+
+    /// Merge another annotation set while interning equal stream names.
+    pub fn merge_interned(&mut self, mut other: Self) {
+        let stream_map = other
+            .streams
+            .drain(..)
+            .map(|source| {
+                let target = self
+                    .streams
+                    .iter()
+                    .find(|target| target.as_ref() == source.as_ref())
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        self.streams.push(source.clone());
+                        source.clone()
+                    });
+                (source, target)
+            })
+            .collect::<Vec<_>>();
+        for provenance in other.provenance.values_mut() {
+            if let Some((_, target)) = stream_map
+                .iter()
+                .find(|(source, _)| Arc::ptr_eq(source, provenance.stream_ref()))
+            {
+                provenance.rebind_stream(target.clone());
+            }
+        }
+        self.provenance.append(&mut other.provenance);
+        self.exactness.append(&mut other.exactness);
+    }
+}
+
 /// In-progress provenance annotation returned by [`AnnotationBuilder::note`].
 pub struct ProvenanceNote<'a> {
-    provenance: &'a mut StreamProvenance,
+    provenance: &'a mut AnnotationProvenance,
 }
 
 impl ProvenanceNote<'_> {
@@ -219,15 +368,40 @@ mod tests {
         builder.note("f3d:body#0", first, 42).tag("body");
 
         let annotations = builder.build();
-        assert_eq!(annotations.streams.len(), 1);
+        assert_eq!(annotations.stream_count(), 1);
+        let provenance = &annotations.provenance["f3d:body#0"];
+        assert_eq!(provenance.stream(), "f3d:Breps.BlobParts/body.smbh");
+        assert_eq!(provenance.offset, 42);
+        assert_eq!(provenance.tag.as_deref(), Some("body"));
+    }
+
+    #[test]
+    fn annotation_wire_keeps_stream_indices_at_the_boundary() {
+        let mut builder = AnnotationBuilder::new();
+        let stream = builder.stream("f3d:Breps.BlobParts/body.smbh");
+        builder.note("f3d:body#0", stream, 42).tag("body");
+        let annotations = builder.build();
+
+        let value = serde_json::to_value(&annotations).unwrap();
+        assert_eq!(value["streams"][0], "f3d:Breps.BlobParts/body.smbh");
+        assert_eq!(value["provenance"]["f3d:body#0"]["stream"], 0);
         assert_eq!(
-            annotations.provenance["f3d:body#0"],
-            StreamProvenance {
-                stream: 0,
-                offset: 42,
-                tag: Some("body".to_string()),
-            }
+            serde_json::from_value::<Annotations>(value).unwrap(),
+            annotations
         );
+    }
+
+    #[test]
+    fn annotation_wire_rejects_a_dangling_stream_index() {
+        let error = serde_json::from_value::<Annotations>(serde_json::json!({
+            "streams": ["f3d:native"],
+            "provenance": {
+                "f3d:body#0": {"stream": 1, "offset": 42}
+            }
+        }))
+        .unwrap_err();
+
+        assert!(error.to_string().contains("references missing stream 1"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-# generated at 5503c1943
+# generated at 7e85ce15d
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -11,11 +11,19 @@ pub fn cadmpeg_ir::annotations::AnnotationBuilder::field_exactness(&mut self, im
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::new() -> Self
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::note(&mut self, impl core::fmt::Display, cadmpeg_ir::annotations::StreamHandle, u64) -> cadmpeg_ir::annotations::ProvenanceNote<'_>
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::remove_entity(&mut self, impl core::fmt::Display)
+pub fn cadmpeg_ir::annotations::AnnotationBuilder::resume(cadmpeg_ir::annotations::Annotations) -> Self
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::stream(&mut self, impl core::convert::Into<alloc::string::String>) -> cadmpeg_ir::annotations::StreamHandle
 pub struct cadmpeg_ir::annotations::Annotations
 pub cadmpeg_ir::annotations::Annotations::exactness: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::ExactnessNote>
-pub cadmpeg_ir::annotations::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::StreamProvenance>
-pub cadmpeg_ir::annotations::Annotations::streams: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::annotations::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::AnnotationProvenance>
+impl cadmpeg_ir::annotations::Annotations
+pub fn cadmpeg_ir::annotations::Annotations::append(&mut self, Self)
+pub fn cadmpeg_ir::annotations::Annotations::merge_interned(&mut self, Self)
+pub fn cadmpeg_ir::annotations::Annotations::stream_count(&self) -> usize
+impl serde_core::ser::Serialize for cadmpeg_ir::annotations::Annotations
+pub fn cadmpeg_ir::annotations::Annotations::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::annotations::Annotations
+pub fn cadmpeg_ir::annotations::Annotations::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::annotations::ExactnessNote
 pub cadmpeg_ir::annotations::ExactnessNote::entity: cadmpeg_ir::Exactness
 pub cadmpeg_ir::annotations::ExactnessNote::fields: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::Exactness>
@@ -25,10 +33,6 @@ pub struct cadmpeg_ir::annotations::ProvenanceNote<'a>
 impl cadmpeg_ir::annotations::ProvenanceNote<'_>
 pub fn cadmpeg_ir::annotations::ProvenanceNote<'_>::tag(self, impl core::convert::Into<alloc::string::String>)
 pub struct cadmpeg_ir::annotations::StreamHandle(_)
-pub struct cadmpeg_ir::annotations::StreamProvenance
-pub cadmpeg_ir::annotations::StreamProvenance::offset: u64
-pub cadmpeg_ir::annotations::StreamProvenance::stream: u32
-pub cadmpeg_ir::annotations::StreamProvenance::tag: core::option::Option<alloc::string::String>
 pub mod cadmpeg_ir::appearance
 pub enum cadmpeg_ir::appearance::AppearanceTarget
 pub cadmpeg_ir::appearance::AppearanceTarget::Body(cadmpeg_ir::ids::BodyId)
@@ -7122,11 +7126,20 @@ pub fn cadmpeg_ir::annotations::AnnotationBuilder::field_exactness(&mut self, im
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::new() -> Self
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::note(&mut self, impl core::fmt::Display, cadmpeg_ir::annotations::StreamHandle, u64) -> cadmpeg_ir::annotations::ProvenanceNote<'_>
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::remove_entity(&mut self, impl core::fmt::Display)
+pub fn cadmpeg_ir::annotations::AnnotationBuilder::resume(cadmpeg_ir::annotations::Annotations) -> Self
 pub fn cadmpeg_ir::annotations::AnnotationBuilder::stream(&mut self, impl core::convert::Into<alloc::string::String>) -> cadmpeg_ir::annotations::StreamHandle
+pub struct cadmpeg_ir::AnnotationLocation
 pub struct cadmpeg_ir::Annotations
 pub cadmpeg_ir::Annotations::exactness: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::ExactnessNote>
-pub cadmpeg_ir::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::StreamProvenance>
-pub cadmpeg_ir::Annotations::streams: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_ir::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::AnnotationProvenance>
+impl cadmpeg_ir::annotations::Annotations
+pub fn cadmpeg_ir::annotations::Annotations::append(&mut self, Self)
+pub fn cadmpeg_ir::annotations::Annotations::merge_interned(&mut self, Self)
+pub fn cadmpeg_ir::annotations::Annotations::stream_count(&self) -> usize
+impl serde_core::ser::Serialize for cadmpeg_ir::annotations::Annotations
+pub fn cadmpeg_ir::annotations::Annotations::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::annotations::Annotations
+pub fn cadmpeg_ir::annotations::Annotations::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::ArenaDiff
 pub cadmpeg_ir::ArenaDiff::added: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::ArenaDiff::kind: alloc::string::String
@@ -7576,6 +7589,22 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::products::ProductDefinitio
 pub const cadmpeg_ir::products::ProductDefinition::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::products::ProductDefinition::identity(&self) -> &str
 pub fn cadmpeg_ir::products::ProductDefinition::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
+pub struct cadmpeg_ir::Provenance<Location>
+pub cadmpeg_ir::Provenance::offset: u64
+pub cadmpeg_ir::Provenance::tag: core::option::Option<alloc::string::String>
+impl cadmpeg_ir::Provenance<cadmpeg_ir::AnnotationLocation>
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::AnnotationLocation>::stream(&self) -> &str
+impl cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::format(&self) -> &str
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::in_stream(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, u64) -> Self
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::root(impl core::convert::Into<alloc::string::String>, u64) -> Self
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::stream(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::with_optional_tag(self, core::option::Option<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::with_tag(self, impl core::convert::Into<alloc::string::String>) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>
+pub fn cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::RetainedSourceRecord
 impl cadmpeg_ir::source_fidelity::RetainedSourceRecord
 pub const fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::byte_len(&self) -> u64
@@ -7695,6 +7724,7 @@ pub fn cadmpeg_ir::source_fidelity::SourceFidelity::version(&self) -> &str
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::with_annotations(cadmpeg_ir::annotations::Annotations) -> Self
 impl core::default::Default for cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::default() -> Self
+pub struct cadmpeg_ir::SourceLocation
 pub struct cadmpeg_ir::SourceMeta
 pub cadmpeg_ir::SourceMeta::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 impl cadmpeg_ir::document::SourceMeta
@@ -7714,11 +7744,6 @@ pub cadmpeg_ir::SourceObjectAssociation::layer: core::option::Option<alloc::stri
 pub cadmpeg_ir::SourceObjectAssociation::name: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SourceObjectAssociation::object_id: alloc::string::String
 pub cadmpeg_ir::SourceObjectAssociation::visible: core::option::Option<bool>
-pub struct cadmpeg_ir::SourceProvenance
-pub cadmpeg_ir::SourceProvenance::format: alloc::string::String
-pub cadmpeg_ir::SourceProvenance::offset: u64
-pub cadmpeg_ir::SourceProvenance::stream: alloc::string::String
-pub cadmpeg_ir::SourceProvenance::tag: core::option::Option<alloc::string::String>
 pub struct cadmpeg_ir::SpatialSketch
 pub cadmpeg_ir::SpatialSketch::configuration: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SpatialSketch::id: cadmpeg_ir::sketches::SpatialSketchId
@@ -7786,10 +7811,6 @@ pub struct cadmpeg_ir::SpreadsheetId(pub alloc::string::String)
 pub struct cadmpeg_ir::SpreadsheetRange
 pub cadmpeg_ir::SpreadsheetRange::end: alloc::string::String
 pub cadmpeg_ir::SpreadsheetRange::start: alloc::string::String
-pub struct cadmpeg_ir::StreamProvenance
-pub cadmpeg_ir::StreamProvenance::offset: u64
-pub cadmpeg_ir::StreamProvenance::stream: u32
-pub cadmpeg_ir::StreamProvenance::tag: core::option::Option<alloc::string::String>
 pub struct cadmpeg_ir::SubdEdge
 pub cadmpeg_ir::SubdEdge::knot_interval: core::option::Option<f64>
 pub cadmpeg_ir::SubdEdge::sector_coefficients: [f64; 2]
@@ -7921,4 +7942,6 @@ pub fn cadmpeg_ir::format_identity(&str, &str, &str, impl core::fmt::Display) ->
 pub fn cadmpeg_ir::is_valid_identity(&str) -> bool
 pub fn cadmpeg_ir::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub type cadmpeg_ir::AnnotationProvenance = cadmpeg_ir::Provenance<cadmpeg_ir::AnnotationLocation>
 pub type cadmpeg_ir::DocumentDraft = cadmpeg_ir::draft::ModelDraft
+pub type cadmpeg_ir::SourceProvenance = cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>

@@ -1259,35 +1259,20 @@ impl EntityRewrite for StandardPopulationScope<'_> {
 
 fn merge_standard_population_annotations(
     target: &mut Annotations,
-    source: Annotations,
+    mut source: Annotations,
     scope: &str,
-) -> Option<()> {
-    let mut stream_map = Vec::with_capacity(source.streams.len());
-    for stream in source.streams {
-        let index = target
-            .streams
-            .iter()
-            .position(|candidate| candidate == &stream)
-            .unwrap_or_else(|| {
-                target.streams.push(stream);
-                target.streams.len() - 1
-            });
-        stream_map.push(u32::try_from(index).ok()?);
-    }
-    for (id, mut provenance) in source.provenance {
-        let stream = *stream_map.get(usize::try_from(provenance.stream).ok()?)?;
-        provenance.stream = stream;
-        target
-            .provenance
-            .insert(rescope_standard_id(&id, scope), provenance);
-    }
-    target.exactness.extend(
-        source
-            .exactness
-            .into_iter()
-            .map(|(id, note)| (rescope_standard_id(&id, scope), note)),
-    );
-    Some(())
+) {
+    source.provenance = source
+        .provenance
+        .into_iter()
+        .map(|(id, provenance)| (rescope_standard_id(&id, scope), provenance))
+        .collect();
+    source.exactness = source
+        .exactness
+        .into_iter()
+        .map(|(id, note)| (rescope_standard_id(&id, scope), note))
+        .collect();
+    target.merge_interned(source);
 }
 
 fn try_decode_standard_populations(
@@ -1349,7 +1334,7 @@ fn try_decode_standard_populations(
             .model
             .extend_rewritten(model, &mut rewriter)
             .ok()?;
-        merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope)?;
+        merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope);
         if output.report.geometry_transferred {
             merged.report.geometry_transferred = true;
         }

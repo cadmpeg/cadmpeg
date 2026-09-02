@@ -61,12 +61,8 @@ pub(crate) struct DirectoryEntry {
 
 impl DirectoryEntry {
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
-        cadmpeg_ir::SourceProvenance {
-            format: "iges".into(),
-            stream: "iges".into(),
-            offset: self.source_offset,
-            tag: Some(format!("directory_entry:D{}", self.sequence)),
-        }
+        cadmpeg_ir::SourceProvenance::in_stream("iges", "iges", self.source_offset)
+            .with_tag(format!("directory_entry:D{}", self.sequence))
     }
 }
 
@@ -139,12 +135,10 @@ impl QuarantinedDirectoryRecord {
                 self.defect.describe(),
                 self.cards
             ))
-            .with_provenance(SourceProvenance {
-                format: "iges".into(),
-                stream: "iges".into(),
-                offset: self.source_offset,
-                tag: Some(format!("directory_entry:D{}", self.sequence)),
-            })
+        .with_provenance(
+            SourceProvenance::in_stream("iges", "iges", self.source_offset)
+                .with_tag(format!("directory_entry:D{}", self.sequence)),
+        )
     }
 }
 

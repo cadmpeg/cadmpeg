@@ -2516,12 +2516,10 @@ impl QuarantinedParameterRecord {
                 self.defect.describe(),
                 self.cards
             ))
-            .with_provenance(SourceProvenance {
-                format: "iges".into(),
-                stream: "iges".into(),
-                offset: self.provenance_offset,
-                tag: Some(format!("D{}:parameter", self.sequence)),
-            })
+        .with_provenance(
+            SourceProvenance::in_stream("iges", "iges", self.provenance_offset)
+                .with_tag(format!("D{}:parameter", self.sequence)),
+        )
     }
 }
 

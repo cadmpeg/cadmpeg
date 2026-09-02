@@ -1069,8 +1069,8 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .and_then(|loss| loss.provenance.as_ref())
         .expect("retained geometry loss has provenance");
     let expected_tag = format!("OBJECT_RECORD/class={class}/type=0x00000001");
-    assert_eq!(loss.format, "rhino");
-    assert_eq!(loss.stream, "");
+    assert_eq!(loss.format(), "rhino");
+    assert_eq!(loss.stream(), None);
     assert_eq!(loss.offset, offset);
     assert_eq!(loss.tag.as_deref(), Some(expected_tag.as_str()));
     assert!(!result

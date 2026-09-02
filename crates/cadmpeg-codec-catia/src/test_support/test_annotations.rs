@@ -12,7 +12,7 @@ pub(crate) fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &An
             for entity in $entities {
                 entity_count += 1;
                 let provenance = &annotations.provenance[&entity.id.0];
-                assert!(annotations.streams[provenance.stream as usize].starts_with("catia:"));
+                assert!(provenance.stream().starts_with("catia:"));
             }
         };
     }

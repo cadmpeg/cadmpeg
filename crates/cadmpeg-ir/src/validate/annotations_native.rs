@@ -60,21 +60,13 @@ pub(super) fn check_annotations(
         .filter_map(|(id, note)| (!note.fields.is_empty()).then_some(id.as_str()))
         .collect();
     let entity_json = annotated_entity_json(ir, &wanted);
-    for (id, provenance) in &annotations.provenance {
+    for id in annotations.provenance.keys() {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,
                 Severity::Error,
                 id,
                 "provenance key does not resolve to an entity",
-            );
-        }
-        if provenance.stream as usize >= annotations.streams.len() {
-            annotation_finding(
-                findings,
-                Severity::Error,
-                id,
-                "provenance stream index is out of range",
             );
         }
     }

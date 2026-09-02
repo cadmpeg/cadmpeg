@@ -180,7 +180,7 @@ impl MergeSession<'_, '_> {
                 &mut parent_fidelity.annotations,
                 component_fidelity.annotations,
                 &occurrence,
-            )?;
+            );
             merged += descendants + 1;
             if component_report.geometry_transferred {
                 parent_report.geometry_transferred = true;
@@ -242,48 +242,20 @@ pub(super) fn append_feature_history(
 
 fn merge_annotations(
     target: &mut cadmpeg_ir::annotations::Annotations,
-    source: cadmpeg_ir::annotations::Annotations,
+    mut source: cadmpeg_ir::annotations::Annotations,
     occurrence: &str,
-) -> Result<(), CodecError> {
-    let mut stream_map = Vec::with_capacity(source.streams.len());
-    for stream in source.streams {
-        let index = if let Some(index) = target
-            .streams
-            .iter()
-            .position(|candidate| candidate == &stream)
-        {
-            index
-        } else {
-            target.streams.push(stream);
-            target.streams.len() - 1
-        };
-        stream_map.push(u32::try_from(index).map_err(|_| {
-            CodecError::Malformed("merged F3Z annotation stream count exceeds u32::MAX".into())
-        })?);
-    }
-    for (id, mut provenance) in source.provenance {
-        let stream = usize::try_from(provenance.stream)
-            .ok()
-            .and_then(|index| stream_map.get(index))
-            .copied()
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "component annotation {id} references missing stream {}",
-                    provenance.stream
-                ))
-            })?;
-        provenance.stream = stream;
-        target
-            .provenance
-            .insert(remap_id_text(&id, occurrence), provenance);
-    }
-    target.exactness.extend(
-        source
-            .exactness
-            .into_iter()
-            .map(|(id, note)| (remap_id_text(&id, occurrence), note)),
-    );
-    Ok(())
+) {
+    source.provenance = source
+        .provenance
+        .into_iter()
+        .map(|(id, provenance)| (remap_id_text(&id, occurrence), provenance))
+        .collect();
+    source.exactness = source
+        .exactness
+        .into_iter()
+        .map(|(id, note)| (remap_id_text(&id, occurrence), note))
+        .collect();
+    target.merge_interned(source);
 }
 
 fn remap_id_text(text: &str, occurrence: &str) -> String {

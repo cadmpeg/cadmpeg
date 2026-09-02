@@ -10,7 +10,7 @@ use crate::records::{
     SketchRelationKind,
 };
 use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
-use cadmpeg_ir::annotations::{Annotations, ExactnessNote, StreamProvenance};
+use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::features::{
     Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
     ParameterId, ParameterValue,
@@ -20,6 +20,7 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchGeometry, SketchId, SketchLocus, SketchPlacement,
 };
+use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
@@ -1301,15 +1302,10 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         metadata: None,
         native_ref: None,
     }];
-    let mut annotations = Annotations::default();
-    annotations.provenance.insert(
-        sketch_id.0.clone(),
-        StreamProvenance {
-            stream: 0,
-            offset: 200,
-            tag: Some("support".into()),
-        },
-    );
+    let mut builder = AnnotationBuilder::new();
+    let stream = builder.stream("test:support");
+    builder.note(&sketch_id.0, stream, 200).tag("support");
+    let mut annotations = builder.build();
     for id in [&sketch_id.0, &entity_id.0, &constraint_id.0] {
         annotations
             .exactness

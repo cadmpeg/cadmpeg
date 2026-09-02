@@ -225,7 +225,7 @@ pub(crate) fn assert_annotation(
     exactness: Exactness,
 ) {
     let provenance = &annotations.provenance[id];
-    assert_eq!(annotations.streams[provenance.stream as usize], stream);
+    assert_eq!(provenance.stream(), stream);
     assert_eq!(provenance.offset, offset);
     assert_eq!(provenance.tag.as_deref(), Some(tag));
     if exactness == Exactness::ByteExact {

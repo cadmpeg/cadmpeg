@@ -346,7 +346,7 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
                     .provenance
                     .get(&entity.id.to_string())
                     .expect("annotation provenance");
-                assert!(annotations.streams[provenance.stream as usize].starts_with("nx:"));
+                assert!(provenance.stream().starts_with("nx:"));
                 assert!(provenance.tag.is_some());
             }
         };
