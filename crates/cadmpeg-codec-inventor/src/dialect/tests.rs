@@ -207,7 +207,7 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
             Admission::Admitted
         } else {
             Admission::Unverified {
-                using: cadmpeg_core::dialect::Grammar::local("cfb3-rse31-meta8").unwrap(),
+                using: cadmpeg_core::dialect::Grammar::of(&InventorDialect::Cfb3Rse31Meta8.id()),
             }
         };
         assert_eq!(matched.admission(), &expected_admission, "{}", case.label);

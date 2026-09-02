@@ -130,22 +130,6 @@ const fn valid_dialect_id(id: &str) -> bool {
     bytes[colon + 1] != b'-' && bytes[bytes.len() - 1] != b'-'
 }
 
-const fn valid_dialect_local(name: &str) -> bool {
-    let bytes = name.as_bytes();
-    if bytes.is_empty() || bytes[0] == b'-' || bytes[bytes.len() - 1] == b'-' {
-        return false;
-    }
-    let mut index = 0;
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if !byte.is_ascii_lowercase() && !byte.is_ascii_digit() && byte != b'-' && byte != b'.' {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
-
 /// A string is not a canonical dialect id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectIdError(String);
@@ -220,16 +204,6 @@ pub enum Admission {
 pub struct Grammar(String);
 
 impl Grammar {
-    /// Names a grammar by its format-local id.
-    pub fn local(name: impl Into<String>) -> Result<Self, GrammarError> {
-        let name = name.into();
-        if valid_dialect_local(&name) {
-            Ok(Self(name))
-        } else {
-            Err(GrammarError(name))
-        }
-    }
-
     /// Names the format-local half of a registry dialect id.
     #[must_use]
     pub fn of(dialect: &DialectId) -> Self {
@@ -242,22 +216,6 @@ impl Grammar {
         &self.0
     }
 }
-
-/// A string is not a canonical format-local grammar name.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GrammarError(String);
-
-impl fmt::Display for GrammarError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "invalid grammar name {:?}: expected a format-local lowercase canonical name",
-            self.0
-        )
-    }
-}
-
-impl Error for GrammarError {}
 
 /// Current wire form of [`Admission`], with the grammar as a full registry id.
 #[derive(Serialize)]
@@ -829,7 +787,7 @@ mod tests {
         assert_eq!(
             unverified.admission(),
             &Admission::Unverified {
-                using: Grammar::local("save-format-218").unwrap(),
+                using: Grammar::of(&DialectId::pinned("acis:save-format-218")),
             }
         );
         assert_eq!(
@@ -861,7 +819,7 @@ mod tests {
         assert_eq!(
             matched.admission(),
             &Admission::Unverified {
-                using: Grammar::local("unknown").unwrap(),
+                using: Grammar::of(&DialectId::pinned("rhino:unknown")),
             }
         );
     }
@@ -930,24 +888,10 @@ mod tests {
         assert_eq!(
             self_named.admission(),
             &Admission::Unverified {
-                using: Grammar::local("archive-80").unwrap(),
+                using: Grammar::of(&DialectId::pinned("rhino:archive-80")),
             }
         );
         assert_eq!(self_named.using(), Some(dialect));
-    }
-
-    #[test]
-    fn grammar_rejects_noncanonical_local_names() {
-        for name in [
-            "",
-            "step:ap242-e3",
-            "Upper",
-            "under_score",
-            "-leading",
-            "trailing-",
-        ] {
-            Grammar::local(name).expect_err("a grammar name is one canonical local id");
-        }
     }
 
     #[test]

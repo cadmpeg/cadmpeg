@@ -1,4 +1,4 @@
-# generated at 3f11b2f41
+# generated at 5f575c298
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -354,12 +354,7 @@ pub struct cadmpeg_core::dialect::FormatIdentityError
 pub struct cadmpeg_core::dialect::Grammar(_)
 impl cadmpeg_core::dialect::Grammar
 pub fn cadmpeg_core::dialect::Grammar::as_str(&self) -> &str
-pub fn cadmpeg_core::dialect::Grammar::local(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_core::dialect::GrammarError>
 pub fn cadmpeg_core::dialect::Grammar::of(&cadmpeg_core::dialect::DialectId) -> Self
-pub struct cadmpeg_core::dialect::GrammarError(_)
-impl core::error::Error for cadmpeg_core::dialect::GrammarError
-impl core::fmt::Display for cadmpeg_core::dialect::GrammarError
-pub fn cadmpeg_core::dialect::GrammarError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait cadmpeg_core::dialect::FormatIdentityPayload: cadmpeg_core::dialect::format_identity_sealed::Sealed
 pub fn cadmpeg_core::dialect::FormatIdentityPayload::format(&self) -> &str
 impl cadmpeg_core::dialect::FormatIdentityPayload for cadmpeg_core::dialect::DialectId

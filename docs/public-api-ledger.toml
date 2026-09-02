@@ -15,7 +15,7 @@
 baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
 audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
 api_baseline_dir = "docs/api-baseline"
-measured_at = "3f11b2f410622f99c8a52ef229efd9c9a82ad7f4"
+measured_at = "5f575c298987064accee817a4e61f6bd295dbfba"
 
 [[change]]
 commit = "6891cb0d706278d9102e97a3a3153d7b9a9fc6f2"
@@ -2402,3 +2402,10 @@ crate = "cadmpeg-codec-creo"
 kind = "trait_impl"
 item = "cadmpeg_codec_creo::CreoCodec: CodecBackend"
 reason = "the codec names its format as the FORMAT constant, exposes detection only as a backend hook, and returns a Decoded body whose identity the sealed wrapper stamps from document source metadata"
+
+[[change]]
+commit = "5f575c298987064accee817a4e61f6bd295dbfba"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::dialect::{Grammar::local,GrammarError}"
+reason = "Grammar is derived only from a validated DialectId, so callers cannot author a second format-local grammar vocabulary"
