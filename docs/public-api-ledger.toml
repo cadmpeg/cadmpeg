@@ -2570,3 +2570,10 @@ crate = "cadmpeg-ir"
 kind = "trait"
 item = "impl Copy for cadmpeg_ir::report::CoverageKey"
 reason = "a coverage key can own a generated name, so the key remains cloneable but is not copyable"
+
+[[change]]
+commit = "fbd37e2e90029af538535c0048e1826b2541b802"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::document::CadIr::set_native_unknowns_owned"
+reason = "retained source bytes live only in SourceFidelity; the CADIR native arena receives only record identities and product links through the split attachment path"

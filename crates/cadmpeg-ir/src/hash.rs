@@ -573,7 +573,9 @@ mod tests {
 
     /// A document with an unordered model, a recorded digest, two native
     /// namespaces, and a retained source image among the unknown records.
-    fn local_digest_fixture() -> CadIr {
+    fn local_digest_fixture_with_source_image(
+        source_image: UnknownRecord,
+    ) -> (CadIr, crate::SourceFidelity) {
         let mut ir = unit_cube();
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
@@ -593,39 +595,47 @@ mod tests {
             .into_iter()
             .collect(),
         ));
-        ir.set_native_unknowns_owned(
-            "synthetic",
-            vec![
-                UnknownRecord {
-                    id: UnknownId("synthetic:file:source-image#0".into()),
-                    offset: 0,
-                    byte_len: 3,
-                    sha256: "00".into(),
-                    data: Some(vec![1, 2, 3]),
-                    links: Vec::new(),
-                },
-                UnknownRecord {
-                    id: UnknownId("synthetic:record#1".into()),
-                    offset: 8,
-                    byte_len: 2,
-                    sha256: "11".into(),
-                    data: Some(vec![4, 5]),
-                    links: vec!["cube:body#0".into()],
-                },
-            ],
-        );
+        let mut source_fidelity = crate::SourceFidelity::default();
+        source_fidelity
+            .attach_native_unknown_records(
+                &mut ir,
+                "synthetic",
+                [
+                    source_image,
+                    UnknownRecord {
+                        id: UnknownId("synthetic:record#1".into()),
+                        offset: 8,
+                        byte_len: 2,
+                        sha256: "11".into(),
+                        data: Some(vec![4, 5]),
+                        links: vec!["cube:body#0".into()],
+                    },
+                ],
+            )
+            .unwrap();
         let namespace = ir.native.namespace_mut("other");
         namespace.version = 3;
         namespace.arenas.insert(
             "records".into(),
             vec![NativeRecord::new("other:record#0", serde_json::Map::new())],
         );
-        ir
+        (ir, source_fidelity)
+    }
+
+    fn local_digest_fixture() -> (CadIr, crate::SourceFidelity) {
+        local_digest_fixture_with_source_image(UnknownRecord {
+            id: UnknownId("synthetic:file:source-image#0".into()),
+            offset: 0,
+            byte_len: 3,
+            sha256: "00".into(),
+            data: Some(vec![1, 2, 3]),
+            links: Vec::new(),
+        })
     }
 
     #[test]
     fn document_local_sha256_matches_the_cloned_normalization() {
-        let ir = local_digest_fixture();
+        let (ir, _source_fidelity) = local_digest_fixture();
         let source_image = "synthetic:file:source-image#0";
         assert_eq!(
             crate::hash::document_local_sha256(&ir, "synthetic", source_image),
@@ -640,10 +650,10 @@ mod tests {
     #[test]
     fn document_local_sha256_ignores_the_recorded_digest_and_retained_bytes() {
         let source_image = "synthetic:file:source-image#0";
-        let ir = local_digest_fixture();
+        let (ir, _source_fidelity) = local_digest_fixture();
         let hash = crate::hash::document_local_sha256(&ir, "synthetic", source_image);
 
-        let mut recorded = local_digest_fixture();
+        let (mut recorded, _source_fidelity) = local_digest_fixture();
         recorded
             .source
             .as_mut()
@@ -655,32 +665,14 @@ mod tests {
             hash
         );
 
-        let mut repacked = local_digest_fixture();
-        let mut records = repacked
-            .native
-            .namespace("synthetic")
-            .unwrap()
-            .arenas
-            .get("unknowns")
-            .unwrap()
-            .clone();
-        records.retain(|record| record.id() != source_image);
-        records.push(
-            UnknownRecord {
-                id: UnknownId(source_image.into()),
-                offset: 4,
-                byte_len: 1,
-                sha256: "22".into(),
-                data: Some(vec![9]),
-                links: vec!["cube:body#0".into()],
-            }
-            .into_native_record(),
-        );
-        repacked
-            .native
-            .namespace_mut("synthetic")
-            .arenas
-            .insert("unknowns".into(), records);
+        let (repacked, _source_fidelity) = local_digest_fixture_with_source_image(UnknownRecord {
+            id: UnknownId(source_image.into()),
+            offset: 4,
+            byte_len: 1,
+            sha256: "22".into(),
+            data: Some(vec![9]),
+            links: vec!["cube:body#0".into()],
+        });
         assert_eq!(
             crate::hash::document_local_sha256(&repacked, "synthetic", source_image),
             hash

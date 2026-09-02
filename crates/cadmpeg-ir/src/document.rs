@@ -29,7 +29,7 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
-use crate::unknown::{NativeUnknownRecord, UnknownRecord};
+use crate::unknown::NativeUnknownRecord;
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -331,20 +331,6 @@ impl CadIr {
     ) -> Result<(), crate::native::NativeConvertError> {
         self.unknowns_namespace_mut(format)
             .set_arena_from("unknowns", records)
-    }
-
-    /// Replace the reserved `unknowns` arena for `format`, consuming the records.
-    ///
-    /// Codecs retaining large source populations should use this form to avoid
-    /// keeping typed and generic native copies alive at the same time.
-    pub fn set_native_unknowns_owned(&mut self, format: &str, records: Vec<UnknownRecord>) {
-        let namespace = self.unknowns_namespace_mut(format);
-        let mut converted = records
-            .into_iter()
-            .map(UnknownRecord::into_native_record)
-            .collect::<Vec<_>>();
-        converted.sort_by(|left, right| left.id().cmp(right.id()));
-        namespace.arenas.insert("unknowns".into(), converted);
     }
 
     /// Return the `format` namespace, versioning a newly created one.

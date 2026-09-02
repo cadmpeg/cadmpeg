@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::{CadIr, UnknownRecord};
+use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -36,30 +36,34 @@ fuzz_target!(|data: &[u8]| {
     let encoder = IgesCodec;
 
     if control & 0x80 != 0 {
-        ir.set_native_unknowns_owned(
-            "iges",
-            vec![UnknownRecord {
-                id: UnknownId("iges:fuzz:unsupported#0".into()),
-                offset: 0,
-                byte_len: 1,
-                sha256: cadmpeg_ir::hash::sha256_hex(&[control]),
-                data: Some(vec![control]),
-                links: Vec::new(),
-            }],
-        );
+        let mut source_fidelity = SourceFidelity::default();
+        source_fidelity
+            .attach_native_unknown_records(
+                &mut ir,
+                "iges",
+                [UnknownRecord {
+                    id: UnknownId("iges:fuzz:unsupported#0".into()),
+                    offset: 0,
+                    byte_len: 1,
+                    sha256: cadmpeg_ir::hash::sha256_hex(&[control]),
+                    data: Some(vec![control]),
+                    links: Vec::new(),
+                }],
+            )
+            .expect("fuzz retained record converts to native identity");
         assert!(encoder
             .plan(
-                EncodeInput::new(&ir, None),
+                EncodeInput::new(&ir, Some(&source_fidelity)),
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .is_err());
         return;
     }
 
-        let Ok(plan) = encoder.plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
-        ) else {
+    let Ok(plan) = encoder.plan(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
+    ) else {
         return;
     };
     let mut encoded = Vec::new();
