@@ -1772,9 +1772,9 @@ fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
         .unwrap_err();
 
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => {
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert_eq!(
-                loss_code,
+                rejection.loss().code.as_str(),
                 IgesLossCode::CompositeCarrierDegraded.kind().as_str()
             );
         }

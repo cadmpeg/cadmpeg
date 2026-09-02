@@ -80,6 +80,47 @@ pub struct DecodeResult {
     source_fidelity: SourceFidelity,
 }
 
+/// A strict-policy refusal bound to the loss in its completed decode report.
+///
+/// Only the sealed decode wrapper constructs this value. The refusing loss is
+/// therefore always an element of [`Self::report`].
+#[derive(Debug)]
+pub struct StrictDecodeRejection {
+    report: Box<DecodeReport>,
+    loss_index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RejectingLossIndex(usize);
+
+impl StrictDecodeRejection {
+    fn new(report: DecodeReport, loss_index: RejectingLossIndex) -> Self {
+        Self {
+            report: Box::new(report),
+            loss_index: loss_index.0,
+        }
+    }
+
+    /// Returns the loss that caused the strict-policy refusal.
+    #[must_use]
+    pub fn loss(&self) -> &LossNote {
+        &self.report.losses[self.loss_index]
+    }
+
+    /// Returns the completed report that contains the refusing loss.
+    #[must_use]
+    pub fn report(&self) -> &DecodeReport {
+        &self.report
+    }
+}
+
+impl fmt::Display for StrictDecodeRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let loss = self.loss();
+        write!(f, "{}: {}", loss.code, loss.message)
+    }
+}
+
 /// Failure from the policy-enforcing decode entry point.
 ///
 /// Backend and resource failures remain [`CodecError`] values. A strict-policy
@@ -93,15 +134,10 @@ pub enum DecodeFailure {
     #[error(transparent)]
     Codec(#[from] CodecError),
     /// Strict mode rejected the first loss whose floor requires refusal.
-    #[error("strict mode rejects {loss_code}: {message}")]
+    #[error("strict mode rejects {rejection}")]
     StrictRejected {
-        /// Stable `namespace/code` form of the refusing loss.
-        loss_code: String,
-        /// The refusing loss's own message, without any refusal prefix.
-        message: String,
-        /// Completed decode report containing the refusing loss and all other
-        /// evidence recovered before the policy gate ran.
-        report: Box<DecodeReport>,
+        /// The completed report and its refusing loss.
+        rejection: StrictDecodeRejection,
     },
 }
 
@@ -349,23 +385,21 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             ))
             .into());
         }
-        let strict_refusal = if options.policy.mode == DecodeMode::Strict && !options.container_only
-        {
-            result
-                .report()
-                .losses
-                .iter()
-                .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-                .map(|loss| (loss.code.to_string(), loss.message.clone()))
-        } else {
-            None
-        };
-        if let Some((loss_code, message)) = strict_refusal {
+        let strict_loss_index =
+            if options.policy.mode == DecodeMode::Strict && !options.container_only {
+                result
+                    .report()
+                    .losses
+                    .iter()
+                    .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
+                    .map(RejectingLossIndex)
+            } else {
+                None
+            };
+        if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
             return Err(DecodeFailure::StrictRejected {
-                loss_code,
-                message,
-                report: Box::new(report),
+                rejection: StrictDecodeRejection::new(report, loss_index),
             });
         }
         Ok(result)

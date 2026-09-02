@@ -236,8 +236,8 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
         .decode(&mut Cursor::new(bytes), &strict_options(false))
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
-            loss_code,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.as_str(),
             IgesLossCode::GlobalNoncanonicalFraming.kind().as_str()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),

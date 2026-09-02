@@ -431,10 +431,14 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect_err("strict refuses the untyped-surface census");
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } = &error else {
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
         panic!("a strict refusal is a policy class, not a container defect: {error:?}");
     };
-    assert!(loss_code.starts_with("sldprt/"), "unexpected: {loss_code}");
+    assert!(
+        rejection.loss().code.as_str().starts_with("sldprt/"),
+        "unexpected: {}",
+        rejection.loss().code
+    );
 }
 
 #[test]

@@ -1,4 +1,4 @@
-# generated at 819957724
+# generated at 5503c1943
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -277,9 +277,7 @@ pub fn cadmpeg_ir::codec::Confidence::fmt(&self, &mut core::fmt::Formatter<'_>) 
 #[non_exhaustive] pub enum cadmpeg_ir::codec::DecodeFailure
 pub cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::error::CodecError)
 pub cadmpeg_ir::codec::DecodeFailure::StrictRejected
-pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::loss_code: alloc::string::String
-pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::message: alloc::string::String
-pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::report: alloc::boxed::Box<cadmpeg_ir::DecodeReport>
+pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::rejection: cadmpeg_ir::codec::StrictDecodeRejection
 pub struct cadmpeg_ir::codec::DecodeBody
 pub cadmpeg_ir::codec::DecodeBody::coverage: cadmpeg_ir::Coverage
 pub cadmpeg_ir::codec::DecodeBody::geometry_transferred: bool
@@ -301,6 +299,12 @@ pub struct cadmpeg_ir::codec::Decoded
 pub cadmpeg_ir::codec::Decoded::body: cadmpeg_ir::codec::DecodeBody
 pub cadmpeg_ir::codec::Decoded::ir: cadmpeg_ir::document::CadIr
 pub cadmpeg_ir::codec::Decoded::source_fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
+pub struct cadmpeg_ir::codec::StrictDecodeRejection
+impl cadmpeg_ir::codec::StrictDecodeRejection
+pub fn cadmpeg_ir::codec::StrictDecodeRejection::loss(&self) -> &cadmpeg_ir::LossNote
+pub fn cadmpeg_ir::codec::StrictDecodeRejection::report(&self) -> &cadmpeg_ir::DecodeReport
+impl core::fmt::Display for cadmpeg_ir::codec::StrictDecodeRejection
+pub fn cadmpeg_ir::codec::StrictDecodeRejection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait cadmpeg_ir::codec::Codec: cadmpeg_ir::codec::sealed::Sealed
 pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure>
 pub fn cadmpeg_ir::codec::Codec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
@@ -6017,9 +6021,7 @@ pub cadmpeg_ir::DatumTargetForm::Rectangle
 #[non_exhaustive] pub enum cadmpeg_ir::DecodeFailure
 pub cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::error::CodecError)
 pub cadmpeg_ir::DecodeFailure::StrictRejected
-pub cadmpeg_ir::DecodeFailure::StrictRejected::loss_code: alloc::string::String
-pub cadmpeg_ir::DecodeFailure::StrictRejected::message: alloc::string::String
-pub cadmpeg_ir::DecodeFailure::StrictRejected::report: alloc::boxed::Box<cadmpeg_ir::DecodeReport>
+pub cadmpeg_ir::DecodeFailure::StrictRejected::rejection: cadmpeg_ir::codec::StrictDecodeRejection
 pub enum cadmpeg_ir::DecodeSidecarParseError
 pub cadmpeg_ir::DecodeSidecarParseError::Fidelity(cadmpeg_ir::source_fidelity::FidelityError)
 pub cadmpeg_ir::DecodeSidecarParseError::Json(serde_json::error::Error)

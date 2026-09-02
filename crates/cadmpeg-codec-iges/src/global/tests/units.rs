@@ -200,8 +200,8 @@ fn recovered_global_real_is_strictly_reported_as_noncanonical() {
         .decode(&mut Cursor::new(bytes), &strict_options(false))
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
-            loss_code,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.as_str(),
             IgesLossCode::GlobalNumericSyntaxRecovered.kind().as_str()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
@@ -251,8 +251,8 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         .decode(&mut Cursor::new(bytes.clone()), &strict_options(false))
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => assert_eq!(
-            loss_code,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.as_str(),
             IgesLossCode::GlobalLengthUnitUnresolved.kind().as_str()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),

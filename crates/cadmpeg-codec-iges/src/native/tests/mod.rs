@@ -91,8 +91,8 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         .decode(&mut Cursor::new(bytes.to_vec()), &strict)
         .unwrap_err()
     {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => {
-            assert_eq!(loss_code, overdeclared.as_str());
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            assert_eq!(rejection.loss().code.as_str(), overdeclared.as_str());
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

@@ -391,8 +391,11 @@ fn strict_decode_refuses_an_unresolved_pointer_loss() {
         .unwrap_err();
 
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { loss_code, .. } => {
-            assert_eq!(loss_code, IgesLossCode::PointerUnresolved.kind().as_str());
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            assert_eq!(
+                rejection.loss().code.as_str(),
+                IgesLossCode::PointerUnresolved.kind().as_str()
+            );
         }
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }
