@@ -132,9 +132,9 @@ fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: 
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id == "rhino:object:record#000000")
+        .find(|value| value.id() == "rhino:object:record#000000")
         .expect("object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(record));
+    assert_eq!(retained.data(), Some(record));
 }
 
 #[test]

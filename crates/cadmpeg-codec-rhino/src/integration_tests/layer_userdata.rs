@@ -168,11 +168,11 @@ fn assert_layer_record_retained(
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000011-20008050-")
         })
         .expect("layer record is retained");
-    assert_eq!(retained.data.as_deref(), Some(layer));
+    assert_eq!(retained.data(), Some(layer));
     assert_valid(result);
 }
 

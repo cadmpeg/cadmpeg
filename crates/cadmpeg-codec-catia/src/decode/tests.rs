@@ -187,6 +187,6 @@ fn container_only_stops_before_geometry() {
     let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
     let retained = &result.source_fidelity().retained_records[0];
-    assert_eq!(retained.sha256.len(), 64);
-    assert!(retained.data.is_some());
+    assert_eq!(retained.sha256().len(), 64);
+    assert!(retained.data().is_some());
 }

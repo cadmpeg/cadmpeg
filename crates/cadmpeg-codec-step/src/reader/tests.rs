@@ -195,8 +195,10 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .retained_record(&unknowns[0].id.0)
         .expect("opaque payload is retained in source fidelity");
     assert_eq!(
-        retained.data.as_deref(),
-        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
+        retained.data(),
+        Some(
+            &bytes[retained.offset() as usize..(retained.offset() + retained.byte_len()) as usize],
+        )
     );
     assert!(unknowns[0]
         .links
@@ -228,8 +230,10 @@ pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
         .retained_record(&signature.id.0)
         .expect("signature source fidelity");
     assert_eq!(
-        retained.data.as_deref(),
-        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
+        retained.data(),
+        Some(
+            &bytes[retained.offset() as usize..(retained.offset() + retained.byte_len()) as usize],
+        )
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::OpaqueRecordPreserved.kind()
@@ -263,7 +267,7 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
         .retained_record(&target.id.0)
         .expect("retained user-defined target span");
     assert_eq!(
-        target_source.data.as_deref(),
+        target_source.data(),
         Some(b"#1=!VENDOR_TARGET('target');".as_slice())
     );
 
@@ -277,7 +281,7 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
         .retained_record(&entity.id.0)
         .expect("retained user-defined entity span");
     assert_eq!(
-        entity_source.data.as_deref(),
+        entity_source.data(),
         Some(b"#2=!VENDOR_ENTITY('vendor payload',#1,!VENDOR_TYPE((#1)));".as_slice())
     );
 
@@ -478,8 +482,7 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .source_fidelity()
         .retained_record(&line.id.0)
         .expect("unowned pcurve line payload is retained")
-        .data
-        .as_deref()
+        .data()
         .is_some_and(|data| data.starts_with(b"#71=LINE")));
     assert!(decoded
         .ir()

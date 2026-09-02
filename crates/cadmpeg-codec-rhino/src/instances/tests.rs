@@ -478,10 +478,10 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|source| source.offset == malformed_range.start as u64)
+        .find(|source| source.offset() == malformed_range.start as u64)
         .expect("malformed definition fidelity");
     assert_eq!(
-        malformed_retained.data.as_deref(),
+        malformed_retained.data(),
         Some(&malformed_source_bytes[malformed_range])
     );
 
@@ -546,12 +546,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|source| source.offset == future_range.start as u64)
+        .find(|source| source.offset() == future_range.start as u64)
         .expect("future definition fidelity");
-    assert_eq!(
-        future_retained.data.as_deref(),
-        Some(future_record.as_slice())
-    );
+    assert_eq!(future_retained.data(), Some(future_record.as_slice()));
 }
 
 #[test]

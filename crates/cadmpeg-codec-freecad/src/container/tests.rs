@@ -193,7 +193,7 @@ fn thumbnail_bytes_are_retained_with_digest() {
         .retained_records
         .first()
         .expect("retained thumbnail");
-    assert_eq!(retained.data.as_deref(), Some(b"png".as_slice()));
+    assert_eq!(retained.data(), Some(b"png".as_slice()));
 }
 
 #[test]

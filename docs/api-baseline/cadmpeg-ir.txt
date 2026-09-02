@@ -1,4 +1,4 @@
-# generated at fbd37e2e9
+# generated at 819957724
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -5427,12 +5427,17 @@ pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::version(&self) -> &str
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::source_fidelity::RetainedSourceRecord
-pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::byte_len: u64
-pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::data: core::option::Option<alloc::vec::Vec<u8>>
-pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::id: alloc::string::String
-pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::offset: u64
-pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::sha256: alloc::string::String
-pub cadmpeg_ir::source_fidelity::RetainedSourceRecord::stream: alloc::string::String
+impl cadmpeg_ir::source_fidelity::RetainedSourceRecord
+pub const fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::byte_len(&self) -> u64
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::data(&self) -> core::option::Option<&[u8]>
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::id(&self) -> &str
+pub const fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::offset(&self) -> u64
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, u64, alloc::vec::Vec<u8>) -> Self
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::sha256(&self) -> &str
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::stream(&self) -> &str
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::unavailable(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, u64, u64, impl core::convert::Into<alloc::string::String>) -> Self
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::RetainedSourceRecord
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::source_fidelity::SourceFidelity::annotations: cadmpeg_ir::annotations::Annotations
 pub cadmpeg_ir::source_fidelity::SourceFidelity::retained_records: alloc::vec::Vec<cadmpeg_ir::source_fidelity::RetainedSourceRecord>
@@ -7570,12 +7575,17 @@ pub const cadmpeg_ir::products::ProductDefinition::KIND: cadmpeg_ir::schema::Ent
 pub fn cadmpeg_ir::products::ProductDefinition::identity(&self) -> &str
 pub fn cadmpeg_ir::products::ProductDefinition::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
 pub struct cadmpeg_ir::RetainedSourceRecord
-pub cadmpeg_ir::RetainedSourceRecord::byte_len: u64
-pub cadmpeg_ir::RetainedSourceRecord::data: core::option::Option<alloc::vec::Vec<u8>>
-pub cadmpeg_ir::RetainedSourceRecord::id: alloc::string::String
-pub cadmpeg_ir::RetainedSourceRecord::offset: u64
-pub cadmpeg_ir::RetainedSourceRecord::sha256: alloc::string::String
-pub cadmpeg_ir::RetainedSourceRecord::stream: alloc::string::String
+impl cadmpeg_ir::source_fidelity::RetainedSourceRecord
+pub const fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::byte_len(&self) -> u64
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::data(&self) -> core::option::Option<&[u8]>
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::id(&self) -> &str
+pub const fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::offset(&self) -> u64
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, u64, alloc::vec::Vec<u8>) -> Self
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::sha256(&self) -> &str
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::stream(&self) -> &str
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::unavailable(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, u64, u64, impl core::convert::Into<alloc::string::String>) -> Self
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::RetainedSourceRecord
+pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::ScaleFactors
 pub cadmpeg_ir::ScaleFactors::uniform: core::option::Option<f64>
 pub cadmpeg_ir::ScaleFactors::x: core::option::Option<f64>

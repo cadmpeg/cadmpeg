@@ -254,19 +254,19 @@ pub enum DecodeSidecarParseError {
 }
 
 /// Source bytes retained for native recovery or replay.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RetainedSourceRecord {
     /// Stable record identifier.
-    pub id: String,
+    id: String,
     /// Source stream containing the record.
-    pub stream: String,
+    stream: String,
     /// First byte offset in the source stream.
-    pub offset: u64,
+    offset: u64,
     /// Number of source bytes.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Lowercase hexadecimal SHA-256 of the source bytes.
-    pub sha256: String,
+    sha256: String,
     /// Retained bytes, when available.
     #[serde(
         default,
@@ -274,7 +274,125 @@ pub struct RetainedSourceRecord {
         with = "crate::bytes::option"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    pub data: Option<Vec<u8>>,
+    data: Option<Vec<u8>>,
+}
+
+#[derive(Deserialize)]
+struct RetainedSourceRecordWire {
+    id: String,
+    stream: String,
+    offset: u64,
+    byte_len: u64,
+    sha256: String,
+    #[serde(default, with = "crate::bytes::option")]
+    data: Option<Vec<u8>>,
+}
+
+impl RetainedSourceRecord {
+    /// Retains source bytes and derives their length and SHA-256 digest.
+    #[must_use]
+    pub fn retained(
+        id: impl Into<String>,
+        stream: impl Into<String>,
+        offset: u64,
+        data: Vec<u8>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            stream: stream.into(),
+            offset,
+            byte_len: data.len() as u64,
+            sha256: crate::hash::sha256_hex(&data),
+            data: Some(data),
+        }
+    }
+
+    /// Records unavailable source bytes by their stored length and digest.
+    #[must_use]
+    pub fn unavailable(
+        id: impl Into<String>,
+        stream: impl Into<String>,
+        offset: u64,
+        byte_len: u64,
+        sha256: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            stream: stream.into(),
+            offset,
+            byte_len,
+            sha256: sha256.into(),
+            data: None,
+        }
+    }
+
+    fn from_wire(wire: RetainedSourceRecordWire) -> Self {
+        Self {
+            id: wire.id,
+            stream: wire.stream,
+            offset: wire.offset,
+            byte_len: wire.byte_len,
+            sha256: wire.sha256,
+            data: wire.data,
+        }
+    }
+
+    fn from_unknown(stream: String, record: UnknownRecord) -> Self {
+        let UnknownRecord {
+            id,
+            offset,
+            byte_len,
+            sha256,
+            data,
+            ..
+        } = record;
+        match data {
+            Some(data) => Self::retained(id.0, stream, offset, data),
+            None => Self::unavailable(id.0, stream, offset, byte_len, sha256),
+        }
+    }
+
+    /// Returns the stable record identifier.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Returns the source stream containing the record.
+    #[must_use]
+    pub fn stream(&self) -> &str {
+        &self.stream
+    }
+
+    /// Returns the first byte offset in the source stream.
+    #[must_use]
+    pub const fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    /// Returns the number of source bytes.
+    #[must_use]
+    pub const fn byte_len(&self) -> u64 {
+        self.byte_len
+    }
+
+    /// Returns the lowercase hexadecimal SHA-256 of the source bytes.
+    #[must_use]
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    /// Returns the retained bytes when available.
+    #[must_use]
+    pub fn data(&self) -> Option<&[u8]> {
+        self.data.as_deref()
+    }
+}
+
+impl<'de> Deserialize<'de> for RetainedSourceRecord {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        RetainedSourceRecordWire::deserialize(deserializer).map(Self::from_wire)
+    }
 }
 
 /// Validation failure in source metadata.
@@ -370,15 +488,11 @@ impl SourceFidelity {
         stream: &str,
         records: impl IntoIterator<Item = UnknownRecord>,
     ) {
-        self.retained_records
-            .extend(records.into_iter().map(|record| RetainedSourceRecord {
-                id: record.id.0,
-                stream: stream.into(),
-                offset: record.offset,
-                byte_len: record.byte_len,
-                sha256: record.sha256,
-                data: record.data,
-            }));
+        self.retained_records.extend(
+            records
+                .into_iter()
+                .map(|record| RetainedSourceRecord::from_unknown(stream.into(), record)),
+        );
     }
 
     /// Stores source bytes in the sidecar and references in the product model.
@@ -402,24 +516,31 @@ impl SourceFidelity {
         ir.set_native_unknowns_from(
             format,
             records.into_iter().map(|record| {
+                let UnknownRecord {
+                    id,
+                    offset,
+                    byte_len,
+                    sha256,
+                    data,
+                    links,
+                } = record;
                 let stream = annotations
                     .provenance
-                    .get(&record.id.0)
+                    .get(&id.0)
                     .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
                     .cloned()
                     .unwrap_or_else(|| "source".into());
                 let product = crate::NativeUnknownRecord {
-                    id: record.id.clone(),
-                    links: record.links,
+                    id: id.clone(),
+                    links,
                 };
-                retained_records.push(RetainedSourceRecord {
-                    id: record.id.0,
-                    stream,
-                    offset: record.offset,
-                    byte_len: record.byte_len,
-                    sha256: record.sha256,
-                    data: record.data,
-                });
+                let retained = match data {
+                    Some(data) => RetainedSourceRecord::retained(id.0, stream, offset, data),
+                    None => {
+                        RetainedSourceRecord::unavailable(id.0, stream, offset, byte_len, sha256)
+                    }
+                };
+                retained_records.push(retained);
                 product
             }),
         )
@@ -484,14 +605,7 @@ mod tests {
     use super::*;
 
     fn record(id: &str, data: &[u8]) -> RetainedSourceRecord {
-        RetainedSourceRecord {
-            id: id.into(),
-            stream: "source".into(),
-            offset: 0,
-            byte_len: data.len() as u64,
-            sha256: crate::hash::sha256_hex(data),
-            data: Some(data.to_vec()),
-        }
+        RetainedSourceRecord::retained(id.to_owned(), "source", 0, data.to_vec())
     }
 
     #[test]
@@ -501,14 +615,16 @@ mod tests {
             ..SourceFidelity::default()
         };
         sidecar.finalize();
-        assert_eq!(sidecar.retained_records[0].id, "a");
+        assert_eq!(sidecar.retained_records[0].id(), "a");
     }
 
     #[test]
     fn validation_rejects_false_payload_metadata() {
+        let mut wire = serde_json::to_value(record("a", &[1, 2])).unwrap();
+        wire["sha256"] = crate::hash::sha256_hex(&[2, 1]).into();
+        let malformed = serde_json::from_value(wire).unwrap();
         let mut sidecar = SourceFidelity::default();
-        sidecar.retained_records.push(record("a", &[1, 2]));
-        sidecar.retained_records[0].sha256 = crate::hash::sha256_hex(&[2, 1]);
+        sidecar.retained_records.push(malformed);
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::Digest { .. })

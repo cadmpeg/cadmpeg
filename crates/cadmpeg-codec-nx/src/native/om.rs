@@ -6035,13 +6035,13 @@ mod tests {
             .source_fidelity()
             .retained_records
             .iter()
-            .filter(|record| record.id.starts_with("nx:om-section-"))
+            .filter(|record| record.id().starts_with("nx:om-section-"))
             .collect::<Vec<_>>();
         assert_eq!(om_records.len(), 2);
         assert!(om_records.iter().all(|record| {
-            record.data.as_ref().is_some_and(|data| {
-                data.len() as u64 == record.byte_len
-                    && cadmpeg_ir::hash::sha256_hex(data) == record.sha256
+            record.data().is_some_and(|data| {
+                data.len() as u64 == record.byte_len()
+                    && cadmpeg_ir::hash::sha256_hex(data) == record.sha256()
             })
         }));
         let object_records = result
@@ -6075,8 +6075,8 @@ mod tests {
             object_records[0].section_offset,
             object_records[1].section_offset
         );
-        assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
-        assert_eq!(object_records[1].sha256, om_records[1].sha256);
+        assert_eq!(object_records[1].byte_len, om_records[1].byte_len());
+        assert_eq!(object_records[1].sha256, om_records[1].sha256());
         assert_eq!(
             object_records[1].dependencies,
             vec![object_records[0].id.clone()]

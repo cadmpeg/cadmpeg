@@ -75,11 +75,11 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
                 .iter()
                 .map(|record| {
                     serde_json::json!({
-                        "id": record.id,
-                        "stream": record.stream,
-                        "offset": record.offset,
-                        "byte_len": record.byte_len,
-                        "data_retained": record.data.is_some(),
+                        "id": record.id(),
+                        "stream": record.stream(),
+                        "offset": record.offset(),
+                        "byte_len": record.byte_len(),
+                        "data_retained": record.data().is_some(),
                     })
                 })
                 .collect();
@@ -99,11 +99,11 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
             for record in &payload.retained_records {
                 println!(
                     "{}\t{}\t{}\t{}\t{}",
-                    super::cell(&record.stream),
-                    record.offset,
-                    record.byte_len,
-                    if record.data.is_some() { "yes" } else { "no" },
-                    super::cell(&record.id),
+                    super::cell(record.stream()),
+                    record.offset(),
+                    record.byte_len(),
+                    if record.data().is_some() { "yes" } else { "no" },
+                    super::cell(record.id()),
                 );
             }
             if payload.retained_records.is_empty() {
@@ -128,7 +128,7 @@ fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &s
     let mut matched: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
         .retained_records
         .iter()
-        .filter(|record| record.stream == stream)
+        .filter(|record| record.stream() == stream)
         .collect();
     if matched.is_empty() {
         if payload.retained_records.is_empty() {
@@ -137,7 +137,7 @@ fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &s
         let mut streams: Vec<&str> = payload
             .retained_records
             .iter()
-            .map(|record| record.stream.as_str())
+            .map(|record| record.stream())
             .collect();
         streams.sort_unstable();
         streams.dedup();
@@ -150,8 +150,8 @@ fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &s
     }
     let missing: Vec<&str> = matched
         .iter()
-        .filter(|record| record.data.is_none())
-        .map(|record| record.id.as_str())
+        .filter(|record| record.data().is_none())
+        .map(|record| record.id())
         .collect();
     if !missing.is_empty() {
         bail!(
@@ -160,24 +160,23 @@ fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &s
             missing.join(", ")
         );
     }
-    matched.sort_by_key(|record| record.offset);
+    matched.sort_by_key(|record| record.offset());
     let mut assembled: Vec<u8> = Vec::new();
     let mut expected_offset: Option<u64> = None;
     for record in &matched {
-        let data = record.data.as_ref().expect("missing data handled above");
-        if data.len() as u64 != record.byte_len {
-            bail!(
-                "retained source record {} declares {} bytes but contains {}",
-                record.id,
-                record.byte_len,
-                data.len()
-            );
-        }
+        let data = record.data().expect("missing data handled above");
         if let Some(expected) = expected_offset {
-            if record.offset != expected {
+            if record.offset() != expected {
                 let extents: Vec<String> = matched
                     .iter()
-                    .map(|r| format!("{}+{} ({})", r.offset, r.byte_len, r.id))
+                    .map(|record| {
+                        format!(
+                            "{}+{} ({})",
+                            record.offset(),
+                            record.byte_len(),
+                            record.id()
+                        )
+                    })
                     .collect();
                 bail!(
                     "the retained extents of stream {stream:?} are not \
@@ -187,7 +186,7 @@ fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &s
                 );
             }
         }
-        expected_offset = Some(record.offset + record.byte_len);
+        expected_offset = Some(record.offset() + record.byte_len());
         assembled.extend_from_slice(data);
     }
 

@@ -196,7 +196,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     let written = regenerated
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
-        .and_then(|record| record.data.as_deref())
+        .and_then(|record| record.data())
         .unwrap();
     let scan = container::scan_bytes(written);
     assert!(scan.blocks.iter().any(|block| {

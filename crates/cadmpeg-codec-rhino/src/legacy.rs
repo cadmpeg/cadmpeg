@@ -2973,11 +2973,13 @@ mod tests {
         assert_eq!(result.ir().model.points.len(), 1);
         let retained = &result.source_fidelity().retained_records;
         assert_eq!(retained.len(), 1);
-        assert_eq!(retained[0].offset, record_offset as u64);
-        assert_eq!(retained[0].byte_len, record.len() as u64);
-        assert_eq!(retained[0].data.as_deref(), Some(record.as_slice()));
-        assert_eq!(retained[0].stream, "rhino");
-        assert!(retained[0].id.starts_with("rhino:legacy:record#00200004-"));
+        assert_eq!(retained[0].offset(), record_offset as u64);
+        assert_eq!(retained[0].byte_len(), record.len() as u64);
+        assert_eq!(retained[0].data(), Some(record.as_slice()));
+        assert_eq!(retained[0].stream(), "rhino");
+        assert!(retained[0]
+            .id()
+            .starts_with("rhino:legacy:record#00200004-"));
         assert!(result
             .report()
             .losses

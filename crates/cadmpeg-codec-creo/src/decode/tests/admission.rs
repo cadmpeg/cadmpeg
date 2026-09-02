@@ -100,14 +100,14 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == unknowns[0].id.as_str())
+        .find(|record| record.id() == unknowns[0].id.as_str())
         .expect("retained thumbnail");
-    assert_eq!(retained.data.as_deref(), Some(jpeg_payload().as_slice()));
+    assert_eq!(retained.data(), Some(jpeg_payload().as_slice()));
     assert_annotation(
         &result.source_fidelity().annotations,
         unknowns[0].id.as_str(),
         "creo:THMB_IMG_MAIN",
-        retained.offset,
+        retained.offset(),
         "jpeg_thumbnail",
         Exactness::ByteExact,
     );
@@ -156,9 +156,9 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == unknowns[0].id.as_str())
+        .find(|record| record.id() == unknowns[0].id.as_str())
         .expect("retained expanded thumbnail");
-    assert_eq!(retained.data.as_deref(), Some(jpeg.as_slice()));
+    assert_eq!(retained.data(), Some(jpeg.as_slice()));
     assert_annotation(
         &result.source_fidelity().annotations,
         unknowns[0].id.as_str(),
@@ -332,13 +332,13 @@ fn decode_annotations_cover_every_emitted_entity() {
             .source_fidelity()
             .retained_records
             .iter()
-            .find(|record| record.id == unknown.id.as_str())
+            .find(|record| record.id() == unknown.id.as_str())
             .expect("unknown source record");
         assert_annotation(
             &result.source_fidelity().annotations,
             unknown.id.as_str(),
             &format!("creo:{section_name}"),
-            retained.offset,
+            retained.offset(),
             "psb_geometry_section",
             Exactness::Unknown,
         );

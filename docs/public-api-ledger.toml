@@ -2577,3 +2577,10 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::document::CadIr::set_native_unknowns_owned"
 reason = "retained source bytes live only in SourceFidelity; the CADIR native arena receives only record identities and product links through the split attachment path"
+
+[[change]]
+commit = "819957724ff1e8d79e3e8c57afd8d197ceeb48bf"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::source_fidelity::RetainedSourceRecord::{id,stream,offset,byte_len,sha256,data}"
+reason = "retained payload construction derives length and digest from its bytes; private fields prevent callers from constructing or mutating inconsistent payload metadata"

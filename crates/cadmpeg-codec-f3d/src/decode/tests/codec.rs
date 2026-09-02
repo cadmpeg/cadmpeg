@@ -532,7 +532,7 @@ fn decode_yields_metadata_and_honest_report() {
         .source_fidelity()
         .retained_records
         .iter()
-        .all(|record| record.sha256.len() == 64));
+        .all(|record| record.sha256().len() == 64));
     assert!(result
         .source_fidelity()
         .retained_record("f3d:file:source-image#0")
