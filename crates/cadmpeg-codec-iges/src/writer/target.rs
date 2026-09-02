@@ -5,7 +5,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     Consumption, EncodeInput, ExportBody, ResolvedTarget, ResolvedWrite, SourceIdentity, WritePath,
 };
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
@@ -159,16 +159,11 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
     else {
         return Ok(Replay::declined());
     };
-    let Some(data) = record.data.as_deref() else {
+    let Some(data) = record.data() else {
         return Err(CodecError::Malformed(
             "retained IGES source image has no bytes".into(),
         ));
     };
-    if record.byte_len != data.len() as u64 || record.sha256 != sha256_hex(data) {
-        return Err(CodecError::Malformed(
-            "retained IGES source image failed integrity validation".into(),
-        ));
-    }
     Ok(Replay::Replayed {
         bytes: data.to_vec(),
     })

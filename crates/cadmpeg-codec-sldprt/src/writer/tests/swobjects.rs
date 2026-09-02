@@ -46,9 +46,9 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.stream == "SWObjects")
+        .find(|record| record.stream() == "SWObjects")
         .unwrap();
-    assert_eq!(retained.data.as_deref(), Some(payload.as_slice()));
+    assert_eq!(retained.data(), Some(payload.as_slice()));
 }
 
 #[test]

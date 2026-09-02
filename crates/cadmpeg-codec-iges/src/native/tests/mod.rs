@@ -203,8 +203,7 @@ fn decode_preserves_native_entities_and_graph() {
             .source_fidelity()
             .retained_record(crate::SOURCE_IMAGE_ID)
             .unwrap()
-            .data
-            .as_deref(),
+            .data(),
         Some(bytes.as_slice())
     );
     let native = result.ir().native.namespace("iges").unwrap();

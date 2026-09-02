@@ -134,11 +134,11 @@ fn viewport_userdata_future_payload_retains_typed_view_list_record() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000015-20008036-")
         })
         .expect("view list record is retained");
-    assert_eq!(retained.data.as_deref(), Some(named_views.as_slice()));
+    assert_eq!(retained.data(), Some(named_views.as_slice()));
     assert_valid(&result);
 }
 
@@ -169,10 +169,10 @@ fn malformed_viewport_userdata_retains_typed_view_list_record() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000015-20008036-")
         })
         .expect("malformed view list record is retained");
-    assert_eq!(retained.data.as_deref(), Some(named_views.as_slice()));
+    assert_eq!(retained.data(), Some(named_views.as_slice()));
     assert_valid(&result);
 }

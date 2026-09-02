@@ -272,9 +272,9 @@ fn registered_future_object_major_is_retained_without_known_prefix() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future-major object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(future_record.as_slice()));
+    assert_eq!(retained.data(), Some(future_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("simple geometry retained")
             && loss.message.contains("unsupported version")
@@ -338,11 +338,11 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000018-20008073-")
         })
         .expect("future-major table record is retained");
-    assert_eq!(retained.data.as_deref(), Some(future_group.as_slice()));
+    assert_eq!(retained.data(), Some(future_group.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
             && loss.message.contains("could not be transferred")
@@ -477,11 +477,11 @@ fn registered_userdata_future_payload_is_retained_by_table_owner() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000012-20008060-")
         })
         .expect("future userdata table record is retained");
-    assert_eq!(retained.data.as_deref(), Some(light_record.as_slice()));
+    assert_eq!(retained.data(), Some(light_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("user-string") && loss.message.contains("unsupported")
     }));
@@ -619,11 +619,11 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000010-20008040-")
         })
         .expect("future material userdata record is retained");
-    assert_eq!(retained.data.as_deref(), Some(material_record.as_slice()));
+    assert_eq!(retained.data(), Some(material_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("physically based material userdata")
             && loss.message.contains("could not be transferred")
@@ -759,11 +759,11 @@ fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000020-20008075-")
         })
         .expect("future dimension-style userdata record is retained");
-    assert_eq!(retained.data.as_deref(), Some(dimstyle_record.as_slice()));
+    assert_eq!(retained.data(), Some(dimstyle_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("V5 dimension-style userdata")
             && loss.message.contains("could not be transferred")
@@ -898,11 +898,11 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000010-20008040-")
         })
         .expect("callback-owned RDK material record is retained");
-    assert_eq!(retained.data.as_deref(), Some(material_record.as_slice()));
+    assert_eq!(retained.data(), Some(material_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("RDK material userdata")
             && loss.message.contains("could not be transferred")
@@ -1000,9 +1000,9 @@ fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() 
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future object userdata record is retained");
-    assert_eq!(retained.data.as_deref(), Some(object_record.as_slice()));
+    assert_eq!(retained.data(), Some(object_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("object user-string userdata") && loss.message.contains("unsupported")
     }));
@@ -1073,9 +1073,9 @@ fn mesh_subd_proxy_future_payload_retains_parent_mesh_record() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future SubD proxy object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(mesh_record.as_slice()));
+    assert_eq!(retained.data(), Some(mesh_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1140,9 +1140,9 @@ fn brep_region_userdata_future_payload_retains_parent_brep_record() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future Brep userdata object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(brep_record.as_slice()));
+    assert_eq!(retained.data(), Some(brep_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1245,9 +1245,9 @@ fn brep_nested_mesh_userdata_future_payload_retains_parent_record() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("nested mesh userdata object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(brep_record.as_slice()));
+    assert_eq!(retained.data(), Some(brep_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1347,9 +1347,9 @@ fn extrusion_display_mesh_cache_nested_userdata_future_payload_retains_parent_re
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("extrusion cache object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(extrusion_record.as_slice()));
+    assert_eq!(retained.data(), Some(extrusion_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1460,11 +1460,11 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000025-2000807a-")
         })
         .expect("future mapping cache record is retained");
-    assert_eq!(retained.data.as_deref(), Some(mapping_record.as_slice()));
+    assert_eq!(retained.data(), Some(mapping_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1506,11 +1506,11 @@ fn future_settings_payload_is_retained_without_known_prefix() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000015-20008034-")
         })
         .expect("future settings payload is retained");
-    assert_eq!(retained.data.as_deref(), Some(future_annotation.as_slice()));
+    assert_eq!(retained.data(), Some(future_annotation.as_slice()));
     assert_valid(&result);
 }
 
@@ -1580,11 +1580,11 @@ fn user_table_records_are_retained_as_complete_opaque_source_records() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id.starts_with("rhino:opaque:record#"))
+        .find(|value| value.id().starts_with("rhino:opaque:record#"))
         .expect("user table record must be retained");
-    assert!(retained.id.contains("-70000042-"));
-    assert_eq!(retained.byte_len, expected.len() as u64);
-    assert_eq!(retained.data.as_deref(), Some(expected.as_slice()));
+    assert!(retained.id().contains("-70000042-"));
+    assert_eq!(retained.byte_len(), expected.len() as u64);
+    assert_eq!(retained.data(), Some(expected.as_slice()));
 }
 
 /// Object type for annotation records, per `docs/formats/rhino_3dm.md`.

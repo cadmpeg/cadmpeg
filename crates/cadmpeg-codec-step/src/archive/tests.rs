@@ -680,8 +680,7 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
             .source_fidelity()
             .retained_record(&unknown[0].id.0)
             .expect("root occurrence source fidelity")
-            .data
-            .as_deref(),
+            .data(),
         Some(b"#1=ITEM(#10,#11);".as_slice())
     );
     for note in [
@@ -904,7 +903,7 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
         decoded
             .source_fidelity()
             .retained_record(&signature_unknown.id.0)
-            .and_then(|record| record.data.as_deref()),
+            .and_then(|record| record.data()),
         Some(&bytes[signature.clone()])
     );
     assert_eq!(

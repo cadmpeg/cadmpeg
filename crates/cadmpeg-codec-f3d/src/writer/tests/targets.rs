@@ -3,7 +3,6 @@
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
 use crate::{loss::F3dLossCode, F3dCodec};
@@ -24,14 +23,14 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let ir = sourced_ir("f3d:f3z-multi-document");
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::default();
-    fidelity.retained_records.push(RetainedSourceRecord {
-        id: crate::ids::FILE_SOURCE_IMAGE_ID.into(),
-        stream: "f3d".into(),
-        offset: 0,
-        byte_len: data.len() as u64,
-        sha256: sha256_hex(&data),
-        data: Some(data),
-    });
+    fidelity
+        .retained_records
+        .push(RetainedSourceRecord::retained(
+            crate::ids::FILE_SOURCE_IMAGE_ID,
+            "f3d",
+            0,
+            data,
+        ));
     let plan = Encoder::plan(
         &F3dCodec,
         EncodeInput::new(&ir, Some(&fidelity)),

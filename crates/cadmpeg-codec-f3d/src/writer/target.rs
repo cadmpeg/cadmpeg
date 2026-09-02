@@ -69,19 +69,13 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     else {
         return Ok(Preservation::Declined);
     };
-    let Some(data) = record.data.as_deref() else {
+    let Some(data) = record.data() else {
         return Err(CodecError::Malformed(
             "retained F3D source image has no bytes".into(),
         ));
     };
     let mut bytes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(
-        input.ir,
-        data,
-        record.byte_len,
-        &record.sha256,
-        &mut bytes,
-    )?;
+    let write_path = F3dCodec::write_preserved_bytes(input.ir, data, &mut bytes)?;
     Ok(Preservation::Written { bytes, write_path })
 }
 

@@ -140,7 +140,7 @@ use cadmpeg_ir::codec::write::{
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
 
@@ -155,7 +155,6 @@ pub struct SldprtCodec;
 /// source-fidelity sidecar throughout export.
 struct SourceRecord<'a> {
     id: UnknownId,
-    byte_len: u64,
     sha256: &'a str,
     data: Option<&'a [u8]>,
 }
@@ -245,12 +244,6 @@ impl SldprtCodec {
                 writer,
             );
         };
-        let hash = sha256_hex(data);
-        if data.len() as u64 != record.byte_len || hash != record.sha256 {
-            return Err(CodecError::Malformed(
-                "retained SLDPRT source image failed integrity validation".into(),
-            ));
-        }
         writer.write_all(data)?;
         Ok(Written::Replayed)
     }
@@ -425,7 +418,7 @@ fn source_records<'a>(
     let retained_by_id = source_fidelity
         .retained_records
         .iter()
-        .map(|record| (record.id.as_str(), record))
+        .map(|record| (record.id(), record))
         .collect::<std::collections::HashMap<_, _>>();
     let mut records = ir
         .native_unknowns_iter("sldprt")
@@ -438,18 +431,16 @@ fn source_records<'a>(
             })?;
             Ok(SourceRecord {
                 id: reference.id,
-                byte_len: retained.byte_len,
-                sha256: &retained.sha256,
-                data: retained.data.as_deref(),
+                sha256: retained.sha256(),
+                data: retained.data(),
             })
         })
         .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
     if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(SourceRecord {
-            id: source.id.clone().into(),
-            byte_len: source.byte_len,
-            sha256: &source.sha256,
-            data: source.data.as_deref(),
+            id: source.id().to_owned().into(),
+            sha256: source.sha256(),
+            data: source.data(),
         });
     }
     Ok(records)
@@ -471,14 +462,13 @@ mod tests {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
         let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        fidelity.retained_records = vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord {
-            id: SOURCE_IMAGE_ID.into(),
-            stream: "source".into(),
-            offset: 0,
-            byte_len: payload.len() as u64,
-            sha256: cadmpeg_ir::hash::sha256_hex(&payload),
-            data: Some(payload),
-        }];
+        fidelity.retained_records =
+            vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(
+                SOURCE_IMAGE_ID,
+                "source",
+                0,
+                payload,
+            )];
 
         let records = crate::source_records(&cadmpeg_ir::examples::unit_cube(), &fidelity).unwrap();
         let retained = records[0].data.expect("retained source bytes");

@@ -154,9 +154,9 @@ fn future_gradient_userdata_retains_typed_hatch_and_complete_object_record() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future gradient userdata object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(hatch.as_slice()));
+    assert_eq!(retained.data(), Some(hatch.as_slice()));
     assert_valid(&result);
 }
 
@@ -185,8 +185,8 @@ fn malformed_gradient_userdata_retains_typed_hatch_and_complete_object_record() 
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("malformed gradient userdata object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(hatch.as_slice()));
+    assert_eq!(retained.data(), Some(hatch.as_slice()));
     assert_valid(&result);
 }

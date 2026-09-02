@@ -7,9 +7,7 @@ use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
-use cadmpeg_ir::hash::{
-    document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
-};
+use cadmpeg_ir::hash::{document_local_sha256_with_charge, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{LossNote, Severity, TransferLedger, TransferOutcome};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::ContainerSummary;
@@ -305,17 +303,18 @@ fn decode_with_occurrence_limits(
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let mut source_fidelity = SourceFidelity::default();
-    source_fidelity.retained_records.push(RetainedSourceRecord {
-        id: crate::SOURCE_IMAGE_ID.into(),
-        stream: "iges".into(),
-        offset: 0,
-        byte_len: source_bytes.len() as u64,
-        sha256: sha256_hex(source_bytes),
-        data: Some(match ctx {
-            Some(ctx) => ctx.copy_retained(source_bytes, "iges_source_image", None)?,
-            None => source_bytes.to_vec(),
-        }),
-    });
+    let retained_source = match ctx {
+        Some(ctx) => ctx.copy_retained(source_bytes, "iges_source_image", None)?,
+        None => source_bytes.to_vec(),
+    };
+    source_fidelity
+        .retained_records
+        .push(RetainedSourceRecord::retained(
+            crate::SOURCE_IMAGE_ID,
+            "iges",
+            0,
+            retained_source,
+        ));
 
     let mut ir = CadIr::empty(Units::default());
     if let Some(context) = &length_context {

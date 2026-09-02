@@ -1623,7 +1623,7 @@ fn decode_reports_display_list_geometry() {
                 && result
                     .source_fidelity()
                     .retained_record(&record.id.0)
-                    .is_some_and(|source| source.data.is_some())
+                    .is_some_and(|source| source.data().is_some())
         }));
 }
 

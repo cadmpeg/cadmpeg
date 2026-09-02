@@ -123,7 +123,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::WritePath;
 use std::io::Write;
@@ -173,11 +173,10 @@ impl F3dCodec {
             .ok_or_else(|| {
                 CodecError::NotImplemented("sidecar has no retained F3D source image".into())
             })?;
-        let data = record.data.as_ref().ok_or_else(|| {
+        let data = record.data().ok_or_else(|| {
             CodecError::Malformed("retained F3D source image has no bytes".into())
         })?;
-        Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
-            .map(PreservedWritePath::report_path)
+        Self::write_preserved_bytes(ir, data, writer).map(PreservedWritePath::report_path)
     }
 
     /// Replay retained source bytes when the document baseline still matches;
@@ -185,8 +184,6 @@ impl F3dCodec {
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
-        byte_len: u64,
-        sha256: &str,
         writer: &mut dyn Write,
     ) -> Result<PreservedWritePath, CodecError> {
         let expected = ir
@@ -194,12 +191,6 @@ impl F3dCodec {
             .as_ref()
             .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
-        let hash = sha256_hex(data);
-        if data.len() as u64 != byte_len || hash != sha256 {
-            return Err(CodecError::Malformed(
-                "retained F3D source image failed integrity validation".into(),
-            ));
-        }
         if decode::document_local_sha256(ir) != *expected {
             writer::patch::write_semantic(ir, data, writer)?;
             return Ok(PreservedWritePath::Patched);

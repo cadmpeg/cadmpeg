@@ -85,9 +85,9 @@ fn assert_float_mesh_and_record(result: &cadmpeg_ir::codec::DecodeResult, record
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id == "rhino:object:record#000000")
+        .find(|value| value.id() == "rhino:object:record#000000")
         .expect("mesh object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(record));
+    assert_eq!(retained.data(), Some(record));
 }
 
 #[test]
@@ -110,9 +110,9 @@ fn current_mesh_double_userdata_reaches_tessellation() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id == "rhino:object:record#000000")
+        .find(|value| value.id() == "rhino:object:record#000000")
         .expect("current mesh object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(record.as_slice()));
+    assert_eq!(retained.data(), Some(record.as_slice()));
     assert_valid(&result);
 }
 
@@ -225,9 +225,9 @@ fn mesh_correspondence_future_payload_retains_parent_mesh_record() {
             .source_fidelity()
             .retained_records
             .iter()
-            .find(|record| record.id == "rhino:object:record#000000")
+            .find(|record| record.id() == "rhino:object:record#000000")
             .expect("mesh correspondence object record is retained");
-        assert_eq!(retained.data.as_deref(), Some(mesh_record.as_slice()));
+        assert_eq!(retained.data(), Some(mesh_record.as_slice()));
         assert_valid(&result);
     }
 }

@@ -385,10 +385,10 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
                 .retained_record(id)
                 .expect("ambiguous placement source record is retained");
             assert_eq!(
-                retained.data.as_deref(),
+                retained.data(),
                 Some(
-                    &input
-                        [retained.offset as usize..(retained.offset + retained.byte_len) as usize]
+                    &input[retained.offset() as usize
+                        ..(retained.offset() + retained.byte_len()) as usize]
                 )
             );
         }
@@ -448,10 +448,10 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
                 .retained_record(id)
                 .expect("competing placement source record is retained");
             assert_eq!(
-                retained.data.as_deref(),
+                retained.data(),
                 Some(
-                    &input
-                        [retained.offset as usize..(retained.offset + retained.byte_len) as usize]
+                    &input[retained.offset() as usize
+                        ..(retained.offset() + retained.byte_len()) as usize]
                 )
             );
         }

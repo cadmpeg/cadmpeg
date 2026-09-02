@@ -89,10 +89,10 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000015-20008136-")
         })
         .expect("render-settings userdata record is retained");
-    assert_eq!(retained.data.as_deref(), Some(userdata.as_slice()));
+    assert_eq!(retained.data(), Some(userdata.as_slice()));
     assert_valid(&result);
 }

@@ -503,7 +503,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&record.id)
+                .get(record.id())
                 .and_then(|note| {
                     regenerated
                         .source_fidelity()
@@ -512,7 +512,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
                         .get(note.stream as usize)
                 })
                 .is_some_and(|stream| stream == "Contents/CustomData")
-                && record.data.as_deref() == Some(payload.as_slice())
+                && record.data() == Some(payload.as_slice())
         }));
 }
 
@@ -585,7 +585,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&record.id)
+                .get(record.id())
                 .and_then(|note| {
                     regenerated
                         .source_fidelity()
@@ -594,13 +594,13 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
                         .get(note.stream as usize)
                 })
                 .is_some_and(|stream| stream == "Contents/CustomData")
-                && record.data.as_deref() == Some(b"opaque-state".as_slice())
+                && record.data() == Some(b"opaque-state".as_slice())
         }));
 
     let written = regenerated
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
-        .and_then(|record| record.data.as_ref())
+        .and_then(|record| record.data())
         .unwrap();
     let scan = container::scan_bytes(written);
     assert_eq!(scan.directory.len(), scan.blocks.len());

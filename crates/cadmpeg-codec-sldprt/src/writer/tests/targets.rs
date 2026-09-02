@@ -4,7 +4,6 @@
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 use std::io::Cursor;
 
@@ -82,14 +81,14 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let ir = sourced_ir("sldprt:sw-version-12000-plus");
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::default();
-    fidelity.retained_records.push(RetainedSourceRecord {
-        id: crate::SOURCE_IMAGE_ID.into(),
-        stream: "sldprt".into(),
-        offset: 0,
-        byte_len: data.len() as u64,
-        sha256: sha256_hex(&data),
-        data: Some(data),
-    });
+    fidelity
+        .retained_records
+        .push(RetainedSourceRecord::retained(
+            crate::SOURCE_IMAGE_ID,
+            "sldprt",
+            0,
+            data,
+        ));
     let plan = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, Some(&fidelity)),

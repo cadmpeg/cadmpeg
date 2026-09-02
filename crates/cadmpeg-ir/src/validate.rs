@@ -183,7 +183,7 @@ pub fn validate_neutral_with_source_fidelity(
         source_fidelity
             .retained_records
             .iter()
-            .map(|record| record.id.clone()),
+            .map(|record| record.id().to_owned()),
     );
     check_annotations(
         ir,

@@ -95,9 +95,9 @@ fn assert_object_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8])
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id == "rhino:object:record#000000")
+        .find(|value| value.id() == "rhino:object:record#000000")
         .expect("hatch object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(record));
+    assert_eq!(retained.data(), Some(record));
 }
 
 #[test]
