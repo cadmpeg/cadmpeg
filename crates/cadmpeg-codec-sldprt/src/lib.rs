@@ -135,13 +135,14 @@ use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
-    Catalog, Consumption, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite,
+    Catalog, Consumption, EncodeInput, EncoderBackend, ExportBody, PatchConsumption, ResolvedWrite,
+    WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::{Annotations, Finding, SourceFidelity, WritePath};
+use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
 
 /// Retained-record id of the whole source part, the byte-replay baseline.
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
@@ -328,10 +329,12 @@ enum SemanticPath {
 }
 
 impl SemanticPath {
-    const fn write_path(self) -> WritePath {
+    fn write_path(self, consumption: Consumption) -> WritePath {
         match self {
-            Self::Patched => WritePath::Patched,
-            Self::Synthesized => WritePath::Synthesized,
+            Self::Patched => WritePath::Patched {
+                consumption: PatchConsumption::Independent(consumption),
+            },
+            Self::Synthesized => WritePath::Synthesized { consumption },
         }
     }
 }
@@ -356,14 +359,7 @@ impl Written {
     fn path(&self) -> WritePath {
         match self {
             Self::Replayed => WritePath::VerbatimReplay,
-            Self::Semantic { path, .. } => path.write_path(),
-        }
-    }
-
-    fn consumption(&self) -> Consumption {
-        match self {
-            Self::Replayed => Consumption::Replayed,
-            Self::Semantic { fidelity, .. } => fidelity.consumption(),
+            Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
 

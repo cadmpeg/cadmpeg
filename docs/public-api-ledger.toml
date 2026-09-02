@@ -2521,3 +2521,17 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::report::TransferLedger::record"
 reason = "callers provide one structurally valid TransferOutcome instead of independently supplied target, disposition, and note fields"
+
+[[change]]
+commit = "8e28e283d36e2a807729fbc037075c20f3ea3542"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::codec::write::Consumption::Replayed"
+reason = "verbatim replay now implies successful fidelity consumption through the backend WritePath variant; synthesized writes cannot claim replay"
+
+[[change]]
+commit = "8e28e283d36e2a807729fbc037075c20f3ea3542"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::codec::write::ExportBody::{write_path,consumption}"
+reason = "one backend WritePath now carries every applicable consumption state, so path and fidelity consumption cannot be supplied independently"

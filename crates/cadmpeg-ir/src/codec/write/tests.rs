@@ -97,8 +97,10 @@ impl EncoderBackend for CatalogEncoder {
         let mut body = ExportBody::synthesized(Vec::new(), input.ir);
         body.notes
             .push(format!("resolved {}", target.target_id().as_str()));
-        body.consumption = Consumption::Degraded {
-            reason: "test backend never replays".to_owned(),
+        body.write_path = WritePath::Synthesized {
+            consumption: Consumption::Degraded {
+                reason: "test backend never replays".to_owned(),
+            },
         };
         Ok(body)
     }
@@ -139,6 +141,49 @@ fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
         FidelityResolution::Degraded {
             reason: "test backend never replays".to_owned()
         }
+    );
+}
+
+#[test]
+fn write_path_structurally_authors_fidelity_resolution() {
+    assert_eq!(
+        WritePath::VerbatimReplay.into_report(true),
+        (
+            crate::report::WritePath::VerbatimReplay,
+            FidelityResolution::Replayed
+        )
+    );
+    assert_eq!(
+        WritePath::Patched {
+            consumption: PatchConsumption::Replayed,
+        }
+        .into_report(true),
+        (
+            crate::report::WritePath::Patched,
+            FidelityResolution::Replayed
+        )
+    );
+    assert_eq!(
+        WritePath::Patched {
+            consumption: PatchConsumption::Independent(Consumption::NotConsumed),
+        }
+        .into_report(true),
+        (
+            crate::report::WritePath::Patched,
+            FidelityResolution::NotConsumed
+        )
+    );
+    assert_eq!(
+        WritePath::Synthesized {
+            consumption: Consumption::Degraded {
+                reason: "missing source".into(),
+            },
+        }
+        .into_report(false),
+        (
+            crate::report::WritePath::Synthesized,
+            FidelityResolution::NotProvided
+        )
     );
 }
 

@@ -9,7 +9,9 @@
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    Consumption, EncodeInput, ExportBody, PatchConsumption, ResolvedWrite, WritePath,
+};
 use cadmpeg_ir::document::CadIr;
 
 use super::write;
@@ -85,10 +87,11 @@ fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
     Ok(ExportBody {
         bytes,
         census: outcome.census,
-        write_path: cadmpeg_ir::WritePath::Patched,
+        write_path: WritePath::Patched {
+            consumption: PatchConsumption::Independent(Consumption::NotConsumed),
+        },
         losses: Vec::new(),
         notes: outcome.notes,
-        consumption: Consumption::NotConsumed,
     })
 }
 

@@ -2,8 +2,8 @@
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
-use cadmpeg_ir::{Annotations, WritePath};
+use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
+use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
 use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
@@ -115,6 +115,11 @@ fn finish(
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
+    let path_note = match &write_path {
+        WritePath::VerbatimReplay => "preserved source container replayed verbatim",
+        WritePath::Patched { .. } => "preserved source container replayed with semantic patches",
+        WritePath::Synthesized { .. } => "source container regenerated from IR",
+    };
     ExportBody {
         bytes,
         census: cadmpeg_ir::EntityCensus {
@@ -124,14 +129,8 @@ fn finish(
         write_path,
         losses,
         notes: vec![
-            match write_path {
-                WritePath::VerbatimReplay => "preserved source container replayed verbatim",
-                WritePath::Patched => "preserved source container replayed with semantic patches",
-                WritePath::Synthesized => "source container regenerated from IR",
-            }
-            .into(),
+            path_note.into(),
             "entity counts are derived from the IR".into(),
         ],
-        consumption: written.consumption(),
     }
 }
