@@ -1,4 +1,4 @@
-# generated at 07d9d38f5
+# generated at 3f11b2f41
 pub mod cadmpeg_codec_freecad
 pub enum cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Document
