@@ -321,14 +321,15 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty(Units::default()).to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report = DecodeReport::unclassified(
-            "test",
-            cadmpeg_ir::DecodeTransfer::full(false),
-            Default::default(),
-            Vec::new(),
-            Vec::new(),
-            cadmpeg_ir::report::TransferLedger::default(),
-        );
+        let report: DecodeReport = serde_json::from_value(serde_json::json!({
+            "format": "test",
+            "container_only": false,
+            "geometry_transferred": false,
+            "losses": [],
+            "notes": [],
+            "dialects": null,
+        }))
+        .unwrap();
         let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
             ArtifactStore::sidecar_path(&path),

@@ -570,7 +570,6 @@ mod tests {
 
     use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
     use cadmpeg_core::target::TargetDescriptor;
-    use cadmpeg_ir::report::TransferLedger;
 
     use super::*;
 
@@ -685,14 +684,15 @@ mod tests {
 
     #[test]
     fn decode_classifier_preserves_a_strict_refusal_and_its_completed_report() {
-        let report = DecodeReport::unclassified(
-            "test",
-            cadmpeg_ir::DecodeTransfer::full(false),
-            BTreeMap::new(),
-            Vec::new(),
-            vec!["decode completed".into()],
-            TransferLedger::default(),
-        );
+        let report: DecodeReport = serde_json::from_value(serde_json::json!({
+            "format": "test",
+            "container_only": false,
+            "geometry_transferred": false,
+            "losses": [],
+            "notes": ["decode completed"],
+            "dialects": null,
+        }))
+        .unwrap();
         let classified = classify(DecodeFailure::StrictRejected {
             loss_code: "test/source.dialect-unverified".into(),
             message: "the dialect was recovered provisionally".into(),

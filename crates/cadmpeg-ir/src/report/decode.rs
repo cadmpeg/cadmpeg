@@ -306,7 +306,8 @@ impl DecodeReport {
 
     /// Constructs a classified report whose format is its primary layer's format.
     #[must_use]
-    pub fn classified(
+    #[cfg(test)]
+    pub(crate) fn classified(
         dialects: DialectLayers,
         transfer: DecodeTransfer,
         coverage: BTreeMap<String, usize>,
@@ -326,7 +327,8 @@ impl DecodeReport {
 
     /// Constructs an unclassified report for a known source format.
     #[must_use]
-    pub fn unclassified(
+    #[cfg(test)]
+    pub(crate) fn unclassified(
         format: impl Into<String>,
         transfer: DecodeTransfer,
         coverage: BTreeMap<String, usize>,
