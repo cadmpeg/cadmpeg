@@ -182,8 +182,8 @@ impl MergeSession<'_, '_> {
                 &occurrence,
             )?;
             merged += descendants + 1;
-            if component_report.transfer.geometry_transferred() {
-                parent_report.transfer = cadmpeg_ir::DecodeTransfer::full(true);
+            if component_report.geometry_transferred {
+                parent_report.geometry_transferred = true;
             }
             parent_report
                 .losses

@@ -33,12 +33,12 @@ fn read_root_uses_sized_and_fallback_read_paths() {
 
     let arena = DecodeArena::new();
     let mut seekable = Cursor::new(bytes.clone());
-    let (_, root) = DecodeContext::read_root(&mut seekable, &arena, &policy).unwrap();
+    let (_, root) = DecodeContext::read_root(&mut seekable, &arena, &policy, false).unwrap();
     assert_eq!(root.window(), bytes.as_slice());
 
     let arena = DecodeArena::new();
     let mut fallback = Unseekable::new(bytes.clone());
-    let (_, root) = DecodeContext::read_root(&mut fallback, &arena, &policy).unwrap();
+    let (_, root) = DecodeContext::read_root(&mut fallback, &arena, &policy, false).unwrap();
     assert_eq!(root.window(), bytes.as_slice());
 }
 

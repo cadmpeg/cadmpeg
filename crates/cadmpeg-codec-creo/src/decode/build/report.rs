@@ -160,11 +160,7 @@ pub(in super::super) fn build_report(
     push_coverage_drop_losses(&mut losses, &coverage);
 
     DecodeBody {
-        transfer: if container_only {
-            cadmpeg_ir::DecodeTransfer::ContainerOnly
-        } else {
-            cadmpeg_ir::DecodeTransfer::full(has_transferred_geometry(ir))
-        },
+        geometry_transferred: has_transferred_geometry(ir),
         coverage,
         losses,
         notes: summary.notes,

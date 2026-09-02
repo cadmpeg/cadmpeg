@@ -1905,7 +1905,7 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::DecodeTransfer::full(false),
+        geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
         losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \

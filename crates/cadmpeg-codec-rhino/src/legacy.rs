@@ -15,7 +15,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeTransfer, TransferLedger};
+use cadmpeg_ir::report::TransferLedger;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
@@ -2434,9 +2434,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: DecodeTransfer::full(
-            decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
-        ),
+            geometry_transferred:
+                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
             coverage: BTreeMap::from([
             ("legacy_v1_points".to_string(), decoded),
             ("legacy_v1_curve_segments".to_string(), decoded_curves),
@@ -2925,6 +2924,7 @@ mod tests {
             decode_v1(&archive(&[[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]]))
                 .expect("valid V1 point archive"),
             crate::dialect::FORMAT,
+            false,
         );
         assert_eq!(result.ir().model.points.len(), 2);
         assert_eq!(
@@ -2939,6 +2939,7 @@ mod tests {
         let result = cadmpeg_ir::codec::DecodeResult::new(
             decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
             crate::dialect::FORMAT,
+            false,
         );
         assert_eq!(result.ir().tolerances.linear, 10.0);
         assert_eq!(result.source_fidelity().retained_records.len(), 3);
@@ -2968,6 +2969,7 @@ mod tests {
         let result = cadmpeg_ir::codec::DecodeResult::new(
             decode_v1(&bytes).expect("framed malformed direct V1 record"),
             crate::dialect::FORMAT,
+            false,
         );
         assert_eq!(result.ir().model.points.len(), 1);
         let retained = &result.source_fidelity().retained_records;
@@ -2997,6 +2999,7 @@ mod tests {
         let result = cadmpeg_ir::codec::DecodeResult::new(
             decode_v1(&bytes).expect("valid V1 direct records"),
             crate::dialect::FORMAT,
+            false,
         );
         let namespace = result
             .ir()
@@ -3058,6 +3061,7 @@ mod tests {
         let result = cadmpeg_ir::codec::DecodeResult::new(
             decode_v1(&legacy_face_archive()).expect("valid V1 face archive"),
             crate::dialect::FORMAT,
+            false,
         );
         let model = &result.ir().model;
         assert_eq!(model.bodies.len(), 1, "{:?}", result.report());
@@ -3077,6 +3081,7 @@ mod tests {
         let result = cadmpeg_ir::codec::DecodeResult::new(
             decode_v1(&legacy_shell_archive()).expect("valid V1 shell archive"),
             crate::dialect::FORMAT,
+            false,
         );
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(result.ir().model.faces.len(), 1);
@@ -3097,6 +3102,7 @@ mod tests {
             decode_v1(&legacy_face_archive_with(&corners, &[1, 1, 1, 1], &[]))
                 .expect("nearby but topologically distinct V1 vertices are valid"),
             crate::dialect::FORMAT,
+            false,
         );
         assert_eq!(result.ir().model.vertices.len(), 4);
         assert_eq!(result.ir().model.edges.len(), 4);
@@ -3127,6 +3133,7 @@ mod tests {
             ))
             .expect("explicit seam edge curves are valid"),
             crate::dialect::FORMAT,
+            false,
         );
         assert_eq!(result.ir().model.edges.len(), 4);
         assert_eq!(result.ir().model.curves.len(), 4);
@@ -3154,6 +3161,7 @@ mod tests {
             ))
             .expect("curve-less seam partners are valid"),
             crate::dialect::FORMAT,
+            false,
         );
         assert_eq!(result.ir().model.edges.len(), 2);
         assert_eq!(result.ir().model.curves.len(), 2);

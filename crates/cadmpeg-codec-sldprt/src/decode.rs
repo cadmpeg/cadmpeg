@@ -138,7 +138,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
             form_padding,
             &mut admitted_entities,
         )?;
-        let mut report = build_container_report(&scan, &classification, true);
+        let mut report = build_container_report(&scan, &classification);
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
     }
@@ -173,7 +173,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
         form_padding,
         &mut admitted_entities,
     )?;
-    let mut report = build_container_report(&scan, &classification, false);
+    let mut report = build_container_report(&scan, &classification);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
     decode_result(ir, report, annotations, unknowns)
@@ -3282,7 +3282,7 @@ fn build_geometry_report(
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
     DecodeBody {
-        transfer: cadmpeg_ir::DecodeTransfer::full(true),
+        geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
         losses,
         notes: container::summarize(scan, dialects.clone()).notes,
@@ -4563,7 +4563,6 @@ fn preserve_source_image(
 fn build_container_report(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
-    container_only: bool,
 ) -> DecodeBody {
     let dialects = classification.layers();
     let summary = container::summarize(scan, dialects.clone());
@@ -4608,11 +4607,7 @@ fn build_container_report(
     classification.append_losses(&mut losses);
 
     DecodeBody {
-        transfer: if container_only {
-            cadmpeg_ir::DecodeTransfer::ContainerOnly
-        } else {
-            cadmpeg_ir::DecodeTransfer::full(false)
-        },
+        geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary.notes,

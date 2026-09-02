@@ -227,7 +227,7 @@ fn build_result(
     let body = DecodeBody {
         coverage,
         losses,
-        ..DecodeBody::new(cadmpeg_ir::DecodeTransfer::full(geometry_transferred))
+        ..DecodeBody::new(geometry_transferred)
     };
 
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();

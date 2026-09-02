@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeTransfer, LossNote};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
@@ -75,7 +75,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     fn new(
         exchange: &Exchange,
         diagnostics: &[ParseDiagnostic],
-        container_only: bool,
         ctx: Option<&'ctx DecodeContext<'arena>>,
     ) -> Self {
         let mut ir = CadIr::empty(Units::default());
@@ -95,11 +94,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             attributes,
         ));
 
-        let mut body = DecodeBody::new(if container_only {
-            DecodeTransfer::ContainerOnly
-        } else {
-            DecodeTransfer::full(false)
-        });
+        let mut body = DecodeBody::new(false);
         body.notes = exchange
             .references
             .iter()
@@ -240,7 +235,7 @@ fn decode_exchange_mode(
     retain_opaque: bool,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
-    let mut session = StepDecodeSession::new(exchange, diagnostics, options.container_only, ctx);
+    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx);
     if options.container_only {
         return Ok((
             session.into_result(SourceFidelity::default()),
@@ -343,7 +338,7 @@ fn decode_exchange_mode(
         || !session.ir.model.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
-        session.body.transfer = DecodeTransfer::full(true);
+        session.body.geometry_transferred = true;
     }
 
     // Keep the established report order while every pass contributes through

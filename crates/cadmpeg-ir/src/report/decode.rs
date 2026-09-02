@@ -50,6 +50,19 @@ impl DecodeTransfer {
         }
     }
 
+    /// Constructs the transfer state from the sealed wrapper's request scope
+    /// and the backend's geometry outcome.
+    pub(crate) const fn stamp_request_scope(
+        container_only: bool,
+        geometry_transferred: bool,
+    ) -> Self {
+        if container_only {
+            Self::ContainerOnly
+        } else {
+            Self::full(geometry_transferred)
+        }
+    }
+
     /// Returns whether the request stopped at the container layer.
     #[must_use]
     pub const fn container_only(self) -> bool {
@@ -276,10 +289,14 @@ impl DecodeReport {
     pub(crate) fn from_body(
         classification: FormatIdentity<DialectLayers>,
         body: crate::codec::DecodeBody,
+        container_only: bool,
     ) -> Self {
         Self {
             classification,
-            transfer: body.transfer,
+            transfer: DecodeTransfer::stamp_request_scope(
+                container_only,
+                body.geometry_transferred,
+            ),
             coverage: body.coverage,
             losses: body.losses,
             notes: body.notes,
@@ -355,21 +372,6 @@ impl DecodeReport {
     #[must_use]
     pub const fn geometry_transferred(&self) -> bool {
         self.transfer.geometry_transferred()
-    }
-
-    /// Records that a full decode transferred B-rep geometry.
-    pub fn mark_geometry_transferred(&mut self) {
-        self.transfer = DecodeTransfer::full(true);
-    }
-
-    /// Stamps the caller's requested decode scope while retaining the
-    /// backend's full-decode geometry outcome.
-    pub(crate) fn stamp_request_scope(&mut self, container_only: bool) {
-        self.transfer = if container_only {
-            DecodeTransfer::ContainerOnly
-        } else {
-            DecodeTransfer::full(self.geometry_transferred())
-        };
     }
 
     /// Records a coverage measure count for a statically declared key.

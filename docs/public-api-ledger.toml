@@ -2430,3 +2430,45 @@ crate = "cadmpeg-ir"
 kind = "trait_impl"
 item = "impl Default for cadmpeg_ir::document::SourceMeta"
 reason = "a default source has neither a valid format nor classified dialect layers; only legacy deserialization may recover source metadata without a dialect classification"
+
+[[change]]
+commit = "694c98746e9df4cfb17d6a49230058b16a02f71f"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::codec::DecodeBody::transfer"
+reason = "codec backends report only whether geometry transferred; the sealed Codec wrapper is the sole author of the request-scoped DecodeTransfer"
+
+[[change]]
+commit = "694c98746e9df4cfb17d6a49230058b16a02f71f"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::DecodeBody::new"
+reason = "a decode body accepts the backend-owned geometry outcome instead of a request-scoped DecodeTransfer"
+
+[[change]]
+commit = "694c98746e9df4cfb17d6a49230058b16a02f71f"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::DecodeResult::new"
+reason = "result construction receives request scope so DecodeTransfer is constructed once with the backend-owned geometry outcome"
+
+[[change]]
+commit = "694c98746e9df4cfb17d6a49230058b16a02f71f"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::report::DecodeReport::mark_geometry_transferred"
+reason = "a stamped decode report is immutable with respect to transfer state; only the backend DecodeBody authors the geometry outcome before sealing"
+
+[[change]]
+commit = "694c98746e9df4cfb17d6a49230058b16a02f71f"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::DecodeContext::read_root"
+reason = "request scope is fixed when the decode context is constructed"
+
+[[change]]
+commit = "694c98746e9df4cfb17d6a49230058b16a02f71f"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::decode::DecodeContext::set_container_only"
+reason = "decode request scope cannot change after context construction"
