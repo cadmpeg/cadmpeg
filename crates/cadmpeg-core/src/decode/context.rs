@@ -41,6 +41,7 @@ impl<'a> DecodeContext<'a> {
         reader: &mut dyn ReadSeek,
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
+        container_only: bool,
     ) -> Result<(Self, View<'a>), CodecError> {
         let max = policy.limits.max_input_bytes;
         let cap = max.saturating_add(1);
@@ -97,7 +98,7 @@ impl<'a> DecodeContext<'a> {
             ));
         }
         let bytes = arena.alloc(buffer.into_boxed_slice());
-        Self::from_bytes(bytes, arena, policy)
+        Self::from_bytes(bytes, arena, policy, container_only)
     }
 
     /// Builds a context over caller-owned root bytes, for fuzz targets and
@@ -107,13 +108,14 @@ impl<'a> DecodeContext<'a> {
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
     ) -> Result<(Self, View<'a>), CodecError> {
-        Self::from_bytes(bytes, arena, policy)
+        Self::from_bytes(bytes, arena, policy, false)
     }
 
     fn from_bytes(
         bytes: &'a [u8],
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
+        container_only: bool,
     ) -> Result<(Self, View<'a>), CodecError> {
         let length = bytes.len() as u64;
         if length > policy.limits.max_input_bytes {
@@ -126,7 +128,7 @@ impl<'a> DecodeContext<'a> {
         let ctx = DecodeContext {
             arena,
             policy: *policy,
-            container_only: false,
+            container_only,
             budget: DecodeBudget::new(*policy, length),
             next_space: Cell::new(1),
             spaces: RefCell::new(vec![SpaceDescriptor {
@@ -146,11 +148,6 @@ impl<'a> DecodeContext<'a> {
     /// Returns whether the caller requested container-only decoding.
     pub fn container_only(&self) -> bool {
         self.container_only
-    }
-
-    /// Records the caller's container-only request before decoding begins.
-    pub fn set_container_only(&mut self, value: bool) {
-        self.container_only = value;
     }
 
     fn decompression_allowance(&self) -> u64 {

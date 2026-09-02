@@ -28,13 +28,8 @@ pub(crate) fn build_decode_report(
     geometry_transferred: bool,
     losses: Vec<LossNote>,
 ) -> DecodeBody {
-    let transfer = if container_only {
-        cadmpeg_ir::DecodeTransfer::ContainerOnly
-    } else {
-        cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
-    };
     DecodeBody {
-        transfer,
+        geometry_transferred,
         coverage: std::collections::BTreeMap::new(),
         losses,
         notes: report_notes(crate::container::summary_notes(scan), container_only),

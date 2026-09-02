@@ -1,4 +1,4 @@
-# generated at 46350bc4d
+# generated at 694c98746
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -275,12 +275,12 @@ pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::message: alloc::string::St
 pub cadmpeg_ir::codec::DecodeFailure::StrictRejected::report: alloc::boxed::Box<cadmpeg_ir::DecodeReport>
 pub struct cadmpeg_ir::codec::DecodeBody
 pub cadmpeg_ir::codec::DecodeBody::coverage: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub cadmpeg_ir::codec::DecodeBody::geometry_transferred: bool
 pub cadmpeg_ir::codec::DecodeBody::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::codec::DecodeBody::notes: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::codec::DecodeBody::transfer: cadmpeg_ir::DecodeTransfer
 pub cadmpeg_ir::codec::DecodeBody::transfer_ledger: cadmpeg_ir::report::TransferLedger
 impl cadmpeg_ir::codec::DecodeBody
-pub fn cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::DecodeTransfer) -> Self
+pub fn cadmpeg_ir::codec::DecodeBody::new(bool) -> Self
 pub struct cadmpeg_ir::codec::DecodeOptions
 pub cadmpeg_ir::codec::DecodeOptions::container_only: bool
 pub cadmpeg_ir::codec::DecodeOptions::policy: cadmpeg_core::decode::policy::DecodePolicy
@@ -289,7 +289,7 @@ impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::codec::Decoded, &str) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::codec::Decoded, &str, bool) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_
@@ -4458,7 +4458,6 @@ pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpe
 pub fn cadmpeg_ir::DecodeReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
 pub const fn cadmpeg_ir::DecodeReport::geometry_transferred(&self) -> bool
-pub fn cadmpeg_ir::DecodeReport::mark_geometry_transferred(&mut self)
 pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
 pub const fn cadmpeg_ir::DecodeReport::transfer(&self) -> cadmpeg_ir::DecodeTransfer
 pub fn cadmpeg_ir::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeTransfer, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
@@ -7201,7 +7200,6 @@ pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpe
 pub fn cadmpeg_ir::DecodeReport::error_count(&self) -> usize
 pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
 pub const fn cadmpeg_ir::DecodeReport::geometry_transferred(&self) -> bool
-pub fn cadmpeg_ir::DecodeReport::mark_geometry_transferred(&mut self)
 pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
 pub const fn cadmpeg_ir::DecodeReport::transfer(&self) -> cadmpeg_ir::DecodeTransfer
 pub fn cadmpeg_ir::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeTransfer, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
@@ -7212,7 +7210,7 @@ impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::document::CadIr> + '_
-pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::codec::Decoded, &str) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::codec::Decoded, &str, bool) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> impl core::ops::deref::DerefMut<Target = cadmpeg_ir::source_fidelity::SourceFidelity> + '_

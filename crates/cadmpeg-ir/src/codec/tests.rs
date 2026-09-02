@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::examples::unit_cube;
-use crate::report::{DecodeTransfer, LossKind, LossNote, LossTaxonomy};
+use crate::report::{LossKind, LossNote, LossTaxonomy};
 use crate::source_fidelity::{RetainedSourceRecord, SourceFidelity};
 use crate::CadIr;
 
@@ -16,13 +16,13 @@ use super::*;
 fn decoded(ir: CadIr) -> Decoded {
     Decoded {
         ir,
-        body: DecodeBody::new(DecodeTransfer::full(true)),
+        body: DecodeBody::new(true),
         source_fidelity: SourceFidelity::default(),
     }
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(decoded(ir), "test")
+    DecodeResult::new(decoded(ir), "test", false)
 }
 
 fn retained_record(id: &str, offset: u64) -> RetainedSourceRecord {
@@ -105,14 +105,12 @@ impl CodecBackend for RejectFloorCodec {
         panic!("the strict gate tests do not inspect")
     }
 
-    fn decode_impl(&self, ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
         let mut decoded = decoded(unit_cube());
-        // Deliberately report the opposite request scope; the wrapper owns it.
-        decoded.body.transfer = if ctx.container_only() {
-            DecodeTransfer::full(true)
-        } else {
-            DecodeTransfer::ContainerOnly
-        };
         decoded
             .body
             .losses
@@ -292,7 +290,7 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
     let mut ir = unit_cube();
     ir.source = None;
 
-    let result = DecodeResult::new(decoded(ir), "test");
+    let result = DecodeResult::new(decoded(ir), "test", false);
 
     assert_eq!(result.report().format(), "test");
     assert!(result.report().dialects().is_none());
@@ -301,7 +299,7 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
 
 #[test]
 fn a_decode_result_keeps_the_body_it_was_given() {
-    let mut body = DecodeBody::new(DecodeTransfer::ContainerOnly);
+    let mut body = DecodeBody::new(false);
     body.notes.push("kept".into());
     body.coverage.insert("entities".into(), 3);
     let result = DecodeResult::new(
@@ -311,6 +309,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
             source_fidelity: SourceFidelity::default(),
         },
         "test",
+        true,
     );
 
     assert!(result.report().container_only());

@@ -155,7 +155,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let result = crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
-        cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT)
+        cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT, false)
     });
 
     let retained = &result.source_fidelity().retained_records;
@@ -171,7 +171,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let result = crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
-        cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT)
+        cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT, false)
     });
     assert_eq!(
         result.source_fidelity().retained_records[0].data.as_deref(),

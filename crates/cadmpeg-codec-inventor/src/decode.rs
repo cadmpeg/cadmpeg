@@ -1669,11 +1669,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let body = DecodeBody {
-        transfer: if ctx.container_only() {
-            cadmpeg_ir::DecodeTransfer::ContainerOnly
-        } else {
-            cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
-        },
+        geometry_transferred,
         coverage: BTreeMap::from([
             ("rse_storage_bands".into(), storage_bands.len()),
             ("rse_databases".into(), databases.len()),

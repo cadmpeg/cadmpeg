@@ -1,4 +1,4 @@
-# generated at 5f575c298
+# generated at 694c98746
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -99,13 +99,12 @@ pub fn cadmpeg_core::decode::DecodeContext<'a>::enter_nested(&self, &'static str
 pub fn cadmpeg_core::decode::DecodeContext<'a>::finish_session(self) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::from_root_bytes(&'a [u8], &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::policy(&self) -> &cadmpeg_core::decode::DecodePolicy
-pub fn cadmpeg_core::decode::DecodeContext<'a>::read_root(&mut dyn cadmpeg_core::io::ReadSeek, &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::read_root(&mut dyn cadmpeg_core::io::ReadSeek, &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy, bool) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::refuse_codec_limit(&self, &'static str, u64, u64, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice_as<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange, impl core::convert::Into<alloc::string::String>) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::reserve_scoped(&self, u64, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<cadmpeg_core::decode::ScopedReservation<'_>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::resolve_location(&self, cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
-pub fn cadmpeg_core::decode::DecodeContext<'a>::set_container_only(&mut self, bool)
 pub fn cadmpeg_core::decode::DecodeContext<'a>::space_descriptors(&self) -> alloc::vec::Vec<cadmpeg_core::decode::SpaceDescriptor>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::work_budget(&self, u64) -> cadmpeg_core::decode::WorkBudget<'_>
 pub struct cadmpeg_core::decode::DecodePolicy

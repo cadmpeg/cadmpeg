@@ -17,7 +17,7 @@ use std::fmt;
 use std::ops::{Deref, DerefMut};
 
 use crate::document::CadIr;
-use crate::report::{DecodeReport, DecodeTransfer, LossNote, StrictConsequence, TransferLedger};
+use crate::report::{DecodeReport, LossNote, StrictConsequence, TransferLedger};
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
@@ -126,8 +126,8 @@ pub struct Decoded {
 /// A [`DecodeReport`] without its classification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodeBody {
-    /// Source-transfer disposition.
-    pub transfer: DecodeTransfer,
+    /// Whether B-rep geometry was transferred into the IR.
+    pub geometry_transferred: bool,
     /// Coverage measures keyed by their declared name.
     pub coverage: BTreeMap<String, usize>,
     /// Losses resolved during decoding.
@@ -139,11 +139,11 @@ pub struct DecodeBody {
 }
 
 impl DecodeBody {
-    /// An empty body with the given transfer disposition.
+    /// An empty body with the given B-rep geometry outcome.
     #[must_use]
-    pub fn new(transfer: DecodeTransfer) -> Self {
+    pub fn new(geometry_transferred: bool) -> Self {
         Self {
-            transfer,
+            geometry_transferred,
             coverage: BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
@@ -159,7 +159,7 @@ impl DecodeResult {
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
     #[must_use]
-    pub fn new(decoded: Decoded, format: &str) -> Self {
+    pub fn new(decoded: Decoded, format: &str, container_only: bool) -> Self {
         let Decoded {
             mut ir,
             body,
@@ -173,7 +173,7 @@ impl DecodeResult {
         source_fidelity.finalize();
         Self {
             ir,
-            report: DecodeReport::from_body(classification, body),
+            report: DecodeReport::from_body(classification, body, container_only),
             source_fidelity,
         }
     }
@@ -191,11 +191,6 @@ impl DecodeResult {
     /// Borrow the transfer report.
     pub fn report(&self) -> &DecodeReport {
         &self.report
-    }
-
-    /// Record whether the caller requested a container-only decode.
-    fn stamp_container_only(&mut self, container_only: bool) {
-        self.report.stamp_request_scope(container_only);
     }
 
     /// Borrow source fidelity.
@@ -366,7 +361,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             mode: DecodeMode::Salvage,
             limits: options.limits,
         };
-        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
         let result = result?;
@@ -386,11 +381,11 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
-        let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
-        ctx.set_container_only(options.container_only);
+        let (ctx, root) =
+            DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
         let decoded = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
-        let mut result = DecodeResult::new(decoded?, C::FORMAT);
+        let result = DecodeResult::new(decoded?, C::FORMAT, options.container_only);
         if result.report().format() != C::FORMAT {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -399,7 +394,6 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             ))
             .into());
         }
-        result.stamp_container_only(options.container_only);
         let strict_refusal = if options.policy.mode == DecodeMode::Strict && !options.container_only
         {
             result

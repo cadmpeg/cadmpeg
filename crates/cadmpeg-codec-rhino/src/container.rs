@@ -8,7 +8,6 @@ use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::DecodeTransfer;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::ContainerSummary;
 
@@ -1196,7 +1195,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     Decoded {
         ir,
         body: DecodeBody {
-            transfer: DecodeTransfer::ContainerOnly,
+            geometry_transferred: false,
             coverage: std::collections::BTreeMap::new(),
             losses,
             notes,

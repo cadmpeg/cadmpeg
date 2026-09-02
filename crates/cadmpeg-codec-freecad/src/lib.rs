@@ -1389,11 +1389,7 @@ impl CodecBackend for FcstdCodec {
         Ok(Decoded {
             ir,
             body: DecodeBody {
-                transfer: if options.container_only {
-                    cadmpeg_ir::DecodeTransfer::ContainerOnly
-                } else {
-                    cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
-                },
+                geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
                 losses,
                 notes: summary_notes,

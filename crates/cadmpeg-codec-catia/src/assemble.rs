@@ -544,7 +544,7 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeBody {
-        transfer: cadmpeg_ir::DecodeTransfer::full(true),
+        geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
         losses,
         notes: Vec::new(),
@@ -661,11 +661,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     ));
 
     DecodeBody {
-        transfer: if container_only {
-            cadmpeg_ir::DecodeTransfer::ContainerOnly
-        } else {
-            cadmpeg_ir::DecodeTransfer::full(false)
-        },
+        geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
         losses,
         notes: Vec::new(),

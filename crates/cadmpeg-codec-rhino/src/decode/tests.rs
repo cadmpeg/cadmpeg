@@ -1065,7 +1065,8 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .expect("required invariant")
             .links
             .clear();
-        let result = cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT);
+        let result =
+            cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT, false);
         assert!(result
             .report()
             .losses

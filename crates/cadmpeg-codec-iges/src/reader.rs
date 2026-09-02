@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
 use cadmpeg_ir::hash::{
     document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
 };
-use cadmpeg_ir::report::{DecodeTransfer, LossNote, Severity, TransferDisposition, TransferLedger};
+use cadmpeg_ir::report::{LossNote, Severity, TransferDisposition, TransferLedger};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
@@ -556,11 +556,7 @@ fn decode_with_occurrence_limits(
             .attributes
             .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
     }
-    let mut body = DecodeBody::new(if options.container_only {
-        DecodeTransfer::ContainerOnly
-    } else {
-        DecodeTransfer::full(geometry_transferred)
-    });
+    let mut body = DecodeBody::new(geometry_transferred);
     body.losses = losses;
     body.notes = notes;
     body.transfer_ledger = transfer_ledger;
@@ -611,7 +607,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
         depth_limit,
         None,
     )
-    .map(|decoded| cadmpeg_ir::codec::DecodeResult::new(decoded, crate::dialect::FORMAT))
+    .map(|decoded| cadmpeg_ir::codec::DecodeResult::new(decoded, crate::dialect::FORMAT, false))
 }
 
 fn charge_entities(
