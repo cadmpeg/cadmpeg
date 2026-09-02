@@ -321,10 +321,8 @@ pub(crate) struct RefusalReport<'a> {
     stage: RefusalStage,
     code: RefusalCode,
     message: Cow<'a, str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dialects: Option<&'a DialectLayers>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    target: Option<&'a TargetRefusal>,
+    #[serde(flatten)]
+    detail: Option<RefusalDetail<'a>>,
 }
 
 /// Everything a surface may show or serialize about one refusal, projected
@@ -342,7 +340,8 @@ pub struct RefusalEvidence<'a> {
 }
 
 /// Typed evidence serialized beside the refusal code.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RefusalDetail<'a> {
     /// Every format layer identified before the codec refused.
     Dialects(&'a DialectLayers),
@@ -359,18 +358,6 @@ pub struct RefusalReports<'a> {
     pub check: Option<&'a ValidationReport>,
     /// Export report computed by encoder planning before rejection.
     pub export: Option<&'a ExportReport>,
-}
-
-fn refusal_reports<'a>(
-    decode: Option<&'a DecodeReport>,
-    check: Option<&'a ValidationReport>,
-    export: Option<&'a ExportReport>,
-) -> RefusalReports<'a> {
-    RefusalReports {
-        decode,
-        check,
-        export,
-    }
 }
 
 /// Variant metadata that does not depend on a refusal's carried reports.
@@ -416,7 +403,11 @@ impl ConversionRefusal {
                 code: RefusalCode::StrictDecodeRejected,
                 message: Cow::Owned(format!("strict mode rejects {loss_code}: {loss_message}")),
                 detail: None,
-                reports: refusal_reports(Some(decode_report), None, None),
+                reports: RefusalReports {
+                    decode: Some(decode_report),
+                    check: None,
+                    export: None,
+                },
             },
             Self::CheckFailed {
                 message,
@@ -426,7 +417,11 @@ impl ConversionRefusal {
                 code: RefusalCode::CheckFailed,
                 message: Cow::Borrowed(message),
                 detail: None,
-                reports: refusal_reports(decode_report.as_ref(), Some(validation), None),
+                reports: RefusalReports {
+                    decode: decode_report.as_ref(),
+                    check: Some(validation),
+                    export: None,
+                },
             },
             Self::DecodeLossRejected {
                 message,
@@ -435,7 +430,11 @@ impl ConversionRefusal {
                 code: RefusalCode::DecodeLossRejected,
                 message: Cow::Borrowed(message),
                 detail: None,
-                reports: refusal_reports(Some(decode_report), None, None),
+                reports: RefusalReports {
+                    decode: Some(decode_report),
+                    check: None,
+                    export: None,
+                },
             },
             Self::ExportLossRejected {
                 message,
@@ -446,11 +445,11 @@ impl ConversionRefusal {
                 code: RefusalCode::ExportLossRejected,
                 message: Cow::Borrowed(message),
                 detail: None,
-                reports: refusal_reports(
-                    decode_report.as_ref(),
-                    validation.as_ref(),
-                    Some(export_report),
-                ),
+                reports: RefusalReports {
+                    decode: decode_report.as_ref(),
+                    check: validation.as_ref(),
+                    export: Some(export_report),
+                },
             },
             Self::EmptyGeometry {
                 message,
@@ -460,7 +459,11 @@ impl ConversionRefusal {
                 code: RefusalCode::EmptyGeometry,
                 message: Cow::Borrowed(message),
                 detail: None,
-                reports: refusal_reports(decode_report.as_ref(), validation.as_ref(), None),
+                reports: RefusalReports {
+                    decode: decode_report.as_ref(),
+                    check: validation.as_ref(),
+                    export: None,
+                },
             },
             Self::UnsupportedOutputFormat { message } => RefusalEvidence {
                 code: RefusalCode::UnsupportedOutputFormat,
@@ -476,7 +479,11 @@ impl ConversionRefusal {
                 code: RefusalCode::UnsupportedTarget,
                 message: Cow::Owned(refusal.to_string()),
                 detail: Some(RefusalDetail::Target(refusal)),
-                reports: refusal_reports(decode_report.as_ref(), validation.as_ref(), None),
+                reports: RefusalReports {
+                    decode: decode_report.as_ref(),
+                    check: validation.as_ref(),
+                    export: None,
+                },
             },
             Self::BinaryStdoutRejected { message } => RefusalEvidence {
                 code: RefusalCode::BinaryStdoutRejected,
@@ -497,17 +504,11 @@ impl ConversionRefusal {
     #[must_use]
     pub(crate) fn report(&self) -> RefusalReport<'_> {
         let evidence = self.evidence();
-        let (dialects, target) = match evidence.detail {
-            Some(RefusalDetail::Dialects(dialects)) => (Some(dialects), None),
-            Some(RefusalDetail::Target(target)) => (None, Some(target)),
-            None => (None, None),
-        };
         RefusalReport {
             stage: evidence.code.disposition().stage,
             code: evidence.code,
             message: evidence.message,
-            dialects,
-            target,
+            detail: evidence.detail,
         }
     }
 
