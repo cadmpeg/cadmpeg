@@ -640,20 +640,13 @@ pub(crate) fn link_payload_carriers(
     annotations.derived(&payload.id, "links");
 }
 
-pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeBody {
+pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     let mut losses = vec![CatiaLossCode::GeometryBrepNotTransferred.note(format!(
         "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
          applicable decoded record families transfer geometry in this codec.",
         scan.variant.id(),
         scan.variant.description()
     ))];
-
-    if container_only {
-        losses.push(
-            CatiaLossCode::ContainerOnlyDecode
-                .note("Container-only decode requested; entity decode was not attempted."),
-        );
-    }
 
     losses.push(CatiaLossCode::TopologyGraphNotBuilt.note(
         "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \

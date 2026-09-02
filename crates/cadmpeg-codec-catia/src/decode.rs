@@ -54,7 +54,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
-        let report = build_container_report(&scan, true);
+        let report = build_container_report(&scan);
         return decode_result(&scan, ir, report, annotations, unknowns);
     }
 
@@ -75,7 +75,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
-    let report = build_container_report(&scan, false);
+    let report = build_container_report(&scan);
     finish_decode(ctx, &scan, ir, report, annotations, unknowns, false)
 }
 

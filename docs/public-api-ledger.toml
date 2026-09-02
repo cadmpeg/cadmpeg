@@ -2472,3 +2472,10 @@ crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::decode::DecodeContext::set_container_only"
 reason = "decode request scope cannot change after context construction"
+
+[[change]]
+commit = "44767655a5780fbb5adc395897f5f5435a86ca6e"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::report::LossTaxonomy::ContainerOnly"
+reason = "a caller-requested container-only operation is request scope, not source-data loss; DecodeTransfer already carries that fact"

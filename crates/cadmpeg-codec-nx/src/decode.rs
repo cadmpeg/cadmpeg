@@ -239,7 +239,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
     if ctx.container_only() {
         ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
         let (ir, annotations, unknowns) = build_container_only_ir(ctx, &scan, &dialects)?;
-        let mut body = build_container_body(&scan, true, dialect_losses, notes);
+        let mut body = build_container_body(&scan, dialect_losses, notes);
         report_untransferred_streams(&scan, &mut body, false);
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
@@ -260,7 +260,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan, &dialects)?;
-    let mut body = build_container_body(&scan, false, dialect_losses, notes);
+    let mut body = build_container_body(&scan, dialect_losses, notes);
     report_untransferred_streams(&scan, &mut body, true);
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
@@ -443,7 +443,6 @@ fn build_metadata_ir(
 
 fn build_container_body(
     scan: &Scan,
-    container_only: bool,
     dialect_losses: Vec<LossNote>,
     notes: Vec<String>,
 ) -> DecodeBody {
@@ -470,13 +469,6 @@ fn build_container_body(
                       geometry this codec does not yet type). The streams are preserved verbatim as \
                       unknown passthrough records.",
         ));
-    }
-
-    if container_only {
-        losses.push(
-            NxLossCode::ContainerOnly
-                .note("Container-only decode requested; entity decode was not attempted."),
-        );
     }
 
     losses.extend(dialect_losses);

@@ -27,8 +27,6 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InventorLossCode {
-    /// Container-only decode was requested; no entity transfer ran.
-    ContainerOnlyDecode,
     /// The active kernel carrier was not transferred into neutral geometry.
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
@@ -99,7 +97,6 @@ impl InventorLossCode {
     /// Every code, in declaration order.
     #[allow(dead_code)] // Catalog for crate tests and harness oracles.
     pub const ALL: &'static [InventorLossCode] = &[
-        Self::ContainerOnlyDecode,
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::RseSegmentPairUntyped,
@@ -138,7 +135,6 @@ impl InventorLossCode {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
-            Self::ContainerOnlyDecode => "container.only-decode",
             Self::GeometryKernelCarrierNotTransferred => "geometry.kernel-carrier-not-transferred",
             Self::GeometryProceduralSurfaceNotTransferred => {
                 "geometry.procedural-surface-not-transferred"
@@ -180,7 +176,6 @@ impl InventorLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::ContainerOnlyDecode => Severity::Info,
             Self::GeometryKernelCarrierNotTransferred => Severity::Blocking,
             _ => Severity::Warning,
         }
@@ -189,7 +184,6 @@ impl InventorLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ContainerOnlyDecode => LossTaxonomy::ContainerOnly,
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
@@ -256,7 +250,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "container.only-decode",
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
                 "rse.segment-pair-untyped",

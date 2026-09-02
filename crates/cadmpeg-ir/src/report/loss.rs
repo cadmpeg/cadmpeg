@@ -97,8 +97,6 @@ pub enum StrictConsequence {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum LossTaxonomy {
-    /// Container-only decode was requested; entity decode was not attempted.
-    ContainerOnly,
     /// No geometry stream was located in the container, so no B-rep could be
     /// transferred.
     MissingGeometryStream,
@@ -206,7 +204,6 @@ impl LossTaxonomy {
     /// The stable `snake_case` identifier for this taxonomy variant.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::ContainerOnly => "container_only",
             Self::MissingGeometryStream => "missing_geometry_stream",
             Self::TopologyNotTransferred => "topology_not_transferred",
             Self::SourceTopologyInvalid => "source_topology_invalid",
@@ -254,7 +251,6 @@ impl LossTaxonomy {
     /// Parse a v1 bare `snake_case` taxonomy identifier.
     pub fn from_v1_str(text: &str) -> Option<Self> {
         Some(match text {
-            "container_only" => Self::ContainerOnly,
             "missing_geometry_stream" => Self::MissingGeometryStream,
             "topology_not_transferred" => Self::TopologyNotTransferred,
             "source_topology_invalid" => Self::SourceTopologyInvalid,
@@ -327,8 +323,7 @@ impl LossTaxonomy {
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
             | Self::PreservedSourceUnavailable => LossCategory::Other,
-            Self::ContainerOnly
-            | Self::MissingGeometryStream
+            Self::MissingGeometryStream
             | Self::GeometryNotTransferred
             | Self::CarrierAxisInferred
             | Self::CarrierSummary
@@ -350,9 +345,7 @@ impl LossTaxonomy {
     /// Returns the default severity for this kind of loss.
     pub const fn default_severity(self) -> Severity {
         match self {
-            Self::ContainerOnly | Self::CarrierSummary | Self::PassthroughRecordOmitted => {
-                Severity::Info
-            }
+            Self::CarrierSummary | Self::PassthroughRecordOmitted => Severity::Info,
             Self::MissingGeometryStream | Self::NoExportableSolids | Self::IntegrityFailure => {
                 Severity::Error
             }

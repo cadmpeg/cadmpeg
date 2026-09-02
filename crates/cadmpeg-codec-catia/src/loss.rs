@@ -27,8 +27,6 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CatiaLossCode {
-    /// Container-only decode skipped entity transfer.
-    ContainerOnlyDecode,
     /// The storage layout matched no declared dialect's structural invariants.
     SourceDialectUnverified,
     /// Verbatim vertex points and analytic surface carriers were decoded.
@@ -90,7 +88,6 @@ pub enum CatiaLossCode {
 impl CatiaLossCode {
     /// Every code, in declaration order.
     pub const ALL: &'static [CatiaLossCode] = &[
-        Self::ContainerOnlyDecode,
         Self::SourceDialectUnverified,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
@@ -125,7 +122,6 @@ impl CatiaLossCode {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
-            Self::ContainerOnlyDecode => "container.decode-only",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
@@ -169,7 +165,7 @@ impl CatiaLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::GeometryCarrierSummary | Self::ContainerOnlyDecode => Severity::Info,
+            Self::GeometryCarrierSummary => Severity::Info,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::TopologyBoundaryGraphNotEmitted
@@ -191,7 +187,6 @@ impl CatiaLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ContainerOnlyDecode => LossTaxonomy::ContainerOnly,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
@@ -251,7 +246,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "container.decode-only",
                 "source.dialect-unverified",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",

@@ -1,4 +1,4 @@
-# generated at 694c98746
+# generated at 44767655a
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4380,7 +4380,6 @@ pub cadmpeg_ir::report::LossTaxonomy::AttributesNotTransferred
 pub cadmpeg_ir::report::LossTaxonomy::BodyTransformNotApplied
 pub cadmpeg_ir::report::LossTaxonomy::CarrierAxisInferred
 pub cadmpeg_ir::report::LossTaxonomy::CarrierSummary
-pub cadmpeg_ir::report::LossTaxonomy::ContainerOnly
 pub cadmpeg_ir::report::LossTaxonomy::CurvelessEdgeOmitted
 pub cadmpeg_ir::report::LossTaxonomy::DecodeDiagnostic
 pub cadmpeg_ir::report::LossTaxonomy::EllipticalConeReduced
@@ -6547,7 +6546,6 @@ pub cadmpeg_ir::LossTaxonomy::AttributesNotTransferred
 pub cadmpeg_ir::LossTaxonomy::BodyTransformNotApplied
 pub cadmpeg_ir::LossTaxonomy::CarrierAxisInferred
 pub cadmpeg_ir::LossTaxonomy::CarrierSummary
-pub cadmpeg_ir::LossTaxonomy::ContainerOnly
 pub cadmpeg_ir::LossTaxonomy::CurvelessEdgeOmitted
 pub cadmpeg_ir::LossTaxonomy::DecodeDiagnostic
 pub cadmpeg_ir::LossTaxonomy::EllipticalConeReduced
