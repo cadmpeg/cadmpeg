@@ -2493,3 +2493,17 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::report::ExportReport::{native,cadir}"
 reason = "production export reports are stamped only by the sealed Encoder wrapper; direct constructors remain internal to report tests and wrapper implementation"
+
+[[change]]
+commit = "e27f6adec76378134487502aca7af3f4d5340a1d"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::codec::DecodeResult::new"
+reason = "the sealed Codec wrapper is the only author that can stamp source format, request scope, and strict-policy admission onto a decode result"
+
+[[change]]
+commit = "e27f6adec76378134487502aca7af3f4d5340a1d"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::codec::DecodeResult::{ir_mut,source_fidelity_mut}"
+reason = "a stamped decode result cannot be reopened for mutation; callers consume it into independent IR, report, and source-fidelity values before editing"

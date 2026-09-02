@@ -134,9 +134,10 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             ("moOriginProfileFeature_c", "Origen", 106),
         ]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let definitions = decoded
         .ir()
         .model

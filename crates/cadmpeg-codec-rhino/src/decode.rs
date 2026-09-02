@@ -5551,9 +5551,52 @@ pub(crate) fn with_expand<R>(
 
 #[cfg(test)]
 pub(crate) fn decode_for_test(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
-    with_expand(scan, |expand| {
-        cadmpeg_ir::codec::DecodeResult::new(decode(scan, expand), crate::dialect::FORMAT, false)
-    })
+    with_expand(scan, |expand| seal_for_test(decode(scan, expand), false))
+}
+
+#[cfg(test)]
+pub(crate) fn seal_for_test(
+    decoded: Decoded,
+    container_only: bool,
+) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+
+    #[derive(Clone)]
+    struct TestBackend(Decoded);
+
+    impl CodecBackend for TestBackend {
+        const FORMAT: &'static str = crate::dialect::FORMAT;
+
+        fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
+            Confidence::High
+        }
+
+        fn inspect_impl(
+            &self,
+            _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            _root: cadmpeg_core::decode::View<'_>,
+        ) -> Result<cadmpeg_ir::ContainerSummary, cadmpeg_core::CodecError> {
+            unreachable!("test backend is decode-only")
+        }
+
+        fn decode_impl(
+            &self,
+            _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            _root: cadmpeg_core::decode::View<'_>,
+        ) -> Result<Decoded, cadmpeg_core::CodecError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    Codec::decode(
+        &TestBackend(decoded),
+        &mut std::io::Cursor::new(Vec::<u8>::new()),
+        &DecodeOptions {
+            container_only,
+            ..DecodeOptions::default()
+        },
+    )
+    .expect("test decode result satisfies the sealed codec contract")
 }
 
 fn build_ir(scan: &Scan<'_>) -> CadIr {

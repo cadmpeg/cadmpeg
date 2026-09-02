@@ -18,9 +18,10 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
     let bytes = include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21");
-    let mut result = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 semantic PMI");
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
 
     assert_eq!(result.ir().model.pmi.len(), 5);
     assert!(!result

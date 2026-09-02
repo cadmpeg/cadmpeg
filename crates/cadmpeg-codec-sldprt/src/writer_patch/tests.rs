@@ -79,12 +79,13 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     body.extend(world_point(261, [11.0, 0.0, 0.0]));
     body.extend(world_point(262, [10.0, 1.0, 0.0]));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let curve = ir_edit
@@ -172,9 +173,10 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     );
     let mut source = sldprt_with_body(&body);
     source.extend(make_block(0x21, "Contents/Config-0-Deltas", &deltas));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[1].position.x = 1_250.0;
 
     let mut encoded = Vec::new();
@@ -220,12 +222,13 @@ fn native_patch_requires_point_provenance_annotation() {
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let point_id = decoded.ir().model.points[1].id.0.clone();
     assert!(decoded
         .source_fidelity()
@@ -275,12 +278,13 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     body.extend(world_point(261, [11.0, 0.0, 0.0]));
     body.extend(world_point(262, [10.0, 1.0, 0.0]));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let plane = ir_edit
@@ -400,9 +404,10 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap()
         .payload
         .clone();
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let brep_hash = crate::decode::brep_local_sha256(decoded.ir());
     let document_hash = crate::decode::document_local_sha256(decoded.ir());
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
@@ -488,12 +493,13 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
 
     let mut body = triangle_body();
     body.extend(edge_use(40, 999));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
 
     let curve_id = decoded.ir().model.edges[0]
         .curve

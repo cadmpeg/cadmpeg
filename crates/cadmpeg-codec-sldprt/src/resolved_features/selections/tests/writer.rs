@@ -24,9 +24,10 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {
@@ -108,9 +109,10 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moExtrusion_c", "UpTo", 31)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {

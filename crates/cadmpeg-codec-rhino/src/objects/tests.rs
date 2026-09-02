@@ -1033,8 +1033,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));
-        let result =
-            cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT, false);
+        let result = crate::decode::seal_for_test(context.commit(), false);
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == crate::loss::RhinoLossCode::ObjectAttributesDegraded.kind()
         }));

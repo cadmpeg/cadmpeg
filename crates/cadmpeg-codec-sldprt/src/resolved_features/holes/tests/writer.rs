@@ -19,9 +19,10 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         "Contents/Keywords",
         br#"<Keywords><Hole Name="Drill" Type="Hole" id="15"><Dimension Name="Diameter">0.25in</Dimension><Dimension Name="Depth">12mm</Dimension></Hole></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
@@ -77,9 +78,10 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         </Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
@@ -178,9 +180,10 @@ fn semantic_writer_round_trips_hole_placement() {
         "Contents/Keywords",
         br#"<Keywords><Hole Name="Placed" Type="Hole" id="28" Face="face:12" Position="1mm,2mm,3mm" Direction="0,0,-1" EndCondition="Blind"><Dimension Name="Diameter">6mm</Dimension><Dimension Name="Depth">10mm</Dimension></Hole></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let FeatureDefinition::Hole {
@@ -250,9 +253,10 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             <Hole Name="Countersink" Type="Hole" id="52" EndCondition="ThroughAll"><Dimension Name="Diameter">5mm</Dimension><Dimension Name="CountersinkDiameter">9mm</Dimension><Dimension Name="CountersinkAngle">82deg</Dimension></Hole>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {

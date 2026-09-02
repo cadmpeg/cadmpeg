@@ -965,7 +965,8 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let surfaces = [
         result.ir().model.surfaces[0].id.clone(),
         result.ir().model.surfaces[1].id.clone(),
@@ -1195,7 +1196,8 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();
@@ -1239,7 +1241,8 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();
@@ -1529,7 +1532,8 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let spine_id = result.ir().model.procedural_curves[0].id.clone();
     let spine_curve = result.ir().model.procedural_curves[0].curve.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -1688,7 +1692,8 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let template = result.ir().model.procedural_curves[0].clone();
     let mut successful = template.clone();
     let successful_id = ProceduralCurveId("synthetic:support-uv-success".into());
@@ -1773,7 +1778,8 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();
@@ -1826,7 +1832,8 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     {
         let mut ir = result.ir_mut();

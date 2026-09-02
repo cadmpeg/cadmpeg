@@ -11,12 +11,13 @@ use crate::SldprtCodec;
 
 #[test]
 fn native_validation_rejects_duplicate_history_ordinals() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].ordinal = 0;
     });
@@ -27,12 +28,13 @@ fn native_validation_rejects_duplicate_history_ordinals() {
 
 #[test]
 fn native_validation_rejects_broken_feature_graph() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].tree_parent = Some("missing-record".into());
     });
@@ -51,9 +53,10 @@ fn native_validation_rejects_broken_history_root_graph() {
         "Contents/Keywords",
         br#"<Keywords><Configuration Name="Default"/><Feature Name="Root" Type="Custom" id="1"><Feature Name="Nested" Type="Custom" id="2"/></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let history = &mut native.feature_histories[0];
         let nested = history
@@ -89,12 +92,13 @@ fn native_validation_rejects_broken_history_root_graph() {
 
 #[test]
 fn native_validation_rejects_orphan_history_records() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let orphan = decoded
         .ir_mut()
         .native
@@ -122,7 +126,7 @@ fn native_validation_rejects_orphan_history_records() {
 
 #[test]
 fn native_validation_rejects_edited_relation_binding() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -131,6 +135,7 @@ fn native_validation_rejects_edited_relation_binding() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].relation_bindings[0].family =
             crate::records::FeatureInputRelationFamily::LineLineDistance;
@@ -159,9 +164,10 @@ fn native_validation_rejects_edited_relation_instance() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].relation_instances[0].parameter_scalar_ref = None;
     });

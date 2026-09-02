@@ -50,9 +50,10 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Compact" Type="Extrusion" id="9"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {

@@ -46,9 +46,10 @@ fn decode_resolves_feature_topology_selections() {
     );
     let mut source = sldprt_with_body(&body_bytes);
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     let body_id = decoded.ir().model.bodies[0].id.clone();
@@ -198,9 +199,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
             <Hole Name="Drill" Type="CustomHole" id="55"><Dimension Name="Diameter">4mm</Dimension><Dimension Name="Depth">5mm</Dimension></Hole>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Sketch { .. }
@@ -269,9 +271,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
-    let mut regenerated = SldprtCodec
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
@@ -318,9 +321,10 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moCombineBodies_c", "Compact", 119)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Combine {
@@ -730,9 +734,10 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         &resolved,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let helix = decoded
         .ir()
         .model

@@ -18,9 +18,10 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition, SketchConstraintId};
 
     let source = sldprt_with_nested_sketch_profile(&triangle_body());
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let sketch = decoded.ir().model.sketches[0].id.clone();
     let entity = decoded.ir().model.sketch_entities[0].id.clone();
     decoded
@@ -73,9 +74,10 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
             <Sketch Name="Profile" Type="Sketch" id="41"/>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: None }
@@ -115,12 +117,13 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
 fn semantic_writer_applies_line_sketch_edits() {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_nested_sketch_profile(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         let SketchGeometry::Line { start, end } = &mut entity.geometry else {
@@ -159,7 +162,7 @@ fn semantic_writer_applies_line_sketch_edits() {
 fn semantic_writer_applies_compressed_line_sketch_edits() {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_compressed_nested_sketch_profile(
                 &triangle_body(),
@@ -167,6 +170,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         let SketchGeometry::Line { start, end } = &mut entity.geometry else {
@@ -220,12 +224,13 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
 fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_nested_sketch_profile(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let SketchGeometry::Line { start, .. } = &mut ir_edit.model.sketch_entities[0].geometry
@@ -254,12 +259,13 @@ fn semantic_writer_applies_circle_sketch_edits() {
     use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_nested_circular_sketch(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let SketchGeometry::Circle { center, radius } =
@@ -292,12 +298,13 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     use cadmpeg_ir::features::{Angle, Length};
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_nested_elliptical_sketch(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let SketchGeometry::Ellipse {
@@ -341,12 +348,13 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
     use cadmpeg_ir::features::{Angle, Length};
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_nested_arc_sketch(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let arc = ir_edit
@@ -415,12 +423,13 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
 fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_nested_nurbs_sketches(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         let SketchGeometry::Nurbs {
             control_points,
@@ -471,9 +480,10 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     let payload = b"vendor-private\x00\x01\x02";
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x77, "Contents/CustomData", payload));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
@@ -529,9 +539,10 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     ));
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords Name="Bracket"><Configuration Name="Default" Material="Steel"/><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth">12.5mm</Dimension></Extrusion></Keywords>"#));
     source.extend(make_block(0x77, "Contents/CustomData", b"opaque-state"));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 2.0;
     decoded.ir_mut().model.tessellations[0].vertices[0].z = 125.0;
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
@@ -606,12 +617,13 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
 
 #[test]
 fn semantic_writer_preserves_display_list_geometry() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     decoded.ir_mut().model.tessellations[0].vertices[0].z = 250.0;
 
@@ -633,12 +645,13 @@ fn semantic_writer_preserves_display_list_geometry() {
 
 #[test]
 fn semantic_writer_rejects_tessellation_f32_overflow() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.tessellations[0].vertices[0].x = f64::MAX;
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(

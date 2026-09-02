@@ -19,9 +19,10 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
     payload.extend([0xde, 0xad, 0xbe, 0xef]);
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x40, "SWObjects", &payload));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .source
@@ -50,9 +51,10 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
 #[test]
 fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
         r: 1.0,
         g: 0.0,
@@ -476,9 +478,10 @@ fn encoder_writes_source_less_line_sketches() {
             .as_deref()
             .is_some_and(|section| section == "Contents/Config-0-ResolvedFeatures")
     }));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let marker_lane = &sldprt_native(decoded.ir()).feature_input_lanes[0];
     assert_eq!(
         marker_lane
@@ -738,9 +741,10 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
-    let mut regenerated = SldprtCodec
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
 
     assert_eq!(regenerated.ir().model.spatial_sketches.len(), 1);
     assert_eq!(regenerated.ir().model.spatial_sketch_entities.len(), 3);

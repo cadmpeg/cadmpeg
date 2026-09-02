@@ -97,7 +97,8 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match StepCodec::default()
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
-        Ok(mut result) => {
+        Ok(result) => {
+            let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
             if let Some(source) = result.ir_mut().source.as_mut() {
                 elide_local_digests(&mut source.attributes);
             }

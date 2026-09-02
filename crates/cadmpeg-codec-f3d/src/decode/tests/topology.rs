@@ -132,12 +132,13 @@ fn history_topology_decode_matches_full_brep_graph() {
 
 #[test]
 fn decode_transfers_generated_wire_body_topology() {
-    let mut result = F3dCodec
+    let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
             &DecodeOptions::default(),
         )
         .expect("generated wire body decode");
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
         result.ir().model.bodies[0].kind,

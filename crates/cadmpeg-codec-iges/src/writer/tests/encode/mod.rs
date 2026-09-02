@@ -79,12 +79,13 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
 
 #[test]
 fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let second_start = decoded
         .ir()
         .model
@@ -763,12 +764,13 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
 
 #[test]
 fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.surfaces.push(Surface {
         id: SurfaceId("surface#free-sphere".into()),
         geometry: SurfaceGeometry::Sphere {
@@ -1185,12 +1187,13 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
 
 #[test]
 fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(parametrically_bounded_plane_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let pcurve = ir.model.pcurves.first_mut().unwrap();
@@ -1253,12 +1256,13 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
 
 #[test]
 fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(multi_pcurve_boundary_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let coedge = ir.model.coedges.first_mut().unwrap();
@@ -1364,12 +1368,13 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
 
 #[test]
 fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let coedge_index = decoded
         .ir()
         .model
@@ -1522,12 +1527,13 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
 
 #[test]
 fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_vertex_loop_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.loops[0].boundary_role = LoopBoundaryRole::Unspecified;
 
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
@@ -1550,12 +1556,13 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
 
 #[test]
 fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_vertex_loop_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.vertices[0].tolerance = Some(0.25);
 
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
@@ -1673,12 +1680,13 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
 
 #[test]
 fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_non_manifold_open_shell_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let body = decoded
         .ir()
         .model

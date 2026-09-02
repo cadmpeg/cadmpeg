@@ -36,12 +36,13 @@ fn transformed_reference_plane_requires_fixed_prefix() {
 fn semantic_writer_preserves_transformed_reference_plane_prefix() {
     use cadmpeg_ir::attributes::AttributeValue;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_envelope(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let transformed = ir
@@ -114,12 +115,13 @@ fn decode_does_not_scan_past_unit_name_record_start() {
 
 #[test]
 fn semantic_writer_preserves_document_metadata() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_envelope(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let expected = decoded

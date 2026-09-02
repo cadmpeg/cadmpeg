@@ -31,9 +31,10 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         diameter = '\u{2300}',
     );
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameters = &decoded.ir().model.parameters;
     assert_eq!(parameters.len(), 10);
     assert_eq!(
@@ -206,9 +207,10 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="sin">1</Dimension><Dimension Name="pi">2</Dimension><Dimension Name="iif">3</Dimension><Dimension Name="Width">4mm</Dimension><Dimension Name="Driven">sin(30deg) + pi + iif(Width = 4mm, 1, 2) + &quot;sin&quot; + &quot;pi&quot; + &quot;iif&quot;</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameter_id = |name: &str| {
         decoded
             .ir()
@@ -374,9 +376,10 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         br#"<Keywords><Extrusion Name="Equation boss" Type="BossExtrude" id="7" Operation="Join" EndCondition="Blind"><Dimension Name="Base">4mm</Dimension><Dimension Name="Depth">Base * 2</Dimension></Extrusion></Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
@@ -448,9 +451,10 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension></Feature><Extrusion Name="Equation boss" Type="BossExtrude" id="8" Operation="Join" EndCondition="Blind"><Dimension Name="Depth">Width * 2</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let equations = decoded
         .ir()
         .model
@@ -579,9 +583,10 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 + D1@Sketch2</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .model

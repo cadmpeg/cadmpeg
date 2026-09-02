@@ -716,11 +716,8 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
         diagnostic.source_range.start < diagnostic.source_range.end
             && !diagnostic.message.contains("unsupported class")
     }));
-    let container_only = cadmpeg_ir::codec::DecodeResult::new(
-        crate::container::container_only_result(&scan),
-        crate::dialect::FORMAT,
-        true,
-    );
+    let container_only =
+        crate::decode::seal_for_test(crate::container::container_only_result(&scan), true);
     assert!(container_only.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss
@@ -1183,8 +1180,7 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.decode_geometry();
         assert!(context.mesh_budget_used() > 0);
-        let result =
-            cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT, false);
+        let result = crate::decode::seal_for_test(context.commit(), false);
         assert!(result.ir().model.tessellations.is_empty());
         assert!(result.ir().model.bodies.is_empty());
     });
@@ -1316,8 +1312,7 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry();
-        let result =
-            cadmpeg_ir::codec::DecodeResult::new(context.commit(), crate::dialect::FORMAT, false);
+        let result = crate::decode::seal_for_test(context.commit(), false);
         assert_eq!(result.ir().model.points.len(), 1);
         assert_eq!(
             result.ir().model.bodies[0]

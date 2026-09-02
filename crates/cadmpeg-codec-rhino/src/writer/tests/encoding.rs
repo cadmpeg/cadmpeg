@@ -70,9 +70,10 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let records = ir
@@ -119,9 +120,10 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let records = ir
@@ -168,9 +170,10 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let records = ir

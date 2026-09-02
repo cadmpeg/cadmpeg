@@ -44,12 +44,13 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
 
 #[test]
 fn rejects_mixed_unclassified_bounded_surface_representation() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
             &DecodeOptions::default(),
         )
         .expect("synthetic mixed-loop fixture decodes");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let model_only_loop_id = decoded.ir().model.faces[0].loops[0].clone();
     {
         let mut ir = decoded.ir_mut();

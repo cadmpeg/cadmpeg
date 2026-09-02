@@ -1249,9 +1249,10 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less circle-carrier encode");
-    let mut round_trip = F3dCodec
+    let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less circle-carrier round trip");
+    let mut round_trip = cadmpeg_test_support::EditableDecodeResult::from(round_trip);
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
     assert_eq!(
         round_trip.ir().model.edges[0].param_range,

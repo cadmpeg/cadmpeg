@@ -76,13 +76,13 @@ fuzz_target!(|data: &[u8]| {
         )
         .is_ok());
     let mut decode = Cursor::new(encoded.as_slice());
-    let mut decoded = codec
+    let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+    let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
 
     if control & 0x40 != 0 {
-        let mut decoded_ir = decoded.ir_mut();
         let source = decoded_ir
             .source
             .as_mut()
@@ -94,7 +94,7 @@ fuzz_target!(|data: &[u8]| {
 
     let replay = encoder
             .plan(
-                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
         .expect("writer output must plan after the optional source edit");
