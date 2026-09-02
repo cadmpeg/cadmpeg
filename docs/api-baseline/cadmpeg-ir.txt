@@ -1,4 +1,4 @@
-# generated at 44767655a
+# generated at 16f57b50b
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4450,7 +4450,6 @@ pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNo
 pub cadmpeg_ir::report::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::report::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedger
 impl cadmpeg_ir::DecodeReport
-pub fn cadmpeg_ir::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, cadmpeg_ir::DecodeTransfer, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 pub const fn cadmpeg_ir::DecodeReport::container_only(&self) -> bool
 pub fn cadmpeg_ir::DecodeReport::coverage_count(&self, cadmpeg_ir::CoverageKey) -> usize
 pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
@@ -4459,7 +4458,6 @@ pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
 pub const fn cadmpeg_ir::DecodeReport::geometry_transferred(&self) -> bool
 pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
 pub const fn cadmpeg_ir::DecodeReport::transfer(&self) -> cadmpeg_ir::DecodeTransfer
-pub fn cadmpeg_ir::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeTransfer, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::report::EntityCensus
@@ -7191,7 +7189,6 @@ pub cadmpeg_ir::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedger
 impl cadmpeg_ir::DecodeReport
-pub fn cadmpeg_ir::DecodeReport::classified(cadmpeg_core::dialect::DialectLayers, cadmpeg_ir::DecodeTransfer, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 pub const fn cadmpeg_ir::DecodeReport::container_only(&self) -> bool
 pub fn cadmpeg_ir::DecodeReport::coverage_count(&self, cadmpeg_ir::CoverageKey) -> usize
 pub fn cadmpeg_ir::DecodeReport::dialects(&self) -> core::option::Option<&cadmpeg_core::dialect::DialectLayers>
@@ -7200,7 +7197,6 @@ pub fn cadmpeg_ir::DecodeReport::format(&self) -> &str
 pub const fn cadmpeg_ir::DecodeReport::geometry_transferred(&self) -> bool
 pub fn cadmpeg_ir::DecodeReport::record_coverage(&mut self, cadmpeg_ir::CoverageKey, usize)
 pub const fn cadmpeg_ir::DecodeReport::transfer(&self) -> cadmpeg_ir::DecodeTransfer
-pub fn cadmpeg_ir::DecodeReport::unclassified(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeTransfer, alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>, alloc::vec::Vec<cadmpeg_ir::LossNote>, alloc::vec::Vec<alloc::string::String>, cadmpeg_ir::report::TransferLedger) -> Self
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::DecodeReport
 pub fn cadmpeg_ir::DecodeReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 #[non_exhaustive] pub struct cadmpeg_ir::DecodeResult

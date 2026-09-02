@@ -2479,3 +2479,10 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::report::LossTaxonomy::ContainerOnly"
 reason = "a caller-requested container-only operation is request scope, not source-data loss; DecodeTransfer already carries that fact"
+
+[[change]]
+commit = "16f57b50bfb5b1e93ad3377f78766e33a5041ea5"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::report::DecodeReport::{classified,unclassified}"
+reason = "production decode reports are constructed only by the sealed Codec wrapper or deserialization; test-only constructors no longer bypass that author"
