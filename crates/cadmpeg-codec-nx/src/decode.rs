@@ -11,9 +11,11 @@
 
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -230,12 +232,14 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 /// resides in external child parts.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = scan(ctx, root)?;
+    let (classification, notes) = summarize(&scan);
+    let (dialects, dialect_losses) = classification.into_report_parts();
 
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
         ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
-        let (ir, annotations, unknowns) = build_container_only_ir(ctx, &scan)?;
-        let mut body = build_container_body(&scan, true);
+        let (ir, annotations, unknowns) = build_container_only_ir(ctx, &scan, &dialects)?;
+        let mut body = build_container_body(&scan, true, dialect_losses, notes);
         report_untransferred_streams(&scan, &mut body, false);
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
@@ -243,14 +247,20 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
     // Charge stream cardinality before geometry construction.
     ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
 
-    if let Some((ir, body, annotations, unknowns)) =
-        try_decode_geometry(ctx, root, &scan, &mut admitted_entities)?
-    {
+    if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
+        ctx,
+        root,
+        &scan,
+        &dialects,
+        &dialect_losses,
+        &notes,
+        &mut admitted_entities,
+    )? {
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
-    let mut body = build_container_body(&scan, false);
+    let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan, &dialects)?;
+    let mut body = build_container_body(&scan, false, dialect_losses, notes);
     report_untransferred_streams(&scan, &mut body, true);
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
@@ -258,11 +268,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
 fn build_container_only_ir(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
+    dialects: &DialectLayers,
 ) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
+    ir.source = Some(source_meta(scan, dialects));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
@@ -400,11 +411,12 @@ fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     scan: &Scan,
+    dialects: &DialectLayers,
 ) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
+    ir.source = Some(source_meta(scan, dialects));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
@@ -429,7 +441,12 @@ fn build_metadata_ir(
     Ok((ir, annotations.build(), unknowns))
 }
 
-fn build_container_body(scan: &Scan, container_only: bool) -> DecodeBody {
+fn build_container_body(
+    scan: &Scan,
+    container_only: bool,
+    dialect_losses: Vec<LossNote>,
+    notes: Vec<String>,
+) -> DecodeBody {
     let mut losses = Vec::new();
 
     let assembly = scan
@@ -462,8 +479,7 @@ fn build_container_body(scan: &Scan, container_only: bool) -> DecodeBody {
         );
     }
 
-    let (classification, notes) = summarize(scan);
-    losses.extend(classification.into_losses());
+    losses.extend(dialect_losses);
     DecodeBody {
         transfer: if container_only {
             cadmpeg_ir::DecodeTransfer::ContainerOnly
