@@ -30,9 +30,8 @@ pub struct ExportReport {
 
 #[derive(Debug, Clone, PartialEq)]
 enum ExportIdentity {
-    /// A dialect-free current export or a migrated report that predates
-    /// required native targets.
-    Targetless(String),
+    /// The dialect-free canonical CADIR document.
+    Cadir,
     /// A current native export, identified by its resolved target.
     Native(DialectId),
 }
@@ -82,7 +81,13 @@ impl<'de> Deserialize<'de> for ExportReport {
                     target.namespace(),
                 )))
             }
-            None => ExportIdentity::Targetless(wire.format),
+            None if wire.format == "cadir" => ExportIdentity::Cadir,
+            None => {
+                return Err(serde::de::Error::custom(format_args!(
+                    "native export report for format {:?} requires a target",
+                    wire.format
+                )))
+            }
         };
         Ok(Self {
             identity,
@@ -212,28 +217,25 @@ impl ExportReport {
     #[must_use]
     pub fn format(&self) -> &str {
         match &self.identity {
-            ExportIdentity::Targetless(format) => format,
+            ExportIdentity::Cadir => "cadir",
             ExportIdentity::Native(target) => target.namespace(),
         }
     }
 
     /// The concrete native dialect written.
     ///
-    /// `None` identifies neutral CADIR or a migrated native report written
-    /// before export targets entered the wire format. New native reports always
-    /// name a target.
+    /// `None` identifies neutral CADIR. Native reports always name a target.
     #[must_use]
     pub fn target(&self) -> Option<&DialectId> {
         match &self.identity {
             ExportIdentity::Native(target) => Some(target),
-            ExportIdentity::Targetless(_) => None,
+            ExportIdentity::Cadir => None,
         }
     }
 
     /// Constructs a report for the neutral CADIR document, which has no native
     /// dialect target.
     #[must_use]
-    #[cfg(test)]
     pub(crate) fn cadir(
         census: EntityCensus,
         fidelity: FidelityResolution,
@@ -241,21 +243,8 @@ impl ExportReport {
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
-        Self::dialect_free("cadir", census, fidelity, write_path, losses, notes)
-    }
-
-    /// Constructs a targetless report stamped with a dialect-free encoder's
-    /// format.
-    pub(crate) fn dialect_free(
-        format: impl Into<String>,
-        census: EntityCensus,
-        fidelity: FidelityResolution,
-        write_path: WritePath,
-        losses: Vec<LossNote>,
-        notes: Vec<String>,
-    ) -> Self {
         Self {
-            identity: ExportIdentity::Targetless(format.into()),
+            identity: ExportIdentity::Cadir,
             census,
             fidelity,
             write_path,
