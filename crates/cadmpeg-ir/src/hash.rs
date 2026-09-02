@@ -189,7 +189,7 @@ fn normalized_native<'a>(
             (
                 name.as_str(),
                 NormalizedNamespace {
-                    version: namespace.version,
+                    version: namespace.version(),
                     arenas,
                 },
             )
@@ -198,12 +198,9 @@ fn normalized_native<'a>(
     let namespace = namespaces
         .entry(format)
         .or_insert_with(|| NormalizedNamespace {
-            version: 0,
+            version: 1,
             arenas: BTreeMap::new(),
         });
-    if namespace.version == 0 {
-        namespace.version = 1;
-    }
     namespace
         .arenas
         .insert("unknowns", unknowns.iter().collect());
@@ -309,7 +306,7 @@ mod tests {
     fn pinned_native() -> Native {
         let mut native = Native::default();
         let namespace = native.namespace_mut("pin");
-        namespace.version = 3;
+        namespace.set_version(std::num::NonZeroU32::new(3).unwrap());
         namespace
             .arenas
             .insert("records".into(), vec![pinned_record()]);
@@ -614,7 +611,7 @@ mod tests {
             )
             .unwrap();
         let namespace = ir.native.namespace_mut("other");
-        namespace.version = 3;
+        namespace.set_version(std::num::NonZeroU32::new(3).unwrap());
         namespace.arenas.insert(
             "records".into(),
             vec![NativeRecord::new("other:record#0", serde_json::Map::new())],

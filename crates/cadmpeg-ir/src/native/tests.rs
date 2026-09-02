@@ -8,8 +8,28 @@ use serde::Serialize;
 
 use crate::diff;
 use crate::examples::unit_cube;
-use crate::native::NativeRecord;
+use crate::native::{NativeNamespace, NativeRecord};
 use crate::validate::validate_neutral;
+
+#[test]
+fn native_namespace_version_is_nonzero_in_memory_and_numeric_on_wire() {
+    let namespace = NativeNamespace::new(std::num::NonZeroU32::new(7).unwrap());
+    let wire = serde_json::to_value(&namespace).unwrap();
+    assert_eq!(wire["version"], 7);
+    assert_eq!(
+        serde_json::from_value::<NativeNamespace>(wire)
+            .unwrap()
+            .version(),
+        7
+    );
+    assert!(
+        serde_json::from_value::<NativeNamespace>(serde_json::json!({
+            "version": 0,
+            "arenas": {}
+        }))
+        .is_err()
+    );
+}
 
 #[test]
 fn native_records_use_own_ids_for_counts_diff_and_validation() {

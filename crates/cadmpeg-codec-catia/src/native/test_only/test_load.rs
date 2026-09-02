@@ -80,7 +80,7 @@ impl CatiaNative {
         }
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
         let mut records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
-        if namespace.version < CATIA_TYPED_OWNER_SLOT_VERSION {
+        if namespace.version() < CATIA_TYPED_OWNER_SLOT_VERSION {
             for record in &mut records {
                 let roles = object_graph::head_roles(record.lead, &record.head);
                 record.owner = roles
@@ -90,7 +90,7 @@ impl CatiaNative {
             }
         }
         let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
-        if namespace.version < CATIA_NUMERIC_PAIR_VERSION {
+        if namespace.version() < CATIA_NUMERIC_PAIR_VERSION {
             for entity in &mut entity_records {
                 entity.numeric_pair = entity_table::parse_numeric_pair(&entity.value_payload);
             }
@@ -107,7 +107,7 @@ impl CatiaNative {
             namespace.arena_as(row_chain_arena)?;
         let mut reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort> =
             namespace.arena_as("reference_signature_cohorts")?;
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
+        if namespace.version() < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
             for entity in &mut entity_records {
                 entity.reference_signature = entity_table::parse_reference_signature(
                     &entity.value_payload,
@@ -119,13 +119,13 @@ impl CatiaNative {
                 });
             }
         }
-        if namespace.version < CATIA_SUFFIX_FRAMING_VERSION {
+        if namespace.version() < CATIA_SUFFIX_FRAMING_VERSION {
             for entity in &mut entity_records {
                 entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
             }
         }
-        if namespace.version < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION
-            || namespace.version < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
+        if namespace.version() < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION
+            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
         {
             for entity in &mut entity_records {
                 entity.relation_expression = relation_expression(
@@ -161,8 +161,8 @@ impl CatiaNative {
                 );
             }
         }
-        if namespace.version < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
-            || namespace.version < CATIA_SUFFIX_TRAILER_8193_VERSION
+        if namespace.version() < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
+            || namespace.version() < CATIA_SUFFIX_TRAILER_8193_VERSION
         {
             for graph in &graphs {
                 let catalog = graph.catalog.as_deref().and_then(|catalog_id| {
@@ -205,7 +205,7 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version < CATIA_RANGE_NOMINAL_VERSION {
+        if namespace.version() < CATIA_RANGE_NOMINAL_VERSION {
             for entity in &mut entity_records {
                 entity.range_interval = range_interval(
                     &entity.value_payload,
@@ -265,7 +265,7 @@ impl CatiaNative {
             terminal_nulls_by_graph,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
+        if namespace.version() < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
             let entity_references = CatiaEntityReferenceIndex {
                 entities: &entities_by_graph_identity,
                 classes: &entity_classes_by_graph_identity,
@@ -281,7 +281,7 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_FRAME_VERSION {
+        if namespace.version() < CATIA_REFERENCE_SIGNATURE_FRAME_VERSION {
             for entity in &mut entity_records {
                 let Some(signature) = &mut entity.reference_signature else {
                     continue;
@@ -294,7 +294,7 @@ impl CatiaNative {
                 signature.production = production;
             }
         }
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_PAIR_VERSION {
+        if namespace.version() < CATIA_REFERENCE_SIGNATURE_PAIR_VERSION {
             let entity_references = CatiaEntityReferenceIndex {
                 entities: &entities_by_graph_identity,
                 classes: &entity_classes_by_graph_identity,
@@ -311,14 +311,14 @@ impl CatiaNative {
         }
         let expected_reference_signature_cohorts =
             derive_reference_signature_cohorts(&entity_records);
-        if namespace.version < CATIA_DERIVED_NATIVE_ID_VERSION {
+        if namespace.version() < CATIA_DERIVED_NATIVE_ID_VERSION {
             reference_signature_cohorts = expected_reference_signature_cohorts;
         } else if reference_signature_cohorts != expected_reference_signature_cohorts {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "CATIA reference-signature cohorts are not canonical".to_string(),
             ));
         }
-        if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
+        if namespace.version() < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
             for graph in &graphs {
                 let terminal_null = entity_records
                     .iter()
@@ -336,16 +336,16 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
-            || namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION
-            || namespace.version < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
-            || namespace.version < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
-            || namespace.version < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
-            || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
-            || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
-            || namespace.version < CATIA_FORMULA_REFERENCE_OFFSET_VERSION
-            || namespace.version < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
+        if namespace.version() < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
+            || namespace.version() < CATIA_TERMINAL_NULL_REFERENCE_VERSION
+            || namespace.version() < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
+            || namespace.version() < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
+            || namespace.version() < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
+            || namespace.version() < CATIA_FORMULA_REFERENCE_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -370,19 +370,19 @@ impl CatiaNative {
                     });
             }
         }
-        if namespace.version < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
-            || namespace.version < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
-            || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
-            || namespace.version < CATIA_RELATION_TYPED_REFERENCE_VERSION
-            || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
-            || namespace.version < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
-            || namespace.version < CATIA_RELATION_PROGRAM_INPUT_VERSION
-            || namespace.version < CATIA_RELATION_PROGRAM_OUTPUT_VERSION
-            || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
-            || namespace.version < CATIA_RELATION_REFERENCE_OFFSET_VERSION
-            || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
-            || namespace.version < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
+        if namespace.version() < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
+            || namespace.version() < CATIA_RELATION_TYPED_REFERENCE_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_INPUT_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_OUTPUT_VERSION
+            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_REFERENCE_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
+            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -406,9 +406,9 @@ impl CatiaNative {
                     });
             }
         }
-        if namespace.version < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION
-            || namespace.version < CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION
-            || namespace.version < CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION
+        if namespace.version() < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION
+            || namespace.version() < CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION
+            || namespace.version() < CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION
         {
             for entity in &mut entity_records {
                 if let Some(range) = &mut entity.constraint_range {
@@ -417,11 +417,11 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version < CATIA_CONFIGURATION_INCIDENCE_VERSION
-            || namespace.version < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
-            || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
-            || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION
+        if namespace.version() < CATIA_CONFIGURATION_INCIDENCE_VERSION
+            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version() < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -459,8 +459,8 @@ impl CatiaNative {
             &entity_classes_by_graph_identity,
             &terminal_nulls_by_graph,
         );
-        if namespace.version < CATIA_DERIVED_NATIVE_ID_VERSION
-            || namespace.version < CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION
+        if namespace.version() < CATIA_DERIVED_NATIVE_ID_VERSION
+            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION
         {
             schema_configuration_row_chains = expected_schema_configuration_row_chains;
         } else if schema_configuration_row_chains != expected_schema_configuration_row_chains {
@@ -814,7 +814,7 @@ impl CatiaNative {
         let design_objects = design_objects(&graphs, &entity_records);
         if namespace.arenas.contains_key("design_objects") {
             let mut stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
-            if namespace.version < CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION {
+            if namespace.version() < CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION {
                 let derived_by_id = design_objects
                     .iter()
                     .map(|object| (object.id.as_str(), object))
@@ -827,7 +827,7 @@ impl CatiaNative {
                     }
                 }
             }
-            if namespace.version < CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION {
+            if namespace.version() < CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION {
                 let derived_by_id = design_objects
                     .iter()
                     .map(|object| (object.id.as_str(), object))
@@ -862,7 +862,7 @@ impl CatiaNative {
                 Vec::new()
             };
         finjpl_segments.sort_by_key(|segment| segment.byte_offset);
-        if namespace.version < CATIA_OBJECT_GRAPH_SEGMENT_VERSION {
+        if namespace.version() < CATIA_OBJECT_GRAPH_SEGMENT_VERSION {
             for graph in &mut graphs {
                 graph.finjpl_segment =
                     containing_finjpl_segment(graph.byte_offset, graph.byte_len, &finjpl_segments)
@@ -890,7 +890,7 @@ impl CatiaNative {
             } else {
                 Vec::new()
             };
-        if namespace.version < CATIA_LEGACY_IDENTITY_LEAD_VERSION {
+        if namespace.version() < CATIA_LEGACY_IDENTITY_LEAD_VERSION {
             for identity in legacy_entity_runs
                 .iter_mut()
                 .flat_map(|run| &mut run.identities)
@@ -898,7 +898,7 @@ impl CatiaNative {
                 identity.lead = 0x81;
             }
         }
-        if namespace.version < CATIA_LEGACY_ROLE_SELECTOR_VERSION {
+        if namespace.version() < CATIA_LEGACY_ROLE_SELECTOR_VERSION {
             for run in &mut legacy_entity_runs {
                 for field in &mut run.text_fields {
                     if let Some(role) = &mut field.role {
@@ -910,7 +910,7 @@ impl CatiaNative {
                 run.role_selectors.dedup_by_key(|role| role.byte_offset);
             }
         }
-        if namespace.version < CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION {
+        if namespace.version() < CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION {
             for program in legacy_entity_runs
                 .iter_mut()
                 .filter_map(|run| run.schema_program.as_mut())
@@ -922,7 +922,7 @@ impl CatiaNative {
                 })?;
             }
         }
-        if namespace.version < CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION {
+        if namespace.version() < CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION {
             for program in legacy_entity_runs
                 .iter_mut()
                 .filter_map(|run| run.schema_program.as_mut())
@@ -930,7 +930,7 @@ impl CatiaNative {
                 program.boundary = CatiaLegacySchemaProgramBoundary::VendorFooter;
             }
         }
-        if namespace.version < CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION {
+        if namespace.version() < CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION {
             for run in &mut legacy_entity_runs {
                 for index in 0..run.scalar_values.len() {
                     let entity_id = run.scalar_values[index].entity_id;
@@ -1000,7 +1000,7 @@ impl CatiaNative {
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);
         validate_legacy_entity_runs(
             &legacy_entity_runs,
-            namespace.version >= CATIA_LEGACY_ROLE_FIELD_CODE_VERSION,
+            namespace.version() >= CATIA_LEGACY_ROLE_FIELD_CODE_VERSION,
         )?;
         let mut preview_images: Vec<CatiaPreviewImage> =
             if namespace.arenas.contains_key("preview_images") {
@@ -1169,9 +1169,13 @@ impl CatiaNative {
             &finjpl_segments,
             &value_blocks,
         )?;
-        validate_alias_links(&alias_rows, &consolidated_owner_packets, namespace.version)?;
+        validate_alias_links(
+            &alias_rows,
+            &consolidated_owner_packets,
+            namespace.version(),
+        )?;
         Ok(Self {
-            version: namespace.version,
+            version: namespace.version(),
             alias_rows,
             catalogs,
             consolidated_circles,

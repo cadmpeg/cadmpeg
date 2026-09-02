@@ -342,9 +342,6 @@ fn add_source_typed_targets(
         return;
     }
     let namespace = ir.native.namespace_mut("step");
-    if namespace.version == 0 {
-        namespace.version = 1;
-    }
     namespace
         .arenas
         .entry("drawing_targets".into())

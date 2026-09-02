@@ -586,7 +586,9 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
     legacy
         .store(&mut namespace)
         .expect("store legacy alias rows");
-    namespace.version = crate::native::CATIA_ALIAS_SURFACE_TAG_VERSION - 1;
+    namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_ALIAS_SURFACE_TAG_VERSION - 1).unwrap(),
+    );
     assert_eq!(
         crate::native::CatiaNative::load(&namespace)
             .expect("load legacy alias rows")

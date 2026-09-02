@@ -56,7 +56,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             "native arena {name} did not survive a typed round trip"
         );
     }
-    assert_eq!(round_trip.version, crate::native::F3D_NATIVE_VERSION);
+    assert_eq!(round_trip.version(), crate::native::F3D_NATIVE_VERSION);
     assert_eq!(
         round_trip
             .arenas

@@ -5980,7 +5980,7 @@ mod tests {
                 .native
                 .namespace("nx")
                 .expect("required invariant")
-                .version,
+                .version(),
             189
         );
         assert_eq!(expressions.len(), 1);

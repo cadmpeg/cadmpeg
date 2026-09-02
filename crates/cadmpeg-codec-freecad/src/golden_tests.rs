@@ -117,7 +117,7 @@ fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
         shape.insert(
             format.clone(),
             serde_json::json!({
-                "version": namespace.version,
+                "version": namespace.version(),
                 "arenas": namespace_shape,
             }),
         );

@@ -390,18 +390,12 @@ mod tests {
     fn model_only_index_excludes_native_identity_universe() {
         let mut ir = CadIr::empty(Units::default());
         let native_id = "test:native#0";
-        ir.native.0.insert(
-            "test".into(),
-            NativeNamespace {
-                version: 1,
-                arenas: [(
-                    "records".into(),
-                    vec![NativeRecord::new(native_id, Map::new())],
-                )]
-                .into_iter()
-                .collect(),
-            },
+        let mut namespace = NativeNamespace::new(std::num::NonZeroU32::MIN);
+        namespace.arenas.insert(
+            "records".into(),
+            vec![NativeRecord::new(native_id, Map::new())],
         );
+        ir.native.0.insert("test".into(), namespace);
         let model_id = "test:model#0";
         ir.model.parameters.push(crate::features::DesignParameter {
             id: crate::features::ParameterId(model_id.into()),

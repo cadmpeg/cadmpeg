@@ -1,4 +1,4 @@
-# generated at 3f11b2f41
+# generated at 63dec9120
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -138,7 +138,7 @@ pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::body_keys: std::collectio
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::face_keys: std::collections::hash::map::HashMap<cadmpeg_ir::ids::FaceId, u64>
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::stats: cadmpeg_asm::brep::Stats
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::unknowns: alloc::vec::Vec<cadmpeg_ir::unknown::UnknownRecord>
-pub fn cadmpeg_asm::brep::transfer::transfer_into_ir(&cadmpeg_core::decode::context::DecodeContext<'_>, &mut cadmpeg_ir::document::CadIr, &str, u32, cadmpeg_asm::brep::AsmBrep) -> core::result::Result<cadmpeg_asm::brep::transfer::AsmTransferRemainder, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::brep::transfer::transfer_into_ir(&cadmpeg_core::decode::context::DecodeContext<'_>, &mut cadmpeg_ir::document::CadIr, &str, core::num::nonzero::NonZeroU32, cadmpeg_asm::brep::AsmBrep) -> core::result::Result<cadmpeg_asm::brep::transfer::AsmTransferRemainder, cadmpeg_core::error::CodecError>
 pub enum cadmpeg_asm::brep::DecodePurpose
 pub cadmpeg_asm::brep::DecodePurpose::History
 pub cadmpeg_asm::brep::DecodePurpose::Model

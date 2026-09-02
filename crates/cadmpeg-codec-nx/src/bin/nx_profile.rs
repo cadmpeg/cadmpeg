@@ -441,7 +441,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
             .ir()
             .native
             .namespace("nx")
-            .map(|namespace| namespace.version),
+            .map(cadmpeg_ir::NativeNamespace::version),
         entities: EntityCounts::from_ir(decoded.ir()),
         losses,
         loss_codes,

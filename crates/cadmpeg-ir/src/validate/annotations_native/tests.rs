@@ -14,20 +14,15 @@ use std::collections::HashSet;
 fn model_entity_wins_when_native_id_collides() {
     let mut ir = unit_cube();
     let id = ir.model.points[0].id.0.clone();
-    ir.native.0.insert(
-        "collision".into(),
-        NativeNamespace {
-            version: 1,
-            arenas: [(
-                "records".into(),
-                vec![NativeRecord::new(
-                    id.clone(),
-                    Map::from_iter([("native_only".into(), Value::Bool(true))]),
-                )],
-            )]
-            .into(),
-        },
+    let mut namespace = NativeNamespace::new(std::num::NonZeroU32::MIN);
+    namespace.arenas.insert(
+        "records".into(),
+        vec![NativeRecord::new(
+            id.clone(),
+            Map::from_iter([("native_only".into(), Value::Bool(true))]),
+        )],
     );
+    ir.native.0.insert("collision".into(), namespace);
     let entities = annotated_entity_json(&ir, &HashSet::from([id.as_str()]));
     assert!(entities[&id].get("position").is_some());
     assert!(entities[&id].get("native_only").is_none());

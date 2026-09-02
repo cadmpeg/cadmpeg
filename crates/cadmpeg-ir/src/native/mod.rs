@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
@@ -224,17 +225,42 @@ impl JsonSchema for NativeRecord {
 }
 
 /// Independently versioned source-format arena collection.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NativeNamespace {
     /// Codec-owned namespace schema version.
-    pub version: u32,
+    version: NonZeroU32,
     /// Record arenas keyed by stable arena name.
     #[serde(default)]
     pub arenas: BTreeMap<String, Vec<NativeRecord>>,
 }
 
 impl NativeNamespace {
+    /// Construct an empty namespace at a nonzero schema version.
+    #[must_use]
+    pub fn new(version: NonZeroU32) -> Self {
+        Self {
+            version,
+            arenas: BTreeMap::new(),
+        }
+    }
+
+    /// Return the codec-owned namespace schema version.
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.version.get()
+    }
+
+    /// Replace the schema version with a nonzero version.
+    pub fn set_version(&mut self, version: NonZeroU32) {
+        self.version = version;
+    }
+
+    /// Raise the schema version to a nonzero minimum without lowering it.
+    pub fn ensure_version_at_least(&mut self, minimum: NonZeroU32) {
+        self.version = self.version.max(minimum);
+    }
+
     /// Replace an arena by serializing codec-owned typed records.
     pub fn set_arena<T: Serialize>(
         &mut self,
@@ -283,6 +309,12 @@ impl NativeNamespace {
             .into_iter()
             .flatten()
             .map(NativeRecord::to_typed)
+    }
+}
+
+impl Default for NativeNamespace {
+    fn default() -> Self {
+        Self::new(NonZeroU32::MIN)
     }
 }
 

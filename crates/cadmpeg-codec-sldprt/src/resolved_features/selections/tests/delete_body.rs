@@ -68,7 +68,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     );
 
     let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
-    legacy.version = 5;
+    legacy.set_version(std::num::NonZeroU32::new(5).unwrap());
     for record in legacy
         .arenas
         .get_mut("feature_input_body_selections")

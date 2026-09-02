@@ -96,8 +96,12 @@ fn native_namespace_types_and_validates_formula_relations() {
         "parameter".to_string(),
         output.get("entity").cloned().unwrap_or_default(),
     );
-    version_235_namespace.version = crate::native::CATIA_FORMULA_OUTPUT_REFERENCE_VERSION - 1;
     drop(stored_fields);
+
+    version_235_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_FORMULA_OUTPUT_REFERENCE_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_235_namespace)
         .expect("migrate formula output reference");
     assert_eq!(
@@ -129,8 +133,12 @@ fn native_namespace_types_and_validates_formula_relations() {
             .expect("stored expression-entity object")["entity"]
             .clone(),
     );
-    version_236_namespace.version = crate::native::CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION - 1;
     drop(stored_fields);
+
+    version_236_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_236_namespace)
         .expect("migrate formula expression reference");
     assert_eq!(
@@ -159,8 +167,12 @@ fn native_namespace_types_and_validates_formula_relations() {
             .clone();
         formula_fields.insert(field.to_string(), reference);
     }
-    version_249_namespace.version = crate::native::CATIA_FORMULA_REFERENCE_OFFSET_VERSION - 1;
     drop(stored_fields);
+
+    version_249_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_FORMULA_REFERENCE_OFFSET_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_249_namespace)
         .expect("migrate formula reference offsets");
     assert_eq!(
@@ -195,8 +207,12 @@ fn native_namespace_types_and_validates_formula_relations() {
     for candidate in candidates {
         *candidate = candidate.as_object().expect("stored candidate reference")["entity"].clone();
     }
-    version_237_namespace.version = crate::native::CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION - 1;
     drop(stored_fields);
+
+    version_237_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_237_namespace)
         .expect("migrate formula dependency references");
     assert_eq!(
@@ -224,7 +240,10 @@ fn native_namespace_types_and_validates_formula_relations() {
         .as_object_mut()
         .expect("stored parameter dependency")
         .remove("source_offset");
-    version_245_namespace.version = crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1;
+    version_245_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_245_namespace)
         .expect("migrate formula dependency offsets");
     assert_eq!(
@@ -249,7 +268,7 @@ fn native_namespace_types_and_validates_formula_relations() {
     version_205_namespace
         .set_arena("entity_records", &version_205_entities)
         .expect("store version 205 entity records");
-    version_205_namespace.version = 205;
+    version_205_namespace.set_version(std::num::NonZeroU32::new(205).unwrap());
     let migrated = crate::native::CatiaNative::load(&version_205_namespace)
         .expect("migrate version 205 formula dependency candidates");
     assert_eq!(
@@ -389,8 +408,14 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
         .expect("stored parameter dependency")
         .insert("source_offset".to_string(), 9_u64.into());
     dependencies.insert(0, literal_dependency);
-    old_namespace.version = crate::native::CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION - 1;
     drop(stored_fields);
+
+    old_namespace.set_version(
+        std::num::NonZeroU32::new(
+            crate::native::CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION - 1,
+        )
+        .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&old_namespace)
         .expect("migrate string-literal relation dependencies");
     assert_eq!(
@@ -496,7 +521,7 @@ fn terminal_entity_identity_is_a_null_formula_output() {
     version_210_namespace
         .set_arena("entity_records", &version_210_entities)
         .expect("store version 210 entity records");
-    version_210_namespace.version = 210;
+    version_210_namespace.set_version(std::num::NonZeroU32::new(210).unwrap());
     let migrated = crate::native::CatiaNative::load(&version_210_namespace)
         .expect("migrate terminal null references");
     assert!(migrated.object_graphs[0].records[0].references[2].is_null);

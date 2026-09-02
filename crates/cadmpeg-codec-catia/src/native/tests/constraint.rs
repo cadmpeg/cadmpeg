@@ -467,7 +467,10 @@ fn native_namespace_types_dimension_constraint_ranges() {
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range namespace");
-    stored.version = crate::native::CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION - 1)
+            .unwrap(),
+    );
     stored
         .arenas
         .get_mut("entity_records")
@@ -494,7 +497,10 @@ fn native_namespace_types_dimension_constraint_ranges() {
     unique_native
         .store(&mut stored)
         .expect("store older range-interval incidence namespace");
-    stored.version = crate::native::CATIA_RANGE_INTERVAL_INCIDENCE_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_RANGE_INTERVAL_INCIDENCE_VERSION - 1)
+            .unwrap(),
+    );
     stored
         .arenas
         .get_mut("entity_records")
@@ -521,7 +527,10 @@ fn native_namespace_types_dimension_constraint_ranges() {
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range source namespace");
-    stored.version = crate::native::CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION - 1)
+            .unwrap(),
+    );
     stored
         .arenas
         .get_mut("entity_records")
@@ -559,7 +568,12 @@ fn native_namespace_types_dimension_constraint_ranges() {
     storage_native
         .store(&mut stored)
         .expect("store older constraint-range storage namespace");
-    stored.version = crate::native::CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION - 1;
+    stored.set_version(
+        std::num::NonZeroU32::new(
+            crate::native::CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION - 1,
+        )
+        .unwrap(),
+    );
     stored
         .arenas
         .get_mut("entity_records")
@@ -745,7 +759,9 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
     native
         .store(&mut previous_namespace)
         .expect("store range-interval namespace");
-    previous_namespace.version = crate::native::CATIA_RANGE_INTERVAL_VERSION - 1;
+    previous_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_RANGE_INTERVAL_VERSION - 1).unwrap(),
+    );
     previous_namespace
         .arenas
         .get_mut("entity_records")
@@ -763,7 +779,9 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
     native
         .store(&mut previous_namespace)
         .expect("store pre-nominal range namespace");
-    previous_namespace.version = crate::native::CATIA_RANGE_NOMINAL_VERSION - 1;
+    previous_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_RANGE_NOMINAL_VERSION - 1).unwrap(),
+    );
     previous_namespace
         .arenas
         .get_mut("entity_records")

@@ -263,7 +263,7 @@ impl SldprtNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        SLDPRT_CATALOGUE.check_version(namespace.version)?;
+        SLDPRT_CATALOGUE.check_version(namespace.version())?;
         let mut native = Self {
             version: SLDPRT_NATIVE_VERSION,
             feature_histories: namespace.arena_as("feature_histories")?,
@@ -276,7 +276,7 @@ impl SldprtNative {
         let mut entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
-        let body_selections: Vec<FeatureInputBodySelection> = if namespace.version == 1
+        let body_selections: Vec<FeatureInputBodySelection> = if namespace.version() == 1
             && !namespace
                 .arenas
                 .contains_key("feature_input_body_selections")
@@ -285,7 +285,7 @@ impl SldprtNative {
         } else {
             namespace.arena_as("feature_input_body_selections")?
         };
-        let edge_selections: Vec<FeatureInputEdgeSelection> = if namespace.version <= 2
+        let edge_selections: Vec<FeatureInputEdgeSelection> = if namespace.version() <= 2
             && !namespace
                 .arenas
                 .contains_key("feature_input_edge_selections")
@@ -294,7 +294,7 @@ impl SldprtNative {
         } else {
             namespace.arena_as("feature_input_edge_selections")?
         };
-        let surface_selections: Vec<FeatureInputSurfaceSelection> = if namespace.version <= 3
+        let surface_selections: Vec<FeatureInputSurfaceSelection> = if namespace.version() <= 3
             && !namespace
                 .arenas
                 .contains_key("feature_input_surface_selections")
@@ -304,7 +304,7 @@ impl SldprtNative {
             namespace.arena_as("feature_input_surface_selections")?
         };
         let generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity> =
-            if namespace.version <= 12
+            if namespace.version() <= 12
                 && !namespace
                     .arenas
                     .contains_key("feature_input_generated_surface_identities")
@@ -496,13 +496,13 @@ impl SldprtNative {
         if let Some(record) = surface_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
-                || (namespace.version >= 8 && record.components.is_empty())
-                || (namespace.version >= 9
+                || (namespace.version() >= 8 && record.components.is_empty())
+                || (namespace.version() >= 9
                     && record
                         .producer_feature_refs
                         .iter()
                         .any(|producer| !feature_ids.contains(producer.as_str())))
-                || (namespace.version >= 10
+                || (namespace.version() >= 10
                     && record
                         .terminal_feature_ref
                         .as_deref()
@@ -647,7 +647,7 @@ impl SldprtNative {
             history.features.sort_by_key(|record| record.ordinal);
         }
         for lane in &mut native.feature_input_lanes {
-            if namespace.version <= 4 {
+            if namespace.version() <= 4 {
                 for entity in entities
                     .iter_mut()
                     .filter(|record| record.parent == lane.id)
@@ -659,7 +659,7 @@ impl SldprtNative {
                         )
                     });
                 }
-            } else if namespace.version <= 6 {
+            } else if namespace.version() <= 6 {
                 for entity in entities
                     .iter_mut()
                     .filter(|record| record.parent == lane.id)
@@ -711,7 +711,7 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.body_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 5 {
+            if namespace.version() <= 5 {
                 let modes = lane
                     .body_selections
                     .iter()
@@ -747,7 +747,7 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.edge_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 11 {
+            if namespace.version() <= 11 {
                 for record in &mut lane.edge_selections {
                     if let Some(local_edge_ids) =
                         usize::try_from(record.offset).ok().and_then(|offset| {
@@ -869,9 +869,9 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 9 {
+            if namespace.version() <= 9 {
                 for record in &mut lane.surface_selections {
-                    if namespace.version <= 7 {
+                    if namespace.version() <= 7 {
                         record.components = usize::try_from(record.offset)
                             .ok()
                             .and_then(|offset| {
@@ -925,7 +925,7 @@ impl SldprtNative {
                     record.id
                 )));
             }
-            lane.generated_surface_identities = if namespace.version <= 12 {
+            lane.generated_surface_identities = if namespace.version() <= 12 {
                 crate::resolved_features::selections::generated_surface_identities(lane)
             } else {
                 let mut records = generated_surface_identities
@@ -1353,7 +1353,7 @@ impl SldprtNative {
                 "history feature classes do not match the feature-input index".into(),
             ));
         }
-        namespace.version = SLDPRT_NATIVE_VERSION;
+        namespace.set_version(std::num::NonZeroU32::new(SLDPRT_NATIVE_VERSION).unwrap());
         SLDPRT_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(SLDPRT_ARENA_NAMES
             .iter()

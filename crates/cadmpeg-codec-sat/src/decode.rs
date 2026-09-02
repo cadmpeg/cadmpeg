@@ -197,7 +197,7 @@ fn build_result(
         unknowns,
         stats,
         annotation_records: _,
-    } = transfer_into_ir(ctx, &mut ir, FORMAT, 1, brep)?;
+    } = transfer_into_ir(ctx, &mut ir, FORMAT, std::num::NonZeroU32::MIN, brep)?;
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());

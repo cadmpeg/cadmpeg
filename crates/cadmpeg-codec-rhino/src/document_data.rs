@@ -648,7 +648,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.version = namespace.version.max(2);
+    namespace.ensure_version_at_least(std::num::NonZeroU32::new(2).unwrap());
     namespace
         .set_arena("revisions", &revisions)
         .expect("Rhino revisions serialize");

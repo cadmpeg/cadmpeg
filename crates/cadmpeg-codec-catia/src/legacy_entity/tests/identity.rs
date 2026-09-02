@@ -262,7 +262,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     previous_schema_namespace
         .set_arena("legacy_entity_runs", &previous_schema_runs)
         .expect("store previous schema-program runs");
-    previous_schema_namespace.version = 221;
+    previous_schema_namespace.set_version(std::num::NonZeroU32::new(221).unwrap());
     let migrated_schema = crate::native::CatiaNative::load(&previous_schema_namespace)
         .expect("migrate schema identifiers");
     assert_eq!(
@@ -287,7 +287,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     previous_boundary_namespace
         .set_arena("legacy_entity_runs", &previous_boundary_runs)
         .expect("store previous schema-program boundary");
-    previous_boundary_namespace.version = 222;
+    previous_boundary_namespace.set_version(std::num::NonZeroU32::new(222).unwrap());
     let migrated_boundary = crate::native::CatiaNative::load(&previous_boundary_namespace)
         .expect("migrate schema-program boundary");
     assert_eq!(
@@ -345,7 +345,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     previous_field_namespace
         .set_arena("legacy_entity_runs", &previous_field_runs)
         .expect("store previous field-binding runs");
-    previous_field_namespace.version = 219;
+    previous_field_namespace.set_version(std::num::NonZeroU32::new(219).unwrap());
     let migrated_field_bindings = crate::native::CatiaNative::load(&previous_field_namespace)
         .expect("load previous field bindings");
     assert!(migrated_field_bindings.legacy_entity_runs[0]
@@ -367,7 +367,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     previous_identity_namespace
         .set_arena("legacy_entity_runs", &previous_identity_runs)
         .expect("store previous identity runs");
-    previous_identity_namespace.version = 215;
+    previous_identity_namespace.set_version(std::num::NonZeroU32::new(215).unwrap());
     let migrated_identity = crate::native::CatiaNative::load(&previous_identity_namespace)
         .expect("migrate legacy identity leads");
     assert!(migrated_identity.legacy_entity_runs[0]
@@ -389,7 +389,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     previous_namespace
         .set_arena("legacy_entity_runs", &previous_runs)
         .expect("store previous legacy entity runs");
-    previous_namespace.version = 211;
+    previous_namespace.set_version(std::num::NonZeroU32::new(211).unwrap());
     let migrated =
         crate::native::CatiaNative::load(&previous_namespace).expect("migrate legacy text roles");
     assert_eq!(migrated.legacy_entity_runs[0].role_selectors.len(), 5);

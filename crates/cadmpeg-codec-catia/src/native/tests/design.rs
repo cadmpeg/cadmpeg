@@ -621,9 +621,13 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .expect("stored parallel reference column")["field"]
             .clone();
     }
-    version_256_namespace.version =
-        crate::native::CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION - 1;
     drop(stored_fields);
+    version_256_namespace.set_version(
+        std::num::NonZeroU32::new(
+            crate::native::CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION - 1,
+        )
+        .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_256_namespace)
         .expect("migrate parallel-reference column incidences");
     assert_eq!(
@@ -651,7 +655,10 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     version_255_namespace
         .set_arena("design_objects", &version_255_objects)
         .expect("store version 255 design objects");
-    version_255_namespace.version = crate::native::CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION - 1;
+    version_255_namespace.set_version(
+        std::num::NonZeroU32::new(crate::native::CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION - 1)
+            .unwrap(),
+    );
     let migrated = crate::native::CatiaNative::load(&version_255_namespace)
         .expect("migrate parallel-reference cell offsets");
     assert_eq!(
@@ -670,7 +677,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     previous_namespace
         .set_arena("design_objects", &previous_objects)
         .expect("store previous design objects");
-    previous_namespace.version = 200;
+    previous_namespace.set_version(std::num::NonZeroU32::new(200).unwrap());
     let migrated = crate::native::CatiaNative::load(&previous_namespace)
         .expect("migrate previous parallel reference table");
     assert_eq!(
@@ -696,7 +703,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     version_203_namespace
         .set_arena("design_objects", &version_203_objects)
         .expect("store version 203 design objects");
-    version_203_namespace.version = 203;
+    version_203_namespace.set_version(std::num::NonZeroU32::new(203).unwrap());
     let migrated = crate::native::CatiaNative::load(&version_203_namespace)
         .expect("migrate version 203 parallel reference row matches");
     assert_eq!(
@@ -722,7 +729,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     version_202_namespace
         .set_arena("design_objects", &version_202_objects)
         .expect("store version 202 design objects");
-    version_202_namespace.version = 202;
+    version_202_namespace.set_version(std::num::NonZeroU32::new(202).unwrap());
     let migrated = crate::native::CatiaNative::load(&version_202_namespace)
         .expect("migrate version 202 source field classes");
     assert_eq!(
@@ -750,7 +757,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     version_201_namespace
         .set_arena("design_objects", &version_201_objects)
         .expect("store version 201 design objects");
-    version_201_namespace.version = 201;
+    version_201_namespace.set_version(std::num::NonZeroU32::new(201).unwrap());
     let migrated = crate::native::CatiaNative::load(&version_201_namespace)
         .expect("migrate version 201 target field classes");
     assert_eq!(
@@ -807,7 +814,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     version_210_namespace
         .set_arena("design_objects", &version_210_objects)
         .expect("store version 210 design objects");
-    version_210_namespace.version = 210;
+    version_210_namespace.set_version(std::num::NonZeroU32::new(210).unwrap());
     let migrated = crate::native::CatiaNative::load(&version_210_namespace)
         .expect("migrate terminal null parallel reference cells");
     assert!(migrated.design_objects[0]
@@ -879,7 +886,7 @@ fn parallel_reference_row_match_requires_distinct_target_fields() {
     version_204_namespace
         .set_arena("design_objects", &version_204_objects)
         .expect("store version 204 design objects");
-    version_204_namespace.version = 204;
+    version_204_namespace.set_version(std::num::NonZeroU32::new(204).unwrap());
 
     let migrated = crate::native::CatiaNative::load(&version_204_namespace)
         .expect("migrate version 204 parallel reference row matches");

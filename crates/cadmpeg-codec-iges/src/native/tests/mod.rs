@@ -207,7 +207,7 @@ fn decode_preserves_native_entities_and_graph() {
         Some(bytes.as_slice())
     );
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.version, 6);
+    assert_eq!(native.version(), 6);
     assert_eq!(native.arenas["cards"].len(), 7);
     assert_eq!(native.arenas["entities"].len(), 1);
     assert!(native.arenas["colors"].is_empty());
