@@ -238,8 +238,7 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// Construction state machine: [`crate::draft::ModelDraft`] (mutable, indexed)
 /// commits into [`CadIr`] (structurally canonical after [`CadIr::finalize`]);
 /// [`crate::ValidationReport`] is produced separately by `validate_neutral` and
-/// is not embedded in the document. Plan prose names the draft stage
-/// `DocumentDraft`; the runtime type is [`crate::draft::ModelDraft`].
+/// is not embedded in the document.
 ///
 /// `model` holds the format-neutral graph. `native` retains typed
 /// format-specific product data without changing that graph's semantics.

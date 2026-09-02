@@ -2654,3 +2654,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::report::LossTaxonomy::as_str"
 reason = "the rendered taxonomy name is derived through serde and returned as an owned string, leaving the serde variant spelling as the single author of loss names"
+
+[[change]]
+commit = "da64d3cbfd50e7e2c06efe953cd38996366aebbe"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::DocumentDraft"
+reason = "the unused alias duplicated ModelDraft without defining a distinct state or contract"

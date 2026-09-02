@@ -1,4 +1,4 @@
-# generated at 94a267d9d
+# generated at da64d3cbf
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -496,6 +496,8 @@ pub fn cadmpeg_ir::draft::ModelDraft::model_mut(&mut self) -> &mut cadmpeg_ir::d
 pub fn cadmpeg_ir::draft::ModelDraft::new() -> Self
 pub fn cadmpeg_ir::draft::ModelDraft::note(&mut self, cadmpeg_ir::LossNote)
 pub fn cadmpeg_ir::draft::ModelDraft::retain_exactness(&mut self, impl core::ops::function::FnMut(&str) -> bool)
+impl core::default::Default for cadmpeg_ir::draft::ModelDraft
+pub fn cadmpeg_ir::draft::ModelDraft::default() -> Self
 pub trait cadmpeg_ir::draft::ArenaEntity: cadmpeg_ir::draft::private::Sealed + cadmpeg_ir::schema::EntitySchema + core::marker::Sized
 pub fn cadmpeg_ir::draft::ArenaEntity::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::draft::ArenaEntity::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -622,7 +624,6 @@ pub fn cadmpeg_ir::topology::Shell::arena_mut(&mut cadmpeg_ir::document::Model) 
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::topology::Vertex
 pub fn cadmpeg_ir::topology::Vertex::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::topology::Vertex::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
-pub type cadmpeg_ir::draft::DocumentDraft = cadmpeg_ir::draft::ModelDraft
 pub mod cadmpeg_ir::drawings
 pub enum cadmpeg_ir::drawings::DrawingKind
 pub cadmpeg_ir::drawings::DrawingKind::Annotation
@@ -7476,6 +7477,8 @@ pub fn cadmpeg_ir::draft::ModelDraft::model_mut(&mut self) -> &mut cadmpeg_ir::d
 pub fn cadmpeg_ir::draft::ModelDraft::new() -> Self
 pub fn cadmpeg_ir::draft::ModelDraft::note(&mut self, cadmpeg_ir::LossNote)
 pub fn cadmpeg_ir::draft::ModelDraft::retain_exactness(&mut self, impl core::ops::function::FnMut(&str) -> bool)
+impl core::default::Default for cadmpeg_ir::draft::ModelDraft
+pub fn cadmpeg_ir::draft::ModelDraft::default() -> Self
 pub struct cadmpeg_ir::ModifiedEntity
 pub cadmpeg_ir::ModifiedEntity::fields: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::ModifiedEntity::id: alloc::string::String
@@ -7973,5 +7976,4 @@ pub fn cadmpeg_ir::is_valid_identity(&str) -> bool
 pub fn cadmpeg_ir::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub type cadmpeg_ir::AnnotationProvenance = cadmpeg_ir::Provenance<cadmpeg_ir::AnnotationLocation>
-pub type cadmpeg_ir::DocumentDraft = cadmpeg_ir::draft::ModelDraft
 pub type cadmpeg_ir::SourceProvenance = cadmpeg_ir::Provenance<cadmpeg_ir::SourceLocation>

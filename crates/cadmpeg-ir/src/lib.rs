@@ -9,8 +9,8 @@
 //! carries neutral construction features, tessellation, appearance, source
 //! attributes, source-native namespaces, and uninterpreted [`UnknownRecord`]s.
 //!
-//! Document state machine: [`draft::ModelDraft`] (plan name `DocumentDraft`)
-//! commits into [`CadIr`]; [`validate_neutral()`] then yields a
+//! Document state machine: [`draft::ModelDraft`] commits into [`CadIr`];
+//! [`validate_neutral()`] then yields a
 //! [`ValidationReport`]. Decode produces [`DecodeResult`] without embedding
 //! validation. Start a hand-built document with [`CadIr::empty`], populate its
 //! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
@@ -82,7 +82,7 @@ pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, D
 pub use container::ContainerSummary;
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
-pub use draft::{DocumentDraft, ModelDraft};
+pub use draft::ModelDraft;
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
     CoilResult, CoilSection, CoilSectionPlacement, ConfigurationActivation, ConfigurationBodies,
