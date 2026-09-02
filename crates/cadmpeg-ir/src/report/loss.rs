@@ -202,98 +202,16 @@ pub enum LossTaxonomy {
 
 impl LossTaxonomy {
     /// The stable `snake_case` identifier for this taxonomy variant.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::MissingGeometryStream => "missing_geometry_stream",
-            Self::TopologyNotTransferred => "topology_not_transferred",
-            Self::SourceTopologyInvalid => "source_topology_invalid",
-            Self::GeometryNotTransferred => "geometry_not_transferred",
-            Self::ReferenceGraphNotClosed => "reference_graph_not_closed",
-            Self::TopologyGaugeSubstituted => "topology_gauge_substituted",
-            Self::CarrierAxisInferred => "carrier_axis_inferred",
-            Self::CarrierSummary => "carrier_summary",
-            Self::MaterialNotTransferred => "material_not_transferred",
-            Self::MetadataNotTransferred => "metadata_not_transferred",
-            Self::AttributesNotTransferred => "attributes_not_transferred",
-            Self::FeatureHistoryRetained => "feature_history_retained",
-            Self::AssemblyComponentsExternal => "assembly_components_external",
-            Self::AssemblyPlacementsNotTransferred => "assembly_placements_not_transferred",
-            Self::RecordNotTyped => "record_not_typed",
-            Self::DecodeDiagnostic => "decode_diagnostic",
-            Self::IntegrityFailure => "integrity_failure",
-            Self::NoncanonicalSourceSyntax => "noncanonical_source_syntax",
-            Self::SourceDialectUnverified => "source_dialect_unverified",
-            Self::SourceDialectDisplaced => "source_dialect_displaced",
-            Self::MeshVertexPrecision => "mesh_vertex_precision",
-            Self::ObjectRecordsUntransferred => "object_records_untransferred",
-            Self::UnsupportedObjectFamily => "unsupported_object_family",
-            Self::AssetNotTransferred => "asset_not_transferred",
-            Self::NoExportableSolids => "no_exportable_solids",
-            Self::HiddenBodyOmitted => "hidden_body_omitted",
-            Self::BodyTransformNotApplied => "body_transform_not_applied",
-            Self::AnalyticSurfaceNormalized => "analytic_surface_normalized",
-            Self::EllipticalConeReduced => "elliptical_cone_reduced",
-            Self::CurvelessEdgeOmitted => "curveless_edge_omitted",
-            Self::UnknownSurfaceFaceOmitted => "unknown_surface_face_omitted",
-            Self::PcurveOmitted => "pcurve_omitted",
-            Self::SubdOmitted => "subd_omitted",
-            Self::TessellationOmitted => "tessellation_omitted",
-            Self::PmiOmitted => "pmi_omitted",
-            Self::SourceAssociationOmitted => "source_association_omitted",
-            Self::PassthroughRecordOmitted => "passthrough_record_omitted",
-            Self::ProceduralReduced => "procedural_reduced",
-            Self::ParametricRecordOmitted => "parametric_record_omitted",
-            Self::AppearanceReduced => "appearance_reduced",
-            Self::PreservedSourceUnavailable => "preserved_source_unavailable",
-        }
+    pub fn as_str(self) -> String {
+        let Ok(serde_json::Value::String(name)) = serde_json::to_value(self) else {
+            unreachable!("a fieldless loss taxonomy always serializes as a string")
+        };
+        name
     }
 
     /// Parse a v1 bare `snake_case` taxonomy identifier.
     pub fn from_v1_str(text: &str) -> Option<Self> {
-        Some(match text {
-            "missing_geometry_stream" => Self::MissingGeometryStream,
-            "topology_not_transferred" => Self::TopologyNotTransferred,
-            "source_topology_invalid" => Self::SourceTopologyInvalid,
-            "geometry_not_transferred" => Self::GeometryNotTransferred,
-            "reference_graph_not_closed" => Self::ReferenceGraphNotClosed,
-            "topology_gauge_substituted" => Self::TopologyGaugeSubstituted,
-            "carrier_axis_inferred" => Self::CarrierAxisInferred,
-            "carrier_summary" => Self::CarrierSummary,
-            "material_not_transferred" => Self::MaterialNotTransferred,
-            "metadata_not_transferred" => Self::MetadataNotTransferred,
-            "attributes_not_transferred" => Self::AttributesNotTransferred,
-            "feature_history_retained" => Self::FeatureHistoryRetained,
-            "assembly_components_external" => Self::AssemblyComponentsExternal,
-            "assembly_placements_not_transferred" => Self::AssemblyPlacementsNotTransferred,
-            "record_not_typed" => Self::RecordNotTyped,
-            "decode_diagnostic" => Self::DecodeDiagnostic,
-            "integrity_failure" => Self::IntegrityFailure,
-            "noncanonical_source_syntax" => Self::NoncanonicalSourceSyntax,
-            "source_dialect_unverified" => Self::SourceDialectUnverified,
-            "source_dialect_displaced" => Self::SourceDialectDisplaced,
-            "mesh_vertex_precision" => Self::MeshVertexPrecision,
-            "object_records_untransferred" => Self::ObjectRecordsUntransferred,
-            "unsupported_object_family" => Self::UnsupportedObjectFamily,
-            "asset_not_transferred" => Self::AssetNotTransferred,
-            "no_exportable_solids" => Self::NoExportableSolids,
-            "hidden_body_omitted" => Self::HiddenBodyOmitted,
-            "body_transform_not_applied" => Self::BodyTransformNotApplied,
-            "analytic_surface_normalized" => Self::AnalyticSurfaceNormalized,
-            "elliptical_cone_reduced" => Self::EllipticalConeReduced,
-            "curveless_edge_omitted" => Self::CurvelessEdgeOmitted,
-            "unknown_surface_face_omitted" => Self::UnknownSurfaceFaceOmitted,
-            "pcurve_omitted" => Self::PcurveOmitted,
-            "subd_omitted" => Self::SubdOmitted,
-            "tessellation_omitted" => Self::TessellationOmitted,
-            "pmi_omitted" => Self::PmiOmitted,
-            "source_association_omitted" => Self::SourceAssociationOmitted,
-            "passthrough_record_omitted" => Self::PassthroughRecordOmitted,
-            "procedural_reduced" => Self::ProceduralReduced,
-            "parametric_record_omitted" => Self::ParametricRecordOmitted,
-            "appearance_reduced" => Self::AppearanceReduced,
-            "preserved_source_unavailable" => Self::PreservedSourceUnavailable,
-            _ => return None,
-        })
+        serde_json::from_value(serde_json::Value::String(text.to_owned())).ok()
     }
 
     /// Returns the subsystem affected by this kind of loss.
@@ -375,7 +293,7 @@ impl LossTaxonomy {
 
 impl fmt::Display for LossTaxonomy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+        f.write_str(&self.as_str())
     }
 }
 
@@ -491,7 +409,7 @@ impl LossKind {
     pub fn shared(taxonomy: LossTaxonomy) -> Self {
         Self {
             namespace: SHARED_LOSS_NAMESPACE.into(),
-            code: taxonomy.as_str().into(),
+            code: taxonomy.as_str(),
             taxonomy,
             strict_floor: taxonomy.strict_floor(),
         }
@@ -539,7 +457,7 @@ impl LossKind {
 
     /// Stable display form `namespace/code`.
     pub fn as_str(&self) -> String {
-        format!("{}/{}", self.namespace, self.code)
+        self.to_string()
     }
 
     /// Returns the subsystem affected by this kind of loss.

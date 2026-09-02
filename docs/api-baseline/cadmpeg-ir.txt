@@ -1,4 +1,4 @@
-# generated at 4fee14438
+# generated at 94a267d9d
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4433,7 +4433,7 @@ pub cadmpeg_ir::report::LossTaxonomy::TopologyNotTransferred
 pub cadmpeg_ir::report::LossTaxonomy::UnknownSurfaceFaceOmitted
 pub cadmpeg_ir::report::LossTaxonomy::UnsupportedObjectFamily
 impl cadmpeg_ir::LossTaxonomy
-pub const fn cadmpeg_ir::LossTaxonomy::as_str(self) -> &'static str
+pub fn cadmpeg_ir::LossTaxonomy::as_str(self) -> alloc::string::String
 pub const fn cadmpeg_ir::LossTaxonomy::category(self) -> cadmpeg_ir::LossCategory
 pub const fn cadmpeg_ir::LossTaxonomy::default_severity(self) -> cadmpeg_ir::Severity
 pub fn cadmpeg_ir::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
@@ -6632,7 +6632,7 @@ pub cadmpeg_ir::LossTaxonomy::TopologyNotTransferred
 pub cadmpeg_ir::LossTaxonomy::UnknownSurfaceFaceOmitted
 pub cadmpeg_ir::LossTaxonomy::UnsupportedObjectFamily
 impl cadmpeg_ir::LossTaxonomy
-pub const fn cadmpeg_ir::LossTaxonomy::as_str(self) -> &'static str
+pub fn cadmpeg_ir::LossTaxonomy::as_str(self) -> alloc::string::String
 pub const fn cadmpeg_ir::LossTaxonomy::category(self) -> cadmpeg_ir::LossCategory
 pub const fn cadmpeg_ir::LossTaxonomy::default_severity(self) -> cadmpeg_ir::Severity
 pub fn cadmpeg_ir::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
