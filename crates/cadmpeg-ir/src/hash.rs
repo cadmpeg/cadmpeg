@@ -478,8 +478,12 @@ mod tests {
     /// must keep.
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
-        ir.source = Some(crate::document::SourceMeta::unclassified(
-            "pin",
+        ir.source = Some(crate::document::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(
+                    cadmpeg_core::dialect::DialectId::pinned("pin:test"),
+                ),
+            ),
             [
                 (
                     DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
@@ -505,7 +509,14 @@ mod tests {
     ///     "attributes": {
     ///       "file_size": "4096"
     ///     },
-    ///     "dialects": null
+    ///     "dialects": {
+    ///       "primary": {
+    ///         "format": "pin",
+    ///         "dialect": "pin:test",
+    ///         "admission": "admitted"
+    ///       },
+    ///       "extra": []
+    ///     }
     ///   },
     /// ```
     ///
@@ -516,9 +527,14 @@ mod tests {
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
+        let independently_normalized = cloned_local_digest(&ir, "pin", "pin:source-image#0");
+        assert_eq!(
+            independently_normalized,
+            "672c76d703df6fba55be8468b76f36dbc748cd5df85cbc5e6976a7f0d6a7e665"
+        );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "0d340d38d1fc9c460368ce1b6798ff14d04444bc517325af4fa168570bcccbc6"
+            independently_normalized
         );
     }
 
@@ -561,8 +577,12 @@ mod tests {
         let mut ir = unit_cube();
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
-        ir.source = Some(crate::SourceMeta::unclassified(
-            "synthetic",
+        ir.source = Some(crate::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(
+                    cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
+                ),
+            ),
             [
                 (
                     DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),

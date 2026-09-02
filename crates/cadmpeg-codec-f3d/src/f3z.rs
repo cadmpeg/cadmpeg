@@ -58,7 +58,7 @@ pub fn decode<'a>(
         mut ir,
         body: mut report,
         source_fidelity: mut fidelity,
-    } = crate::decode::decode_archive_member(ctx, root_scan)?;
+    } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
     fidelity
         .retained_records
         .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
@@ -79,7 +79,7 @@ pub fn decode<'a>(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
-        classify_outer(&mut ir, &mut report, outer);
+        report.losses.extend(outer.losses);
         return Ok(finalize_result(ir, report, fidelity));
     }
 
@@ -104,17 +104,8 @@ pub fn decode<'a>(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences);
-    classify_outer(&mut ir, &mut report, outer);
-    Ok(finalize_result(ir, report, fidelity))
-}
-
-fn classify_outer(
-    ir: &mut cadmpeg_ir::CadIr,
-    report: &mut DecodeBody,
-    outer: archive::ArchiveSession<'_>,
-) {
     report.losses.extend(outer.losses);
-    crate::report::classify_source(ir, outer.layers);
+    Ok(finalize_result(ir, report, fidelity))
 }
 
 fn finalize_result(

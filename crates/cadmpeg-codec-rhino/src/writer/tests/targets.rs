@@ -84,10 +84,13 @@ fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
 #[test]
 fn inherit_refuses_a_source_that_records_no_dialect() {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
-        "rhino",
-        std::collections::BTreeMap::new(),
-    ));
+    ir.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "format": "rhino",
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
     let error = Encoder::plan(
         &RhinoCodec,
         EncodeInput::new(&ir, None),

@@ -127,7 +127,11 @@ impl MergeSession<'_, '_> {
                 ClassifiedMember::Scanned(member_scan) => member_scan,
                 ClassifiedMember::Unreadable(_) => continue,
             };
-            let component = match crate::decode::decode_archive_member(self.ctx, member_scan) {
+            let component = match crate::decode::decode_archive_member(
+                self.ctx,
+                member_scan,
+                &self.archive.layers,
+            ) {
                 Ok(component) => component,
                 Err(error) => {
                     parent_report

@@ -37,8 +37,10 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     // refuses without pretending schema 4 was requested and then naming it
     // as both requested and available.
     let mut step_source = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    step_source.source = Some(cadmpeg_ir::document::SourceMeta::unclassified(
-        "step",
+    step_source.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::pinned("step:ap242"),
+        )),
         std::collections::BTreeMap::new(),
     ));
     let missing_graph = FcstdCodec
@@ -346,10 +348,13 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     let (mut ir, _, _) = decoded.into_parts();
     let source = ir.source.take().expect("the decode records a source");
     let format = source.format().to_owned();
-    ir.source = Some(cadmpeg_ir::SourceMeta::unclassified(
-        format,
-        source.attributes,
-    ));
+    ir.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "format": format,
+            "attributes": source.attributes,
+        }))
+        .unwrap(),
+    );
 
     let error = inherit(&ir).expect_err("a source with no recorded dialect is refused");
     let CodecError::UnsupportedTarget(refusal) = &error else {

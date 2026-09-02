@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode and inspection reports assembled from F3D identity and transfer facts.
 
+use std::collections::BTreeMap;
+
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::codec::DecodeBody;
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
 
 /// Identity owner of a decoded F3D member.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReportScope {
     /// The member is the decoded document and owns its classified layers.
     Standalone,
     /// The containing F3Z archive owns identity and classifies every member.
-    ArchiveMember,
+    ArchiveMember(DialectLayers),
 }
 
 /// Build a decode body from route-owned losses. Identity is authored once, on
@@ -39,36 +42,27 @@ pub(crate) fn build_decode_report(
     }
 }
 
-/// Author the document's identity once: a standalone document owns its
-/// classified layers on `ir.source` and charges the classification and dialect
-/// losses ahead of the route's own; an archive member keeps the unclassified
-/// format identity until the containing F3Z stamps its archive-owned layers.
+/// Constructs the document's source metadata once from route-owned identity.
+///
+/// A standalone document classifies its own layers and charges classification
+/// and dialect losses ahead of route losses. An archive member uses the outer
+/// archive layers already classified by the F3Z session.
 pub(crate) fn classify_document(
     scan: &ContainerScan<'_>,
     scope: ReportScope,
-    ir: &mut CadIr,
+    attributes: BTreeMap<String, String>,
     body: &mut DecodeBody,
-) {
-    match scope {
+) -> SourceMeta {
+    let dialects = match scope {
         ReportScope::Standalone => {
             let (dialects, mut losses) = crate::dialect::classify_layers(scan);
             losses.extend(crate::dialect::dialect_losses(&dialects));
             body.losses.splice(0..0, losses);
-            classify_source(ir, dialects);
+            dialects
         }
-        ReportScope::ArchiveMember => {}
-    }
-}
-
-/// Replace the document's source identity with `dialects`, keeping its
-/// non-dialect attributes.
-pub(crate) fn classify_source(ir: &mut CadIr, dialects: cadmpeg_core::dialect::DialectLayers) {
-    let attributes = ir
-        .source
-        .take()
-        .map(|source| source.attributes)
-        .unwrap_or_default();
-    ir.source = Some(SourceMeta::classified(dialects, attributes));
+        ReportScope::ArchiveMember(dialects) => dialects,
+    };
+    SourceMeta::classified(dialects, attributes)
 }
 
 fn report_notes(notes: Vec<String>, container_only: bool) -> Vec<String> {
@@ -107,14 +101,10 @@ mod tests {
         let mut scan = crate::container::scan(&ctx, root).unwrap();
         scan.breps.push(scan.breps[0].clone());
 
-        let mut ir = cadmpeg_ir::examples::unit_cube();
         let mut report = build_decode_report(&scan, false, true, Vec::new());
-        classify_document(&scan, ReportScope::Standalone, &mut ir, &mut report);
-        assert!(ir
-            .source
-            .as_ref()
-            .and_then(|source| source.dialects())
-            .is_some());
+        let source =
+            classify_document(&scan, ReportScope::Standalone, BTreeMap::new(), &mut report);
+        assert!(source.dialects().is_some());
         assert!(report
             .losses
             .iter()

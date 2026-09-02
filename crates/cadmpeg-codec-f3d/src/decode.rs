@@ -21,7 +21,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{LossCategory, LossNote, LossTaxonomy, Severity};
@@ -2146,7 +2146,7 @@ struct GeometryIndex {
 }
 
 /// State shared by every finalization path for one decoded F3D member.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 struct DecodeSessionState {
     admitted_entities: u64,
     report_scope: crate::report::ReportScope,
@@ -2166,6 +2166,7 @@ struct F3dDecodeSession<'a> {
     geometry_materials: Option<materials::DecodedMaterials>,
     native: F3dNative,
     ir: CadIr,
+    source_attributes: std::collections::BTreeMap<String, String>,
     report: DecodeBody,
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
@@ -2206,7 +2207,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         let geometry_materials =
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
-        let (mut ir, mut native, asm_remainder) =
+        let (mut ir, source_attributes, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
@@ -2240,6 +2241,7 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_materials: Some(geometry_materials),
             native,
             ir,
+            source_attributes,
             report,
             report_scope,
             unknowns,
@@ -2259,7 +2261,7 @@ impl<'a> F3dDecodeSession<'a> {
             admitted_entities,
             report_scope,
         } = session_state;
-        let (ir, unknowns) = build_metadata_ir(scan);
+        let (ir, source_attributes, unknowns) = build_metadata_ir(scan);
         Self {
             ctx,
             scan,
@@ -2267,6 +2269,7 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_materials: None,
             native: F3dNative::default(),
             ir,
+            source_attributes,
             report: crate::report::build_decode_report(scan, false, false, container_losses(scan)),
             report_scope,
             unknowns,
@@ -2799,7 +2802,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir,
                 materials.has_topology_assignments,
             );
-            annotate_docstruct(&mut self.ir, scan);
+            annotate_docstruct(&mut self.source_attributes, scan);
             match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
                 Ok(Some(table)) => {
                     report_xref_placement_failures(&mut self.report, &table);
@@ -2825,7 +2828,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.deferred_has_appearance = Some(decoded_materials.has_topology_assignments);
             self.ir.model.appearances = decoded_materials.appearances;
             self.ir.model.appearance_bindings = decoded_materials.bindings;
-            annotate_docstruct(&mut self.ir, scan);
+            annotate_docstruct(&mut self.source_attributes, scan);
             let xref_table =
                 crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
             if let Ok(Some(table)) = &xref_table {
@@ -2928,6 +2931,7 @@ impl<'a> F3dDecodeSession<'a> {
                     annotations,
                     unknowns: self.unknowns,
                     source_image,
+                    source_attributes: self.source_attributes,
                 },
                 &mut admitted_entities,
             );
@@ -2959,6 +2963,7 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 unknowns: self.unknowns,
                 source_image,
+                source_attributes: self.source_attributes,
             },
             &mut admitted_entities,
         )
@@ -2986,8 +2991,13 @@ pub(crate) fn decode_member<'a>(
 pub(crate) fn decode_archive_member<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
+    dialects: &cadmpeg_core::dialect::DialectLayers,
 ) -> Result<Decoded, CodecError> {
-    decode_scanned_document(ctx, scan, crate::report::ReportScope::ArchiveMember)
+    decode_scanned_document(
+        ctx,
+        scan,
+        crate::report::ReportScope::ArchiveMember(dialects.clone()),
+    )
 }
 
 fn decode_document<'a>(
@@ -3017,8 +3027,8 @@ fn decode_scanned_document<'a>(
     )?;
 
     if ctx.container_only() {
-        let (mut ir, unknowns) = build_metadata_ir(scan);
-        annotate_docstruct(&mut ir, scan);
+        let (ir, mut source_attributes, unknowns) = build_metadata_ir(scan);
+        annotate_docstruct(&mut source_attributes, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns);
         let source_image = preserve_source_image(scan);
         let mut report =
@@ -3036,6 +3046,7 @@ fn decode_scanned_document<'a>(
                 annotations,
                 unknowns,
                 source_image,
+                source_attributes,
             },
             &mut admitted_entities,
         );
@@ -3568,18 +3579,15 @@ fn report_unresolved_mesh_attributes(
 }
 
 /// Record the `Properties.dat` docstruct declaration on the source metadata.
-fn annotate_docstruct(ir: &mut CadIr, scan: &ContainerScan) {
+fn annotate_docstruct(
+    attributes: &mut std::collections::BTreeMap<String, String>,
+    scan: &ContainerScan,
+) {
     let Some(docstruct) = crate::xref::docstruct(scan) else {
         return;
     };
-    if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("docstruct_type".into(), docstruct.doc_type);
-        source
-            .attributes
-            .insert("docstruct_subtype".into(), docstruct.subtype);
-    }
+    attributes.insert("docstruct_type".into(), docstruct.doc_type);
+    attributes.insert("docstruct_subtype".into(), docstruct.subtype);
 }
 
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
@@ -3757,6 +3765,7 @@ struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
+    source_attributes: std::collections::BTreeMap<String, String>,
 }
 
 fn decode_result(
@@ -3778,7 +3787,12 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image]);
-    crate::report::classify_document(scan, report_scope, &mut ir, &mut report);
+    ir.source = Some(crate::report::classify_document(
+        scan,
+        report_scope,
+        retained.source_attributes,
+        &mut report,
+    ));
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
@@ -4763,10 +4777,18 @@ fn build_geometry_ir(
     scan: &ContainerScan,
     primary_model_brep: &BrepFacts,
     brep: Brep,
-) -> Result<(CadIr, F3dNative, AsmTransferRemainder), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        std::collections::BTreeMap<String, String>,
+        F3dNative,
+        AsmTransferRemainder,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
-    let (source, tolerances) = source_and_tolerances(scan, primary_model_brep);
-    ir.source = Some(source);
+    let (source_attributes, tolerances) =
+        source_attributes_and_tolerances(scan, primary_model_brep);
     ir.tolerances = tolerances;
     let Brep {
         asm,
@@ -4785,14 +4807,14 @@ fn build_geometry_ir(
     native.persistent_design_links = persistent_design_links;
     native.persistent_subentity_tags = persistent_subentity_tags;
     native.creation_timestamps = creation_timestamps;
-    Ok((ir, native, remainder))
+    Ok((ir, source_attributes, native, remainder))
 }
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.
-fn source_and_tolerances(
+fn source_attributes_and_tolerances(
     scan: &ContainerScan,
     primary_model_brep: &BrepFacts,
-) -> (SourceMeta, Tolerances) {
+) -> (std::collections::BTreeMap<String, String>, Tolerances) {
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = scan.design_asset_folder() {
         attributes.insert("asset_folder".to_string(), folder.to_owned());
@@ -4832,12 +4854,7 @@ fn source_and_tolerances(
         }
     }
 
-    (source_meta(attributes), tolerances)
-}
-
-/// Source metadata carrying non-dialect attributes.
-fn source_meta(attributes: std::collections::BTreeMap<String, String>) -> SourceMeta {
-    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
+    (attributes, tolerances)
 }
 
 /// Loss report for a successful geometry decode.
@@ -4934,7 +4951,13 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
     losses
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
+fn build_metadata_ir(
+    scan: &ContainerScan,
+) -> (
+    CadIr,
+    std::collections::BTreeMap<String, String>,
+    Vec<UnknownRecord>,
+) {
     let mut ir = CadIr::empty(Units::default());
     let mut unknowns = Vec::new();
 
@@ -4984,8 +5007,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
         });
     }
 
-    ir.source = Some(source_meta(attributes));
-    (ir, unknowns)
+    (ir, attributes, unknowns)
 }
 
 /// Build geometry and topology loss notes from the container state.

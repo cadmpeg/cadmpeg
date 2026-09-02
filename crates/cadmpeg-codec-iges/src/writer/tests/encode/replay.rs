@@ -56,10 +56,13 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let mut unclassified = decoded.ir().clone();
     let source = unclassified.source.take().unwrap();
     let format = source.format().to_owned();
-    unclassified.source = Some(cadmpeg_ir::SourceMeta::unclassified(
-        format,
-        source.attributes,
-    ));
+    unclassified.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "format": format,
+            "attributes": source.attributes,
+        }))
+        .unwrap(),
+    );
     let plan = IgesCodec
         .plan(
             EncodeInput::new(&unclassified, Some(decoded.source_fidelity())),
