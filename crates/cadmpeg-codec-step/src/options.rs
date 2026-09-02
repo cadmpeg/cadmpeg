@@ -110,13 +110,6 @@ impl StepSchema {
         }
     }
 
-    pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
-        Self::ALL
-            .into_iter()
-            .find(|schema| schema.descriptor().id == target.id)
-            .expect("STEP target catalog is projected from StepSchema::ALL")
-    }
-
     /// The typed dialect identity written for this schema.
     pub(crate) const fn id(self) -> DialectId {
         match self {

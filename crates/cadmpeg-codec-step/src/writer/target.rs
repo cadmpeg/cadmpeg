@@ -2,8 +2,8 @@
 //! STEP target resolution and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
-use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
+use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
+use cadmpeg_ir::WritePath;
 
 use crate::export::write_step_outcome;
 use crate::loss::StepLossCode;
@@ -24,31 +24,26 @@ const OFF_CATALOG_SOURCE_REASON: &str =
 pub(crate) fn plan(
     codec: &StepCodec,
     input: EncodeInput<'_>,
-    resolved: &ResolvedWrite,
-) -> Result<ExportPlan, CodecError> {
-    let Some(entry) = resolved.catalog_entry() else {
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
+    let Some(index) = resolved.index() else {
         return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
-    let schema = StepSchema::from_catalog_entry(entry);
+    let schema = StepSchema::ALL[index];
     let mut bytes = Vec::new();
     let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)
         .map_err(CodecError::from)?;
-    let target = schema.descriptor().id;
     let mut losses = outcome.losses;
     if let Some(message) = resolved.displacement_message() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }
-    let report = ExportReport::native(
-        target,
-        outcome.census,
-        if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        },
-        WritePath::Synthesized,
+    Ok(ExportBody {
+        bytes,
+        census: outcome.census,
+        write_path: WritePath::Synthesized,
         losses,
-        outcome.notes,
-    );
-    Ok(ExportPlan::buffered(report, bytes))
+        notes: outcome.notes,
+        // STEP has no retained image: a provided fidelity is never replayed.
+        consumption: Consumption::NotConsumed,
+    })
 }

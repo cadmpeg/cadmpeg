@@ -268,6 +268,25 @@ impl TransferLedger {
 pub struct CoverageKey(pub &'static str);
 
 impl DecodeReport {
+    /// Stamps a classification onto a report body.
+    ///
+    /// The sealed decode wrapper is the production caller: the classification
+    /// is the document's own source identity, authored once by the backend.
+    #[must_use]
+    pub(crate) fn from_body(
+        classification: FormatIdentity<DialectLayers>,
+        body: crate::codec::DecodeBody,
+    ) -> Self {
+        Self {
+            classification,
+            transfer: body.transfer,
+            coverage: body.coverage,
+            losses: body.losses,
+            notes: body.notes,
+            transfer_ledger: body.transfer_ledger,
+        }
+    }
+
     /// Constructs a classified report whose format is its primary layer's format.
     #[must_use]
     pub fn classified(

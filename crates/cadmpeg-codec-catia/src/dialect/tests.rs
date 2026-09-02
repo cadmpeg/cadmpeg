@@ -112,7 +112,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             witness.fixture
         );
         assert_eq!(
-            matched.admission() == Admission::Admitted,
+            matched.admission() == &Admission::Admitted,
             !charged,
             "{}: admission and the dialect-unverified loss must agree",
             witness.fixture
@@ -121,10 +121,10 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 }
 
 #[test]
-fn the_totality_row_is_admitted_unverified_without_a_substituted_grammar() {
+fn the_totality_row_is_residual_without_a_substituted_grammar() {
     assert_eq!(
-        admission(Variant::Unknown),
-        Admission::AdmittedUnverified { using: None },
+        matched(Variant::Unknown).admission(),
+        &Admission::Residual,
         "no CATIA family's grammar is substituted for an unrecognized layout"
     );
     for variant in [
@@ -137,7 +137,11 @@ fn the_totality_row_is_admitted_unverified_without_a_substituted_grammar() {
         Variant::Unknown,
     ] {
         if variant != Variant::Unknown {
-            assert_eq!(admission(variant), Admission::Admitted, "{variant:?}");
+            assert_eq!(
+                matched(variant).admission(),
+                &Admission::Admitted,
+                "{variant:?}"
+            );
         }
     }
 }
@@ -164,10 +168,7 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     assert_eq!(matched.declared()[DECLARED_BUILD_DATE], "03-10-2017.22.00");
 
     assert_eq!(matched.dialect().as_str(), "catia:unknown");
-    assert_eq!(
-        matched.admission(),
-        Admission::AdmittedUnverified { using: None }
-    );
+    assert_eq!(matched.admission(), &Admission::Residual);
 }
 
 /// The declaration is evidence, never identity: a file with no

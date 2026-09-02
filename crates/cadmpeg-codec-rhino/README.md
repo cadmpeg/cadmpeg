@@ -45,7 +45,7 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 
 ```rust,no_run
 use cadmpeg_codec_rhino::RhinoCodec;
-use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::CadIr;
 use std::fs::File;
 

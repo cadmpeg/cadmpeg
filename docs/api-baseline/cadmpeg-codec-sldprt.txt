@@ -1,13 +1,14 @@
-# generated at 8b1cd929e
+# generated at 3f11b2f41
 pub mod cadmpeg_codec_sldprt
 pub struct cadmpeg_codec_sldprt::SldprtCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_sldprt::SldprtCodec
-pub fn cadmpeg_codec_sldprt::SldprtCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_sldprt::SldprtCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_codec_sldprt::SldprtCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_sldprt::SldprtCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::write::EncoderBackend for cadmpeg_codec_sldprt::SldprtCodec
 pub const cadmpeg_codec_sldprt::SldprtCodec::FORMAT: &'static str
-pub const cadmpeg_codec_sldprt::SldprtCodec::TARGET_DOMAIN: cadmpeg_ir::codec::write::EncoderTargetDomain
-pub fn cadmpeg_codec_sldprt::SldprtCodec::plan_resolved(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::ResolvedEncoderTarget) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_sldprt::SldprtCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_sldprt::SldprtCodec::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
+pub fn cadmpeg_codec_sldprt::SldprtCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+impl cadmpeg_ir::codec::write::backend::EncoderBackend for cadmpeg_codec_sldprt::SldprtCodec
+pub type cadmpeg_codec_sldprt::SldprtCodec::Target = cadmpeg_ir::codec::write::backend::Catalog
+pub const cadmpeg_codec_sldprt::SldprtCodec::FORMAT: &'static str
+pub const cadmpeg_codec_sldprt::SldprtCodec::TARGET: cadmpeg_ir::codec::write::backend::Catalog
+pub fn cadmpeg_codec_sldprt::SldprtCodec::plan_resolved(&self, cadmpeg_ir::codec::write::backend::EncodeInput<'_>, cadmpeg_ir::codec::write::resolve::ResolvedWrite<'_>) -> core::result::Result<cadmpeg_ir::codec::write::backend::ExportBody, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_sldprt::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::check::Finding>

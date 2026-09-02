@@ -33,9 +33,9 @@
 #   encodings); they are marked `refused` and the reason names the refusal
 #   site.
 #
-#   `unclassified-recovered` mirrors `Admission::AdmittedUnverified`: the file
-#   is parsed, but with a strategy some other row declares. The codec charges
-#   its `source.dialect-unverified` loss on exactly these rows.
+#   `unclassified-recovered` covers `Admission::Unverified` and
+#   `Admission::Residual`: the file is parsed through a recovery route. The
+#   codec charges its `source.dialect-unverified` loss on exactly these rows.
 #
 #   Each `[format.<id>]` block declares the published level and the `scored`
 #   rows that level covers. A fixture-backed read level or a maintainer
@@ -163,7 +163,7 @@ write = "preserved"
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+Unverified. No fixture declares the flag, so the row cannot claim
 a score. Write is preservation only: `Inherit` replays whatever dialect
 the source is (`writer.rs:93-97`, `replay_bytes` with no target,
 `writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
@@ -178,7 +178,7 @@ write = "preserved"
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+Unverified. No fixture declares the flag, so the row cannot claim
 a score. Write is preservation only: `Inherit` replays whatever dialect
 the source is (`writer.rs:93-97`, `replay_bytes` with no target,
 `writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
@@ -193,12 +193,12 @@ write = "preserved"
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified. `legacy_2_0_fixed_ascii.igs` declares field 23 = 3 and
+Unverified. `legacy_2_0_fixed_ascii.igs` declares field 23 = 3 and
 its Global record stops there, so fields 24, 25, and 26 -- the drafting
 standard, the model creation date, and the application protocol, which
 `global.rs` gives to the 4.0, 5.0, and 5.1 tables respectively -- are
 absent as a 2.0 record requires. The golden pins the row, the
-AdmittedUnverified admission using `iges:5.3-fixed-ascii`, and
+Unverified admission using `iges:5.3-fixed-ascii`, and
 the `source.dialect-unverified` loss. The read cell stays
 `unclassified-recovered` because that cell is the mirror of the admission,
 not a fixture-gated placeholder: the fixture confirms the recovery rather
@@ -216,7 +216,7 @@ write = "preserved"
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+Unverified. No fixture declares the flag, so the row cannot claim
 a score. Write is preservation only: `Inherit` replays whatever dialect
 the source is (`writer.rs:93-97`, `replay_bytes` with no target,
 `writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
@@ -231,7 +231,7 @@ write = "preserved"
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+Unverified. No fixture declares the flag, so the row cannot claim
 a score. Write is preservation only: `Inherit` replays whatever dialect
 the source is (`writer.rs:93-97`, `replay_bytes` with no target,
 `writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
@@ -255,7 +255,7 @@ write = "preserved"
 reason = """
 the version flag has no Global table this codec verified; `global.rs`
 reads it with the 5.3 26-field table and classify returns
-AdmittedUnverified. No fixture declares the flag, so the row cannot claim
+Unverified. No fixture declares the flag, so the row cannot claim
 a score. Write is preservation only: `Inherit` replays whatever dialect
 the source is (`writer.rs:93-97`, `replay_bytes` with no target,
 `writer.rs:295-312`), and `writer.rs:84-91` states the synthesis catalog
@@ -438,7 +438,7 @@ a version flag outside the declared table (12, 99, or an unreadable field
 23); read with the nearest verified row's Global table.
 `unknown_version_flag_99.igs` declares field 23 = 99. No row's
 `version_flag` discriminant holds 99, so the document lands on the
-totality row, and the golden pins that id, the AdmittedUnverified
+totality row, and the golden pins that id, the Unverified
 admission using `iges:5.3-fixed-ascii`, and a
 `source.dialect-unverified` loss whose message names the clamp to 11 that
 IGES 5.3 section 2.2.4.3.23 requires of a postprocessor. The read cell
@@ -638,7 +638,7 @@ reason = """
 an archive word outside the declared set is read with the chunked scan words 2
 through 90 share. Chunk width and version-conditioned record branches follow
 the observed word directly; no declared row is substituted.
-`Admission::AdmittedUnverified` has no `using` value and charges
+`Admission::Residual` carries no `using` value and charges
 `source.dialect-unverified`. No frozen fixture exists, so the recovery is
 witnessed by a synthesized archive in the codec's own suite, not by this table"""
 
@@ -864,8 +864,8 @@ write = "none"
 reason = """
 `manifest::parse_top_level` parses any readable version with the 3-2-0-0
 layout, so a document that declares another version and fits that layout is
-classified as residual `f3d:unknown`, admitted unverified using
-`f3d:manifest-3-2-0-0`, and charges
+classified as `f3d:unknown` with `Unverified` admission using the
+`f3d:manifest-3-2-0-0` grammar, and charges
 `source.dialect-unverified`; a document whose layout does not fit produces a
 structural malformed error that names its declared version as the probable
 cause. No .f3d file of another generation is in the repository"""
@@ -908,8 +908,8 @@ dialect = "sat:acis-binary"
 read = "detected"
 write = "none"
 reason = """
-the framed `sat:acis-binary` host row is Admitted at every save format. Its
-separate `acis:` kernel row is admitted unverified outside majors 217 and 218
+the framed `sat:acis-binary` host row is `Admitted` at every save format. Its
+separate `acis:` kernel row is `Unverified` outside majors 217 and 218
 and charges source.kernel-dialect-unverified. The golden that pins the host row is
 code-built"""
 
@@ -918,9 +918,9 @@ dialect = "sat:text"
 read = "detected"
 write = "none"
 reason = """
-the framed `sat:text` host row is Admitted under either terminator at every
+the framed `sat:text` host row is `Admitted` under either terminator at every
 save format. An `acis:text-acis` kernel layer outside majors 217 and 218 is
-admitted unverified and charges source.kernel-dialect-unverified. The golden that
+`Residual` and charges source.kernel-dialect-unverified. The golden that
 pins the host row is code-built"""
 
 [[support]]
@@ -981,7 +981,7 @@ verified band's record grammar, in `cadmpeg-codec-sat` and again in
 `cadmpeg-codec-inventor`, which emits this id as the kernel layer of such
 a carrier. SAT charges source.kernel-dialect-unverified and Inventor charges
 source.kernel-dialect-unverified on an
-`Admission::AdmittedUnverified` match; unit tests witness the recovery —
+`Admission::Unverified` match; unit tests witness the recovery —
 no golden carries the id, so the row lists no fixture"""
 
 [[support]]

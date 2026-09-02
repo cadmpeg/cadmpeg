@@ -21,21 +21,6 @@ pub enum CodecError {
     /// The document supplied to an encoder violates its input contract.
     #[error("invalid encoder input: {0}")]
     InvalidInput(String),
-    /// A codec backend returned an identity other than the sealed wrapper selected.
-    ///
-    /// This is an implementation contract failure, not a statement about the
-    /// input bytes. Public codec wrappers construct it after a backend returns.
-    #[error("codec {codec:?} {operation} returned identity {reported:?}; expected {expected:?}")]
-    ContractViolation {
-        /// Codec id whose backend ran.
-        codec: &'static str,
-        /// Sealed operation that detected the violation.
-        operation: &'static str,
-        /// Identity selected by the sealed wrapper.
-        expected: String,
-        /// Identity returned by the backend.
-        reported: String,
-    },
     /// A required read extended past the end of its window after commitment.
     ///
     /// Distinct from [`CodecError::Malformed`]: a truncation is missing input,
@@ -134,15 +119,14 @@ mod tests {
     fn a_dialect_refusal_keeps_the_identification_it_refused() {
         let error = CodecError::UnsupportedDialect {
             dialects: Box::new(
-                DialectLayers::new(
+                DialectLayers::of(
                     DialectMatch::refused(DialectId::pinned("acis:save-format-binary-other"))
                         .with_declared(BTreeMap::from([(
                             "save_format".to_owned(),
                             "700".to_owned(),
                         )])),
-                    vec![DialectMatch::refused(DialectId::pinned("sat:binary"))],
                 )
-                .expect("the test layers have distinct format keys"),
+                .with(DialectMatch::refused(DialectId::pinned("sat:binary"))),
             ),
             message: "save format 700 has no read grammar".into(),
         };

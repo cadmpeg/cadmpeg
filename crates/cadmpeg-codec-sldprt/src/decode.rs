@@ -8,7 +8,8 @@
 //! identities. It then adds appearances, display meshes, document attributes,
 //! feature history, feature-input lanes, provenance, and retained source data.
 //!
-//! The returned [`DecodeResult`] contains both the IR and its diagnostics.
+//! The returned [`Decoded`] carries the IR and its diagnostics body; the sealed
+//! codec wrapper stamps the identity the IR source authored onto the report.
 //! Untyped surface and curve carriers become opaque geometry linked to the
 //! retained Parasolid source record. If no body stream yields geometry, decoding returns a
 //! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
@@ -20,12 +21,11 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
-use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::SldprtLossCode;
 use cadmpeg_ir::units::Units;
@@ -116,8 +116,8 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 ///
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
-/// through [`DecodeResult::report`] when a partial result can be represented.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+/// through the decode body when a partial result can be represented.
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let classification = crate::dialect::classify_layers(&scan);
     let dialects = classification.layers();
@@ -131,8 +131,13 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut pmi_losses) =
-            build_metadata_ir(ctx, &scan, form_padding, &mut admitted_entities)?;
+        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+            ctx,
+            &scan,
+            &classification,
+            form_padding,
+            &mut admitted_entities,
+        )?;
         let mut report = build_container_report(&scan, &classification, true);
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
@@ -148,9 +153,9 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &scan,
+                &classification,
                 source_header,
-                decoded.brep,
-                &decoded.configuration_bodies,
+                decoded,
                 form_padding,
                 &mut admitted_entities,
             )?;
@@ -161,15 +166,20 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         }
     }
 
-    let (ir, annotations, unknowns, mut pmi_losses) =
-        build_metadata_ir(ctx, &scan, form_padding, &mut admitted_entities)?;
+    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+        ctx,
+        &scan,
+        &classification,
+        form_padding,
+        &mut admitted_entities,
+    )?;
     let mut report = build_container_report(&scan, &classification, false);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
     decode_result(ir, report, annotations, unknowns)
 }
 
-fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
+fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
     let unresolved = ir
         .model
         .tessellations
@@ -187,10 +197,10 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
 
 fn decode_result(
     mut ir: CadIr,
-    report: DecodeReport,
+    body: DecodeBody,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = unknowns
         .iter()
@@ -200,9 +210,12 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
-    let mut result = DecodeResult::new(ir, report, source_fidelity)?;
-    stamp_local_digests(&mut result.ir_mut());
-    Ok(result)
+    stamp_local_digests(&mut ir);
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }
 
 fn incomplete_pattern(
@@ -345,7 +358,7 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
-fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
+fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
         FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
@@ -2011,7 +2024,7 @@ fn try_decode_brep(
     scan: &ContainerScan,
     streams: &[BodyStream<'_>],
     classification: &crate::dialect::LayerClassification,
-) -> Option<(DecodedBrep, DecodeReport)> {
+) -> Option<(DecodedBrep, DecodeBody)> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
         sites
@@ -2251,9 +2264,9 @@ fn ensure_display_appearance(
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
-    mut brep: Brep,
-    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    decoded: DecodedBrep,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
@@ -2265,9 +2278,14 @@ fn build_geometry_ir(
     ),
     CodecError,
 > {
+    let DecodedBrep {
+        metadata_stream: _,
+        mut brep,
+        configuration_bodies,
+    } = decoded;
     let mut ir = CadIr::empty(Units::default());
     let appearance_definitions = crate::appearance::definitions(scan);
-    ir.source = Some(source_meta(scan, header));
+    ir.source = Some(source_meta(scan, classification, header));
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
@@ -2654,7 +2672,7 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    assign_configuration_bodies(&mut ir, configuration_bodies);
+    assign_configuration_bodies(&mut ir, &configuration_bodies);
     crate::history::project_configuration_sketch_states(
         &mut ir,
         &histories,
@@ -3060,7 +3078,11 @@ fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::S
     }
 }
 
-fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMeta {
+fn source_meta(
+    scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
+    header: Option<&StreamHeader>,
+) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
@@ -3097,7 +3119,7 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
     }
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes);
-    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
+    SourceMeta::classified(classification.layers().clone(), attributes)
 }
 
 fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
@@ -3185,7 +3207,7 @@ fn build_geometry_report(
     scan: &ContainerScan,
     decoded: &Brep,
     classification: &crate::dialect::LayerClassification,
-) -> DecodeReport {
+) -> DecodeBody {
     let dialects = classification.layers();
     let s = &decoded.stats;
     let mut losses = Vec::new();
@@ -3259,19 +3281,19 @@ fn build_geometry_report(
     }
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
-    DecodeReport::classified(
-        dialects.clone(),
-        cadmpeg_ir::DecodeTransfer::full(true),
-        std::collections::BTreeMap::new(),
+    DecodeBody {
+        transfer: cadmpeg_ir::DecodeTransfer::full(true),
+        coverage: std::collections::BTreeMap::new(),
         losses,
-        container::summarize(scan, dialects.clone()).notes,
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        notes: container::summarize(scan, dialects.clone()).notes,
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }
 
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
@@ -3347,7 +3369,10 @@ fn build_metadata_ir(
         });
     }
 
-    ir.source = Some(SourceMeta::unclassified(crate::dialect::FORMAT, attributes));
+    ir.source = Some(SourceMeta::classified(
+        classification.layers().clone(),
+        attributes,
+    ));
     project_design_history(
         &mut ir,
         &histories,
@@ -4539,7 +4564,7 @@ fn build_container_report(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     container_only: bool,
-) -> DecodeReport {
+) -> DecodeBody {
     let dialects = classification.layers();
     let summary = container::summarize(scan, dialects.clone());
     let parasolid_sources = scan
@@ -4582,18 +4607,17 @@ fn build_container_report(
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
 
-    DecodeReport::classified(
-        dialects.clone(),
-        if container_only {
+    DecodeBody {
+        transfer: if container_only {
             cadmpeg_ir::DecodeTransfer::ContainerOnly
         } else {
             cadmpeg_ir::DecodeTransfer::full(false)
         },
-        std::collections::BTreeMap::new(),
+        coverage: std::collections::BTreeMap::new(),
         losses,
-        summary.notes,
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        notes: summary.notes,
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }
 
 fn append_swift_pmi_losses(scan: &ContainerScan<'_>, losses: &mut Vec<cadmpeg_ir::LossNote>) {

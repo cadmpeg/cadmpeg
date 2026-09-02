@@ -708,12 +708,13 @@ mod tests {
 
         let source = right.source.take().unwrap();
         right.source = Some(crate::document::SourceMeta::classified(
-            DialectLayers::new(
-                DialectMatch::admitted(DialectId::pinned("rhino:archive-80")),
-                vec![DialectMatch::residual(DialectId::pinned("acis:text-acis"))
-                    .with_instance("body.sat")],
-            )
-            .unwrap(),
+            DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
+                "rhino:archive-80",
+            )))
+            .with(
+                DialectMatch::residual(DialectId::pinned("acis:text-acis"))
+                    .with_instance("body.sat"),
+            ),
             source.attributes,
         ));
         let result = diff(&left, &right);

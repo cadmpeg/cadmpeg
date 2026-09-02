@@ -26,13 +26,13 @@
 //! The two identity rows are [`Admission::Admitted`]: each is parsed with the
 //! strategy its own row declares. [`F3dDialect::Unknown`] is the mandatory
 //! totality row and it is
-//! [`Admission::AdmittedUnverified`], using `f3d:manifest-3-2-0-0` as the
+//! [`Admission::Unverified`], using `f3d:manifest-3-2-0-0` as the
 //! strategy applied to it, with [`dialect_loss`] charging
 //! `source.dialect-unverified` on exactly that admission. Refusal stays
 //! structural: a manifest whose bytes do not fit the anchors is refused by
 //! `crate::manifest::parse_top_level`, and no version is on an allowlist.
 //!
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -103,7 +103,7 @@ pub(crate) enum F3dDialect {
     /// The document is read, so the row carries a match. The strategy applied
     /// to it is the one [`Self::Manifest3200`] declares, which the document's
     /// own declaration does not name, so the admission is
-    /// [`Admission::AdmittedUnverified`] and [`dialect_loss`] charges the
+    /// [`Admission::Unverified`] and [`dialect_loss`] charges the
     /// recovery.
     Unknown,
 }
@@ -163,42 +163,33 @@ impl F3dDialect {
     fn matched(self, declared: BTreeMap<String, String>) -> DialectMatch {
         match self {
             Self::Manifest3200 | Self::F3zMultiDocument => DialectMatch::admitted(self.id()),
-            Self::Unknown => DialectMatch::unverified(self.id(), Self::Manifest3200.id())
-                .expect("F3D dialect and grammar ids share one format namespace"),
+            Self::Unknown => {
+                DialectMatch::unverified(self.id(), Grammar::of(&Self::Manifest3200.id()))
+            }
         }
         .with_declared(declared)
     }
 }
 
-/// One document's admitted identity layers and recoverable classification loss.
-pub(crate) struct DocumentClassification {
-    layers: DialectLayers,
-    losses: Vec<LossNote>,
-}
-
-impl DocumentClassification {
-    pub(crate) fn into_parts(self) -> (DialectLayers, Vec<LossNote>) {
-        (self.layers, self.losses)
-    }
-}
-
 /// Classify the document and every kernel carrier without refusing on a layer
-/// identity collision.
+/// identity collision. Returns the layer set and any recoverable
+/// classification loss.
 pub(crate) fn classify_layers(
     scan: &crate::container::ContainerScan<'_>,
-) -> DocumentClassification {
+) -> (DialectLayers, Vec<LossNote>) {
     let mut layers = DialectLayers::of(scan.dialect.clone());
     let mut losses = Vec::new();
     for layer in kernel_layers(scan) {
         let format = layer.format().to_owned();
         let instance = layer.instance().unwrap_or("unidentified").to_owned();
-        if layers.try_push(layer).is_err() {
+        if let Some(displaced) = layers.push(layer) {
+            layers.push(displaced);
             losses.push(F3dLossCode::DialectLayerCollision.note(format!(
                 "the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"
             )));
         }
     }
-    DocumentClassification { layers, losses }
+    (layers, losses)
 }
 
 /// Dialect-derived losses implied by a report's final classified layers.
@@ -219,30 +210,29 @@ pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
 
 /// The dialect-unverified loss for a classified layer.
 ///
-/// `None` exactly when `matched.admission` is [`Admission::Admitted`], because
-/// this reads that field rather than reclassifying. The biconditional the
-/// decode policy requires is therefore structural: the note charged and the
-/// admission reported come from one value, not from two authors agreeing.
+/// Returns a loss exactly for an unverified or residual admission. This reads
+/// the admission rather than reclassifying, so the note and reported state
+/// come from one value.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    match matched.admission() {
-        Admission::Admitted | Admission::Refused => None,
-        Admission::AdmittedUnverified { using } => {
-            let using =
-                using.expect("the F3D unverified classifier always names its manifest strategy");
-            let version = matched
-                .declared()
-                .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
-                .map_or("(none)", String::as_str);
-            let message = format!(
-                "the top-level manifest declares version {version:?}, which no dialect row of \
-                 this codec names, so no declared identity was verified. The document is read on \
-                 {using}: every field after the version was parsed with that layout. The layout \
-                 fitting is consistency, not a declaration."
-            );
-            let message = archive_member_message(matched, &message);
-            Some(F3dLossCode::SourceDialectUnverified.note(message))
+    let strategy = match matched.admission() {
+        Admission::Admitted | Admission::Refused => return None,
+        Admission::Unverified { using } => {
+            format!("{}:{}", matched.format(), using.as_str())
         }
-    }
+        Admission::Residual => "the residual parser path, which names no declared grammar".into(),
+    };
+    let version = matched
+        .declared()
+        .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
+        .map_or("(none)", String::as_str);
+    let message = format!(
+        "the top-level manifest declares version {version:?}, which no dialect row of \
+                 this codec names, so no declared identity was verified. The document is read on \
+                 {strategy}: every field after the version was parsed with that layout. The layout \
+                 fitting is consistency, not a declaration."
+    );
+    let message = archive_member_message(matched, &message);
+    Some(F3dLossCode::SourceDialectUnverified.note(message))
 }
 
 /// Kernel dialect layers from the binary and text B-rep streams.
@@ -311,7 +301,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             let message = archive_member_message(matched, &message);
             return Some(F3dLossCode::KernelCarrierUnparseable.note(message));
         }
-        Admission::Admitted | Admission::AdmittedUnverified { .. } => {}
+        Admission::Admitted | Admission::Unverified { .. } | Admission::Residual => {}
     }
     let carrier = matched
         .declared()

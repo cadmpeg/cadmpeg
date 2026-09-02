@@ -90,7 +90,7 @@ aliases = ["igs"]
 
 # Version-flag values 1, 2, 3, 4, 5, and 7 have distinct Fixed ASCII identity
 # rows. Their Global tables recover through the 5.1 through 5.3 field layout,
-# so admission is `AdmittedUnverified`, `using` is the representation's 5.3
+# so admission is `Unverified`, `using` is the representation's 5.3
 # row, and decode charges `iges/source.dialect-unverified`. Flags 6 and 8
 # through 11 use the verified 4.0 and 5.0 through 5.3 tables. Flags 12 and 99
 # classify as `iges:unknown`; their effective grammar version is 5.3.
@@ -407,13 +407,13 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:100"
 # `is_part28_xml` (codec.rs:416-437), namespaces at codec.rs:441-444.
 # Disposition: `CodecError::UnsupportedDialect` with the message
 # `STEP Part 28 XML encoding` from
-# `StepDialect::alternate_encoding_refusal` (dialect.rs), returned by
+# `AlternateEncoding::refusal_message` (dialect.rs), returned by
 # `refuse_alternate_encoding` before the ISO-10303-21 magic test. `detect` returns Medium (codec.rs:54-59) so the
 # codec claims the file and refuses it rather than letting another codec
 # mis-decode it. Structurally identified, semantic decode refused. The refusal
 # returns before any exchange structure or report exists. The error carries
 # this row's `DialectMatch` with `Admission::Refused`;
-# `StepDialect::alternate_encoding_refusal` (dialect.rs) is where the three
+# `AlternateEncoding` (dialect.rs) is where the three
 # rows and their refusal messages are named.
 id = "step:part28-xml"
 title = "ISO 10303-28 edition 2 XML encoding"
@@ -452,7 +452,7 @@ witness = "code:crates/cadmpeg-codec-step/src/codec.rs:399"
 #     that do not read as a numeric object identifier. An edition claim
 #     matching nothing is an unrecognized declaration; making no claim at all
 #     is `step:ap242`.
-# Disposition: admitted-unverified.
+# Admission: `Unverified` using the `step:ap242-e3` grammar.
 id = "step:unknown"
 unknown_kind = "recovered-residual"
 title = "ISO 10303-21 exchange with an unrecognized FILE_SCHEMA identifier"
@@ -494,7 +494,7 @@ witness = "corpus:crates/cadmpeg-codec-step/tests/fixtures/ap242_ed3_sections.p2
 # (`RhinoLossCode::SourceWriterStampUnverified`), never at the archive level.
 # That code is deliberately distinct from the document-level
 # `source.dialect-unverified` the other codecs charge when admission is
-# `AdmittedUnverified`: rhino charges the per-record one inside admitted
+# `Unverified` or `Residual`: rhino charges the per-record one inside admitted
 # documents, so the two must not share a string.
 [format.rhino]
 complete = true
@@ -587,7 +587,7 @@ witness = "code:crates/cadmpeg-codec-rhino/src/chunks.rs"
 # totality: any positive archive word that is not one of the ten literals
 # classifies here, including 51 and 61 -- `ArchiveVersion::from_word` does not
 # fold near-misses into a band. The document decodes with
-# `Admission::AdmittedUnverified`. A word below 50 uses the four-byte chunk
+# `Admission::Residual`. A word below 50 uses the four-byte chunk
 # value width. A word of 50 or greater uses the eight-byte chunk value width.
 # Record branches continue to use the observed word through
 # `ArchiveVersion::Other`; no declared row is substituted, so `using` is
@@ -681,7 +681,7 @@ witness = "corpus:corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
 # `FcstdDialect::persistence_tags` maps every non-schema-2 declaration to that
 # vocabulary, and both container validation and full graph recovery consume
 # that result.
-# `FcstdDialect::classify` returns `Admission::AdmittedUnverified`, names
+# `FcstdDialect::classify` returns `Admission::Unverified`, names
 # `fcstd:schema-4` as the row in use, and both decode branches charge
 # `fcstd/source.dialect-unverified` (dialect.rs:169-220). Schema 4 is the newer
 # row with that vocabulary and the writer's default.
@@ -720,7 +720,7 @@ witness = "code:crates/cadmpeg-codec-freecad/src/lib.rs:1115"
 # below and derives the row from `form_code_padding` itself, so the
 # discriminant the classifier reads and the discriminant the decoder branches
 # on are one expression. The two versioned rows are `Admitted`; the residual
-# row is `AdmittedUnverified` and charges `source.dialect-unverified` from the
+# row is `Residual` and charges `source.dialect-unverified` from the
 # same predicate, so the biconditional holds by construction. Refusal is never
 # a dialect judgement here -- this codec refuses only on container framing,
 # I/O, and entity-budget grounds.
@@ -1018,7 +1018,7 @@ witness = "code:crates/cadmpeg-codec-creo/src/container.rs:946"
 #                         legacy-ASCII tests, and container.rs:2386-2390 then
 #                         discards a successfully parsed legacy-ASCII framing.
 #   container.rs:948-949  none of the three signatures matched.
-# Disposition: admitted-unverified. `Layout::Unknown` is an error nowhere;
+# Admission: `Residual`. `Layout::Unknown` is an error nowhere;
 # decode proceeds and every layout-conditional path is a positive gate on a
 # known variant, so Unknown simply skips them. Inspect reports the layout token;
 # the decode loss reports the retained cause (dialect.rs).
@@ -1080,7 +1080,7 @@ witness = "code:crates/cadmpeg-codec-f3d/src/container.rs"
 # Mandatory `unknown` row (B4). `manifest::parse_top_level` applies the
 # `3-2-0-0` layout to every readable version. When that layout fits,
 # `F3dDialect::classify_document` returns this row with
-# `Admission::AdmittedUnverified`, names `f3d:manifest-3-2-0-0` as the applied
+# `Admission::Unverified`, names `f3d:manifest-3-2-0-0` as the applied
 # strategy, and decode charges `f3d/source.dialect-unverified`
 # (dialect.rs:140-207). The layout is attempted regardless of the declared
 # version. A manifest that fits decodes. If the layout fails under an
@@ -1109,7 +1109,8 @@ witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs"
 # schema equal to 31 and every Meta Stream verified. Admission additionally
 # requires every such stream to frame under those grammars. Another or absent
 # declaration selects `inventor:unknown`; an unframed verified declaration keeps
-# the declared row. Both cases are admitted unverified, never refused.
+# the declared row. Both cases are `Unverified` using the
+# `inventor:cfb3-rse31-meta8` grammar, never refused.
 #
 # No `.ipt`, `.iam`, `.idw`, or `.ipn` file exists in this repository; the
 # goldens are code-built. Both rows rest on code.
@@ -1173,7 +1174,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:34"
 id = "sat:acis-binary"
 title = "Bare Spatial ACIS binary stream"
 discriminants = { magic = "ACIS BinaryFile" }
-seam = "the framed host stream is Admitted at every save format. The separate kernel layer is acis:save-format-217 or acis:save-format-218 with Admitted admission, or acis:save-format-binary-other with AdmittedUnverified admission using the nearer verified ACIS row. The kernel-layer recovery charges source.kernel-dialect-unverified"
+seam = "the framed host stream is Admitted at every save format. The separate kernel layer is acis:save-format-217 or acis:save-format-218 with Admitted admission, or acis:save-format-binary-other with Unverified admission using the nearer verified ACIS row. The kernel-layer recovery charges source.kernel-dialect-unverified"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 
 [[dialect]]
@@ -1184,7 +1185,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:37"
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and AdmittedUnverified elsewhere without naming a binary grammar as using, charging source.kernel-dialect-unverified"
+seam = "the framed host stream is Admitted. The terminator selects the separate kernel row: acis:text-asm is Admitted at every save format; acis:text-acis is Admitted at save-format majors 217 and 218 and Residual elsewhere, charging source.kernel-dialect-unverified"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:40"
 
 [[dialect]]
@@ -1264,7 +1265,7 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs:29"
 id = "acis:save-format-binary-other"
 title = "Spatial ACIS binary stream outside save formats 217 and 218"
 discriminants = { magic = "ACIS BinaryFile", save_format_major = "any other" }
-seam = "structurally identified and read with a verified band's record grammar; an AdmittedUnverified admission, not a refusal"
+seam = "structurally identified and read with a verified band's record grammar; an Unverified admission, not a refusal"
 witness = "code:crates/cadmpeg-asm/src/dialect.rs:63"
 
 [[dialect]]
@@ -1284,12 +1285,12 @@ witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 # (`vertex_point_ref` / `coedge_pcurve_ref`,
 # crates/cadmpeg-asm/src/brep/geometry.rs:189-203), so 700 is not a separate
 # identity row here. Outside the verified decoder band, the text row is
-# AdmittedUnverified without `using`: no declared text-band grammar exists, and
+# Residual: no declared text-band grammar exists, and
 # a binary save-format row is not a text grammar.
 id = "acis:text-acis"
 title = "ACIS text stream terminated End-of-ACIS-data"
 discriminants = { header_line_1 = "four integer fields", terminator = "End-of-ACIS-data" }
-seam = "the legacy subtype spellings and the save-format-700 record layouts travel with this terminator; majors 217 and 218 are Admitted, while other majors are AdmittedUnverified without using because no declared text-band grammar exists"
+seam = "the legacy subtype spellings and the save-format-700 record layouts travel with this terminator; majors 217 and 218 are Admitted, while other majors are Residual because no declared text-band grammar exists"
 witness = "code:crates/cadmpeg-asm/src/dialect.rs"
 
 [[dialect]]

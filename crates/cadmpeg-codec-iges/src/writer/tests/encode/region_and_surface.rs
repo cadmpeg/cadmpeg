@@ -1,5 +1,5 @@
 use super::*;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 
 #[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {

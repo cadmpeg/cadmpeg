@@ -58,15 +58,16 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::codec::TargetRequest;
-//! use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+//! use cadmpeg_ir::codec::write::TargetRequest;
+//! use cadmpeg_ir::codec::write::Encoder;
+//! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.sldprt")?;
 //! let decoded = SldprtCodec.decode(&mut input, &DecodeOptions::default())?;
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
-//!     .plan(cadmpeg_ir::codec::EncodeInput {
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput {
 //!         ir: decoded.ir(),
 //!         fidelity: Some(decoded.source_fidelity()),
 //!     }, TargetRequest::Inherit)?
@@ -75,7 +76,8 @@
 //! # }
 //! ```
 //!
-//! [`SldprtCodec`] implements [`Encoder`] through `plan` → `write_to`. Encoding
+//! [`SldprtCodec`] implements [`cadmpeg_ir::codec::write::Encoder`] through
+//! `plan` → `write_to`. Encoding
 //! with the retained `source_fidelity` sidecar replays or patches the source
 //! image. Omitting `fidelity` regenerates the supported source-less profile.
 //! Supported geometry edits can patch the native partition when the entity
@@ -132,14 +134,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
-use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, EncoderBackend, EncoderTargetDomain,
-    ExportPlan, ResolvedEncoderTarget,
+use cadmpeg_ir::codec::write::{
+    Catalog, Consumption, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite,
 };
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::{Annotations, FidelityResolution, Finding, SourceFidelity, WritePath};
+use cadmpeg_ir::{Annotations, Finding, SourceFidelity, WritePath};
 
 /// Retained-record id of the whole source part, the byte-replay baseline.
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
@@ -265,9 +267,9 @@ impl SldprtCodec {
         let dialect = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
-                WritePath::Synthesized
+                SemanticPath::Synthesized
             } else {
-                WritePath::Patched
+                SemanticPath::Patched
             },
             dialect,
             fidelity,
@@ -284,8 +286,8 @@ enum ReplaySkipped {
 }
 
 impl ReplaySkipped {
-    fn fidelity(self) -> FidelityResolution {
-        FidelityResolution::Degraded {
+    fn consumption(self) -> Consumption {
+        Consumption::Degraded {
             reason: match self {
                 Self::BaselineMissing => "preserved SLDPRT source digest baseline is unavailable",
                 Self::DigestMismatch => {
@@ -298,18 +300,38 @@ impl ReplaySkipped {
     }
 }
 
-/// Fidelity result for a semantic write. A replay skip carries the sole typed
-/// reason from which both fidelity and any applicable loss are derived.
+/// How a semantic write consumed the fidelity it was given. A replay skip
+/// carries the sole typed reason from which both the consumption and any
+/// applicable loss are derived.
 enum SemanticFidelity {
-    Resolution(FidelityResolution),
+    Consumed(Consumption),
     ReplaySkipped(ReplaySkipped),
 }
 
 impl SemanticFidelity {
-    fn resolution(&self) -> FidelityResolution {
+    fn consumption(&self) -> Consumption {
         match self {
-            Self::Resolution(resolution) => resolution.clone(),
-            Self::ReplaySkipped(reason) => reason.fidelity(),
+            Self::Consumed(consumption) => consumption.clone(),
+            Self::ReplaySkipped(reason) => reason.consumption(),
+        }
+    }
+}
+
+/// The two ways the semantic writer can produce a document. A verbatim replay
+/// is not one of them, so a replay can never carry a semantic skip reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SemanticPath {
+    /// Retained source records fed the write.
+    Patched,
+    /// The document was built from the neutral IR alone.
+    Synthesized,
+}
+
+impl SemanticPath {
+    const fn write_path(self) -> WritePath {
+        match self {
+            Self::Patched => WritePath::Patched,
+            Self::Synthesized => WritePath::Synthesized,
         }
     }
 }
@@ -322,7 +344,7 @@ enum Written {
     /// A semantic write, in the dialect the emitted `swSolidWorks` envelope
     /// declares.
     Semantic {
-        path: WritePath,
+        path: SemanticPath,
         dialect: DialectId,
         fidelity: SemanticFidelity,
     },
@@ -334,34 +356,34 @@ impl Written {
     fn path(&self) -> WritePath {
         match self {
             Self::Replayed => WritePath::VerbatimReplay,
-            Self::Semantic { path, .. } => *path,
+            Self::Semantic { path, .. } => path.write_path(),
         }
     }
 
-    fn fidelity(&self) -> FidelityResolution {
+    fn consumption(&self) -> Consumption {
         match self {
-            Self::Replayed => FidelityResolution::Replayed,
-            Self::Semantic { fidelity, .. } => fidelity.resolution(),
+            Self::Replayed => Consumption::Replayed,
+            Self::Semantic { fidelity, .. } => fidelity.consumption(),
         }
     }
 
-    fn replay_skipped(&self) -> Option<ReplaySkipped> {
+    /// The semantic path that ran instead of an eligible replay, with why.
+    fn replay_skipped(&self) -> Option<(SemanticPath, ReplaySkipped)> {
         match self {
             Self::Semantic {
+                path,
                 fidelity: SemanticFidelity::ReplaySkipped(reason),
                 ..
-            } => Some(*reason),
+            } => Some((*path, *reason)),
             _ => None,
         }
     }
 }
 
 impl CodecBackend for SldprtCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+    const FORMAT: &'static str = dialect::FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_sldprt(prefix) {
             Confidence::High
         } else {
@@ -381,28 +403,22 @@ impl CodecBackend for SldprtCodec {
         Ok(summary)
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }
 
 impl EncoderBackend for SldprtCodec {
     const FORMAT: &'static str = dialect::FORMAT;
-    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(dialect::TARGETS);
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog(dialect::TARGETS);
 
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        target: ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, CodecError> {
-        let ResolvedEncoderTarget::Native(resolved) = target else {
-            unreachable!("a catalog encoder receives only native target resolutions")
-        };
-        writer::target::plan(input, &resolved)
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

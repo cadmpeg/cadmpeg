@@ -11,11 +11,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::EncodeInput;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
@@ -1902,18 +1903,17 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// A report carrying the unconditional appearance loss that
 /// `build_container_report` and `build_geometry_report` state before appearance
 /// decoding runs.
-fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
-    cadmpeg_ir::report::DecodeReport::unclassified(
-        "f3d",
-        cadmpeg_ir::DecodeTransfer::full(false),
-        std::collections::BTreeMap::new(),
-        vec![F3dLossCode::MaterialNotTransferred.note(
+fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
+    cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::DecodeTransfer::full(false),
+        coverage: std::collections::BTreeMap::new(),
+        losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \
              transferred.",
         )],
-        Vec::new(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }
 
 fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
@@ -1937,7 +1937,7 @@ fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
     }
 }
 
-fn material_losses(report: &cadmpeg_ir::report::DecodeReport) -> Vec<&str> {
+fn material_losses(report: &cadmpeg_ir::codec::DecodeBody) -> Vec<&str> {
     report
         .losses
         .iter()

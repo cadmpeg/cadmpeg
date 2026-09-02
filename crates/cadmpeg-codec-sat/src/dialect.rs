@@ -12,7 +12,7 @@
 //! # Identity and admission are the host grammar
 //!
 //! The host rows are discriminated by the stream's leading bytes alone
-//! ([`StreamKind`]), which are read exactly: `ASM BinaryFile4`/`8`, `ACIS
+//! ([`crate::detect::StreamKind`]), which are read exactly: `ASM BinaryFile4`/`8`, `ACIS
 //! BinaryFile`, or the two text header lines. A recognized stream that has no
 //! binary record-stream boundary or complete text framing takes
 //! [`Admission::Refused`]. Inspection reports that match, and decode returns
@@ -23,10 +23,10 @@
 //! ACIS record decoders are verified against majors 217 and 218; the ASM record
 //! decoders compare no save format at all. A stream outside the verified band
 //! is not refused: its records are read with the verified band's grammar, which
-//! is [`Admission::AdmittedUnverified`] on that layer, and `using` names the
-//! verified binary `acis:` row whose grammar was substituted. An ACIS text
-//! stream outside that band has no declared text-band grammar to name and is
-//! admitted unverified without `using`. The recovery is charged as
+//! is [`Admission::Unverified`] on that layer, and `using` names the verified
+//! binary `acis:` row whose grammar was substituted. An ACIS text stream
+//! outside that band has no declared text-band grammar to name and is
+//! [`Admission::Residual`]. The recovery is charged as
 //! [`SatLossCode::SourceDialectUnverified`] by [`dialect_loss`], on a result
 //! that carries whatever those records decoded.
 //!
@@ -36,11 +36,10 @@
 //! [`SatLossCode::SourceDialectUnverified`]:
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
-use crate::detect::StreamKind;
 use crate::{SAT_ACIS_BINARY, SAT_ASM_BINARY, SAT_TEXT};
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -51,33 +50,6 @@ const DECLARED_ENCODING: &str = "encoding";
 /// Key of the text stream's terminator line in [`DialectMatch::declared`].
 /// Absent on the binary branches, which carry no terminator.
 const DECLARED_TERMINATOR: &str = "terminator";
-
-impl StreamKind {
-    /// Every stream kind that can produce a dialect report.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 3] = [Self::AsmBinary, Self::AcisBinary, Self::Text];
-
-    /// The registry-generated id when this kind reaches classification.
-    ///
-    /// One row of `docs/dialects.toml` under the `sat` namespace per stream
-    /// kind: the discriminant is the leading magic, or the two-line header shape
-    /// for text. `detect::confidence` reports [`Confidence::No`] for
-    /// [`Self::Unknown`], and both entry points return before classification,
-    /// so it has no reportable id.
-    ///
-    /// Identity here is the detection discriminant and nothing else. This is the
-    /// only registry string boundary the enum has.
-    ///
-    /// [`Confidence::No`]: cadmpeg_ir::codec::Confidence::No
-    pub(crate) const fn reportable_id(self) -> Option<DialectId> {
-        match self {
-            Self::AsmBinary => Some(SAT_ASM_BINARY),
-            Self::AcisBinary => Some(SAT_ACIS_BINARY),
-            Self::Text => Some(SAT_TEXT),
-            Self::Unknown => None,
-        }
-    }
-}
 
 /// The text branch's evidence.
 ///
@@ -114,41 +86,41 @@ pub(crate) enum StreamEvidence<'a> {
 }
 
 impl StreamEvidence<'_> {
-    /// The stream kind this evidence came from.
-    const fn kind(&self) -> StreamKind {
+    /// The host row this evidence identifies. Every variant is a reportable
+    /// kind, so the id is total: [`StreamKind::Unknown`] never reaches here.
+    const fn dialect(&self) -> DialectId {
         match self {
-            Self::AsmBinary(_) => StreamKind::AsmBinary,
-            Self::UnframedAsmBinary(_) => StreamKind::AsmBinary,
-            Self::AcisBinary(_) => StreamKind::AcisBinary,
-            Self::UnframedAcisBinary(_) => StreamKind::AcisBinary,
-            Self::Text(_) => StreamKind::Text,
+            Self::AsmBinary(_) | Self::UnframedAsmBinary(_) => SAT_ASM_BINARY,
+            Self::AcisBinary(_) | Self::UnframedAcisBinary(_) => SAT_ACIS_BINARY,
+            Self::Text(_) => SAT_TEXT,
         }
     }
 }
 
-/// How the host stream was admitted.
+/// The host match: identity from the discriminant, admission from framing.
 ///
 /// [`Admission::Refused`] here is structural and nothing else: the host
 /// discriminant matched but the stream did not frame. Kernel-band admission is
 /// owned by `cadmpeg_asm::dialect::classify` and cannot change this host state.
-fn admission(evidence: &StreamEvidence<'_>) -> Admission {
+fn host(evidence: &StreamEvidence<'_>) -> DialectMatch {
+    let dialect = evidence.dialect();
     match evidence {
         StreamEvidence::AsmBinary(Some(_))
         | StreamEvidence::AcisBinary(Some(_))
-        | StreamEvidence::Text(Some(_)) => Admission::Admitted,
+        | StreamEvidence::Text(Some(_)) => DialectMatch::admitted(dialect),
         StreamEvidence::AsmBinary(None)
         | StreamEvidence::UnframedAsmBinary(_)
         | StreamEvidence::AcisBinary(None)
         | StreamEvidence::UnframedAcisBinary(_)
-        | StreamEvidence::Text(None) => Admission::Refused,
+        | StreamEvidence::Text(None) => DialectMatch::refused(dialect),
     }
 }
 
 /// The recovery loss a match charges, if it recovered.
 ///
-/// `Some` exactly when the kernel match reports
-/// [`Admission::AdmittedUnverified`]. A binary recovery names the substituted
-/// binary row. A text recovery states that no declared text-band grammar was
+/// `Some` exactly when the kernel match reports [`Admission::Unverified`] or
+/// [`Admission::Residual`]. A binary recovery names the substituted binary
+/// row. A text recovery states that no declared text-band grammar was
 /// available. The message is not the contract; the code is.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     cadmpeg_asm::dialect::unverified_message("the stream", matched)
@@ -191,16 +163,10 @@ pub(crate) const fn terminator_line(branch: sat::Terminator) -> &'static str {
 /// in this codec, so a classification bug and the report can never disagree.
 ///
 /// Identity is the row the leading discriminant satisfies; admission is
-/// [`admission`]. Kernel save-format identity and admission are not copied into
+/// [`host`]. Kernel save-format identity and admission are not copied into
 /// this host match.
 fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
-    let dialect = evidence
-        .kind()
-        .reportable_id()
-        .expect("stream evidence is constructed only for reportable kinds");
-    DialectMatch::from_admission(dialect, admission(evidence))
-        .expect("SAT dialect admissions use only SAT grammar ids")
-        .with_declared(declared(evidence))
+    host(evidence).with_declared(declared(evidence))
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.

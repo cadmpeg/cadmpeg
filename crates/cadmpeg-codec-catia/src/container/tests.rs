@@ -6,7 +6,7 @@
 use super::*;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::test_support::{
     append_e5_record, external_reference_segment, finjpl_stream, outer_body_catpart,

@@ -12,7 +12,7 @@
 //!
 //! Spatial ACIS 217 and 218 binary streams use the verified 32-bit SAB grammar.
 //! Other ACIS binary header bands keep an admitted `sat:` host layer and recover
-//! through an admitted-unverified `acis:` kernel layer that names the nearest
+//! through an unverified `acis:` kernel layer that names the nearest
 //! verified grammar and charges the recovery loss. Inspection and decode emit
 //! both layers. A text stream frames on either branch terminator, and its decode
 //! outcome decides whether the report carries geometry.
@@ -32,18 +32,16 @@ include!("dialect/registry_ids.rs");
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::ContainerSummary;
 
 /// Bare ASM stream codec.
 pub struct SatCodec;
 
 impl CodecBackend for SatCodec {
-    fn id(&self) -> &'static str {
-        FORMAT
-    }
+    const FORMAT: &'static str = FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         detect::confidence(prefix)
     }
 
@@ -55,11 +53,7 @@ impl CodecBackend for SatCodec {
         detect::inspect(ctx, root)
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root.window())
     }
 }

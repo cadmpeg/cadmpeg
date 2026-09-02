@@ -378,7 +378,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 6, file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
       ]
@@ -477,7 +477,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 6, file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
     ]

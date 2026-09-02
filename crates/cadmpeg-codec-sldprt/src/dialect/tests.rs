@@ -5,7 +5,7 @@
 //! No golden fixture carries a `swSolidWorks` block, so no golden exercises a
 //! `swVersion` declaration at all: every frozen `.sldprt` in the tree
 //! classifies as `sldprt:unknown` with an empty `declared` map, is
-//! `AdmittedUnverified`, and charges `source.dialect-unverified`. The
+//! `Residual`, and charges `source.dialect-unverified`. The
 //! declaration table below carries the versioned-row coverage instead, over
 //! containers built by [`crate::test_support::container`].
 
@@ -80,7 +80,7 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
     assert_eq!(kernel.dialect().as_str(), "parasolid:sch-sw-33103");
     assert_eq!(kernel.declared()["schema"], "SCH_SW_33103_11000");
     assert_eq!(kernel.instance(), None);
-    assert_eq!(kernel.admission(), Admission::Admitted);
+    assert_eq!(kernel.admission(), &Admission::Admitted);
 }
 
 #[test]
@@ -90,9 +90,9 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
         "SCH_TEST_1_9999",
         "block@7:body+3",
         false,
-        cadmpeg_parasolid::KnownSchemaAdmission::Verified,
+        &VERIFIED_KERNELS,
     );
-    let layers = DialectLayers::new(host, vec![kernel]).unwrap();
+    let layers = DialectLayers::of(host).with(kernel);
     let losses = dialect_losses(&layers);
 
     assert_eq!(losses.len(), 1);
@@ -288,7 +288,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let context = format!("swVersion {:?}", case.declaration);
 
         assert_eq!(
-            matched.admission() == Admission::Admitted,
+            *matched.admission() == Admission::Admitted,
             loss.is_none(),
             "{context}: admission and the dialect-unverified loss must agree"
         );
@@ -304,8 +304,8 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
     // Admission verifies a *declared* identity. A part declaring 11999 or
     // 12000 is read with the padding its own declaration selects, so it is
     // `Admitted`. A part declaring nothing usable has no declaration to verify
-    // against, so it is `AdmittedUnverified` without a substituted grammar.
-    // The residual fallback does not claim another row's strategy.
+    // against, so it is `Residual`: read without any declared grammar. The
+    // residual fallback does not claim another row's strategy.
     // The pair (`sldprt:unknown`, `Admitted`) must be unreachable.
     for case in CASES {
         let matched = SldprtDialect::classify(case.declaration);
@@ -313,11 +313,11 @@ fn the_versioned_rows_verify_a_declaration_and_the_residual_row_cannot() {
         let residual = matched.dialect().as_str() == SldprtDialect::Unknown.id().as_str();
 
         let expected = if residual {
-            Admission::AdmittedUnverified { using: None }
+            Admission::Residual
         } else {
             Admission::Admitted
         };
-        assert_eq!(matched.admission(), expected, "{context}");
+        assert_eq!(matched.admission(), &expected, "{context}");
         assert_eq!(
             residual,
             case.id == "sldprt:unknown",
@@ -404,10 +404,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     assert_eq!(crate::container::declared_sw_version(&scan), None);
     assert_eq!(matched.dialect().as_str(), "sldprt:unknown");
     assert!(matched.declared().is_empty());
-    assert_eq!(
-        matched.admission(),
-        Admission::AdmittedUnverified { using: None }
-    );
+    assert_eq!(matched.admission(), &Admission::Residual);
     assert!(dialect_loss(&matched).is_some());
 }
 

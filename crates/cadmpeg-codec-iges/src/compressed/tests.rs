@@ -7,8 +7,9 @@ use crate::test_support::{point_file, point_file_with_global};
 use crate::IgesCodec;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
-use cadmpeg_ir::codec::TargetRequest;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
@@ -352,7 +353,7 @@ fn compressed_ascii_classifies_into_its_own_representation_row() {
 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:5.3-compressed-ascii");
-    assert_eq!(matched.admission(), Admission::Admitted);
+    assert_eq!(matched.admission(), &Admission::Admitted);
     assert_eq!(matched.declared()["representation"], "compressed-ascii");
 
     let source_meta = decoded.ir().source.as_ref().unwrap();
@@ -380,10 +381,8 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
-        matched.admission(),
-        Admission::AdmittedUnverified {
-            using: Some(DialectId::pinned("iges:5.3-compressed-ascii")),
-        }
+        matched.using(),
+        Some(DialectId::pinned("iges:5.3-compressed-ascii"))
     );
     assert_eq!(matched.declared()["representation"], "compressed-ascii");
     assert_eq!(matched.declared()["version_flag"], "4");

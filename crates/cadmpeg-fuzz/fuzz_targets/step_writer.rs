@@ -11,7 +11,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_step::{StepCodec, StepSchema};
-use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::CadIr;
 use libfuzzer_sys::fuzz_target;
 

@@ -2,7 +2,7 @@
 //! The write-target request reaching this encoder's `plan`.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::units::Units;
 
@@ -93,8 +93,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         EncodeInput::new(&ir, None),
         TargetRequest::Inherit,
     )
-    .err()
-    .expect("a source with no recorded dialect is refused");
+    .expect_err("a source with no recorded dialect is refused");
 
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
@@ -168,8 +167,7 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
         EncodeInput::new(&ir, None),
         TargetRequest::Inherit,
     )
-    .err()
-    .expect("a source dialect outside the catalog is refused");
+    .expect_err("a source dialect outside the catalog is refused");
 
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");

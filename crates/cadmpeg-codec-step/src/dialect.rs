@@ -13,7 +13,7 @@
 //! nothing in the reader branches on the declared schema. The schema identifier
 //! is read after the parse, recorded, and used for DATA-section name matching.
 //! It is nonetheless the identity axis. [`StepSchema::file_schema`] owns the
-//! declarations for writable Part 21 rows; [`StepDialect::schema_identifier`]
+//! declarations for writable Part 21 rows; [`Part21Dialect::schema_identifier`]
 //! delegates those rows to it and adds the edition-unspecified AP242 row.
 //!
 //! The `FILE_DESCRIPTION` implementation level is the axis the parser does
@@ -28,7 +28,7 @@
 //! [`DialectMatch::dialect`] records which registry row the document satisfies.
 //! A row matches only when *every* one of its discriminants matches. Four rows
 //! share the AP242 schema name and separate on the object identifier, which
-//! Part 21 makes optional: absent is [`StepDialect::Ap242`], the region where
+//! Part 21 makes optional: absent is [`Part21Dialect::Ap242`], the region where
 //! the schema is declared and the edition is not; each declared edition has its
 //! own row; an edition claim naming no declared edition satisfies no row and
 //! lands on [`StepDialect::Unknown`], the mandatory totality row. Parsing an
@@ -48,7 +48,7 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::Exchange;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -85,12 +85,71 @@ pub(crate) const DECLARED_IMPLEMENTATION_LEVEL: &str = "implementation_level";
 /// One row of `docs/dialects.toml` under the `step` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum StepDialect {
-    Schema(StepSchema),
-    Ap242,
+    /// A Part 21 identity row: every row with a `FILE_SCHEMA` identifier.
+    Part21(Part21Dialect),
+    Unknown,
+}
+
+/// A structurally identified STEP encoding this codec refuses before decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum AlternateEncoding {
     Part28Xml,
     Ap242BoModelXml,
     Part26Hdf5,
-    Unknown,
+}
+
+impl AlternateEncoding {
+    #[cfg(test)]
+    const ALL: [Self; 3] = [Self::Part28Xml, Self::Ap242BoModelXml, Self::Part26Hdf5];
+
+    const fn id(self) -> DialectId {
+        match self {
+            Self::Part28Xml => STEP_PART28_XML,
+            Self::Ap242BoModelXml => STEP_AP242_BO_MODEL_XML,
+            Self::Part26Hdf5 => STEP_PART26_HDF5,
+        }
+    }
+
+    const fn refusal_message(self) -> &'static str {
+        match self {
+            Self::Part26Hdf5 => "STEP Part 26 binary/HDF5 encoding",
+            Self::Part28Xml => "STEP Part 28 XML encoding",
+            Self::Ap242BoModelXml => "AP242 BO-Model XML sidecar",
+        }
+    }
+
+    fn refused_match(self) -> DialectMatch {
+        DialectMatch::refused(self.id())
+    }
+}
+
+/// The rows a Part 21 `FILE_SCHEMA` identifier can name. Every row here has a
+/// canonical identifier, so [`Part21Dialect::schema_identifier`] is total.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Part21Dialect {
+    /// A writable schema row.
+    Schema(StepSchema),
+    /// The edition-unspecified AP242 row: the schema name with no object
+    /// identifier.
+    Ap242,
+}
+
+impl Part21Dialect {
+    /// The registry-generated id for this row.
+    pub(crate) const fn id(self) -> DialectId {
+        match self {
+            Self::Schema(schema) => schema.id(),
+            Self::Ap242 => STEP_AP242,
+        }
+    }
+
+    /// The canonical `FILE_SCHEMA` identifier for this row.
+    pub(crate) const fn schema_identifier(self) -> &'static str {
+        match self {
+            Self::Schema(schema) => schema.file_schema(),
+            Self::Ap242 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+        }
+    }
 }
 
 /// The row whose entity vocabulary this codec actually reads a Part 21
@@ -101,46 +160,27 @@ pub(crate) enum StepDialect {
 /// decoded from any exchange, and no reader stage consults `FILE_SCHEMA`.
 /// Edition 3 is the newest of the AP242 rows and the one the reader's other
 /// defaults follow, so it names the strategy used.
-const NEAREST_STRATEGY: StepDialect = StepDialect::Schema(StepSchema::Ap242Edition3);
+const NEAREST_STRATEGY: Part21Dialect = Part21Dialect::Schema(StepSchema::Ap242Edition3);
 
 impl StepDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 11] = [
-        Self::Schema(StepSchema::Ap203Edition1),
-        Self::Schema(StepSchema::Ap203Edition2),
-        Self::Schema(StepSchema::Ap214),
-        Self::Ap242,
-        Self::Schema(StepSchema::Ap242Edition1),
-        Self::Schema(StepSchema::Ap242Edition2),
-        Self::Schema(StepSchema::Ap242Edition3),
-        Self::Part28Xml,
-        Self::Ap242BoModelXml,
-        Self::Part26Hdf5,
+    pub(crate) const ALL: [Self; 8] = [
+        Self::Part21(Part21Dialect::Schema(StepSchema::Ap203Edition1)),
+        Self::Part21(Part21Dialect::Schema(StepSchema::Ap203Edition2)),
+        Self::Part21(Part21Dialect::Schema(StepSchema::Ap214)),
+        Self::Part21(Part21Dialect::Ap242),
+        Self::Part21(Part21Dialect::Schema(StepSchema::Ap242Edition1)),
+        Self::Part21(Part21Dialect::Schema(StepSchema::Ap242Edition2)),
+        Self::Part21(Part21Dialect::Schema(StepSchema::Ap242Edition3)),
         Self::Unknown,
     ];
 
     /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
         match self {
-            Self::Schema(schema) => schema.id(),
-            Self::Ap242 => STEP_AP242,
-            Self::Part28Xml => STEP_PART28_XML,
-            Self::Ap242BoModelXml => STEP_AP242_BO_MODEL_XML,
-            Self::Part26Hdf5 => STEP_PART26_HDF5,
+            Self::Part21(row) => row.id(),
             Self::Unknown => STEP_UNKNOWN,
-        }
-    }
-
-    /// The canonical `FILE_SCHEMA` identifier for a Part 21 identity row.
-    ///
-    /// The edition-unspecified AP242 row has its legal bare schema name. The
-    /// alternate encodings and totality row have no Part 21 declaration.
-    pub(crate) const fn schema_identifier(self) -> Option<&'static str> {
-        match self {
-            Self::Schema(schema) => Some(schema.file_schema()),
-            Self::Ap242 => Some("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"),
-            Self::Part28Xml | Self::Ap242BoModelXml | Self::Part26Hdf5 | Self::Unknown => None,
         }
     }
 
@@ -155,7 +195,7 @@ impl StepDialect {
     /// The AP242 name is shared by four rows, so the object identifier is the
     /// second discriminant there and its three states are distinct facts:
     ///
-    /// - absent — a complete declaration naming no edition, [`Self::Ap242`].
+    /// - absent — a complete declaration naming no edition, [`Part21Dialect::Ap242`].
     ///   The object identifier is optional in Part 21; leaving it out is legal
     ///   and says the edition is unspecified, not that the file is unrecognized.
     /// - present and naming an edition — that edition's row, decided against
@@ -168,65 +208,42 @@ impl StepDialect {
         let Some((name, object_identifier_text)) = split_schema_identifier(identifier) else {
             return Self::Unknown;
         };
-        let ap242_name = Self::Ap242
-            .schema_identifier()
-            .expect("the AP242 row has a Part 21 identifier");
+        let ap242_name = Part21Dialect::Ap242.schema_identifier();
         if name.eq_ignore_ascii_case(ap242_name) {
             if object_identifier_text.is_none() {
-                return Self::Ap242;
+                return Self::Part21(Part21Dialect::Ap242);
             }
-            return Self::from_ap242_identifier(name, object_identifier).unwrap_or(Self::Unknown);
+            return Self::from_ap242_identifier(name, object_identifier)
+                .map_or(Self::Unknown, Self::Part21);
         }
         [
-            Self::Schema(StepSchema::Ap203Edition1),
-            Self::Schema(StepSchema::Ap203Edition2),
-            Self::Schema(StepSchema::Ap214),
+            Part21Dialect::Schema(StepSchema::Ap203Edition1),
+            Part21Dialect::Schema(StepSchema::Ap203Edition2),
+            Part21Dialect::Schema(StepSchema::Ap214),
         ]
         .into_iter()
-        .find(|dialect| {
-            split_schema_identifier(
-                dialect
-                    .schema_identifier()
-                    .expect("Part 21 discriminants have identifiers"),
-            )
-            .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
+        .find(|row| {
+            split_schema_identifier(row.schema_identifier())
+                .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
         })
-        .unwrap_or(Self::Unknown)
+        .map_or(Self::Unknown, Self::Part21)
     }
 
     /// The AP242 edition row whose canonical object identifier the declaration
     /// names. A future or malformed object identifier names no verified row.
-    fn from_ap242_identifier(name: &str, object_identifier: Option<&[u64]>) -> Option<Self> {
-        if !name.eq_ignore_ascii_case(Self::Ap242.schema_identifier()?) {
+    fn from_ap242_identifier(
+        name: &str,
+        object_identifier: Option<&[u64]>,
+    ) -> Option<Part21Dialect> {
+        if !name.eq_ignore_ascii_case(Part21Dialect::Ap242.schema_identifier()) {
             return None;
         }
         match object_identifier? {
-            [1, 0, 10303, 442, 1, 1, 4] => Some(Self::Schema(StepSchema::Ap242Edition1)),
-            [1, 0, 10303, 442, 3, 1, 4] => Some(Self::Schema(StepSchema::Ap242Edition2)),
-            [1, 0, 10303, 442, 4, 1, 4] => Some(Self::Schema(StepSchema::Ap242Edition3)),
+            [1, 0, 10303, 442, 1, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition1)),
+            [1, 0, 10303, 442, 3, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition2)),
+            [1, 0, 10303, 442, 4, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition3)),
             _ => None,
         }
-    }
-
-    /// The refusal message this codec returns for an alternate encoding, or
-    /// `None` for a Part 21 row.
-    ///
-    /// The three alternate-encoding rows are exactly the rows with a message:
-    /// they are identified structurally and refused before any exchange
-    /// structure is read.
-    pub(crate) const fn alternate_encoding_refusal(self) -> Option<&'static str> {
-        match self {
-            Self::Part26Hdf5 => Some("STEP Part 26 binary/HDF5 encoding"),
-            Self::Part28Xml => Some("STEP Part 28 XML encoding"),
-            Self::Ap242BoModelXml => Some("AP242 BO-Model XML sidecar"),
-            Self::Schema(_) | Self::Ap242 | Self::Unknown => None,
-        }
-    }
-
-    /// Classifies one structurally identified alternate encoding at refusal.
-    fn classify_refused(self) -> DialectMatch {
-        debug_assert!(self.alternate_encoding_refusal().is_some());
-        DialectMatch::refused(self.id())
     }
 
     /// Classifies one Part 21 exchange. The single construction path for a
@@ -272,8 +289,7 @@ impl StepDialect {
         );
 
         if dialect == Self::Unknown {
-            DialectMatch::unverified(dialect.id(), NEAREST_STRATEGY.id())
-                .expect("STEP dialect and grammar ids share one format namespace")
+            DialectMatch::unverified(dialect.id(), Grammar::of(&NEAREST_STRATEGY.id()))
         } else {
             DialectMatch::admitted(dialect.id())
         }
@@ -285,15 +301,14 @@ impl StepDialect {
 ///
 /// `None` exactly when `matched.admission` is [`Admission::Admitted`], because
 /// this reads that field rather than reclassifying the document. Design §7
-/// requires the charge on every [`Admission::AdmittedUnverified`], and this is
+/// requires the charge on every [`Admission::Unverified`], and this is
 /// how STEP satisfies it: the codec decodes an unrecognized schema by recording
 /// the string and reading the exchange with the AP242 entity vocabulary
 /// anyway, which is a recovery, not a verified read.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { using } = matched.admission() else {
+    let Admission::Unverified { using } = matched.admission() else {
         return None;
     };
-    let using = using.expect("the STEP unverified classifier always names its AP242 strategy");
     let declaration = matched
         .declared()
         .get(DECLARED_FILE_SCHEMA_IDENTIFIER)
@@ -303,7 +318,8 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         );
     Some(StepLossCode::SourceDialectUnverified.note(format!(
         "{declaration}; it satisfies no declared STEP dialect, so this decode read the exchange \
-with the entity vocabulary verified for {using}"
+with the entity vocabulary verified for {FORMAT}:{}",
+        using.as_str()
     )))
 }
 
@@ -327,22 +343,19 @@ with the entity vocabulary verified for {using}"
 /// schema/unit/context agreement, conflict policy, and retention of both source
 /// graphs.
 pub(crate) fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    let dialect = if crate::codec::is_part26_hdf5(bytes) {
-        StepDialect::Part26Hdf5
+    let encoding = if crate::codec::is_part26_hdf5(bytes) {
+        AlternateEncoding::Part26Hdf5
     } else if crate::codec::is_part28_xml(bytes) {
-        StepDialect::Part28Xml
+        AlternateEncoding::Part28Xml
     } else if crate::codec::is_ap242_bo_model_xml(bytes) {
-        StepDialect::Ap242BoModelXml
+        AlternateEncoding::Ap242BoModelXml
     } else {
         return Ok(());
     };
-    match dialect.alternate_encoding_refusal() {
-        Some(message) => Err(CodecError::UnsupportedDialect {
-            dialects: Box::new(DialectLayers::of(dialect.classify_refused())),
-            message: message.into(),
-        }),
-        None => Ok(()),
-    }
+    Err(CodecError::UnsupportedDialect {
+        dialects: Box::new(DialectLayers::of(encoding.refused_match())),
+        message: encoding.refusal_message().into(),
+    })
 }
 
 #[cfg(test)]

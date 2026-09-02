@@ -6,8 +6,9 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{DecodeReport, DecodeTransfer};
+use cadmpeg_ir::report::DecodeTransfer;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::ContainerSummary;
 
@@ -1138,7 +1139,9 @@ pub(crate) fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
         .classify(scan.metadata.properties.writer_version)
 }
 
-fn source_meta(scan: &Scan<'_>) -> SourceMeta {
+/// The source metadata a container-only decode records; `primary` is the one
+/// author of the document's identity.
+fn source_meta(scan: &Scan<'_>, primary: DialectMatch) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
@@ -1155,15 +1158,15 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
         "instance_definition_count".to_string(),
         scan.definitions.definitions.len().to_string(),
     );
-    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
+    SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
+        attributes,
+    )
 }
 
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(
-    scan: &Scan<'_>,
-) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
+pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(source_meta(scan));
     let mut notes = vec![scan.version_note()];
     notes.extend(scan.warnings.iter().cloned());
     notes.extend(
@@ -1189,18 +1192,18 @@ pub(crate) fn container_only_result(
     }));
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
-    Ok(cadmpeg_ir::codec::DecodeResult::new(
+    ir.source = Some(source_meta(scan, primary));
+    Decoded {
         ir,
-        DecodeReport::classified(
-            cadmpeg_core::dialect::DialectLayers::of(primary),
-            DecodeTransfer::ContainerOnly,
-            std::collections::BTreeMap::new(),
+        body: DecodeBody {
+            transfer: DecodeTransfer::ContainerOnly,
+            coverage: std::collections::BTreeMap::new(),
             losses,
             notes,
-            cadmpeg_ir::report::TransferLedger::default(),
-        ),
-        cadmpeg_ir::SourceFidelity::default(),
-    )?)
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        },
+        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+    }
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
@@ -1233,7 +1236,7 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     container_only: bool,
-) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
     if header.archive_version == ArchiveVersion::V1 {
@@ -1241,9 +1244,12 @@ pub(crate) fn decode(
     }
     let scan = scan(data)?;
     if container_only && scan.archive.is_chunked() {
-        return container_only_result(&scan);
+        return Ok(container_only_result(&scan));
     }
-    crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
+    Ok(crate::decode::decode(
+        &scan,
+        crate::mesh::MeshExpand::new(ctx, root),
+    ))
 }
 
 #[cfg(test)]

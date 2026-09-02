@@ -34,7 +34,7 @@
 
 use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -52,7 +52,7 @@ include!("dialect/registry_ids.rs");
 /// No row is a cross-format default because this writer cannot synthesize an
 /// `FCStd` document graph from another format.
 ///
-/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::TargetRequest::Inherit
+/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::TargetRequest::Inherit
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: FcstdDialect::Schema4.id(),
     aliases: &["4"],
@@ -163,8 +163,7 @@ impl FcstdDialect {
             declared.insert(DECLARED_PROGRAM_VERSION.into(), version.clone());
         }
         if dialect == Self::Unknown {
-            DialectMatch::unverified(dialect.id(), Self::NEAREST_VERIFIED.id())
-                .expect("FCStd dialect and grammar ids share one format namespace")
+            DialectMatch::unverified(dialect.id(), Grammar::of(&Self::NEAREST_VERIFIED.id()))
         } else {
             DialectMatch::admitted(dialect.id())
         }
@@ -176,7 +175,7 @@ impl FcstdDialect {
     /// `None` exactly when the completed match reports
     /// [`Admission::Admitted`].
     pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-        let Admission::AdmittedUnverified { .. } = matched.admission() else {
+        let Admission::Unverified { .. } = matched.admission() else {
             return None;
         };
         let schema_version = matched

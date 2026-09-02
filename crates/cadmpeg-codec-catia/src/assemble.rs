@@ -5,6 +5,7 @@
 //! loss accounting, neutral-model admissibility, source metadata, generic
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
@@ -13,7 +14,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -445,7 +446,10 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
             format!("0x{:08x}", segment.type_word),
         );
     }
-    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
+    SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::classify(scan)),
+        attributes,
+    )
 }
 
 pub(crate) fn build_geometry_report(
@@ -456,7 +460,7 @@ pub(crate) fn build_geometry_report(
     analytic_record_count: usize,
     report_counts: &GeometryReportCounts,
     topology_failure: Option<&str>,
-) -> DecodeReport {
+) -> DecodeBody {
     let mut losses = Vec::new();
 
     losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
@@ -539,14 +543,13 @@ pub(crate) fn build_geometry_report(
         ),
     );
 
-    DecodeReport::unclassified(
-        crate::dialect::FORMAT,
-        cadmpeg_ir::DecodeTransfer::full(true),
-        std::collections::BTreeMap::new(),
+    DecodeBody {
+        transfer: cadmpeg_ir::DecodeTransfer::full(true),
+        coverage: std::collections::BTreeMap::new(),
         losses,
-        Vec::new(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }
 
 pub(crate) fn build_metadata_ir(
@@ -637,7 +640,7 @@ pub(crate) fn link_payload_carriers(
     annotations.derived(&payload.id, "links");
 }
 
-pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
+pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeBody {
     let mut losses = vec![CatiaLossCode::GeometryBrepNotTransferred.note(format!(
         "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
          applicable decoded record families transfer geometry in this codec.",
@@ -657,18 +660,17 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
                   for this file.",
     ));
 
-    DecodeReport::unclassified(
-        crate::dialect::FORMAT,
-        if container_only {
+    DecodeBody {
+        transfer: if container_only {
             cadmpeg_ir::DecodeTransfer::ContainerOnly
         } else {
             cadmpeg_ir::DecodeTransfer::full(false)
         },
-        std::collections::BTreeMap::new(),
+        coverage: std::collections::BTreeMap::new(),
         losses,
-        Vec::new(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }
 
 pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {

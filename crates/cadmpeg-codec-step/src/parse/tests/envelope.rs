@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cadmpeg_core::decode::{InspectOptions, View};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::StepCodec;
 
@@ -29,7 +29,7 @@ fn assert_unsupported_dialect(
     assert_eq!(dialects.primary().dialect().as_str(), expected_id);
     assert_eq!(
         dialects.primary().admission(),
-        cadmpeg_core::dialect::Admission::Refused
+        &cadmpeg_core::dialect::Admission::Refused
     );
     assert_eq!(message, expected_message);
 }

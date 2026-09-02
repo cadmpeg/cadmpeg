@@ -86,8 +86,7 @@ fn f3z_archive_merges_identity_occurrences() {
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .err()
-        .expect("the F3Z row is not a synthesis target");
+        .expect_err("the F3Z row is not a synthesis target");
     let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };

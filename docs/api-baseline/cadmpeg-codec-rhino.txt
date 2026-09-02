@@ -1,4 +1,4 @@
-# generated at 8b1cd929e
+# generated at 3f11b2f41
 pub mod cadmpeg_codec_rhino
 pub enum cadmpeg_codec_rhino::RhinoArchiveVersion
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V5
@@ -9,11 +9,12 @@ impl cadmpeg_codec_rhino::RhinoArchiveVersion
 pub const fn cadmpeg_codec_rhino::RhinoArchiveVersion::descriptor(self) -> cadmpeg_core::target::TargetDescriptor
 pub struct cadmpeg_codec_rhino::RhinoCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_rhino::RhinoCodec
-pub fn cadmpeg_codec_rhino::RhinoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_rhino::RhinoCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_codec_rhino::RhinoCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_rhino::RhinoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::write::EncoderBackend for cadmpeg_codec_rhino::RhinoCodec
 pub const cadmpeg_codec_rhino::RhinoCodec::FORMAT: &'static str
-pub const cadmpeg_codec_rhino::RhinoCodec::TARGET_DOMAIN: cadmpeg_ir::codec::write::EncoderTargetDomain
-pub fn cadmpeg_codec_rhino::RhinoCodec::plan_resolved(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::ResolvedEncoderTarget) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_rhino::RhinoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_rhino::RhinoCodec::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
+pub fn cadmpeg_codec_rhino::RhinoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+impl cadmpeg_ir::codec::write::backend::EncoderBackend for cadmpeg_codec_rhino::RhinoCodec
+pub type cadmpeg_codec_rhino::RhinoCodec::Target = cadmpeg_ir::codec::write::backend::Catalog
+pub const cadmpeg_codec_rhino::RhinoCodec::FORMAT: &'static str
+pub const cadmpeg_codec_rhino::RhinoCodec::TARGET: cadmpeg_ir::codec::write::backend::Catalog
+pub fn cadmpeg_codec_rhino::RhinoCodec::plan_resolved(&self, cadmpeg_ir::codec::write::backend::EncodeInput<'_>, cadmpeg_ir::codec::write::resolve::ResolvedWrite<'_>) -> core::result::Result<cadmpeg_ir::codec::write::backend::ExportBody, cadmpeg_core::error::CodecError>

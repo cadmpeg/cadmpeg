@@ -31,11 +31,12 @@ use super::support_uv::pcurve_requires_completion;
 use super::{summarize, Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, SketchSpace,
 };
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -72,7 +73,7 @@ pub(crate) fn build_geometry_report(
     model: &crate::native::NativeModel,
     completion_budget: CompletionBudgetStatus,
     adaptive_geometry_exhausted: bool,
-) -> DecodeReport {
+) -> DecodeBody {
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
@@ -276,16 +277,14 @@ pub(crate) fn build_geometry_report(
     }
 
     let (classification, notes) = summarize(scan);
-    let (dialects, dialect_losses) = classification.into_report_parts();
-    losses.extend(dialect_losses);
-    DecodeReport::classified(
-        dialects,
-        cadmpeg_ir::DecodeTransfer::full(true),
-        std::collections::BTreeMap::new(),
+    losses.extend(classification.into_losses());
+    DecodeBody {
+        transfer: cadmpeg_ir::DecodeTransfer::full(true),
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes,
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    }
 }
 
 pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {

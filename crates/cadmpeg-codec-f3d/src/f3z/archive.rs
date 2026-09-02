@@ -124,8 +124,7 @@ pub(super) fn classify_members<'a>(
                 continue;
             }
         };
-        let classification = crate::dialect::classify_layers(&member_scan);
-        let (member_layers, member_losses) = classification.into_parts();
+        let (member_layers, member_losses) = crate::dialect::classify_layers(&member_scan);
         losses.extend(member_losses.into_iter().map(|mut loss| {
             loss.message = format!("archive member {member_path}: {}", loss.message);
             loss
@@ -168,7 +167,8 @@ pub(super) fn merge_member_layers(
         );
         let matched = matched.with_declared(declared).with_instance(instance);
         let format = matched.format().to_owned();
-        if target.try_push(matched).is_err() {
+        if let Some(displaced) = target.push(matched) {
+            target.push(displaced);
             losses.push(F3dLossCode::DialectLayerCollision.note(format!(
                 "archive member {member_path} produced a duplicate {format} dialect layer at instance {collision_instance}; the later layer was omitted",
             )));

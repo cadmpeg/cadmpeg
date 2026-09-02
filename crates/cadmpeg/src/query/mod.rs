@@ -273,7 +273,7 @@ struct DecodeReportProbe {
 
 /// Lenient dialect identity. Admission stays as JSON so a future admission
 /// variant does not make an otherwise projectable artifact unreadable.
-#[derive(Deserialize, Serialize)]
+#[derive(Serialize)]
 struct DialectMatchProbe {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     format: Option<String>,
@@ -289,6 +289,48 @@ struct DialectMatchProbe {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     instance: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DialectMatchProbeWire {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    dialect: Option<String>,
+    #[serde(default)]
+    declared: Option<Value>,
+    #[serde(default)]
+    admission: Option<Value>,
+    #[serde(default)]
+    instance: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for DialectMatchProbe {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = DialectMatchProbeWire::deserialize(deserializer)?;
+        Ok(Self {
+            format: wire.format,
+            dialect: wire.dialect,
+            declared: wire.declared,
+            admission: wire.admission.map(project_admission),
+            instance: wire.instance,
+        })
+    }
+}
+
+/// Projects the version-7 `admitted_unverified` spelling onto the current
+/// four-state admission meaning while retaining unknown future variants.
+fn project_admission(admission: Value) -> Value {
+    let Some(legacy) = admission.get("admitted_unverified") else {
+        return admission;
+    };
+    match legacy.get("using") {
+        Some(Value::String(using)) => serde_json::json!({
+            "unverified": { "using": using }
+        }),
+        None | Some(Value::Null) => Value::String("residual".to_owned()),
+        Some(_) => admission,
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -350,7 +392,10 @@ impl LossCodeProbe {
 
 #[cfg(test)]
 mod tests {
-    use super::{push_decode_dialect_summary, DecodeReportProbe, LossCodeProbe, SourceProbe};
+    use super::{
+        push_decode_dialect_summary, DecodeReportProbe, DialectMatchProbe, LossCodeProbe,
+        SourceProbe,
+    };
 
     #[test]
     fn legacy_loss_codes_use_the_shared_migration_spelling() {
@@ -398,7 +443,7 @@ mod tests {
                 ("decode_dialect_layers".to_owned(), "2".to_owned()),
                 (
                     "decode_dialects".to_owned(),
-                    r#"{"primary":{"format":"f3d","dialect":"f3d:archive-2","declared":{"manifest_version":"2"},"admission":"admitted"},"extra":[{"format":"acis","dialect":"acis:sab-22300","declared":{"save_format":"22300"},"admission":{"admitted_unverified":{"using":"acis:sab-22200"}},"instance":"member:model.sab"}]}"#.to_owned()
+                    r#"{"primary":{"format":"f3d","dialect":"f3d:archive-2","declared":{"manifest_version":"2"},"admission":"admitted"},"extra":[{"format":"acis","dialect":"acis:sab-22300","declared":{"save_format":"22300"},"admission":{"unverified":{"using":"acis:sab-22200"}},"instance":"member:model.sab"}]}"#.to_owned()
                 ),
                 ("decode_dialect_format".to_owned(), "f3d".to_owned()),
                 ("decode_dialect".to_owned(), "f3d:archive-2".to_owned()),
@@ -408,6 +453,29 @@ mod tests {
                     r#"{"manifest_version":"2"}"#.to_owned()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn dialect_probe_projects_both_legacy_unverified_states() {
+        let substituted: DialectMatchProbe = serde_json::from_value(serde_json::json!({
+            "admission": {"admitted_unverified": {"using": "acis:sab-22200"}}
+        }))
+        .unwrap();
+        assert_eq!(
+            substituted.admission,
+            Some(serde_json::json!({
+                "unverified": {"using": "acis:sab-22200"}
+            }))
+        );
+
+        let residual: DialectMatchProbe = serde_json::from_value(serde_json::json!({
+            "admission": {"admitted_unverified": {}}
+        }))
+        .unwrap();
+        assert_eq!(
+            residual.admission,
+            Some(serde_json::Value::String("residual".into()))
         );
     }
 
@@ -426,16 +494,16 @@ mod tests {
         assert_eq!(layers.primary.dialect.as_deref(), Some("rhino:archive-80"));
         assert!(layers.extra.is_empty());
 
-        let error = serde_json::from_value::<SourceProbe>(serde_json::json!({
+        let Err(error) = serde_json::from_value::<SourceProbe>(serde_json::json!({
             "format": "rhino",
             "dialects": {
                 "primary": {"dialect": "rhino:archive-80"},
                 "extra": []
             },
             "dialect": {"dialect": "rhino:archive-80"}
-        }))
-        .err()
-        .expect("two source identity fields are ambiguous");
+        })) else {
+            panic!("two source identity fields are ambiguous");
+        };
         assert!(
             error
                 .to_string()
@@ -503,8 +571,9 @@ struct NativeNamespaceProbe {
     arenas: BTreeMap<String, ArenaLen>,
 }
 
-/// Bounded decode-sidecar projection. Versions 1 and 2 are projected through
-/// their version-3 meaning without materializing retained payload bytes.
+/// Bounded decode-sidecar projection. Versions 1 through 3 are projected
+/// through their version-4 meaning without materializing retained payload
+/// bytes.
 #[derive(Deserialize)]
 struct SidecarProbe {
     version: String,
@@ -518,7 +587,9 @@ impl SidecarProbe {
     fn migrate_projection(&mut self) -> Result<()> {
         match self.version.as_str() {
             cadmpeg_ir::DECODE_SIDECAR_VERSION => Ok(()),
-            cadmpeg_ir::DECODE_SIDECAR_VERSION_V1 | cadmpeg_ir::DECODE_SIDECAR_VERSION_V2 => {
+            cadmpeg_ir::DECODE_SIDECAR_VERSION_V1
+            | cadmpeg_ir::DECODE_SIDECAR_VERSION_V2
+            | cadmpeg_ir::DECODE_SIDECAR_VERSION_V3 => {
                 self.input_version = Some(std::mem::replace(
                     &mut self.version,
                     cadmpeg_ir::DECODE_SIDECAR_VERSION.to_owned(),

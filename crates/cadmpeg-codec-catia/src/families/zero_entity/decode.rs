@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
@@ -12,7 +13,6 @@ use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -928,14 +928,13 @@ pub(crate) fn try_decode_zero_entity(
     };
     Some(FamilyOutput {
         ir,
-        report: DecodeReport::unclassified(
-            crate::dialect::FORMAT,
-            cadmpeg_ir::DecodeTransfer::full(true),
+        report: DecodeBody {
+            transfer: cadmpeg_ir::DecodeTransfer::full(true),
             coverage,
-            vec![topology_loss.note(topology_message)],
-            Vec::new(),
-            cadmpeg_ir::report::TransferLedger::default(),
-        ),
+            losses: vec![topology_loss.note(topology_message)],
+            notes: Vec::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        },
         annotations: annotations.build(),
         unknowns,
         standard_face_population: false,

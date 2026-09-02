@@ -16,19 +16,6 @@ pub const DECLARED_SCHEMA: &str = "schema";
 /// Declared-key name for the host location carrying the stream.
 pub const DECLARED_CARRIER: &str = "carrier";
 
-/// Whether the host parser verified the grammar of a named Parasolid row.
-///
-/// Identity comes from the shared schema-token map. Admission is a separate
-/// host fact: two containers can carry the same token while applying different
-/// embedded-stream grammars.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KnownSchemaAdmission {
-    /// The host applied and verified the grammar named by a recognized row.
-    Verified,
-    /// The host retained the recognized identity without verifying its grammar.
-    Unverified,
-}
-
 /// One exact ASCII `SCH_` token and its location in a supplied prologue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchemaToken<'a> {
@@ -106,19 +93,12 @@ fn schema_token(prologue: &[u8], offset: usize, end: usize) -> Option<SchemaToke
     Some(SchemaToken { value, offset })
 }
 
-/// Classify one schema-bearing Parasolid stream and record its host carrier.
+/// Registry row named by one schema token, or the residual row.
 ///
-/// `instance_tagged` identifies the carrier when the host contains more than
-/// one Parasolid stream. The schema and carrier are always retained verbatim as
-/// declarations, independent of whether the schema has a named registry row.
-#[must_use]
-pub fn classify_layer(
-    schema: &str,
-    carrier: &str,
-    instance_tagged: bool,
-    known_admission: KnownSchemaAdmission,
-) -> DialectMatch {
-    let id = if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
+/// Identity comes from this shared schema-token map so hosts cannot disagree
+/// about the identity of the same declaration.
+fn schema_row(schema: &str) -> DialectId {
+    if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
         PARASOLID_SCH_SW_33103
     } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
         PARASOLID_SCH_SW_32001
@@ -129,14 +109,32 @@ pub fn classify_layer(
         PARASOLID_FORMAT_13006
     } else {
         PARASOLID_UNKNOWN
-    };
+    }
+}
+
+/// Classify one schema-bearing Parasolid stream and record its host carrier.
+///
+/// `instance_tagged` identifies the carrier when the host contains more than
+/// one Parasolid stream. The schema and carrier are always retained verbatim as
+/// declarations, independent of whether the schema has a named registry row.
+/// `verified` lists the rows whose grammar the host applied and verified; every
+/// other row, and the residual row, is admitted without verification.
+#[must_use]
+pub fn classify_layer(
+    schema: &str,
+    carrier: &str,
+    instance_tagged: bool,
+    verified: &[DialectId],
+) -> DialectMatch {
+    let id = schema_row(schema);
     let declared = BTreeMap::from([
         (DECLARED_SCHEMA.to_owned(), schema.to_owned()),
         (DECLARED_CARRIER.to_owned(), carrier.to_owned()),
     ]);
-    let matched = match (id == PARASOLID_UNKNOWN, known_admission) {
-        (true, _) | (_, KnownSchemaAdmission::Unverified) => DialectMatch::residual(id),
-        (false, KnownSchemaAdmission::Verified) => DialectMatch::admitted(id),
+    let matched = if verified.contains(&id) {
+        DialectMatch::admitted(id)
+    } else {
+        DialectMatch::residual(id)
     }
     .with_declared(declared);
     if instance_tagged {
@@ -152,16 +150,11 @@ pub fn classify_layer(
 /// stable instance keys, so hosts cannot disagree about when identity needs a
 /// disambiguator.
 #[must_use]
-pub fn extra_layers(
-    streams: Vec<(String, String)>,
-    known_admission: KnownSchemaAdmission,
-) -> Vec<DialectMatch> {
+pub fn extra_layers(streams: Vec<(String, String)>, verified: &[DialectId]) -> Vec<DialectMatch> {
     let instance_tagged = streams.len() > 1;
     streams
         .into_iter()
-        .map(|(schema, carrier)| {
-            classify_layer(&schema, &carrier, instance_tagged, known_admission)
-        })
+        .map(|(schema, carrier)| classify_layer(&schema, &carrier, instance_tagged, verified))
         .collect()
 }
 
@@ -177,10 +170,11 @@ pub fn push_extras(
     let mut collisions = Vec::new();
     for layer in extras {
         let format = layer.format().to_owned();
-        let instance = layer.instance().unwrap_or("unidentified").to_owned();
-        if layers.try_push(layer).is_err() {
+        let carrier = layer.instance().unwrap_or("unidentified").to_owned();
+        if let Some(displaced) = layers.push(layer) {
+            layers.push(displaced);
             collisions.push(format!(
-                "the container produced a duplicate {format} dialect layer at carrier {instance}; \
+                "the container produced a duplicate {format} dialect layer at carrier {carrier}; \
                  the later classification was omitted"
             ));
         }
@@ -196,7 +190,10 @@ pub fn push_extras(
 #[must_use]
 pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
     if matched.format() != FORMAT
-        || !matches!(matched.admission(), Admission::AdmittedUnverified { .. })
+        || !matches!(
+            matched.admission(),
+            Admission::Unverified { .. } | Admission::Residual
+        )
     {
         return None;
     }
@@ -231,6 +228,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+
+    const ALL_ROWS: [DialectId; 3] = [
+        PARASOLID_SCH_SW_33103,
+        PARASOLID_SCH_SW_32001,
+        PARASOLID_FORMAT_13006,
+    ];
 
     #[test]
     fn schema_token_uses_one_exact_ascii_grammar() {
@@ -271,10 +274,9 @@ mod tests {
             ("Sch_Sw_32001_11000", "parasolid:sch-sw-32001"),
             ("SCH_3201255_32001_13006", "parasolid:format-13006"),
         ] {
-            let matched =
-                classify_layer(schema, "stream@12", false, KnownSchemaAdmission::Verified);
+            let matched = classify_layer(schema, "stream@12", false, &ALL_ROWS);
             assert_eq!(matched.dialect().as_str(), expected);
-            assert_eq!(matched.admission(), Admission::Admitted);
+            assert_eq!(matched.admission(), &Admission::Admitted);
             assert_eq!(matched.declared()[DECLARED_SCHEMA], schema);
             assert_eq!(matched.declared()[DECLARED_CARRIER], "stream@12");
             assert_eq!(matched.instance(), None);
@@ -282,19 +284,11 @@ mod tests {
     }
 
     #[test]
-    fn residual_schemas_use_unverified_admission_without_a_substitution() {
-        let matched = classify_layer(
-            "SCH_TEST_1_9999",
-            "block@7:body+3",
-            true,
-            KnownSchemaAdmission::Verified,
-        );
+    fn residual_schemas_use_residual_admission_without_a_substitution() {
+        let matched = classify_layer("SCH_TEST_1_9999", "block@7:body+3", true, &ALL_ROWS);
 
         assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
-        assert_eq!(
-            matched.admission(),
-            Admission::AdmittedUnverified { using: None }
-        );
+        assert_eq!(matched.admission(), &Admission::Residual);
         assert_eq!(matched.declared()[DECLARED_SCHEMA], "SCH_TEST_1_9999");
         assert_eq!(matched.declared()[DECLARED_CARRIER], "block@7:body+3");
         assert_eq!(matched.instance(), Some("block@7:body+3"));
@@ -310,14 +304,14 @@ mod tests {
                 ("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned()),
                 ("SCH_TEST_1_9999".to_owned(), "stream@48".to_owned()),
             ],
-            KnownSchemaAdmission::Verified,
+            &ALL_ROWS,
         );
         assert_eq!(layers[0].instance(), Some("stream@12"));
         assert_eq!(layers[1].instance(), Some("stream@48"));
 
         let one = extra_layers(
             vec![("SCH_SW_33103_11000".to_owned(), "stream@12".to_owned())],
-            KnownSchemaAdmission::Verified,
+            &ALL_ROWS,
         );
         assert_eq!(one[0].instance(), None);
     }
@@ -327,18 +321,8 @@ mod tests {
         let mut layers = DialectLayers::of(DialectMatch::admitted(
             DialectId::parse("nx:splmsstr").expect("valid host dialect id"),
         ));
-        let first = classify_layer(
-            "SCH_SW_33103_11000",
-            "stream@12",
-            true,
-            KnownSchemaAdmission::Unverified,
-        );
-        let later = classify_layer(
-            "SCH_SW_32001_11000",
-            "stream@12",
-            true,
-            KnownSchemaAdmission::Unverified,
-        );
+        let first = classify_layer("SCH_SW_33103_11000", "stream@12", true, &[]);
+        let later = classify_layer("SCH_SW_32001_11000", "stream@12", true, &[]);
 
         let collisions = push_extras(&mut layers, [first.clone(), later]);
 
@@ -361,7 +345,7 @@ mod tests {
             "SCH_TEST_1_9999",
         ]
         .map(|schema| {
-            classify_layer(schema, "carrier", false, KnownSchemaAdmission::Verified)
+            classify_layer(schema, "carrier", false, &ALL_ROWS)
                 .dialect()
                 .to_string()
         })
@@ -376,14 +360,11 @@ mod tests {
             "SCH_3501171_35102_13006",
             "stream@12",
             false,
-            KnownSchemaAdmission::Unverified,
+            &[PARASOLID_SCH_SW_33103],
         );
 
         assert_eq!(matched.dialect().as_str(), "parasolid:format-13006");
-        assert_eq!(
-            matched.admission(),
-            Admission::AdmittedUnverified { using: None }
-        );
+        assert_eq!(matched.admission(), &Admission::Residual);
         let message = unverified_message(&matched).expect("unverified row explains its admission");
         assert!(message.contains("host did not verify"));
         assert!(message.contains("parasolid:format-13006"));

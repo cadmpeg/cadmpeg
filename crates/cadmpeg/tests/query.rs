@@ -21,7 +21,7 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
-  "schema_version": 7,
+        "schema_version": 8,
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -178,7 +178,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         dir.path(),
         "identity.report.json",
         r#"{
-          "schema_version": 7,
+        "schema_version": 8,
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -274,7 +274,7 @@ fn summary_projects_structured_target_refusals() {
         dir.path(),
         "target-refusal.json",
         r#"{
-          "schema_version": 7,
+        "schema_version": 8,
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -338,7 +338,7 @@ fn sidecar_summary_projects_supported_versions_and_discloses_unchecked_fidelity(
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("sidecar_version\t3")
+            predicate::str::contains("sidecar_version\t4")
                 .and(predicate::str::contains("sidecar_input_version\t1"))
                 .and(predicate::str::contains(
                     "sidecar_fidelity_validation\tnot_run",
@@ -485,7 +485,7 @@ fn query_json_wraps_the_projection_in_the_versioned_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 7);
+    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "query findings");
     assert_eq!(value["findings"].as_array().unwrap().len(), 2);
     assert_eq!(value["findings"][0]["check"], "identity");
@@ -502,18 +502,20 @@ fn query_reads_stdin_with_dash() {
 }
 
 #[test]
-fn a_version_two_sidecar_still_projects() {
+fn version_two_and_three_sidecars_still_project() {
     let dir = tempdir().unwrap();
-    let sidecar = write(
-        dir.path(),
-        "model.fidelity.json",
-        &SIDECAR.replace("\"version\": \"1\"", "\"version\": \"2\""),
-    );
-    cadmpeg()
-        .args(["query", "coverage", sidecar.to_str().unwrap()])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("streams\t7"));
+    for version in ["2", "3"] {
+        let sidecar = write(
+            dir.path(),
+            &format!("model-v{version}.fidelity.json"),
+            &SIDECAR.replace("\"version\": \"1\"", &format!("\"version\": \"{version}\"")),
+        );
+        cadmpeg()
+            .args(["query", "coverage", sidecar.to_str().unwrap()])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("streams\t7"));
+    }
 }
 
 #[test]
@@ -795,7 +797,7 @@ fn item_json_envelope_uses_item_payload_key() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 7);
+    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "query item");
     assert_eq!(value["item"].as_array().unwrap().len(), 1);
     assert_eq!(

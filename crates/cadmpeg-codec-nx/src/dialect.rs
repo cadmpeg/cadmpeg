@@ -92,6 +92,16 @@ impl LayerClassification {
         self.losses.extend(dialect_losses(&self.layers));
         (self.layers, self.losses)
     }
+
+    /// The classified layers; authored once onto `SourceMeta`.
+    pub(crate) fn into_layers(self) -> DialectLayers {
+        self.layers
+    }
+
+    /// The classification losses the decode body reports.
+    pub(crate) fn into_losses(self) -> Vec<LossNote> {
+        self.into_report_parts().1
+    }
 }
 
 /// Classify the host container and every schema-bearing Parasolid stream.
@@ -112,7 +122,8 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
             .into_iter()
             .map(|(stream, schema)| (schema.to_owned(), format!("stream@{}", stream.file_offset)))
             .collect(),
-        cadmpeg_parasolid::KnownSchemaAdmission::Unverified,
+        // NX verifies no Parasolid schema itself; every kernel layer is residual.
+        &[],
     );
     let (host, matched) = classify_host(&scan.container);
     let mut layers = DialectLayers::of(matched);

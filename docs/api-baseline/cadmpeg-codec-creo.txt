@@ -1,8 +1,8 @@
-# generated at 8b1cd929e
+# generated at 3f11b2f41
 pub mod cadmpeg_codec_creo
 pub struct cadmpeg_codec_creo::CreoCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_creo::CreoCodec
-pub fn cadmpeg_codec_creo::CreoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_creo::CreoCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_codec_creo::CreoCodec::id(&self) -> &'static str
+pub const cadmpeg_codec_creo::CreoCodec::FORMAT: &'static str
+pub fn cadmpeg_codec_creo::CreoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_creo::CreoCodec::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_creo::CreoCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>

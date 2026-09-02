@@ -1,7 +1,7 @@
 //! Per-family CATIA record decoders.
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, CadIr};
 
@@ -20,7 +20,7 @@ pub mod zero_entity;
 /// Model layers a family route emits for one decoded storage stream.
 pub(crate) struct FamilyOutput {
     pub(crate) ir: CadIr,
-    pub(crate) report: DecodeReport,
+    pub(crate) report: DecodeBody,
     pub(crate) annotations: Annotations,
     pub(crate) unknowns: Vec<UnknownRecord>,
     /// The neutral face population was emitted from standard FBB face rows.

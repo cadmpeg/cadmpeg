@@ -1,8 +1,8 @@
-# generated at 8b1cd929e
+# generated at 3f11b2f41
 pub mod cadmpeg_codec_sat
 pub struct cadmpeg_codec_sat::SatCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_sat::SatCodec
-pub fn cadmpeg_codec_sat::SatCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_sat::SatCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_codec_sat::SatCodec::id(&self) -> &'static str
+pub const cadmpeg_codec_sat::SatCodec::FORMAT: &'static str
+pub fn cadmpeg_codec_sat::SatCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_sat::SatCodec::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_sat::SatCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>

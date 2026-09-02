@@ -2,7 +2,7 @@
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use super::*;
 use crate::loss::InventorLossCode;
@@ -221,7 +221,7 @@ fn a_verified_acis_carrier_reports_its_band_admitted() {
     assert_eq!(layer.dialect().as_str(), "acis:save-format-218");
     assert_eq!(
         layer.admission(),
-        cadmpeg_core::dialect::Admission::Admitted
+        &cadmpeg_core::dialect::Admission::Admitted
     );
     assert!(
         !codes.iter().any(|code| code.contains("dialect-unverified")),
@@ -240,13 +240,15 @@ fn an_unverified_acis_carrier_is_read_and_marked() {
     let (layer, codes) = kernel_layer_of(&bytes);
 
     assert_eq!(layer.dialect().as_str(), "acis:save-format-binary-other");
-    assert_eq!(
+    assert!(matches!(
         layer.admission(),
-        cadmpeg_core::dialect::Admission::AdmittedUnverified {
-            using: Some(cadmpeg_core::dialect::DialectId::pinned(
-                "acis:save-format-218",
-            )),
-        }
+        cadmpeg_core::dialect::Admission::Unverified { .. }
+    ));
+    assert_eq!(
+        layer.using(),
+        Some(cadmpeg_core::dialect::DialectId::pinned(
+            "acis:save-format-218"
+        ))
     );
     assert_eq!(layer.declared()[DECLARED_SAVE_FORMAT_MAJOR], "700");
     assert!(

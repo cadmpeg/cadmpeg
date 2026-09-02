@@ -68,7 +68,7 @@ fn iges_dump_report_classifies_codec_refusal() {
         .stderr(predicate::str::contains("decode failed"));
 
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 7);
+    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "dump");
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "decode");
@@ -138,7 +138,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 7);
+    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");

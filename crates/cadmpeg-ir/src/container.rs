@@ -187,8 +187,7 @@ mod tests {
         let primary = DialectMatch::admitted(DialectId::pinned("rhino:archive-80"));
         let extra = DialectMatch::admitted(DialectId::pinned("acis:save-format-217"));
         let summary = ContainerSummary::classified(
-            DialectLayers::new(primary.clone(), vec![extra.clone()])
-                .expect("the extra uses another format"),
+            DialectLayers::of(primary.clone()).with(extra.clone()),
             "flat",
             Vec::new(),
             Vec::new(),

@@ -3,11 +3,11 @@
 
 use super::*;
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::report::FidelityResolution;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
-fn degraded_reason(plan: &cadmpeg_ir::codec::ExportPlan, context: &str) -> String {
+fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
     match &plan.report().fidelity {
         FidelityResolution::Degraded { reason } => reason.clone(),
         other => panic!("{context}: {other:?}"),

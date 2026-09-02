@@ -266,9 +266,7 @@
           }
         ],
         "primary": {
-          "admission": {
-            "admitted_unverified": {}
-          },
+          "admission": "residual",
           "dialect": "sldprt:unknown",
           "format": "sldprt"
         }
@@ -298,9 +296,7 @@
         }
       ],
       "primary": {
-        "admission": {
-          "admitted_unverified": {}
-        },
+        "admission": "residual",
         "dialect": "sldprt:unknown",
         "format": "sldprt"
       }

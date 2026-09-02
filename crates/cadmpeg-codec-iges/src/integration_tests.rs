@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use cadmpeg_ir::codec::{Codec, CodecBackend};
+use cadmpeg_ir::codec::Codec;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;

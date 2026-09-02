@@ -12,7 +12,7 @@
 //! codec has verified Global tables for five of them
 //! ([`crate::global::GlobalTable`] groups the rest as `Legacy`). A document at an
 //! unverified version still classifies into its own identity row and is
-//! admitted as [`cadmpeg_core::dialect::Admission::AdmittedUnverified`], naming
+//! admitted as [`cadmpeg_core::dialect::Admission::Unverified`], naming
 //! the row whose Global table actually parsed it.
 //!
 //! # The declaration is evidence; the id is identity
@@ -30,7 +30,7 @@ use crate::global::ResolvedGlobal;
 use crate::representation::Representation;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use crate::IgesVersion;
-use cadmpeg_core::dialect::{DialectId, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
@@ -191,8 +191,7 @@ pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) 
     if matches!(recovery, DialectRecovery::Verified) {
         DialectMatch::admitted(dialect)
     } else {
-        DialectMatch::unverified(dialect, nearest_verified_id(representation))
-            .expect("IGES dialect and grammar ids share one format namespace")
+        DialectMatch::unverified(dialect, Grammar::of(&nearest_verified_id(representation)))
     }
     .with_declared(declared)
 }

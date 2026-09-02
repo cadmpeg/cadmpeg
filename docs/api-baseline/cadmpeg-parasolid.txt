@@ -1,8 +1,5 @@
-# generated at 7229bc5a4
+# generated at 3f11b2f41
 pub mod cadmpeg_parasolid
-pub enum cadmpeg_parasolid::KnownSchemaAdmission
-pub cadmpeg_parasolid::KnownSchemaAdmission::Unverified
-pub cadmpeg_parasolid::KnownSchemaAdmission::Verified
 pub struct cadmpeg_parasolid::SchemaToken<'a>
 impl<'a> cadmpeg_parasolid::SchemaToken<'a>
 pub const fn cadmpeg_parasolid::SchemaToken<'a>::end(self) -> usize
@@ -11,8 +8,8 @@ pub const fn cadmpeg_parasolid::SchemaToken<'a>::value(self) -> &'a str
 pub const cadmpeg_parasolid::DECLARED_CARRIER: &str
 pub const cadmpeg_parasolid::DECLARED_SCHEMA: &str
 pub const cadmpeg_parasolid::FORMAT: &str
-pub fn cadmpeg_parasolid::classify_layer(&str, &str, bool, cadmpeg_parasolid::KnownSchemaAdmission) -> cadmpeg_core::dialect::DialectMatch
-pub fn cadmpeg_parasolid::extra_layers(alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, cadmpeg_parasolid::KnownSchemaAdmission) -> alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
+pub fn cadmpeg_parasolid::classify_layer(&str, &str, bool, &[cadmpeg_core::dialect::DialectId]) -> cadmpeg_core::dialect::DialectMatch
+pub fn cadmpeg_parasolid::extra_layers(alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, &[cadmpeg_core::dialect::DialectId]) -> alloc::vec::Vec<cadmpeg_core::dialect::DialectMatch>
 pub fn cadmpeg_parasolid::find_schema_token(&[u8]) -> core::option::Option<cadmpeg_parasolid::SchemaToken<'_>>
 pub fn cadmpeg_parasolid::find_u8_length_prefixed_schema_token(&[u8]) -> core::option::Option<cadmpeg_parasolid::SchemaToken<'_>>
 pub fn cadmpeg_parasolid::push_extras(&mut cadmpeg_core::dialect::DialectLayers, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_core::dialect::DialectMatch>) -> alloc::vec::Vec<alloc::string::String>

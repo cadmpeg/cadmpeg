@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
@@ -15,7 +15,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, DecodeTransfer, TransferLedger};
+use cadmpeg_ir::report::{DecodeTransfer, TransferLedger};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
@@ -2104,7 +2104,7 @@ fn evaluate_nurbs(curve: &NurbsCurve, parameter: f64) -> Result<Point3, CodecErr
 }
 
 /// Decodes the V1 flat geometry stream.
-pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
+pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     let header = parse_header(data).map_err(malformed)?;
     if header.archive_version != ArchiveVersion::V1 {
         return Err(CodecError::Malformed(
@@ -2127,8 +2127,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     let primary = ArchiveVersion::V1.classify(None);
 
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(SourceMeta::unclassified(
-        crate::dialect::FORMAT,
+    ir.source = Some(SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
         BTreeMap::from([("archive_version".to_string(), "1".to_string())]),
     ));
     let mut decoded = 0_usize;
@@ -2431,43 +2431,42 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records("rhino", opaque_records);
-    Ok(DecodeResult::new(
+    Ok(Decoded {
         ir,
-        DecodeReport::classified(
-            cadmpeg_core::dialect::DialectLayers::of(primary),
-            DecodeTransfer::full(
-                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
-            ),
-            BTreeMap::from([
-                ("legacy_v1_points".to_string(), decoded),
-                ("legacy_v1_curve_segments".to_string(), decoded_curves),
-                ("legacy_v1_meshes".to_string(), decoded_meshes),
-                ("legacy_v1_breps".to_string(), decoded_breps),
-                ("legacy_v1_annotations".to_string(), decoded_annotations),
-                ("legacy_v1_nurbs_curves".to_string(), decoded_nurbs_curves),
-                ("legacy_v1_nurbs_surfaces".to_string(), decoded_nurbs_surfaces),
-                ("legacy_v1_nurbs_breps".to_string(), decoded_nurbs_breps),
-            ]),
-            losses,
-            std::iter::once(format!(
-                "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
-            ))
-            .chain((!direct_records.is_empty()).then(|| {
-                format!(
-                    "typed {decoded_annotations} V1 annotations, {decoded_nurbs_curves} pre-class NURBS curves, {decoded_nurbs_surfaces} pre-class NURBS surfaces, and {decoded_nurbs_breps} pre-class NURBS Breps"
-                )
-            }))
-            .chain((opaque_count > 0).then(|| {
-                format!(
-                    "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
-                )
-            }))
-            .chain(diagnostics)
-            .collect(),
-            TransferLedger::default(),
+        body: DecodeBody {
+            transfer: DecodeTransfer::full(
+            decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
         ),
+            coverage: BTreeMap::from([
+            ("legacy_v1_points".to_string(), decoded),
+            ("legacy_v1_curve_segments".to_string(), decoded_curves),
+            ("legacy_v1_meshes".to_string(), decoded_meshes),
+            ("legacy_v1_breps".to_string(), decoded_breps),
+            ("legacy_v1_annotations".to_string(), decoded_annotations),
+            ("legacy_v1_nurbs_curves".to_string(), decoded_nurbs_curves),
+            ("legacy_v1_nurbs_surfaces".to_string(), decoded_nurbs_surfaces),
+            ("legacy_v1_nurbs_breps".to_string(), decoded_nurbs_breps),
+        ]),
+            losses,
+            notes: std::iter::once(format!(
+            "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
+        ))
+        .chain((!direct_records.is_empty()).then(|| {
+            format!(
+                "typed {decoded_annotations} V1 annotations, {decoded_nurbs_curves} pre-class NURBS curves, {decoded_nurbs_surfaces} pre-class NURBS surfaces, and {decoded_nurbs_breps} pre-class NURBS Breps"
+            )
+        }))
+        .chain((opaque_count > 0).then(|| {
+            format!(
+                "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
+            )
+        }))
+        .chain(diagnostics)
+        .collect(),
+            transfer_ledger: TransferLedger::default(),
+        },
         source_fidelity,
-    )?)
+    })
 }
 
 #[cfg(test)]
@@ -2922,8 +2921,11 @@ mod tests {
 
     #[test]
     fn v1_flat_points_decode_to_neutral_points() {
-        let result = decode_v1(&archive(&[[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]]))
-            .expect("valid V1 point archive");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&archive(&[[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]]))
+                .expect("valid V1 point archive"),
+            crate::dialect::FORMAT,
+        );
         assert_eq!(result.ir().model.points.len(), 2);
         assert_eq!(
             result.ir().model.points[0].position,
@@ -2934,7 +2936,10 @@ mod tests {
 
     #[test]
     fn v1_settings_presentation_records_are_opaque_and_table_end_is_structural() {
-        let result = decode_v1(&v1_settings_archive()).expect("valid V1 settings stream");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
+            crate::dialect::FORMAT,
+        );
         assert_eq!(result.ir().tolerances.linear, 10.0);
         assert_eq!(result.source_fidelity().retained_records.len(), 3);
         assert_eq!(
@@ -2960,7 +2965,10 @@ mod tests {
         let record = chunk(0x0020_0004, b"legacy annotation payload");
         bytes.extend(&record);
 
-        let result = decode_v1(&bytes).expect("framed malformed direct V1 record");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&bytes).expect("framed malformed direct V1 record"),
+            crate::dialect::FORMAT,
+        );
         assert_eq!(result.ir().model.points.len(), 1);
         let retained = &result.source_fidelity().retained_records;
         assert_eq!(retained.len(), 1);
@@ -2986,7 +2994,10 @@ mod tests {
         bytes.extend(rhinoio_surface_object());
         bytes.extend(rhinoio_brep_object());
 
-        let result = decode_v1(&bytes).expect("valid V1 direct records");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&bytes).expect("valid V1 direct records"),
+            crate::dialect::FORMAT,
+        );
         let namespace = result
             .ir()
             .native
@@ -3044,7 +3055,10 @@ mod tests {
 
     #[test]
     fn v1_legacy_face_decodes_complete_brep_topology() {
-        let result = decode_v1(&legacy_face_archive()).expect("valid V1 face archive");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&legacy_face_archive()).expect("valid V1 face archive"),
+            crate::dialect::FORMAT,
+        );
         let model = &result.ir().model;
         assert_eq!(model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(model.faces.len(), 1);
@@ -3060,7 +3074,10 @@ mod tests {
 
     #[test]
     fn v1_legacy_shell_decodes_nested_faces() {
-        let result = decode_v1(&legacy_shell_archive()).expect("valid V1 shell archive");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&legacy_shell_archive()).expect("valid V1 shell archive"),
+            crate::dialect::FORMAT,
+        );
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_eq!(result.report().coverage["legacy_v1_breps"], 1);
@@ -3076,8 +3093,11 @@ mod tests {
             [0.0005, 0.0, 0.0],
             [0.0, 1.0, 0.0],
         ];
-        let result = decode_v1(&legacy_face_archive_with(&corners, &[1, 1, 1, 1], &[]))
-            .expect("nearby but topologically distinct V1 vertices are valid");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&legacy_face_archive_with(&corners, &[1, 1, 1, 1], &[]))
+                .expect("nearby but topologically distinct V1 vertices are valid"),
+            crate::dialect::FORMAT,
+        );
         assert_eq!(result.ir().model.vertices.len(), 4);
         assert_eq!(result.ir().model.edges.len(), 4);
         let edge_endpoints = result
@@ -3099,12 +3119,15 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 1.0, 0.0],
         ];
-        let result = decode_v1(&legacy_face_archive_with(
-            &corners,
-            &[3, 3, 3, 3],
-            &[1, 0, 3, 2],
-        ))
-        .expect("explicit seam edge curves are valid");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&legacy_face_archive_with(
+                &corners,
+                &[3, 3, 3, 3],
+                &[1, 0, 3, 2],
+            ))
+            .expect("explicit seam edge curves are valid"),
+            crate::dialect::FORMAT,
+        );
         assert_eq!(result.ir().model.edges.len(), 4);
         assert_eq!(result.ir().model.curves.len(), 4);
         assert!(result
@@ -3123,12 +3146,15 @@ mod tests {
             [1.0, 1.0, 0.0],
             [0.0, 1.0, 0.0],
         ];
-        let result = decode_v1(&legacy_face_archive_with(
-            &corners,
-            &[3, 2, 3, 2],
-            &[1, 0, 3, 2],
-        ))
-        .expect("curve-less seam partners are valid");
+        let result = cadmpeg_ir::codec::DecodeResult::new(
+            decode_v1(&legacy_face_archive_with(
+                &corners,
+                &[3, 2, 3, 2],
+                &[1, 0, 3, 2],
+            ))
+            .expect("curve-less seam partners are valid"),
+            crate::dialect::FORMAT,
+        );
         assert_eq!(result.ir().model.edges.len(), 2);
         assert_eq!(result.ir().model.curves.len(), 2);
         let coedges = &result.ir().model.coedges;
