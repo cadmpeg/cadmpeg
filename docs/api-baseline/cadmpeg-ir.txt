@@ -1,4 +1,4 @@
-# generated at a54e545a4
+# generated at fbd37e2e9
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -384,7 +384,6 @@ pub fn cadmpeg_ir::document::CadIr::native_unknowns(&self, &str) -> core::result
 pub fn cadmpeg_ir::document::CadIr::native_unknowns_iter<'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<cadmpeg_ir::unknown::NativeUnknownRecord, cadmpeg_ir::native::NativeConvertError>> + 'a
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns(&mut self, &str, &[cadmpeg_ir::unknown::NativeUnknownRecord]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, &str, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
-pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_owned(&mut self, &str, alloc::vec::Vec<cadmpeg_ir::unknown::UnknownRecord>)
 pub fn cadmpeg_ir::document::CadIr::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 pub struct cadmpeg_ir::document::Model
 pub cadmpeg_ir::document::Model::appearance_bindings: alloc::vec::Vec<cadmpeg_ir::appearance::AppearanceBinding>
@@ -7175,7 +7174,6 @@ pub fn cadmpeg_ir::document::CadIr::native_unknowns(&self, &str) -> core::result
 pub fn cadmpeg_ir::document::CadIr::native_unknowns_iter<'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<cadmpeg_ir::unknown::NativeUnknownRecord, cadmpeg_ir::native::NativeConvertError>> + 'a
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns(&mut self, &str, &[cadmpeg_ir::unknown::NativeUnknownRecord]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, &str, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
-pub fn cadmpeg_ir::document::CadIr::set_native_unknowns_owned(&mut self, &str, alloc::vec::Vec<cadmpeg_ir::unknown::UnknownRecord>)
 pub fn cadmpeg_ir::document::CadIr::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 pub struct cadmpeg_ir::CameraState
 pub cadmpeg_ir::CameraState::orientation: core::option::Option<[f64; 4]>
