@@ -212,7 +212,7 @@ arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
 
-fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<String, D::Error>
+fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<(), D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -222,7 +222,7 @@ where
             "unsupported ir_version {version:?}; expected {IR_VERSION}"
         )));
     }
-    Ok(version)
+    Ok(())
 }
 
 #[cfg(feature = "schema")]
@@ -244,16 +244,10 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// `model` holds the format-neutral graph. `native` retains typed
 /// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
-/// `ir_version` is constructor- and deserializer-controlled.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+/// `ir_version` is a serialized constant checked by the read adapter.
+#[derive(Debug, Clone, PartialEq)]
 pub struct CadIr {
-    /// IR schema version.
-    #[serde(deserialize_with = "deserialize_ir_version")]
-    #[cfg_attr(feature = "schema", schemars(schema_with = "ir_version_schema"))]
-    ir_version: String,
     /// Source-container metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceMeta>,
     /// Canonical unit declaration.
     pub units: Units,
@@ -262,8 +256,87 @@ pub struct CadIr {
     /// Format-neutral model.
     pub model: Model,
     /// Independently versioned native namespaces.
-    #[serde(default)]
     pub native: Native,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CadIrWriteWire<'a> {
+    #[cfg_attr(feature = "schema", schemars(schema_with = "ir_version_schema"))]
+    ir_version: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<&'a SourceMeta>,
+    units: &'a Units,
+    tolerances: &'a Tolerances,
+    model: &'a Model,
+    native: &'a Native,
+}
+
+#[derive(Deserialize)]
+struct CadIrReadWire {
+    #[serde(rename = "ir_version", deserialize_with = "deserialize_ir_version")]
+    _ir_version: (),
+    #[serde(flatten)]
+    payload: CadIrPayload,
+}
+
+#[derive(Deserialize)]
+struct CadIrPayload {
+    #[serde(default)]
+    source: Option<SourceMeta>,
+    units: Units,
+    tolerances: Tolerances,
+    model: Model,
+    #[serde(default)]
+    native: Native,
+}
+
+impl Serialize for CadIr {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        CadIrWriteWire {
+            ir_version: IR_VERSION,
+            source: self.source.as_ref(),
+            units: &self.units,
+            tolerances: &self.tolerances,
+            model: &self.model,
+            native: &self.native,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for CadIr {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = CadIrReadWire::deserialize(deserializer)?;
+        Ok(wire.payload.into())
+    }
+}
+
+impl From<CadIrPayload> for CadIr {
+    fn from(payload: CadIrPayload) -> Self {
+        Self {
+            source: payload.source,
+            units: payload.units,
+            tolerances: payload.tolerances,
+            model: payload.model,
+            native: payload.native,
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for CadIr {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "CadIr".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::CadIr").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        CadIrWriteWire::json_schema(generator)
+    }
 }
 
 impl CadIr {
@@ -341,7 +414,6 @@ impl CadIr {
     /// Construct an empty current-version document with default tolerances.
     pub fn empty(units: Units) -> Self {
         Self {
-            ir_version: IR_VERSION.to_owned(),
             source: None,
             units,
             tolerances: Tolerances::default(),
@@ -350,9 +422,9 @@ impl CadIr {
         }
     }
 
-    /// IR schema version stamped by constructors and accepted on deserialize.
+    /// IR schema version emitted by serialization and accepted on deserialize.
     pub fn ir_version(&self) -> &str {
-        &self.ir_version
+        IR_VERSION
     }
 
     /// Serialize a finalized, identity-sorted view as pretty JSON.
@@ -387,7 +459,7 @@ impl CadIr {
                 "unsupported ir_version {version:?}; expected {IR_VERSION}"
             )));
         }
-        serde_json::from_str(s)
+        serde_json::from_str::<CadIrPayload>(s).map(Into::into)
     }
 
     /// Sort model, native, and unknown-record arenas by identity.
@@ -399,12 +471,6 @@ impl CadIr {
     /// Count arena rows and native loss tallies without running validation.
     pub fn census(&self) -> std::collections::BTreeMap<String, usize> {
         entity_census(self)
-    }
-
-    /// Test-only: stamp a non-current `ir_version` for version-check coverage.
-    #[cfg(test)]
-    pub(crate) fn set_ir_version_for_test(&mut self, version: impl Into<String>) {
-        self.ir_version = version.into();
     }
 }
 
