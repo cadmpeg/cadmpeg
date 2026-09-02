@@ -14,7 +14,7 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::container::{self, role};

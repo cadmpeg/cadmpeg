@@ -78,10 +78,7 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, StreamProvenance};
-pub use codec::{
-    CadirEncoder, Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult,
-    Encoder,
-};
+pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
 pub use container::ContainerSummary;
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
@@ -127,7 +124,7 @@ pub use sketches::{
 pub use source_fidelity::{
     decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
     SourceFidelity, DECODE_SIDECAR_VERSION, DECODE_SIDECAR_VERSION_V1, DECODE_SIDECAR_VERSION_V2,
-    SOURCE_FIDELITY_VERSION,
+    DECODE_SIDECAR_VERSION_V3, SOURCE_FIDELITY_VERSION,
 };
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{

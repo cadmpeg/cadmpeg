@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 
 #[test]
 fn encode_emits_the_typed_ellipse_form_for_v5_0() {

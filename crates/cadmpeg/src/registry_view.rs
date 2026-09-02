@@ -157,11 +157,8 @@ mod tests {
     fn every_classified_layer_gets_a_human_line() {
         use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
-        let dialects = DialectLayers::new(
-            DialectMatch::admitted(DialectId::pinned("sldprt:2024")),
-            vec![DialectMatch::admitted(DialectId::pinned("acis:sat-32"))],
-        )
-        .expect("formats are unique");
+        let dialects = DialectLayers::of(DialectMatch::admitted(DialectId::pinned("sldprt:2024")))
+            .with(DialectMatch::admitted(DialectId::pinned("acis:sat-32")));
         assert_eq!(dialect_lines(Some(&dialects)).len(), 2);
         assert_eq!(dialect_lines(Some(&dialects))[1], "dialect: acis:sat-32");
     }

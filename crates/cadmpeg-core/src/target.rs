@@ -125,8 +125,6 @@ impl fmt::Display for TargetToken {
 pub enum TargetRefusalKind {
     /// An explicit token names no entry in the encoder catalog.
     UnknownExplicit {
-        /// Encoder format.
-        format: String,
         /// Token supplied by the caller, retained verbatim.
         requested: TargetToken,
     },
@@ -147,14 +145,9 @@ pub enum TargetRefusalKind {
         reason: String,
     },
     /// Same-format inheritance found source metadata without a dialect.
-    UnrecordedSource {
-        /// Encoder and source format.
-        format: String,
-    },
+    UnrecordedSource,
     /// Inheritance had no same-format source and the catalog declares no default.
     NoDefault {
-        /// Encoder format.
-        format: String,
         /// Why no same-format source identity was available to inherit.
         source: DefaultSource,
     },
@@ -176,6 +169,8 @@ pub enum TargetRefusalKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct TargetRefusal {
+    /// Refusing encoder format, stated once for every request state.
+    format: String,
     #[serde(flatten)]
     kind: TargetRefusalKind,
     available: &'static [TargetDescriptor],
@@ -192,10 +187,19 @@ pub enum DefaultSource {
 }
 
 impl TargetRefusal {
-    /// Associates one request-state reason with the refusing encoder catalog.
+    /// Associates one request-state reason with the refusing encoder format
+    /// and catalog.
     #[must_use]
-    pub const fn new(kind: TargetRefusalKind, available: &'static [TargetDescriptor]) -> Self {
-        Self { kind, available }
+    pub fn new(
+        format: impl Into<String>,
+        kind: TargetRefusalKind,
+        available: &'static [TargetDescriptor],
+    ) -> Self {
+        Self {
+            format: format.into(),
+            kind,
+            available,
+        }
     }
 
     /// Builds the refusal for an explicit token outside an encoder catalog.
@@ -206,8 +210,8 @@ impl TargetRefusal {
         available: &'static [TargetDescriptor],
     ) -> Self {
         Self::new(
+            format,
             TargetRefusalKind::UnknownExplicit {
-                format: format.into(),
                 requested: TargetToken::new(requested),
             },
             available,
@@ -223,14 +227,7 @@ impl TargetRefusal {
     /// Returns the refusing encoder format.
     #[must_use]
     pub fn format(&self) -> &str {
-        match &self.kind {
-            TargetRefusalKind::UnknownExplicit { format, .. }
-            | TargetRefusalKind::UnrecordedSource { format }
-            | TargetRefusalKind::NoDefault { format, .. } => format,
-            TargetRefusalKind::ExplicitUnavailable { target, .. }
-            | TargetRefusalKind::DefaultUnavailable { target, .. } => target.namespace(),
-            TargetRefusalKind::InheritedUnavailable { source, .. } => source.namespace(),
-        }
+        &self.format
     }
 
     /// Returns the encoder's structured synthesis catalog.
@@ -250,7 +247,7 @@ impl TargetRefusal {
             TargetRefusalKind::UnknownExplicit { requested, .. }
             | TargetRefusalKind::ExplicitUnavailable { requested, .. } => Some(requested.as_str()),
             TargetRefusalKind::InheritedUnavailable { source, .. } => Some(source.as_str()),
-            TargetRefusalKind::UnrecordedSource { .. }
+            TargetRefusalKind::UnrecordedSource
             | TargetRefusalKind::NoDefault { .. }
             | TargetRefusalKind::DefaultUnavailable { .. } => None,
         }
@@ -265,7 +262,7 @@ impl TargetRefusal {
             | TargetRefusalKind::InheritedUnavailable { reason, .. }
             | TargetRefusalKind::DefaultUnavailable { reason, .. } => Some(reason),
             TargetRefusalKind::UnknownExplicit { .. }
-            | TargetRefusalKind::UnrecordedSource { .. }
+            | TargetRefusalKind::UnrecordedSource
             | TargetRefusalKind::NoDefault { .. } => None,
         }
     }
@@ -286,10 +283,9 @@ impl TargetRefusal {
 
 impl fmt::Display for TargetRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let format = &self.format;
         match &self.kind {
-            TargetRefusalKind::UnknownExplicit {
-                format, requested, ..
-            } => write!(
+            TargetRefusalKind::UnknownExplicit { requested } => write!(
                 f,
                 "{format} cannot write {requested}: not a target this encoder can synthesize"
             )?,
@@ -300,30 +296,24 @@ impl fmt::Display for TargetRefusal {
                 ..
             } => write!(
                 f,
-                "{} cannot write explicit target {requested} ({target}): {reason}",
-                target.namespace()
+                "{format} cannot write explicit target {requested} ({target}): {reason}"
             )?,
-            TargetRefusalKind::InheritedUnavailable { source, reason, .. } => write!(
+            TargetRefusalKind::InheritedUnavailable { source, reason } => write!(
                 f,
-                "{} cannot preserve source dialect {source}: {reason}",
-                source.namespace()
+                "{format} cannot preserve source dialect {source}: {reason}"
             )?,
-            TargetRefusalKind::UnrecordedSource { format, .. } => write!(
+            TargetRefusalKind::UnrecordedSource => write!(
                 f,
                 "{format} cannot inherit a write target: the {format} source records no dialect; name an explicit target"
             )?,
             TargetRefusalKind::NoDefault {
-                format,
                 source: DefaultSource::ForeignFormat(source_format),
-                ..
             } => write!(
                 f,
                 "{format} cannot inherit a write target from source format {source_format}: this encoder declares no cross-format default"
             )?,
             TargetRefusalKind::NoDefault {
-                format,
                 source: DefaultSource::NoSource,
-                ..
             } => write!(
                 f,
                 "{format} cannot select an inherited write target: the document records no source format and this encoder declares no default"
@@ -332,9 +322,8 @@ impl fmt::Display for TargetRefusal {
                 target,
                 source,
                 reason,
-                ..
             } => {
-                write!(f, "{} cannot write default target {target}", target.namespace())?;
+                write!(f, "{format} cannot write default target {target}")?;
                 if let DefaultSource::ForeignFormat(source_format) = source {
                     write!(f, " selected for source format {source_format}")?;
                 }
@@ -374,6 +363,7 @@ mod tests {
     #[test]
     fn target_refusal_serializes_request_state_and_the_complete_catalog() {
         let refusal = TargetRefusal::new(
+            "fcstd",
             TargetRefusalKind::ExplicitUnavailable {
                 target: DialectId::pinned("fcstd:schema-4"),
                 requested: TargetToken::new("4"),
@@ -385,6 +375,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(refusal).expect("target refusal serializes"),
             serde_json::json!({
+                "format": "fcstd",
                 "kind": "explicit_unavailable",
                 "target": "fcstd:schema-4",
                 "requested": "4",
@@ -469,8 +460,8 @@ mod tests {
     #[test]
     fn missing_default_names_a_foreign_source_without_inventing_a_dialect() {
         let refusal = TargetRefusal::new(
+            "fcstd",
             TargetRefusalKind::NoDefault {
-                format: "fcstd".into(),
                 source: DefaultSource::ForeignFormat("step".into()),
             },
             TARGETS,
@@ -486,12 +477,7 @@ mod tests {
 
     #[test]
     fn unrecorded_same_format_source_is_not_a_missing_default() {
-        let refusal = TargetRefusal::new(
-            TargetRefusalKind::UnrecordedSource {
-                format: "fcstd".into(),
-            },
-            TARGETS,
-        );
+        let refusal = TargetRefusal::new("fcstd", TargetRefusalKind::UnrecordedSource, TARGETS);
 
         assert_eq!(
             refusal.to_string(),

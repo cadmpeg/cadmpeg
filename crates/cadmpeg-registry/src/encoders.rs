@@ -8,9 +8,9 @@
 
 #[cfg(test)]
 use cadmpeg_core::{target::assert_valid_target_catalog, CodecError};
-use cadmpeg_ir::codec::Encoder;
+use cadmpeg_ir::codec::write::Encoder;
 #[cfg(test)]
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 
 use crate::Format;
 
@@ -20,7 +20,7 @@ use crate::Format;
 /// and nothing an encoder needs at construction can be wrong by then. What can
 /// be wrong is the dialect, and that is `plan`'s question, not this one's.
 pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
-    let constructor = crate::descriptors::by_output(format).1.encoder;
+    let constructor = format.descriptor().1.encoder;
     constructor()
 }
 
@@ -79,11 +79,10 @@ mod tests {
             let requested = format!("{}:nonesuch", encoder.id());
             let error = encoder
                 .plan(
-                    cadmpeg_ir::codec::EncodeInput::new(&ir, None),
+                    cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
                     TargetRequest::Explicit(&requested),
                 )
-                .err()
-                .expect("an id outside the catalog is refused");
+                .expect_err("an id outside the catalog is refused");
             let CodecError::UnsupportedTarget(refusal) = &error else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };

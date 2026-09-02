@@ -1,12 +1,13 @@
-# generated at 8b1cd929e
+# generated at 3f11b2f41
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
-pub cadmpeg_registry::DetectionOutcome::Ambiguous::candidates: alloc::vec::Vec<&'a cadmpeg_registry::InputDescriptor>
+pub cadmpeg_registry::DetectionOutcome::Ambiguous::candidates: alloc::vec::Vec<&'static str>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous::confidence: cadmpeg_ir::codec::Confidence
 pub cadmpeg_registry::DetectionOutcome::Detected
+pub cadmpeg_registry::DetectionOutcome::Detected::codec: &'a dyn cadmpeg_ir::codec::Codec
 pub cadmpeg_registry::DetectionOutcome::Detected::confidence: cadmpeg_ir::codec::Confidence
-pub cadmpeg_registry::DetectionOutcome::Detected::descriptor: &'a cadmpeg_registry::InputDescriptor
+pub cadmpeg_registry::DetectionOutcome::Detected::format_id: &'static str
 pub cadmpeg_registry::DetectionOutcome::None
 pub enum cadmpeg_registry::ForcedInput
 pub cadmpeg_registry::ForcedInput::Cadir
@@ -28,6 +29,15 @@ pub fn cadmpeg_registry::Format::is_known_name(&str) -> bool
 pub fn cadmpeg_registry::Format::name(self) -> &'static str
 pub fn cadmpeg_registry::Format::transfers_geometry(self) -> bool
 pub fn cadmpeg_registry::Format::vocabulary() -> alloc::string::String
+pub enum cadmpeg_registry::InspectError
+pub cadmpeg_registry::InspectError::Cadir
+pub cadmpeg_registry::InspectError::Codec
+pub cadmpeg_registry::InspectError::Codec::error: cadmpeg_core::error::CodecError
+pub cadmpeg_registry::InspectError::Codec::format: &'static str
+pub cadmpeg_registry::InspectError::Codec::selection: cadmpeg_registry::Selection
+pub cadmpeg_registry::InspectError::Io(core::io::error::Error)
+pub cadmpeg_registry::InspectError::Unrecognized
+pub cadmpeg_registry::InspectError::Unresolved(cadmpeg_registry::ResolveSourceError)
 pub enum cadmpeg_registry::Inspection
 pub cadmpeg_registry::Inspection::Classified(cadmpeg_ir::container::ContainerSummary)
 pub cadmpeg_registry::Inspection::Failed(cadmpeg_core::error::CodecError)
@@ -42,21 +52,11 @@ pub type cadmpeg_registry::ReadDisposition::Error = cadmpeg_registry::UnknownDis
 pub fn cadmpeg_registry::ReadDisposition::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_registry::ReadDisposition
 pub fn cadmpeg_registry::ReadDisposition::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub enum cadmpeg_registry::ResolveInspectionError
-pub cadmpeg_registry::ResolveInspectionError::Io(core::io::error::Error)
-pub cadmpeg_registry::ResolveInspectionError::Resolve(cadmpeg_registry::ResolveSourceError)
 pub enum cadmpeg_registry::ResolveSourceError
 pub cadmpeg_registry::ResolveSourceError::Ambiguous
 pub cadmpeg_registry::ResolveSourceError::Ambiguous::candidates: alloc::string::String
 pub cadmpeg_registry::ResolveSourceError::Ambiguous::confidence: cadmpeg_ir::codec::Confidence
 pub cadmpeg_registry::ResolveSourceError::UnsupportedFormat(&'static str)
-pub enum cadmpeg_registry::ResolvedInspection
-pub cadmpeg_registry::ResolvedInspection::Cadir
-pub cadmpeg_registry::ResolvedInspection::Native
-pub cadmpeg_registry::ResolvedInspection::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
-pub cadmpeg_registry::ResolvedInspection::Native::format: &'static str
-pub cadmpeg_registry::ResolvedInspection::Native::inspection: core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
-pub cadmpeg_registry::ResolvedInspection::Unrecognized
 pub enum cadmpeg_registry::ResolvedSource<'a>
 pub cadmpeg_registry::ResolvedSource::Cadir
 pub cadmpeg_registry::ResolvedSource::Native
@@ -64,6 +64,12 @@ pub cadmpeg_registry::ResolvedSource::Native::codec: &'a dyn cadmpeg_ir::codec::
 pub cadmpeg_registry::ResolvedSource::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
 pub cadmpeg_registry::ResolvedSource::Native::format_id: &'static str
 pub cadmpeg_registry::ResolvedSource::Unrecognized
+pub enum cadmpeg_registry::Selection
+pub cadmpeg_registry::Selection::Detected
+pub cadmpeg_registry::Selection::Detected::confidence: cadmpeg_ir::codec::Confidence
+pub cadmpeg_registry::Selection::Forced
+impl cadmpeg_registry::Selection
+pub const fn cadmpeg_registry::Selection::confidence(self) -> core::option::Option<cadmpeg_ir::codec::Confidence>
 pub enum cadmpeg_registry::WriteDisposition
 pub cadmpeg_registry::WriteDisposition::Emitted
 pub cadmpeg_registry::WriteDisposition::None
@@ -101,7 +107,7 @@ pub cadmpeg_registry::Identification::inspection: cadmpeg_registry::Inspection
 pub struct cadmpeg_registry::InputCatalog
 impl cadmpeg_registry::InputCatalog
 pub fn cadmpeg_registry::InputCatalog::by_id(&self, &str) -> core::option::Option<&dyn cadmpeg_ir::codec::Codec>
-pub fn cadmpeg_registry::InputCatalog::candidates(&self, &[u8]) -> alloc::vec::Vec<(&cadmpeg_registry::InputDescriptor, cadmpeg_ir::codec::Confidence)>
+pub fn cadmpeg_registry::InputCatalog::candidates(&self, &[u8]) -> alloc::vec::Vec<(&dyn cadmpeg_ir::codec::Codec, cadmpeg_ir::codec::Confidence)>
 pub fn cadmpeg_registry::InputCatalog::descriptor(&self, &str) -> core::option::Option<&cadmpeg_registry::InputDescriptor>
 pub fn cadmpeg_registry::InputCatalog::descriptors(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_registry::InputDescriptor>
 pub fn cadmpeg_registry::InputCatalog::detect(&self, &[u8]) -> cadmpeg_registry::DetectionOutcome<'_>
@@ -112,10 +118,14 @@ pub cadmpeg_registry::InputDescriptor::codec: core::option::Option<alloc::boxed:
 pub cadmpeg_registry::InputDescriptor::extensions: &'static [&'static str]
 impl cadmpeg_registry::InputDescriptor
 pub fn cadmpeg_registry::InputDescriptor::format_id(&self) -> &'static str
+pub struct cadmpeg_registry::Inspected
+pub cadmpeg_registry::Inspected::format: &'static str
+pub cadmpeg_registry::Inspected::selection: cadmpeg_registry::Selection
+pub cadmpeg_registry::Inspected::summary: cadmpeg_ir::container::ContainerSummary
 pub struct cadmpeg_registry::UnknownDisposition
 pub struct cadmpeg_registry::UnknownFormat
 pub const cadmpeg_registry::DETECTION_PREFIX_LEN: usize
-pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::write::Encoder>
+pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::write::backend::Encoder>
 pub fn cadmpeg_registry::dialect_provenance(core::option::Option<&cadmpeg_core::dialect::DialectLayers>) -> core::option::Option<cadmpeg_registry::DialectProvenance>
 pub fn cadmpeg_registry::dialect_table(core::option::Option<&str>) -> core::result::Result<alloc::vec::Vec<cadmpeg_registry::FormatDialects>, cadmpeg_registry::UnknownFormat>
 pub fn cadmpeg_registry::dialects(&str) -> alloc::vec::Vec<&'static cadmpeg_registry::DialectEntry>
@@ -124,5 +134,5 @@ pub fn cadmpeg_registry::format_rows(&cadmpeg_registry::InputCatalog) -> alloc::
 pub fn cadmpeg_registry::identify(&mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::io::error::Result<alloc::vec::Vec<cadmpeg_registry::Identification>>
 pub fn cadmpeg_registry::identify_with(&cadmpeg_registry::InputCatalog, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::io::error::Result<alloc::vec::Vec<cadmpeg_registry::Identification>>
 pub fn cadmpeg_registry::input_names() -> impl core::iter::traits::iterator::Iterator<Item = &'static str>
-pub fn cadmpeg_registry::resolve_and_inspect_with(&cadmpeg_registry::InputCatalog, &mut dyn cadmpeg_core::io::ReadSeek, core::option::Option<cadmpeg_registry::ForcedInput>, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_registry::ResolvedInspection, cadmpeg_registry::ResolveInspectionError>
+pub fn cadmpeg_registry::resolve_and_inspect_with(&cadmpeg_registry::InputCatalog, &mut dyn cadmpeg_core::io::ReadSeek, core::option::Option<cadmpeg_registry::ForcedInput>, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_registry::Inspected, cadmpeg_registry::InspectError>
 pub fn cadmpeg_registry::support(&cadmpeg_core::dialect::DialectId) -> core::option::Option<cadmpeg_registry::Disposition>

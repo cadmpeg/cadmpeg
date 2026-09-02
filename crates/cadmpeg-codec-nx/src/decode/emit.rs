@@ -1349,7 +1349,10 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
             );
         }
     }
-    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
+    SourceMeta::classified(
+        crate::dialect::classify_layers(scan).into_layers(),
+        attributes,
+    )
 }
 
 #[cfg(test)]

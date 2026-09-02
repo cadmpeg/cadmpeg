@@ -10,6 +10,7 @@ use super::super::sketch::{
     resolved_section_coordinates, resolved_section_radii, resolved_section_scalar_values,
 };
 use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage};
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::document::SourceMeta;
 
 pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
@@ -922,7 +923,10 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
         attributes.insert("first_quilt_ptr".to_string(), value.to_string());
     }
     (
-        SourceMeta::unclassified(crate::dialect::FORMAT, attributes),
+        SourceMeta::classified(
+            DialectLayers::of(crate::dialect::classify(scan).matched().clone()),
+            attributes,
+        ),
         coverage,
     )
 }

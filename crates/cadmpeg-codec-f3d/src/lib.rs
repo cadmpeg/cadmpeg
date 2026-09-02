@@ -2,7 +2,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write Autodesk Fusion `.f3d` archives.
 //!
-//! [`F3dCodec`] implements [`Codec`] and [`Encoder`]. Decoding produces a
+//! [`F3dCodec`] implements [`cadmpeg_ir::codec::Codec`] and
+//! [`cadmpeg_ir::codec::write::Encoder`]. Decoding produces a
 //! [`CadIr`] document with B-rep topology, analytic and cached NURBS geometry,
 //! body transforms, design and sketch records, construction history, and
 //! appearances. Encoding replays an unchanged decoded archive byte for byte,
@@ -38,8 +39,9 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::codec::TargetRequest;
-//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions, Encoder};
+//! use cadmpeg_ir::codec::write::TargetRequest;
+//! use cadmpeg_ir::codec::write::Encoder;
+//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,7 +50,7 @@
 //! // Edit supported fields in result.ir().
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
-//!     .plan(cadmpeg_ir::codec::EncodeInput {
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput {
 //!         ir: result.ir(),
 //!         fidelity: Some(result.source_fidelity()),
 //!     }, TargetRequest::Inherit)?
@@ -118,10 +120,8 @@ mod zip_write;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeResult, EncodeInput, EncoderBackend, EncoderTargetDomain,
-    ExportPlan, ResolvedEncoderTarget,
-};
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ContainerSummary;
@@ -194,11 +194,9 @@ impl F3dCodec {
 }
 
 impl CodecBackend for F3dCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+    const FORMAT: &'static str = dialect::FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(ZIP_MAGIC) {
             return Confidence::No;
         }
@@ -230,28 +228,22 @@ impl CodecBackend for F3dCodec {
         }
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }
 
 impl EncoderBackend for F3dCodec {
     const FORMAT: &'static str = dialect::FORMAT;
-    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(dialect::TARGETS);
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog(dialect::TARGETS);
 
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        target: ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, CodecError> {
-        let ResolvedEncoderTarget::Native(resolved) = target else {
-            unreachable!("a catalog encoder receives only native target resolutions")
-        };
-        writer::target::plan(input, &resolved)
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

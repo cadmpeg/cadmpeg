@@ -272,6 +272,13 @@ pub fn support(dialect: &DialectId) -> Option<Disposition> {
 mod tests {
     use super::*;
 
+    fn expect_err<T, E>(result: Result<T, E>, message: &str) -> E {
+        match result {
+            Ok(_) => panic!("{message}"),
+            Err(error) => error,
+        }
+    }
+
     /// The embedded registries parse, and the join is total in the direction
     /// this view depends on: every identity row has a capability row.
     ///
@@ -287,12 +294,13 @@ mod tests {
 
     #[test]
     fn the_registry_join_rejects_a_support_row_without_an_identity() {
-        let error = Registries::load_from(
-            "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
-            "[[support]]\ndialect = \"step:ap214\"\nread = \"L1\"\nwrite = \"none\"\n",
-        )
-        .err()
-        .expect("the unmatched support row is rejected");
+        let error = expect_err(
+            Registries::load_from(
+                "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
+                "[[support]]\ndialect = \"step:ap214\"\nread = \"L1\"\nwrite = \"none\"\n",
+            ),
+            "the unmatched support row is rejected",
+        );
         assert!(
             matches!(error, RegistryLoadError::SupportWithoutIdentity(id) if id == "step:ap214")
         );
@@ -300,12 +308,13 @@ mod tests {
 
     #[test]
     fn the_registry_join_rejects_an_identity_row_without_support() {
-        let error = Registries::load_from(
-            "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
-            "",
-        )
-        .err()
-        .expect("the unmatched identity row is rejected");
+        let error = expect_err(
+            Registries::load_from(
+                "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
+                "",
+            ),
+            "the unmatched identity row is rejected",
+        );
         assert!(
             matches!(error, RegistryLoadError::IdentityWithoutSupport(id) if id.as_str() == "step:ap203")
         );
@@ -313,22 +322,24 @@ mod tests {
 
     #[test]
     fn the_registry_join_rejects_duplicate_support_rows() {
-        let error = Registries::load_from(
+        let error = expect_err(
+            Registries::load_from(
             "[format.step]\n[[dialect]]\nid = \"step:ap203\"\ntitle = \"AP203\"\n",
             "[[support]]\ndialect = \"step:ap203\"\nread = \"L1\"\nwrite = \"none\"\n\n[[support]]\ndialect = \"step:ap203\"\nread = \"L2\"\nwrite = \"none\"\n",
-        )
-        .err()
-        .expect("the duplicate support row is rejected");
+            ),
+            "the duplicate support row is rejected",
+        );
         assert!(matches!(error, RegistryLoadError::DuplicateSupport(id) if id == "step:ap203"));
     }
 
     #[test]
     fn the_identity_registry_rejects_a_format_word_with_two_owners() {
-        let error = IdentityRegistry::load_from(
-            "[format.step]\naliases = [\"cad\"]\n[format.iges]\naliases = [\"cad\"]\n",
-        )
-        .err()
-        .expect("a format word must have one owner");
+        let error = expect_err(
+            IdentityRegistry::load_from(
+                "[format.step]\naliases = [\"cad\"]\n[format.iges]\naliases = [\"cad\"]\n",
+            ),
+            "a format word must have one owner",
+        );
         assert!(
             matches!(error, RegistryLoadError::DuplicateFormatName { name, .. } if name == "cad")
         );

@@ -4,7 +4,8 @@
 use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
     SurfaceGeometry,
@@ -327,8 +328,7 @@ fn encode_rejects_open_shells_before_iges_5_3() {
         .unwrap();
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
         let error = plan_at(version, decoded.ir(), None)
-            .err()
-            .expect("legacy target must reject an open shell");
+            .expect_err("legacy target must reject an open shell");
         assert!(
             error
                 .to_string()
@@ -752,8 +752,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     ]);
 
     let error = plan_at(IgesVersion::V5_3, &ir, None)
-        .err()
-        .expect("standalone pointer-defined analytic surface must be refused");
+        .expect_err("standalone pointer-defined analytic surface must be refused");
     assert!(
         error.to_string().contains(
             "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
@@ -782,8 +781,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
     });
 
     let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .err()
-        .expect("free analytic surface must not inherit B-rep eligibility");
+        .expect_err("free analytic surface must not inherit B-rep eligibility");
     assert!(
         error
             .to_string()
@@ -802,8 +800,7 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
         .unwrap();
 
     let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .err()
-        .expect("a cylindrical face without axial bounds must be refused");
+        .expect_err("a cylindrical face without axial bounds must be refused");
     assert!(
         error
             .to_string()

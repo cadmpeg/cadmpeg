@@ -49,8 +49,8 @@ Semantic decode accepts `SchemaVersion=2`, `3`, and `4`. Schema 2 uses the
 
 ```rust,no_run
 use cadmpeg_codec_freecad::FcstdCodec;
-use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
-use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
-        .plan(EncodeInput::new(&result.ir(), None), TargetRequest::Inherit)?
+        .plan(EncodeInput::new(result.ir(), None), TargetRequest::Inherit)?
         .write_to(&mut output)?;
     Ok(())
 }

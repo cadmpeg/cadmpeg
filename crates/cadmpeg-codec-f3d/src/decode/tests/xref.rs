@@ -6,14 +6,13 @@ use crate::loss::F3dLossCode;
 
 #[test]
 fn superseded_xref_placements_have_a_distinct_loss_note() {
-    let mut report = cadmpeg_ir::report::DecodeReport::unclassified(
-        "f3d",
-        cadmpeg_ir::DecodeTransfer::full(true),
-        std::collections::BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        Default::default(),
-    );
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::DecodeTransfer::full(true),
+        coverage: std::collections::BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
     let table = crate::xref::XrefTable {
         designs: Vec::new(),
         references: vec![crate::records::XrefReference {

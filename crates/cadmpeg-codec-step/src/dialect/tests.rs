@@ -9,31 +9,21 @@ use std::collections::BTreeSet;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(
-        &StepDialect::ALL.map(StepDialect::id),
-        FORMAT,
-    );
+    let ids = StepDialect::ALL
+        .map(StepDialect::id)
+        .into_iter()
+        .chain(AlternateEncoding::ALL.map(AlternateEncoding::id))
+        .collect::<Vec<_>>();
+    cadmpeg_test_support::assert_dialect_rows_closed(&ids, FORMAT);
 }
 
 #[test]
 fn exactly_the_alternate_encoding_rows_carry_a_refusal_message() {
-    let refused = [
-        StepDialect::Schema(StepSchema::Ap203Edition1),
-        StepDialect::Schema(StepSchema::Ap203Edition2),
-        StepDialect::Schema(StepSchema::Ap214),
-        StepDialect::Ap242,
-        StepDialect::Schema(StepSchema::Ap242Edition1),
-        StepDialect::Schema(StepSchema::Ap242Edition2),
-        StepDialect::Schema(StepSchema::Ap242Edition3),
-        StepDialect::Part28Xml,
-        StepDialect::Ap242BoModelXml,
-        StepDialect::Part26Hdf5,
-        StepDialect::Unknown,
-    ]
-    .iter()
-    .filter(|dialect| dialect.alternate_encoding_refusal().is_some())
-    .map(|dialect| dialect.id().as_str().to_owned())
-    .collect::<BTreeSet<_>>();
+    let refused = AlternateEncoding::ALL
+        .map(AlternateEncoding::id)
+        .iter()
+        .map(|dialect| dialect.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
 
     assert_eq!(
         refused,
@@ -223,7 +213,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     for case in CASES {
         let matched = StepDialect::classify(&exchange(case.identifiers, "2;1"));
         let charged = dialect_loss(&matched).is_some_and(|note| note.code == expected);
-        let admitted = matched.admission() == Admission::Admitted;
+        let admitted = matched.admission() == &Admission::Admitted;
 
         assert_eq!(
             admitted, !charged,
@@ -237,11 +227,14 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             case.identifiers
         );
         if !admitted {
+            assert!(
+                matches!(matched.admission(), Admission::Unverified { .. }),
+                "FILE_SCHEMA {:?}: the totality row is read unverified",
+                case.identifiers
+            );
             assert_eq!(
-                matched.admission(),
-                Admission::AdmittedUnverified {
-                    using: Some(NEAREST_STRATEGY.id()),
-                },
+                matched.using(),
+                Some(NEAREST_STRATEGY.id()),
                 "FILE_SCHEMA {:?}: `using` names the strategy actually applied",
                 case.identifiers
             );
@@ -261,7 +254,7 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
     ));
 
     assert_eq!(matched.dialect().as_str(), "step:ap242");
-    assert_eq!(matched.admission(), Admission::Admitted);
+    assert_eq!(matched.admission(), &Admission::Admitted);
     assert!(dialect_loss(&matched).is_none());
     assert!(!matched.declared().contains_key(DECLARED_LONG_FORM_ARCS));
 }

@@ -3,7 +3,7 @@
 
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::*;
 use crate::IgesCodec;

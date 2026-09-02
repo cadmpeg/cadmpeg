@@ -43,8 +43,8 @@
 //!
 //! Admission verifies a *declared* identity, and `sldprt:unknown` is the
 //! absence of one. So the two versioned rows are [`Admission::Admitted`] and
-//! `sldprt:unknown` is [`Admission::AdmittedUnverified`] with no substituted
-//! grammar. Its residual fallback does not claim another row's strategy.
+//! `sldprt:unknown` is [`Admission::Residual`]: read with no declared grammar.
+//! Its residual fallback does not claim another row's strategy.
 //!
 //! That fallback is well-defined — the padding filter is not applied and the
 //! ambiguity resolver requires the two candidate offsets to agree before it
@@ -129,6 +129,14 @@ impl LayerClassification {
     }
 }
 
+/// Embedded Parasolid schema rows this codec reads with their own declared
+/// grammar. Every other schema is recovered on the kernel's residual path.
+pub(crate) const VERIFIED_KERNELS: [DialectId; 3] = [
+    DialectId::pinned("parasolid:sch-sw-33103"),
+    DialectId::pinned("parasolid:sch-sw-32001"),
+    DialectId::pinned("parasolid:format-13006"),
+];
+
 /// Classify the host document and every framed Parasolid stream it carries.
 pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
     let kernels = scan
@@ -144,8 +152,7 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
         })
         .collect::<Vec<_>>();
     let mut layers = DialectLayers::of(SldprtDialect::classify_scan(scan));
-    let extra =
-        cadmpeg_parasolid::extra_layers(kernels, cadmpeg_parasolid::KnownSchemaAdmission::Verified);
+    let extra = cadmpeg_parasolid::extra_layers(kernels, &VERIFIED_KERNELS);
     let losses = cadmpeg_parasolid::push_extras(&mut layers, extra)
         .into_iter()
         .map(|message| SldprtLossCode::DialectLayerCollision.note(message))
@@ -235,8 +242,8 @@ impl SldprtDialect {
 /// admission reported come from one value, not from two authors agreeing.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
-        Admission::Admitted => None,
-        Admission::AdmittedUnverified { .. } => {
+        Admission::Admitted | Admission::Refused => None,
+        Admission::Unverified { .. } | Admission::Residual => {
             if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
                 return Some(SldprtLossCode::KernelDialectUnverified.note(message));
             }
@@ -259,7 +266,6 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
                 matched.dialect()
             )))
         }
-        Admission::Refused => None,
     }
 }
 

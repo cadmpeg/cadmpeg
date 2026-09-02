@@ -2,10 +2,10 @@
 //! Typed F3D native-namespace helpers for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Write;
 
-use cadmpeg_ir::codec::Encoder;
+use cadmpeg_ir::codec::write::Encoder;
 
 use crate::F3dCodec;
 
@@ -24,7 +24,7 @@ impl TestEncode for F3dCodec {
         output: &mut dyn Write,
     ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_core::CodecError> {
         self.plan(
-            cadmpeg_ir::codec::EncodeInput { ir, fidelity: None },
+            cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
             TargetRequest::Inherit,
         )?
         .write_to(output)

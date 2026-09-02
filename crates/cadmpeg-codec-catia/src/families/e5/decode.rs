@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! E5-stream decode route: analytic carriers, plane fitting, and topology transfer.
 
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -12,7 +13,6 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex, VertexUse,
 };
@@ -262,14 +262,13 @@ pub(crate) fn try_decode_e5(
     let annotations = annotations.build();
     Some(FamilyOutput {
         ir,
-        report: DecodeReport::unclassified(
-            crate::dialect::FORMAT,
-            cadmpeg_ir::DecodeTransfer::full(true),
-            std::collections::BTreeMap::new(),
+        report: DecodeBody {
+            transfer: cadmpeg_ir::DecodeTransfer::full(true),
+            coverage: std::collections::BTreeMap::new(),
             losses,
-            Vec::new(),
-            cadmpeg_ir::report::TransferLedger::default(),
-        ),
+            notes: Vec::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        },
         annotations,
         unknowns,
         standard_face_population: false,

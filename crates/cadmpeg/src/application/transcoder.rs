@@ -5,13 +5,14 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_ir::codec::{DecodeOptions, EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::SourceFidelity;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
-use crate::application::refusal::{classify_load_error, ApplicationError};
+use crate::application::refusal::ApplicationError;
 use crate::application::validators::validate_ir;
 use crate::application::{
     ArtifactStore, ConversionRefusal, LoadedDocument, NativeValidatorCatalog, SidecarPersistOutcome,
@@ -117,7 +118,7 @@ impl TargetSelection {
     ///
     /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
     /// resolves to is the encoder's answer, not the command line's:
-    /// [`Encoder::plan`](cadmpeg_ir::codec::Encoder::plan) preserves the source
+    /// [`Encoder::plan`](cadmpeg_ir::codec::write::Encoder::plan) preserves the source
     /// dialect within one format and selects the catalog default when there is
     /// nothing to inherit: no source or a source of another format. Deciding
     /// the cross-format default here as well would write the same rule twice.
@@ -353,8 +354,7 @@ impl<'a> Transcoder<'a> {
             .map_err(ApplicationError::from)?;
 
         let outcome =
-            loader::load_artifact(self.inputs, source.path, source.options, source.forced)
-                .map_err(classify_load_error)?;
+            loader::load_artifact(self.inputs, source.path, source.options, source.forced)?;
         let loaded = outcome.document;
         let notices = outcome.notices;
         let decode_report = loaded.decode_report().cloned();

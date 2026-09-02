@@ -30,7 +30,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     )
     .expect("synthesized unknown record conversion")
     .0;
-    assert!(result.report().losses.iter().any(|loss| {
+    assert!(result.body.losses.iter().any(|loss| {
         loss.code == StepLossCode::ByteAccountingUnclassified.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("1 byte(s) unclassified")

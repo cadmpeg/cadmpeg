@@ -49,37 +49,66 @@ pub struct Identification {
     pub inspection: Inspection,
 }
 
-/// Inspection of the single source selected by [`InputCatalog::resolve_source`].
-#[derive(Debug)]
-// A resolved inspection is returned once per input. Boxing its native result
-// would add an allocation and obscure direct ownership without reducing the
-// summary or error data the caller must retain.
-#[allow(clippy::large_enum_variant)]
-pub enum ResolvedInspection {
-    /// A native codec was selected and its inspection was attempted.
-    Native {
-        /// Stable format id of the selected codec.
-        format: &'static str,
-        /// Detection confidence, or `None` when the caller forced the codec.
-        confidence: Option<Confidence>,
-        /// Complete summary or the codec error that prevented classification.
-        inspection: Result<ContainerSummary, CodecError>,
+/// How the inspected codec was selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Selection {
+    /// Content detection named the codec at this confidence.
+    Detected {
+        /// Detection confidence of the byte prefix.
+        confidence: Confidence,
     },
-    /// The source begins as CADIR JSON, which has no native container to inspect.
-    Cadir,
-    /// No registered codec recognized the source.
-    Unrecognized,
+    /// The caller forced the codec; no detection ran.
+    Forced,
 }
 
-/// Failure before a selected codec could inspect the source.
+impl Selection {
+    /// Detection confidence, or `None` when the codec was forced.
+    #[must_use]
+    pub const fn confidence(self) -> Option<Confidence> {
+        match self {
+            Self::Detected { confidence } => Some(confidence),
+            Self::Forced => None,
+        }
+    }
+}
+
+/// A successfully inspected source: the selected codec's format, how it was
+/// selected, and its complete summary.
+#[derive(Debug)]
+pub struct Inspected {
+    /// Stable format id of the selected codec.
+    pub format: &'static str,
+    /// How the codec was chosen.
+    pub selection: Selection,
+    /// The codec's complete container summary.
+    pub summary: ContainerSummary,
+}
+
+/// Why [`resolve_and_inspect_with`] produced no summary.
 #[derive(Debug, thiserror::Error)]
-pub enum ResolveInspectionError {
+pub enum InspectError {
     /// Reading or repositioning the source failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    /// The source could not be resolved to one input.
+    /// The source could not be resolved to one codec.
     #[error(transparent)]
-    Resolve(#[from] ResolveSourceError),
+    Unresolved(#[from] ResolveSourceError),
+    /// The source begins as CADIR JSON, which has no native container.
+    #[error("CADIR JSON has no native container to inspect")]
+    Cadir,
+    /// No registered codec recognized the source.
+    #[error("no registered codec recognized the input")]
+    Unrecognized,
+    /// The selected codec recognized the prefix but its inspection failed.
+    #[error("{format} inspection failed: {error}")]
+    Codec {
+        /// Stable format id of the selected codec.
+        format: &'static str,
+        /// How the codec was chosen.
+        selection: Selection,
+        /// The codec's typed failure.
+        error: CodecError,
+    },
 }
 
 /// Detects `source`, retains equal-confidence candidates, and inspects a sole
@@ -131,19 +160,16 @@ pub fn identify_with(
         }
         DetectionOutcome::None => Ok(Vec::new()),
         DetectionOutcome::Detected {
-            descriptor,
+            codec,
+            format_id,
             confidence,
         } => {
-            let codec = descriptor
-                .codec
-                .as_deref()
-                .expect("a detected descriptor has a codec");
             let inspection = match inspect_codec(codec, source, options)? {
                 Ok(summary) => Inspection::Classified(summary),
                 Err(error) => Inspection::Failed(error),
             };
             Ok(vec![Identification {
-                format: descriptor.format_id(),
+                format: format_id,
                 confidence,
                 inspection,
             }])
@@ -153,8 +179,8 @@ pub fn identify_with(
             candidates,
         } => Ok(candidates
             .into_iter()
-            .map(|descriptor| Identification {
-                format: descriptor.format_id(),
+            .map(|format| Identification {
+                format,
                 confidence,
                 inspection: Inspection::Skipped,
             })
@@ -165,28 +191,40 @@ pub fn identify_with(
 /// Resolves and inspects exactly one source against a caller-held catalog.
 ///
 /// Unlike [`identify_with`], equal-confidence ambiguity is a resolution error,
-/// and an explicit [`ForcedInput`] is accepted. Prefix and seek failures are
-/// returned as [`ResolveInspectionError`]; a selected codec's error remains in
-/// [`ResolvedInspection::Native`] beside the format identity it established.
+/// and an explicit [`ForcedInput`] is accepted. Every way of not producing a
+/// summary is one [`InspectError`] variant; a selected codec's failure keeps
+/// the format identity and selection it established.
 pub fn resolve_and_inspect_with(
     catalog: &InputCatalog,
     source: &mut dyn ReadSeek,
     forced: Option<ForcedInput>,
     options: &InspectOptions,
-) -> Result<ResolvedInspection, ResolveInspectionError> {
+) -> Result<Inspected, InspectError> {
     let prefix = read_prefix(source, options)?;
     match catalog.resolve_source(&prefix, forced)? {
         ResolvedSource::Native {
             codec,
             format_id,
             confidence,
-        } => Ok(ResolvedInspection::Native {
-            format: format_id,
-            confidence,
-            inspection: inspect_codec(codec, source, options)?,
-        }),
-        ResolvedSource::Cadir => Ok(ResolvedInspection::Cadir),
-        ResolvedSource::Unrecognized => Ok(ResolvedInspection::Unrecognized),
+        } => {
+            let selection = confidence.map_or(Selection::Forced, |confidence| {
+                Selection::Detected { confidence }
+            });
+            match inspect_codec(codec, source, options)? {
+                Ok(summary) => Ok(Inspected {
+                    format: format_id,
+                    selection,
+                    summary,
+                }),
+                Err(error) => Err(InspectError::Codec {
+                    format: format_id,
+                    selection,
+                    error,
+                }),
+            }
+        }
+        ResolvedSource::Cadir => Err(InspectError::Cadir),
+        ResolvedSource::Unrecognized => Err(InspectError::Unrecognized),
     }
 }
 
@@ -523,16 +561,21 @@ mod tests {
 
         let catalog = InputCatalog::with_builtins();
         let mut source = Cursor::new(bytes);
-        let ResolvedInspection::Native {
+        let Err(InspectError::Codec {
             format,
-            confidence,
-            inspection: Err(error),
-        } = resolve_and_inspect_with(&catalog, &mut source, None, &starved).unwrap()
+            selection,
+            error,
+        }) = resolve_and_inspect_with(&catalog, &mut source, None, &starved)
         else {
             panic!("resolved inspection must retain the selected codec failure");
         };
         assert_eq!(format, "rhino");
-        assert_eq!(confidence, Some(Confidence::High));
+        assert_eq!(
+            selection,
+            Selection::Detected {
+                confidence: Confidence::High
+            }
+        );
         assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
 
         // The same bytes under the default budget do settle the dialect, so

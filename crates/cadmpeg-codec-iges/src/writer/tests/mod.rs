@@ -2,7 +2,8 @@
 use super::*;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
@@ -760,9 +761,9 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
-    let error = curve_entity(&geometry, Some(&span), IgesVersion::V5_3)
-        .err()
-        .expect("zero-length span must not become a full revolution");
+    let Err(error) = curve_entity(&geometry, Some(&span), IgesVersion::V5_3) else {
+        panic!("zero-length span must not become a full revolution");
+    };
     assert!(error.to_string().contains("non-zero ordered span"));
 }
 

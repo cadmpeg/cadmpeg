@@ -14,15 +14,18 @@ use crate::SatCodec;
 use crate::FORMAT;
 use cadmpeg_asm::dialect::{DECLARED_SAVE_FORMAT_MAJOR, DECLARED_SAVE_FORMAT_MINOR};
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::dialect::{Admission, Grammar};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() {
-    let reportable = StreamKind::ALL.map(|kind| {
-        kind.reportable_id()
-            .expect("the reportable kind list excludes Unknown")
-    });
+    let reportable = [
+        StreamEvidence::AsmBinary(None),
+        StreamEvidence::AcisBinary(None),
+        StreamEvidence::Text(None),
+    ]
+    .map(|evidence| evidence.dialect());
     cadmpeg_test_support::assert_dialect_rows_closed(&reportable, FORMAT);
 }
 
@@ -65,21 +68,23 @@ fn only_the_acis_kernel_branches_are_banded() {
             })),
         ] {
             let (host, kernel) = layers(&asm);
-            assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
-            assert_eq!(kernel.admission(), Admission::Admitted, "{version:?}");
+            assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
+            assert_eq!(kernel.admission(), &Admission::Admitted, "{version:?}");
         }
 
         let (host, matched) = layers(&StreamEvidence::AcisBinary(Some(&kernel)));
-        assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
+        assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
-            assert_eq!(matched.admission(), Admission::Admitted, "{version:?}");
+            assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
             assert!(dialect_loss(&matched).is_none(), "{version:?}");
         } else {
+            assert!(
+                matches!(matched.admission(), Admission::Unverified { .. }),
+                "{version:?}"
+            );
             assert_eq!(
-                matched.admission(),
-                Admission::AdmittedUnverified {
-                    using: Some(DialectId::pinned(nearest)),
-                },
+                matched.using(),
+                Some(DialectId::pinned(nearest)),
                 "{version:?}"
             );
             let loss = dialect_loss(&matched).expect("the recovery is charged");
@@ -91,16 +96,12 @@ fn only_the_acis_kernel_branches_are_banded() {
             branch: sat::Terminator::Acis,
             header: &kernel,
         })));
-        assert_eq!(host.admission(), Admission::Admitted, "{version:?}");
+        assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
-            assert_eq!(matched.admission(), Admission::Admitted, "{version:?}");
+            assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
             assert!(dialect_loss(&matched).is_none(), "{version:?}");
         } else {
-            assert_eq!(
-                matched.admission(),
-                Admission::AdmittedUnverified { using: None },
-                "{version:?}"
-            );
+            assert_eq!(matched.admission(), &Admission::Residual, "{version:?}");
             let loss = dialect_loss(&matched).expect("the recovery is charged");
             assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
             assert!(
@@ -125,18 +126,13 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
     ] {
         let (matched, _) = layers(&evidence);
         assert_eq!(matched.dialect().as_str(), id);
-        assert_eq!(matched.admission(), Admission::Refused, "{id}");
+        assert_eq!(matched.admission(), &Admission::Refused, "{id}");
     }
 }
 
 #[test]
-fn the_detect_unreachable_kind_has_no_reportable_id() {
-    assert_eq!(StreamKind::Unknown.reportable_id(), None);
-}
-
-#[test]
 fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
-    // The biconditional §7 requires: `AdmittedUnverified` and the
+    // The biconditional §7 requires: `Unverified`/`Residual` and the
     // `source.kernel-dialect-unverified` charge are the same fact, read from one
     // place. `Refused` here is structural — the discriminant matched and the
     // stream did not frame — and carries no recovery mark.
@@ -161,7 +157,10 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
     ] {
         let (_, matched) = layers(&evidence);
         assert_eq!(
-            matches!(matched.admission(), Admission::AdmittedUnverified { .. }),
+            matches!(
+                matched.admission(),
+                Admission::Unverified { .. } | Admission::Residual
+            ),
             dialect_loss(&matched).is_some(),
             "{:?}",
             matched.admission()
@@ -262,22 +261,22 @@ fn cases() -> Vec<Case> {
             bytes: acis_text(700),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            kernel_admission: Admission::AdmittedUnverified { using: None },
+            kernel_admission: Admission::Residual,
         },
         Case {
             label: "acis text sphere outside the verified band",
             bytes: acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT),
             id: "sat:text",
             kernel_id: "acis:text-acis",
-            kernel_admission: Admission::AdmittedUnverified { using: None },
+            kernel_admission: Admission::Residual,
         },
         Case {
             label: "acis binary sphere outside the verified band",
             bytes: binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand),
             id: "sat:acis-binary",
             kernel_id: "acis:save-format-binary-other",
-            kernel_admission: Admission::AdmittedUnverified {
-                using: Some(DialectId::pinned("acis:save-format-218")),
+            kernel_admission: Admission::Unverified {
+                using: Grammar::local("save-format-218").unwrap(),
             },
         },
         Case {
@@ -313,7 +312,7 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .expect("SAT reports dialect layers")
             .primary();
 
-        assert_eq!(matched.admission(), Admission::Admitted, "{}", case.label);
+        assert_eq!(matched.admission(), &Admission::Admitted, "{}", case.label);
         let kernel = result
             .report()
             .dialects()
@@ -322,9 +321,12 @@ fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
             .iter()
             .nth(1)
             .expect("SAT reports its ACIS layer");
-        assert_eq!(kernel.admission(), case.kernel_admission, "{}", case.label);
+        assert_eq!(kernel.admission(), &case.kernel_admission, "{}", case.label);
         assert_eq!(
-            matches!(kernel.admission(), Admission::AdmittedUnverified { .. }),
+            matches!(
+                kernel.admission(),
+                Admission::Unverified { .. } | Admission::Residual
+            ),
             charged,
             "{}: admission and the recovery mark must agree",
             case.label

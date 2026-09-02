@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
-use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
-use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{Annotations, FidelityResolution, WritePath};
+use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
+use cadmpeg_ir::{Annotations, WritePath};
 
 use crate::loss::SldprtLossCode;
-use crate::{source_records, ReplaySkipped, SemanticFidelity, SldprtCodec, Written};
+use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -29,14 +27,12 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SldprtCodec, Writte
 /// inherit: the document has no source, or a source of another format.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    resolved: &ResolvedWrite,
-) -> Result<ExportPlan, CodecError> {
-    let target = resolved.dialect().clone();
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
     let (written, bytes) = write(input, resolved.preserves_source())?;
     check_honesty(resolved, &written)?;
     Ok(finish(
         input,
-        target,
         resolved.displacement_message(),
         &written,
         bytes,
@@ -61,7 +57,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             input.ir,
             &Annotations::default(),
             &[],
-            SemanticFidelity::Resolution(FidelityResolution::NotConsumed),
+            SemanticFidelity::Consumed(Consumption::NotConsumed),
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
@@ -71,7 +67,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
-                SemanticFidelity::Resolution(FidelityResolution::NotProvided)
+                SemanticFidelity::Consumed(Consumption::NotConsumed)
             },
             &mut bytes,
         )?,
@@ -81,11 +77,11 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
 
 /// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land
 /// on the resolved target.
-fn check_honesty(resolved: &ResolvedWrite, written: &Written) -> Result<(), CodecError> {
+fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> Result<(), CodecError> {
     let Written::Semantic { dialect: got, .. } = written else {
         return Ok(());
     };
-    if got == resolved.dialect() {
+    if got == resolved.target_id() {
         return Ok(());
     }
     Err(resolved.unavailable(format!(
@@ -96,23 +92,22 @@ fn check_honesty(resolved: &ResolvedWrite, written: &Written) -> Result<(), Code
 
 fn finish(
     input: EncodeInput<'_>,
-    target: DialectId,
     displacement: Option<String>,
     written: &Written,
     bytes: Vec<u8>,
-) -> ExportPlan {
+) -> ExportBody {
     let write_path = written.path();
-    let fidelity = written.fidelity();
-    let mut losses: Vec<_> = (written.replay_skipped() == Some(ReplaySkipped::ImageMissing))
-        .then(|| {
-            SldprtLossCode::SourcePreservedImageUnavailable.note(match write_path {
-                WritePath::Patched => {
+    let mut losses: Vec<_> = written
+        .replay_skipped()
+        .filter(|(_, reason)| *reason == ReplaySkipped::ImageMissing)
+        .map(|(path, _)| {
+            SldprtLossCode::SourcePreservedImageUnavailable.note(match path {
+                SemanticPath::Patched => {
                     "preserved SLDPRT source image is unavailable; wrote from retained source records with semantic patches"
                 }
-                WritePath::Synthesized => {
+                SemanticPath::Synthesized => {
                     "preserved SLDPRT source image is unavailable; regenerated from IR"
                 }
-                WritePath::VerbatimReplay => unreachable!("a replay did not skip its source image"),
             })
         })
         .into_iter()
@@ -120,28 +115,23 @@ fn finish(
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
-    ExportPlan::buffered(
-        ExportReport::native(
-            target,
-            cadmpeg_ir::EntityCensus {
-                basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: input.ir.census(),
-            },
-            fidelity,
-            write_path,
-            losses,
-            vec![
-                match write_path {
-                    WritePath::VerbatimReplay => "preserved source container replayed verbatim",
-                    WritePath::Patched => {
-                        "preserved source container replayed with semantic patches"
-                    }
-                    WritePath::Synthesized => "source container regenerated from IR",
-                }
-                .into(),
-                "entity counts are derived from the IR".into(),
-            ],
-        ),
+    ExportBody {
         bytes,
-    )
+        census: cadmpeg_ir::EntityCensus {
+            basis: cadmpeg_ir::CensusBasis::IrArenas,
+            counts: input.ir.census(),
+        },
+        write_path,
+        losses,
+        notes: vec![
+            match write_path {
+                WritePath::VerbatimReplay => "preserved source container replayed verbatim",
+                WritePath::Patched => "preserved source container replayed with semantic patches",
+                WritePath::Synthesized => "source container regenerated from IR",
+            }
+            .into(),
+            "entity counts are derived from the IR".into(),
+        ],
+        consumption: written.consumption(),
+    }
 }

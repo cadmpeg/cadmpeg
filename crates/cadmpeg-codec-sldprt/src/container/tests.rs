@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::container::{self, role};
 use crate::test_support::*;

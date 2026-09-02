@@ -5,7 +5,7 @@
 use super::*;
 use cadmpeg_core::target::find_target;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::report::FidelityResolution;
 
 /// The global of [`point_file`] with field 23 set to `flag`.
@@ -20,7 +20,7 @@ fn point_file_at_version_flag(flag: u8) -> Vec<u8> {
 fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
-) -> Result<cadmpeg_ir::codec::ExportPlan, CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
     IgesCodec.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
 }
 
@@ -101,9 +101,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         Some("iges:1.0-fixed-ascii".to_owned())
     );
 
-    let error = inherit(decoded.ir(), None)
-        .err()
-        .expect("1.0 is not a synthesis target");
+    let error = inherit(decoded.ir(), None).expect_err("1.0 is not a synthesis target");
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };

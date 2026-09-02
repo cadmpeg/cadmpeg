@@ -111,7 +111,7 @@ pub enum RhinoLossCode {
     /// whose grammar this codec verified. It is deliberately *not*
     /// `source.dialect-unverified`: the other codecs pin that string for the
     /// document-level statement "the dialect itself was not verified", which
-    /// holds exactly when `Admission::AdmittedUnverified` is reported. Rhino
+    /// holds exactly when `Admission::Residual` is reported. Rhino
     /// charges this one inside `Admission::Admitted` documents, so a consumer
     /// joining loss code to admission state must be able to tell them apart.
     /// The taxonomy family below is still the right one.
@@ -121,7 +121,7 @@ pub enum RhinoLossCode {
     ///
     /// Document level, and the counterpart of the per-record code above:
     /// charged exactly when the primary-layer `crate::dialect` match is
-    /// `Admission::AdmittedUnverified`, from the same predicate that decides
+    /// `Admission::Residual`, from the same predicate that decides
     /// the admission. A word no row claims still selects its own chunk width
     /// and checksum mechanics. No declared archive row is substituted, and
     /// nothing verified that the observed word means those mechanics.

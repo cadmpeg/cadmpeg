@@ -13,8 +13,7 @@
       }
     },
     "fidelity": {
-      "reason": "preserved IGES source image is unavailable",
-      "status": "degraded"
+      "status": "not_provided"
     },
     "format": "iges",
     "losses": [

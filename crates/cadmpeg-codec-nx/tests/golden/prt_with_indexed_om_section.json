@@ -369,9 +369,7 @@
         "dialects": {
           "extra": [
             {
-              "admission": {
-                "admitted_unverified": {}
-              },
+              "admission": "residual",
               "declared": {
                 "carrier": "stream@357",
                 "schema": "SCH_TEST_1_9999"
@@ -404,9 +402,7 @@
       "dialects": {
         "extra": [
           {
-            "admission": {
-              "admitted_unverified": {}
-            },
+            "admission": "residual",
             "declared": {
               "carrier": "stream@357",
               "schema": "SCH_TEST_1_9999"
@@ -456,7 +452,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 6, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
       ]
@@ -614,9 +610,7 @@
     "dialects": {
       "extra": [
         {
-          "admission": {
-            "admitted_unverified": {}
-          },
+          "admission": "residual",
           "declared": {
             "carrier": "stream@357",
             "schema": "SCH_TEST_1_9999"
@@ -688,7 +682,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: version 6, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
     ]

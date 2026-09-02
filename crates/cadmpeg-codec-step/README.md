@@ -114,7 +114,7 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21
 [`CadIr`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html
 [`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html
-[`Encoder`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Encoder.html
+[`Encoder`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/write/trait.Encoder.html
 [`EntityCensus::total`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.EntityCensus.html#method.total
 [`ExportReport::census`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.census
 [`ExportReport::error_count`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#method.error_count

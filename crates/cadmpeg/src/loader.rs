@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Input detection and loading into CADIR.
 
-use std::fmt;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{anyhow, Context};
-use cadmpeg_ir::codec::{Confidence, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Confidence, DecodeOptions};
 use cadmpeg_ir::CadIr;
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
 };
 
+use crate::application::refusal::ApplicationError;
 use crate::application::{ArtifactStore, LoadOrigin, LoadedDocument};
 
 /// Non-fatal notice produced while loading an input.
@@ -36,44 +36,6 @@ pub struct LoadOutcome {
     pub notices: Vec<LoadNotice>,
 }
 
-/// A document-load failure before application refusal classification.
-#[derive(Debug)]
-pub enum LoadError {
-    /// A native codec returned a typed decode result.
-    Decode {
-        /// Input being decoded.
-        path: PathBuf,
-        /// Selected native codec.
-        format_id: &'static str,
-        /// Codec or strict-policy failure.
-        failure: Box<DecodeFailure>,
-    },
-    /// Filesystem, detection, CADIR parsing, or sidecar failure.
-    Operational(anyhow::Error),
-}
-
-impl From<anyhow::Error> for LoadError {
-    fn from(error: anyhow::Error) -> Self {
-        Self::Operational(error)
-    }
-}
-
-impl fmt::Display for LoadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Decode {
-                path,
-                format_id,
-                failure,
-            } => write!(f, "decoding {} as {format_id}: {failure}", path.display()),
-            Self::Operational(error) if f.alternate() => write!(f, "{error:#}"),
-            Self::Operational(error) => fmt::Display::fmt(error, f),
-        }
-    }
-}
-
-impl std::error::Error for LoadError {}
-
 /// Restates a detection failure with the flag that overrides it.
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
@@ -88,6 +50,9 @@ pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 
 /// Load CADIR from a native CAD file or CADIR JSON.
 ///
+/// A native decode failure is classified into an [`ApplicationError`] here,
+/// at the only site that knows the path and the selected codec.
+///
 /// An explicit input format bypasses detection. Without one, the registered
 /// codec with the strongest match decodes the file. An input beginning with a
 /// JSON object is parsed as CADIR when no native codec recognizes it.
@@ -96,7 +61,7 @@ pub fn load_artifact(
     path: &Path,
     options: DecodeOptions,
     forced: Option<ForcedInput>,
-) -> Result<LoadOutcome, LoadError> {
+) -> Result<LoadOutcome, ApplicationError> {
     let prefix = ArtifactStore::read_detection_input(
         path,
         DETECTION_PREFIX_LEN,
@@ -119,13 +84,9 @@ pub fn load_artifact(
                 });
             }
             let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-            let result = codec
-                .decode(&mut f, &options)
-                .map_err(|failure| LoadError::Decode {
-                    path: path.to_owned(),
-                    format_id,
-                    failure: Box::new(failure),
-                })?;
+            let result = codec.decode(&mut f, &options).map_err(|failure| {
+                ApplicationError::from_decode_failure(path, format_id, failure)
+            })?;
             return Ok(LoadOutcome {
                 document: LoadedDocument::decoded(result),
                 notices,

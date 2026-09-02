@@ -26,7 +26,7 @@
 //! layout-conditional decode path is a positive gate on a named layout, so an
 //! unclassified document simply runs the layout-independent path and skips all
 //! of them. That is a real recovery strategy and it is charged as one:
-//! [`cadmpeg_core::dialect::Admission::AdmittedUnverified`] plus
+//! [`cadmpeg_core::dialect::Admission::Residual`] plus
 //! [`CreoLossCode::SourceDialectUnverified`]. [`DialectClassification`] carries
 //! either an admitted match or a recovered match with its cause, so admission
 //! and explanation cannot be paired independently.
@@ -139,10 +139,10 @@ impl Layout {
 ///
 /// # No substituted grammar on the unclassified path
 ///
-/// Creo's unclassified path substitutes nothing: it skips every layout gate.
-/// The admission therefore carries no `using` value. Naming `creo:nd`,
-/// `creo:depdb`, or the residual row itself would assert a substitution that
-/// did not happen.
+/// Creo's unclassified path substitutes nothing: it skips every layout gate,
+/// so the admission is [`cadmpeg_core::dialect::Admission::Residual`]. Naming
+/// `creo:nd`, `creo:depdb`, or the residual row itself as a grammar would assert
+/// a substitution that did not happen.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectClassification {
     let layout = scan.framing.layout;
     let mut declared = BTreeMap::new();

@@ -8,12 +8,12 @@ use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::{DecodeReport, TransferLedger};
+use cadmpeg_ir::report::TransferLedger;
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
@@ -41,7 +41,7 @@ use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
 use crate::rse::{DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState};
 
-pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let container = InventorContainer::open(ctx, root)?;
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
@@ -52,6 +52,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         classification.matched.clone(),
         &container.rse.active_carrier,
     );
+    // The kernel layer, classified from the carrier's own header. Non-primary:
+    // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
+    let kernel_match = dialects
+        .iter()
+        .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        .cloned();
     let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
@@ -532,7 +538,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     }
     attributes.insert("document_kind".into(), document_kind.label().into());
     metadata.apply_attributes(&mut attributes);
-    ir.source = Some(SourceMeta::unclassified(crate::dialect::FORMAT, attributes));
+    ir.source = Some(SourceMeta::classified(dialects, attributes));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
             id: ProductDefinitionId("inventor:document:product#root".into()),
@@ -1308,11 +1314,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         "admit Inventor entities",
     )?;
 
-    // The kernel layer, classified from the carrier's own header. Non-primary:
-    // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
-    let kernel_match = dialects
-        .iter()
-        .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT);
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
@@ -1410,7 +1411,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
     losses.extend(classification.loss);
-    losses.extend(kernel_match.and_then(kernel_dialect_loss));
+    losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
     if ctx.container_only() {
         losses.push(
             InventorLossCode::ContainerOnlyDecode.note("Container-only decode was requested."),
@@ -1667,152 +1668,152 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
-    Ok(DecodeResult::new(
+    let body = DecodeBody {
+        transfer: if ctx.container_only() {
+            cadmpeg_ir::DecodeTransfer::ContainerOnly
+        } else {
+            cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
+        },
+        coverage: BTreeMap::from([
+            ("rse_storage_bands".into(), storage_bands.len()),
+            ("rse_databases".into(), databases.len()),
+            ("rse_registry_entries".into(), segment_registry.len()),
+            ("rse_revisions".into(), revisions.len()),
+            ("rse_segment_pairs".into(), segment_pairs.len()),
+            ("rse_segment_meta".into(), segment_meta.len()),
+            ("rse_meta_types".into(), meta_types.len()),
+            ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
+            ("rse_segment_bulk".into(), segment_bulk.len()),
+            ("rse_records".into(), rse_records.len()),
+            ("rse_segment_bulk_issues".into(), segment_bulk_issues.len()),
+            ("property_sets".into(), property_sets.len()),
+            ("properties".into(), properties.len()),
+            ("preview_assets".into(), preview_asset_count),
+            ("protein_entries".into(), protein_entries.len()),
+            ("protein_assets".into(), protein_assets.len()),
+            ("protein_rejections".into(), protein_rejections.len()),
+            ("protein_appearances".into(), protein_appearance_count),
+            (
+                "appearance_bindings_transferred".into(),
+                appearance_binding_count,
+            ),
+            ("pm_app_default_styles".into(), pm_app_default_styles.len()),
+            (
+                "pm_app_rendering_styles".into(),
+                pm_app_rendering_styles.len(),
+            ),
+            ("pm_graphics_faces".into(), pm_graphics_faces.len()),
+            (
+                "pm_graphics_style_collections".into(),
+                pm_graphics_style_collections.len(),
+            ),
+            (
+                "pm_graphics_primary_color_styles".into(),
+                pm_graphics_primary_color_styles.len(),
+            ),
+            ("face_color_appearances".into(), face_color_appearance_count),
+            (
+                "presentation_record_issues".into(),
+                presentation_record_issues.len(),
+            ),
+            ("pm_dc_parameters".into(), design_inventory.parameters.len()),
+            (
+                "pm_dc_expressions".into(),
+                design_inventory.expressions.len(),
+            ),
+            ("pm_dc_units".into(), design_inventory.units.len()),
+            (
+                "design_parameters_transferred".into(),
+                design_parameter_count,
+            ),
+            ("design_record_issues".into(), design_inventory.issues.len()),
+            ("pm_dc_sketches".into(), sketch_inventory.sketches.len()),
+            (
+                "pm_dc_sketch_entities".into(),
+                sketch_inventory.entities.len(),
+            ),
+            ("pm_dc_transforms".into(), sketch_inventory.transforms.len()),
+            ("pm_dc_directions".into(), sketch_inventory.directions.len()),
+            (
+                "pm_dc_sketch_constraints".into(),
+                sketch_inventory.constraints.len(),
+            ),
+            ("sketch_record_issues".into(), sketch_inventory.issues.len()),
+            ("pm_dc_features".into(), feature_inventory.features.len()),
+            (
+                "pm_dc_pattern_features".into(),
+                feature_inventory.pattern_features.len(),
+            ),
+            (
+                "pm_dc_feature_terminators".into(),
+                feature_inventory.terminators.len(),
+            ),
+            (
+                "pm_dc_feature_properties".into(),
+                feature_inventory.properties.len(),
+            ),
+            (
+                "pm_dc_feature_labels".into(),
+                feature_inventory.labels.len(),
+            ),
+            (
+                "pm_dc_entity_style_links".into(),
+                feature_inventory.entity_style_links.len(),
+            ),
+            (
+                "feature_record_issues".into(),
+                feature_inventory.issues.len(),
+            ),
+            ("features_transferred".into(), transferred_feature_count),
+            (
+                "feature_result_topologies_transferred".into(),
+                transferred_feature_result_count,
+            ),
+            ("sketches_transferred".into(), transferred_sketch_count),
+            (
+                "sketch_entities_transferred".into(),
+                transferred_sketch_entity_count,
+            ),
+            (
+                "sketch_constraints_transferred".into(),
+                transferred_sketch_constraint_count,
+            ),
+            ("external_references".into(), external_references.len()),
+            ("embedded_references".into(), embedded_references.len()),
+            ("ufrx_model_states".into(), ufrx_model_states.len()),
+            ("ufrx_occurrences".into(), ufrx_occurrences.len()),
+            ("assembly_occurrences".into(), assembly_occurrences.len()),
+            ("assembly_placements".into(), assembly_placements.len()),
+            (
+                "assembly_occurrences_transferred".into(),
+                transferred_occurrence_count,
+            ),
+            (
+                "assembly_record_issues".into(),
+                assembly_record_issues.len(),
+            ),
+            (
+                "active_kernel_carriers".into(),
+                usize::from(matches!(
+                    &container.rse.active_carrier,
+                    ActiveCarrierState::Selected(_)
+                )),
+            ),
+            ("kernel_unknown_records".into(), kernel_unknown_record_count),
+            (
+                "kernel_unknown_surface_faces".into(),
+                kernel_stats.unknown_surface_faces,
+            ),
+        ]),
+        losses,
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+    Ok(Decoded {
         ir,
-        DecodeReport::classified(
-            dialects,
-            if ctx.container_only() {
-                cadmpeg_ir::DecodeTransfer::ContainerOnly
-            } else {
-                cadmpeg_ir::DecodeTransfer::full(geometry_transferred)
-            },
-            BTreeMap::from([
-                ("rse_storage_bands".into(), storage_bands.len()),
-                ("rse_databases".into(), databases.len()),
-                ("rse_registry_entries".into(), segment_registry.len()),
-                ("rse_revisions".into(), revisions.len()),
-                ("rse_segment_pairs".into(), segment_pairs.len()),
-                ("rse_segment_meta".into(), segment_meta.len()),
-                ("rse_meta_types".into(), meta_types.len()),
-                ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
-                ("rse_segment_bulk".into(), segment_bulk.len()),
-                ("rse_records".into(), rse_records.len()),
-                ("rse_segment_bulk_issues".into(), segment_bulk_issues.len()),
-                ("property_sets".into(), property_sets.len()),
-                ("properties".into(), properties.len()),
-                ("preview_assets".into(), preview_asset_count),
-                ("protein_entries".into(), protein_entries.len()),
-                ("protein_assets".into(), protein_assets.len()),
-                ("protein_rejections".into(), protein_rejections.len()),
-                ("protein_appearances".into(), protein_appearance_count),
-                (
-                    "appearance_bindings_transferred".into(),
-                    appearance_binding_count,
-                ),
-                ("pm_app_default_styles".into(), pm_app_default_styles.len()),
-                (
-                    "pm_app_rendering_styles".into(),
-                    pm_app_rendering_styles.len(),
-                ),
-                ("pm_graphics_faces".into(), pm_graphics_faces.len()),
-                (
-                    "pm_graphics_style_collections".into(),
-                    pm_graphics_style_collections.len(),
-                ),
-                (
-                    "pm_graphics_primary_color_styles".into(),
-                    pm_graphics_primary_color_styles.len(),
-                ),
-                ("face_color_appearances".into(), face_color_appearance_count),
-                (
-                    "presentation_record_issues".into(),
-                    presentation_record_issues.len(),
-                ),
-                ("pm_dc_parameters".into(), design_inventory.parameters.len()),
-                (
-                    "pm_dc_expressions".into(),
-                    design_inventory.expressions.len(),
-                ),
-                ("pm_dc_units".into(), design_inventory.units.len()),
-                (
-                    "design_parameters_transferred".into(),
-                    design_parameter_count,
-                ),
-                ("design_record_issues".into(), design_inventory.issues.len()),
-                ("pm_dc_sketches".into(), sketch_inventory.sketches.len()),
-                (
-                    "pm_dc_sketch_entities".into(),
-                    sketch_inventory.entities.len(),
-                ),
-                ("pm_dc_transforms".into(), sketch_inventory.transforms.len()),
-                ("pm_dc_directions".into(), sketch_inventory.directions.len()),
-                (
-                    "pm_dc_sketch_constraints".into(),
-                    sketch_inventory.constraints.len(),
-                ),
-                ("sketch_record_issues".into(), sketch_inventory.issues.len()),
-                ("pm_dc_features".into(), feature_inventory.features.len()),
-                (
-                    "pm_dc_pattern_features".into(),
-                    feature_inventory.pattern_features.len(),
-                ),
-                (
-                    "pm_dc_feature_terminators".into(),
-                    feature_inventory.terminators.len(),
-                ),
-                (
-                    "pm_dc_feature_properties".into(),
-                    feature_inventory.properties.len(),
-                ),
-                (
-                    "pm_dc_feature_labels".into(),
-                    feature_inventory.labels.len(),
-                ),
-                (
-                    "pm_dc_entity_style_links".into(),
-                    feature_inventory.entity_style_links.len(),
-                ),
-                (
-                    "feature_record_issues".into(),
-                    feature_inventory.issues.len(),
-                ),
-                ("features_transferred".into(), transferred_feature_count),
-                (
-                    "feature_result_topologies_transferred".into(),
-                    transferred_feature_result_count,
-                ),
-                ("sketches_transferred".into(), transferred_sketch_count),
-                (
-                    "sketch_entities_transferred".into(),
-                    transferred_sketch_entity_count,
-                ),
-                (
-                    "sketch_constraints_transferred".into(),
-                    transferred_sketch_constraint_count,
-                ),
-                ("external_references".into(), external_references.len()),
-                ("embedded_references".into(), embedded_references.len()),
-                ("ufrx_model_states".into(), ufrx_model_states.len()),
-                ("ufrx_occurrences".into(), ufrx_occurrences.len()),
-                ("assembly_occurrences".into(), assembly_occurrences.len()),
-                ("assembly_placements".into(), assembly_placements.len()),
-                (
-                    "assembly_occurrences_transferred".into(),
-                    transferred_occurrence_count,
-                ),
-                (
-                    "assembly_record_issues".into(),
-                    assembly_record_issues.len(),
-                ),
-                (
-                    "active_kernel_carriers".into(),
-                    usize::from(matches!(
-                        &container.rse.active_carrier,
-                        ActiveCarrierState::Selected(_)
-                    )),
-                ),
-                ("kernel_unknown_records".into(), kernel_unknown_record_count),
-                (
-                    "kernel_unknown_surface_faces".into(),
-                    kernel_stats.unknown_surface_faces,
-                ),
-            ]),
-            losses,
-            Vec::new(),
-            TransferLedger::default(),
-        ),
+        body,
         source_fidelity,
-    )?)
+    })
 }
 
 fn version_record(version: VersionTuple) -> VersionTupleRecord {
@@ -1829,10 +1830,9 @@ fn apply_kernel_header(
     family: crate::kernel::KernelFamily,
     header: &cadmpeg_asm::kernel_header::KernelHeader,
 ) {
-    let source = ir
-        .source
-        .as_mut()
-        .expect("Inventor source metadata is established before ASM transfer");
+    let Some(source) = ir.source.as_mut() else {
+        return;
+    };
     if let Some(version) = header.save_format_version {
         source
             .attributes

@@ -7,8 +7,9 @@ use crate::native::DocumentFacts;
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_core::target::{find_target, DefaultSource, TargetRefusalKind};
-use cadmpeg_ir::codec::{EncodeInput, TargetRequest};
-use cadmpeg_ir::{CadIr, Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
+use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
@@ -24,8 +25,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit("fcstd:schema-3"),
         )
-        .err()
-        .expect("unsupported target must fail");
+        .expect_err("unsupported target must fail");
     let CodecError::UnsupportedTarget(refusal) = &unsupported else {
         panic!("expected a target refusal, got {unsupported}");
     };
@@ -51,11 +51,11 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     assert!(matches!(
         refusal.kind(),
         TargetRefusalKind::NoDefault {
-            format,
             source: DefaultSource::ForeignFormat(source_format),
             ..
-        } if format == "fcstd" && source_format == "step"
+        } if source_format == "step"
     ));
+    assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         missing_graph.to_string(),
         "fcstd cannot inherit a write target from source format step: this encoder declares no cross-format default; available targets: fcstd:schema-4"
@@ -74,7 +74,7 @@ fn schema_two_archive() -> Vec<u8> {
     )
 }
 
-fn inherit(ir: &CadIr) -> Result<cadmpeg_ir::codec::ExportPlan, CodecError> {
+fn inherit(ir: &CadIr) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
     Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(ir, None),
@@ -240,9 +240,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         .set_arena("document", &[] as &[DocumentFacts])
         .expect("drop the document record");
 
-    let error = inherit(&ir)
-        .err()
-        .expect("a schema-2 source with no baseline is refused");
+    let error = inherit(&ir).expect_err("a schema-2 source with no baseline is refused");
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
@@ -280,9 +278,7 @@ fn inherit_refuses_when_native_document_identity_disagrees_with_source_identity(
         .set_arena("document", &documents)
         .expect("replace document");
 
-    let error = inherit(&ir)
-        .err()
-        .expect("the native declaration cannot deliver schema 4");
+    let error = inherit(&ir).expect_err("the native declaration cannot deliver schema 4");
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("expected a target refusal");
     };
@@ -317,8 +313,7 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit("fcstd:schema-4"),
     )
-    .err()
-    .expect("this writer regenerates no Document.xml");
+    .expect_err("this writer regenerates no Document.xml");
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
@@ -356,9 +351,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         source.attributes,
     ));
 
-    let error = inherit(&ir)
-        .err()
-        .expect("a source with no recorded dialect is refused");
+    let error = inherit(&ir).expect_err("a source with no recorded dialect is refused");
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
@@ -366,7 +359,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     assert_eq!(refusal.requested(), None);
     assert!(matches!(
         refusal.kind(),
-        TargetRefusalKind::UnrecordedSource { .. }
+        TargetRefusalKind::UnrecordedSource
     ));
     assert!(
         refusal

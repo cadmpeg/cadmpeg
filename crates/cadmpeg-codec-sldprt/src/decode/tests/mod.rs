@@ -1,15 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design-loss and geometry-report tests for SLDPRT decode.
 
-fn empty_report(geometry_transferred: bool) -> cadmpeg_ir::report::DecodeReport {
-    cadmpeg_ir::report::DecodeReport::unclassified(
-        "sldprt",
-        cadmpeg_ir::DecodeTransfer::full(geometry_transferred),
-        std::collections::BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    )
+fn empty_report(geometry_transferred: bool) -> cadmpeg_ir::codec::DecodeBody {
+    cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::DecodeTransfer::full(geometry_transferred))
 }
 
 mod admission;

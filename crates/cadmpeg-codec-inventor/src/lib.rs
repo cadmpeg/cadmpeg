@@ -37,7 +37,7 @@ mod validate;
 use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, Finding};
 
@@ -54,11 +54,9 @@ pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
 pub struct InventorCodec;
 
 impl CodecBackend for InventorCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+    const FORMAT: &'static str = dialect::FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix)
         else {
             return Confidence::No;
@@ -78,11 +76,7 @@ impl CodecBackend for InventorCodec {
         Ok(container::InventorContainer::open(ctx, root)?.summary())
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }

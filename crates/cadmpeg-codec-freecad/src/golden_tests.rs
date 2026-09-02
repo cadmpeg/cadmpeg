@@ -16,7 +16,8 @@ use std::path::Path;
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 

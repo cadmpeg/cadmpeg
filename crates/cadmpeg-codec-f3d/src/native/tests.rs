@@ -10,11 +10,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::EncodeInput;
-use cadmpeg_ir::codec::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;

@@ -37,10 +37,8 @@ pub mod fuzz;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, EncoderBackend,
-    EncoderTargetDomain, ExportPlan, ResolvedEncoderTarget,
-};
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeOptions, Decoded};
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ContainerSummary;
@@ -91,13 +89,6 @@ impl IgesVersion {
         V5_3
     );
 
-    pub(crate) fn from_catalog_entry(target: &TargetDescriptor) -> Self {
-        Self::ALL
-            .into_iter()
-            .find(|version| version.descriptor().id == target.id)
-            .expect("IGES target catalog is projected from IgesVersion::ALL")
-    }
-
     /// The typed write-target catalog row for this version.
     #[must_use]
     pub const fn descriptor(self) -> TargetDescriptor {
@@ -133,11 +124,9 @@ pub(crate) fn document_digest(ir: &CadIr) -> String {
 }
 
 impl CodecBackend for IgesCodec {
-    fn id(&self) -> &'static str {
-        dialect::FORMAT
-    }
+    const FORMAT: &'static str = dialect::FORMAT;
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         representation::confidence(prefix)
     }
 
@@ -166,11 +155,7 @@ impl CodecBackend for IgesCodec {
         }
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut source = Cursor::new(root.window());
         let representation = representation::classify(&mut source)?;
         let options = DecodeOptions {
@@ -198,17 +183,15 @@ impl CodecBackend for IgesCodec {
 
 impl EncoderBackend for IgesCodec {
     const FORMAT: &'static str = dialect::FORMAT;
-    const TARGET_DOMAIN: EncoderTargetDomain = EncoderTargetDomain::Catalog(IgesVersion::TARGETS);
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog(IgesVersion::TARGETS);
 
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
-        target: ResolvedEncoderTarget,
-    ) -> Result<ExportPlan, CodecError> {
-        let ResolvedEncoderTarget::Native(resolved) = target else {
-            unreachable!("a catalog encoder receives only native target resolutions")
-        };
-        writer::target::plan(input, &resolved)
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

@@ -2,9 +2,8 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
@@ -15,7 +14,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, DecodeTransfer, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeTransfer, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -2391,7 +2390,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Commits the transaction and produces canonical IR and report state.
-    pub(crate) fn commit(mut self) -> Result<DecodeResult, CodecError> {
+    pub(crate) fn commit(mut self) -> Decoded {
         self.report
             .phase_losses
             .extend(self.scan.metadata.losses.iter().cloned());
@@ -2570,21 +2569,21 @@ impl<'a> DecodeContext<'a> {
             .expect("Rhino source records separate from product identities");
         source_fidelity.retain_unknown_records("rhino", self.opaque_records);
         let primary = crate::container::dialect_match(self.scan);
-        // Charged from the reported admission itself, so the document-level
-        // `AdmittedUnverified` and its loss cannot be reported apart.
+        // Charged from the admission the source records, so the document-level
+        // residual admission and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
-        Ok(DecodeResult::new(
-            self.ir,
-            DecodeReport::classified(
-                cadmpeg_core::dialect::DialectLayers::of(primary),
-                DecodeTransfer::full(self.geometry_transferred),
-                std::collections::BTreeMap::new(),
+        self.ir.source = Some(source_meta(self.scan, primary));
+        Decoded {
+            ir: self.ir,
+            body: DecodeBody {
+                transfer: DecodeTransfer::full(self.geometry_transferred),
+                coverage: std::collections::BTreeMap::new(),
                 losses,
                 notes,
-                cadmpeg_ir::report::TransferLedger::default(),
-            ),
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            },
             source_fidelity,
-        )?)
+        }
     }
 
     fn retain_object_records(&mut self) {
@@ -5473,10 +5472,7 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> SourceProvenance {
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(
-    scan: &Scan<'_>,
-    expand: crate::mesh::MeshExpand<'_>,
-) -> Result<DecodeResult, CodecError> {
+pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> Decoded {
     let mut context = DecodeContext::new(scan, expand);
     context.decode_geometry();
     context.decode_dimensions();
@@ -5554,16 +5550,15 @@ pub(crate) fn with_expand<R>(
 }
 
 #[cfg(test)]
-pub(crate) fn decode_for_test(scan: &Scan<'_>) -> DecodeResult {
+pub(crate) fn decode_for_test(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
     with_expand(scan, |expand| {
-        decode(scan, expand).expect("the Rhino source and report formats agree")
+        cadmpeg_ir::codec::DecodeResult::new(decode(scan, expand), crate::dialect::FORMAT)
     })
 }
 
 fn build_ir(scan: &Scan<'_>) -> CadIr {
     let units = Units::default();
     let mut ir = CadIr::empty(units);
-    ir.source = Some(source_meta(scan));
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters {
             ir.tolerances.linear = linear;
@@ -5573,7 +5568,9 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
     ir
 }
 
-fn source_meta(scan: &Scan<'_>) -> SourceMeta {
+/// The source metadata `commit` records; `primary` is the one author of the
+/// document's identity.
+fn source_meta(scan: &Scan<'_>, primary: cadmpeg_core::dialect::DialectMatch) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
@@ -5685,7 +5682,10 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
             attributes.insert(format!("{prefix}.uuid"), id.to_string());
         }
     }
-    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
+    SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
+        attributes,
+    )
 }
 
 #[cfg(test)]

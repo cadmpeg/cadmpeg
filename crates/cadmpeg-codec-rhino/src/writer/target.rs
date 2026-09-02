@@ -2,8 +2,8 @@
 //! Rhino target resolution and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{EncodeInput, ExportPlan, ResolvedWrite};
-use cadmpeg_ir::{ExportReport, FidelityResolution, WritePath};
+use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite};
+use cadmpeg_ir::WritePath;
 
 use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
@@ -12,21 +12,25 @@ use crate::RhinoArchiveVersion;
 /// [`RhinoArchiveVersion::TARGETS`].
 ///
 /// Archives 1, 2, 3, 4, 5 and 90 decode without a writer, unknown words decode
-/// as admitted-unverified, and 3DM has no retained-image path that could write
-/// any of them back.
+/// as residual, and 3DM has no retained-image path that could write any of
+/// them back.
 const OFF_CATALOG_SOURCE_REASON: &str =
     "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
 
-/// Resolve the request against the source and synthesize the selected archive.
+/// Synthesize the resolved archive version.
+///
+/// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
+/// position; the preserved resolution has no row and is refused here because
+/// 3DM has no replay path.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
-    resolved: &ResolvedWrite,
-) -> Result<ExportPlan, CodecError> {
-    let Some(entry) = resolved.catalog_entry() else {
-        return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
+    target: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
+    let Some(index) = target.index() else {
+        return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
-    let version = RhinoArchiveVersion::from_catalog_entry(entry);
+    let version = RhinoArchiveVersion::ALL[index];
     let mut bytes = Vec::new();
     super::write(input.ir, version, &mut bytes)?;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
@@ -53,8 +57,7 @@ pub(crate) fn plan(
                 || f64::from(normal.z as f32) != normal.z
         });
     let mut losses = Vec::new();
-    let target = version.descriptor().id;
-    if let Some(message) = resolved.displacement_message() {
+    if let Some(message) = target.displacement_message() {
         losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
     }
     if vertex_quantization {
@@ -70,20 +73,15 @@ pub(crate) fn plan(
              so no other target avoids it",
         ));
     }
-    let report = ExportReport::native(
-        target,
-        cadmpeg_ir::EntityCensus {
+    Ok(ExportBody {
+        bytes,
+        census: cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: input.ir.census(),
         },
-        if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        },
-        WritePath::Synthesized,
+        write_path: WritePath::Synthesized,
         losses,
-        vec![format!("3DM archive version {}", version.value())],
-    );
-    Ok(ExportPlan::buffered(report, bytes))
+        notes: vec![format!("3DM archive version {}", version.value())],
+        consumption: Consumption::NotConsumed,
+    })
 }

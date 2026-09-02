@@ -22,8 +22,8 @@
 //! [`DialectMatch::declared`] as evidence and branched on nowhere.
 //!
 //! [`Variant::Unknown`] uses the metadata-IR fallback. Its
-//! [`Admission::AdmittedUnverified`] value names no substituted grammar; no
-//! recognized family grammar is applied.
+//! [`Admission::Residual`] value names no substituted grammar; no recognized
+//! family grammar is applied.
 
 use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
@@ -90,21 +90,21 @@ impl Variant {
 /// losses already say so.
 ///
 /// [`Variant::Unknown`] matches no route at all, so no declared strategy was
-/// applied to it: [`Admission::AdmittedUnverified`].
-pub(crate) fn admission(variant: Variant) -> Admission {
+/// applied to it: [`Admission::Residual`].
+pub(crate) fn matched(variant: Variant) -> DialectMatch {
+    let id = variant.id();
     match variant {
         Variant::StandardNested
         | Variant::FbbOnly
         | Variant::ZeroEntity
         | Variant::FloatPackedInnerNoFbb
         | Variant::E5Stream
-        | Variant::InnerNoDirectory => Admission::Admitted,
-        Variant::Unknown => Admission::AdmittedUnverified { using: None },
+        | Variant::InnerNoDirectory => DialectMatch::admitted(id),
+        Variant::Unknown => DialectMatch::residual(id),
     }
 }
 
-/// The dialect-unverified loss, charged exactly on
-/// [`Admission::AdmittedUnverified`].
+/// The dialect-unverified loss, charged exactly on [`Admission::Residual`].
 ///
 /// `None` exactly when the classified match is [`Admission::Admitted`]. The
 /// loss reads the admission already built by [`classify`] and does not
@@ -116,9 +116,9 @@ pub(crate) fn admission(variant: Variant) -> Admission {
 /// transferred out of an identified layout. This one states that the layout was
 /// never identified.
 pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let Admission::AdmittedUnverified { .. } = matched.admission() else {
+    if !matches!(matched.admission(), Admission::Residual) {
         return None;
-    };
+    }
     Some(CatiaLossCode::SourceDialectUnverified.note(format!(
         "This container matched no CATIA V5 storage family's structural invariants, so it \
          is `{}`. No decode route declares a grammar for that row, and no declared \
@@ -156,12 +156,10 @@ fn declared(scan: &ContainerScan) -> BTreeMap<String, String> {
 /// [`DialectMatch`] in this codec, so a classification bug and the report can
 /// never disagree.
 ///
-/// Identity is [`ContainerScan::variant`], the structural family the scan
-/// resolved; admission is [`admission`]. Neither is computed from the other.
+/// Identity and admission both come from [`ContainerScan::variant`], the
+/// structural family the scan resolved, through [`matched`].
 pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
-    DialectMatch::from_admission(scan.variant.id(), admission(scan.variant))
-        .expect("CATIA dialect admissions use only CATIA grammar ids")
-        .with_declared(declared(scan))
+    matched(scan.variant).with_declared(declared(scan))
 }
 
 #[cfg(test)]

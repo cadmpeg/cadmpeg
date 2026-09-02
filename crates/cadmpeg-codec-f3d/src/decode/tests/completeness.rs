@@ -5,14 +5,13 @@ use super::super::feature_definition_is_incomplete;
 
 #[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
-    let mut report = cadmpeg_ir::report::DecodeReport::unclassified(
-        "f3d",
-        cadmpeg_ir::DecodeTransfer::full(true),
-        std::collections::BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    );
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::DecodeTransfer::full(true),
+        coverage: std::collections::BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+    };
 
     super::super::report_untyped_material_distances(&mut report, 0);
     assert!(report.losses.is_empty());

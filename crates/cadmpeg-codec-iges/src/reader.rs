@@ -6,19 +6,21 @@ use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
 use cadmpeg_ir::hash::{
     document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
 };
-use cadmpeg_ir::report::{
-    DecodeReport, DecodeTransfer, LossNote, Severity, TransferDisposition, TransferLedger,
-};
+use cadmpeg_ir::report::{DecodeTransfer, LossNote, Severity, TransferDisposition, TransferLedger};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn source_meta(global: &global::ResolvedGlobal, representation: Representation) -> SourceMeta {
+fn source_meta(
+    global: &global::ResolvedGlobal,
+    representation: Representation,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("representation".into(), representation.as_str().into());
     attributes.insert(
@@ -38,7 +40,10 @@ fn source_meta(global: &global::ResolvedGlobal, representation: Representation) 
     if let Some(value) = global.native_file_name() {
         attributes.insert("native_file_name".into(), value);
     }
-    SourceMeta::unclassified(crate::dialect::FORMAT, attributes)
+    SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
+        attributes,
+    )
 }
 
 fn occurrence_loss(
@@ -251,7 +256,7 @@ pub(crate) fn decode(
     representation: Representation,
     options: DecodeOptions,
     ctx: &DecodeContext<'_>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let output = usize::try_from(ctx.policy().limits.max_collection_items)
         .ok()
         .map_or(native::MAX_PRODUCT_OCCURRENCES, |policy| {
@@ -281,7 +286,7 @@ fn decode_with_occurrence_limits(
     product_occurrence_output_limit: usize,
     product_occurrence_depth_limit: usize,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
     let length_context = parse.global.length_context();
     let quarantined_parameter_sequences = parse
@@ -317,7 +322,7 @@ fn decode_with_occurrence_limits(
         ir.tolerances.linear = context.minimum_resolution_mm();
     }
     let primary = crate::dialect::classify(representation, &parse.global);
-    ir.source = Some(source_meta(&parse.global, representation));
+    ir.source = Some(source_meta(&parse.global, representation, primary));
     let projection = match length_context.filter(|_| !options.container_only) {
         Some(context) => {
             charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
@@ -538,37 +543,32 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let mut result = DecodeResult::new(
-        ir,
-        DecodeReport::classified(
-            cadmpeg_core::dialect::DialectLayers::of(primary),
-            if options.container_only {
-                DecodeTransfer::ContainerOnly
-            } else {
-                DecodeTransfer::full(geometry_transferred)
-            },
-            std::collections::BTreeMap::new(),
-            losses,
-            notes,
-            transfer_ledger,
-        ),
-        source_fidelity,
-    )?;
     let document_digest = match ctx {
-        Some(ctx) => document_local_sha256_with_charge(
-            result.ir(),
-            "iges",
-            crate::SOURCE_IMAGE_ID,
-            |bytes| ctx.charge_work(bytes, "iges_document_digest"),
-        )?,
-        None => crate::document_digest(result.ir()),
+        Some(ctx) => {
+            document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
+                ctx.charge_work(bytes, "iges_document_digest")
+            })?
+        }
+        None => crate::document_digest(&ir),
     };
-    if let Some(source) = &mut result.ir_mut().source {
+    if let Some(source) = &mut ir.source {
         source
             .attributes
             .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
     }
-    Ok(result)
+    let mut body = DecodeBody::new(if options.container_only {
+        DecodeTransfer::ContainerOnly
+    } else {
+        DecodeTransfer::full(geometry_transferred)
+    });
+    body.losses = losses;
+    body.notes = notes;
+    body.transfer_ledger = transfer_ledger;
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }
 
 /// Fail the decode when the projected IR has any error-severity finding.
@@ -601,7 +601,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
     options: DecodeOptions,
     output_limit: usize,
     depth_limit: usize,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
     decode_with_occurrence_limits(
         bytes,
         bytes,
@@ -611,6 +611,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
         depth_limit,
         None,
     )
+    .map(|decoded| cadmpeg_ir::codec::DecodeResult::new(decoded, crate::dialect::FORMAT))
 }
 
 fn charge_entities(

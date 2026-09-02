@@ -25,7 +25,7 @@ unavailable fields set to `None`.
 `KernelHeader` metadata. Every ACIS save format uses this parser. Majors 217
 and 218 are the bands the record decoders are verified against, which `dialect`
 states: a stream outside them is framed and decoded the same way, and the host
-labels the result `Admission::AdmittedUnverified` and charges its
+labels the result `Admission::Unverified` and charges its
 `source.dialect-unverified` loss.
 
 `BinaryFile4` stores the save-format version, record count, entity count, and

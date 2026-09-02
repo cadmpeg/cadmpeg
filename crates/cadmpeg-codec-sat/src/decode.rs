@@ -9,11 +9,10 @@ use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::{Tolerances, Units};
 use std::collections::BTreeMap;
 
@@ -22,7 +21,7 @@ use crate::dialect::{dialect_loss, layers, terminator_line, StreamEvidence, Text
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
-pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(bytes) {
         StreamKind::AsmBinary => decode_asm_binary(ctx, bytes),
         StreamKind::Text => decode_text(ctx, bytes),
@@ -36,7 +35,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResu
 pub(crate) fn decode_asm_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let header = asm_header::parse(bytes).ok_or_else(|| {
         unsupported_unframed(
             &StreamEvidence::AsmBinary(None),
@@ -73,13 +72,13 @@ pub(crate) fn decode_asm_binary(
     header_attributes(&header, "asm", &mut attributes);
     let evidence = StreamEvidence::AsmBinary(Some(&header));
     let (matched, kernel) = layers(&evidence);
-    build_result(ctx, brep, attributes, &header, None, matched, kernel)
+    build_result(ctx, brep, attributes, &header, None, matched, &kernel)
 }
 
 pub(crate) fn decode_acis_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let header = acis_header::parse(bytes).ok_or_else(|| {
         unsupported_unframed(
             &StreamEvidence::AcisBinary(None),
@@ -116,10 +115,10 @@ pub(crate) fn decode_acis_binary(
     // gates nothing. Build the admitted evidence only after framing succeeds.
     let evidence = StreamEvidence::AcisBinary(Some(&header));
     let (matched, kernel) = layers(&evidence);
-    build_result(ctx, brep, attributes, &header, None, matched, kernel)
+    build_result(ctx, brep, attributes, &header, None, matched, &kernel)
 }
 
-fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     let stream = sat::parse(bytes).map_err(|error| {
         unsupported_unframed(
             &StreamEvidence::Text(None),
@@ -158,7 +157,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         &header,
         Some(dialect),
         matched,
-        kernel,
+        &kernel,
     )
 }
 
@@ -167,17 +166,9 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
 fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String>) -> CodecError {
     let (matched, kernel) = layers(evidence);
     CodecError::UnsupportedDialect {
-        dialects: Box::new(
-            cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
-                .expect("SAT host and ACIS kernel layer keys are distinct"),
-        ),
+        dialects: Box::new(DialectLayers::of(matched).with(kernel)),
         message: message.into(),
     }
-}
-
-/// Builds source metadata from non-dialect stream attributes.
-fn source_meta(attributes: BTreeMap<String, String>) -> SourceMeta {
-    SourceMeta::unclassified(FORMAT, attributes)
 }
 
 fn build_result(
@@ -187,10 +178,15 @@ fn build_result(
     header: &KernelHeader,
     text_dialect: Option<&str>,
     matched: DialectMatch,
-    kernel: DialectMatch,
-) -> Result<DecodeResult, CodecError> {
+    kernel: &DialectMatch,
+) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(source_meta(attributes));
+    // Identity is authored once, here; the sealed wrapper stamps the report
+    // from it.
+    ir.source = Some(SourceMeta::classified(
+        DialectLayers::of(matched).with(kernel.clone()),
+        attributes,
+    ));
     if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
         ir.tolerances = Tolerances { linear, angular };
     }
@@ -206,7 +202,7 @@ fn build_result(
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     let mut losses = Vec::new();
-    losses.extend(dialect_loss(&kernel));
+    losses.extend(dialect_loss(kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{dialect}`.")
@@ -228,15 +224,11 @@ fn build_result(
         "unknown_surface_faces".to_string(),
         stats.unknown_surface_faces,
     );
-    let report = DecodeReport::classified(
-        cadmpeg_core::dialect::DialectLayers::new(matched, vec![kernel])
-            .expect("the ACIS kernel layer differs from the SAT primary"),
-        cadmpeg_ir::DecodeTransfer::full(geometry_transferred),
+    let body = DecodeBody {
         coverage,
         losses,
-        Vec::new(),
-        cadmpeg_ir::report::TransferLedger::default(),
-    );
+        ..DecodeBody::new(cadmpeg_ir::DecodeTransfer::full(geometry_transferred))
+    };
 
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity
@@ -244,7 +236,11 @@ fn build_result(
         .map_err(|error| {
             CodecError::malformed(format_args!("unknown-record retention failed: {error}"))
         })?;
-    Ok(DecodeResult::new(ir, report, source_fidelity)?)
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }
 
 #[cfg(test)]
