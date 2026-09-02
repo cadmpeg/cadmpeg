@@ -189,7 +189,7 @@ impl<E: EncoderBackend> Encoder for E {
                 ExportReport::native(target, census, fidelity, write_path, losses, notes)
             }
         };
-        Ok(ExportPlan::buffered(report, bytes))
+        Ok(ExportPlan { report, bytes })
     }
 }
 
@@ -286,13 +286,6 @@ pub struct ExportPlan {
 }
 
 impl ExportPlan {
-    /// Creates a plan whose bytes have already been materialized.
-    ///
-    /// The plan reports exactly the report it is given, including fidelity.
-    pub fn buffered(report: ExportReport, bytes: Vec<u8>) -> Self {
-        Self { report, bytes }
-    }
-
     /// Returns the complete plan-time export report.
     pub fn report(&self) -> &ExportReport {
         &self.report

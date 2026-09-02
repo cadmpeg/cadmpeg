@@ -1,4 +1,4 @@
-# generated at 35c11cb4f
+# generated at 097e65f3e
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -218,7 +218,6 @@ impl cadmpeg_ir::codec::write::ExportBody
 pub fn cadmpeg_ir::codec::write::ExportBody::synthesized(alloc::vec::Vec<u8>, &cadmpeg_ir::document::CadIr) -> Self
 pub struct cadmpeg_ir::codec::write::ExportPlan
 impl cadmpeg_ir::codec::write::ExportPlan
-pub fn cadmpeg_ir::codec::write::ExportPlan::buffered(cadmpeg_ir::ExportReport, alloc::vec::Vec<u8>) -> Self
 pub fn cadmpeg_ir::codec::write::ExportPlan::report(&self) -> &cadmpeg_ir::ExportReport
 pub fn cadmpeg_ir::codec::write::ExportPlan::write_to(self, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::ExportReport, cadmpeg_core::error::CodecError>
 pub struct cadmpeg_ir::codec::write::ResolvedWrite<'a>
