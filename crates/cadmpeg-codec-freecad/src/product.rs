@@ -530,14 +530,15 @@ pub(crate) fn external_document_reference(
     attribute: Option<&str>,
 ) -> ExternalDocumentReference {
     let is_path = attribute.is_some_and(|name| name.eq_ignore_ascii_case("file"));
-    ExternalDocumentReference {
-        path: is_path.then(|| value.to_owned()),
-        document_id: (!is_path).then(|| value.to_owned()),
-        resolution: if value.is_empty() {
-            ExternalResolution::MissingReference
-        } else {
-            ExternalResolution::Unresolved
-        },
+    let resolution = if value.is_empty() {
+        ExternalResolution::MissingReference
+    } else {
+        ExternalResolution::Unresolved
+    };
+    if is_path {
+        ExternalDocumentReference::path(value, resolution)
+    } else {
+        ExternalDocumentReference::document_id(value, resolution)
     }
 }
 

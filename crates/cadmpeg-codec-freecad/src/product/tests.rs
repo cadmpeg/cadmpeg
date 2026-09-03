@@ -948,8 +948,8 @@ fn transfers_external_product_paths_and_targets() {
     let cadmpeg_ir::PrototypeReference::External { document, object } = &by_path.prototype else {
         panic!("path prototype is external");
     };
-    assert_eq!(document.path.as_deref(), Some("parts/widget.FCStd"));
-    assert_eq!(document.document_id, None);
+    assert_eq!(document.as_path(), Some("parts/widget.FCStd"));
+    assert_eq!(document.as_document_id(), None);
     assert_eq!(object.as_deref(), Some("Body"));
     assert_eq!(
         document.resolution,
@@ -958,18 +958,11 @@ fn transfers_external_product_paths_and_targets() {
 
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-    let mut corrupted = result.ir().clone();
-    let cadmpeg_ir::PrototypeReference::External { document, .. } =
-        &mut corrupted.model.occurrences[0].prototype
-    else {
-        panic!("external prototype");
-    };
-    document.path = Some("also-a-path.FCStd".into());
-    document.document_id = Some("also-an-id".into());
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("invalid occurrence reference")));
+    let mut wire = serde_json::to_value(result.ir()).expect("document wire");
+    let document = &mut wire["model"]["occurrences"][0]["prototype"]["document"];
+    document["path"] = serde_json::json!("also-a-path.FCStd");
+    document["document_id"] = serde_json::json!("also-an-id");
+    assert!(serde_json::from_value::<cadmpeg_ir::CadIr>(wire).is_err());
 }
 
 #[test]

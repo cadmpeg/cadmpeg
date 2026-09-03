@@ -102,9 +102,10 @@ pub use presentation::{
 };
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
-    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChangePolicy,
-    ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
-    Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChangePolicy, ExternalDocument,
+    ExternalDocumentReference, ExternalResolution, JointConnector, JointId, JointKind, JointLimits,
+    JointOperand, JointOperands, Occurrence, OperandContainer, PairedJointKind, ProductDefinition,
+    ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
 pub use provenance::{

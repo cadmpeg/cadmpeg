@@ -1,4 +1,4 @@
-# generated at da64d3cbf
+# generated at 5fc457761
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4215,6 +4215,9 @@ pub cadmpeg_ir::products::CopyOnChangePolicy::Enabled
 pub cadmpeg_ir::products::CopyOnChangePolicy::Native(alloc::string::String)
 pub cadmpeg_ir::products::CopyOnChangePolicy::Owned
 pub cadmpeg_ir::products::CopyOnChangePolicy::Tracking
+pub enum cadmpeg_ir::products::ExternalDocument
+pub cadmpeg_ir::products::ExternalDocument::DocumentId(alloc::string::String)
+pub cadmpeg_ir::products::ExternalDocument::Path(alloc::string::String)
 pub enum cadmpeg_ir::products::ExternalResolution
 pub cadmpeg_ir::products::ExternalResolution::MissingReference
 pub cadmpeg_ir::products::ExternalResolution::Unresolved
@@ -4234,10 +4237,61 @@ pub cadmpeg_ir::products::JointKind::RackPinion
 pub cadmpeg_ir::products::JointKind::Revolute
 pub cadmpeg_ir::products::JointKind::Screw
 pub cadmpeg_ir::products::JointKind::Slider
+impl core::convert::From<cadmpeg_ir::products::PairedJointKind> for cadmpeg_ir::products::JointKind
+pub fn cadmpeg_ir::products::JointKind::from(cadmpeg_ir::products::PairedJointKind) -> Self
+impl core::convert::TryFrom<cadmpeg_ir::products::JointKind> for cadmpeg_ir::products::PairedJointKind
+pub type cadmpeg_ir::products::PairedJointKind::Error = ()
+pub fn cadmpeg_ir::products::PairedJointKind::try_from(cadmpeg_ir::products::JointKind) -> core::result::Result<Self, Self::Error>
+pub enum cadmpeg_ir::products::JointLimits
+pub cadmpeg_ir::products::JointLimits::Both
+pub cadmpeg_ir::products::JointLimits::Both::maximum: f64
+pub cadmpeg_ir::products::JointLimits::Both::minimum: f64
+pub cadmpeg_ir::products::JointLimits::Maximum(f64)
+pub cadmpeg_ir::products::JointLimits::Minimum(f64)
+impl cadmpeg_ir::products::JointLimits
+pub fn cadmpeg_ir::products::JointLimits::maximum(&self) -> core::option::Option<f64>
+pub fn cadmpeg_ir::products::JointLimits::minimum(&self) -> core::option::Option<f64>
+pub fn cadmpeg_ir::products::JointLimits::new(core::option::Option<f64>, core::option::Option<f64>) -> core::option::Option<Self>
+impl serde_core::ser::Serialize for cadmpeg_ir::products::JointLimits
+pub fn cadmpeg_ir::products::JointLimits::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::JointLimits
+pub fn cadmpeg_ir::products::JointLimits::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub enum cadmpeg_ir::products::JointOperands
+pub cadmpeg_ir::products::JointOperands::Grounded
+pub cadmpeg_ir::products::JointOperands::Grounded::connector: cadmpeg_ir::products::JointConnector
+pub cadmpeg_ir::products::JointOperands::Grounded::offset_frame: core::option::Option<cadmpeg_ir::transform::Transform>
+pub cadmpeg_ir::products::JointOperands::Pair
+pub cadmpeg_ir::products::JointOperands::Pair::connectors: [cadmpeg_ir::products::JointConnector; 2]
+pub cadmpeg_ir::products::JointOperands::Pair::kind: cadmpeg_ir::products::PairedJointKind
+pub cadmpeg_ir::products::JointOperands::Pair::offset_frames: core::option::Option<[cadmpeg_ir::transform::Transform; 2]>
 pub enum cadmpeg_ir::products::OccurrenceParent
 pub cadmpeg_ir::products::OccurrenceParent::Occurrence
 pub cadmpeg_ir::products::OccurrenceParent::Occurrence::occurrence: cadmpeg_ir::ids::OccurrenceId
 pub cadmpeg_ir::products::OccurrenceParent::Root
+pub enum cadmpeg_ir::products::OperandContainer
+pub cadmpeg_ir::products::OperandContainer::External(cadmpeg_ir::products::ExternalDocumentReference)
+pub cadmpeg_ir::products::OperandContainer::Occurrence(cadmpeg_ir::ids::OccurrenceId)
+pub cadmpeg_ir::products::OperandContainer::Root
+pub enum cadmpeg_ir::products::PairedJointKind
+pub cadmpeg_ir::products::PairedJointKind::Angle
+pub cadmpeg_ir::products::PairedJointKind::Ball
+pub cadmpeg_ir::products::PairedJointKind::Belt
+pub cadmpeg_ir::products::PairedJointKind::Cylindrical
+pub cadmpeg_ir::products::PairedJointKind::Distance
+pub cadmpeg_ir::products::PairedJointKind::Fixed
+pub cadmpeg_ir::products::PairedJointKind::Gears
+pub cadmpeg_ir::products::PairedJointKind::Native(alloc::string::String)
+pub cadmpeg_ir::products::PairedJointKind::Parallel
+pub cadmpeg_ir::products::PairedJointKind::Perpendicular
+pub cadmpeg_ir::products::PairedJointKind::RackPinion
+pub cadmpeg_ir::products::PairedJointKind::Revolute
+pub cadmpeg_ir::products::PairedJointKind::Screw
+pub cadmpeg_ir::products::PairedJointKind::Slider
+impl core::convert::From<cadmpeg_ir::products::PairedJointKind> for cadmpeg_ir::products::JointKind
+pub fn cadmpeg_ir::products::JointKind::from(cadmpeg_ir::products::PairedJointKind) -> Self
+impl core::convert::TryFrom<cadmpeg_ir::products::JointKind> for cadmpeg_ir::products::PairedJointKind
+pub type cadmpeg_ir::products::PairedJointKind::Error = ()
+pub fn cadmpeg_ir::products::PairedJointKind::try_from(cadmpeg_ir::products::JointKind) -> core::result::Result<Self, Self::Error>
 pub enum cadmpeg_ir::products::ProductDefinitionKind
 pub cadmpeg_ir::products::ProductDefinitionKind::Group
 pub cadmpeg_ir::products::ProductDefinitionKind::LinkGroup
@@ -4261,16 +4315,19 @@ pub cadmpeg_ir::products::AssemblyJoint::angular_limits: core::option::Option<ca
 pub cadmpeg_ir::products::AssemblyJoint::detached: [bool; 2]
 pub cadmpeg_ir::products::AssemblyJoint::distance: core::option::Option<f64>
 pub cadmpeg_ir::products::AssemblyJoint::distance2: core::option::Option<f64>
-pub cadmpeg_ir::products::AssemblyJoint::frames: alloc::vec::Vec<cadmpeg_ir::transform::Transform>
 pub cadmpeg_ir::products::AssemblyJoint::id: cadmpeg_ir::products::JointId
-pub cadmpeg_ir::products::AssemblyJoint::kind: cadmpeg_ir::products::JointKind
 pub cadmpeg_ir::products::AssemblyJoint::linear_limits: core::option::Option<cadmpeg_ir::products::JointLimits>
 pub cadmpeg_ir::products::AssemblyJoint::native_ref: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::products::AssemblyJoint::offset_frames: alloc::vec::Vec<cadmpeg_ir::transform::Transform>
-pub cadmpeg_ir::products::AssemblyJoint::operands: alloc::vec::Vec<cadmpeg_ir::products::JointOperand>
 pub cadmpeg_ir::products::AssemblyJoint::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub cadmpeg_ir::products::AssemblyJoint::suppressed: bool
 pub cadmpeg_ir::products::AssemblyJoint::translation_offset: core::option::Option<[f64; 3]>
+impl cadmpeg_ir::products::AssemblyJoint
+pub fn cadmpeg_ir::products::AssemblyJoint::connectors(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_ir::products::JointConnector>
+pub fn cadmpeg_ir::products::AssemblyJoint::grounded(cadmpeg_ir::products::JointId, cadmpeg_ir::products::JointConnector, core::option::Option<cadmpeg_ir::transform::Transform>) -> Self
+pub fn cadmpeg_ir::products::AssemblyJoint::kind(&self) -> cadmpeg_ir::products::JointKind
+pub fn cadmpeg_ir::products::AssemblyJoint::offset_frames(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_ir::transform::Transform>
+pub fn cadmpeg_ir::products::AssemblyJoint::operands(&self) -> &cadmpeg_ir::products::JointOperands
+pub fn cadmpeg_ir::products::AssemblyJoint::paired(cadmpeg_ir::products::JointId, cadmpeg_ir::products::PairedJointKind, [cadmpeg_ir::products::JointConnector; 2], core::option::Option<[cadmpeg_ir::transform::Transform; 2]>) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::products::AssemblyJoint
 pub fn cadmpeg_ir::products::AssemblyJoint::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::products::AssemblyJoint::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -4278,19 +4335,38 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::products::AssemblyJoint
 pub const cadmpeg_ir::products::AssemblyJoint::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::products::AssemblyJoint::identity(&self) -> &str
 pub fn cadmpeg_ir::products::AssemblyJoint::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
+impl serde_core::ser::Serialize for cadmpeg_ir::products::AssemblyJoint
+pub fn cadmpeg_ir::products::AssemblyJoint::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::AssemblyJoint
+pub fn cadmpeg_ir::products::AssemblyJoint::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::products::ExternalDocumentReference
-pub cadmpeg_ir::products::ExternalDocumentReference::document_id: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::products::ExternalDocumentReference::path: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::products::ExternalDocumentReference::document: cadmpeg_ir::products::ExternalDocument
 pub cadmpeg_ir::products::ExternalDocumentReference::resolution: cadmpeg_ir::products::ExternalResolution
+impl cadmpeg_ir::products::ExternalDocumentReference
+pub fn cadmpeg_ir::products::ExternalDocumentReference::as_document_id(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::products::ExternalDocumentReference::as_path(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::products::ExternalDocumentReference::document_id(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::products::ExternalResolution) -> Self
+pub fn cadmpeg_ir::products::ExternalDocumentReference::path(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::products::ExternalResolution) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::products::ExternalDocumentReference
+pub fn cadmpeg_ir::products::ExternalDocumentReference::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::ExternalDocumentReference
+pub fn cadmpeg_ir::products::ExternalDocumentReference::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub struct cadmpeg_ir::products::JointConnector
+pub cadmpeg_ir::products::JointConnector::frame: cadmpeg_ir::transform::Transform
+pub cadmpeg_ir::products::JointConnector::operand: cadmpeg_ir::products::JointOperand
 pub struct cadmpeg_ir::products::JointId(pub alloc::string::String)
-pub struct cadmpeg_ir::products::JointLimits
-pub cadmpeg_ir::products::JointLimits::maximum: core::option::Option<f64>
-pub cadmpeg_ir::products::JointLimits::minimum: core::option::Option<f64>
 pub struct cadmpeg_ir::products::JointOperand
-pub cadmpeg_ir::products::JointOperand::external_document: core::option::Option<cadmpeg_ir::products::ExternalDocumentReference>
-pub cadmpeg_ir::products::JointOperand::object: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::products::JointOperand::occurrence: core::option::Option<cadmpeg_ir::ids::OccurrenceId>
+pub cadmpeg_ir::products::JointOperand::container: cadmpeg_ir::products::OperandContainer
+pub cadmpeg_ir::products::JointOperand::object: alloc::string::String
 pub cadmpeg_ir::products::JointOperand::subelements: alloc::vec::Vec<alloc::string::String>
+impl cadmpeg_ir::products::JointOperand
+pub fn cadmpeg_ir::products::JointOperand::external(cadmpeg_ir::products::ExternalDocumentReference, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::products::JointOperand::occurrence(cadmpeg_ir::ids::OccurrenceId, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::products::JointOperand::root(impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::products::JointOperand
+pub fn cadmpeg_ir::products::JointOperand::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::JointOperand
+pub fn cadmpeg_ir::products::JointOperand::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::products::Occurrence
 pub cadmpeg_ir::products::Occurrence::claim_child: core::option::Option<bool>
 pub cadmpeg_ir::products::Occurrence::copy_on_change: core::option::Option<cadmpeg_ir::products::CopyOnChangePolicy>
@@ -6068,6 +6144,9 @@ pub cadmpeg_ir::Exactness::ByteExact
 pub cadmpeg_ir::Exactness::Derived
 pub cadmpeg_ir::Exactness::Inferred
 pub cadmpeg_ir::Exactness::Unknown
+pub enum cadmpeg_ir::ExternalDocument
+pub cadmpeg_ir::ExternalDocument::DocumentId(alloc::string::String)
+pub cadmpeg_ir::ExternalDocument::Path(alloc::string::String)
 pub enum cadmpeg_ir::ExternalResolution
 pub cadmpeg_ir::ExternalResolution::MissingReference
 pub cadmpeg_ir::ExternalResolution::Unresolved
@@ -6578,6 +6657,33 @@ pub cadmpeg_ir::JointKind::RackPinion
 pub cadmpeg_ir::JointKind::Revolute
 pub cadmpeg_ir::JointKind::Screw
 pub cadmpeg_ir::JointKind::Slider
+impl core::convert::From<cadmpeg_ir::products::PairedJointKind> for cadmpeg_ir::products::JointKind
+pub fn cadmpeg_ir::products::JointKind::from(cadmpeg_ir::products::PairedJointKind) -> Self
+impl core::convert::TryFrom<cadmpeg_ir::products::JointKind> for cadmpeg_ir::products::PairedJointKind
+pub type cadmpeg_ir::products::PairedJointKind::Error = ()
+pub fn cadmpeg_ir::products::PairedJointKind::try_from(cadmpeg_ir::products::JointKind) -> core::result::Result<Self, Self::Error>
+pub enum cadmpeg_ir::JointLimits
+pub cadmpeg_ir::JointLimits::Both
+pub cadmpeg_ir::JointLimits::Both::maximum: f64
+pub cadmpeg_ir::JointLimits::Both::minimum: f64
+pub cadmpeg_ir::JointLimits::Maximum(f64)
+pub cadmpeg_ir::JointLimits::Minimum(f64)
+impl cadmpeg_ir::products::JointLimits
+pub fn cadmpeg_ir::products::JointLimits::maximum(&self) -> core::option::Option<f64>
+pub fn cadmpeg_ir::products::JointLimits::minimum(&self) -> core::option::Option<f64>
+pub fn cadmpeg_ir::products::JointLimits::new(core::option::Option<f64>, core::option::Option<f64>) -> core::option::Option<Self>
+impl serde_core::ser::Serialize for cadmpeg_ir::products::JointLimits
+pub fn cadmpeg_ir::products::JointLimits::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::JointLimits
+pub fn cadmpeg_ir::products::JointLimits::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub enum cadmpeg_ir::JointOperands
+pub cadmpeg_ir::JointOperands::Grounded
+pub cadmpeg_ir::JointOperands::Grounded::connector: cadmpeg_ir::products::JointConnector
+pub cadmpeg_ir::JointOperands::Grounded::offset_frame: core::option::Option<cadmpeg_ir::transform::Transform>
+pub cadmpeg_ir::JointOperands::Pair
+pub cadmpeg_ir::JointOperands::Pair::connectors: [cadmpeg_ir::products::JointConnector; 2]
+pub cadmpeg_ir::JointOperands::Pair::kind: cadmpeg_ir::products::PairedJointKind
+pub cadmpeg_ir::JointOperands::Pair::offset_frames: core::option::Option<[cadmpeg_ir::transform::Transform; 2]>
 pub enum cadmpeg_ir::LossCategory
 pub cadmpeg_ir::LossCategory::Attribute
 pub cadmpeg_ir::LossCategory::DesignIntent
@@ -6651,6 +6757,30 @@ pub cadmpeg_ir::NativeConvertError::Serde(serde_json::error::Error)
 pub cadmpeg_ir::NativeConvertError::UnsupportedVersion(cadmpeg_ir::native::catalogue::NativeVersionError)
 impl core::convert::From<cadmpeg_ir::native::NativeConvertError> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_ir::native::NativeConvertError) -> Self
+pub enum cadmpeg_ir::OperandContainer
+pub cadmpeg_ir::OperandContainer::External(cadmpeg_ir::products::ExternalDocumentReference)
+pub cadmpeg_ir::OperandContainer::Occurrence(cadmpeg_ir::ids::OccurrenceId)
+pub cadmpeg_ir::OperandContainer::Root
+pub enum cadmpeg_ir::PairedJointKind
+pub cadmpeg_ir::PairedJointKind::Angle
+pub cadmpeg_ir::PairedJointKind::Ball
+pub cadmpeg_ir::PairedJointKind::Belt
+pub cadmpeg_ir::PairedJointKind::Cylindrical
+pub cadmpeg_ir::PairedJointKind::Distance
+pub cadmpeg_ir::PairedJointKind::Fixed
+pub cadmpeg_ir::PairedJointKind::Gears
+pub cadmpeg_ir::PairedJointKind::Native(alloc::string::String)
+pub cadmpeg_ir::PairedJointKind::Parallel
+pub cadmpeg_ir::PairedJointKind::Perpendicular
+pub cadmpeg_ir::PairedJointKind::RackPinion
+pub cadmpeg_ir::PairedJointKind::Revolute
+pub cadmpeg_ir::PairedJointKind::Screw
+pub cadmpeg_ir::PairedJointKind::Slider
+impl core::convert::From<cadmpeg_ir::products::PairedJointKind> for cadmpeg_ir::products::JointKind
+pub fn cadmpeg_ir::products::JointKind::from(cadmpeg_ir::products::PairedJointKind) -> Self
+impl core::convert::TryFrom<cadmpeg_ir::products::JointKind> for cadmpeg_ir::products::PairedJointKind
+pub type cadmpeg_ir::products::PairedJointKind::Error = ()
+pub fn cadmpeg_ir::products::PairedJointKind::try_from(cadmpeg_ir::products::JointKind) -> core::result::Result<Self, Self::Error>
 pub enum cadmpeg_ir::ParameterValue
 pub cadmpeg_ir::ParameterValue::Angle(cadmpeg_ir::features::Angle)
 pub cadmpeg_ir::ParameterValue::Boolean(bool)
@@ -7172,16 +7302,19 @@ pub cadmpeg_ir::AssemblyJoint::angular_limits: core::option::Option<cadmpeg_ir::
 pub cadmpeg_ir::AssemblyJoint::detached: [bool; 2]
 pub cadmpeg_ir::AssemblyJoint::distance: core::option::Option<f64>
 pub cadmpeg_ir::AssemblyJoint::distance2: core::option::Option<f64>
-pub cadmpeg_ir::AssemblyJoint::frames: alloc::vec::Vec<cadmpeg_ir::transform::Transform>
 pub cadmpeg_ir::AssemblyJoint::id: cadmpeg_ir::products::JointId
-pub cadmpeg_ir::AssemblyJoint::kind: cadmpeg_ir::products::JointKind
 pub cadmpeg_ir::AssemblyJoint::linear_limits: core::option::Option<cadmpeg_ir::products::JointLimits>
 pub cadmpeg_ir::AssemblyJoint::native_ref: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::AssemblyJoint::offset_frames: alloc::vec::Vec<cadmpeg_ir::transform::Transform>
-pub cadmpeg_ir::AssemblyJoint::operands: alloc::vec::Vec<cadmpeg_ir::products::JointOperand>
 pub cadmpeg_ir::AssemblyJoint::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub cadmpeg_ir::AssemblyJoint::suppressed: bool
 pub cadmpeg_ir::AssemblyJoint::translation_offset: core::option::Option<[f64; 3]>
+impl cadmpeg_ir::products::AssemblyJoint
+pub fn cadmpeg_ir::products::AssemblyJoint::connectors(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_ir::products::JointConnector>
+pub fn cadmpeg_ir::products::AssemblyJoint::grounded(cadmpeg_ir::products::JointId, cadmpeg_ir::products::JointConnector, core::option::Option<cadmpeg_ir::transform::Transform>) -> Self
+pub fn cadmpeg_ir::products::AssemblyJoint::kind(&self) -> cadmpeg_ir::products::JointKind
+pub fn cadmpeg_ir::products::AssemblyJoint::offset_frames(&self) -> impl core::iter::traits::iterator::Iterator<Item = &cadmpeg_ir::transform::Transform>
+pub fn cadmpeg_ir::products::AssemblyJoint::operands(&self) -> &cadmpeg_ir::products::JointOperands
+pub fn cadmpeg_ir::products::AssemblyJoint::paired(cadmpeg_ir::products::JointId, cadmpeg_ir::products::PairedJointKind, [cadmpeg_ir::products::JointConnector; 2], core::option::Option<[cadmpeg_ir::transform::Transform; 2]>) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::products::AssemblyJoint
 pub fn cadmpeg_ir::products::AssemblyJoint::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::products::AssemblyJoint::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -7189,6 +7322,10 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::products::AssemblyJoint
 pub const cadmpeg_ir::products::AssemblyJoint::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::products::AssemblyJoint::identity(&self) -> &str
 pub fn cadmpeg_ir::products::AssemblyJoint::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
+impl serde_core::ser::Serialize for cadmpeg_ir::products::AssemblyJoint
+pub fn cadmpeg_ir::products::AssemblyJoint::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::AssemblyJoint
+pub fn cadmpeg_ir::products::AssemblyJoint::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::AttributeChange
 pub cadmpeg_ir::AttributeChange::key: alloc::string::String
 pub cadmpeg_ir::AttributeChange::left: core::option::Option<alloc::string::String>
@@ -7369,9 +7506,17 @@ pub fn cadmpeg_ir::ExportReport::serialize<S: serde_core::ser::Serializer>(&self
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::ExportReport
 pub fn cadmpeg_ir::ExportReport::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::ExternalDocumentReference
-pub cadmpeg_ir::ExternalDocumentReference::document_id: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::ExternalDocumentReference::path: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::ExternalDocumentReference::document: cadmpeg_ir::products::ExternalDocument
 pub cadmpeg_ir::ExternalDocumentReference::resolution: cadmpeg_ir::products::ExternalResolution
+impl cadmpeg_ir::products::ExternalDocumentReference
+pub fn cadmpeg_ir::products::ExternalDocumentReference::as_document_id(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::products::ExternalDocumentReference::as_path(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::products::ExternalDocumentReference::document_id(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::products::ExternalResolution) -> Self
+pub fn cadmpeg_ir::products::ExternalDocumentReference::path(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::products::ExternalResolution) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::products::ExternalDocumentReference
+pub fn cadmpeg_ir::products::ExternalDocumentReference::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::ExternalDocumentReference
+pub fn cadmpeg_ir::products::ExternalDocumentReference::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::Feature
 pub cadmpeg_ir::Feature::definition: cadmpeg_ir::features::FeatureDefinition
 pub cadmpeg_ir::Feature::dependencies: alloc::vec::Vec<cadmpeg_ir::features::FeatureId>
@@ -7414,15 +7559,22 @@ pub cadmpeg_ir::IrDiff::tolerance_change: core::option::Option<(cadmpeg_ir::unit
 pub cadmpeg_ir::IrDiff::unit_change: core::option::Option<(cadmpeg_ir::units::Units, cadmpeg_ir::units::Units)>
 impl cadmpeg_ir::diff::IrDiff
 pub fn cadmpeg_ir::diff::IrDiff::is_empty(&self) -> bool
+pub struct cadmpeg_ir::JointConnector
+pub cadmpeg_ir::JointConnector::frame: cadmpeg_ir::transform::Transform
+pub cadmpeg_ir::JointConnector::operand: cadmpeg_ir::products::JointOperand
 pub struct cadmpeg_ir::JointId(pub alloc::string::String)
-pub struct cadmpeg_ir::JointLimits
-pub cadmpeg_ir::JointLimits::maximum: core::option::Option<f64>
-pub cadmpeg_ir::JointLimits::minimum: core::option::Option<f64>
 pub struct cadmpeg_ir::JointOperand
-pub cadmpeg_ir::JointOperand::external_document: core::option::Option<cadmpeg_ir::products::ExternalDocumentReference>
-pub cadmpeg_ir::JointOperand::object: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::JointOperand::occurrence: core::option::Option<cadmpeg_ir::ids::OccurrenceId>
+pub cadmpeg_ir::JointOperand::container: cadmpeg_ir::products::OperandContainer
+pub cadmpeg_ir::JointOperand::object: alloc::string::String
 pub cadmpeg_ir::JointOperand::subelements: alloc::vec::Vec<alloc::string::String>
+impl cadmpeg_ir::products::JointOperand
+pub fn cadmpeg_ir::products::JointOperand::external(cadmpeg_ir::products::ExternalDocumentReference, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::products::JointOperand::occurrence(cadmpeg_ir::ids::OccurrenceId, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::products::JointOperand::root(impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::products::JointOperand
+pub fn cadmpeg_ir::products::JointOperand::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::products::JointOperand
+pub fn cadmpeg_ir::products::JointOperand::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
 pub struct cadmpeg_ir::LossCount
 pub cadmpeg_ir::LossCount::count: usize
 pub cadmpeg_ir::LossCount::format: alloc::string::String

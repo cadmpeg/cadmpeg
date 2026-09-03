@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
-    AssemblyJoint, JointId, JointKind, JointLimits, JointOperand, Occurrence,
+    AssemblyJoint, JointConnector, JointId, JointKind, JointLimits, JointOperand, Occurrence,
+    PairedJointKind,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -154,7 +155,7 @@ pub(crate) fn transfer_neutral(
         .collect::<HashMap<_, _>>();
     records
         .iter()
-        .map(|record| {
+        .filter_map(|record| {
             let bool_value = |name: &str| {
                 record
                     .parameters
@@ -179,78 +180,116 @@ pub(crate) fn transfer_neutral(
                         .then(|| scalar(maximum))
                         .flatten()
                         .map(|value: f64| value * scale);
-                    (minimum.is_some() || maximum.is_some())
-                        .then_some(JointLimits { minimum, maximum })
+                    JointLimits::new(minimum, maximum)
                 };
-            AssemblyJoint {
-                id: JointId(crate::native::model_id(
-                    "joint",
-                    &record.object,
-                    "constraint",
-                )),
-                kind: joint_kind(&record.kind),
-                operands: record
-                    .references
-                    .iter()
-                    .map(|reference| JointOperand {
-                        occurrence: reference
-                            .object
-                            .as_deref()
-                            .and_then(|object| occurrence_by_native.get(object).copied())
-                            .cloned(),
-                        external_document: reference.document.as_deref().map(|document| {
+            let operands = record
+                .references
+                .iter()
+                .map(|reference| {
+                    let object = reference.object.clone()?;
+                    let subelements = reference
+                        .subelements
+                        .iter()
+                        .filter(|subelement| !subelement.is_empty())
+                        .cloned()
+                        .collect();
+                    if let Some(document) = reference.document.as_deref() {
+                        return Some(JointOperand::external(
                             crate::product::external_document_reference(
                                 document,
                                 reference.document_attribute.as_deref(),
-                            )
-                        }),
-                        object: reference.object.clone(),
-                        subelements: reference
-                            .subelements
-                            .iter()
-                            .filter(|subelement| !subelement.is_empty())
-                            .cloned()
-                            .collect(),
-                    })
-                    .collect(),
-                frames: record
-                    .placements
-                    .iter()
-                    .copied()
-                    .map(|rows| Transform { rows })
-                    .collect(),
-                offset_frames: record
-                    .offsets
-                    .iter()
-                    .copied()
-                    .map(|rows| Transform { rows })
-                    .collect(),
-                suppressed: bool_value("Suppressed").unwrap_or(false),
-                detached: [
-                    bool_value("Detach1").unwrap_or(false),
-                    bool_value("Detach2").unwrap_or(false),
-                ],
-                angle: scalar("Angle").map(f64::to_radians),
-                translation_offset: None,
-                distance: scalar("Distance"),
-                distance2: scalar("Distance2"),
-                angular_limits: enabled_limits(
-                    "AngleMin",
-                    "AngleMax",
-                    "EnableAngleMin",
-                    "EnableAngleMax",
-                    std::f64::consts::PI / 180.0,
-                ),
-                linear_limits: enabled_limits(
-                    "LengthMin",
-                    "LengthMax",
-                    "EnableLengthMin",
-                    "EnableLengthMax",
-                    1.0,
-                ),
-                properties: record.parameters.clone(),
-                native_ref: Some(record.id.clone()),
-            }
+                            ),
+                            object,
+                            subelements,
+                        ));
+                    }
+                    Some(
+                        match occurrence_by_native.get(object.as_str()).copied().cloned() {
+                            Some(occurrence) => {
+                                JointOperand::occurrence(occurrence, object, subelements)
+                            }
+                            None => JointOperand::root(object, subelements),
+                        },
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let frames = record
+                .placements
+                .iter()
+                .copied()
+                .map(|rows| Transform { rows })
+                .collect::<Vec<_>>();
+            let offsets = record
+                .offsets
+                .iter()
+                .copied()
+                .map(|rows| Transform { rows })
+                .collect::<Vec<_>>();
+            let id = JointId(crate::native::model_id(
+                "joint",
+                &record.object,
+                "constraint",
+            ));
+            let kind = joint_kind(&record.kind);
+            let mut joint = if kind == JointKind::Grounded {
+                let [operand] = operands.try_into().ok()?;
+                let [frame] = frames.try_into().ok()?;
+                let offset_frame = match offsets.as_slice() {
+                    [] => None,
+                    [offset] => Some(*offset),
+                    _ => return None,
+                };
+                AssemblyJoint::grounded(id, JointConnector { operand, frame }, offset_frame)
+            } else {
+                let kind = PairedJointKind::try_from(kind).ok()?;
+                let [first_operand, second_operand] = operands.try_into().ok()?;
+                let [first_frame, second_frame] = frames.try_into().ok()?;
+                let offset_frames = if offsets.is_empty() {
+                    None
+                } else {
+                    Some(<Vec<Transform> as TryInto<[Transform; 2]>>::try_into(offsets).ok()?)
+                };
+                AssemblyJoint::paired(
+                    id,
+                    kind,
+                    [
+                        JointConnector {
+                            operand: first_operand,
+                            frame: first_frame,
+                        },
+                        JointConnector {
+                            operand: second_operand,
+                            frame: second_frame,
+                        },
+                    ],
+                    offset_frames,
+                )
+            };
+            joint.suppressed = bool_value("Suppressed").unwrap_or(false);
+            joint.detached = [
+                bool_value("Detach1").unwrap_or(false),
+                bool_value("Detach2").unwrap_or(false),
+            ];
+            joint.angle = scalar("Angle").map(f64::to_radians);
+            joint.distance = scalar("Distance");
+            joint.distance2 = scalar("Distance2");
+            joint.angular_limits = enabled_limits(
+                "AngleMin",
+                "AngleMax",
+                "EnableAngleMin",
+                "EnableAngleMax",
+                std::f64::consts::PI / 180.0,
+            );
+            joint.linear_limits = enabled_limits(
+                "LengthMin",
+                "LengthMax",
+                "EnableLengthMin",
+                "EnableLengthMax",
+                1.0,
+            );
+            joint.properties = record.parameters.clone();
+            joint.native_ref = Some(record.id.clone());
+            Some(joint)
         })
         .collect()
 }
@@ -549,6 +588,8 @@ pub(crate) mod tests {
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
 
+    const EPS_JOINT_SCALAR: f64 = 1.0e-12;
+
     #[test]
     fn every_primary_joint_family_has_a_neutral_variant() {
         for family in [
@@ -631,46 +672,46 @@ pub(crate) mod tests {
         );
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert_eq!(joint.kind, cadmpeg_ir::JointKind::Revolute);
-        assert_eq!(joint.operands.len(), 2);
-        assert!(joint
-            .operands
-            .iter()
-            .all(|operand| operand.occurrence.is_some()));
-        assert_eq!(joint.frames[1].rows[0][3], 2.0);
-        assert_eq!(joint.offset_frames.len(), 2);
-        assert_eq!(joint.offset_frames[0].rows[0][3], 0.5);
-        assert_eq!(joint.offset_frames[1].rows[0][3], 1.5);
+        assert_eq!(joint.kind(), cadmpeg_ir::JointKind::Revolute);
+        let connectors = joint.connectors().collect::<Vec<_>>();
+        assert_eq!(connectors.len(), 2);
+        assert!(connectors.iter().all(|connector| matches!(
+            connector.operand.container,
+            cadmpeg_ir::OperandContainer::Occurrence(_)
+        )));
+        assert_eq!(connectors[1].frame.rows[0][3], 2.0);
+        let offset_frames = joint.offset_frames().collect::<Vec<_>>();
+        assert_eq!(offset_frames.len(), 2);
+        assert_eq!(offset_frames[0].rows[0][3], 0.5);
+        assert_eq!(offset_frames[1].rows[0][3], 1.5);
         assert!(joint.suppressed);
         assert_eq!(joint.detached, [true, false]);
-        assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1.0e-12);
+        assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
         let limits = joint.angular_limits.as_ref().expect("angular limits");
-        assert!((limits.minimum.expect("minimum") - (-30_f64).to_radians()).abs() < 1.0e-12);
-        assert!((limits.maximum.expect("maximum") - 45_f64.to_radians()).abs() < 1.0e-12);
+        assert!(
+            (limits.minimum().expect("minimum") - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR
+        );
+        assert!(
+            (limits.maximum().expect("maximum") - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR
+        );
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut corrupted = result.ir().clone();
-        let limits = corrupted.model.assembly_joints[0]
-            .angular_limits
-            .as_mut()
-            .expect("limits");
-        limits.minimum = Some(2.0);
-        limits.maximum = Some(1.0);
+        corrupted.model.assembly_joints[0].angular_limits = Some(cadmpeg_ir::JointLimits::Both {
+            minimum: 2.0,
+            maximum: 1.0,
+        });
         assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
             .findings
             .iter()
             .any(|finding| finding.message.contains("invalid assembly joint")));
-        let mut corrupted = result.ir().clone();
-        corrupted.model.assembly_joints[0].operands[0].external_document =
-            Some(cadmpeg_ir::ExternalDocumentReference {
-                path: Some("external.FCStd".into()),
-                document_id: None,
-                resolution: cadmpeg_ir::ExternalResolution::Unresolved,
-            });
-        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message.contains("invalid assembly joint operands")));
+        let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
+            .expect("assembly joint wire");
+        wire["operands"][0]["external_document"] = serde_json::json!({
+            "path": "external.FCStd",
+            "resolution": "unresolved"
+        });
+        assert!(serde_json::from_value::<cadmpeg_ir::AssemblyJoint>(wire).is_err());
     }
 
     #[test]
@@ -695,13 +736,16 @@ pub(crate) mod tests {
             .expect("grounded assembly object");
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert_eq!(joint.kind, cadmpeg_ir::JointKind::Grounded);
-        assert_eq!(joint.operands.len(), 1);
-        assert!(joint.operands[0].occurrence.is_some());
-        assert_eq!(joint.frames.len(), 1);
-        assert_eq!(joint.frames[0].rows[0][3], 7.0);
-        assert_eq!(joint.frames[0].rows[1][3], 8.0);
-        assert_eq!(joint.frames[0].rows[2][3], 9.0);
+        assert_eq!(joint.kind(), cadmpeg_ir::JointKind::Grounded);
+        let connectors = joint.connectors().collect::<Vec<_>>();
+        assert_eq!(connectors.len(), 1);
+        assert!(matches!(
+            connectors[0].operand.container,
+            cadmpeg_ir::OperandContainer::Occurrence(_)
+        ));
+        assert_eq!(connectors[0].frame.rows[0][3], 7.0);
+        assert_eq!(connectors[0].frame.rows[1][3], 8.0);
+        assert_eq!(connectors[0].frame.rows[2][3], 9.0);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
