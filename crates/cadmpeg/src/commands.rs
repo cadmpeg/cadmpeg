@@ -498,9 +498,7 @@ pub fn convert(
             print_decode_report(&mut stderr, report)?;
             writeln!(stderr)?;
         }
-        if let Some(validation) = &prepared.validation {
-            print_check_report(&mut stderr, validation)?;
-        }
+        print_check_report(&mut stderr, &prepared.validation)?;
         (
             prepared.document.decode_report().cloned(),
             prepared.validation.clone(),
@@ -515,7 +513,7 @@ pub fn convert(
         "convert",
         CommandReportBody {
             decode_report: decode_report.as_ref(),
-            check_report: validation.as_ref(),
+            check_report: Some(&validation),
             export: Some(&emission.report),
             refusal: None,
         },

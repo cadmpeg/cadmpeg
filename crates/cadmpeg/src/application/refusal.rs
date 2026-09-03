@@ -270,7 +270,7 @@ pub enum ConversionRefusal {
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
-        validation: Option<ValidationReport>,
+        validation: ValidationReport,
         /// Export report computed by encoder planning before rejection.
         export_report: ExportReport,
     },
@@ -281,7 +281,7 @@ pub enum ConversionRefusal {
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
-        validation: Option<ValidationReport>,
+        validation: ValidationReport,
     },
     /// The command-line target cannot select a writable output format.
     UnsupportedOutputFormat {
@@ -295,7 +295,7 @@ pub enum ConversionRefusal {
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
-        validation: Option<ValidationReport>,
+        validation: ValidationReport,
     },
     /// Binary container would write to stdout without an override.
     BinaryStdoutRejected {
@@ -438,7 +438,7 @@ impl ConversionRefusal {
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
-                    check: validation.as_ref(),
+                    check: Some(validation),
                     export: Some(export_report),
                 },
             },
@@ -452,7 +452,7 @@ impl ConversionRefusal {
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
-                    check: validation.as_ref(),
+                    check: Some(validation),
                     export: None,
                 },
             },
@@ -472,7 +472,7 @@ impl ConversionRefusal {
                 detail: Some(RefusalDetail::Target(refusal)),
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
-                    check: validation.as_ref(),
+                    check: Some(validation),
                     export: None,
                 },
             },
@@ -587,7 +587,11 @@ mod tests {
                 IGES_CATALOG,
             )),
             decode_report: None,
-            validation: None,
+            validation: ValidationReport {
+                entity_counts: BTreeMap::new(),
+                findings: Vec::new(),
+                losses: Vec::new(),
+            },
         };
         assert_eq!(refusal.code(), RefusalCode::UnsupportedTarget);
         assert_eq!(report_value(&refusal)["stage"], "plan");

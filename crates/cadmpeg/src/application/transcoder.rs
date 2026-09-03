@@ -311,7 +311,7 @@ pub struct PreparedConversion {
     /// Loaded source document.
     pub document: LoadedDocument,
     /// Validation report.
-    pub validation: Option<ValidationReport>,
+    pub validation: ValidationReport,
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
     destination: ResolvedDestination,
@@ -359,26 +359,23 @@ impl<'a> Transcoder<'a> {
             return Err(refusal.into());
         }
 
-        let validation = {
-            let validation = validate_ir(
-                self.validators,
-                &loaded.ir,
-                loaded.fidelity(),
-                losses(decode_report.as_ref()),
-            );
-            if !validation.is_ok() && !policy.admission.admits_errors() {
-                return Err(ConversionRefusal::CheckFailed {
-                    message: format!(
-                        "check found {} error(s); refusing to export (use --allow-errors to override)",
-                        validation.error_count()
-                    ),
-                    decode_report,
-                    validation,
-                }
-                .into());
+        let validation = validate_ir(
+            self.validators,
+            &loaded.ir,
+            loaded.fidelity(),
+            losses(decode_report.as_ref()),
+        );
+        if !validation.is_ok() && !policy.admission.admits_errors() {
+            return Err(ConversionRefusal::CheckFailed {
+                message: format!(
+                    "check found {} error(s); refusing to export (use --allow-errors to override)",
+                    validation.error_count()
+                ),
+                decode_report,
+                validation,
             }
-            Some(validation)
-        };
+            .into());
+        }
 
         if format.transfers_geometry()
             && decode_report
@@ -505,7 +502,7 @@ pub(crate) enum EmittedArtifact {
 fn plan_refusal(
     error: cadmpeg_core::CodecError,
     decode_report: Option<DecodeReport>,
-    validation: Option<ValidationReport>,
+    validation: ValidationReport,
 ) -> ApplicationError {
     match error {
         cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
