@@ -69,7 +69,7 @@ pub(crate) fn neutral_model_is_admissible(
     ir.model.finalize();
     cadmpeg_ir::admit_with_additional_native_identities(
         ir,
-        pending_unknowns.iter().map(|record| record.id.as_str()),
+        pending_unknowns.iter().map(|record| record.id().as_str()),
         cadmpeg_ir::CATIA_ADMISSION_CHECKS,
         Vec::new(),
     )
@@ -572,14 +572,7 @@ pub(crate) fn build_metadata_fallback(
             scan.variant.id().to_string(),
             Exactness::Unknown,
         );
-        unknowns.push(UnknownRecord {
-            id,
-            offset: 0,
-            byte_len: brep.len() as u64,
-            sha256: sha256_hex(brep),
-            data: Some(brep.clone()),
-            links: Vec::new(),
-        });
+        unknowns.push(UnknownRecord::retained(id, 0, brep.clone(), Vec::new()));
     }
     (ir, annotations.build(), unknowns)
 }
@@ -605,14 +598,7 @@ pub(crate) fn preserve_raw_payload(
         scan.variant.id().to_string(),
         Exactness::Unknown,
     );
-    unknowns.push(UnknownRecord {
-        id,
-        offset: 0,
-        byte_len: bytes.len() as u64,
-        sha256: sha256_hex(bytes),
-        data: Some(bytes.to_vec()),
-        links: Vec::new(),
-    });
+    unknowns.push(UnknownRecord::retained(id, 0, bytes.to_vec(), Vec::new()));
 }
 
 /// Attribute typed carrier views to the preserved payload when CATIA's binding
@@ -636,8 +622,8 @@ pub(crate) fn link_payload_carriers(
     let payload = unknowns
         .last_mut()
         .expect("partial CATIA decode preserves its source payload");
-    payload.links = links;
-    annotations.derived(&payload.id, "links");
+    *payload.links_mut() = links;
+    annotations.derived(payload.id(), "links");
 }
 
 pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
@@ -1020,14 +1006,12 @@ mod route_tests {
             },
             cache_fit_tolerance: None,
         });
-        let unknowns = [UnknownRecord {
-            id: record_id,
-            offset: 0,
-            byte_len: 0,
-            sha256: String::new(),
-            data: Some(Vec::new()),
-            links: Vec::new(),
-        }];
+        let unknowns = [UnknownRecord::retained(
+            record_id,
+            0,
+            Vec::new(),
+            Vec::new(),
+        )];
 
         assert!(neutral_model_is_admissible(&mut ir, &unknowns));
     }

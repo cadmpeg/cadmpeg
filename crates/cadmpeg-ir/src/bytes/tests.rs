@@ -24,14 +24,12 @@ where
 #[test]
 fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     assert_base64_round_trip_and_rejection(
-        &UnknownRecord {
-            id: UnknownId("synthetic:test:unknown#0".into()),
-            offset: 0,
-            byte_len: 3,
-            sha256: "00".repeat(32),
-            data: Some(vec![1, 2, 3]),
-            links: Vec::new(),
-        },
+        &UnknownRecord::retained(
+            UnknownId("synthetic:test:unknown#0".into()),
+            0,
+            vec![1, 2, 3],
+            Vec::new(),
+        ),
         "data",
     );
     assert_base64_round_trip_and_rejection(

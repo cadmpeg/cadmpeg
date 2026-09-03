@@ -370,14 +370,7 @@ impl RetainedSourceRecord {
     }
 
     fn from_unknown(stream: String, record: UnknownRecord) -> Self {
-        let UnknownRecord {
-            id,
-            offset,
-            byte_len,
-            sha256,
-            data,
-            ..
-        } = record;
+        let (id, offset, byte_len, sha256, data, _) = record.into_parts();
         match data {
             Some(data) => Self::retained(id.0, stream, offset, data),
             None => Self::unavailable(id.0, stream, offset, byte_len, sha256),
@@ -597,14 +590,7 @@ impl SourceFidelity {
         ir.set_native_unknowns_from(
             format,
             records.into_iter().map(|record| {
-                let UnknownRecord {
-                    id,
-                    offset,
-                    byte_len,
-                    sha256,
-                    data,
-                    links,
-                } = record;
+                let (id, offset, byte_len, sha256, data, links) = record.into_parts();
                 let stream = annotations.provenance.get(&id.0).map_or_else(
                     || "source".into(),
                     |provenance| provenance.stream().to_owned(),

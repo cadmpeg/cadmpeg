@@ -258,9 +258,9 @@ pub(crate) fn try_decode_geometry(
             let unknown = unknown_stream_metadata(si, stream);
             let container_stream = annotations.stream("nx:container");
             annotations
-                .note(&unknown.id, container_stream, stream.file_offset as u64)
+                .note(unknown.id(), container_stream, stream.file_offset as u64)
                 .tag(stream.kind.label());
-            annotations.exactness(&unknown.id, Exactness::Derived);
+            annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
             continue;
@@ -991,21 +991,21 @@ pub(crate) fn try_decode_geometry(
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         let mut unknown = unknown_stream_metadata(si, stream);
-        unknown.links.extend(
+        unknown.links_mut().extend(
             ir.model.surfaces[first_surface..]
                 .iter()
                 .map(|surface| surface.id.0.clone()),
         );
-        unknown.links.extend(
+        unknown.links_mut().extend(
             ir.model.curves[first_curve..]
                 .iter()
                 .map(|curve| curve.id.0.clone()),
         );
         let container_stream = annotations.stream("nx:container");
         annotations
-            .note(&unknown.id, container_stream, stream.file_offset as u64)
+            .note(unknown.id(), container_stream, stream.file_offset as u64)
             .tag(stream.kind.label());
-        annotations.exactness(&unknown.id, Exactness::Derived);
+        annotations.exactness(unknown.id(), Exactness::Derived);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
     }
@@ -1218,7 +1218,7 @@ pub(crate) fn retain_live_annotations(
         ir.model.procedural_curves,
         ir.model.features,
     );
-    ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
+    ids.extend(unknowns.iter().map(|unknown| unknown.id().to_string()));
     annotations.provenance.retain(|id, _| ids.contains(id));
     annotations.exactness.retain(|id, _| ids.contains(id));
 }
@@ -1245,9 +1245,9 @@ pub(crate) fn retain_live_unknown_links(
             .map(|entity| entity.id.to_string()),
     );
     for unknown in unknowns.iter_mut() {
-        unknown.links.retain(|link| ids.contains(link));
-        if !unknown.links.is_empty() {
-            annotations.derived(&unknown.id, "links");
+        unknown.links_mut().retain(|link| ids.contains(link));
+        if !unknown.links().is_empty() {
+            annotations.derived(unknown.id(), "links");
         }
     }
 }

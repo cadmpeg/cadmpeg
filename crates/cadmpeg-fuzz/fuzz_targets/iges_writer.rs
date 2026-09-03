@@ -41,14 +41,12 @@ fuzz_target!(|data: &[u8]| {
             .attach_native_unknown_records(
                 &mut ir,
                 "iges",
-                [UnknownRecord {
-                    id: UnknownId("iges:fuzz:unsupported#0".into()),
-                    offset: 0,
-                    byte_len: 1,
-                    sha256: cadmpeg_ir::hash::sha256_hex(&[control]),
-                    data: Some(vec![control]),
-                    links: Vec::new(),
-                }],
+                [UnknownRecord::retained(
+                    UnknownId("iges:fuzz:unsupported#0".into()),
+                    0,
+                    vec![control],
+                    Vec::new(),
+                )],
             )
             .expect("fuzz retained record converts to native identity");
         assert!(encoder

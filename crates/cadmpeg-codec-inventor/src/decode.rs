@@ -1635,17 +1635,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             )?;
             source_fidelity.retain_unknown_records(
                 &format!("RSeStorage/B{}:expanded", carrier.segment_token),
-                [UnknownRecord {
-                    id: UnknownId(format!(
+                [UnknownRecord::retained(
+                    UnknownId(format!(
                         "inventor:kernel:carrier#{}-{}",
                         carrier.segment_token, carrier.record_ordinal
                     )),
-                    offset: carrier.carrier_offset,
-                    byte_len: carrier.bytes.window().len() as u64,
-                    sha256: sha256_hex(carrier.bytes.window()),
-                    data: Some(data),
-                    links: vec![active_carrier.id.clone()],
-                }],
+                    carrier.carrier_offset,
+                    data,
+                    vec![active_carrier.id.clone()],
+                )],
             );
         }
     }

@@ -1,4 +1,4 @@
-# generated at 2f16f5798
+# generated at 58029ba0b
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -5923,14 +5923,22 @@ pub cadmpeg_ir::unknown::NativeUnknownRecord::links: alloc::vec::Vec<alloc::stri
 impl core::convert::From<&cadmpeg_ir::unknown::UnknownRecord> for cadmpeg_ir::unknown::NativeUnknownRecord
 pub fn cadmpeg_ir::unknown::NativeUnknownRecord::from(&cadmpeg_ir::unknown::UnknownRecord) -> Self
 pub struct cadmpeg_ir::unknown::UnknownRecord
-pub cadmpeg_ir::unknown::UnknownRecord::byte_len: u64
-pub cadmpeg_ir::unknown::UnknownRecord::data: core::option::Option<alloc::vec::Vec<u8>>
-pub cadmpeg_ir::unknown::UnknownRecord::id: cadmpeg_ir::ids::UnknownId
-pub cadmpeg_ir::unknown::UnknownRecord::links: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::unknown::UnknownRecord::offset: u64
-pub cadmpeg_ir::unknown::UnknownRecord::sha256: alloc::string::String
+impl cadmpeg_ir::unknown::UnknownRecord
+pub const fn cadmpeg_ir::unknown::UnknownRecord::byte_len(&self) -> u64
+pub fn cadmpeg_ir::unknown::UnknownRecord::data(&self) -> core::option::Option<&[u8]>
+pub fn cadmpeg_ir::unknown::UnknownRecord::id(&self) -> &cadmpeg_ir::ids::UnknownId
+pub fn cadmpeg_ir::unknown::UnknownRecord::links(&self) -> &[alloc::string::String]
+pub fn cadmpeg_ir::unknown::UnknownRecord::links_mut(&mut self) -> &mut alloc::vec::Vec<alloc::string::String>
+pub const fn cadmpeg_ir::unknown::UnknownRecord::offset(&self) -> u64
+pub fn cadmpeg_ir::unknown::UnknownRecord::retain_data(&mut self, alloc::vec::Vec<u8>)
+pub fn cadmpeg_ir::unknown::UnknownRecord::retained(cadmpeg_ir::ids::UnknownId, u64, alloc::vec::Vec<u8>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::unknown::UnknownRecord::set_id(&mut self, cadmpeg_ir::ids::UnknownId)
+pub fn cadmpeg_ir::unknown::UnknownRecord::sha256(&self) -> &str
+pub fn cadmpeg_ir::unknown::UnknownRecord::unavailable(cadmpeg_ir::ids::UnknownId, u64, u64, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
 impl core::convert::From<&cadmpeg_ir::unknown::UnknownRecord> for cadmpeg_ir::unknown::NativeUnknownRecord
 pub fn cadmpeg_ir::unknown::NativeUnknownRecord::from(&cadmpeg_ir::unknown::UnknownRecord) -> Self
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::unknown::UnknownRecord
+pub fn cadmpeg_ir::unknown::UnknownRecord::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub mod cadmpeg_ir::validate
 pub mod cadmpeg_ir::validate::admissibility_freeze
 pub fn cadmpeg_ir::validate::admissibility_freeze::accepted_empty() -> cadmpeg_ir::document::CadIr
@@ -8078,14 +8086,22 @@ pub struct cadmpeg_ir::SubdVertexGripLayout
 pub cadmpeg_ir::SubdVertexGripLayout::direction: cadmpeg_ir::subd::SubdGripDirection
 pub cadmpeg_ir::SubdVertexGripLayout::wedges: alloc::vec::Vec<cadmpeg_ir::subd::SubdGripWedge>
 pub struct cadmpeg_ir::UnknownRecord
-pub cadmpeg_ir::UnknownRecord::byte_len: u64
-pub cadmpeg_ir::UnknownRecord::data: core::option::Option<alloc::vec::Vec<u8>>
-pub cadmpeg_ir::UnknownRecord::id: cadmpeg_ir::ids::UnknownId
-pub cadmpeg_ir::UnknownRecord::links: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::UnknownRecord::offset: u64
-pub cadmpeg_ir::UnknownRecord::sha256: alloc::string::String
+impl cadmpeg_ir::unknown::UnknownRecord
+pub const fn cadmpeg_ir::unknown::UnknownRecord::byte_len(&self) -> u64
+pub fn cadmpeg_ir::unknown::UnknownRecord::data(&self) -> core::option::Option<&[u8]>
+pub fn cadmpeg_ir::unknown::UnknownRecord::id(&self) -> &cadmpeg_ir::ids::UnknownId
+pub fn cadmpeg_ir::unknown::UnknownRecord::links(&self) -> &[alloc::string::String]
+pub fn cadmpeg_ir::unknown::UnknownRecord::links_mut(&mut self) -> &mut alloc::vec::Vec<alloc::string::String>
+pub const fn cadmpeg_ir::unknown::UnknownRecord::offset(&self) -> u64
+pub fn cadmpeg_ir::unknown::UnknownRecord::retain_data(&mut self, alloc::vec::Vec<u8>)
+pub fn cadmpeg_ir::unknown::UnknownRecord::retained(cadmpeg_ir::ids::UnknownId, u64, alloc::vec::Vec<u8>, alloc::vec::Vec<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::unknown::UnknownRecord::set_id(&mut self, cadmpeg_ir::ids::UnknownId)
+pub fn cadmpeg_ir::unknown::UnknownRecord::sha256(&self) -> &str
+pub fn cadmpeg_ir::unknown::UnknownRecord::unavailable(cadmpeg_ir::ids::UnknownId, u64, u64, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<alloc::string::String>) -> Self
 impl core::convert::From<&cadmpeg_ir::unknown::UnknownRecord> for cadmpeg_ir::unknown::NativeUnknownRecord
 pub fn cadmpeg_ir::unknown::NativeUnknownRecord::from(&cadmpeg_ir::unknown::UnknownRecord) -> Self
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::unknown::UnknownRecord
+pub fn cadmpeg_ir::unknown::UnknownRecord::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::ValidationReport
 pub cadmpeg_ir::ValidationReport::entity_counts: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub cadmpeg_ir::ValidationReport::findings: alloc::vec::Vec<cadmpeg_ir::Finding>

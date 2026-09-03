@@ -597,11 +597,11 @@ impl<'a> DecodeContext<'a> {
         let Some(record) = self.unknowns.get_mut(source_order) else {
             return false;
         };
-        if link == record.id.to_string() {
+        if link == record.id().to_string() {
             return false;
         }
-        if let Err(index) = record.links.binary_search(&link) {
-            record.links.insert(index, link);
+        if let Err(index) = record.links().binary_search(&link) {
+            record.links_mut().insert(index, link);
         }
         true
     }
@@ -661,7 +661,7 @@ impl<'a> DecodeContext<'a> {
                 let Some(index) = self
                     .unknowns
                     .iter()
-                    .position(|record| record.id == reference.id)
+                    .position(|record| record.id() == &reference.id)
                 else {
                     before.truncate(&mut self.ir);
                     annotation_checkpoint.rollback(&mut self.annotations);
@@ -680,7 +680,7 @@ impl<'a> DecodeContext<'a> {
                 return Err(error);
             }
             for (index, links) in link_updates {
-                self.unknowns[index].links = links;
+                *self.unknowns[index].links_mut() = links;
             }
             self.ir.model.finalize();
             Ok(value)
@@ -1283,7 +1283,7 @@ impl<'a> DecodeContext<'a> {
                 parameters,
                 properties: BTreeMap::new(),
             },
-            native_ref: Some(self.unknowns[source_order].id.to_string()),
+            native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let hatch_loops = hatch.loops;
         let result = self.validate_candidate(|candidate, candidate_annotations| {
@@ -1461,7 +1461,7 @@ impl<'a> DecodeContext<'a> {
                     ("view_sha256".to_string(), sha256_hex(view)),
                 ]),
             },
-            native_ref: Some(self.unknowns[source_order].id.to_string()),
+            native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let result = self.validate_candidate(|candidate, candidate_annotations| {
             commit_curve_tree(
@@ -1598,7 +1598,7 @@ impl<'a> DecodeContext<'a> {
                 ]),
                 properties,
             },
-            native_ref: Some(self.unknowns[source_order].id.to_string()),
+            native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
@@ -1665,7 +1665,7 @@ impl<'a> DecodeContext<'a> {
             &morph,
             &key,
             (!identity.name.is_empty()).then(|| identity.name.clone()),
-            self.unknowns[source_order].id.to_string(),
+            self.unknowns[source_order].id().to_string(),
             &captives,
         );
         let feature_id = feature.id.to_string();
@@ -1761,7 +1761,7 @@ impl<'a> DecodeContext<'a> {
                     .map(|id| BTreeMap::from([("model_curve".to_string(), id.clone())]))
                     .unwrap_or_default(),
             },
-            native_ref: Some(self.unknowns[source_order].id.to_string()),
+            native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let parameter_curve = construction.parameter_curve;
         let model_curve = construction.model_curve;
@@ -1894,7 +1894,7 @@ impl<'a> DecodeContext<'a> {
         let original_links = self
             .unknowns
             .iter()
-            .map(|record| record.links.clone())
+            .map(|record| record.links().to_vec())
             .collect::<Vec<_>>();
         let original_statuses = self.statuses.clone();
         let original_outcomes = self.outcomes.clone();
@@ -1948,7 +1948,7 @@ impl<'a> DecodeContext<'a> {
         ArenaLengths::remove_ids(&mut self.ir, &added_ids);
         annotation_checkpoint.rollback(&mut self.annotations);
         for (record, links) in self.unknowns.iter_mut().zip(original_links) {
-            record.links = links;
+            *record.links_mut() = links;
         }
         self.statuses = original_statuses;
         self.outcomes = original_outcomes;
@@ -2528,12 +2528,12 @@ impl<'a> DecodeContext<'a> {
         let byte_records = self
             .unknowns
             .iter()
-            .filter(|record| record.data.is_some())
+            .filter(|record| record.data().is_some())
             .count()
             + self
                 .opaque_records
                 .iter()
-                .filter(|record| record.data.is_some())
+                .filter(|record| record.data().is_some())
                 .count();
         let note = if self.opaque_records.is_empty() {
             format!(
@@ -2646,13 +2646,10 @@ impl<'a> DecodeContext<'a> {
                 .checked_add(bytes.len())
                 .expect("retention cap checked");
         }
-        UnknownRecord {
-            id,
-            offset: u64::try_from(range.start).expect("Rhino record offset fits u64"),
-            byte_len,
-            sha256: sha256_hex(bytes),
-            data,
-            links: Vec::new(),
+        let offset = u64::try_from(range.start).expect("Rhino record offset fits u64");
+        match data {
+            Some(data) => UnknownRecord::retained(id, offset, data, Vec::new()),
+            None => UnknownRecord::unavailable(id, offset, byte_len, sha256_hex(bytes), Vec::new()),
         }
     }
 
@@ -2725,7 +2722,7 @@ impl<'a> DecodeContext<'a> {
         let Some(unknown) = self
             .unknowns
             .get(source_order)
-            .map(|record| record.id.clone())
+            .map(|record| record.id().clone())
         else {
             return false;
         };
@@ -2951,7 +2948,7 @@ impl<'a> DecodeContext<'a> {
         let Some(unknown) = self
             .unknowns
             .get(source_order)
-            .map(|record| record.id.clone())
+            .map(|record| record.id().clone())
         else {
             return false;
         };
@@ -3055,7 +3052,7 @@ impl<'a> DecodeContext<'a> {
         let Some(unknown) = self
             .unknowns
             .get(source_order)
-            .map(|record| record.id.clone())
+            .map(|record| record.id().clone())
         else {
             return false;
         };
@@ -3154,7 +3151,7 @@ impl<'a> DecodeContext<'a> {
         let Some(unknown) = self
             .unknowns
             .get(source_order)
-            .map(|record| record.id.clone())
+            .map(|record| record.id().clone())
         else {
             return;
         };
@@ -3362,7 +3359,7 @@ impl<'a> DecodeContext<'a> {
         };
         let association = self.source_association(identity);
         let key = self.object_key(identity, source_order);
-        let unknown = self.unknowns[source_order].id.clone();
+        let unknown = self.unknowns[source_order].id().clone();
         self.ir
             .set_native_unknowns_from("rhino", self.unknowns.iter().map(NativeUnknownRecord::from))
             .expect("Rhino unknown records serialize");
@@ -3543,7 +3540,8 @@ fn append_links_to_native_record(record: &mut NativeUnknownRecord, links: &[Stri
 }
 
 fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
-    append_links(&record.id, &mut record.links, links);
+    let id = record.id().clone();
+    append_links(&id, record.links_mut(), links);
 }
 
 fn append_links(unknown_id: &UnknownId, record_links: &mut Vec<String>, links: &[String]) {

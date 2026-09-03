@@ -1053,7 +1053,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         assert!(context.append_link(0, "rhino:curve#1".to_string()));
         assert!(context.append_link(0, "rhino:curve#2".to_string()));
         assert_eq!(
-            context.unknown(0).expect("required invariant").links,
+            context.unknown(0).expect("required invariant").links(),
             vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
         );
         assert!(context.mark_decoded(0));
@@ -1063,7 +1063,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         context
             .unknown_mut(0)
             .expect("required invariant")
-            .links
+            .links_mut()
             .clear();
         let result = crate::decode::seal_for_test(context.commit(), false);
         assert!(result
@@ -1102,17 +1102,13 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
         let original = context
             .unknown(0)
             .expect("required invariant")
-            .data
-            .clone()
-            .expect("required invariant");
+            .data()
+            .expect("required invariant")
+            .to_vec();
         let findings = context.reject_duplicate_entity_candidate();
         assert!(findings.contains("identity"));
         assert_eq!(
-            context
-                .unknown(0)
-                .expect("required invariant")
-                .data
-                .as_deref(),
+            context.unknown(0).expect("required invariant").data(),
             Some(original.as_slice())
         );
         assert_eq!(context.unknown_count(), 1);

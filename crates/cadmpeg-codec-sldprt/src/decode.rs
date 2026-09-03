@@ -24,7 +24,6 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
 use crate::loss::SldprtLossCode;
@@ -202,7 +201,7 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = unknowns
         .iter()
-        .position(|record| record.id.0 == "sldprt:file:source-image#0")
+        .position(|record| record.id().0 == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
     source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
     if let Some(source_image) = source_image {
@@ -2911,14 +2910,12 @@ fn build_geometry_ir(
             "displaylist_tessellation",
             Exactness::Unknown,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(display_id),
-            offset: 0,
-            byte_len: display.payload().len() as u64,
-            sha256: sha256_hex(display.payload()),
-            data: Some(display.payload().to_vec()),
-            links: display_links,
-        });
+        unknowns.push(UnknownRecord::retained(
+            UnknownId(display_id),
+            0,
+            display.payload().to_vec(),
+            display_links,
+        ));
     }
     let unmatched_feature_sources = feature_appearance_sources
         .difference(&matched_feature_sources)
@@ -2963,7 +2960,7 @@ fn build_geometry_ir(
     for source_block in &scan.blocks {
         if unknowns
             .iter()
-            .any(|record| record.id.0 == format!("sldprt:file:block#{}", source_block.offset))
+            .any(|record| record.id().0 == format!("sldprt:file:block#{}", source_block.offset))
         {
             continue;
         }
@@ -2979,14 +2976,12 @@ fn build_geometry_ir(
             source_block.family,
             Exactness::ByteExact,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(id),
-            offset: 0,
-            byte_len: source_block.payload.len() as u64,
-            sha256: sha256_hex(&source_block.payload),
-            data: Some(source_block.payload.clone()),
-            links: Vec::new(),
-        });
+        unknowns.push(UnknownRecord::retained(
+            UnknownId(id),
+            0,
+            source_block.payload.clone(),
+            Vec::new(),
+        ));
     }
     for source_stream in &scan.compound_streams {
         let id = format!("sldprt:file:compound-stream#{}", source_stream.directory_id);
@@ -2998,14 +2993,12 @@ fn build_geometry_ir(
             container::payload_family(&source_stream.payload),
             Exactness::ByteExact,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(id),
-            offset: 0,
-            byte_len: source_stream.payload.len() as u64,
-            sha256: sha256_hex(&source_stream.payload),
-            data: Some(source_stream.payload.clone()),
-            links: Vec::new(),
-        });
+        unknowns.push(UnknownRecord::retained(
+            UnknownId(id),
+            0,
+            source_stream.payload.clone(),
+            Vec::new(),
+        ));
     }
     let mut opaque_links = BTreeMap::<String, Vec<String>>::new();
     for surface in &ir.model.surfaces {
@@ -3033,9 +3026,9 @@ fn build_geometry_ir(
     for (record_id, links) in opaque_links {
         let source = unknowns
             .iter_mut()
-            .find(|record| record.id.0 == record_id)
+            .find(|record| record.id().0 == record_id)
             .expect("opaque geometry source is retained");
-        source.links.extend(links);
+        source.links_mut().extend(links);
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -3341,14 +3334,12 @@ fn build_metadata_ir(
             "parasolid_stream",
             Exactness::Unknown,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(id),
+        unknowns.push(UnknownRecord::retained(
+            UnknownId(id),
             offset,
-            byte_len: site.payload.len() as u64,
-            sha256: sha256_hex(site.payload),
-            data: Some(site.payload.to_vec()),
-            links: Vec::new(),
-        });
+            site.payload.to_vec(),
+            Vec::new(),
+        ));
     }
 
     ir.source = Some(SourceMeta::classified(
@@ -4530,14 +4521,12 @@ fn preserve_source_image(
         "source_image",
         Exactness::ByteExact,
     );
-    unknowns.push(UnknownRecord {
-        id: UnknownId("sldprt:file:source-image#0".into()),
-        offset: 0,
-        byte_len: scan.source_image.len() as u64,
-        sha256: sha256_hex(scan.source_image),
-        data: Some(scan.source_image.to_vec()),
-        links: Vec::new(),
-    });
+    unknowns.push(UnknownRecord::retained(
+        UnknownId("sldprt:file:source-image#0".into()),
+        0,
+        scan.source_image.to_vec(),
+        Vec::new(),
+    ));
 }
 
 /// Builds the metadata-only report from the same classification the report

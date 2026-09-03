@@ -1162,21 +1162,28 @@ pub(crate) fn retain_unknown_stream_data(
     stream: &Stream,
     unknown: &mut UnknownRecord,
 ) -> Result<(), CodecError> {
-    if unknown.data.is_none() {
-        unknown.data =
-            Some(ctx.copy_retained(&stream.inflated, "retain NX unknown stream", None)?);
+    if unknown.data().is_none() {
+        unknown.retain_data(ctx.copy_retained(
+            &stream.inflated,
+            "retain NX unknown stream",
+            None,
+        )?);
     }
     Ok(())
 }
 
 fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> UnknownRecord {
-    UnknownRecord {
-        id: UnknownId(format!("nx:container:parasolid#{si}")),
-        offset: stream.file_offset as u64,
-        byte_len: stream.inflated.len() as u64,
-        sha256: sha256_hex(&stream.inflated),
-        data,
-        links: Vec::new(),
+    let id = UnknownId(format!("nx:container:parasolid#{si}"));
+    let offset = stream.file_offset as u64;
+    match data {
+        Some(data) => UnknownRecord::retained(id, offset, data, Vec::new()),
+        None => UnknownRecord::unavailable(
+            id,
+            offset,
+            stream.inflated.len() as u64,
+            sha256_hex(&stream.inflated),
+            Vec::new(),
+        ),
     }
 }
 

@@ -12,7 +12,6 @@ use crate::container::{self, role, ContainerScan};
 
 use super::super::native::annotate;
 use super::super::native::emit_arena;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::unknown::UnknownRecord;
 
 pub(in super::super) fn preserve_passthrough_sections(
@@ -81,14 +80,12 @@ pub(in super::super) fn preserve_passthrough_sections(
             tag,
             exactness,
         );
-        unknowns.push(UnknownRecord {
+        unknowns.push(UnknownRecord::retained(
             id,
-            offset: offset as u64,
-            byte_len: bytes.len() as u64,
-            sha256: sha256_hex(bytes),
-            data: Some(bytes.to_vec()),
-            links: Vec::new(),
-        });
+            offset as u64,
+            bytes.to_vec(),
+            Vec::new(),
+        ));
     }
     unknowns
 }

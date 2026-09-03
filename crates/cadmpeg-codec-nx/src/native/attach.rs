@@ -105,14 +105,12 @@ fn attach_container_payloads(
             .note(&id, annotation_stream, offset)
             .tag(content.label());
         annotations.exactness(&id, Exactness::ByteExact);
-        unknowns.push(UnknownRecord {
+        unknowns.push(UnknownRecord::retained(
             id,
             offset,
-            byte_len,
-            sha256: sha256_hex(bytes),
-            data: Some(ctx.copy_retained(bytes, "retain NX opaque container payload", None)?),
-            links: Vec::new(),
-        });
+            ctx.copy_retained(bytes, "retain NX opaque container payload", None)?,
+            Vec::new(),
+        ));
     }
     attach_jpeg_preview_assets(ctx, ir, scan, annotations, unknowns)?;
     Ok(())
@@ -151,18 +149,12 @@ fn attach_indexed_om_unknowns(
                     "OM_DATA_BLOCK"
                 });
             annotations.exactness(&id, Exactness::ByteExact);
-            unknowns.push(UnknownRecord {
+            unknowns.push(UnknownRecord::retained(
                 id,
                 offset,
-                byte_len: record.bytes.len() as u64,
-                sha256: sha256_hex(record.bytes),
-                data: Some(ctx.copy_retained(
-                    record.bytes,
-                    "retain NX indexed object-model record",
-                    None,
-                )?),
-                links: Vec::new(),
-            });
+                ctx.copy_retained(record.bytes, "retain NX indexed object-model record", None)?,
+                Vec::new(),
+            ));
         }
     }
     Ok(())
@@ -768,14 +760,12 @@ fn attach_jpeg_preview_assets(
                 .note(&native_ref, stream, source_offset)
                 .tag("JPEG_PREVIEW_INVALID");
             annotations.exactness(&native_ref, Exactness::ByteExact);
-            unknowns.push(UnknownRecord {
-                id: UnknownId(native_ref),
-                offset: source_offset,
-                byte_len: source_byte_len,
-                sha256: sha256_hex(bytes),
-                data: Some(ctx.copy_retained(bytes, "retain NX invalid JPEG preview", None)?),
-                links: Vec::new(),
-            });
+            unknowns.push(UnknownRecord::retained(
+                UnknownId(native_ref),
+                source_offset,
+                ctx.copy_retained(bytes, "retain NX invalid JPEG preview", None)?,
+                Vec::new(),
+            ));
             continue;
         }
         let id = AssetId(format!("{native_ref}:asset"));

@@ -3794,14 +3794,12 @@ fn decode_result(
 
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     let id = crate::ids::FILE_SOURCE_IMAGE_ID;
-    UnknownRecord {
-        id: UnknownId(id.into()),
-        offset: 0,
-        byte_len: scan.source_image.len() as u64,
-        sha256: sha256_hex(scan.source_image),
-        data: Some(scan.source_image.to_vec()),
-        links: Vec::new(),
-    }
+    UnknownRecord::retained(
+        UnknownId(id.into()),
+        0,
+        scan.source_image.to_vec(),
+        Vec::new(),
+    )
 }
 
 /// Machine-local `document_local_sha256` for the F3D write-path edit oracle.
@@ -4063,7 +4061,7 @@ fn populate_annotations(
             let stream = annotations.stream(crate::ids::native_scope(&fallback.name));
             for unknown in unknowns {
                 annotations
-                    .note(&unknown.id.0, stream, unknown.offset)
+                    .note(&unknown.id().0, stream, unknown.offset())
                     .tag("opaque_brep");
             }
         }
@@ -5010,14 +5008,13 @@ fn build_metadata_ir(
             }
         }
 
-        unknowns.push(UnknownRecord {
-            id: UnknownId(crate::ids::native_scoped_id(&brep.name, "unknown", 0)),
-            offset: 0,
-            byte_len: brep.uncompressed_len,
-            sha256: brep.sha256.clone(),
-            data: None,
-            links: Vec::new(),
-        });
+        unknowns.push(UnknownRecord::unavailable(
+            UnknownId(crate::ids::native_scoped_id(&brep.name, "unknown", 0)),
+            0,
+            brep.uncompressed_len,
+            brep.sha256.clone(),
+            Vec::new(),
+        ));
     }
 
     (ir, attributes, unknowns)
