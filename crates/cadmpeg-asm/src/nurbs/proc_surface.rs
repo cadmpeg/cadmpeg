@@ -20,6 +20,7 @@ use cadmpeg_ir::geometry::{
     RevisionSurfaceParameterization, SurfaceGeometry, VariableBlendSolvedCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use std::num::NonZeroI64;
 
 /// A decoded native procedural definition and the fit contract of its solved cache.
 pub struct DecodedProceduralSurface {
@@ -802,12 +803,8 @@ pub struct EmbeddedRevisionCompoundLoft {
     pub kind: i64,
     /// Two booleans serialized after the kind.
     pub kind_flags: [bool; 2],
-    /// The integer selector serialized after the kind flags.
-    pub selector: i64,
-    /// The loft direction vector, when serialized.
-    pub direction: Option<Vector3>,
-    /// The loft direction curve, when serialized.
-    pub direction_curve: Option<NurbsCurve>,
+    /// The loft direction selected after the kind flags.
+    pub direction: EmbeddedCompoundLoftDirection,
     /// Optional parameter bounds; `None` marks an unbounded end.
     pub interval: [Option<f64>; 2],
     /// An embedded curve closing the record, when present.
@@ -859,7 +856,12 @@ pub enum EmbeddedCompoundLoftDirection {
     /// A direction vector.
     Vector(Vector3),
     /// An embedded direction curve.
-    Curve(NurbsCurve),
+    Curve {
+        /// Exact nonzero selector serialized before the curve.
+        selector: NonZeroI64,
+        /// Embedded direction curve.
+        curve: NurbsCurve,
+    },
 }
 
 /// The kind-discriminated tail of an embedded compound loft.
@@ -2002,13 +2004,16 @@ fn revision_compound_loft(
     (kind == 0).then_some(())?;
     let kind_flags = [cur.take_bool()?, cur.take_bool()?];
     let selector = cur.take_long()?;
-    let (direction, direction_curve) = if selector == 0 {
+    let direction = if selector == 0 {
         let value = cur.take_vector3()?;
-        (Some(Vector3::new(value[0], value[1], value[2])), None)
+        EmbeddedCompoundLoftDirection::Vector(Vector3::new(value[0], value[1], value[2]))
     } else {
         let (curve, curve_end) = curve_block(span, cur.pos())?;
         cur.set_pos(curve_end);
-        (None, Some(curve))
+        EmbeddedCompoundLoftDirection::Curve {
+            selector: NonZeroI64::new(selector)?,
+            curve,
+        }
     };
     let interval = [
         cur.take_optional_range_value()?,
@@ -2037,9 +2042,7 @@ fn revision_compound_loft(
                 flags,
                 kind,
                 kind_flags,
-                selector,
                 direction,
-                direction_curve,
                 interval,
                 trailing_curve,
             },
@@ -2118,7 +2121,10 @@ fn compound_loft_spl_sur(
             } else {
                 let (curve, curve_end) = curve_block(span, cur.pos())?;
                 cur.set_pos(curve_end);
-                EmbeddedCompoundLoftDirection::Curve(curve)
+                EmbeddedCompoundLoftDirection::Curve {
+                    selector: NonZeroI64::new(selector)?,
+                    curve,
+                }
             };
             let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
             EmbeddedCompoundLoftTail::Zero {
@@ -2222,7 +2228,10 @@ fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurfa
         } else {
             let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
-            EmbeddedCompoundLoftDirection::Curve(curve)
+            EmbeddedCompoundLoftDirection::Curve {
+                selector: NonZeroI64::new(selector)?,
+                curve,
+            }
         };
         EmbeddedScaledCompoundLoftBranch::Direct {
             flag,

@@ -251,7 +251,10 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         CompoundLoftTail::Zero {
             flags: [false, true],
             selector: 4,
-            direction: CompoundLoftDirection::Curve { curve },
+            direction: CompoundLoftDirection::Curve {
+                curve,
+                selector: std::num::NonZeroI64::new(4).unwrap(),
+            },
             trailing_flags: [true, true],
         },
     ];
@@ -452,6 +455,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
                 selector: 4,
                 direction: CompoundLoftDirection::Curve {
                     curve: curve.clone(),
+                    selector: std::num::NonZeroI64::new(4).unwrap(),
                 },
             },
         ),

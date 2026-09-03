@@ -616,7 +616,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         scales.push(second_scale.as_ref());
                     }
                     crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
+                            direction
+                        {
                             check_curve(curve, findings);
                         }
                     }
@@ -661,7 +663,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         check_curve(curve, findings);
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
+                            direction
+                        {
                             check_curve(curve, findings);
                         }
                     }
@@ -885,7 +889,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 for curve in std::iter::once(&construction.base_path)
                     .chain(construction.entries.iter().map(|entry| &entry.path))
                     .flat_map(|path| path.curve.iter().chain(path.auxiliaries.iter()))
-                    .chain(construction.direction_curve.iter())
+                    .chain(match &construction.direction {
+                        crate::geometry::CompoundLoftDirection::Vector { .. } => None,
+                        crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
+                    })
                     .chain(construction.trailing_curve.iter())
                 {
                     if ids.curves(&curve.0).is_none() {

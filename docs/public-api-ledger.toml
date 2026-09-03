@@ -2941,3 +2941,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::G2BlendFirstShape::Full::{surface,tolerance}"
 reason = "G2BlendFullSupport owns the exact support surface and its fit tolerance together, so a full first-side shape cannot carry only half of the pair"
+
+[[change]]
+commit = "1853146eb746c56b3c13b26ea5fb33930180333b"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::{RevisionCompoundLoftConstruction::{selector,direction,direction_curve},CompoundLoftDirection::Curve::selector}"
+reason = "CompoundLoftDirection carries exactly one vector or curve and retains the curve form's nonzero native selector, so revision compound lofts cannot pair a selector with the wrong payload"

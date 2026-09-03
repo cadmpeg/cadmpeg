@@ -157,7 +157,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         scales.push(second_scale.as_ref());
                     }
                     crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
+                            direction
+                        {
                             curves.insert(&curve.0);
                         }
                     }
@@ -193,7 +195,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         curves.insert(&curve.0);
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
+                            direction
+                        {
                             curves.insert(&curve.0);
                         }
                     }
@@ -370,7 +374,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 curves.extend(
                     [
-                        construction.direction_curve.as_ref(),
+                        match &construction.direction {
+                            crate::geometry::CompoundLoftDirection::Vector { .. } => None,
+                            crate::geometry::CompoundLoftDirection::Curve { curve, .. } => {
+                                Some(curve)
+                            }
+                        },
                         construction.trailing_curve.as_ref(),
                     ]
                     .into_iter()
