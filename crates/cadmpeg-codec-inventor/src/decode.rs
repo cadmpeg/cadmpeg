@@ -19,7 +19,7 @@ use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, Unknown
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
-use crate::dialect::{kernel_dialect_loss, DialectRecovery};
+use crate::dialect::{dialect_loss, kernel_dialect_loss, DialectRecovery};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
@@ -47,11 +47,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
     let recovery = DialectRecovery::of(&container);
-    let classification = recovery.classify();
-    let dialects = crate::dialect::layers(
-        classification.matched.clone(),
-        &container.rse.active_carrier,
-    );
+    let matched = recovery.classify();
+    let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier);
     // The kernel layer, classified from the carrier's own header. Non-primary:
     // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
     let kernel_match = dialects
@@ -1410,7 +1407,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
-    losses.extend(classification.loss);
+    losses.extend(dialect_loss(&matched, &recovery));
     losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
     if !ctx.container_only()
         && !matches!(document_kind, DocumentKind::Assembly)

@@ -399,9 +399,8 @@ fn mixed_unframed_and_foreign_declarations_report_every_admission_cause() {
         unframed_meta_streams: vec![verified_meta],
     };
 
-    let classification = recovery.classify();
-    let note = classification
-        .loss
+    let matched = recovery.classify();
+    let note = dialect_loss(&matched, &recovery)
         .expect("mixed admission failures charge one complete dialect loss");
     assert!(note
         .message

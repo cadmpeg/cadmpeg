@@ -14,7 +14,7 @@
 //! declares schema 31 and metadata version 8 therefore keeps
 //! `inventor:cfb3-rse31-meta8` when its body is malformed, with
 //! [`Admission::Unverified`](cadmpeg_core::dialect::Admission::Unverified).
-//! [`DialectClassification::loss`] is `None` exactly when admission is
+//! [`dialect_loss`] returns `None` exactly when admission is
 //! [`Admission::Admitted`](cadmpeg_core::dialect::Admission::Admitted).
 //!
 //! # The row absorbs what the codec does not gate
@@ -148,12 +148,6 @@ pub(crate) struct DialectRecovery {
     unframed_meta_streams: Vec<MetaStreamDeclaration>,
 }
 
-/// The three projections produced by one evaluation of parsed dialect facts.
-pub(crate) struct DialectClassification {
-    pub(crate) matched: DialectMatch,
-    pub(crate) loss: Option<LossNote>,
-}
-
 impl DialectRecovery {
     /// Collects every version declaration the decode read from `container`.
     pub(crate) fn of(container: &InventorContainer<'_>) -> Self {
@@ -205,8 +199,8 @@ impl DialectRecovery {
         }
     }
 
-    /// Evaluate identity, admission, and loss once from the parsed facts.
-    pub(crate) fn classify(&self) -> DialectClassification {
+    /// Evaluate identity and admission once from the parsed facts.
+    pub(crate) fn classify(&self) -> DialectMatch {
         let identity_verified = !self.schemas.is_empty()
             && self
                 .schemas
@@ -254,27 +248,19 @@ impl DialectRecovery {
                 ),
             );
         }
-        let loss = (!admitted).then(|| self.unverified_loss());
-        DialectClassification {
-            matched: if admitted {
-                DialectMatch::admitted(dialect.id())
-            } else {
-                DialectMatch::unverified(
-                    dialect.id(),
-                    Grammar::of(&InventorDialect::Cfb3Rse31Meta8.id()),
-                )
-            }
-            .with_declared(declared),
-            loss,
+        if admitted {
+            DialectMatch::admitted(dialect.id())
+        } else {
+            DialectMatch::unverified(
+                dialect.id(),
+                Grammar::of(&InventorDialect::Cfb3Rse31Meta8.id()),
+            )
         }
+        .with_declared(declared)
     }
 
     /// The loss charged when the document's declarations do not select the
     /// grammar this codec read it with.
-    ///
-    /// `None` exactly when `matched.admission` is
-    /// [`Admission::Admitted`](cadmpeg_core::dialect::Admission::Admitted).
-    /// [`Self::classify`] reports the same admission value.
     fn unverified_loss(&self) -> LossNote {
         let mut reasons = Vec::new();
         if !self.unframed_schemas.is_empty() {
@@ -349,6 +335,18 @@ impl DialectRecovery {
             MetaStreamDeclaration::VERIFIED_VERSION
         ))
     }
+}
+
+/// The dialect-unverified loss required by a classified admission.
+///
+/// Presence is derived from `matched`; recovery evidence supplies only the
+/// message detail and cannot independently select whether a loss exists.
+pub(crate) fn dialect_loss(matched: &DialectMatch, recovery: &DialectRecovery) -> Option<LossNote> {
+    (!matches!(
+        matched.admission(),
+        cadmpeg_core::dialect::Admission::Admitted
+    ))
+    .then(|| recovery.unverified_loss())
 }
 
 /// The `acis:` kernel-layer match for one parsed active carrier.
