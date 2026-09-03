@@ -461,7 +461,7 @@ pub enum FidelityError {
 }
 
 /// Decode-time source annotations and retained native records.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
     pub annotations: Annotations,
@@ -521,15 +521,6 @@ impl JsonSchema for SourceFidelity {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         SourceFidelityWriteWire::json_schema(generator)
-    }
-}
-
-impl Default for SourceFidelity {
-    fn default() -> Self {
-        Self {
-            annotations: Annotations::default(),
-            retained_records: Vec::new(),
-        }
     }
 }
 
@@ -603,11 +594,10 @@ impl SourceFidelity {
                     data,
                     links,
                 } = record;
-                let stream = annotations
-                    .provenance
-                    .get(&id.0)
-                    .map(|provenance| provenance.stream().to_owned())
-                    .unwrap_or_else(|| "source".into());
+                let stream = annotations.provenance.get(&id.0).map_or_else(
+                    || "source".into(),
+                    |provenance| provenance.stream().to_owned(),
+                );
                 let product = crate::NativeUnknownRecord {
                     id: id.clone(),
                     links,
