@@ -1417,10 +1417,12 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) {
                 scale_point2(point, scale);
             }
         }
-        SketchGeometry::Text { height, anchor, .. } => {
+        SketchGeometry::Text {
+            height, placement, ..
+        } => {
             height.0 *= scale;
-            if let Some(anchor) = anchor {
-                scale_point2(anchor, scale);
+            if let Some(placement) = placement {
+                scale_point2(&mut placement.anchor, scale);
             }
         }
         SketchGeometry::ExternalReference { .. } | SketchGeometry::Native { .. } => {}

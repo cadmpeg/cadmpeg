@@ -3235,3 +3235,17 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::SketchGeometry::{Ellipse,Hyperbola,Parabola}"
 reason = "one optional bounds array replaces each independently optional start and end pair"
+
+[[change]]
+commit = "6577bd73b0de6d7a97080e9d5631f0aa7a1658e9"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchGeometry::Text"
+reason = "one optional TextPlacement replaces the independently optional anchor and rotation"
+
+[[change]]
+commit = "6577bd73b0de6d7a97080e9d5631f0aa7a1658e9"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::sketches::TextPlacement"
+reason = "the text anchor and rotation are constructed and transformed as one placement"

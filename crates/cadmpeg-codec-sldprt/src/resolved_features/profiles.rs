@@ -2202,8 +2202,7 @@ fn transform_sketch_block_geometry(
             font_weight,
             height,
             width_factor,
-            anchor,
-            rotation: text_rotation,
+            placement,
             horizontal_alignment,
             vertical_alignment,
         } => SketchGeometry::Text {
@@ -2212,11 +2211,13 @@ fn transform_sketch_block_geometry(
             font_weight: *font_weight,
             height: *height,
             width_factor: *width_factor,
-            anchor: match anchor {
-                Some(anchor) => Some(point(*anchor)?),
+            placement: match placement {
+                Some(placement) => Some(cadmpeg_ir::sketches::TextPlacement {
+                    anchor: point(placement.anchor)?,
+                    rotation: angle(placement.rotation),
+                }),
                 None => None,
             },
-            rotation: text_rotation.map(angle),
             horizontal_alignment: *horizontal_alignment,
             vertical_alignment: *vertical_alignment,
         },

@@ -1126,3 +1126,35 @@ fn conic_bounds_keep_the_paired_wire_fields() {
         assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
     }
 }
+
+#[test]
+fn text_placement_keeps_the_paired_wire_fields() {
+    use crate::features::{Angle, Length};
+    use crate::math::Point2;
+    use crate::sketches::{SketchGeometry, TextPlacement};
+
+    let geometry = SketchGeometry::Text {
+        text: "cadmpeg".into(),
+        font_family: "sans".into(),
+        font_weight: 400,
+        height: Length(4.0),
+        width_factor: None,
+        placement: Some(TextPlacement {
+            anchor: Point2::new(1.0, 2.0),
+            rotation: Angle(0.5),
+        }),
+        horizontal_alignment: None,
+        vertical_alignment: None,
+    };
+    let wire = serde_json::to_value(&geometry).unwrap();
+    assert_eq!(wire["anchor"], serde_json::json!({ "u": 1.0, "v": 2.0 }));
+    assert_eq!(wire["rotation"], 0.5);
+    assert_eq!(
+        serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
+        geometry
+    );
+
+    let mut split = wire;
+    split.as_object_mut().unwrap().remove("rotation");
+    assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
+}

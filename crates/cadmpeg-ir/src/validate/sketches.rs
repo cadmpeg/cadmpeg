@@ -710,8 +710,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 font_weight,
                 height,
                 width_factor,
-                anchor,
-                rotation,
+                placement,
                 ..
             } => {
                 if text.is_empty()
@@ -719,8 +718,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     || !matches!(font_weight, 400 | 500 | 750)
                     || nonpositive(height.0)
                     || width_factor.is_some_and(nonpositive)
-                    || anchor.is_some_and(|anchor| !finite2(anchor))
-                    || rotation.is_some_and(|rotation| !rotation.0.is_finite())
+                    || placement.is_some_and(|placement| {
+                        !finite2(placement.anchor) || !placement.rotation.0.is_finite()
+                    })
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
