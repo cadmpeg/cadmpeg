@@ -6,7 +6,6 @@
 
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
@@ -221,7 +220,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
         CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     };
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId("unknown".into()),
         geometry: CurveGeometry::Unknown { record: None },

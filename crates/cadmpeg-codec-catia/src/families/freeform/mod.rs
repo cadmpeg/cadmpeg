@@ -16,7 +16,6 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -439,7 +438,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     {
         return None;
     }
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
@@ -2710,7 +2709,6 @@ mod tests {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
@@ -2760,7 +2758,7 @@ mod tests {
 
     #[test]
     fn standalone_clamped_curve_becomes_a_valid_wire_edge() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let curve_id = CurveId("catia:test:curve#0".to_string());
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
@@ -2795,7 +2793,7 @@ mod tests {
 
     #[test]
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let bytes = crate::test_support::b2_line_profile_stream();
         let wires = append_consolidated_line_profiles(
             &mut ir,
@@ -2827,7 +2825,7 @@ mod tests {
 
     #[test]
     fn rolling_ball_pool_retains_both_exact_limiting_curves() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let bytes = crate::test_support::a5_freeform_curve_stream();
         append_freeform_surface_pools(
             &mut ir,
@@ -2974,7 +2972,7 @@ mod tests {
 
     #[test]
     fn consolidated_surface_curve_reuses_one_matching_unresolved_edge() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let points = [
             Point3::new(1.0, 4.0, 3.0),
             Point3::new(2.0, 2.0 + 2.0 * 0.5f64.cos(), 3.0 + 2.0 * 0.5f64.sin()),
@@ -3137,7 +3135,7 @@ mod tests {
     fn consolidated_pcurve_uses_unique_standard_carrier_tag() {
         let bytes =
             crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x1234);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let surface_id = SurfaceId("standard-carrier".to_string());
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -3184,7 +3182,7 @@ mod tests {
     fn consolidated_pcurve_uses_unique_canonical_surface_alias_tag() {
         let bytes =
             crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let surface_id = SurfaceId("standard-carrier".to_string());
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -3223,7 +3221,7 @@ mod tests {
 
     #[test]
     fn standard_carrier_index_rejects_duplicate_or_unknown_geometry() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for (id, geometry) in [
             (
                 "known-0",
@@ -3267,7 +3265,7 @@ mod tests {
         }
         bytes.extend_from_slice(&crate::test_support::a5_native_edge_run_stream(6, 139, 142));
 
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
                 id: PointId(format!("point#{index}")),

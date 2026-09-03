@@ -19,7 +19,6 @@ use crate::subd::{
 use crate::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use crate::units::Units;
 
 const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1.0e-9;
 
@@ -106,7 +105,7 @@ pub fn unit_cube() -> CadIr {
         ),
     ];
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     // Points + vertices.
     for (i, (x, y, z)) in corners.iter().enumerate() {
@@ -256,7 +255,7 @@ pub fn unit_cube() -> CadIr {
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
 pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceError> {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
             id: CurveId("synthetic:v2:curve#u".into()),

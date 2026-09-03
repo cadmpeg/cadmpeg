@@ -110,7 +110,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
         (IgesVersion::V5_2, "iges:5.2-fixed-ascii"),
         (IgesVersion::V5_3, "iges:5.3-fixed-ascii"),
     ] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(Point {
             id: PointId(format!("point#{id}")),
             source_object: None,

@@ -1111,7 +1111,7 @@ mod tests {
     }
 
     fn complete_block_ir() -> CadIr {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let body = BodyId("body".to_string());
         ir.model.bodies.push(model_body(&body.0));
         ir.model.features.push(Feature {
@@ -1300,7 +1300,7 @@ mod tests {
 
     #[test]
     fn complete_sphere_rederives_a_new_body() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let body = BodyId("sphere".to_string());
         ir.model.bodies.push(model_body(&body.0));
         ir.model.features.push(Feature {
@@ -1692,7 +1692,7 @@ mod tests {
 
     #[test]
     fn body_neutral_history_needs_only_exact_configuration_body_membership() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let mut datum = body_neutral_feature(
             "datum",
             0,
@@ -1711,7 +1711,7 @@ mod tests {
 
     #[test]
     fn empty_body_neutral_model_does_not_need_an_active_configuration_identity() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(body_neutral_feature(
             "datum",
             0,
@@ -2753,7 +2753,7 @@ mod tests {
 
     #[test]
     fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
             id: FeatureId("datum".to_string()),
             ordinal: 0,
@@ -2895,7 +2895,7 @@ mod tests {
 
     #[test]
     fn native_delete_without_a_primary_body_is_body_neutral() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let mut deletion = Feature {
             id: FeatureId("delete".to_string()),
             ordinal: 0,

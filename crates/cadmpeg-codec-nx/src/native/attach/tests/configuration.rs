@@ -311,7 +311,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .collect();
 
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -337,7 +337,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         })
         .collect::<Vec<_>>();
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &untreated_templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -356,7 +356,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     let mut mixed_templates = untreated_templates.clone();
     mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &mixed_templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -370,7 +370,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     let mut mismatched_outputs = outputs;
     mismatched_outputs.insert("simple-b".into(), vec![BodyId("other-body".into())]);
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -397,7 +397,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         pmi: None,
         native_ref: None,
     };
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.parameters = vec![
         parameter(
             "length",
@@ -498,7 +498,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
     ];
     let mut annotations = AnnotationBuilder::new();
     for parameters in &mut cases {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
@@ -546,7 +546,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         native_ref: None,
     };
     let body = BodyId("body".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features = vec![
         feature("dependency", Vec::new(), Vec::new(), None),
         feature(
@@ -608,7 +608,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         },
         native_ref: None,
     };
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut body_record = cadmpeg_ir::examples::unit_cube().model.bodies.remove(0);
     body_record.id = body.clone();
     ir.model.bodies.push(body_record);
@@ -676,7 +676,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         feature_states: BTreeMap::new(),
         native_ref: None,
     };
-    let mut missing_dependency = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut missing_dependency = CadIr::empty();
     missing_dependency.model.features = vec![producer("missing")];
     missing_dependency.model.configurations = vec![configuration(
         "active",
@@ -690,7 +690,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         .feature_states
         .is_empty());
 
-    let mut unresolved_bodies = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut unresolved_bodies = CadIr::empty();
     unresolved_bodies.model.features = vec![producer("writer")];
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations = vec![configuration(
@@ -704,7 +704,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         .feature_states
         .is_empty());
 
-    let mut contradicted = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut contradicted = CadIr::empty();
     contradicted.model.features = vec![producer("writer")];
     contradicted.model.features[0].dependencies.clear();
     contradicted.model.features[0].suppressed = Some(true);
@@ -719,7 +719,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         .feature_states
         .is_empty());
 
-    let mut ambiguous = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ambiguous = CadIr::empty();
     ambiguous.model.features = vec![producer("writer")];
     ambiguous.model.features[0].dependencies.clear();
     ambiguous.model.configurations = vec![
@@ -771,7 +771,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         named_point: "named-point".to_string(),
         source_offsets: vec![52],
     };
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::attach_sketch_graph(
@@ -797,7 +797,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         }
     ));
 
-    let mut rejected_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut rejected_ir = CadIr::empty();
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = rejected_annotations.stream("nx:container");
     assert!(super::attach_sketch_graph(
@@ -863,7 +863,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         scalar("scalar-1", 0, 12.5, 51),
         scalar("scalar-2", 1, -3.0, 59),
     ];
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::attach_sketch_graph(
@@ -1299,7 +1299,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         ],
         values: [20.0, 21.0, 22.0],
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
     let parameter_owners = ir
@@ -1362,7 +1362,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
         expression(1, "p1", "2", Some(2.0)),
         expression(2, "p2", "p1 * 3", Some(6.0)),
     ];
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
     super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
@@ -1406,7 +1406,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         source_table: "table".into(),
         source_offset: 1,
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
     super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations);
@@ -1674,7 +1674,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     use cadmpeg_ir::ids::{BodyId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind};
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let bound = BodyId("nx:s2:body#3".to_string());
     ir.model.bodies.extend([
         Body {
@@ -1737,7 +1737,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
 #[test]
 fn body_write_does_not_materialize_missing_neutral_geometry() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let binding = crate::native::segments::SegmentBodyBinding {
         id: "nx:segment-body-bindings:binding#0".to_string(),
         stream_link: "nx:segment-stream-links:link#0".to_string(),

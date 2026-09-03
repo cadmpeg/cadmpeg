@@ -12,7 +12,6 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsSurface, Surface, SurfaceG
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::StepLossCode;
@@ -29,7 +28,7 @@ fn edgeless_doc() -> CadIr {
     use cadmpeg_ir::topology::{
         Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
         id: PointId("p0".into()),
         position: Point3::new(0.0, 0.0, 0.0),
@@ -955,7 +954,7 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
 
 #[test]
 fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let curve_id = CurveId("step:test:curve#standalone-unsupported".into());
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -1388,7 +1387,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
 
 #[test]
 fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let surface_id = SurfaceId("step:test:surface#unsupported".into());
     let construction_id =
         cadmpeg_ir::ids::ProceduralSurfaceId("step:test:construction:surface#unsupported".into());
@@ -1427,7 +1426,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
 
 #[test]
 fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let curve_id = CurveId("step:test:curve#unsupported".into());
     let construction_id = ProceduralCurveId("step:test:construction:curve#unsupported".into());
     ir.model.curves.push(Curve {

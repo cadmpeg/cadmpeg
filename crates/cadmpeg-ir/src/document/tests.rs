@@ -192,7 +192,7 @@ fn parser_distinguishes_malformed_json_from_version_rejection() {
 
 #[test]
 fn current_document_excludes_source_byte_accounting() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let json = serde_json::to_value(&ir).unwrap();
 
     assert_eq!(json["ir_version"], crate::IR_VERSION);

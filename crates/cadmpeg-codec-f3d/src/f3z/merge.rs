@@ -143,14 +143,6 @@ impl MergeSession<'_, '_> {
                     continue;
                 }
             };
-            if component.ir.units != parent_ir.units {
-                parent_report
-                    .losses
-                    .push(F3dLossCode::XrefUnitsMismatch.note(format!(
-                        "xref {label}: component units differ from the containing document; the occurrence was not merged"
-                    )));
-                continue;
-            }
             let child_table = xref_table_from_ir(&component.ir)?;
             let cadmpeg_ir::codec::Decoded {
                 ir: mut component_ir,

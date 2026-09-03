@@ -19,13 +19,12 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
 #[test]
 fn native_planar_and_spatial_sketch_geometry_is_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketch_entities.push(SketchEntity {
         id: SketchEntityId("planar-entity".into()),
         sketch: SketchId("planar-sketch".into()),
@@ -60,7 +59,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
 
 #[test]
 fn only_sketch_owned_relation_records_without_constraints_are_counted() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("sketch-feature".into()),
         ordinal: 0,
@@ -184,7 +183,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
 
 #[test]
 fn native_relation_records_have_at_most_one_neutral_owner() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let entity = |id: &str, native_ref: &str| SketchEntity {
         id: SketchEntityId(id.into()),
         sketch: SketchId("sketch".into()),
@@ -356,7 +355,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
 
 #[test]
 fn native_dimension_subtypes_are_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let owner = FeatureId("owner".into());
     ir.model.features.push(Feature {
         id: owner.clone(),

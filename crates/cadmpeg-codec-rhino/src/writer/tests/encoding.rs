@@ -11,7 +11,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Color, Point};
-use cadmpeg_ir::units::Units;
 
 use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
@@ -56,7 +55,7 @@ fn object_attribute_items_are_written_in_ascending_order() {
 
 #[test]
 fn nonempty_user_string_presentation_is_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
         id: PointId("cadir:model:point#user-strings".into()),
         position: Point3::new(1.0, 2.0, 3.0),
@@ -106,7 +105,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
 
 #[test]
 fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
         id: PointId("cadir:model:point#mesh-modifiers".into()),
         position: Point3::new(1.0, 2.0, 3.0),
@@ -156,7 +155,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
 
 #[test]
 fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
         id: PointId("cadir:model:point#layer-settings".into()),
         position: Point3::new(1.0, 2.0, 3.0),

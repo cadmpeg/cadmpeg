@@ -874,7 +874,7 @@ fn cylinder_plane_transfer_fixture(
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::Edge;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let source = SurfaceId("synthetic:source-cylinder".into());
     let target = SurfaceId("synthetic:target-plane".into());
     ir.model.surfaces.extend([
@@ -957,7 +957,7 @@ fn blend_contact_transfer_fixture(
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let support = SurfaceId("synthetic:blend-contact-support".into());
     let other_support = SurfaceId("synthetic:blend-contact-other-support".into());
     let offset = SurfaceId("synthetic:blend-contact-offset".into());
@@ -1118,7 +1118,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::Edge;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let source = SurfaceId("synthetic:unevaluable-source-blend".into());
     let other_support = SurfaceId("synthetic:other-support".into());
     let target = SurfaceId("synthetic:target-blend".into());
@@ -1244,7 +1244,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let nurbs = SurfaceId("synthetic:nurbs-boundary".into());
     let plane = SurfaceId("synthetic:boundary-plane".into());
     ir.model.surfaces.extend([
@@ -1404,7 +1404,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let first_support = SurfaceId("nx:test:boundary-plane-a".into());
     let second_support = SurfaceId("nx:test:boundary-plane-b".into());
     ir.model.surfaces.extend([

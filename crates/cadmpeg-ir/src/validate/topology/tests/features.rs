@@ -96,7 +96,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     let feature_id = FeatureId("test:model:feature#datum-point".into());
     let state_id = FeatureInputTopologyId("test:model:feature-input#datum-point".into());
     let historical_vertex = HistoricalVertexId("test:model:historical-vertex#local".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .feature_input_topologies
         .push(FeatureInputTopology {
@@ -192,7 +192,7 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
         }
     };
 
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.feature_input_topologies.extend([
         FeatureInputTopology {
             id: first_state.clone(),
@@ -1559,7 +1559,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
     };
     use crate::ids::FeatureResultTopologyId;
 
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     let producer = FeatureId("synthetic:test:feature#0-producer".into());
     ir.model.features.push(Feature {
         id: producer.clone(),
@@ -1638,7 +1638,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
 
     let asset_id = AssetId("synthetic:test:asset#reference-image".into());
     let feature_id = FeatureId("synthetic:test:feature#reference-image".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.assets.push(Asset {
         id: asset_id.clone(),
         name: Some("reference.png".into()),

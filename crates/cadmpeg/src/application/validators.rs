@@ -66,7 +66,6 @@ impl NativeValidatorCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::CadIr;
     use cadmpeg_registry::InputCatalog;
 
@@ -124,14 +123,14 @@ mod tests {
             entries: vec![("fcstd", counting_fcstd), ("f3d", counting_f3d)],
         };
         CALLS.store(0, Ordering::SeqCst);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let _ = ir.native.namespace_mut("fcstd");
         let _ = ir.native.namespace_mut("f3d");
         let _ = catalog.validate(&ir);
         assert_eq!(CALLS.load(Ordering::SeqCst), 2);
 
         CALLS.store(0, Ordering::SeqCst);
-        let mut none = CadIr::empty(Units::default());
+        let mut none = CadIr::empty();
         let _ = none.native.namespace_mut("absent");
         let _ = catalog.validate(&none);
         assert_eq!(CALLS.load(Ordering::SeqCst), 0);

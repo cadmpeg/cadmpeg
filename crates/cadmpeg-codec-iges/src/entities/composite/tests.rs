@@ -14,7 +14,6 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurveDefi
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
@@ -766,7 +765,7 @@ fn positive_join_tolerance_excludes_the_resolution_boundary() {
 #[test]
 fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     let curve_id = CurveId("line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {
@@ -846,7 +845,7 @@ fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
 #[test]
 fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     let base_id = CurveId("base".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: base_id.clone(),
         geometry: CurveGeometry::Nurbs(NurbsCurve {
@@ -925,7 +924,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 #[test]
 fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     let curve_id = CurveId("line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1007,7 +1006,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
 #[test]
 fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
     let curve_id = CurveId("line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1063,7 +1062,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     let bounded = CurveId("bounded".into());
     let edgeless = CurveId("edgeless".into());
     let absent = CurveId("absent".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for id in [bounded.clone(), edgeless.clone()] {
         ir.model.curves.push(Curve {
             id,
@@ -1540,7 +1539,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
     let second_id = CurveId("second".into());
     let composite_id = CurveId("composite".into());
     let first_end = Point3::new(1.0, 0.0, 0.0);
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.extend([
         Curve {
             id: first_id.clone(),

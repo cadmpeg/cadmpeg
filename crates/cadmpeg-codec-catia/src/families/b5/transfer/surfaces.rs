@@ -801,7 +801,6 @@ mod tests {
     use super::*;
     use cadmpeg_ir::geometry::PcurveGeometry;
     use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::units::Units;
 
     use crate::families::b5::transfer::{
         ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
@@ -854,7 +853,7 @@ mod tests {
                 ]),
             },
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         emit_extrusion_procedure(
             &mut ir,

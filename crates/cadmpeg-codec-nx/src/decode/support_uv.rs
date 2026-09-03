@@ -2221,7 +2221,7 @@ mod tests {
     #[test]
     fn oversized_serialized_lane_is_declined_before_geometry_work() {
         let surface_id = SurfaceId("synthetic:support-plane".into());
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -2296,7 +2296,7 @@ mod tests {
             v_periodic: false,
         };
         let geometry = SurfaceGeometry::Nurbs(nurbs.clone());
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
             geometry: geometry.clone(),

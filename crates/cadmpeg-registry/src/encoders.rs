@@ -73,7 +73,7 @@ mod tests {
     /// actually runs.
     #[test]
     fn an_unknown_explicit_target_is_refused_with_the_catalog() {
-        let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let ir = cadmpeg_ir::CadIr::empty();
         for format in Format::all() {
             let encoder = build_encoder(format);
             let requested = format!("{}:nonesuch", encoder.id());

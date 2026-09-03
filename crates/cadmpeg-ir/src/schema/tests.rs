@@ -10,7 +10,7 @@ use crate::CadIr;
 
 #[test]
 fn typed_reference_walk_ignores_id_shaped_plain_strings() {
-    let mut ir = crate::CadIr::empty(crate::units::Units::default());
+    let mut ir = crate::CadIr::empty();
     let owner = crate::ids::ProductDefinitionId("test:model:product#owner".into());
     let target = crate::ids::BodyId("test:model:body#missing".into());
     ir.model.product_definitions.push(ProductDefinition {
@@ -99,7 +99,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     feature.visit_references(&mut |reference| feature_references.push(reference.target));
     assert_eq!(feature_references, vec![state_id.0]);
 
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.feature_input_topologies.push(state);
     ir.model.features.push(feature);
     assert!(!validate_neutral(&ir, Vec::new())

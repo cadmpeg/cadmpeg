@@ -66,7 +66,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
     scan.surfaces
         .parameters
         .extend([parameter(7, 1.0), parameter(8, 2.0)]);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
         super::transfer_positional_tori(
@@ -96,7 +96,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
             major_radius: 0.0,
             minor_radius: 2.0,
         });
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
         super::transfer_positional_tori(

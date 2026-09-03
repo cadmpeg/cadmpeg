@@ -672,7 +672,6 @@ mod tests {
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::decode::surfaces::BrepTransferDiagnostics;
@@ -732,7 +731,7 @@ mod tests {
             }],
         });
 
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId("creo:visibgeom:curve#10".to_string()),
             geometry: CurveGeometry::Circle {

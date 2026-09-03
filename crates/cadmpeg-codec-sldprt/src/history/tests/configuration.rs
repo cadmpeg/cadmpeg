@@ -37,7 +37,7 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 
 #[test]
 fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
@@ -57,7 +57,7 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
 
 #[test]
 fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
@@ -243,7 +243,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     };
     let feature_id = cadmpeg_ir::features::FeatureId("sketch".into());
     let unresolved = FeatureDefinition::Sketch { sketch: None };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -489,7 +489,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
     let planar_state_id = FeatureId("sldprt:model:feature#planar-state".into());
     let planar_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#planar-state".into());
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -607,7 +607,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 
     let feature_id = FeatureId("sldprt:model:feature#scoped-spatial".into());
     let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#scoped-spatial".into());
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -691,7 +691,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         definition,
         native_ref: Some(native_ref.into()),
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features = vec![
         neutral_feature(
             producer_id.clone(),
@@ -967,7 +967,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         specification: None,
         allow_multi_profile_faces: None,
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: id.clone(),
         ordinal: 0,
@@ -1333,7 +1333,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         ParameterValue,
     };
 
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let parameter_id = ParameterId("test:model:parameter#depth".into());
     let count_id = ParameterId("test:model:parameter#count".into());
     ir.model.parameters.push(DesignParameter {
@@ -1475,7 +1475,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         definition: definition(),
         native_ref: Some(feature_ref.into()),
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
     ir.model.faces.push(Face {
         id: FaceId("face".into()),
@@ -1553,7 +1553,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
         definition: definition(),
         native_ref: None,
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
     ir.model.surfaces.push(Surface {
         id: SurfaceId("surface".into()),

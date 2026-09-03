@@ -10,7 +10,6 @@ use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 
 const STATION_TOLERANCE: f64 = 1e-9;
 
@@ -96,7 +95,7 @@ fn generated_fixture(
         source_object: None,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, coordinate, reversed) in axial_stations {
         scan.surfaces.rows.push(row(*id, *reversed));
         ir.model.surfaces.push(plane(
@@ -279,7 +278,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         row(36, false),
         row(35, true),
     ]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId("creo:visibgeom:surface#37".to_string()),

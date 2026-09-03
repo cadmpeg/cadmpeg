@@ -1786,7 +1786,6 @@ mod tests {
     use super::super::equations::PlaneEquation;
     use super::*;
     use cadmpeg_ir::geometry::NurbsSurface;
-    use cadmpeg_ir::units::Units;
     use std::collections::BTreeSet;
 
     #[test]
@@ -1823,7 +1822,7 @@ mod tests {
 
     #[test]
     fn mapped_pcurve_endpoints_reject_duplicate_face_surfaces() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
                 id: SurfaceId("creo:visibgeom:surface#7".to_string()),
@@ -1856,7 +1855,7 @@ mod tests {
     #[test]
     fn two_chart_samples_validate_every_point_and_extend_a_nurbs_boundary_span() {
         let scan = crate::container::scan_bytes(Vec::new());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
                 id: SurfaceId("creo:visibgeom:surface#7".to_string()),
@@ -1948,7 +1947,7 @@ mod tests {
                 ],
                 offset: 0,
             });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
                 id: SurfaceId("creo:visibgeom:surface#1".to_string()),
@@ -2055,7 +2054,7 @@ mod tests {
                 side: 0,
             }],
         });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
                 id: SurfaceId("creo:visibgeom:surface#10".to_string()),
@@ -2158,7 +2157,7 @@ mod tests {
                 next_edges: [841, 164],
                 offset: 100,
             });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId("creo:visibgeom:surface#43".to_string()),
             geometry: SurfaceGeometry::Plane {
@@ -2263,7 +2262,7 @@ mod tests {
             face_1_endpoints: [[0.0, 0.0], [0.0, 1.0]],
             offset: 0,
         });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
                 id: SurfaceId("creo:visibgeom:surface#10".to_string()),

@@ -8,7 +8,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
     Surface {
@@ -109,7 +108,7 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
@@ -148,7 +147,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             offset: 0,
             body_offset: 0,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.75));
     ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
         origin: Point3::new(0.0, 0.0, 12.5),
@@ -212,7 +211,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
             offset: 0,
             body_offset: 0,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.2));
 
     let carriers = placed_carriers(&scan, &ir);
@@ -239,7 +238,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
             u_axis: [1.0, 0.0, 0.0],
             offset: 0,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         carrier_surface(
             7,
@@ -265,7 +264,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
 #[test]
 fn placed_carriers_admits_unique_rowless_model_surface() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
     let carriers = placed_carriers(&scan, &ir);
@@ -278,7 +277,7 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
 #[test]
 fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
@@ -427,7 +426,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
         },
         source_object: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.extend([curve.clone(), curve]);
 
     assert_eq!(

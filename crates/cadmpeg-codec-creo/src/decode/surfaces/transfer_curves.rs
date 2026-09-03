@@ -300,7 +300,6 @@ mod tests {
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
     use super::transfer_nurbs_boundary_curves;
@@ -415,7 +414,7 @@ mod tests {
             },
         ];
 
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
                 id: SurfaceId("creo:visibgeom:surface#1".to_string()),
@@ -534,7 +533,7 @@ mod tests {
             },
             source_object: None,
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model
             .surfaces
             .extend([extrusion.clone(), extrusion, plane]);

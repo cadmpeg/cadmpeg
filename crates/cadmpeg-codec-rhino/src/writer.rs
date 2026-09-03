@@ -414,7 +414,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             }
         }
 
-        let mut scoped = CadIr::empty(ir.units.clone());
+        let mut scoped = CadIr::empty();
         scoped.tolerances = ir.tolerances;
         scoped.model.bodies.push(body.clone());
         scoped.model.regions = model
@@ -498,7 +498,7 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
     use cadmpeg_ir::topology::BodyKind;
     use std::collections::BTreeSet;
 
-    let mut scoped = CadIr::empty(ir.units.clone());
+    let mut scoped = CadIr::empty();
     scoped.tolerances = ir.tolerances;
     scoped.model.bodies = ir
         .model

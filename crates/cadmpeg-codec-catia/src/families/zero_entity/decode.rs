@@ -14,7 +14,6 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 
@@ -608,7 +607,7 @@ pub(crate) fn try_decode_zero_entity(
         &scan.data, preamble,
     );
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     preserve_raw_payload(
@@ -956,7 +955,7 @@ mod tests {
     fn closed_wire_clamps_nurbs_range_at_the_domain_boundary() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId("catia:test:nurbs#0".to_string()),
             geometry: CurveGeometry::Nurbs(NurbsCurve {
@@ -1034,7 +1033,7 @@ mod tests {
     fn closed_face_local_loop_uses_ownership_root_with_untransferred_sibling() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for (index, (origin, direction)) in [
             (corner, Vector3::new(-1.0, 0.0, 0.0)),
             (first, Vector3::new(1.0, 0.0, 0.0)),
@@ -1175,7 +1174,7 @@ mod tests {
         let first = Point3::new(start_angle.cos(), start_angle.sin(), 0.0);
         let corner = Point3::new(end_angle.cos(), end_angle.sin(), 0.0);
         let chord = first.distance(corner);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId("catia:test:circle#0".to_string()),
             geometry: CurveGeometry::Circle {
@@ -1271,7 +1270,7 @@ mod tests {
             apex_factor: 0.2,
             axis: Vector3::new(0.0, 0.0, 1.0),
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
@@ -1401,7 +1400,7 @@ mod tests {
                 supports: vec![support(4, 30, [first, second])],
             },
         ];
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut annotations = AnnotationBuilder::new();
 
         let counts = transfer_closed_wire_loops(

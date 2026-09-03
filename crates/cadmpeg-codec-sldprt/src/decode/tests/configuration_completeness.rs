@@ -11,7 +11,6 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
@@ -24,7 +23,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         }],
         native: "native".into(),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("draft".into()),
         ordinal: 0,
@@ -88,7 +87,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
 
 #[test]
 fn configuration_feature_states_drive_design_completeness_accounting() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature_id = FeatureId("configured".into());
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -183,7 +182,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 
 #[test]
 fn metadata_only_native_feature_does_not_report_missing_operation() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("metadata-only".into()),
         ordinal: 0,
@@ -215,7 +214,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
 
 #[test]
 fn active_configuration_inherits_late_feature_resolutions() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature_id = FeatureId("mirror".into());
     let seed = PatternSeed::Feature(FeatureId("seed".into()));
     ir.model.features.push(Feature {
@@ -383,7 +382,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
 
 #[test]
 fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature_id = FeatureId("feature".into());
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -470,7 +469,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
 
 #[test]
 fn active_configuration_snapshots_final_neutral_design_state() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature_id = FeatureId("feature".into());
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -563,7 +562,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
 
 #[test]
 fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let independent = ParameterId("independent".into());
     let overridden = ParameterId("overridden".into());
     let dependent = ParameterId("dependent".into());

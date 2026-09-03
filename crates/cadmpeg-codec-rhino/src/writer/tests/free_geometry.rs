@@ -11,7 +11,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
-use cadmpeg_ir::units::Units;
 use sha2::{Digest, Sha256};
 
 use super::*;
@@ -20,7 +19,7 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn source_less_points_round_trip_across_target_versions() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
         id: PointId("point:a".into()),
         position: Point3::new(1.25, -2.5, 3.75),
@@ -60,7 +59,7 @@ fn source_less_points_round_trip_across_target_versions() {
 
 #[test]
 fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.0;
     ir.model.points.push(Point {
         id: PointId("point:coarse-tolerance".into()),
@@ -96,7 +95,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         (1.0e-6, 0.0),
         (1.0e-6, std::f64::consts::PI.next_up()),
     ] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.tolerances.linear = linear;
         ir.tolerances.angular = angular;
         let mut output = vec![0xaa];
@@ -114,7 +113,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 
 #[test]
 fn rejection_occurs_before_output() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId("curve:a".into()),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Degenerate {
@@ -135,7 +134,7 @@ fn rejection_occurs_before_output() {
 
 #[test]
 fn source_less_circle_round_trips_with_its_frame() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId("curve:circle".into()),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Circle {
@@ -178,7 +177,7 @@ fn source_less_circle_round_trips_with_its_frame() {
 
 #[test]
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId("curve:nurbs".into()),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
@@ -235,7 +234,7 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
 
 #[test]
 fn free_plane_and_rational_nurbs_surface_round_trip() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId("surface:plane".into()),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
@@ -306,7 +305,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
 
 #[test]
 fn standalone_mesh_round_trips_across_archive_versions() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .tessellations
         .push(cadmpeg_ir::tessellation::Tessellation {
@@ -379,7 +378,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
 
 #[test]
 fn mesh_precision_is_target_specific_and_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .tessellations
         .push(cadmpeg_ir::tessellation::Tessellation {
@@ -432,7 +431,7 @@ fn mesh_precision_is_target_specific_and_reported() {
 
 #[test]
 fn mesh_auxiliary_channels_round_trip_by_kind() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let vertices = vec![
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -497,7 +496,7 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
 
 #[test]
 fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut uv_data = vec![0_u8; 24];
     uv_data[..4].copy_from_slice(&0x4000_8000_u32.to_le_bytes());
     uv_data[4..12].copy_from_slice(&160_i64.to_le_bytes());
@@ -551,7 +550,7 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
 
 #[test]
 fn free_vertex_body_preserves_point_cloud_grouping() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let body_id: cadmpeg_ir::ids::BodyId = "cadir:model:body#cloud".into();
     let region_id: cadmpeg_ir::ids::RegionId = "cadir:model:region#cloud".into();
     let shell_id: cadmpeg_ir::ids::ShellId = "cadir:model:shell#cloud".into();
@@ -625,7 +624,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
 
 #[test]
 fn supported_decoded_geometry_can_be_edited_and_rewritten() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
         id: PointId("cadir:model:point#retained".into()),
         position: Point3::new(1.0, 2.0, 3.0),
@@ -665,7 +664,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 
 #[test]
 fn unsupported_retained_native_records_are_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
         id: PointId("cadir:model:point#retained".into()),
         position: Point3::new(1.0, 2.0, 3.0),
@@ -709,7 +708,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 
 #[test]
 fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId("cadir:model:curve#periodic".into()),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {

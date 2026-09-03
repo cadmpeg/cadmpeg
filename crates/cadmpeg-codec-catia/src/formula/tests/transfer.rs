@@ -802,7 +802,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut excluded_ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::Annotations::default();
     let excluded = crate::formula::transfer_parameters(
         &mut excluded_ir,

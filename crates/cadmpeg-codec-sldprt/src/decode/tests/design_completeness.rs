@@ -11,13 +11,12 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
 #[test]
 fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature = |id: &str, ordinal, definition| Feature {
         id: FeatureId(id.into()),
         ordinal,
@@ -82,7 +81,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
 
 #[test]
 fn design_completeness_audits_direct_body_and_shape_families() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let body = BodyId("body".into());
     let source = FeatureId("base".into());
     let mut push = |id: &str, ordinal, dependencies, outputs, definition| {
@@ -191,7 +190,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
 
 #[test]
 fn design_completeness_audits_typed_construction_families() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let body = BodyId("body".into());
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
     let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]);
@@ -292,7 +291,7 @@ fn design_completeness_audits_typed_construction_families() {
 
 #[test]
 fn binder_completeness_requires_resolved_targets_and_shape_arity() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let source = FeatureId("source".into());
     let feature = |id: &str, ordinal, dependencies, definition| Feature {
         id: FeatureId(id.into()),
@@ -380,7 +379,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
 
 #[test]
 fn post_process_completeness_delegates_to_the_wrapped_operation() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let post_process = |operation| FeatureDefinition::PostProcess {
         operation: Box::new(operation),
         refine: true,
@@ -433,7 +432,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
 
 #[test]
 fn design_completeness_recurses_through_pattern_operands() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let seed = cadmpeg_ir::features::PatternSeed::Feature(FeatureId("seed".into()));
     for (ordinal, pattern) in [
         (
@@ -513,7 +512,7 @@ fn design_completeness_recurses_through_pattern_operands() {
 
 #[test]
 fn design_completeness_checks_secondary_sweep_and_loft_paths() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
@@ -595,7 +594,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
 
 #[test]
 fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
@@ -714,7 +713,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
 
 #[test]
 fn empty_required_operands_are_incomplete_design_semantics() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature = |ordinal, definition| Feature {
         id: FeatureId(format!("feature-{ordinal}")),
         ordinal,
@@ -826,7 +825,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
 
 #[test]
 fn hole_completeness_checks_optional_operands_when_present() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let hole = |profile, exit_kind| FeatureDefinition::Hole {
         profile,
         profile_filter: None,
@@ -885,7 +884,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
 
 #[test]
 fn incomplete_parameter_semantics_are_reported_as_design_losses() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let owner = FeatureId("owner".into());
     ir.model.features.push(Feature {
         id: owner.clone(),
@@ -1047,7 +1046,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
 
 #[test]
 fn incoherent_feature_graph_is_reported_as_design_loss() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let first = FeatureId("first".into());
     let second = FeatureId("second".into());
     let missing = FeatureId("missing".into());

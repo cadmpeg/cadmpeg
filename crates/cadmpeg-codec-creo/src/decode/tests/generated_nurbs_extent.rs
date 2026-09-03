@@ -7,7 +7,6 @@ use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 
 fn translated_surface() -> NurbsSurface {
     NurbsSurface {
@@ -87,7 +86,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         row(34, crate::surface::SurfaceKind::Extrusion),
         row(35, crate::surface::SurfaceKind::Plane),
     ]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId("creo:visibgeom:surface#31".to_string()),

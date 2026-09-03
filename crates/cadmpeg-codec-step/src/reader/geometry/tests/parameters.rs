@@ -67,7 +67,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
 
 #[test]
 fn surface_parameter_units_follow_the_surface_chart() {
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = CadIr::empty();
     let plane = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -148,7 +148,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
 
 #[test]
 fn procedural_surface_units_follow_the_evaluated_parameter_order() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let directrix = CurveId("line".into());
     ir.model.curves.push(Curve {
         id: directrix.clone(),
@@ -222,7 +222,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
 
 #[test]
 fn directrix_parameter_units_follow_step_curve_equations() {
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = CadIr::empty();
     let angle_scale = std::f64::consts::PI / 180.0;
     let parabola = CurveGeometry::Parabola {
         vertex: Point3::new(0.0, 0.0, 0.0),
@@ -260,7 +260,7 @@ fn directrix_parameter_units_follow_step_curve_equations() {
 
 #[test]
 fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let directrix = CurveId("composite".into());
     ir.model.curves.push(Curve {
         id: directrix.clone(),
@@ -303,7 +303,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
 fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let surface_id = SurfaceId("surface".into());
     let directrix = CurveId("directrix".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Line {

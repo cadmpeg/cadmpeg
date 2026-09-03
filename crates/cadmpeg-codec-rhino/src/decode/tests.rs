@@ -420,7 +420,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
 fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     let unknown: UnknownId = "rhino:object:record#x".into();
     let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
-    let mut candidate = CadIr::empty(Units::default());
+    let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
             "rhino",
@@ -464,7 +464,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
         source_object: None,
     };
-    let mut live = CadIr::empty(Units::default());
+    let mut live = CadIr::empty();
     live.model.curves.push(curve.clone());
     let mut candidate = live.clone();
     let mut staged = BrepDraft::default();
@@ -535,7 +535,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(control_points[1].u, 25.4);
     assert_eq!(model.coedges[0].radial_next, model.coedges[0].id);
     let links = staged.links.clone();
-    let mut candidate = CadIr::empty(Units::default());
+    let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
             "rhino",
@@ -595,7 +595,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         vec!["rhino:object:vertex#free-vertex.slot-3".into()]
     );
 
-    let mut candidate = CadIr::empty(Units::default());
+    let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
             "rhino",
@@ -943,7 +943,7 @@ fn test_association() -> SourceObjectAssociation {
 #[test]
 fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
     for (caps, expected_faces) in [([true, false], 1), ([false, true], 1), ([true, true], 2)] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let association = test_association();
         let extrusion = cap_extrusion(caps);
         let directrices = extrusion
@@ -988,7 +988,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
 
 #[test]
 fn cap_staging_failure_leaves_original_transaction_unmodified() {
-    let original = CadIr::empty(Units::default());
+    let original = CadIr::empty();
     let mut candidate = original.clone();
     let mut links = Vec::new();
     assert!(!stage_extrusion_caps(

@@ -822,7 +822,6 @@ mod tests {
     use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::units::Units;
 
     use super::super::records::ZeroEntitySupportOccurrence;
     use super::*;
@@ -936,7 +935,7 @@ mod tests {
                 )
             })
             .collect::<HashMap<_, _>>();
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId("catia:test:surface#0".into()),
             geometry: SurfaceGeometry::Plane {
@@ -1036,7 +1035,7 @@ mod tests {
                 )
             })
             .collect::<HashMap<_, _>>();
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId("catia:test:surface#0".into()),
             geometry: SurfaceGeometry::Plane {

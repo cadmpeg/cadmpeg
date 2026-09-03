@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 fn active_body_selection_accepts_a_complete_singleton_membership() {
     let first = BodyId("nx:test:body#first".into());
     let second = BodyId("nx:test:body#second".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.extend([
         Body {
             id: first.clone(),
@@ -86,7 +86,7 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
 
 #[test]
 fn analytic_closed_isocurves_retain_the_native_full_turn() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let cone = SurfaceId("nx:test:cone".into());
     let sphere = SurfaceId("nx:test:sphere".into());
     let torus = SurfaceId("nx:test:torus".into());
@@ -353,7 +353,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
 #[test]
 fn boundary_pcurve_requires_an_affine_carrier_witness() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let curve = CurveId("nx:test:bowed-boundary-curve".into());
     let surface = SurfaceId("nx:test:boundary-plane".into());
     ir.model.curves.push(Curve {
@@ -410,7 +410,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
 
 #[test]
 fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let curve = CurveId("nx:test:affine-nurbs-boundary-curve".into());
     let surface = SurfaceId("nx:test:affine-nurbs-boundary-surface".into());
     ir.model.curves.push(Curve {
@@ -599,7 +599,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
     let start_vertex = VertexId("nx:test:budget-start-vertex".into());
     let end_vertex = VertexId("nx:test:budget-end-vertex".into());
     let edge = EdgeId("nx:test:budget-edge".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -904,7 +904,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
 
 #[test]
 fn nurbs_blend_contact_requires_the_declared_radius_shell() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let surface = SurfaceId("nx:test:contact-support".into());
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
@@ -921,7 +921,7 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
 
 #[test]
 fn saved_offset_cache_retains_its_procedural_lineage() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let support = SurfaceId("nx:test:support".into());
     let cache = SurfaceId("nx:test:cache".into());
     ir.model.surfaces.extend([
@@ -963,7 +963,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
 
 #[test]
 fn serialized_surface_curves_select_a_terminal_intersection_branch() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let surfaces = [
         SurfaceId("nx:test:surface#0".into()),
         SurfaceId("nx:test:surface#1".into()),
@@ -1463,7 +1463,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     }
 
     let support = SurfaceId("nx:test:offset-orientation-support".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -1498,7 +1498,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
 
 #[test]
 fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let curve = CurveId("nx:test:closed-orientation-curve".into());
     let support = SurfaceId("nx:test:closed-orientation-support".into());
     ir.model.curves.push(Curve {
@@ -1545,7 +1545,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
 
 #[test]
 fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let curve_id = CurveId("nx:test:curve#0".into());
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -1687,7 +1687,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
 
 #[test]
 fn boundary_coincidence_is_certified_between_uniform_samples() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let surfaces = [
         SurfaceId("nx:test:surface#0".into()),
         SurfaceId("nx:test:surface#1".into()),

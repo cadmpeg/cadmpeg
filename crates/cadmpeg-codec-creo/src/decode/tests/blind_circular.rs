@@ -33,7 +33,6 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 use std::collections::BTreeSet;
 
 #[test]
@@ -628,7 +627,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, origin, normal) in [
         (1, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         (2, [0.0, 5.0, 0.0], [0.0, 1.0, 0.0]),
@@ -722,7 +721,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             offset: 150,
         });
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId("creo:visibgeom:surface#11".to_string()),
         geometry: SurfaceGeometry::Cylinder {
@@ -784,7 +783,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
             offset: id as usize,
         });
     }
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
@@ -918,7 +917,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
             offset: 0,
         });
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, origin, normal) in [
         (1, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         (2, [0.0, 5.0, 0.0], [0.0, 1.0, 0.0]),
@@ -979,7 +978,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
             offset: 0,
         });
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (12, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
@@ -1060,7 +1059,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
             offset: 0,
         });
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
@@ -1461,7 +1460,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         },
         source_object: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
         plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
@@ -1837,7 +1836,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(table.clone());
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert_eq!(
@@ -1894,7 +1893,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         },
         source_object: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId("creo:visibgeom:surface#37".to_string()),

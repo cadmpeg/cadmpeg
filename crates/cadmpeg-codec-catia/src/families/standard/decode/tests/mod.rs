@@ -52,7 +52,6 @@ pub(super) use cadmpeg_ir::geometry::{
 pub(super) use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId, VertexId};
 pub(super) use cadmpeg_ir::math::{Point2, Point3, Vector3};
 pub(super) use cadmpeg_ir::topology::{Face, Point, Sense, Vertex};
-pub(super) use cadmpeg_ir::units::Units;
 
 pub(super) use cadmpeg_ir::AnnotationBuilder;
 pub(super) use std::cell::Cell;

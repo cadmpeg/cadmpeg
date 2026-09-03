@@ -17,7 +17,6 @@ use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -556,7 +555,7 @@ pub(crate) fn build_geometry_report(
 pub(crate) fn build_metadata_fallback(
     scan: &ContainerScan,
 ) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
-    let ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
 
@@ -770,7 +769,6 @@ mod route_tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use cadmpeg_ir::topology::Shell;
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::unknown::UnknownRecord;
 
     #[test]
@@ -914,10 +912,10 @@ mod route_tests {
 
     #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
-        let mut valid = CadIr::empty(Units::default());
+        let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(&mut valid, &[]));
 
-        let mut invalid = CadIr::empty(Units::default());
+        let mut invalid = CadIr::empty();
         invalid.model.shells.push(Shell {
             id: ShellId("catia:test:shell#invalid".into()),
             region: RegionId("catia:test:region#missing".into()),
@@ -943,7 +941,7 @@ mod route_tests {
     /// that arena in the order the pipeline publishes it.
     #[test]
     fn neutral_model_admissibility_canonicalizes_arena_order() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
                 id: CurveId(format!("catia:test:curve#{key}")),
@@ -988,7 +986,7 @@ mod route_tests {
     #[test]
     fn neutral_model_admissibility_includes_pending_unknown_records() {
         let record_id = UnknownId("catia:test:unknown#0".into());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let curve_id = CurveId("catia:test:curve#0".into());
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
@@ -1017,7 +1015,7 @@ mod route_tests {
 
     #[test]
     fn unresolved_carrier_accounting_requires_an_exact_construction() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let curve_id = CurveId("curve-0".to_string());
         ir.model.curves.push(Curve {
             id: curve_id.clone(),

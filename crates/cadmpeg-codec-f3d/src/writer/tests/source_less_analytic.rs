@@ -1368,7 +1368,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
     };
 
-    let mut source_less = CadIr::empty(Default::default());
+    let mut source_less = CadIr::empty();
     let body = BodyId("synthetic:cylinder-band:body#0".into());
     let region = RegionId("synthetic:cylinder-band:region#0".into());
     let shell = ShellId("synthetic:cylinder-band:shell#0".into());

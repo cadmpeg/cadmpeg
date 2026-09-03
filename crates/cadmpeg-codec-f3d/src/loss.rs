@@ -156,8 +156,6 @@ pub enum F3dLossCode {
     XrefMemberMissing,
     /// An `XREF` member failed to decode.
     XrefMemberUndecoded,
-    /// An `XREF` component's units differ from the containing document.
-    XrefUnitsMismatch,
     /// T-spline records were retained without typed semantics.
     TsplineRecordUntyped,
     /// A T-spline control cage was not decoded.
@@ -247,7 +245,6 @@ impl F3dLossCode {
         Self::XrefCycle,
         Self::XrefMemberMissing,
         Self::XrefMemberUndecoded,
-        Self::XrefUnitsMismatch,
         Self::TsplineRecordUntyped,
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
@@ -335,7 +332,6 @@ impl F3dLossCode {
             Self::XrefCycle => "xref.cycle",
             Self::XrefMemberMissing => "xref.member-missing",
             Self::XrefMemberUndecoded => "xref.member-undecoded",
-            Self::XrefUnitsMismatch => "xref.units-mismatch",
             Self::TsplineRecordUntyped => "tspline.record-untyped",
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
@@ -363,7 +359,6 @@ impl F3dLossCode {
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefUnitsMismatch
             | Self::TsplineCageUndecoded => Severity::Error,
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
@@ -391,7 +386,6 @@ impl F3dLossCode {
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefUnitsMismatch
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
@@ -553,7 +547,6 @@ mod tests {
                 "xref.cycle",
                 "xref.member-missing",
                 "xref.member-undecoded",
-                "xref.units-mismatch",
                 "tspline.record-untyped",
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",

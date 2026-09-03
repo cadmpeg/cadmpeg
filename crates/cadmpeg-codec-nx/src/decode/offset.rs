@@ -2372,7 +2372,7 @@ mod tests {
     #[test]
     fn positive_weight_control_hull_bounds_offset_queries() {
         let support = SurfaceId("synthetic:hull-support".into());
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Nurbs(NurbsSurface {
@@ -2419,7 +2419,7 @@ mod tests {
         let offset = SurfaceId("synthetic:linear-offset".into());
         let construction =
             cadmpeg_ir::ids::ProceduralSurfaceId("synthetic:linear-offset-construction".into());
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Nurbs(NurbsSurface {

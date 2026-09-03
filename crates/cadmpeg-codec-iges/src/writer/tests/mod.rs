@@ -7,7 +7,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::io::Cursor;
 
@@ -183,7 +182,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     let vertex_start = VertexId("vertex#start".into());
     let vertex_end = VertexId("vertex#end".into());
     let curve_id = CurveId("curve#line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point {
             id: point_start.clone(),
@@ -231,7 +230,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
 #[test]
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
         id: PointId("point#global-profile".into()),
         source_object: None,
@@ -329,7 +328,7 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
 
 #[test]
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.5;
     ir.model.points.push(Point {
         id: PointId("point#resolution-floor".into()),
@@ -778,7 +777,6 @@ fn generated_conic_sweep_uses_the_shared_angular_tolerance() {
 fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
-    use cadmpeg_ir::units::Units;
 
     let face_id = FaceId::from("face");
     let inner_id = LoopId::from("inner");
@@ -793,7 +791,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         color: None,
         tolerance: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
             id: inner_id,
@@ -823,7 +821,6 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
 fn face_loop_order_does_not_promote_an_unclassified_loop() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
-    use cadmpeg_ir::units::Units;
 
     let face_id = FaceId::from("face");
     let inner_id = LoopId::from("inner");
@@ -838,7 +835,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         color: None,
         tolerance: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
             id: inner_id,

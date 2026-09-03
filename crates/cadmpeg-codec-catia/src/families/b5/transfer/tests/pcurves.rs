@@ -29,7 +29,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -965,7 +964,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     );
     assert!(plan.exact_support_edges.contains(&5));
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     assert!(transfer(
         &mut ir,
         &mut AnnotationBuilder::new(),
@@ -1131,7 +1130,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         },
     ]);
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     assert!(transfer(
         &mut ir,
         &mut AnnotationBuilder::new(),

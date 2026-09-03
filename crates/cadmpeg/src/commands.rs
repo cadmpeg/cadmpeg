@@ -567,9 +567,6 @@ pub fn diff(
         });
     }
     println!("diff {} vs {}", a.path.display(), b.path.display());
-    if let Some((before, after)) = &result.unit_change {
-        println!("  units: {before:?} → {after:?}");
-    }
     if let Some((before, after)) = &result.tolerance_change {
         println!("  tolerances: {before:?} → {after:?}");
     }

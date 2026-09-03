@@ -7,17 +7,16 @@
 
 use crate::ids::{PointId, RegionId, ShellId, VertexId};
 use crate::topology::{Shell, Vertex};
-use crate::units::Units;
 use crate::CadIr;
 
 /// Empty document: accepted by every current production gate.
 pub fn accepted_empty() -> CadIr {
-    CadIr::empty(Units::default())
+    CadIr::empty()
 }
 
 /// Vertex → missing point: rejected (`ReferentialIntegrity`).
 pub fn rejected_missing_point(prefix: &str) -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
         id: VertexId(format!("{prefix}:vertex#0")),
         point: PointId(format!("{prefix}:point#missing")),
@@ -28,7 +27,7 @@ pub fn rejected_missing_point(prefix: &str) -> CadIr {
 
 /// Shell → missing region: rejected (`ReferentialIntegrity` / topology).
 pub fn rejected_missing_region(prefix: &str) -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.shells.push(Shell {
         id: ShellId(format!("{prefix}:shell#0")),
         region: RegionId(format!("{prefix}:region#missing")),

@@ -166,7 +166,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     let support = SurfaceId("synthetic:wavy-support".into());
     let offset = SurfaceId("synthetic:wavy-offset".into());
     let construction = ProceduralSurfaceId("synthetic:wavy-offset-construction".into());
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
@@ -1153,7 +1153,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     let curve_id = cadmpeg_ir::ids::CurveId("synthetic:intersection:curve#0".into());
     let first = Point3::new(1.0, 2.0, 3.0);
     let last = Point3::new(4.0, 5.0, 6.0);
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
@@ -1288,7 +1288,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     let surface_id = SurfaceId("synthetic:serialized-seed-surface".into());
     let curve_id = CurveId("synthetic:serialized-seed-curve".into());
     let procedural_id = ProceduralCurveId("synthetic:serialized-seed-intersection".into());
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
@@ -1416,7 +1416,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         ProceduralSurfaceId("synthetic:coupled-construction-first".into()),
         ProceduralSurfaceId("synthetic:coupled-construction-second".into()),
     ];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: base_surfaces[0].clone(),
@@ -1873,7 +1873,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let supports = [SurfaceId("support-a".into()), SurfaceId("support-b".into())];
     for support in &supports {
         ir.model.surfaces.push(Surface {

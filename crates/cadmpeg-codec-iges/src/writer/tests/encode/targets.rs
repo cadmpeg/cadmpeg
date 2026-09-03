@@ -177,7 +177,7 @@ fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
 /// test fail while every other assertion in the crate still passes.
 #[test]
 fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
         id: PointId("cadir:model:point#honesty".into()),
         source_object: None,

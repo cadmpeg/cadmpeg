@@ -6,7 +6,6 @@ use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 
 #[test]
 fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
@@ -30,7 +29,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             u_axis: [0.0, 0.0, 1.0],
             offset: 1,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId("creo:visibgeom:surface#6".to_string()),
         geometry: SurfaceGeometry::Plane {
@@ -98,7 +97,7 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
     scan.planes.positional_frames.push(placed_plane());
 
     assert_eq!(
-        unbounded_feature_plane_definition(&scan, &CadIr::empty(Units::default()), 5),
+        unbounded_feature_plane_definition(&scan, &CadIr::empty(), 5),
         Some(IrFeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 1.0, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -110,7 +109,7 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
 #[test]
 fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
     let scan = unbounded_plane_scan();
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(plane_surface(1.0));
 
     assert_eq!(
@@ -127,7 +126,7 @@ fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
 fn unbounded_plane_rejects_conflicting_carriers() {
     let mut scan = unbounded_plane_scan();
     scan.planes.positional_frames.push(placed_plane());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(plane_surface(2.0));
 
     assert!(unbounded_feature_plane_definition(&scan, &ir, 5).is_none());

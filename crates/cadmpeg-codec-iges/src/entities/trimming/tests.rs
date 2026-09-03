@@ -11,7 +11,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Sense, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use super::{
@@ -317,7 +316,7 @@ fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
 fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let curve_id = CurveId("curve".into());
     let surface_id = SurfaceId("surface".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {

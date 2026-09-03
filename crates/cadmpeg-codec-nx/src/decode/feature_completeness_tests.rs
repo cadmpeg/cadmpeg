@@ -1529,7 +1529,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;
 
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("test:feature#block".into()),
         ordinal: 0,
@@ -1824,7 +1824,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("test:feature#initial-bodies".into()),
         ordinal: 0,
@@ -1858,7 +1858,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
 
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("test:feature#snapshot".into()),
         ordinal: 0,

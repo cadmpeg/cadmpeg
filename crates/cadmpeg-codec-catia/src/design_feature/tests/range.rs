@@ -79,7 +79,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         entity_records: vec![range_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 

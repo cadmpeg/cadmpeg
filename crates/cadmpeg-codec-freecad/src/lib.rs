@@ -48,7 +48,6 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::LossNote;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
@@ -1107,7 +1106,7 @@ impl CodecBackend for FcstdCodec {
         if let Some((_, thumbnail)) = thumbnail {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
         }
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();

@@ -18,7 +18,6 @@ use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region,
     Sense, Shell, Vertex,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use serde::{de::DeserializeOwned, Serialize};
@@ -406,12 +405,11 @@ mod consolidated_revolution_binding_tests {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
     fn one_revolution_torus_closes_face_aliases_and_meridian_seam() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let surface_ids = [
             SurfaceId("face-surface#0".to_string()),
             SurfaceId("face-surface#1".to_string()),
@@ -1707,7 +1705,7 @@ fn try_decode_standard_population(
         return None;
     }
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     preserve_raw_payload(

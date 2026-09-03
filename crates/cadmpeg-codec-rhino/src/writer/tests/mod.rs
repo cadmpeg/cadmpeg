@@ -9,7 +9,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::units::Units;
 
 pub(crate) use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
@@ -74,7 +73,7 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let body: BodyId = "cadir:model:body#polygon".into();
     let region: RegionId = "cadir:model:region#polygon".into();
     let shell: ShellId = "cadir:model:shell#polygon".into();
@@ -286,7 +285,7 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let body: BodyId = "cadir:model:body#adjacent".into();
     let region: RegionId = "cadir:model:region#adjacent".into();
     let shell: ShellId = "cadir:model:shell#adjacent".into();
@@ -467,7 +466,7 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let body: BodyId = "cadir:model:body#tetrahedron".into();
     let region: RegionId = "cadir:model:region#tetrahedron".into();
     let shell: ShellId = "cadir:model:shell#tetrahedron".into();

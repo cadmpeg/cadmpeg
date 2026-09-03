@@ -379,7 +379,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
             lead54_trailing_entity: None,
         });
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
     let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
     let [parameter] = ir.model.parameters.as_slice() else {
@@ -410,7 +410,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         .binding
         .value
         .clear();
-    let mut empty_binding_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut empty_binding_ir = CadIr::empty();
     let empty_binding_transfer = crate::formula::transfer_parameters(
         &mut empty_binding_ir,
         &empty_binding_native,
@@ -440,7 +440,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         .expect("complete relation-program inputs")[0]
         .value_type = "Real".to_string();
     conflicting_native.entity_records[1].relation_program_instance = Some(conflicting_instance);
-    let mut conflicting_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut conflicting_ir = CadIr::empty();
     let conflicting_transfer = crate::formula::transfer_parameters(
         &mut conflicting_ir,
         &conflicting_native,
@@ -489,7 +489,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
             lead54_trailing_entity: None,
         });
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
     let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
     let [input, output] = ir.model.parameters.as_slice() else {
@@ -513,7 +513,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         .clone()
         .expect("compound relation-program instance");
     ambiguous_native.entity_records[1].relation_program_instance = Some(duplicate_program);
-    let mut ambiguous_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ambiguous_ir = CadIr::empty();
     let ambiguous_transfer = crate::formula::transfer_parameters(
         &mut ambiguous_ir,
         &ambiguous_native,

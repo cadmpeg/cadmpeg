@@ -197,18 +197,7 @@ pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &
     });
 }
 
-pub(super) fn check_units(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if ir.units.length != LengthUnit::Millimeter {
-        findings.push(Finding {
-            check: Check::Units,
-            severity: Severity::Warning,
-            message: format!(
-                "document length unit is {:?}, not the canonical millimeter",
-                ir.units.length
-            ),
-            entity: None,
-        });
-    }
+pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
     if nonpositive(ir.tolerances.linear) {
         findings.push(Finding {
             check: Check::Tolerances,

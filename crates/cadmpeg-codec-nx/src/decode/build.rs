@@ -48,7 +48,6 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -137,7 +136,7 @@ pub(crate) fn try_decode_geometry(
     notes: &[String],
     admitted_entities: &mut u64,
 ) -> Result<Option<GeometryDecode>, CodecError> {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     let mut stream_unknowns = Vec::new();

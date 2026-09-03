@@ -4,13 +4,12 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::units::Units;
 
 use crate::RhinoCodec;
 
 /// An empty document that a Rhino decode of `dialect` would have produced.
 fn source_in(dialect: &'static str) -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::pinned(dialect),
@@ -66,7 +65,7 @@ fn an_explicit_target_wins_over_the_source_archive_version() {
 /// source whose identity could change.
 #[test]
 fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
-    let ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
     assert_eq!(
         resolved(&ir, RhinoCodec, TargetRequest::Inherit),
         "rhino:archive-80"
@@ -83,7 +82,7 @@ fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
 /// codec.
 #[test]
 fn inherit_refuses_a_source_that_records_no_dialect() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
             "format": "rhino",
@@ -201,7 +200,7 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
 fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point {
         id: cadmpeg_ir::ids::PointId("cadir:model:point#honesty".into()),
         source_object: None,

@@ -255,7 +255,6 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
     let target_result = StepCodec::default()
         .decode(&mut Cursor::new(target_bytes), &DecodeOptions::default())
         .expect("decode target independently");
-    assert_eq!(root_result.ir().units, target_result.ir().units);
     assert!(root_result
         .ir()
         .model

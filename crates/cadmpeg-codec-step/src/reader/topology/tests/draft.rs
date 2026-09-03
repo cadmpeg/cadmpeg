@@ -10,7 +10,6 @@ use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
-use cadmpeg_ir::units::Units;
 use std::collections::HashSet;
 use std::io::Cursor;
 
@@ -36,7 +35,7 @@ fn surface_draft(id: &str) -> ModelDraft {
 fn cross_root_surface_filter_tracks_successful_commits_only() {
     let committed_id = "step:data:surface#implicit-face-1";
     let rejected_id = "step:data:surface#implicit-face-2";
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut session = CommitSession::new(&ir);
 
     session
@@ -69,7 +68,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
@@ -113,7 +112,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),

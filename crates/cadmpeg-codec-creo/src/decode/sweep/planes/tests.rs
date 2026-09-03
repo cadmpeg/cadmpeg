@@ -7,7 +7,6 @@ use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 
 fn expected_linear_plane_extent() -> (ExtrudeExtent, [f64; 3]) {
     (
@@ -130,7 +129,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
     ]);
 
     assert_eq!(
-        generated_cap_plane_extent(&scan, &CadIr::empty(Units::default()), 7,),
+        generated_cap_plane_extent(&scan, &CadIr::empty(), 7,),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -153,7 +152,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
     scan.planes
         .outlines
         .extend([plane_outline(31, 2.0), plane_outline(32, 8.0)]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .surfaces
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
@@ -185,7 +184,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
 fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_frames() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .surfaces
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
@@ -207,7 +206,7 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
         plane_outline(31, 2.0),
         plane_outline(32, 8.0),
     ]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .surfaces
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
@@ -334,7 +333,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         normal: frame.axis,
         offset: 0,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(
         33,
         Point3::new(0.0, 4.0, 0.0),

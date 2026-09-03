@@ -332,7 +332,6 @@ mod tests {
     use super::*;
     use crate::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
     use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
-    use crate::units::Units;
     use crate::{NativeNamespace, NativeRecord};
     use serde_json::Map;
 
@@ -369,7 +368,7 @@ mod tests {
 
     #[test]
     fn procedural_surface_owner_index_preserves_arena_precedence() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for id in ["first", "second"] {
             ir.model.procedural_surfaces.push(procedural_surface! {
                 id: ProceduralSurfaceId(format!("test:procedural-surface#{id}")),
@@ -392,7 +391,7 @@ mod tests {
 
     #[test]
     fn procedural_curve_owner_index_preserves_arena_precedence() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let curve = CurveId("test:curve#owner".to_string());
         for id in ["first", "second"] {
             ir.model.procedural_curves.push(procedural_curve! {
@@ -419,7 +418,7 @@ mod tests {
 
     #[test]
     fn model_only_index_excludes_native_identity_universe() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let native_id = "test:native#0";
         let mut namespace = NativeNamespace::new(std::num::NonZeroU32::MIN);
         namespace.arenas.insert(
@@ -456,7 +455,7 @@ mod tests {
 
     #[test]
     fn typed_lookup_indexes_are_lazy_and_preserve_last_duplicate() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let parameter_id = crate::features::ParameterId("test:parameter#0".into());
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
             ir.model.parameters.push(crate::features::DesignParameter {
@@ -489,7 +488,7 @@ mod tests {
 
     #[test]
     fn procedural_carrier_index_preserves_exact_and_unique_producer_rules() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let exact_surface = crate::ids::SurfaceId("test:surface#exact".to_string());
         let exact_construction = crate::ids::ProceduralSurfaceId("test:procedural#exact".into());
         ir.model.surfaces.push(Surface {

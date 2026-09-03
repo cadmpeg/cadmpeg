@@ -36,7 +36,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     // The catalog intentionally has no cross-format default, so `plan`
     // refuses without pretending schema 4 was requested and then naming it
     // as both requested and available.
-    let mut step_source = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut step_source = cadmpeg_ir::CadIr::empty();
     step_source.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::pinned("step:ap242"),

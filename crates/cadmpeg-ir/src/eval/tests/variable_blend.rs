@@ -12,7 +12,7 @@ fn variable_blend_eval_fixture(
     let second_surface = SurfaceId("second-support".into());
     let blend_surface = SurfaceId("cacheless-variable-blend".into());
     let slice = CurveId("blend-slice".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: slice.clone(),
         geometry: CurveGeometry::Line {

@@ -318,7 +318,7 @@ mod tests {
     use cadmpeg_ir::topology::{Body, BodyKind, Face, Sense};
 
     fn model(face_count: usize) -> CadIr {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.bodies.push(Body {
             id: BodyId("body".into()),
             kind: BodyKind::Solid,

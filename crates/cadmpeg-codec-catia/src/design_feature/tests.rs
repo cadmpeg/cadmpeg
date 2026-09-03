@@ -6,7 +6,6 @@
 use super::*;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::units::Units;
 use std::io::Cursor;
 
 use crate::native::{
@@ -221,7 +220,7 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -268,7 +267,7 @@ fn malformed_compact_root_does_not_promote_an_operation() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -303,7 +302,7 @@ fn assigns_parent_from_an_exact_transferred_owner_chain() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut parent_feature = feature("parent-feature", "parent-object");
     parent_feature.ordinal = 10;
     let mut child_feature = feature("child-feature", "child-object");
@@ -340,7 +339,7 @@ fn assigns_parent_from_the_nearest_transferred_ancestor() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut parent_feature = feature("parent-feature", "parent-object");
     parent_feature.ordinal = 10;
     let mut child_feature = feature("child-feature", "child-object");
@@ -375,7 +374,7 @@ fn rejects_a_parent_that_does_not_precede_its_child() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut parent_feature = feature("parent-feature", "parent-object");
     parent_feature.ordinal = 20;
     let mut child_feature = feature("child-feature", "child-object");
@@ -408,7 +407,7 @@ fn does_not_assign_a_self_parent() {
         design_objects: vec![design_object("feature-object", Some("feature-object"))],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(feature("feature", "feature-object"));
     let transfer = DesignFeatureTransfer {
         feature_ids: HashMap::from([("feature-object".to_string(), FeatureId::from("feature"))]),
@@ -429,7 +428,7 @@ fn omits_all_parents_in_an_owner_cycle() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .features
         .push(feature("first-feature", "first-object"));
@@ -489,7 +488,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, native_ref, ordinal) in [
         ("first-feature", "first-object", 10),
         ("second-feature", "second-object", 15),
@@ -598,7 +597,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -696,7 +695,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     transfer_design_features(&mut ir, &native, None);
 
@@ -821,7 +820,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         entity_records: vec![definition_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -956,7 +955,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
         entity_records: vec![chain_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -1090,7 +1089,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         entity_records: vec![descendant_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -1210,7 +1209,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .parameters
         .push(parameter("late-parameter", "late-parameter-entity"));
@@ -1323,7 +1322,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         entity_records: vec![entity_record("parameter-entity", "parameter-record", 30, 3)],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .parameters
         .push(parameter("parameter", "parameter-entity"));
@@ -1348,7 +1347,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
 
 #[test]
 fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId::from("feature"),
         ordinal: 0,
@@ -1400,7 +1399,7 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
 
 #[test]
 fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId::from("pattern-feature"),
         ordinal: 0,
@@ -1447,7 +1446,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
 #[test]
 fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
     let owner = FeatureId::from("feature");
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut first = parameter("first", "first-native");
     first.owner = Some(owner.clone());
     first.name = "Angle".to_string();
@@ -1511,7 +1510,7 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -1535,7 +1534,7 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
         .value = "CircPattern".to_string();
     native.object_graphs[0].records[0].class_name = Some("Element1".to_string());
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
     assert!(ir.model.features.is_empty());
     assert!(transfer.consumed_records().is_empty());
@@ -1561,7 +1560,7 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
         Some("PRTSketch")
     );
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
     assert!(ir.model.features.is_empty());
@@ -1606,7 +1605,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         name: "Sketch".to_string(),
     });
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
     let parameter_entity = native
@@ -1698,7 +1697,7 @@ fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
         Some(native.design_objects[1].id.clone())
     );
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
     assert!(ir.model.features.is_empty());
@@ -1779,7 +1778,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     child_object.parallel_reference_table = None;
     native.design_objects.push(child_object);
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
     ir.model
         .parameters
@@ -1830,7 +1829,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
             class,
         ]));
         let native = crate::native::CatiaNative::decode(&bytes);
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
 
         let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
@@ -1850,7 +1849,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
             native.design_objects[0].fields.iter().cloned().collect()
         );
 
-        let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut excluded_ir = CadIr::empty();
         let excluded = crate::design_feature::transfer_design_features(
             &mut excluded_ir,
             &native,
@@ -1895,7 +1894,7 @@ fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
         let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
         bytes.extend(catalog_stream(&catalog));
         let native = crate::native::CatiaNative::decode(&bytes);
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
 
         let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 

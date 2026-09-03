@@ -9,7 +9,6 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::directory::{DirectoryEntry, Status};
@@ -568,7 +567,7 @@ fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
 
 #[test]
 fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (sequence, z) in [(1, 0.0), (3, 0.0)] {
         ir.model.curves.push(Curve {
             id: CurveId(format!("iges:model:curve#D{sequence}")),
@@ -694,7 +693,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
 
 #[test]
 fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for sequence in [1, 3] {
         ir.model.curves.push(Curve {
             id: CurveId(format!("iges:model:curve#D{sequence}")),

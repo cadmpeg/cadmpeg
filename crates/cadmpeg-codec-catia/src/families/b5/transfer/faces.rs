@@ -607,7 +607,6 @@ mod tests {
     use cadmpeg_ir::ids::{PcurveId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::LoopBoundaryRole;
-    use cadmpeg_ir::units::Units;
 
     use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMetadata};
     use super::{b5_boundary_roles, OrientedLoop};
@@ -719,7 +718,7 @@ mod tests {
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId("surface#10".to_string()),
             geometry: SurfaceGeometry::Plane {

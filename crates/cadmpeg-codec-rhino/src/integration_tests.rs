@@ -175,7 +175,7 @@ fn document_pipeline_composes_definitions_history_identity_attributes_and_settin
 
 #[test]
 fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topology() {
-    let mut point_ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut point_ir = cadmpeg_ir::CadIr::empty();
     point_ir.model.points.push(cadmpeg_ir::topology::Point {
         id: cadmpeg_ir::ids::PointId("integration:point#0".into()),
         position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
@@ -1960,7 +1960,7 @@ fn opennurbs_object_walk_and_transfer_floor() {
             80 => RhinoArchiveVersion::V8,
             _ => unreachable!("supported writer version table"),
         };
-        let mut point_ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut point_ir = cadmpeg_ir::CadIr::empty();
         point_ir.model.points.push(cadmpeg_ir::topology::Point {
             id: cadmpeg_ir::ids::PointId("integration:writer-point#0".into()),
             position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),

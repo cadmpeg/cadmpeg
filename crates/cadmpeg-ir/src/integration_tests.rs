@@ -15,7 +15,6 @@ use crate::math::Point3;
 use crate::provenance::SourceObjectAssociation;
 use crate::report::{Check, Severity, ValidationReport};
 use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use crate::units::Units;
 use crate::validate::{entity_census, validate_neutral};
 
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
@@ -61,7 +60,7 @@ fn point(id: &str) -> Point {
 
 fn ir_strategy() -> impl Strategy<Value = CadIr> {
     proptest::collection::btree_set(id_strategy(), 1..=8).prop_map(|ids| {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for id in ids {
             ir.model.points.push(point(&id));
         }
@@ -236,7 +235,7 @@ proptest! {
                 tolerance: None,
             })
             .unwrap();
-        let mut base = CadIr::empty(Units::default());
+        let mut base = CadIr::empty();
         let dangling_result = dangling.commit_model(&mut base);
         let is_unresolved = matches!(
             dangling_result,
@@ -257,7 +256,7 @@ proptest! {
             &region_id,
             &shell_id,
         );
-        let mut base = CadIr::empty(Units::default());
+        let mut base = CadIr::empty();
         draft.commit_model(&mut base).unwrap();
         base.finalize();
         let report = validate_neutral(&base, Vec::new());

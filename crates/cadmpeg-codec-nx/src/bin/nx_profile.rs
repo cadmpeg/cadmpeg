@@ -857,7 +857,7 @@ mod tests {
 
     #[test]
     fn streaming_canonical_hash_matches_the_canonical_document() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let ir = CadIr::empty();
         assert_eq!(
             canonical_sha256(&ir).expect("test IR must serialize through the profile writer"),
             cadmpeg_ir::hash::sha256_hex(
@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn empty_neutral_history_rederives_the_empty_saved_body_census() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let ir = CadIr::empty();
         assert_eq!(
             neutral_rederivation_evidence(&ir),
             (VerificationStatus::Verified, None)
@@ -907,7 +907,7 @@ mod tests {
         use cadmpeg_ir::features::{Feature, FeatureId};
         use cadmpeg_ir::topology::{Body, BodyKind};
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let body = BodyId("body".to_string());
         ir.model.bodies.push(Body {
             id: body.clone(),
@@ -948,7 +948,7 @@ mod tests {
     fn rederivation_boundary_identifies_feature_family_and_history_position() {
         use cadmpeg_ir::features::{Feature, FeatureId};
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
             id: FeatureId("block".to_string()),
             ordinal: 17,
@@ -1023,7 +1023,7 @@ mod tests {
     fn unresolved_body_neutral_state_does_not_block_rederivation() {
         use cadmpeg_ir::features::{Feature, FeatureId, FeatureTreeNodeRole};
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
             id: FeatureId("feature".to_string()),
             ordinal: 0,
@@ -1080,7 +1080,7 @@ mod tests {
         use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
         use cadmpeg_ir::ids::AppearanceId;
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
             id: BodyId("body".to_string()),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
@@ -1167,7 +1167,7 @@ mod tests {
         use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
         use cadmpeg_ir::ids::AppearanceId;
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
             id: BodyId("body".to_string()),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
@@ -1224,7 +1224,7 @@ mod tests {
 
     #[test]
     fn effective_color_accepts_absent_color_without_an_assignment() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let ir = CadIr::empty();
         let target = AppearanceTarget::Body(BodyId("body".to_string()));
 
         assert!(has_effective_color(&ir, None, &target));
@@ -1232,7 +1232,7 @@ mod tests {
 
     #[test]
     fn effective_color_requires_normalized_direct_color() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let ir = CadIr::empty();
         let target = AppearanceTarget::Body(BodyId("body".to_string()));
         assert!(!has_effective_color(
             &ir,

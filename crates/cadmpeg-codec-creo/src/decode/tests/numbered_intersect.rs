@@ -39,7 +39,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry};
-use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -304,7 +303,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
 #[test]
 fn chamfer_requires_every_affected_support_plane_to_be_placed() {
     let mut scan = crate::container::scan_bytes(Vec::new());
-    let empty_ir = CadIr::empty(Units::default());
+    let empty_ir = CadIr::empty();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 10,
         type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
@@ -418,11 +417,11 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
     scan.surfaces.rows.extend([row(31), row(32)]);
     scan.planes.outlines.push(plane(31, 2.0));
 
-    assert!(feature_plane_equations(&scan, &CadIr::empty(Units::default()), 917).is_none());
+    assert!(feature_plane_equations(&scan, &CadIr::empty(), 917).is_none());
 
     scan.planes.outlines.push(plane(32, 8.0));
     assert_eq!(
-        feature_plane_equations(&scan, &CadIr::empty(Units::default()), 917).and_then(|planes| {
+        feature_plane_equations(&scan, &CadIr::empty(), 917).and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some((
@@ -1283,7 +1282,7 @@ fn mixed_current_and_generated_edges_remain_native() {
             offset: 1,
         },
     ]);
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: IrFeatureId("creo:model:feature#97".to_string()),
         ordinal: 0,
@@ -1339,7 +1338,7 @@ fn agreed_empty_edge_selection_is_resolved() {
     ]);
 
     assert_eq!(
-        feature_edge_selection(&scan, &CadIr::empty(Units::default()), 10),
+        feature_edge_selection(&scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Resolved {
             edges: Vec::new(),
             native: "creo:allfeatur:edgs_affected#10:".to_string(),
@@ -1359,7 +1358,7 @@ fn agreed_empty_edge_selection_is_resolved() {
             offset: 0,
         });
     assert_eq!(
-        feature_edge_selection(&replay_scan, &CadIr::empty(Units::default()), 10),
+        feature_edge_selection(&replay_scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Resolved {
             edges: Vec::new(),
             native: "creo:allfeatur:replay_edgs_affected#10:".to_string(),
@@ -1385,10 +1384,7 @@ fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
         },
     ]);
 
-    assert_eq!(
-        feature_edge_selection(&scan, &CadIr::empty(Units::default()), 10),
-        None
-    );
+    assert_eq!(feature_edge_selection(&scan, &CadIr::empty(), 10), None);
 }
 
 #[test]
@@ -1499,7 +1495,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             offset: 0,
         });
     assert_eq!(
-        feature_edge_selection(&scan, &CadIr::empty(Units::default()), 10),
+        feature_edge_selection(&scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Generated {
             edges: vec![GeneratedEdgeRef {
                 feature: IrFeatureId("creo:model:feature#50".to_string()),
@@ -1833,7 +1829,7 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
 
 #[test]
 fn geometry_signal_excludes_opaque_carriers() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let surface_id = SurfaceId("surface".to_string());
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
