@@ -1064,9 +1064,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 };
                 let profile_feature = &model_features[profile_index];
                 let FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
                     sketch: Some(sketch),
-                    ..
                 } = &profile_feature.definition
                 else {
                     continue;
@@ -1079,13 +1077,11 @@ pub(crate) fn bind_profile_revolution_axes(
             cadmpeg_ir::features::ProfileRef::Sketch(sketch_id) => {
                 let mut owners = model_features.iter().filter(|candidate| {
                     matches!(
-                        &candidate.definition,
-                        FeatureDefinition::Sketch {
-                            space: cadmpeg_ir::features::SketchSpace::Planar,
-                            sketch: Some(candidate),
-                            ..
-                        } if candidate == sketch_id
-                    )
+                    &candidate.definition,
+                    FeatureDefinition::Sketch {
+                        sketch: Some(candidate),
+                    } if candidate == sketch_id
+                        )
                 });
                 let Some(owner) = owners.next() else {
                     continue;

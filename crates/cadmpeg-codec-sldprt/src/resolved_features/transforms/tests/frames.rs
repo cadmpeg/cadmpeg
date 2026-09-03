@@ -316,10 +316,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: None,
-        },
+        definition: FeatureDefinition::Sketch { sketch: None },
         native_ref: Some("native-feature".into()),
     };
     let parameter = DesignParameter {
@@ -725,7 +722,6 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         },
         native_ref: Some("feature-native".into()),
@@ -1164,10 +1160,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: None,
-        },
+        definition: FeatureDefinition::Sketch { sketch: None },
         native_ref: Some("feature-native".into()),
     }];
     let parameter = DesignParameter {

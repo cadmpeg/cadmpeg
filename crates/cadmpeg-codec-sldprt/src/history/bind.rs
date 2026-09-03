@@ -2,9 +2,7 @@
 //! Sketch binding, regeneration order, and feature-output derivation.
 
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, PathRef, ProfileRef, SketchSpace, SplitFaceTool,
-};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, PathRef, ProfileRef, SplitFaceTool};
 use cadmpeg_ir::topology::Face;
 use std::collections::HashMap;
 
@@ -71,7 +69,6 @@ pub fn bind_unique_sketch_feature(
     }
     for (index, _, _, sketch, _) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         };
     }

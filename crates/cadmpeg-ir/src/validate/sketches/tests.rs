@@ -643,7 +643,6 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: crate::features::SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: None,

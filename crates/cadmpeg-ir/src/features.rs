@@ -1172,12 +1172,9 @@ pub enum FeatureDefinition {
     },
     /// Solved sketch node in the construction history.
     Sketch {
-        /// Coordinate space containing the sketch geometry.
-        #[serde(default)]
-        space: SketchSpace,
-        /// Neutral planar sketch geometry owned by this history node, when resolved.
         /// Neutral sketch geometry owned by this history node, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(flatten, with = "sketch_feature_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "SketchFeatureSchemaWire"))]
         sketch: Option<crate::sketches::SketchId>,
     },
     /// Solved spatial-sketch node in the construction history.
@@ -2362,18 +2359,83 @@ pub enum PrincipalPlane {
     Right,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the planar-sketch wire schema")]
+struct SketchFeatureSchemaWire {
+    space: SketchFeatureSpaceSchema,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sketch: Option<crate::sketches::SketchId>,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
 #[serde(rename_all = "snake_case")]
-/// Coordinate space of a sketch history node.
-pub enum SketchSpace {
-    /// Planar or spatial coordinates are not established.
+#[expect(dead_code, reason = "variants define the planar-sketch wire schema")]
+enum SketchFeatureSpaceSchema {
     Unresolved,
-    /// Geometry lies on one plane.
-    #[default]
     Planar,
-    /// Geometry occupies model-space coordinates.
-    Spatial,
+}
+
+mod sketch_feature_wire {
+    use crate::sketches::SketchId;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Clone, Copy, Default, Deserialize, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum Space {
+        Unresolved,
+        #[default]
+        Planar,
+        Spatial,
+    }
+
+    #[derive(Serialize)]
+    struct WriteWire<'a> {
+        space: Space,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sketch: Option<&'a SketchId>,
+    }
+
+    #[derive(Deserialize)]
+    struct ReadWire {
+        #[serde(default)]
+        space: Space,
+        #[serde(default)]
+        sketch: Option<SketchId>,
+    }
+
+    pub fn serialize<S>(value: &Option<SketchId>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        WriteWire {
+            space: if value.is_some() {
+                Space::Planar
+            } else {
+                Space::Unresolved
+            },
+            sketch: value.as_ref(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<SketchId>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReadWire::deserialize(deserializer)?;
+        match (wire.space, wire.sketch) {
+            (Space::Planar, sketch) => Ok(sketch),
+            (Space::Unresolved, None) => Ok(None),
+            (Space::Unresolved, Some(_)) => Err(serde::de::Error::custom(
+                "sketch must be absent when space is unresolved",
+            )),
+            (Space::Spatial, _) => Err(serde::de::Error::custom(
+                "spatial sketch geometry requires the spatial_sketch definition",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

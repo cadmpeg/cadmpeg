@@ -90,7 +90,6 @@ pub use features::{
     ConfigurationId, ConfigurationName, CurveProjectionDirection, CurveProjectionDirectionState,
     DesignConfiguration, DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId,
     ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
-    SketchSpace,
 };
 pub use ids::{format_identity, is_valid_identity, IdentityError};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};

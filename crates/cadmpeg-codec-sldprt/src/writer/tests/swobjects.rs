@@ -342,7 +342,6 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -575,11 +574,7 @@ fn encoder_writes_source_less_line_sketches() {
         )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(_),
-            ..
-        }
+        FeatureDefinition::Sketch { sketch: Some(_) }
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,

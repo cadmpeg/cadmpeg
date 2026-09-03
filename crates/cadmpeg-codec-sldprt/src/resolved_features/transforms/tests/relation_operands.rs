@@ -565,7 +565,6 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: Some("feature-native".into()),
@@ -646,7 +645,6 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: Some("feature-native".into()),
@@ -718,7 +716,6 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: Some("feature-native".into()),

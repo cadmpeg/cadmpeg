@@ -223,10 +223,7 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                space: crate::features::SketchSpace::Planar,
-                sketch: None,
-            },
+            definition: FeatureDefinition::Sketch { sketch: None },
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
@@ -261,7 +258,6 @@ mod tests {
                     dependencies: Vec::new(),
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {
-                        space: crate::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     },
                 },

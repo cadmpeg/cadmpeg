@@ -201,10 +201,7 @@ pub(in super::super) fn schema_feature_definition(
                     .any(|candidate| candidate.id == sketch)
                     .then_some(sketch)
             });
-        return IrFeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::default(),
-            sketch,
-        };
+        return IrFeatureDefinition::Sketch { sketch };
     }
     if schema_class == 911 {
         let stepped_form = stepped_hole_form(

@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition, FeatureId, ParameterId, PatternForm, PatternKind, PrincipalPlane,
-    SketchSpace,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
@@ -658,7 +657,6 @@ fn transfer_sketch(
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Unresolved,
             sketch: Some(sketch_id),
         },
         native_ref: Some(object.id.clone()),

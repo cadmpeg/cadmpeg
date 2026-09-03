@@ -1453,9 +1453,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
 #[test]
 fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
-    use cadmpeg_ir::features::{
-        BooleanOp, LoftSection, PathRef, SheetMetalThicknessSide, SketchSpace,
-    };
+    use cadmpeg_ir::features::{BooleanOp, LoftSection, PathRef, SheetMetalThicknessSide};
     use cadmpeg_ir::sketches::SpatialSketchId;
 
     let feature = |id: &str, ordinal, definition| Feature {
@@ -1479,7 +1477,6 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         "f3d:feature:planar-sketch",
         0,
         FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(planar_sketch.clone()),
         },
     );

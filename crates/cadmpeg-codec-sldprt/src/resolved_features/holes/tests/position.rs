@@ -504,7 +504,6 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(SketchId("position-geometry".into())),
         },
         native_ref: Some("native-position-sketch".into()),
@@ -740,7 +739,6 @@ fn unique_unindexed_point_locus_is_projected() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(SketchId("position-geometry".into())),
         },
         native_ref: Some("native-position-sketch".into()),

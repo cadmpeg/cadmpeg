@@ -6,7 +6,7 @@ use crate::records::{
 };
 use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue, SketchSpace,
+    ParameterValue,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
@@ -93,7 +93,6 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: Some("feature".into()),

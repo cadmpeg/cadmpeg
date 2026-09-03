@@ -3088,3 +3088,17 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::TSplineSurfaceConstruction::{program_graph,values_graph}"
 reason = "the semantic program graphs are parsed on demand from the sole stored T-spline subtransform source and cannot diverge from it"
+
+[[change]]
+commit = "addc498b134e3fa1607f32100f008e3dff32a5ea"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::features::SketchSpace"
+reason = "planar sketch resolution is represented by the optional SketchId, while model-space sketches use the separate SpatialSketch definition"
+
+[[change]]
+commit = "addc498b134e3fa1607f32100f008e3dff32a5ea"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::FeatureDefinition::Sketch::space"
+reason = "Some(sketch) is necessarily planar and None is unresolved, so an independent space discriminator admitted contradictions and a dead spatial form"

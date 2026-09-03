@@ -655,10 +655,7 @@ pub fn project_parameter_design_with_edge_identities(
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind);
             let definition = match family {
-                Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Unresolved,
-                    sketch: None,
-                },
+                Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: None },
                 Some(DesignFeatureFamily::Assemble) => scope
                     .assembly_alignment
                     .as_ref()
@@ -2547,16 +2544,12 @@ pub fn bind_sketch_feature_geometry(
         let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
         feature.definition = match (has_planar, has_spatial) {
             (true, false) => FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(planar),
             },
             (false, true) => FeatureDefinition::SpatialSketch {
                 sketch: Some(spatial),
             },
-            _ => FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Unresolved,
-                sketch: None,
-            },
+            _ => FeatureDefinition::Sketch { sketch: None },
         };
     }
     for feature in features.iter_mut() {
@@ -2621,7 +2614,6 @@ pub fn bind_sketch_feature_geometry(
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
             } => Some((sketch.clone(), feature.id.clone())),
             _ => None,

@@ -1089,8 +1089,8 @@ mod tests {
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
         HolePlacement, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction,
-        RibConstruction, RibDraft, SketchSpace, SurfaceExtension, SweepMode, SweepSection,
-        Termination, ThickenSide, TrimRegion,
+        RibConstruction, RibDraft, SurfaceExtension, SweepMode, SweepSection, Termination,
+        ThickenSide, TrimRegion,
     };
     use cadmpeg_ir::ids::{CurveId, FaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1507,10 +1507,7 @@ mod tests {
         ir.model.features.push(body_neutral_feature(
             &profile.0,
             1,
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Unresolved,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ));
         ir.model.features.extend([
             complete_extrude_feature(
@@ -1545,10 +1542,7 @@ mod tests {
         ir.model.features.push(body_neutral_feature(
             &profile.0,
             1,
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Unresolved,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ));
         ir.model.features.push(complete_extrude_feature(
             "extrude",

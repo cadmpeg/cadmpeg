@@ -7,7 +7,7 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::features::{
     ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, Length, ParameterId, PathRef, ProfileRef,
-    SketchSpace, SplitFaceTool,
+    SplitFaceTool,
 };
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -885,10 +885,7 @@ pub(crate) fn project_definition(
         {
             FeatureDefinition::SpatialSketch { sketch: None }
         } else {
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            }
+            FeatureDefinition::Sketch { sketch: None }
         };
     }
     if class == Some(FeatureClass::SketchBlockDefinition) {

@@ -227,7 +227,6 @@ fn encoder_writes_source_less_curved_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -857,7 +856,6 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             },
             native_ref: None,
@@ -890,9 +888,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } => Some(sketch),
             _ => None,
         })

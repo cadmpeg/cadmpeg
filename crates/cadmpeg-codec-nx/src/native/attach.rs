@@ -16,8 +16,8 @@ use cadmpeg_ir::features::{
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
     HolePlacement, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
-    RadiusForm, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SurfaceExtension, SweepMode,
-    Termination, ThickenSide, TrimRegion,
+    RadiusForm, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, SweepMode, Termination,
+    ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -3458,7 +3458,6 @@ fn attach_feature_operations(
                 .unwrap_or_else(|| {
                     if let Some(sketch) = sketch {
                         return FeatureDefinition::Sketch {
-                            space: SketchSpace::Planar,
                             sketch: Some(sketch),
                         };
                     }
@@ -6000,10 +5999,7 @@ fn non_boolean_feature_definition_with_parameters(
             placement: None,
             op: BooleanOp::Unresolved,
         },
-        "SKETCH" => FeatureDefinition::Sketch {
-            space: SketchSpace::Unresolved,
-            sketch: None,
-        },
+        "SKETCH" => FeatureDefinition::Sketch { sketch: None },
         "EXTRACT_BODY" => FeatureDefinition::ExtractBody {
             source: BodySelection::Unresolved,
         },

@@ -34,8 +34,8 @@ use cadmpeg_ir::features::{
     DatumPlaneReference, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
     FeatureTreeNodeRole, HoleBottom, HoleKind, Length, ParameterId, ParameterValue, PathRef,
-    ProfileRef, RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction, SketchSpace,
-    SplitFaceTool, Termination,
+    ProfileRef, RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction, SplitFaceTool,
+    Termination,
 };
 #[allow(unused_imports)]
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};

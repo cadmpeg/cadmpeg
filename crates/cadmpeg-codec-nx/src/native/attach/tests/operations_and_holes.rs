@@ -471,10 +471,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 fn nx_named_operation_families_preserve_unresolved_semantics() {
     assert!(matches!(
         super::non_boolean_feature_definition("SKETCH", &[], None, None, None),
-        cadmpeg_ir::features::FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Unresolved,
-            sketch: None,
-        }
+        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: None }
     ));
     assert!(matches!(
         super::non_boolean_feature_definition(

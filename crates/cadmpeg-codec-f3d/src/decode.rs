@@ -512,7 +512,7 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
 }
 
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternKind, SketchSpace};
+    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
 
     match definition {
         FeatureDefinition::Native { kind, .. } => !matches!(kind.as_str(), "Canvas" | "Decal"),
@@ -776,9 +776,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     }
                 }
         }
-        FeatureDefinition::Sketch { space, sketch } => {
-            *space == SketchSpace::Unresolved || sketch.is_none()
-        }
+        FeatureDefinition::Sketch { sketch } => sketch.is_none(),
         FeatureDefinition::DatumPoint { construction, .. } => construction
             .as_deref()
             .is_none_or(|construction| !datum_point_construction_is_resolved(construction)),

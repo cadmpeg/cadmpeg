@@ -99,9 +99,7 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(id),
-            ..
         } if id == &sketch.id
     ));
 }
@@ -279,8 +277,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,
         FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(value), ..
+            sketch: Some(value),
         } if value == &sketch_id
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
@@ -312,11 +309,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         .iter()
         .any(|feature| matches!(
             feature.definition,
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(_),
-                ..
-            }
+            FeatureDefinition::Sketch { sketch: Some(_) }
         )));
 }
 
@@ -369,28 +362,19 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "base",
             "Profile",
             "native-base",
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ),
         neutral(
             "alias",
             "Profile<3>",
             "native-alias",
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ),
         neutral(
             "different",
             "Profile<4>",
             "native-different",
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ),
         neutral(
             "consumer",
@@ -486,9 +470,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } => Some(sketch.clone()),
             _ => None,
         })
