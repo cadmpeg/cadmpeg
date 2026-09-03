@@ -124,8 +124,9 @@ pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
     SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
-    SketchPlacement, SketchSolverScalar, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
-    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
+    SketchPlacement, SketchSolverScalar, SolverScalarClass, SpatialSketch, SpatialSketchEntity,
+    SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId,
+    SpatialSketchProfile,
 };
 pub use source_fidelity::{
     decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,

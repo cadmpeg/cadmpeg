@@ -1243,3 +1243,29 @@ fn same_coordinate_accepts_legacy_relation_tags() {
         );
     }
 }
+
+#[test]
+fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
+    use crate::sketches::{SketchSolverScalar, SolverScalarClass};
+
+    for (class, wire_value) in [
+        (SolverScalarClass::Difference, 0),
+        (SolverScalarClass::Angle, 4),
+        (SolverScalarClass::Equality, 6),
+    ] {
+        let scalar = SketchSolverScalar { class, key: 17 };
+        let wire = serde_json::to_value(scalar).unwrap();
+        assert_eq!(wire["variable_type"], wire_value);
+        assert_eq!(
+            serde_json::from_value::<SketchSolverScalar>(wire).unwrap(),
+            scalar
+        );
+    }
+
+    let error = serde_json::from_value::<SketchSolverScalar>(serde_json::json!({
+        "variable_type": 5,
+        "key": 17,
+    }))
+    .unwrap_err();
+    assert!(error.to_string().contains("variable_type"));
+}

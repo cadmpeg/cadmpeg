@@ -3277,3 +3277,17 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::sketches::SketchConstraintDefinition::{HorizontalLoci,VerticalLoci,HorizontalPoints,VerticalPoints}"
 reason = "one SameCoordinate variant with a typed axis replaces four duplicate relation spellings"
+
+[[change]]
+commit = "ea7aae5232889264edcbfaf6588e2614623a4f51"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchSolverScalar"
+reason = "a closed SolverScalarClass replaces the unrestricted variable_type integer while preserving its numeric wire field"
+
+[[change]]
+commit = "ea7aae5232889264edcbfaf6588e2614623a4f51"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::sketches::SolverScalarClass"
+reason = "the three admitted Creo solver scalar classes are the only constructible values"
