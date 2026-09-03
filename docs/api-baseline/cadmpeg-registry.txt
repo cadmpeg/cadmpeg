@@ -1,4 +1,4 @@
-# generated at 2c906f0ca
+# generated at 0a532ebc4
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -10,7 +10,7 @@ pub cadmpeg_registry::DetectionOutcome::Detected::confidence: cadmpeg_ir::codec:
 pub cadmpeg_registry::DetectionOutcome::None
 pub enum cadmpeg_registry::ForcedInput
 pub cadmpeg_registry::ForcedInput::Cadir
-pub cadmpeg_registry::ForcedInput::Codec(&'static cadmpeg_registry::FormatDescriptor)
+pub cadmpeg_registry::ForcedInput::Codec(&'static cadmpeg_registry::NativeDescriptor)
 impl core::cmp::Eq for cadmpeg_registry::ForcedInput
 impl core::cmp::PartialEq for cadmpeg_registry::ForcedInput
 pub fn cadmpeg_registry::ForcedInput::eq(&self, &Self) -> bool
@@ -128,6 +128,7 @@ pub struct cadmpeg_registry::Inspected
 pub cadmpeg_registry::Inspected::format: &'static str
 pub cadmpeg_registry::Inspected::selection: cadmpeg_registry::Selection
 pub cadmpeg_registry::Inspected::summary: cadmpeg_ir::container::ContainerSummary
+pub struct cadmpeg_registry::NativeDescriptor
 pub struct cadmpeg_registry::UnknownDisposition
 pub struct cadmpeg_registry::UnknownFormat
 pub const cadmpeg_registry::DETECTION_PREFIX_LEN: usize
