@@ -3004,3 +3004,17 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::products::Occurrence::{linked_subelements,element_component,claim_child,copy_on_change,copy_on_change_source,copy_on_change_group,copy_on_change_touched}"
 reason = "LinkState groups App::Link-only occurrence metadata, and CopyOnChange carries its policy with the optional source, group, and touched state"
+
+[[change]]
+commit = "19bfa38012e0aa68bb42c2afd34aa03c7912342b"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::native::catalogue::FamilyRow::{phase,note}"
+reason = "Phase carries the required annotation function for GroupA and GroupB families, while ArenaOnly cannot retain an unreachable callback"
+
+[[change]]
+commit = "19bfa38012e0aa68bb42c2afd34aa03c7912342b"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::native::catalogue::Catalogue::note_phase"
+reason = "NotePhase selects an annotation pass independently from the invariant-bearing row Phase"

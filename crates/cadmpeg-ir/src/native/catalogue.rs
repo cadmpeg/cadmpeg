@@ -1,15 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative native-family catalogues and version contracts.
 
-/// Ordered processing phase for a native record family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Phase {
+/// Ordered processing phase and annotation function for a native record family.
+pub enum Phase<M, A, N, E> {
     /// Families handled before the first codec semantic island.
-    GroupA,
+    GroupA(NoteFn<M, A, N, E>),
     /// Families handled between codec semantic islands.
-    GroupB,
+    GroupB(NoteFn<M, A, N, E>),
     /// Families emitted without catalogue-driven annotations.
     ArenaOnly,
+}
+
+/// Annotation pass selected by a codec semantic island.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotePhase {
+    /// Emit annotations before the first semantic island.
+    GroupA,
+    /// Emit annotations between semantic islands.
+    GroupB,
 }
 
 /// Annotation function carried by a family row.
@@ -28,9 +36,7 @@ pub struct FamilyRow<M, A, N, E> {
     /// Codec-selected exactness metadata.
     pub exactness: E,
     /// Ordered processing phase.
-    pub phase: Phase,
-    /// Emits source annotations for this family.
-    pub note: Option<NoteFn<M, A, N, E>>,
+    pub phase: Phase<M, A, N, E>,
     /// Serializes this family into a native namespace.
     pub emit: EmitFn<M, A, N, E>,
     /// Returns this family's record count.
@@ -70,10 +76,12 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     }
 
     /// Emits annotations for every family in one phase.
-    pub fn note_phase(&self, phase: Phase, model: &M, annotations: &mut A) {
-        for row in self.rows.iter().filter(|row| row.phase == phase) {
-            if let Some(note) = row.note {
-                note(model, row, annotations);
+    pub fn note_phase(&self, phase: NotePhase, model: &M, annotations: &mut A) {
+        for row in self.rows {
+            match (&row.phase, phase) {
+                (Phase::GroupA(note), NotePhase::GroupA)
+                | (Phase::GroupB(note), NotePhase::GroupB) => note(model, row, annotations),
+                (Phase::GroupA(_) | Phase::GroupB(_) | Phase::ArenaOnly, _) => {}
             }
         }
     }

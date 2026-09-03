@@ -54,7 +54,7 @@ use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
 use super::has_complete_saved_toggle_stream;
-use cadmpeg_ir::native::catalogue::Phase;
+use cadmpeg_ir::native::catalogue::NotePhase;
 
 pub(crate) fn attach_container_layer(
     ctx: &DecodeContext<'_>,
@@ -203,7 +203,7 @@ pub(crate) fn attach(
         annotations.exactness(&tessellation.id, Exactness::Derived);
         ir.model.tessellations.push(tessellation);
     }
-    NATIVE_CATALOGUE.note_phase(Phase::GroupA, model, annotations);
+    NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);
     attach_material_texture_assets(ctx, ir, model, scan, annotations)?;
     for attribute in &model.om.part_attributes {
         annotations
@@ -263,7 +263,7 @@ pub(crate) fn attach(
         &topology_attribute_index,
         annotations,
     );
-    NATIVE_CATALOGUE.note_phase(Phase::GroupB, model, annotations);
+    NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
         for (ordinal, configuration) in model.om.configurations.iter().enumerate() {

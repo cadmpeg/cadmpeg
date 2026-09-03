@@ -897,15 +897,15 @@ fn catalogue_arenas_match_known_arenas() {
     assert_eq!(
         CATALOGUE
             .iter()
-            .filter(|row| row.phase == Phase::GroupA)
+            .filter(|row| matches!(&row.phase, Phase::GroupA(_)))
             .count(),
-        122,
+        117,
         "group A family count"
     );
     assert_eq!(
         CATALOGUE
             .iter()
-            .filter(|row| row.phase == Phase::GroupB)
+            .filter(|row| matches!(&row.phase, Phase::GroupB(_)))
             .count(),
         9,
         "group B family count"
