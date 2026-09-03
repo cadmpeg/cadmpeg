@@ -69,6 +69,7 @@ mod prototype_association_tests;
 /// no transferred entities.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
+    let classification = crate::dialect::classify(&scan);
     // Charge section cardinality before IR construction so max_entities can
     // refuse the build rather than only the finalizer.
     ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
@@ -81,9 +82,9 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
         coverage,
         brep_diagnostics,
     } = if ctx.container_only() {
-        build_container_ir(&scan)?
+        build_container_ir(&scan, &classification)?
     } else {
-        build_ir(ctx, &scan)?
+        build_ir(ctx, &scan, &classification)?
     };
     ctx.admit_entities(
         ir.model.entity_count() as u64,
@@ -92,6 +93,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
     )?;
     let body = build_report(
         &scan,
+        &classification,
         &ir,
         coverage,
         &brep_diagnostics,

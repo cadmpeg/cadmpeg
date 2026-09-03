@@ -2825,6 +2825,19 @@ pub fn summarize(
         })
         .collect();
 
+    let notes = notes(scan);
+
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
+        "psb",
+        entries,
+        classification.loss().into_iter().collect(),
+        notes,
+    )
+}
+
+/// Build the diagnostic notes shared by inspection and decode reports.
+pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
     let mut notes = vec![
         format!("PSB container: {}", scan.framing.version_line),
         format!(
@@ -2891,13 +2904,7 @@ pub fn summarize(
             .to_string(),
     );
 
-    ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
-        "psb",
-        entries,
-        classification.loss().into_iter().collect(),
-        notes,
-    )
+    notes
 }
 
 #[cfg(test)]

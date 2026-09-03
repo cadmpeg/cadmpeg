@@ -41,10 +41,13 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
 }
 
-pub(in super::super) fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
+pub(in super::super) fn build_container_ir(
+    scan: &ContainerScan,
+    classification: &crate::dialect::DialectClassification,
+) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
-    let (meta, coverage) = source_meta(scan);
+    let (meta, coverage) = source_meta(scan, classification);
     ir.source = Some(meta);
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
@@ -469,10 +472,11 @@ fn transfer_placed_plane_surfaces_into_ir(
 pub(in super::super) fn build_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
-    let (meta, mut coverage) = source_meta(scan);
+    let (meta, mut coverage) = source_meta(scan, classification);
     let mut brep_diagnostics = BrepTransferDiagnostics::default();
     ir.source = Some(meta);
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
