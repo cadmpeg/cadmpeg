@@ -3172,3 +3172,10 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::geometry::{SpringLayout,SpringSupport,SpringPcurve}"
 reason = "the new types make spring layout and null-carrier replacement-range invariants structural"
+
+[[change]]
+commit = "c6eaac086daf92a0dc5b488ca64e7bb2425949c9"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::SubdGripWedge"
+reason = "phantom secondary-grip wedges can no longer carry topology or grip payloads"

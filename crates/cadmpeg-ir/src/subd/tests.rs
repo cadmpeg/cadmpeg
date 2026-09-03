@@ -4,8 +4,8 @@
 use crate::ids::SubdId;
 use crate::math::Point3;
 use crate::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripWedge, SubdScheme, SubdSurface,
+    SubdVertex, SubdVertexTag,
 };
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -84,4 +84,53 @@ fn subd_round_trip_and_directed_ring_validation() {
     );
     ir.model.subds[0].faces[0].edges[1].reversed = true;
     assert!(!validate_neutral(&ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn grip_wedge_keeps_the_flat_wire_shape() {
+    let phantom_wire = serde_json::json!({
+        "edge": null,
+        "sector_face": null,
+        "phantom": true,
+        "spokes": [],
+        "sectors": [],
+    });
+    assert_eq!(
+        serde_json::to_value(SubdGripWedge::Phantom).unwrap(),
+        phantom_wire
+    );
+    assert_eq!(
+        serde_json::from_value::<SubdGripWedge>(phantom_wire).unwrap(),
+        SubdGripWedge::Phantom
+    );
+
+    let slot = SubdGripWedge::Slot {
+        edge: Some(3),
+        sector_face: None,
+        spokes: Vec::new(),
+        sectors: Vec::new(),
+    };
+    assert_eq!(
+        serde_json::to_value(&slot).unwrap(),
+        serde_json::json!({
+            "edge": 3,
+            "sector_face": null,
+            "phantom": false,
+            "spokes": [],
+            "sectors": [],
+        })
+    );
+}
+
+#[test]
+fn grip_wedge_rejects_phantom_payload() {
+    let error = serde_json::from_value::<SubdGripWedge>(serde_json::json!({
+        "edge": 3,
+        "sector_face": null,
+        "phantom": true,
+        "spokes": [],
+        "sectors": [],
+    }))
+    .unwrap_err();
+    assert!(error.to_string().contains("phantom SubD grip wedge"));
 }

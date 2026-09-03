@@ -76,10 +76,9 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
                 tag: SubdVertexTag::Smooth,
                 secondary_grips: Some(SubdVertexGripLayout {
                     direction: SubdGripDirection::North,
-                    wedges: vec![SubdGripWedge {
+                    wedges: vec![SubdGripWedge::Slot {
                         edge: Some(0),
                         sector_face: None,
-                        phantom: false,
                         spokes: vec![Some(SubdSecondaryGrip {
                             source_index: 0,
                             point: Point3::new(0.25, 0.0, 0.0),
@@ -124,10 +123,9 @@ fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
                 tag: SubdVertexTag::Smooth,
                 secondary_grips: Some(SubdVertexGripLayout {
                     direction: SubdGripDirection::North,
-                    wedges: vec![SubdGripWedge {
+                    wedges: vec![SubdGripWedge::Slot {
                         edge: Some(0),
                         sector_face: None,
-                        phantom: false,
                         spokes: Vec::new(),
                         sectors: Vec::new(),
                     }],
@@ -181,10 +179,9 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
                 tag: SubdVertexTag::Smooth,
                 secondary_grips: (index == 0).then_some(SubdVertexGripLayout {
                     direction: SubdGripDirection::North,
-                    wedges: vec![SubdGripWedge {
+                    wedges: vec![SubdGripWedge::Slot {
                         edge: Some(0),
                         sector_face: Some(0),
-                        phantom: false,
                         spokes: Vec::new(),
                         sectors: Vec::new(),
                     }],

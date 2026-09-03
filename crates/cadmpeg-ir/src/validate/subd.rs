@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::math::{Point3, Vector3};
-use crate::subd::{SubdSurface, SubdSymmetryKind};
+use crate::subd::{SubdGripWedge, SubdSurface, SubdSymmetryKind};
 use crate::validate::geometry_payloads::bounds_err;
 
 const EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9: f64 = 1.0e-9;
@@ -214,8 +214,16 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             for (wedge_index, wedge) in layout.wedges.iter().enumerate() {
                 let next = &layout.wedges[(wedge_index + 1) % layout.wedges.len()];
-                let expected_sectors = wedge.spokes.len().checked_mul(next.spokes.len());
-                if expected_sectors != Some(wedge.sectors.len()) {
+                let spoke_count = |wedge: &SubdGripWedge| match wedge {
+                    SubdGripWedge::Phantom => 0,
+                    SubdGripWedge::Slot { spokes, .. } => spokes.len(),
+                };
+                let sector_count = match wedge {
+                    SubdGripWedge::Phantom => 0,
+                    SubdGripWedge::Slot { sectors, .. } => sectors.len(),
+                };
+                let expected_sectors = spoke_count(wedge).checked_mul(spoke_count(next));
+                if expected_sectors != Some(sector_count) {
                     bounds_err(
                         findings,
                         &subd.id.0,
@@ -224,24 +232,17 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         ),
                     );
                 }
-                if wedge.phantom
-                    && (wedge.edge.is_some()
-                        || wedge.sector_face.is_some()
-                        || !wedge.spokes.is_empty()
-                        || !wedge.sectors.is_empty())
-                {
-                    bounds_err(
-                        findings,
-                        &subd.id.0,
-                        &format!(
-                            "SubD vertex {index} wedge {wedge_index} has invalid phantom data"
-                        ),
-                    );
-                }
-                if wedge.edge.is_some_and(|edge| edge as usize >= edge_count)
-                    || wedge
-                        .sector_face
-                        .is_some_and(|face| face as usize >= face_count)
+                let SubdGripWedge::Slot {
+                    edge,
+                    sector_face,
+                    spokes,
+                    sectors,
+                } = wedge
+                else {
+                    continue;
+                };
+                if edge.is_some_and(|edge| edge as usize >= edge_count)
+                    || sector_face.is_some_and(|face| face as usize >= face_count)
                 {
                     bounds_err(
                         findings,
@@ -251,8 +252,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         ),
                     );
                 }
-                if wedge
-                    .edge
+                if edge
                     .and_then(|edge| subd.edges.get(edge as usize))
                     .is_some_and(|edge| {
                         u32::try_from(index).map_or(true, |owner| !edge.vertices.contains(&owner))
@@ -266,10 +266,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         ),
                     );
                 }
-                if let Some(face) = wedge
-                    .sector_face
-                    .and_then(|face| subd.faces.get(face as usize))
-                {
+                if let Some(face) = sector_face.and_then(|face| subd.faces.get(face as usize)) {
                     let incident = match u32::try_from(index) {
                         Ok(owner) => face.edges.iter().any(|use_| {
                             subd.edges
@@ -288,7 +285,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         );
                     }
                 }
-                for grip in wedge.spokes.iter().chain(&wedge.sectors).flatten() {
+                for grip in spokes.iter().chain(sectors).flatten() {
                     if !finite_point(&grip.point)
                         || !grip.weight.is_finite()
                         || grip.weight <= 0.0
