@@ -10,8 +10,12 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     let (mut exchange, _) = crate::parse::parse(input).expect("parse accounting fixture");
     let mut extended = input.to_vec();
     extended.push(0xc3);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&extended, &arena, &policy)
+        .expect("root fits the test policy");
 
-    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), None)
+    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), &ctx)
         .expect("byte accounting allocation");
 
     assert_eq!(accounting.unclassified, 1);
@@ -20,7 +24,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
         extended.len()
     );
 
-    let result = decode_exchange_mode(&extended, &mut exchange, &[], true, None, Packaging::Bare)
+    let result = decode_exchange_mode(&extended, &mut exchange, &[], true, &ctx, Packaging::Bare)
         .expect("synthesized unknown record conversion")
         .0;
     assert!(result.body.losses.iter().any(|loss| {

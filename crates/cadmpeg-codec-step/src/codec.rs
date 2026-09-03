@@ -119,7 +119,7 @@ fn inspect_exchange(
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
     let (decoded, opaque_offsets) =
-        reader::analyze_exchange(bytes, &mut exchange, &diagnostics, Some(ctx))?;
+        reader::analyze_exchange(bytes, &mut exchange, &diagnostics, ctx)?;
     let mut entries = vec![ContainerEntry {
         name: "HEADER".into(),
         role: "metadata".into(),

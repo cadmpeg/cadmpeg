@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -99,14 +99,14 @@ struct StepDecodeSession<'ctx, 'arena> {
     typed_records: HashSet<u64>,
     admitted_ir_entities: u64,
     semantic_input_work: u64,
-    ctx: Option<&'ctx DecodeContext<'arena>>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
 impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     fn new(
         exchange: &Exchange,
         diagnostics: &[ParseDiagnostic],
-        ctx: Option<&'ctx DecodeContext<'arena>>,
+        ctx: &'ctx DecodeContext<'arena>,
         packaging: Packaging,
     ) -> Self {
         let mut ir = CadIr::empty(Units::default());
@@ -174,16 +174,13 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         self.charge_pending_ir_entities(operation)?;
         let output_work = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
         let units = self.semantic_input_work.saturating_add(output_work);
-        self.ctx
-            .map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+        self.ctx.charge_work(units, operation)
     }
 
     fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
         let current_entities = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
         let additional_entities = current_entities.saturating_sub(self.admitted_ir_entities);
-        if let Some(ctx) = self.ctx {
-            ctx.charge_entities(additional_entities, operation)?;
-        }
+        self.ctx.charge_entities(additional_entities, operation)?;
         self.admitted_ir_entities = current_entities;
         Ok(())
     }
@@ -225,14 +222,14 @@ pub fn decode(
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
-    decode_exchange(input, exchange, &diagnostics, Some(ctx), packaging)
+    decode_exchange(input, exchange, &diagnostics, ctx, packaging)
 }
 
 pub(super) fn decode_exchange(
     input: &[u8],
     mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     decode_exchange_mode(input, &mut exchange, diagnostics, true, ctx, packaging)
@@ -248,7 +245,7 @@ pub(super) fn analyze_exchange(
     input: &[u8],
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
     decode_exchange_mode(input, exchange, diagnostics, false, ctx, Packaging::Bare)
 }
@@ -258,11 +255,11 @@ fn decode_exchange_mode(
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     packaging: Packaging,
 ) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, packaging);
-    if ctx.is_some_and(DecodeContext::container_only) {
+    if ctx.container_only() {
         return Ok((
             session.into_result(SourceFidelity::default()),
             BTreeSet::new(),
@@ -277,14 +274,13 @@ fn decode_exchange_mode(
     session.charge_stage("step_carrier_index")?;
     let carrier_index = index::CarrierIndex::from_ir(&session.ir);
     session.charge_stage("step_topology_decode")?;
-    if let Some(ctx) = session.ctx {
-        ctx.charge_work(
-            implicit_face_plane_work(exchange),
-            "step_implicit_face_plane",
-        )?;
-    }
-    let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx);
-    geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
+    session.ctx.charge_work(
+        implicit_face_plane_work(exchange),
+        "step_implicit_face_plane",
+    )?;
+    let mut topology =
+        topology::decode(exchange, &mut session.ir, &carrier_index, Some(session.ctx));
+    geometry::infer_edge_parameter_ranges(&mut session.ir, Some(session.ctx))?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_stage("step_topology_association")?;
     geometry::associate_topology_carriers(
@@ -334,7 +330,7 @@ fn decode_exchange_mode(
         &geometry.value,
         &topology.value,
         &mut session.ir,
-        session.ctx,
+        Some(session.ctx),
         &mut session.admitted_ir_entities,
     )?;
     session.charge_stage("step_tessellation_decode")?;
@@ -346,7 +342,7 @@ fn decode_exchange_mode(
         &geometry.value,
         &topology.value,
         &mut session.ir,
-        session.ctx,
+        Some(session.ctx),
     );
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
@@ -354,7 +350,7 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         &product.value.product_definition_ids_by_source,
-        session.ctx,
+        Some(session.ctx),
     );
     session.charge_stage("step_validation_decode")?;
     let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);
@@ -478,16 +474,14 @@ fn decode_exchange_mode(
         }
     }
     let accounting = {
-        if let Some(ctx) = session.ctx {
-            ctx.charge_work(
-                u64::try_from(input.len()).unwrap_or(u64::MAX),
-                "step_byte_accounting",
-            )?;
-        }
-        let _reservation = session
-            .ctx
-            .map(|ctx| ctx.reserve_scoped(input.len() as u64, "step_byte_accounting", None))
-            .transpose()?;
+        session.ctx.charge_work(
+            u64::try_from(input.len()).unwrap_or(u64::MAX),
+            "step_byte_accounting",
+        )?;
+        let _reservation =
+            session
+                .ctx
+                .reserve_scoped(input.len() as u64, "step_byte_accounting", None)?;
         byte_accounting(input, exchange, &session.typed_records, session.ctx)?
     };
     if retain_opaque {
@@ -495,12 +489,14 @@ fn decode_exchange_mode(
         exchange.release_source_graph();
         let mut opaque = Vec::with_capacity(opaque_sources.len() + signature_spans.len());
         for source in opaque_sources {
-            let bytes = if let Some(ctx) = session.ctx {
-                ctx.charge_collection_items(source.reference_work, "step_opaque_record_links")?;
-                ctx.copy_retained(&input[source.span.clone()], "step_opaque_record", None)?
-            } else {
-                input[source.span.clone()].to_vec()
-            };
+            session
+                .ctx
+                .charge_collection_items(source.reference_work, "step_opaque_record_links")?;
+            let bytes = session.ctx.copy_retained(
+                &input[source.span.clone()],
+                "step_opaque_record",
+                None,
+            )?;
             opaque.push(UnknownRecord {
                 id: UnknownId(source.unknown_id),
                 offset: source.span.start as u64,
@@ -521,11 +517,11 @@ fn decode_exchange_mode(
             });
         }
         for (index, signature) in signature_spans.into_iter().enumerate() {
-            let bytes = if let Some(ctx) = session.ctx {
-                ctx.copy_retained(&input[signature.clone()], "step_signature_record", None)?
-            } else {
-                input[signature.clone()].to_vec()
-            };
+            let bytes = session.ctx.copy_retained(
+                &input[signature.clone()],
+                "step_signature_record",
+                None,
+            )?;
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord {
                 id: crate::ids::StepIdentity::signature(index),
@@ -1028,13 +1024,10 @@ fn byte_accounting(
     input: &[u8],
     exchange: &Exchange,
     typed_records: &HashSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ByteAccounting, CodecError> {
-    let mut classes = if let Some(ctx) = ctx {
-        ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?
-    } else {
-        alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?
-    };
+    let mut classes =
+        ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
     for record in exchange.records.values() {
         let class = if typed_records.contains(&record.id) {
             ByteClass::Typed

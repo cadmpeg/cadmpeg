@@ -14,6 +14,13 @@ use cadmpeg_ir::report::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
 
+fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)?;
+    normalize(source, &ctx)
+}
+
 fn source_lines(bytes: &[u8]) -> Vec<Vec<u8>> {
     bytes
         .split(|byte| *byte == b'\n')
@@ -115,7 +122,7 @@ fn compressed_points_file_with_global(global: &[u8]) -> Vec<u8> {
 #[test]
 fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     let source = compressed_points_file();
-    let normalized = normalize(&source, None).unwrap();
+    let normalized = normalize_for_test(&source).unwrap();
     let lines = source_lines(&normalized);
     assert_eq!(
         lines
@@ -247,7 +254,7 @@ fn compressed_ascii_accepts_directory_specifiers_on_multiple_lines() {
     source.extend_from_slice(&fixed[terminate]);
     source.push(b'\n');
 
-    let normalized = normalize(&source, None).unwrap();
+    let normalized = normalize_for_test(&source).unwrap();
     assert_eq!(
         source_lines(&normalized)
             .iter()

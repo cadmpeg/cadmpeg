@@ -107,13 +107,13 @@ pub(crate) struct PhysicalParse<'a, 'ctx> {
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
-    _scan_storage: Option<ScopedReservation<'ctx>>,
+    _scan_storage: ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
     fn run(
         bytes: &'a [u8],
-        ctx: Option<&'ctx DecodeContext<'_>>,
+        ctx: &'ctx DecodeContext<'_>,
         mode: ParseMode,
     ) -> Result<Self, CodecError> {
         let (card_scan, card_storage, directory_entries, parameter_parse) = match mode {
@@ -131,10 +131,8 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ),
         };
         charge_work(ctx, bytes.len() as u64, card_scan)?;
-        let scan_storage = ctx
-            .map(|ctx| ctx.reserve_scoped(bytes.len() as u64, card_storage, None))
-            .transpose()?;
-        let scan = card::scan_with_context(bytes, ctx)?;
+        let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage, None)?;
+        let scan = card::scan_with_context(bytes, Some(ctx))?;
         let (global, mut global_losses) = global::parse(&scan)?;
         let (directory, quarantined_directory) = directory::parse(&scan, global.global_table());
         charge_entities(
@@ -143,7 +141,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             directory_entries,
         )?;
         if mode == ParseMode::Decode {
-            entities::geometry::enforce_transform_depth(&directory, ctx)?;
+            entities::geometry::enforce_transform_depth(&directory, Some(ctx))?;
         }
         let parameter::ParameterAssembly {
             records: parameters,
@@ -155,7 +153,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &directory,
             &quarantined_directory,
             &global,
-            ctx,
+            Some(ctx),
         )?;
         global_losses.extend(
             global
@@ -217,7 +215,7 @@ pub(crate) fn inspect(
     representation: Representation,
     source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
-    let parse = PhysicalParse::run(window, Some(ctx), ParseMode::Inspect)?;
+    let parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     losses.extend(parse.record_losses());
@@ -272,7 +270,7 @@ pub(crate) fn decode(
         representation,
         output,
         depth,
-        Some(ctx),
+        ctx,
     )
 }
 
@@ -282,7 +280,7 @@ fn decode_with_occurrence_limits(
     representation: Representation,
     product_occurrence_output_limit: usize,
     product_occurrence_depth_limit: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
     let length_context = parse.global.length_context();
@@ -302,10 +300,7 @@ fn decode_with_occurrence_limits(
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let mut source_fidelity = SourceFidelity::default();
-    let retained_source = match ctx {
-        Some(ctx) => ctx.copy_retained(source_bytes, "iges_source_image", None)?,
-        None => source_bytes.to_vec(),
-    };
+    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image", None)?;
     source_fidelity
         .retained_records
         .push(RetainedSourceRecord::retained(
@@ -321,23 +316,21 @@ fn decode_with_occurrence_limits(
     }
     let primary = crate::dialect::classify(representation, &parse.global);
     ir.source = Some(source_meta(&parse.global, representation, primary));
-    let projection =
-        match length_context.filter(|_| !ctx.is_some_and(DecodeContext::container_only)) {
-            Some(context) => {
-                charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-                entities::geometry::project_geometry(
-                    &mut ir,
-                    projected_directory,
-                    &parse.parameters,
-                    &parse.trailing_pointer_analysis,
-                    &context,
-                    ctx,
-                )?
-            }
-            None => entities::geometry::Projection::default(),
-        };
-    let semantic_structure_admitted =
-        (!ctx.is_some_and(DecodeContext::container_only)).then_some(&projection.decoded);
+    let projection = match length_context.filter(|_| !ctx.container_only()) {
+        Some(context) => {
+            charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
+            entities::geometry::project_geometry(
+                &mut ir,
+                projected_directory,
+                &parse.parameters,
+                &parse.trailing_pointer_analysis,
+                &context,
+                Some(ctx),
+            )?
+        }
+        None => entities::geometry::Projection::default(),
+    };
+    let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection.decoded);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
         occurrence_expansion: product_occurrence_expansion,
@@ -361,7 +354,7 @@ fn decode_with_occurrence_limits(
             product_occurrence_output_limit,
             product_occurrence_depth_limit,
         ),
-        ctx,
+        Some(ctx),
     )?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
@@ -439,7 +432,7 @@ fn decode_with_occurrence_limits(
         ));
     }
     let global_table = parse.global.global_table();
-    if !ctx.is_some_and(DecodeContext::container_only) {
+    if !ctx.container_only() {
         let attributed_before_generic = attributed_sequences(&losses);
         let generic_losses = parse
             .directory
@@ -477,7 +470,7 @@ fn decode_with_occurrence_limits(
         )?;
         reject_invalid_semantic_ir(&ir)?;
     }
-    let attributed = if ctx.is_some_and(DecodeContext::container_only) {
+    let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
         attributed_sequences(&losses)
@@ -489,7 +482,7 @@ fn decode_with_occurrence_limits(
         .filter(|entry| entry.entity_type != 0)
     {
         let attributed_loss = attributed.contains(&entry.sequence);
-        let note = if ctx.is_some_and(DecodeContext::container_only) {
+        let note = if ctx.container_only() {
             "native record retained; semantic projection was not requested"
         } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
             "native record retained; entity is outside the declared read envelope"
@@ -546,14 +539,10 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let document_digest = match ctx {
-        Some(ctx) => {
-            document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
-                ctx.charge_work(bytes, "iges_document_digest")
-            })?
-        }
-        None => crate::document_digest(&ir),
-    };
+    let document_digest =
+        document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
+            ctx.charge_work(bytes, "iges_document_digest")
+        })?;
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -634,7 +623,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
                 Representation::FixedAscii,
                 self.output_limit,
                 self.depth_limit,
-                Some(ctx),
+                ctx,
             )
         }
     }
@@ -650,19 +639,19 @@ pub(crate) fn decode_with_test_occurrence_limits(
 }
 
 fn charge_entities(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     count: u64,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| ctx.charge_entities(count, operation))
+    ctx.charge_entities(count, operation)
 }
 
 fn charge_work(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     units: u64,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+    ctx.charge_work(units, operation)
 }
 
 #[cfg(test)]
