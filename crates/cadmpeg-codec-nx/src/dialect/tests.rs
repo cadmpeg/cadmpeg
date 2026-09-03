@@ -38,7 +38,7 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
 }
 
 fn classify(container: &Container<'_>) -> DialectMatch {
-    classify_host(container).1
+    NxDialect::of_container(container).matched(container.version)
 }
 
 #[test]

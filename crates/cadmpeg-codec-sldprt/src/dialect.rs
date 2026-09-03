@@ -3,7 +3,7 @@
 //! admitted.
 //!
 //! The `*LossCode` template: the enum is internal, registry-generated
-//! [`DialectId`] constants are the boundary, [`SldprtDialect::classify`] is the
+//! [`DialectId`] constants are the boundary, [`classify_layers`] is the
 //! one construction path, and the vocabulary is closed.
 //!
 //! # The axis is `swVersion`, and it is the only one that selects a layout
@@ -113,11 +113,16 @@ pub(crate) enum SldprtDialect {
 /// Dialect layers admitted from one container and classification damage that
 /// could not be represented in the unique layer identity set.
 pub(crate) struct LayerClassification {
+    host: SldprtDialect,
     layers: DialectLayers,
     losses: Vec<LossNote>,
 }
 
 impl LayerClassification {
+    pub(crate) fn host(&self) -> SldprtDialect {
+        self.host
+    }
+
     pub(crate) fn layers(&self) -> &DialectLayers {
         &self.layers
     }
@@ -150,13 +155,19 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
             })
         })
         .collect::<Vec<_>>();
-    let mut layers = DialectLayers::of(SldprtDialect::classify_scan(scan));
+    let declaration = crate::container::declared_sw_version(scan);
+    let host = SldprtDialect::from_declaration(declaration);
+    let mut layers = DialectLayers::of(host.matched(declaration));
     let extra = cadmpeg_parasolid::extra_layers(kernels, &VERIFIED_KERNELS);
     let losses = cadmpeg_parasolid::push_extras(&mut layers, extra)
         .into_iter()
         .map(|message| SldprtLossCode::DialectLayerCollision.note(message))
         .collect();
-    LayerClassification { layers, losses }
+    LayerClassification {
+        host,
+        layers,
+        losses,
+    }
 }
 
 impl SldprtDialect {
@@ -209,17 +220,20 @@ impl SldprtDialect {
     /// Classifies one document from its `swVersion` declaration. The single
     /// construction path for a [`DialectMatch`] in this codec, so a
     /// classification bug and the report can never disagree.
+    #[cfg(test)]
     pub(crate) fn classify(sw_version: Option<&str>) -> DialectMatch {
+        Self::from_declaration(sw_version).matched(sw_version)
+    }
+
+    /// Build the wire identity for this typed row and its source declaration.
+    fn matched(self, sw_version: Option<&str>) -> DialectMatch {
         let mut declared = BTreeMap::new();
         if let Some(value) = sw_version {
             declared.insert(DECLARED_SW_VERSION.into(), value.to_owned());
         }
-        let dialect = Self::from_declaration(sw_version);
-        match dialect {
-            Self::SwVersionPre12000 | Self::SwVersion12000Plus => {
-                DialectMatch::admitted(dialect.id())
-            }
-            Self::Unknown => DialectMatch::residual(dialect.id()),
+        match self {
+            Self::SwVersionPre12000 | Self::SwVersion12000Plus => DialectMatch::admitted(self.id()),
+            Self::Unknown => DialectMatch::residual(self.id()),
         }
         .with_declared(declared)
     }
@@ -228,6 +242,7 @@ impl SldprtDialect {
     ///
     /// The read is [`crate::container::declared_sw_version`], so the retained
     /// declaration has one extraction and one report location.
+    #[cfg(test)]
     pub(crate) fn classify_scan(scan: &ContainerScan<'_>) -> DialectMatch {
         Self::classify(crate::container::declared_sw_version(scan))
     }
