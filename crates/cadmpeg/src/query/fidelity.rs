@@ -175,7 +175,7 @@ fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -
         let mut streams: Vec<&str> = payload
             .retained_records
             .iter()
-            .map(|record| record.stream())
+            .map(cadmpeg_ir::RetainedSourceRecord::stream)
             .collect();
         streams.sort_unstable();
         streams.dedup();
