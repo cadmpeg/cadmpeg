@@ -599,14 +599,12 @@ mod tests {
                 "synthetic",
                 [
                     source_image,
-                    UnknownRecord {
-                        id: UnknownId("synthetic:record#1".into()),
-                        offset: 8,
-                        byte_len: 2,
-                        sha256: "11".into(),
-                        data: Some(vec![4, 5]),
-                        links: vec!["cube:body#0".into()],
-                    },
+                    UnknownRecord::retained(
+                        UnknownId("synthetic:record#1".into()),
+                        8,
+                        vec![4, 5],
+                        vec!["cube:body#0".into()],
+                    ),
                 ],
             )
             .unwrap();
@@ -620,14 +618,12 @@ mod tests {
     }
 
     fn local_digest_fixture() -> (CadIr, crate::SourceFidelity) {
-        local_digest_fixture_with_source_image(UnknownRecord {
-            id: UnknownId("synthetic:file:source-image#0".into()),
-            offset: 0,
-            byte_len: 3,
-            sha256: "00".into(),
-            data: Some(vec![1, 2, 3]),
-            links: Vec::new(),
-        })
+        local_digest_fixture_with_source_image(UnknownRecord::retained(
+            UnknownId("synthetic:file:source-image#0".into()),
+            0,
+            vec![1, 2, 3],
+            Vec::new(),
+        ))
     }
 
     #[test]
@@ -662,14 +658,13 @@ mod tests {
             hash
         );
 
-        let (repacked, _source_fidelity) = local_digest_fixture_with_source_image(UnknownRecord {
-            id: UnknownId(source_image.into()),
-            offset: 4,
-            byte_len: 1,
-            sha256: "22".into(),
-            data: Some(vec![9]),
-            links: vec!["cube:body#0".into()],
-        });
+        let (repacked, _source_fidelity) =
+            local_digest_fixture_with_source_image(UnknownRecord::retained(
+                UnknownId(source_image.into()),
+                4,
+                vec![9],
+                vec!["cube:body#0".into()],
+            ));
         assert_eq!(
             crate::hash::document_local_sha256(&repacked, "synthetic", source_image),
             hash

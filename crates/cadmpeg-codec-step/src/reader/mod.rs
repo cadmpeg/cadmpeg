@@ -7,7 +7,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::units::Units;
@@ -497,13 +496,11 @@ fn decode_exchange_mode(
                 "step_opaque_record",
                 None,
             )?;
-            opaque.push(UnknownRecord {
-                id: UnknownId(source.unknown_id),
-                offset: source.span.start as u64,
-                byte_len: source.span.len() as u64,
-                sha256: sha256_hex(&bytes),
-                data: Some(bytes),
-                links: source
+            opaque.push(UnknownRecord::retained(
+                UnknownId(source.unknown_id),
+                source.span.start as u64,
+                bytes,
+                source
                     .links
                     .into_iter()
                     .flat_map(|id| {
@@ -514,7 +511,7 @@ fn decode_exchange_mode(
                             .chain(source_targets.get(&id).into_iter().flatten().cloned())
                     })
                     .collect(),
-            });
+            ));
         }
         for (index, signature) in signature_spans.into_iter().enumerate() {
             let bytes = session.ctx.copy_retained(
@@ -523,14 +520,12 @@ fn decode_exchange_mode(
                 None,
             )?;
             *counts.entry("SIGNATURE".into()).or_default() += 1;
-            opaque.push(UnknownRecord {
-                id: crate::ids::StepIdentity::signature(index),
-                offset: signature.start as u64,
-                byte_len: signature.len() as u64,
-                sha256: sha256_hex(&bytes),
-                data: Some(bytes),
-                links: Vec::new(),
-            });
+            opaque.push(UnknownRecord::retained(
+                crate::ids::StepIdentity::signature(index),
+                signature.start as u64,
+                bytes,
+                Vec::new(),
+            ));
         }
         source_fidelity.attach_native_unknown_records(&mut session.ir, "step", opaque)?;
     }

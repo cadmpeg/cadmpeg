@@ -1121,14 +1121,12 @@ impl CodecBackend for FcstdCodec {
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
-                [UnknownRecord {
-                    id: UnknownId(native::native_id("thumbnail", name)),
-                    offset: 0,
-                    byte_len: bytes.len() as u64,
-                    sha256: sha256_hex(bytes),
-                    data: Some(bytes.to_vec()),
-                    links: vec![native::native_id("document", "0")],
-                }],
+                [UnknownRecord::retained(
+                    UnknownId(native::native_id("thumbnail", name)),
+                    0,
+                    bytes.to_vec(),
+                    vec![native::native_id("document", "0")],
+                )],
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");

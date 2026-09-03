@@ -22,7 +22,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, VertexId,
+    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -227,9 +227,10 @@ impl Brep {
             .iter_mut()
             .for_each(|pcurve| pcurve.id.0 = qualify(&pcurve.id.0));
         for record in &mut self.unknowns {
-            record.id.0 = qualify(&record.id.0);
+            let id = UnknownId(qualify(&record.id().0));
+            record.set_id(id);
             record
-                .links
+                .links_mut()
                 .iter_mut()
                 .for_each(|link| *link = qualify(link));
         }

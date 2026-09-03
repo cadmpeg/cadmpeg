@@ -513,16 +513,21 @@ fn retain_v1_record(
             .checked_add(bytes.len())
             .expect("V1 retention cap checked");
     }
-    UnknownRecord {
-        id: UnknownId(format!(
-            "rhino:legacy:record#{:08x}-{:016x}",
-            chunk.typecode, chunk.header_start
-        )),
-        offset: u64::try_from(range.start).expect("V1 record offset fits u64"),
-        byte_len: u64::try_from(bytes.len()).expect("V1 record length fits u64"),
-        sha256: sha256_hex(bytes),
-        data: retain.then(|| bytes.to_vec()),
-        links: Vec::new(),
+    let id = UnknownId(format!(
+        "rhino:legacy:record#{:08x}-{:016x}",
+        chunk.typecode, chunk.header_start
+    ));
+    let offset = u64::try_from(range.start).expect("V1 record offset fits u64");
+    if retain {
+        UnknownRecord::retained(id, offset, bytes.to_vec(), Vec::new())
+    } else {
+        UnknownRecord::unavailable(
+            id,
+            offset,
+            u64::try_from(bytes.len()).expect("V1 record length fits u64"),
+            sha256_hex(bytes),
+            Vec::new(),
+        )
     }
 }
 
@@ -2415,7 +2420,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     let opaque_count = opaque_records.len();
     let opaque_bytes = opaque_records
         .iter()
-        .filter(|record| record.data.is_some())
+        .filter(|record| record.data().is_some())
         .count();
     let losses = omitted
         .into_iter()

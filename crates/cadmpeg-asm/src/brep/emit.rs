@@ -35,7 +35,6 @@ use cadmpeg_ir::geometry::{
     Surface, SurfaceGeometry, VariableBlendConstruction, VertexBlendBoundary,
     VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, UnknownId, VertexId,
@@ -4174,14 +4173,12 @@ pub(crate) fn emit_passthrough_unknowns(
     for r in records {
         let i = r.index as i64;
         if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
-            out.unknowns.push(UnknownRecord {
-                id: UnknownId(unknown_record_id(r, format)),
-                offset: r.offset as u64,
-                byte_len: r.len as u64,
-                sha256: sha256_hex(&bytes[r.offset..(r.offset + r.len).min(bytes.len())]),
-                data: Some(bytes[r.offset..(r.offset + r.len).min(bytes.len())].to_vec()),
-                links: Vec::new(),
-            });
+            out.unknowns.push(UnknownRecord::retained(
+                UnknownId(unknown_record_id(r, format)),
+                r.offset as u64,
+                bytes[r.offset..(r.offset + r.len).min(bytes.len())].to_vec(),
+                Vec::new(),
+            ));
         }
     }
 }
@@ -4273,7 +4270,7 @@ pub(crate) fn emit_annotation_records(
     let unknown_ids = out
         .unknowns
         .iter()
-        .map(|unknown| unknown.id.0.as_str())
+        .map(|unknown| unknown.id().0.as_str())
         .collect::<HashSet<_>>();
     let procedural_ids = out
         .procedural_surfaces
