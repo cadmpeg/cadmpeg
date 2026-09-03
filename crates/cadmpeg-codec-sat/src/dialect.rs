@@ -66,19 +66,15 @@ pub(crate) struct TextEvidence<'a> {
 
 /// What one stream's own bytes said, as the reading path read them.
 ///
-/// One variant per reportable [`StreamKind`]. `None` inside a variant means
-/// the kind's discriminant matched but nothing past it parsed. Inspection
-/// reports what it could read, and decode refuses with the same primary match.
+/// One variant per reportable [`StreamKind`]. Inspection reports what it could
+/// read, and decode refuses with the same primary match.
 pub(crate) enum StreamEvidence<'a> {
-    /// `ASM BinaryFile4`/`8`. The header is `None` only if the magic matched
-    /// and `asm_header::parse` still declined, which its own contract makes
-    /// unreachable; the arm keeps this function total.
-    AsmBinary(Option<&'a KernelHeader>),
+    /// Parsed `ASM BinaryFile4`/`8` header and record-stream frame.
+    AsmBinary(&'a KernelHeader),
     /// Parsed ASM header from a stream with no record-stream frame.
     UnframedAsmBinary(&'a KernelHeader),
-    /// `ACIS BinaryFile`, under the same header-parse note as
-    /// [`Self::AsmBinary`].
-    AcisBinary(Option<&'a KernelHeader>),
+    /// Parsed `ACIS BinaryFile` header and record-stream frame.
+    AcisBinary(&'a KernelHeader),
     /// Parsed ACIS header from a stream with no record-stream frame.
     UnframedAcisBinary(&'a KernelHeader),
     /// Text header lines; `None` when the stream did not parse past them.
@@ -105,12 +101,10 @@ impl StreamEvidence<'_> {
 fn host(evidence: &StreamEvidence<'_>) -> DialectMatch {
     let dialect = evidence.dialect();
     match evidence {
-        StreamEvidence::AsmBinary(Some(_))
-        | StreamEvidence::AcisBinary(Some(_))
+        StreamEvidence::AsmBinary(_)
+        | StreamEvidence::AcisBinary(_)
         | StreamEvidence::Text(Some(_)) => DialectMatch::admitted(dialect),
-        StreamEvidence::AsmBinary(None)
-        | StreamEvidence::UnframedAsmBinary(_)
-        | StreamEvidence::AcisBinary(None)
+        StreamEvidence::UnframedAsmBinary(_)
         | StreamEvidence::UnframedAcisBinary(_)
         | StreamEvidence::Text(None) => DialectMatch::refused(dialect),
     }
@@ -172,15 +166,11 @@ fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
 /// Classify the same evidence as the shared non-primary kernel layer.
 fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
     let header = match evidence {
-        StreamEvidence::AsmBinary(Some(header)) => {
-            cadmpeg_asm::dialect::KernelHeaderRef::Asm(header)
-        }
+        StreamEvidence::AsmBinary(header) => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
         StreamEvidence::UnframedAsmBinary(header) => {
             cadmpeg_asm::dialect::KernelHeaderRef::Asm(header)
         }
-        StreamEvidence::AcisBinary(Some(header)) => {
-            cadmpeg_asm::dialect::KernelHeaderRef::Acis(header)
-        }
+        StreamEvidence::AcisBinary(header) => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
         StreamEvidence::UnframedAcisBinary(header) => {
             cadmpeg_asm::dialect::KernelHeaderRef::Acis(header)
         }
@@ -188,9 +178,7 @@ fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
             sat::Terminator::Asm => cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(text.header),
             sat::Terminator::Acis => cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(text.header),
         },
-        StreamEvidence::AsmBinary(None)
-        | StreamEvidence::AcisBinary(None)
-        | StreamEvidence::Text(None) => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+        StreamEvidence::Text(None) => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
     };
     cadmpeg_asm::dialect::classify(header)
 }

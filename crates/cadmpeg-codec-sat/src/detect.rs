@@ -107,44 +107,40 @@ pub(crate) fn inspect(
     // report the same `sat:` row and the same admission for the same bytes.
     let (matched, kernel) = match kind {
         StreamKind::AsmBinary => {
-            let header = asm_header::parse(bytes);
-            let framed = header.as_ref().is_some_and(|header| {
-                asm_header::record_stream_start_with_header(bytes, header).is_some()
-            });
-            if let Some(header) = &header {
-                header_attributes(header, "asm", &mut attributes);
-                if header.has_history_partition() {
-                    notes.push(
-                        "the stream declares a construction-history partition; decode reads \
-                             the solved partition"
-                            .to_string(),
-                    );
-                }
+            let header = asm_header::parse(bytes)
+                .expect("StreamKind::AsmBinary guarantees the ASM header magic");
+            let framed = asm_header::record_stream_start_with_header(bytes, &header).is_some();
+            header_attributes(&header, "asm", &mut attributes);
+            if header.has_history_partition() {
+                notes.push(
+                    "the stream declares a construction-history partition; decode reads \
+                         the solved partition"
+                        .to_string(),
+                );
             }
-            let evidence = match (header.as_ref(), framed) {
-                (Some(header), false) => StreamEvidence::UnframedAsmBinary(header),
-                (header, _) => StreamEvidence::AsmBinary(header),
+            let evidence = if framed {
+                StreamEvidence::AsmBinary(&header)
+            } else {
+                StreamEvidence::UnframedAsmBinary(&header)
             };
             crate::dialect::layers(&evidence)
         }
         StreamKind::AcisBinary => {
-            let header = acis_header::parse(bytes);
-            let framed = header.as_ref().is_some_and(|header| {
-                acis_header::record_stream_start_with_header(bytes, header).is_some()
-            });
-            let evidence = match (header.as_ref(), framed) {
-                (Some(header), false) => StreamEvidence::UnframedAcisBinary(header),
-                (header, _) => StreamEvidence::AcisBinary(header),
+            let header = acis_header::parse(bytes)
+                .expect("StreamKind::AcisBinary guarantees the ACIS header magic");
+            let framed = acis_header::record_stream_start_with_header(bytes, &header).is_some();
+            let evidence = if framed {
+                StreamEvidence::AcisBinary(&header)
+            } else {
+                StreamEvidence::UnframedAcisBinary(&header)
             };
-            if let Some(header) = &header {
-                header_attributes(header, "acis", &mut attributes);
-                if header.has_history_partition() {
-                    notes.push(
-                        "the stream declares a construction-history partition; decode reads \
-                             the solved partition"
-                            .into(),
-                    );
-                }
+            header_attributes(&header, "acis", &mut attributes);
+            if header.has_history_partition() {
+                notes.push(
+                    "the stream declares a construction-history partition; decode reads \
+                         the solved partition"
+                        .into(),
+                );
             }
             crate::dialect::layers(&evidence)
         }
