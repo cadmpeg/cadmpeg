@@ -75,10 +75,18 @@ fn print_load_notice(document: &LoadedDocument) {
 
 /// CLI-facing conversion arguments assembled from argv.
 pub struct ConversionArgs {
-    /// Application conversion policy.
-    pub policy: ConversionPolicy,
-    /// Replace an existing command report.
-    pub report_overwrite: bool,
+    /// Decode and export loss refusal.
+    pub losses: crate::application::LossPolicy,
+    /// Permit export when validation reports errors.
+    pub allow_errors: bool,
+    /// Permit a geometry export when decode transferred no geometry.
+    pub allow_empty: bool,
+    /// Optional CAD output path.
+    pub output: Option<PathBuf>,
+    /// Permit binary output on standard output.
+    pub binary_stdout: bool,
+    /// Replace an existing CAD output or command report.
+    pub force: bool,
     /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
     /// Explicit input format selected by the user.
@@ -404,14 +412,24 @@ pub fn convert(
     conversion: &ConversionArgs,
     args: &DecodeArgs,
 ) -> CommandResult<()> {
-    let selection = match TargetSelection::resolve(to, conversion.policy.destination.path()) {
+    let policy = ConversionPolicy {
+        losses: conversion.losses,
+        allow_errors: conversion.allow_errors,
+        allow_empty: conversion.allow_empty,
+        destination: DestinationPolicy::new(
+            conversion.output.clone(),
+            conversion.force,
+            conversion.binary_stdout,
+        ),
+    };
+    let selection = match TargetSelection::resolve(to, policy.destination.path()) {
         Ok(selection) => selection,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
                 write_refusal_command_report(
                     path,
                     conversion.report.as_deref(),
-                    conversion.report_overwrite,
+                    conversion.force,
                     "convert",
                     refusal,
                 );
@@ -421,8 +439,8 @@ pub fn convert(
     };
     let target = export_target(selection);
     if let Some(report_path) = conversion.report.as_deref() {
-        ArtifactStore::check_output_path(path, report_path, conversion.report_overwrite)?;
-        if let Some(destination) = conversion.policy.destination.path() {
+        ArtifactStore::check_output_path(path, report_path, conversion.force)?;
+        if let Some(destination) = policy.destination.path() {
             ArtifactStore::check_distinct_output_paths(
                 destination,
                 "CAD output",
@@ -454,14 +472,14 @@ pub fn convert(
         write_refusal_command_report(
             path,
             conversion.report.as_deref(),
-            conversion.report_overwrite,
+            conversion.force,
             "convert",
             refusal,
         );
         Ok(())
     };
 
-    let prepared = match transcoder.prepare(&source, target, &conversion.policy) {
+    let prepared = match transcoder.prepare(&source, target, &policy) {
         Ok(prepared) => prepared,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
@@ -500,7 +518,7 @@ pub fn convert(
     if let Err(error) = write_command_report(
         path,
         conversion.report.as_deref(),
-        conversion.report_overwrite,
+        conversion.force,
         "convert",
         CommandReportBody::Ok {
             decode_report: decode_report.as_ref(),

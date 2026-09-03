@@ -34,7 +34,8 @@ use cadmpeg_core::dialect::DialectLayers;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::ser::SerializeTuple;
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 
 use crate::CadIr;
@@ -58,7 +59,8 @@ pub struct AttributeChange {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceDiff {
     /// `(left, right)` source format ids, present only when they differ.
-    pub format_change: Option<(String, String)>,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<(String, String)>"))]
+    pub format_change: Option<FormatChange>,
     /// `(left, right)` complete dialect-layer sets, present when they differ.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dialects_change: Option<(Option<DialectLayers>, Option<DialectLayers>)>,
@@ -70,6 +72,43 @@ pub struct SourceDiff {
     /// See the module documentation: such a digest cannot agree across platforms,
     /// so a verdict that turned on one would call the same file changed.
     pub local_digests: Vec<AttributeChange>,
+}
+
+/// A change between two source formats, with absence represented explicitly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatChange {
+    before: Option<String>,
+    after: Option<String>,
+}
+
+impl FormatChange {
+    fn between(before: Option<&str>, after: Option<&str>) -> Option<Self> {
+        (before != after).then(|| Self {
+            before: before.map(str::to_owned),
+            after: after.map(str::to_owned),
+        })
+    }
+
+    /// Returns the left-hand source format, or `None` when it was absent.
+    #[must_use]
+    pub fn before(&self) -> Option<&str> {
+        self.before.as_deref()
+    }
+
+    /// Returns the right-hand source format, or `None` when it is absent.
+    #[must_use]
+    pub fn after(&self) -> Option<&str> {
+        self.after.as_deref()
+    }
+}
+
+impl Serialize for FormatChange {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple = serializer.serialize_tuple(2)?;
+        tuple.serialize_element(self.before().unwrap_or(""))?;
+        tuple.serialize_element(self.after().unwrap_or(""))?;
+        tuple.end()
+    }
 }
 
 impl SourceDiff {
@@ -266,8 +305,8 @@ fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Toleran
 /// attribute as a difference or as an informational machine-local digest.
 fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let empty_attributes = BTreeMap::new();
-    let left_format = left.source.as_ref().map_or("", |source| source.format());
-    let right_format = right.source.as_ref().map_or("", |source| source.format());
+    let left_format = left.source.as_ref().map(|source| source.format());
+    let right_format = right.source.as_ref().map(|source| source.format());
     let left_dialects = left.source.as_ref().and_then(|source| source.dialects());
     let right_dialects = right.source.as_ref().and_then(|source| source.dialects());
     let left_attributes = left
@@ -279,8 +318,7 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
         .as_ref()
         .map_or(&empty_attributes, |source| &source.attributes);
     let mut result = SourceDiff {
-        format_change: (left_format != right_format)
-            .then(|| (left_format.to_owned(), right_format.to_owned())),
+        format_change: FormatChange::between(left_format, right_format),
         dialects_change: (left_dialects != right_dialects)
             .then(|| (left_dialects.cloned(), right_dialects.cloned())),
         ..SourceDiff::default()
@@ -621,9 +659,13 @@ mod tests {
         for (left, right) in [(&bare, &populated), (&populated, &bare)] {
             let result = diff(left, right);
             assert!(!result.is_empty());
-            assert!(result.source.format_change.is_some());
+            let change = result.source.format_change.as_ref().unwrap();
+            assert_ne!(change.before(), change.after());
             assert_eq!(result.source.attributes.len(), 1);
         }
+
+        let rendered = serde_json::to_value(&diff(&bare, &populated).source).unwrap();
+        assert_eq!(rendered["format_change"], serde_json::json!(["", "rhino"]));
 
         assert!(diff(&bare, &bare).is_empty());
     }

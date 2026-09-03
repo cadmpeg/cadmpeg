@@ -12,6 +12,5 @@ pub use document::{LoadOrigin, LoadedDocument};
 pub use refusal::ConversionRefusal;
 pub use transcoder::{
     export_target, ConversionPolicy, DestinationPolicy, LossPolicy, SourceRequest, Transcoder,
-    ValidationAdmission,
 };
 pub use validators::NativeValidatorCatalog;

@@ -16,7 +16,9 @@ use crate::application::{ArtifactStore, ConversionRefusal, SidecarPersistOutcome
 use super::CLI_SCHEMA_VERSION;
 
 pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
-    if let Some((before, after)) = &source.format_change {
+    if let Some(change) = &source.format_change {
+        let before = change.before().unwrap_or("");
+        let after = change.after().unwrap_or("");
         println!("  source format: {before} → {after}");
     }
     if let Some((before, after)) = &source.dialects_change {

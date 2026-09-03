@@ -23,32 +23,6 @@ use registry_view::{print_dialects, print_formats};
 use crate::application::{LossPolicy, NativeValidatorCatalog};
 use crate::commands::AppCatalogs;
 
-/// Which losses `--reject-lossy` refuses on.
-///
-/// One predicate at two stages. Decode loss is what the reader could not carry
-/// into the neutral document; export loss is what the writer cannot put in the
-/// output. `Any` is both, and is what the bare flag means.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum LossScope {
-    /// Refuse when the decode reported any loss.
-    Decode,
-    /// Refuse when export planning reported any loss.
-    Export,
-    /// Refuse on either.
-    Any,
-}
-
-impl From<Option<LossScope>> for LossPolicy {
-    fn from(scope: Option<LossScope>) -> Self {
-        match scope {
-            None => Self::Allow,
-            Some(LossScope::Decode) => Self::RejectDecode,
-            Some(LossScope::Export) => Self::RejectExport,
-            Some(LossScope::Any) => Self::RejectAny,
-        }
-    }
-}
-
 #[derive(Debug, Parser)]
 #[command(
     name = "cadmpeg",
@@ -81,10 +55,12 @@ struct InputArgs {
 
 impl InputArgs {
     fn forced(&self) -> Option<ForcedInput> {
-        self.input_format
-            .as_deref()
-            .map(|name| cadmpeg_registry::forced_input(name).expect("clap validates input formats"))
+        forced_input(self.input_format.as_deref())
     }
+}
+
+fn forced_input(name: Option<&str>) -> Option<ForcedInput> {
+    name.map(|name| cadmpeg_registry::forced_input(name).expect("clap validates input formats"))
 }
 
 #[derive(Debug, Clone, Args)]
@@ -200,7 +176,7 @@ enum Command {
             default_missing_value = "any",
             value_name = "SCOPE"
         )]
-        reject_lossy: Option<LossScope>,
+        reject_lossy: Option<LossPolicy>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -527,15 +503,11 @@ fn main() -> ExitCode {
             &catalogs,
             commands::DiffInput {
                 path: &a,
-                forced: input_format_a
-                    .as_deref()
-                    .and_then(cadmpeg_registry::forced_input),
+                forced: forced_input(input_format_a.as_deref()),
             },
             commands::DiffInput {
                 path: &b,
-                forced: input_format_b
-                    .as_deref()
-                    .and_then(cadmpeg_registry::forced_input),
+                forced: forced_input(input_format_b.as_deref()),
             },
             &decode,
             json,
@@ -561,16 +533,12 @@ fn main() -> ExitCode {
                 Err(misdirected_json("convert").into())
             } else {
                 let conversion_args = commands::ConversionArgs {
-                    policy: application::ConversionPolicy {
-                        losses: reject_lossy.into(),
-                        admission: application::ValidationAdmission::new(allow_errors, allow_empty),
-                        destination: application::DestinationPolicy::new(
-                            output,
-                            force,
-                            binary_stdout,
-                        ),
-                    },
-                    report_overwrite: force,
+                    losses: reject_lossy.unwrap_or_default(),
+                    allow_errors,
+                    allow_empty,
+                    output,
+                    binary_stdout,
+                    force,
                     report,
                     forced_input: input_args.forced(),
                 };
