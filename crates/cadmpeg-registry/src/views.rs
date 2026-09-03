@@ -2,7 +2,7 @@
 //! Runtime projections of the joined dialect registries.
 
 use cadmpeg_core::dialect::{DialectId, DialectLayers};
-use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
+use cadmpeg_core::target::TargetCatalog;
 
 use crate::disposition::ReadDisposition;
 use crate::registry::{canonical_format_name, catalog_of, registries, support, DialectEntry};
@@ -21,8 +21,9 @@ pub struct DialectProvenance {
     /// The declared read disposition for that id, when the registry has one.
     pub read: Option<ReadDisposition>,
     /// The typed targets this build can synthesize for the format, in catalog
-    /// order. Empty when the build has no encoder or the encoder has no catalog.
-    pub write_targets: &'static [TargetDescriptor],
+    /// order. `None` when the build has no encoder; an empty catalog identifies
+    /// an encoder with no dialect targets.
+    pub write_targets: Option<TargetCatalog>,
 }
 
 /// The provenance of the primary dialect the codec matched.
@@ -35,9 +36,7 @@ pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectPro
     Some(DialectProvenance {
         id: entry.dialect().clone(),
         read: support(entry.dialect()).map(|disposition| disposition.read),
-        write_targets: catalog_of(entry.format())
-            .map(|catalog| catalog.targets())
-            .unwrap_or(&[]),
+        write_targets: catalog_of(entry.format()),
     })
 }
 
@@ -145,10 +144,12 @@ mod tests {
         assert!(provenance.read.is_some());
         assert!(provenance
             .write_targets
+            .expect("Rhino has an encoder")
             .iter()
             .any(|target| target.id.as_str() == "rhino:archive-50"));
         assert!(provenance
             .write_targets
+            .expect("Rhino has an encoder")
             .iter()
             .any(|target| target.id.as_str() == "rhino:archive-80"));
     }
