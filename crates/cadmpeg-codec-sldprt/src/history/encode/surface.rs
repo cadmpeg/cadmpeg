@@ -14,7 +14,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BodySelection, EdgeSelection, FaceSelection, Length, PathRef, RuledSurfaceCorner,
     RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceContinuity, SurfaceExtension,
-    ThickenSide, TrimCellSelection, TrimRegion,
+    ThickenSide, TrimRegion,
 };
 
 #[allow(
@@ -40,18 +40,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         tool: &PathRef,
         keep: &TrimRegion,
-        cell_selection: &Option<TrimCellSelection>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
-        if cell_selection.is_some() {
+        let Some(keep_token) = crate::feature_schema::trim_region_token(keep) else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} carries a cell-selected trim not representable by its schema",
                 feature.id
             )));
-        }
+        };
         Ok({
             let faces = face_selection_value(faces).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -69,10 +68,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert("Faces".into(), faces);
             properties.insert("Tool".into(), tool);
-            properties.insert(
-                "Keep".into(),
-                crate::feature_schema::trim_region_token(*keep).into(),
-            );
+            properties.insert("Keep".into(), keep_token.into());
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "TrimSurface".into(), |record| record.kind.clone()),
                 parameters: existing

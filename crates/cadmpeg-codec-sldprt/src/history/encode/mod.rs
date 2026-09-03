@@ -82,11 +82,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 distance,
             } => self.encode_datum_offset_plane(reference, distance),
             FeatureDefinition::TrimSurface {
-                faces,
-                tool,
-                keep,
-                cell_selection,
-            } => self.encode_trim_surface(faces, tool, keep, cell_selection),
+                faces, tool, keep, ..
+            } => self.encode_trim_surface(faces, tool, keep),
             FeatureDefinition::ExtendSurface {
                 faces,
                 distance,

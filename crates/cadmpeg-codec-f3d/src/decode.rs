@@ -521,20 +521,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::MeshImport { tessellations } => tessellations.is_empty(),
         FeatureDefinition::Decal { faces, .. } => !face_selection_is_resolved(faces),
         FeatureDefinition::TrimSurface {
-            faces,
-            tool,
-            keep,
-            cell_selection,
+            faces, tool, keep, ..
         } => {
             !face_selection_is_resolved(faces)
                 || !loft_path_is_resolved(tool)
-                || match cell_selection {
-                    Some(selection) => {
-                        !selection.is_valid()
-                            || !matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved)
-                    }
-                    None => matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved),
-                }
+                || matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved)
         }
         FeatureDefinition::CosmeticThread {
             face,
