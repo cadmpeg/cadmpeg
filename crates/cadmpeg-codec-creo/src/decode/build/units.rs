@@ -79,12 +79,9 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
         }
     }
     for coedge in &mut ir.model.coedges {
-        if let (Some(range), Some(curve_id)) = (
-            coedge.use_curve_parameter_range.as_mut(),
-            coedge.use_curve.as_ref(),
-        ) {
-            if let Some(scale) = curve_parameter_scales.get(curve_id) {
-                scale_pair(range, *scale);
+        if let Some(use_curve) = &mut coedge.use_curve {
+            if let Some(scale) = curve_parameter_scales.get(&use_curve.curve) {
+                scale_pair(&mut use_curve.parameter_range, *scale);
             }
         }
     }

@@ -1206,7 +1206,6 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
-        use_curve_parameter_range: None,
     });
     brep.edges.push(Edge {
         id: EdgeId(id(7)),

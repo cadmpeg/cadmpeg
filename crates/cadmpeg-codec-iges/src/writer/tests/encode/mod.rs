@@ -945,7 +945,6 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             sense: Sense::Forward,
             pcurves: pcurve_uses,
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.model.loops.push(Loop {

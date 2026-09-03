@@ -724,7 +724,6 @@ pub(super) fn emit_topology(
                 })
                 .collect(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
         if let Some(parent) = ir
             .model

@@ -333,8 +333,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             }
         }
         if let Some(curve) = &ce.use_curve {
-            if ids.curves(&curve.0).is_none() {
-                ref_error(findings, &ce.id.0, "coedge use curve", &curve.0);
+            if ids.curves(&curve.curve.0).is_none() {
+                ref_error(findings, &ce.id.0, "coedge use curve", &curve.curve.0);
             }
         }
     }

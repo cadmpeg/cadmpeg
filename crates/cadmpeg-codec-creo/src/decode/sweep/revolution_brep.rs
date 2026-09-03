@@ -263,7 +263,6 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         parameter_range: None,
                     }],
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
                 loops.push(loop_id);
             }

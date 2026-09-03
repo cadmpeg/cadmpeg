@@ -842,7 +842,6 @@ impl<'a> Builder<'a> {
                     radial_next: id,
                     sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
                     use_curve: None,
-                    use_curve_parameter_range: None,
                     pcurves: pcurve
                         .into_iter()
                         .map(

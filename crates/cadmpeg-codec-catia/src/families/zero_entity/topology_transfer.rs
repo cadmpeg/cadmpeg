@@ -608,9 +608,13 @@ pub(crate) fn transfer_closed_face_topology(
                 } else {
                     Some(occurrence.oriented_curve.as_ref()?.clone())
                 };
-                let use_curve_parameter_range = use_curve
-                    .as_ref()
-                    .and(occurrence.oriented_curve_parameter_range);
+                let use_curve = match use_curve {
+                    Some(curve) => Some(cadmpeg_ir::topology::CoedgeUseCurve {
+                        curve,
+                        parameter_range: occurrence.oriented_curve_parameter_range?,
+                    }),
+                    None => None,
+                };
                 let pcurves = occurrence
                     .pcurve
                     .as_ref()
@@ -658,7 +662,6 @@ pub(crate) fn transfer_closed_face_topology(
                     sense,
                     pcurves,
                     use_curve,
-                    use_curve_parameter_range,
                 });
                 coedges_by_support.insert(support_record_ordinal, coedge_id);
             }

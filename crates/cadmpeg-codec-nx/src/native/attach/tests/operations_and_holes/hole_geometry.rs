@@ -167,7 +167,6 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
         }
     }
@@ -552,7 +551,6 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                     sense: Sense::Forward,
                     pcurves: Vec::new(),
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
         }

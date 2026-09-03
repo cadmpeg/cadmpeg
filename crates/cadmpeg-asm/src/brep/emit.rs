@@ -3773,8 +3773,12 @@ pub(crate) fn emit_coedges(
                     })
                     .into_iter()
                     .collect(),
-                use_curve: use_curve.as_ref().map(|(curve, _)| curve.clone()),
-                use_curve_parameter_range: use_curve.map(|(_, range)| range),
+                use_curve: use_curve.map(|(curve, parameter_range)| {
+                    cadmpeg_ir::topology::CoedgeUseCurve {
+                        curve,
+                        parameter_range,
+                    }
+                }),
             });
             if let Some((parameter_range, extension)) = tolerant {
                 out.tolerant_coedge_parameters

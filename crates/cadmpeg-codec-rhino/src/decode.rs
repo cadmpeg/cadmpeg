@@ -3745,7 +3745,6 @@ fn stage_extrusion_caps(
                     parameter_range: None,
                 }],
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
@@ -4326,7 +4325,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                     })
                     .collect(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             coedges.push(coedge_id);
         }

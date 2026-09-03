@@ -741,65 +741,64 @@ fn retain_unowned_carriers(
         return;
     }
     let mut roots = BTreeSet::new();
-    for identity in ir
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.0.as_str())
-        .chain(
-            ir.model
-                .edges
-                .iter()
-                .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.0.as_str())),
-        )
-        .chain(ir.model.faces.iter().map(|face| face.surface.0.as_str()))
-        .chain(
-            ir.model
-                .coedges
-                .iter()
-                .filter_map(|coedge| coedge.use_curve.as_ref().map(|curve| curve.0.as_str())),
-        )
-        .chain(
-            ir.model
-                .pcurves
-                .iter()
-                .filter(|pcurve| owned.contains(&pcurve.id.0))
-                .map(|pcurve| pcurve.id.0.as_str()),
-        )
-        .chain(
-            ir.model
-                .points
-                .iter()
-                .filter(|point| point.source_object.is_some())
-                .map(|point| point.id.0.as_str()),
-        )
-        .chain(
-            ir.model
-                .curves
-                .iter()
-                .filter(|curve| curve.source_object.is_some())
-                .map(|curve| curve.id.0.as_str()),
-        )
-        .chain(
-            ir.model
-                .surfaces
-                .iter()
-                .filter(|surface| surface.source_object.is_some())
-                .map(|surface| surface.id.0.as_str()),
-        )
-        .chain(
-            ir.model
-                .procedural_curves
-                .iter()
-                .map(|curve| curve.id.0.as_str()),
-        )
-        .chain(
-            ir.model
-                .procedural_surfaces
-                .iter()
-                .map(|surface| surface.id.0.as_str()),
-        )
-        .filter_map(step_id_from_ir)
+    for identity in
+        ir.model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.point.0.as_str())
+            .chain(
+                ir.model
+                    .edges
+                    .iter()
+                    .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.0.as_str())),
+            )
+            .chain(ir.model.faces.iter().map(|face| face.surface.0.as_str()))
+            .chain(
+                ir.model.coedges.iter().filter_map(|coedge| {
+                    coedge.use_curve.as_ref().map(|use_| use_.curve.0.as_str())
+                }),
+            )
+            .chain(
+                ir.model
+                    .pcurves
+                    .iter()
+                    .filter(|pcurve| owned.contains(&pcurve.id.0))
+                    .map(|pcurve| pcurve.id.0.as_str()),
+            )
+            .chain(
+                ir.model
+                    .points
+                    .iter()
+                    .filter(|point| point.source_object.is_some())
+                    .map(|point| point.id.0.as_str()),
+            )
+            .chain(
+                ir.model
+                    .curves
+                    .iter()
+                    .filter(|curve| curve.source_object.is_some())
+                    .map(|curve| curve.id.0.as_str()),
+            )
+            .chain(
+                ir.model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| surface.source_object.is_some())
+                    .map(|surface| surface.id.0.as_str()),
+            )
+            .chain(
+                ir.model
+                    .procedural_curves
+                    .iter()
+                    .map(|curve| curve.id.0.as_str()),
+            )
+            .chain(
+                ir.model
+                    .procedural_surfaces
+                    .iter()
+                    .map(|surface| surface.id.0.as_str()),
+            )
+            .filter_map(step_id_from_ir)
     {
         roots.insert(identity);
     }

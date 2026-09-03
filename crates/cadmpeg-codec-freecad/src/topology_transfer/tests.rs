@@ -538,7 +538,6 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
                 radial_next: id,
                 sense: Sense::Forward,
                 use_curve: None,
-                use_curve_parameter_range: None,
                 pcurves: Vec::new(),
             }
         })
@@ -558,7 +557,6 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
                 radial_next: id,
                 sense: Sense::Forward,
                 use_curve: None,
-                use_curve_parameter_range: None,
                 pcurves: Vec::new(),
             }
         })
@@ -585,7 +583,6 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         radial_next: id.clone(),
         sense: Sense::Forward,
         use_curve: None,
-        use_curve_parameter_range: None,
         pcurves: Vec::new(),
     }];
     close_radial_rings(&mut singleton);

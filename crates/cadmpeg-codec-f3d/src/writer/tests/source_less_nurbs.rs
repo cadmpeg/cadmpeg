@@ -459,7 +459,6 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
                 sense: cadmpeg_ir::topology::Sense::Reversed,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
     }
     for index in 0..3 {

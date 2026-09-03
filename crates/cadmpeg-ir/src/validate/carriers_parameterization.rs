@@ -27,7 +27,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         ir.model
             .coedges
             .iter()
-            .filter_map(|coedge| coedge.use_curve.as_ref().map(|id| id.0.as_str())),
+            .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.0.as_str())),
     );
     surfaces.extend(
         ir.model
@@ -850,19 +850,9 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|pcurve| (pcurve.id.0.as_str(), &pcurve.geometry))
         .collect::<HashMap<_, _>>();
     for coedge in &ir.model.coedges {
-        if coedge.use_curve.is_some() != coedge.use_curve_parameter_range.is_some() {
-            findings.push(Finding {
-                check: Check::ParameterDomain,
-                severity: Severity::Error,
-                message: "coedge use curve and parameter range must occur together".into(),
-                entity: Some(coedge.id.0.clone()),
-            });
-        }
-        if let Some([start, end]) = coedge.use_curve_parameter_range {
-            let geometry = coedge
-                .use_curve
-                .as_ref()
-                .and_then(|id| curves.get(id.0.as_str()));
+        if let Some(use_curve) = &coedge.use_curve {
+            let [start, end] = use_curve.parameter_range;
+            let geometry = curves.get(use_curve.curve.0.as_str());
             let mut valid =
                 start.is_finite() && end.is_finite() && start <= end && geometry.is_some();
             if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {

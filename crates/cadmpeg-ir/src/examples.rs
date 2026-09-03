@@ -183,7 +183,6 @@ pub fn unit_cube() -> CadIr {
                 },
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             edge_to_coedges
                 .entry(*edge_index)

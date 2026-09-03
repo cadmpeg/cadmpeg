@@ -1064,7 +1064,6 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             sense: cadmpeg_ir::topology::Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     source_less.model.loops[0].coedges.push(coedge_id);
     let ring = source_less.model.loops[0].coedges.clone();
@@ -1459,7 +1458,6 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             },
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
         source_less.model.edges.push(Edge {
             id: edges[index].clone(),

@@ -1720,7 +1720,6 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                         parameter_range: Some(pcurve_domain),
                     }],
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
                 global_trim += 1;
             }

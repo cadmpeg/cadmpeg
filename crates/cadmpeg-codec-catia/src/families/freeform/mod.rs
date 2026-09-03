@@ -3074,7 +3074,6 @@ mod tests {
                 },
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
         }
         ir.model.procedural_curves.push(ProceduralCurve::new(

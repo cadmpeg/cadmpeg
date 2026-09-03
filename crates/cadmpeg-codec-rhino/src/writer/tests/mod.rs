@@ -188,7 +188,6 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.finalize();
@@ -272,7 +271,6 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.finalize();
@@ -449,7 +447,6 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
             sense,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.finalize();
@@ -632,7 +629,6 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
                 sense: face_uses[face][offset].1,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
         }
     }

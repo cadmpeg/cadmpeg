@@ -77,7 +77,6 @@ fn edgeless_doc() -> CadIr {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
-        use_curve_parameter_range: None,
     });
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
@@ -212,8 +211,10 @@ fn writer_reports_unrepresented_topology_metadata() {
         .expect("pcurve-backed coedge");
     coedge.pcurves[0].isoparametric = Some(true);
     coedge.pcurves[0].parameter_range = Some([0.0, 1.0]);
-    coedge.use_curve = Some(edge_curve);
-    coedge.use_curve_parameter_range = Some([0.0, 1.0]);
+    coedge.use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
+        curve: edge_curve,
+        parameter_range: [0.0, 1.0],
+    });
 
     let report = write_step(
         &ir,

@@ -282,7 +282,6 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
-        use_curve_parameter_range: None,
     });
     assert_eq!(
         bodies_containing_edges(&ir, std::slice::from_ref(&edge_id)),

@@ -308,7 +308,6 @@ fn add_face(
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     model.loops.push(Loop {
@@ -490,7 +489,6 @@ fn add_cylindrical_patch_face(
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     model.loops.push(Loop {

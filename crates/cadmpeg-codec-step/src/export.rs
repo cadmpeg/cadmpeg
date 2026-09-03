@@ -3980,9 +3980,7 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
-            .filter(|coedge| {
-                coedge.use_curve.is_some() || coedge.use_curve_parameter_range.is_some()
-            })
+            .filter(|coedge| coedge.use_curve.is_some())
             .count();
         if coedge_use_curve_metadata_count > 0 {
             self.loss(

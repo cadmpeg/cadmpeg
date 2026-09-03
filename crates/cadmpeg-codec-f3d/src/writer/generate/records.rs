@@ -68,16 +68,16 @@ pub(crate) fn native_tolerant_coedge_extension(
                 .iter()
                 .find(|candidate| candidate.id == *coedge)
                 .ok_or_else(|| CodecError::malformed(format_args!("missing coedge {coedge}")))?;
-            let curve_id = model_coedge.use_curve.as_ref().ok_or_else(|| {
+            let use_curve = model_coedge.use_curve.as_ref().ok_or_else(|| {
                 CodecError::malformed(format_args!("tolerant coedge {coedge} has no use curve"))
             })?;
             let curve = target
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == *curve_id)
+                .find(|curve| curve.id == use_curve.curve)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("missing use curve {curve_id}"))
+                    CodecError::malformed(format_args!("missing use curve {}", use_curve.curve))
                 })?;
             let CurveGeometry::Nurbs(curve) = &curve.geometry else {
                 return Err(CodecError::NotImplemented(format!(

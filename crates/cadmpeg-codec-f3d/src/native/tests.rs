@@ -313,24 +313,24 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         3
     );
     assert!(decoded.ir().model.coedges.iter().all(|coedge| {
-        coedge.use_curve_parameter_range == Some([-2.0, 3.0])
-            && coedge.use_curve.as_ref().is_some_and(|id| {
-                decoded.ir().model.curves.iter().any(|curve| {
-                    curve.id == *id
+        coedge.use_curve.as_ref().is_some_and(|use_| {
+            use_.parameter_range == [-2.0, 3.0]
+                && decoded.ir().model.curves.iter().any(|curve| {
+                    curve.id == use_.curve
                         && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs) if nurbs.degree == 2)
                 })
-            })
+        })
     }));
     let first_use_curve = decoded.ir().model.coedges[0]
         .use_curve
         .as_ref()
-        .and_then(|id| {
+        .and_then(|use_| {
             decoded
                 .ir()
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == *id)
+                .find(|curve| curve.id == use_.curve)
         })
         .expect("first embedded use curve");
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(first_use_curve) = &first_use_curve.geometry
@@ -351,7 +351,8 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let use_curve = edited.model.coedges[0]
         .use_curve
         .clone()
-        .expect("first coedge use curve");
+        .expect("first coedge use curve")
+        .curve;
     let curve = edited
         .model
         .curves
@@ -382,8 +383,10 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         source_object: None,
     });
     let tolerant_coedge = source_less.model.coedges[0].id.clone();
-    source_less.model.coedges[0].use_curve = Some(generated_curve_id);
-    source_less.model.coedges[0].use_curve_parameter_range = Some([-2.0, 3.0]);
+    source_less.model.coedges[0].use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
+        curve: generated_curve_id,
+        parameter_range: [-2.0, 3.0],
+    });
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
         vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             id: "generated:tolerant-coedge-parameters#0".into(),

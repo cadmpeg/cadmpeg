@@ -174,7 +174,6 @@ pub(super) fn sketch_brep(
                     Sense::Forward
                 },
                 use_curve: None,
-                use_curve_parameter_range: None,
                 pcurves: Vec::new(),
             });
         }
@@ -235,7 +234,6 @@ pub(super) fn sketch_brep(
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         });
         ir.model.loops.push(Loop {

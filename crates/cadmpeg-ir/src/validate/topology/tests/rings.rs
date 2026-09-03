@@ -34,18 +34,19 @@ fn dangling_reference_is_flagged() {
 }
 
 #[test]
-fn coedge_use_curve_requires_a_resolved_carrier_and_interval() {
+fn coedge_use_curve_requires_a_resolved_carrier() {
     let mut ir = unit_cube();
-    ir.model.coedges[0].use_curve = Some(CurveId("missing:use-curve#0".into()));
+    ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+        curve: CurveId("missing:use-curve#0".into()),
+        parameter_range: [0.0, 1.0],
+    });
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message.contains("coedge use curve")
     }));
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
-            && finding
-                .message
-                .contains("use curve and parameter range must occur together")
+            && finding.message.contains("outside its carrier domain")
     }));
 }
 

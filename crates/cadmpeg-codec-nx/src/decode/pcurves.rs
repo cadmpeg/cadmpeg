@@ -3598,7 +3598,6 @@ mod tests {
                 parameter_range: None,
             }],
             use_curve: None,
-            use_curve_parameter_range: None,
         });
 
         let mut index = super::IntersectionIncidenceIndex::default();

@@ -2208,7 +2208,6 @@ pub(super) fn project(
                     sense: item.segment.sense,
                     pcurves: pcurve_uses,
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
             candidate.model_mut().loops.push(Loop {
