@@ -2567,7 +2567,7 @@ reason = "coverage key storage is private; static and generated names enter thro
 [[change]]
 commit = "a54e545a42135700a4d647de9e91c35bf98a5560"
 crate = "cadmpeg-ir"
-kind = "trait"
+kind = "trait_impl"
 item = "impl Copy for cadmpeg_ir::report::CoverageKey"
 reason = "a coverage key can own a generated name, so the key remains cloneable but is not copyable"
 
@@ -2595,14 +2595,14 @@ reason = "a strict refusal carries one sealed StrictDecodeRejection instead of c
 [[change]]
 commit = "5503c1943003cf76e3768b07aee3746821d9b11f"
 crate = "cadmpeg-ir"
-kind = "addition"
+kind = "signature"
 item = "cadmpeg_ir::codec::StrictDecodeRejection"
 reason = "the sealed decode gate binds the refusing loss index to its completed report and consumers project the loss through read-only accessors"
 
 [[change]]
 commit = "7e85ce15d6f7825324a2fdf57d07af5bc511bc68"
 crate = "cadmpeg-ir"
-kind = "type"
+kind = "signature"
 item = "cadmpeg_ir::{SourceProvenance,StreamProvenance,Provenance,SourceLocation,AnnotationLocation,AnnotationProvenance}"
 reason = "one generic Provenance type now uses location types to distinguish loss attribution from annotation attribution; root-stream absence is Option and annotation provenance owns an opaque stream reference instead of a fallible index"
 
@@ -2616,7 +2616,7 @@ reason = "the serialized stream table is private and annotation provenance store
 [[change]]
 commit = "7e85ce15d6f7825324a2fdf57d07af5bc511bc68"
 crate = "cadmpeg-ir"
-kind = "addition"
+kind = "signature"
 item = "cadmpeg_ir::annotations::{AnnotationBuilder::resume,Annotations::{stream_count,append,merge_interned}}"
 reason = "annotation construction and merging preserve valid stream references while retaining each codec's existing stream-table ordering policy"
 
@@ -2665,28 +2665,28 @@ reason = "the unused alias duplicated ModelDraft without defining a distinct sta
 [[change]]
 commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
 crate = "cadmpeg-ir"
-kind = "type"
+kind = "signature"
 item = "cadmpeg_ir::{ExternalDocumentReference,ExternalDocument}"
 reason = "an external document reference carries exactly one typed path or document id; malformed legacy field combinations exist only in the rejecting wire adapter"
 
 [[change]]
 commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
 crate = "cadmpeg-ir"
-kind = "type"
+kind = "field"
 item = "cadmpeg_ir::{JointOperand,OperandContainer}"
 reason = "a joint operand always names its object and carries exactly one root, occurrence, or external container state"
 
 [[change]]
 commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
 crate = "cadmpeg-ir"
-kind = "type"
+kind = "variant"
 item = "cadmpeg_ir::JointLimits"
 reason = "enabled joint limits carry a lower bound, an upper bound, or both and cannot represent an enabled interval without bounds"
 
 [[change]]
 commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
 crate = "cadmpeg-ir"
-kind = "type"
+kind = "variant"
 item = "cadmpeg_ir::{AssemblyJoint,JointOperands,JointConnector,PairedJointKind}"
 reason = "grounded and paired joints bundle their exact connector, frame, and optional offset cardinality; paired families exclude grounded"
 
@@ -2714,7 +2714,7 @@ reason = "codec insertion keeps the first layer for a format and instance key an
 [[change]]
 commit = "9bf4ff07bbd49dc99702b76f2cf83c33b917266e"
 crate = "cadmpeg-core"
-kind = "addition"
+kind = "variant"
 item = "cadmpeg_core::dialect::LayerInstance"
 reason = "layer classifiers take a typed sole-or-tagged identity policy instead of a boolean that gates whether the carrier becomes an instance key"
 
@@ -2735,7 +2735,7 @@ reason = "Parasolid layer classification takes LayerInstance instead of an insta
 [[change]]
 commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
 crate = "cadmpeg-core"
-kind = "type"
+kind = "field"
 item = "cadmpeg_core::target::{TargetDescriptor,TargetCatalog}"
 reason = "the catalog owns its optional default index; an individual target row can no longer independently claim to be the default"
 
@@ -2756,7 +2756,7 @@ reason = "catalog validation and refusals take the sealed TargetCatalog value so
 [[change]]
 commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
 crate = "cadmpeg-ir"
-kind = "type"
+kind = "signature"
 item = "cadmpeg_ir::codec::write::{Catalog,TargetDomain::targets,Encoder::targets}"
 reason = "encoder catalogs return the target rows and their optional default as one TargetCatalog value"
 
