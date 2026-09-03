@@ -51,10 +51,7 @@ fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Compressed ASCII: {}", message.into()))
 }
 
-fn split_lines<'a>(
-    source: &'a [u8],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<&'a [u8]>, CodecError> {
+fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a [u8]>, CodecError> {
     if source.is_empty() {
         return Err(malformed("source is empty"));
     }
@@ -73,9 +70,7 @@ fn split_lines<'a>(
             }
             None => (source.len(), source.len()),
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "iges_compressed_ascii_lines")?;
-        }
+        ctx.charge_collection_items(1, "iges_compressed_ascii_lines")?;
         lines.push(&source[start..end]);
         start = next;
     }
@@ -613,21 +608,16 @@ fn append_terminate(
     append_card(output, &data, b'T', 1)
 }
 
-fn charge_normalization(ctx: Option<&DecodeContext<'_>>, bytes: usize) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| {
-        ctx.charge_work(
-            u64::try_from(bytes).unwrap_or(u64::MAX),
-            "iges_compressed_ascii_normalization",
-        )
-    })
+fn charge_normalization(ctx: &DecodeContext<'_>, bytes: usize) -> Result<(), CodecError> {
+    ctx.charge_work(
+        u64::try_from(bytes).unwrap_or(u64::MAX),
+        "iges_compressed_ascii_normalization",
+    )
 }
 
 /// Expand one Compressed ASCII source into the fixed-card input consumed by
 /// the IGES section, Directory, and Parameter parsers.
-pub(crate) fn normalize(
-    source: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
     let lines = split_lines(source, ctx)?;
     let flag = lines
         .first()
