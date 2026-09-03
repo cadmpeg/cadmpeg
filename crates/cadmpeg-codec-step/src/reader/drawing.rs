@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
+use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::NativeRecord;
+use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
@@ -40,7 +41,7 @@ struct TargetContext<'a> {
 }
 
 impl TargetContext<'_> {
-    fn target(&self, id: u64) -> Option<DrawingTarget> {
+    fn target(&self, id: u64) -> Option<ReferenceSelection> {
         target_for(
             id,
             self.target_identities,
@@ -465,7 +466,7 @@ fn relationship_fields(name: &str) -> &'static [(usize, &'static str)] {
 }
 
 fn add_reference_fields(
-    relationships: &mut BTreeMap<String, Vec<DrawingTarget>>,
+    relationships: &mut BTreeMap<String, Vec<ReferenceSelection>>,
     name: &str,
     parameters: &[Value],
     source_id: u64,
@@ -789,54 +790,47 @@ fn target_for(
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-) -> Option<DrawingTarget> {
+) -> Option<ReferenceSelection> {
     if let Some(identity) = target_identities
         .get(&id)
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.iter().next())
     {
-        return Some(DrawingTarget {
-            target: Some(identity.clone()),
-            external_document: None,
-            external_object: None,
-            is_null: false,
-            subelements: Vec::new(),
-        });
+        return Some(ReferenceSelection::new(
+            ReferenceTarget::Local(identity.clone()),
+            Vec::new(),
+        ));
     }
     if let Some(uri) = external_documents.get(&id) {
-        return Some(DrawingTarget {
-            target: None,
-            external_document: Some((*uri).into()),
-            external_object: Some(format!("#{id}")),
-            is_null: false,
-            subelements: Vec::new(),
-        });
+        return Some(ReferenceSelection::new(
+            ReferenceTarget::External {
+                document: (*uri).into(),
+                object: format!("#{id}"),
+            },
+            Vec::new(),
+        ));
     }
     if let Some(identities) = wrapper_target_identities(id, target_identities, exchange) {
         if identities.len() == 1 {
-            return Some(DrawingTarget {
-                target: Some(
+            return Some(ReferenceSelection::new(
+                ReferenceTarget::Local(
                     identities
                         .into_iter()
                         .next()
                         .expect("one wrapper target identity"),
                 ),
-                external_document: None,
-                external_object: None,
-                is_null: false,
-                subelements: Vec::new(),
-            });
+                Vec::new(),
+            ));
         }
     }
     if known_typed.contains(&id) {
         return None;
     }
-    exchange.records.get(&id).map(|record| DrawingTarget {
-        target: Some(opaque_record_id(record).0),
-        external_document: None,
-        external_object: None,
-        is_null: false,
-        subelements: Vec::new(),
+    exchange.records.get(&id).map(|record| {
+        ReferenceSelection::new(
+            ReferenceTarget::Local(opaque_record_id(record).0),
+            Vec::new(),
+        )
     })
 }
 

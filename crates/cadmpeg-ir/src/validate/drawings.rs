@@ -20,12 +20,11 @@ pub(super) fn check_drawings(
                 .as_ref()
                 .is_none_or(|id| all_ids.contains(id))
             && drawing.assets.iter().all(|id| all_ids.contains(id))
-            && drawing.relationships.values().flatten().all(|target| {
-                target.target.as_ref().is_none_or(|id| all_ids.contains(id))
-                    && (target.is_null
-                        || target.target.is_some()
-                        || (target.external_document.is_some() && target.external_object.is_some()))
-            });
+            && drawing
+                .relationships
+                .values()
+                .flatten()
+                .all(|target| target.local_target().is_none_or(|id| all_ids.contains(id)));
         let numeric_valid = drawing
             .position
             .iter()

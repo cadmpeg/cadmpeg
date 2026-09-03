@@ -64,6 +64,7 @@ pub mod pmi;
 pub mod presentation;
 pub mod products;
 mod provenance;
+pub mod references;
 pub mod report;
 pub mod schema;
 pub mod semantic_annotations;
@@ -112,6 +113,7 @@ pub use provenance::{
     AnnotationLocation, AnnotationProvenance, Exactness, Provenance, SourceLocation,
     SourceObjectAssociation, SourceProvenance,
 };
+pub use references::{ReferenceSelection, ReferenceTarget};
 
 pub use report::{
     CensusBasis, Check, Coverage, CoverageKey, DecodeReport, DecodeTransfer, EntityCensus,

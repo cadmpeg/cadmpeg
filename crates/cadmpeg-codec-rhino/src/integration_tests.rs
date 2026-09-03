@@ -1649,8 +1649,8 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
     for role in ["dimstyle_id", "detail_measured"] {
         let targets = &annotation.references[role];
         assert_eq!(targets.len(), 1);
-        assert!(targets[0].is_null);
-        assert!(targets[0].target.is_none());
+        assert!(targets[0].is_null());
+        assert!(targets[0].local_target().is_none());
     }
     assert!(annotation.assets.is_empty());
 

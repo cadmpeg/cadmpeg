@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
+use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, ValueRecord};
 
@@ -95,26 +96,26 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
-        let relationship = |link: &crate::native::LinkTarget| DrawingTarget {
-            target: link
-                .document
-                .is_none()
-                .then(|| {
-                    link.object
-                        .as_ref()
-                        .filter(|object| !object.is_empty())
-                        .map(|object| {
-                            neutral_ids
-                                .get(object.as_str())
-                                .cloned()
-                                .unwrap_or_else(|| object.clone())
-                        })
-                })
-                .flatten(),
-            external_document: link.document.clone(),
-            external_object: link.document.as_ref().and(link.object.clone()),
-            is_null: link.document.is_none() && link.object.as_deref() == Some(""),
-            subelements: link.subelements.clone(),
+        let relationship = |link: &crate::native::LinkTarget| {
+            let target = match (&link.document, &link.object) {
+                (Some(document), Some(object)) => ReferenceTarget::External {
+                    document: document.clone(),
+                    object: object.clone(),
+                },
+                (None, Some(object)) if object.is_empty() => ReferenceTarget::Null,
+                (None, Some(object)) => ReferenceTarget::Local(
+                    neutral_ids
+                        .get(object.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| object.clone()),
+                ),
+                _ => {
+                    return Err(CodecError::malformed(
+                        "drawing relationship has no complete target",
+                    ));
+                }
+            };
+            Ok(ReferenceSelection::new(target, link.subelements.clone()))
         };
         let parameter = |name: &str| scalar_property(&owned, name);
         let x = parameter("X")?;
@@ -175,8 +176,14 @@ pub(crate) fn transfer_neutral(
         let relationships = record
             .relationships
             .iter()
-            .map(|(role, targets)| (role.clone(), targets.iter().map(relationship).collect()))
-            .collect::<BTreeMap<_, _>>();
+            .map(|(role, targets)| {
+                let targets = targets
+                    .iter()
+                    .map(&relationship)
+                    .collect::<Result<Vec<_>, CodecError>>()?;
+                Ok((role.clone(), targets))
+            })
+            .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
         let template = if is_page_type(&record.kind) {
             record
                 .relationships

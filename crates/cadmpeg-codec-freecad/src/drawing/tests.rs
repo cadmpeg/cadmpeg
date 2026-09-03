@@ -102,7 +102,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         Some(neutral_template.id.0.as_str())
     );
     assert_eq!(
-        neutral_page.relationships["Views"][0].target.as_deref(),
+        neutral_page.relationships["Views"][0].local_target(),
         Some(neutral_view.id.0.as_str())
     );
     assert_eq!(neutral_template.assets.len(), 1);
@@ -164,9 +164,9 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         .find(|drawing| drawing.object.ends_with("#PageNull"))
         .expect("null page");
     assert!(null_page.template.is_none());
-    assert!(null_page.relationships["Template"][0].is_null);
+    assert!(null_page.relationships["Template"][0].is_null());
     assert_eq!(
-        null_page.relationships["Views"][0].target.as_deref(),
+        null_page.relationships["Views"][0].local_target(),
         Some("fcstd:native:object#Model")
     );
     let model_page = pages
@@ -175,7 +175,7 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         .expect("model page");
     assert!(model_page.template.is_none());
     assert_eq!(
-        model_page.relationships["Template"][0].target.as_deref(),
+        model_page.relationships["Template"][0].local_target(),
         Some("fcstd:native:object#Model")
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -248,7 +248,7 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         Some(neutral_template.id.0.as_str())
     );
     assert_eq!(
-        neutral_view.relationships["Template"][0].target.as_deref(),
+        neutral_view.relationships["Template"][0].local_target(),
         Some(neutral_template.id.0.as_str())
     );
     assert!(neutral_view.template.is_none());
