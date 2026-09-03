@@ -32,7 +32,14 @@ pub(crate) fn build_decode_report(
         geometry_transferred,
         coverage: Default::default(),
         losses,
-        notes: report_notes(crate::container::summary_notes(scan), container_only),
+        notes: crate::container::summary_notes(
+            scan,
+            if container_only {
+                crate::container::SummaryScope::ContainerOnly
+            } else {
+                crate::container::SummaryScope::FullDecode
+            },
+        ),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
@@ -58,13 +65,6 @@ pub(crate) fn classify_document(
         ReportScope::ArchiveMember(dialects) => dialects,
     };
     SourceMeta::classified(dialects, attributes)
-}
-
-fn report_notes(notes: Vec<String>, container_only: bool) -> Vec<String> {
-    notes
-        .into_iter()
-        .filter(|note| container_only || !note.starts_with("container-level inspection only"))
-        .collect()
 }
 
 /// Build a single-document inspection summary with the same dialect facts that
