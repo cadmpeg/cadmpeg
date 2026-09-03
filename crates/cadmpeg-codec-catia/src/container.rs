@@ -1488,6 +1488,21 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         });
     }
 
+    let notes = notes(scan);
+
+    let matched = crate::dialect::classify(scan);
+    let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(matched),
+        "v5-cfv2",
+        entries,
+        losses,
+        notes,
+    )
+}
+
+/// Build the diagnostic notes shared by inspection and decode reports.
+pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
     let mut notes = vec![format!(
         "outer V5_CFV2 container: directory offset {} + length {} = {} (file size {}); variant: {}",
         scan.outer_dir_offset,
@@ -1547,15 +1562,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
-    let matched = crate::dialect::classify(scan);
-    let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();
-    ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(matched),
-        "v5-cfv2",
-        entries,
-        losses,
-        notes,
-    )
+    notes
 }
 
 #[cfg(test)]

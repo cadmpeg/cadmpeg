@@ -30,8 +30,8 @@ use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, attach_free_vertices, build_geometry_report,
     circle_parameter_range_from_surface_branch, link_payload_carriers, neutral_model_is_admissible,
-    ordered_range, preserve_raw_payload, rational_pcurve_arc, source_meta, unit_vector,
-    unwrap_angle, TypedCounts,
+    ordered_range, preserve_raw_payload, rational_pcurve_arc, unit_vector, unwrap_angle,
+    TypedCounts,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::freeform::{
@@ -1702,7 +1702,6 @@ fn try_decode_standard_population(
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
     preserve_raw_payload(
         &mut unknowns,
         &mut annotations,

@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::assemble::{
     annotate, circle_parameter_range_from_surface_branch, insert_unresolved_carrier_loss,
     link_payload_carriers, neutral_model_is_admissible, ordered_range, preserve_raw_payload,
-    quintic_jet_pcurve, rational_pcurve_arc, source_meta, unit_vector,
+    quintic_jet_pcurve, rational_pcurve_arc, unit_vector,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
@@ -112,7 +112,6 @@ pub(crate) fn try_decode_e5(
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
     preserve_raw_payload(
         &mut unknowns,
         &mut annotations,

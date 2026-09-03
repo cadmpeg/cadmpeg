@@ -19,7 +19,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 
 use crate::assemble::{
-    annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload, source_meta,
+    annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
@@ -607,7 +607,6 @@ pub(crate) fn try_decode_zero_entity(
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
     preserve_raw_payload(
         &mut unknowns,
         &mut annotations,
