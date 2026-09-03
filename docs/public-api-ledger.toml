@@ -2710,3 +2710,24 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::DialectLayers::{push,insert}"
 reason = "codec insertion keeps the first layer for a format and instance key and returns the rejected duplicate instead of replacing and returning the authoritative layer"
+
+[[change]]
+commit = "9bf4ff07bbd49dc99702b76f2cf83c33b917266e"
+crate = "cadmpeg-core"
+kind = "addition"
+item = "cadmpeg_core::dialect::LayerInstance"
+reason = "layer classifiers take a typed sole-or-tagged identity policy instead of a boolean that gates whether the carrier becomes an instance key"
+
+[[change]]
+commit = "9bf4ff07bbd49dc99702b76f2cf83c33b917266e"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::dialect::classify_layer"
+reason = "ACIS layer classification takes LayerInstance instead of an instance_tagged boolean"
+
+[[change]]
+commit = "9bf4ff07bbd49dc99702b76f2cf83c33b917266e"
+crate = "cadmpeg-parasolid"
+kind = "signature"
+item = "cadmpeg_parasolid::classify_layer"
+reason = "Parasolid layer classification takes LayerInstance instead of an instance_tagged boolean"

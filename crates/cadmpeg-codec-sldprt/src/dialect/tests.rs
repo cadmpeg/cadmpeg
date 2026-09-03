@@ -89,7 +89,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let kernel = cadmpeg_parasolid::classify_layer(
         "SCH_TEST_1_9999",
         "block@7:body+3",
-        false,
+        cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
     );
     let layers = DialectLayers::of(host).with(kernel);

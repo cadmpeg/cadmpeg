@@ -1,4 +1,4 @@
-# generated at 22ffe1e06
+# generated at 9bf4ff07b
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -297,6 +297,9 @@ pub fn cadmpeg_core::dialect::FormatIdentity<T>::format(&self) -> &str
 pub fn cadmpeg_core::dialect::FormatIdentity<T>::from_wire(impl core::convert::Into<alloc::string::String>, core::option::Option<T>) -> core::result::Result<Self, cadmpeg_core::dialect::FormatIdentityError>
 pub fn cadmpeg_core::dialect::FormatIdentity<T>::into_wire_parts(self) -> (alloc::string::String, core::option::Option<T>)
 pub fn cadmpeg_core::dialect::FormatIdentity<T>::unclassified(impl core::convert::Into<alloc::string::String>) -> Self
+pub enum cadmpeg_core::dialect::LayerInstance
+pub cadmpeg_core::dialect::LayerInstance::Sole
+pub cadmpeg_core::dialect::LayerInstance::Tagged
 pub struct cadmpeg_core::dialect::DialectId(_)
 impl cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_core::dialect::DialectId::as_str(&self) -> &str
