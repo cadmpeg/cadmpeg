@@ -11,8 +11,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-    SketchLocus,
+    Sketch, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchId, SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -144,9 +144,10 @@ fn point_relation_ignores_auxiliary_relation_links() {
 
     assert_eq!(
         typed_marker_relation_definition(&relation, &markers, &loci),
-        Some(SketchConstraintDefinition::HorizontalPoints {
+        Some(SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Entity(SketchEntityId("first-point".into())),
             second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+            axis: SketchCoordinateAxis::V,
         })
     );
 }
@@ -217,9 +218,10 @@ fn axis_relation_expands_intermediate_relation_handle() {
 
     assert_eq!(
         typed_marker_relation_definition(&horizontal, &markers, &loci),
-        Some(SketchConstraintDefinition::HorizontalPoints {
+        Some(SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Entity(SketchEntityId("first-point".into())),
             second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+            axis: SketchCoordinateAxis::V,
         })
     );
 
@@ -256,9 +258,10 @@ fn axis_relation_expands_intermediate_relation_handle() {
             &markers,
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::HorizontalPoints {
+        Some(SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Entity(SketchEntityId("first-entity".into())),
             second: SketchLocus::Entity(SketchEntityId("second-entity".into())),
+            axis: SketchCoordinateAxis::V,
         })
     );
     let mut ambiguous_entities = entities.clone();
@@ -357,9 +360,10 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::HorizontalPoints {
+        Some(SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Entity(first_entity.id),
             second: SketchLocus::Entity(second_entity.id),
+            axis: SketchCoordinateAxis::V,
         })
     );
 }
@@ -417,9 +421,10 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
 
     assert_eq!(
         definition,
-        SketchConstraintDefinition::HorizontalPoints {
+        SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Entity(first_id),
             second: second_locus,
+            axis: SketchCoordinateAxis::V,
         }
     );
     assert!(marker_relation_is_inactive(
@@ -1120,7 +1125,10 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
             .expect("typed horizontal-points relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::HorizontalPoints { .. }
+        SketchConstraintDefinition::SameCoordinate {
+            axis: SketchCoordinateAxis::V,
+            ..
+        }
     ));
     assert!(marker_relation_is_inactive(
         &relation,
@@ -1150,7 +1158,10 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     .expect("typed legacy horizontal relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::HorizontalPoints { .. }
+        SketchConstraintDefinition::SameCoordinate {
+            axis: SketchCoordinateAxis::V,
+            ..
+        }
     ));
     assert!(marker_relation_is_inactive(
         &swapped_relation,
@@ -1209,7 +1220,10 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     .expect("typed owner horizontal relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::HorizontalPoints { .. }
+        SketchConstraintDefinition::SameCoordinate {
+            axis: SketchCoordinateAxis::V,
+            ..
+        }
     ));
     assert!(marker_relation_is_inactive(
         &owner_relation,
@@ -1277,9 +1291,10 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     .expect("typed horizontal point relation");
     assert_eq!(
         definition,
-        SketchConstraintDefinition::HorizontalPoints {
+        SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Entity(first_entity.id.clone()),
             second: SketchLocus::Entity(second_entity.id.clone()),
+            axis: SketchCoordinateAxis::V,
         }
     );
     assert!(!marker_relation_is_inactive(

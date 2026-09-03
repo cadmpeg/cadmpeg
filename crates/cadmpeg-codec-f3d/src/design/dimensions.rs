@@ -2255,11 +2255,7 @@ pub(crate) fn constraint_parameters(
         | Definition::Collinear { .. }
         | Definition::Symmetric { .. }
         | Definition::Horizontal { .. }
-        | Definition::HorizontalLoci { .. }
-        | Definition::HorizontalPoints { .. }
         | Definition::Vertical { .. }
-        | Definition::VerticalLoci { .. }
-        | Definition::VerticalPoints { .. }
         | Definition::Parallel { .. }
         | Definition::Perpendicular { .. }
         | Definition::Tangent { .. }
@@ -3942,7 +3938,8 @@ pub(crate) fn exact_atomic_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry as Geometry, SketchLocus,
+        SketchConstraintDefinition as Definition, SketchCoordinateAxis, SketchGeometry as Geometry,
+        SketchLocus,
     };
 
     let lines = || {
@@ -4054,9 +4051,10 @@ pub(crate) fn exact_atomic_constraint(
                     .iter()
                     .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
         {
-            Some(Definition::HorizontalLoci {
+            Some(Definition::SameCoordinate {
                 first: SketchLocus::Entity(entities[0].id.clone()),
                 second: SketchLocus::Entity(entities[1].id.clone()),
+                axis: SketchCoordinateAxis::V,
             })
         }
         SketchConstraintKind::Vertical
@@ -4073,9 +4071,10 @@ pub(crate) fn exact_atomic_constraint(
                     .iter()
                     .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
         {
-            Some(Definition::VerticalLoci {
+            Some(Definition::SameCoordinate {
                 first: SketchLocus::Entity(entities[0].id.clone()),
                 second: SketchLocus::Entity(entities[1].id.clone()),
+                axis: SketchCoordinateAxis::U,
             })
         }
         SketchConstraintKind::Tangent => {

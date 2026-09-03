@@ -13,7 +13,8 @@ use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKin
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+    Sketch, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
+    SketchLocus,
 };
 use std::collections::HashMap;
 
@@ -50,16 +51,16 @@ pub(super) fn generated_marker_relations(
                 .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
                 .unwrap_or_default()
         }
-        SketchConstraintDefinition::HorizontalPoints { first, second } => {
+        SketchConstraintDefinition::SameCoordinate {
+            first,
+            second,
+            axis,
+        } => {
             vec![GeneratedMarkerRelation::Loci(
-                SketchRelationKind::HorizontalPoints,
-                first,
-                second,
-            )]
-        }
-        SketchConstraintDefinition::VerticalPoints { first, second } => {
-            vec![GeneratedMarkerRelation::Loci(
-                SketchRelationKind::VerticalPoints,
+                match axis {
+                    SketchCoordinateAxis::U => SketchRelationKind::VerticalPoints,
+                    SketchCoordinateAxis::V => SketchRelationKind::HorizontalPoints,
+                },
                 first,
                 second,
             )]

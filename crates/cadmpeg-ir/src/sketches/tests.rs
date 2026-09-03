@@ -178,18 +178,20 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
         },
-        SketchConstraintDefinition::HorizontalLoci {
+        SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
+            axis: crate::sketches::SketchCoordinateAxis::V,
         },
         SketchConstraintDefinition::VerticalDistance {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
         },
-        SketchConstraintDefinition::VerticalLoci {
+        SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
+            axis: crate::sketches::SketchCoordinateAxis::U,
         },
         SketchConstraintDefinition::RepeatedDistance {
             measurements: vec![SketchDistanceMeasurement::Horizontal {
@@ -1194,4 +1196,50 @@ fn internal_alignment_index_stays_with_bspline_variants() {
     let mut extraneous_index = wire;
     extraneous_index["alignment"] = serde_json::json!("ellipse_focus1");
     assert!(serde_json::from_value::<SketchConstraintDefinition>(extraneous_index).is_err());
+}
+
+#[test]
+fn same_coordinate_accepts_legacy_relation_tags() {
+    use crate::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId,
+        SketchLocus,
+    };
+
+    let first = SketchLocus::Entity(SketchEntityId("test:sketch-entity#first".into()));
+    let second = SketchLocus::Entity(SketchEntityId("test:sketch-entity#second".into()));
+    for (kind, axis) in [
+        ("horizontal_loci", SketchCoordinateAxis::V),
+        ("horizontal_points", SketchCoordinateAxis::V),
+        ("vertical_loci", SketchCoordinateAxis::U),
+        ("vertical_points", SketchCoordinateAxis::U),
+    ] {
+        let constraint = serde_json::from_value::<SketchConstraint>(serde_json::json!({
+            "id": "test:sketch-constraint#axis",
+            "sketch": "test:sketch#axis",
+            "definition": {
+                "kind": kind,
+                "first": first,
+                "second": second,
+            },
+        }))
+        .unwrap();
+        assert_eq!(
+            constraint.definition,
+            SketchConstraintDefinition::SameCoordinate {
+                first: first.clone(),
+                second: second.clone(),
+                axis,
+            }
+        );
+        let wire = serde_json::to_value(constraint).unwrap();
+        assert_eq!(wire["definition"]["kind"], "same_coordinate");
+        assert_eq!(
+            wire["definition"]["axis"],
+            if axis == SketchCoordinateAxis::U {
+                "u"
+            } else {
+                "v"
+            }
+        );
+    }
 }

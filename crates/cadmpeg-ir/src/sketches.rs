@@ -825,6 +825,7 @@ pub struct SketchConstraint {
     /// Owning sketch.
     pub sketch: SketchId,
     /// Constraint semantics.
+    #[serde(deserialize_with = "deserialize_sketch_constraint_definition")]
     pub definition: SketchConstraintDefinition,
     /// User-visible constraint name, when assigned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -856,6 +857,30 @@ pub struct SketchConstraint {
     /// Source-native relation record when decoded from one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+fn deserialize_sketch_constraint_definition<'de, D>(
+    deserializer: D,
+) -> Result<SketchConstraintDefinition, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(object) = value.as_object_mut() {
+        let axis = match object.get("kind").and_then(serde_json::Value::as_str) {
+            Some("horizontal_loci" | "horizontal_points") => Some("v"),
+            Some("vertical_loci" | "vertical_points") => Some("u"),
+            _ => None,
+        };
+        if let Some(axis) = axis {
+            object.insert(
+                "kind".into(),
+                serde_json::Value::String("same_coordinate".into()),
+            );
+            object.insert("axis".into(), serde_json::Value::String(axis.into()));
+        }
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
 /// A geometric locus on a sketch entity.
@@ -1734,38 +1759,10 @@ pub enum SketchConstraintDefinition {
         /// Constrained entity.
         entity: SketchEntityId,
     },
-    /// Two loci have equal vertical sketch coordinate.
-    HorizontalLoci {
-        /// First constrained locus.
-        first: SketchLocus,
-        /// Second constrained locus.
-        second: SketchLocus,
-    },
     /// Line is vertical in sketch coordinates.
     Vertical {
         /// Constrained entity.
         entity: SketchEntityId,
-    },
-    /// Two loci have equal horizontal sketch coordinate.
-    VerticalLoci {
-        /// First constrained locus.
-        first: SketchLocus,
-        /// Second constrained locus.
-        second: SketchLocus,
-    },
-    /// Two explicit loci have equal horizontal sketch coordinates.
-    HorizontalPoints {
-        /// First aligned locus.
-        first: SketchLocus,
-        /// Second aligned locus.
-        second: SketchLocus,
-    },
-    /// Two explicit loci have equal vertical sketch coordinates.
-    VerticalPoints {
-        /// First aligned locus.
-        first: SketchLocus,
-        /// Second aligned locus.
-        second: SketchLocus,
     },
     /// Two entities are parallel.
     Parallel {

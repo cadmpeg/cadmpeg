@@ -11,7 +11,9 @@ use crate::records::{
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
+};
 use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
 };
@@ -654,11 +656,17 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     other_point.id = SketchEntityId("generated:point#other".into());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
-        Some(SketchConstraintDefinition::HorizontalLoci { .. })
+        Some(SketchConstraintDefinition::SameCoordinate {
+            axis: SketchCoordinateAxis::V,
+            ..
+        })
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
-        Some(SketchConstraintDefinition::VerticalLoci { .. })
+        Some(SketchConstraintDefinition::SameCoordinate {
+            axis: SketchCoordinateAxis::U,
+            ..
+        })
     ));
     assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
     assert!(matches!(

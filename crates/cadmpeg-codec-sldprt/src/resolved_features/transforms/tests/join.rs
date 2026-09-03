@@ -12,8 +12,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-    SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -300,9 +300,10 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(horizontal_points.id.as_str(), &horizontal_points);
     assert_eq!(
         typed_marker_relation_definition(&horizontal_points, &markers, &joins),
-        Some(SketchConstraintDefinition::HorizontalPoints {
+        Some(SketchConstraintDefinition::SameCoordinate {
             first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
             second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+            axis: SketchCoordinateAxis::V,
         })
     );
     let mut legacy_horizontal_points = marker("legacy-horizontal-points", None);
@@ -314,9 +315,10 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     );
     assert_eq!(
         typed_marker_relation_definition(&legacy_horizontal_points, &markers, &joins),
-        Some(SketchConstraintDefinition::HorizontalPoints {
+        Some(SketchConstraintDefinition::SameCoordinate {
             first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
             second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+            axis: SketchCoordinateAxis::V,
         })
     );
     let mut entity_marker = marker("entity-marker", Some([0.01, 0.01]));

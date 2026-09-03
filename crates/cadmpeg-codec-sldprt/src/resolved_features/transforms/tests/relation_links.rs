@@ -9,8 +9,8 @@ use crate::records::{
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-    SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::HashMap;
 
@@ -167,9 +167,10 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
             &markers,
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::HorizontalPoints {
+        Some(SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Entity(first_entity.id),
             second: SketchLocus::Entity(second_entity.id),
+            axis: SketchCoordinateAxis::V,
         })
     );
 }

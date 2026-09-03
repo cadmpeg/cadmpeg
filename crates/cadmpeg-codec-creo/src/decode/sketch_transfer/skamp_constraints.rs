@@ -346,10 +346,15 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         let entity = sketch_entity_id(sketch, item.entity_id);
                         let first = SketchLocus::Start(entity.clone());
                         let second = SketchLocus::End(entity);
-                        if kind == 12 {
-                            SketchConstraintDefinition::HorizontalLoci { first, second }
+                        let axis = if kind == 12 {
+                            SketchCoordinateAxis::V
                         } else {
-                            SketchConstraintDefinition::VerticalLoci { first, second }
+                            SketchCoordinateAxis::U
+                        };
+                        SketchConstraintDefinition::SameCoordinate {
+                            first,
+                            second,
+                            axis,
                         }
                     }
                     (37, [source, result])
@@ -565,9 +570,7 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
         | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
-        | SketchConstraintDefinition::VerticalDistance { first, second, .. }
-        | SketchConstraintDefinition::HorizontalLoci { first, second }
-        | SketchConstraintDefinition::VerticalLoci { first, second } => {
+        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }
         SketchConstraintDefinition::Midpoint { point, entity }

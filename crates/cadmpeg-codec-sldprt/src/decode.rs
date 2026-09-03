@@ -289,11 +289,7 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::Symmetric { .. }
         | Constraint::PointSymmetric { .. }
         | Constraint::Horizontal { .. }
-        | Constraint::HorizontalLoci { .. }
         | Constraint::Vertical { .. }
-        | Constraint::VerticalLoci { .. }
-        | Constraint::HorizontalPoints { .. }
-        | Constraint::VerticalPoints { .. }
         | Constraint::Parallel { .. }
         | Constraint::Perpendicular { .. }
         | Constraint::Tangent { .. }
