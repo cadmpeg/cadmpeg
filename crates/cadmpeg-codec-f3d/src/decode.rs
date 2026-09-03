@@ -762,10 +762,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         // also requires resolved selections and the material-side convention.
         FeatureDefinition::Draft {
             faces,
-            neutral_plane,
-            parting_tool,
-            pull_direction,
-            pull_plane,
+            anchor,
             angle,
             outward,
             ..
@@ -773,18 +770,19 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             angle.is_none()
                 || outward.is_none()
                 || !face_selection_is_resolved(faces)
-                || match parting_tool {
-                    Some(parting_tool) => {
-                        !face_selection_is_resolved(parting_tool)
-                            || pull_direction.is_none()
-                            || pull_direction.is_some_and(|direction| direction.unit().is_none())
-                            || pull_plane.is_none()
+                || match anchor {
+                    cadmpeg_ir::features::DraftAnchor::PartingLine { tool, pull } => {
+                        !face_selection_is_resolved(tool)
+                            || pull.direction.unit().is_none()
+                            || pull.plane.is_none()
                     }
-                    None => !draft_neutral_plane_is_resolved(
-                        neutral_plane,
-                        pull_plane.as_ref(),
-                        pull_direction.as_ref(),
-                    ),
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
+                        !draft_neutral_plane_is_resolved(
+                            plane,
+                            pull.as_ref().and_then(|pull| pull.plane.as_ref()),
+                            pull.as_ref().map(|pull| &pull.direction),
+                        )
+                    }
                 }
         }
         FeatureDefinition::Sketch { space, sketch } => {

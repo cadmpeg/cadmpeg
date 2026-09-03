@@ -570,10 +570,13 @@ fn semantic_writer_round_trips_typed_draft() {
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
-            neutral_plane: FaceSelection::Native(neutral_plane),
-            parting_tool: None,
-            pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native(neutral_plane),
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                    plane: None,
+                }),
+            },
             angle: Some(Angle(value)),
             outward: Some(false),
         } if faces == "face:1,face:2"
@@ -585,8 +588,11 @@ fn semantic_writer_round_trips_typed_draft() {
         let mut ir_edit = decoded.ir_mut();
         let FeatureDefinition::Draft {
             faces,
-            neutral_plane,
-            pull_direction,
+            anchor:
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: neutral_plane,
+                    pull: Some(pull),
+                },
             angle,
             outward,
             ..
@@ -594,7 +600,7 @@ fn semantic_writer_round_trips_typed_draft() {
         else {
             panic!("typed draft");
         };
-        *pull_direction = Some(Vector3::new(0.0, 1.0, 0.0));
+        pull.direction = Vector3::new(0.0, 1.0, 0.0);
         *angle = Some(Angle(7f64.to_radians()));
         *outward = Some(true);
         *faces = FaceSelection::Native("face:4".into());
@@ -623,11 +629,17 @@ fn semantic_writer_round_trips_typed_draft() {
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::Draft {
-            pull_direction: Some(Vector3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0
-            }),
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: Vector3 {
+                        x: 0.0,
+                        y: 1.0,
+                        z: 0.0
+                    },
+                    ..
+                }),
+                ..
+            },
             outward: Some(true),
             ..
         }
@@ -653,10 +665,13 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
-            neutral_plane: FaceSelection::Native(neutral_plane),
-            parting_tool: None,
-            pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native(neutral_plane),
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                    plane: None,
+                }),
+            },
             angle: None,
             outward: None,
         } if faces == "face:1,face:2" && neutral_plane == "face:3"
@@ -738,7 +753,10 @@ fn semantic_writer_preserves_absent_feature_selections() {
         &decoded.ir().model.features[2].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
-            neutral_plane: FaceSelection::Unresolved,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Unresolved,
+                ..
+            },
             ..
         }
     ));

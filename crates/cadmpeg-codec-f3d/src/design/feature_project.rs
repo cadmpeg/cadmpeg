@@ -1549,11 +1549,12 @@ pub fn project_parameter_design_with_edge_identities(
     }
     for feature in &mut features {
         let dependencies = match &feature.definition {
-            FeatureDefinition::Draft {
-                pull_plane: Some(plane),
-                ..
-            }
-            | FeatureDefinition::SplitFace {
+            FeatureDefinition::Draft { anchor, .. } => anchor
+                .pull()
+                .and_then(|pull| pull.plane.as_ref())
+                .into_iter()
+                .collect(),
+            FeatureDefinition::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
                 ..
             } => vec![plane],
@@ -2934,12 +2935,15 @@ fn project_draft(
                     Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
                 return Some(FeatureDefinition::Draft {
                     faces: project_draft_face_selection(scope, faces, face_operands, histories),
-                    neutral_plane: cadmpeg_ir::features::FaceSelection::Native(
-                        neutral_feature_id(neutral_plane).0,
-                    ),
-                    parting_tool: None,
-                    pull_direction: Some(pull_direction),
-                    pull_plane: Some(neutral_feature_id(neutral_plane)),
+                    anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                        plane: cadmpeg_ir::features::FaceSelection::Native(
+                            neutral_feature_id(neutral_plane).0,
+                        ),
+                        pull: Some(cadmpeg_ir::features::DraftPull {
+                            direction: pull_direction,
+                            plane: Some(neutral_feature_id(neutral_plane)),
+                        }),
+                    },
                     angle: Some(Angle(construction.angle)),
                     outward: Some(draft_outward(construction.angle)),
                 });
@@ -2952,25 +2956,20 @@ fn project_draft(
             )?;
             Some(FeatureDefinition::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories),
-                neutral_plane,
-                parting_tool: None,
-                pull_direction: None,
-                pull_plane: None,
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: neutral_plane,
+                    pull: None,
+                },
                 angle: Some(Angle(construction.angle)),
                 outward: Some(draft_outward(construction.angle)),
             })
         }
         [neutral_plane] if member_of_scope(neutral_plane) => Some(FeatureDefinition::Draft {
             faces: project_draft_face_selection(scope, faces, face_operands, histories),
-            neutral_plane: project_draft_face_selection(
-                scope,
-                neutral_plane,
-                face_operands,
-                histories,
-            ),
-            parting_tool: None,
-            pull_direction: None,
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: project_draft_face_selection(scope, neutral_plane, face_operands, histories),
+                pull: None,
+            },
             angle: Some(Angle(construction.angle)),
             outward: Some(draft_outward(construction.angle)),
         }),
@@ -2996,15 +2995,18 @@ fn project_draft(
                 Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
             Some(FeatureDefinition::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories),
-                neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                parting_tool: Some(project_draft_face_selection(
-                    scope,
-                    parting_tool,
-                    face_operands,
-                    histories,
-                )),
-                pull_direction: Some(pull_direction),
-                pull_plane: Some(neutral_feature_id(pull_plane)),
+                anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
+                    tool: project_draft_face_selection(
+                        scope,
+                        parting_tool,
+                        face_operands,
+                        histories,
+                    ),
+                    pull: cadmpeg_ir::features::DraftPull {
+                        direction: pull_direction,
+                        plane: Some(neutral_feature_id(pull_plane)),
+                    },
+                },
                 angle: Some(Angle(construction.angle)),
                 outward: Some(draft_outward(construction.angle)),
             })

@@ -670,10 +670,10 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         },
         FeatureDefinition::Draft {
             faces: face.clone(),
-            neutral_plane: face.clone(),
-            parting_tool: None,
-            pull_direction: None,
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: face.clone(),
+                pull: None,
+            },
             angle: None,
             outward: None,
         },

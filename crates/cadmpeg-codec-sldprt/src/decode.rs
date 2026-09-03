@@ -1522,21 +1522,25 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             }
             FeatureDefinition::Draft {
                 faces,
-                neutral_plane,
-                parting_tool,
-                pull_plane: _,
-                pull_direction,
+                anchor,
                 angle,
                 outward,
             } => {
                 incomplete_face_selection(faces)
-                    || parting_tool.as_ref().map_or_else(
-                        || incomplete_face_selection(neutral_plane),
-                        incomplete_face_selection,
-                    )
-                    || pull_direction.is_none()
+                    || match anchor {
+                        cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                            incomplete_face_selection(plane)
+                        }
+                        cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+                            incomplete_face_selection(tool)
+                        }
+                    }
+                    || anchor.pull().is_none()
                     || angle.is_none()
-                    || (parting_tool.is_none() && outward.is_none())
+                    || (matches!(
+                        anchor,
+                        cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
+                    ) && outward.is_none())
             }
             FeatureDefinition::Combine {
                 target, tools, op, ..

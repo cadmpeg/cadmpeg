@@ -15,6 +15,133 @@ use crate::products::JointId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Resolved pull frame of a draft anchor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DraftPull {
+    /// Pull direction used to measure the draft angle.
+    pub direction: Vector3,
+    /// Datum-plane feature that supplied the direction, when retained.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane: Option<FeatureId>,
+}
+
+/// Selection form and pull frame of a draft operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DraftAnchor {
+    /// A neutral plane remains fixed during the operation.
+    NeutralPlane {
+        /// Neutral-plane selection.
+        plane: FaceSelection,
+        /// Explicit pull frame, when the source retains one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pull: Option<DraftPull>,
+    },
+    /// A parting tool and its pull frame define a parting-line draft.
+    PartingLine {
+        /// Parting-tool faces.
+        tool: FaceSelection,
+        /// Required pull frame.
+        pull: DraftPull,
+    },
+}
+
+impl DraftAnchor {
+    /// Pull frame retained by this anchor, when available.
+    #[must_use]
+    pub const fn pull(&self) -> Option<&DraftPull> {
+        match self {
+            Self::NeutralPlane { pull, .. } => pull.as_ref(),
+            Self::PartingLine { pull, .. } => Some(pull),
+        }
+    }
+
+    /// Mutable pull frame retained by this anchor, when available.
+    #[must_use]
+    pub fn pull_mut(&mut self) -> Option<&mut DraftPull> {
+        match self {
+            Self::NeutralPlane { pull, .. } => pull.as_mut(),
+            Self::PartingLine { pull, .. } => Some(pull),
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the draft-anchor wire schema")]
+struct DraftAnchorSchemaWire {
+    neutral_plane: FaceSelection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parting_tool: Option<FaceSelection>,
+    pull_direction: Option<Vector3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pull_plane: Option<FeatureId>,
+}
+
+mod draft_anchor_wire {
+    use super::{DraftAnchor, DraftPull, FaceSelection, FeatureId, Vector3};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        neutral_plane: FaceSelection,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parting_tool: Option<FaceSelection>,
+        pull_direction: Option<Vector3>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pull_plane: Option<FeatureId>,
+    }
+
+    pub fn serialize<S>(value: &DraftAnchor, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let (neutral_plane, parting_tool, pull) = match value {
+            DraftAnchor::NeutralPlane { plane, pull } => (plane.clone(), None, pull.as_ref()),
+            DraftAnchor::PartingLine { tool, pull } => {
+                (FaceSelection::Unresolved, Some(tool.clone()), Some(pull))
+            }
+        };
+        Wire {
+            neutral_plane,
+            parting_tool,
+            pull_direction: pull.map(|pull| pull.direction),
+            pull_plane: pull.and_then(|pull| pull.plane.clone()),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DraftAnchor, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        let pull = match (wire.pull_direction, wire.pull_plane) {
+            (Some(direction), plane) => Some(DraftPull { direction, plane }),
+            (None, None) => None,
+            (None, Some(_)) => {
+                return Err(serde::de::Error::custom(
+                    "draft pull plane requires a pull direction",
+                ));
+            }
+        };
+        match (wire.neutral_plane, wire.parting_tool, pull) {
+            (FaceSelection::Unresolved, Some(tool), Some(pull)) => {
+                Ok(DraftAnchor::PartingLine { tool, pull })
+            }
+            (FaceSelection::Unresolved, Some(_), None) => Err(serde::de::Error::custom(
+                "parting-line draft requires a pull direction",
+            )),
+            (plane, None, pull) => Ok(DraftAnchor::NeutralPlane { plane, pull }),
+            (_, Some(_), _) => Err(serde::de::Error::custom(
+                "draft cannot carry both a neutral plane and a parting tool",
+            )),
+        }
+    }
+}
+
 /// Identifies a neutral construction feature.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1535,20 +1662,10 @@ pub enum FeatureDefinition {
     Draft {
         /// Faces whose angle is modified.
         faces: FaceSelection,
-        /// Neutral plane that remains fixed during the operation.
-        neutral_plane: FaceSelection,
-        /// Parting-tool faces used by a parting-line draft.
-        ///
-        /// A parting-line draft has this field set and leaves `neutral_plane`
-        /// unresolved. A neutral-plane draft leaves this field absent and
-        /// resolves `neutral_plane` instead.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parting_tool: Option<FaceSelection>,
-        /// Pull direction used to measure the draft angle.
-        pull_direction: Option<Vector3>,
-        /// Datum-plane feature supplying the parting-line pull direction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pull_plane: Option<FeatureId>,
+        /// Structurally selected anchor and pull frame.
+        #[serde(flatten, with = "draft_anchor_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "DraftAnchorSchemaWire"))]
+        anchor: DraftAnchor,
         /// Signed draft angle.
         angle: Option<Angle>,
         /// Whether material is added away from the pull direction.

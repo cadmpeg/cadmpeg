@@ -726,11 +726,13 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
 
     let (features, _) = project(&selection);
     let FeatureDefinition::Draft {
-        neutral_plane,
+        anchor:
+            cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: neutral_plane,
+                pull,
+            },
         angle,
         outward,
-        pull_direction,
-        pull_plane,
         ..
     } = &features[0].definition
     else {
@@ -738,8 +740,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     };
     assert_eq!(angle.as_ref().map(|angle| angle.0), Some(-0.25));
     assert_eq!(*outward, Some(true));
-    assert!(pull_direction.is_none());
-    assert!(pull_plane.is_none());
+    assert!(pull.is_none());
     let FaceSelection::Historical {
         state,
         faces,

@@ -416,10 +416,10 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-            neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-            parting_tool: None,
-            pull_direction: None,
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                pull: None,
+            },
             angle: None,
             outward: None,
         }
@@ -483,10 +483,10 @@ fn decode_types_named_draft_with_unresolved_operands() {
             &feature.definition,
             cadmpeg_ir::features::FeatureDefinition::Draft {
                 faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-                neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                parting_tool: None,
-                pull_direction: None,
-                pull_plane: None,
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    pull: None,
+                },
                 angle: None,
                 outward: None,
             }

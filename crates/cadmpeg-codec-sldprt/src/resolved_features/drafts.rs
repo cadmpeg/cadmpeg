@@ -644,10 +644,10 @@ mod tests {
             outputs: Vec::new(),
             definition: FeatureDefinition::Draft {
                 faces: FaceSelection::Unresolved,
-                neutral_plane: FaceSelection::Unresolved,
-                parting_tool: None,
-                pull_direction: None,
-                pull_plane: None,
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: FaceSelection::Unresolved,
+                    pull: None,
+                },
                 angle: Some(Angle(0.1)),
                 outward: None,
             },
@@ -662,28 +662,34 @@ mod tests {
             &projected[0].definition,
             FeatureDefinition::Draft {
                 faces: FaceSelection::Native(faces),
-                neutral_plane: FaceSelection::Native(neutral_plane),
-                pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: FaceSelection::Native(neutral_plane),
+                    pull: Some(cadmpeg_ir::features::DraftPull {
+                        direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                        ..
+                    }),
+                },
                 ..
             } if faces.contains(":8") && neutral_plane.contains(":3")
         ));
 
-        let FeatureDefinition::Draft {
-            faces,
-            pull_direction,
-            ..
-        } = &mut projected[0].definition
-        else {
+        let FeatureDefinition::Draft { faces, anchor, .. } = &mut projected[0].definition else {
             panic!("typed draft");
         };
         *faces = FaceSelection::Native("explicit-faces".into());
-        *pull_direction = Some(Vector3::new(0.0, 1.0, 0.0));
+        anchor.pull_mut().unwrap().direction = Vector3::new(0.0, 1.0, 0.0);
         super::super::projections::project_draft_operands(&mut projected, &[history], &[lane]);
         assert!(matches!(
             &projected[0].definition,
             FeatureDefinition::Draft {
                 faces: FaceSelection::Native(faces),
-                pull_direction: Some(Vector3 { x: 0.0, y: 1.0, z: 0.0 }),
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    pull: Some(cadmpeg_ir::features::DraftPull {
+                        direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                        ..
+                    }),
+                    ..
+                },
                 ..
             } if faces == "explicit-faces"
         ));

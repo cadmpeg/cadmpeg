@@ -203,20 +203,26 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
         .get("Direction")
         .and_then(|value| parse_vector3(value))
         .filter(|direction| direction.norm().is_finite() && direction.norm() > 0.0);
+    let neutral_plane = feature
+        .properties
+        .get("NeutralPlane")
+        .cloned()
+        .map_or(FaceSelection::Unresolved, FaceSelection::Native);
+    let pull = pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
+        direction,
+        plane: None,
+    });
+    let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+        plane: neutral_plane,
+        pull,
+    };
     FeatureDefinition::Draft {
         faces: feature
             .properties
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        neutral_plane: feature
-            .properties
-            .get("NeutralPlane")
-            .cloned()
-            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        parting_tool: None,
-        pull_direction,
-        pull_plane: None,
+        anchor,
         angle: feature
             .parameters
             .get("Angle")

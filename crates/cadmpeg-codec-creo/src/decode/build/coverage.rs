@@ -323,8 +323,7 @@ pub(in super::super) fn collect_feature_coverage(
             }
             IrFeatureDefinition::Draft {
                 faces,
-                neutral_plane,
-                pull_direction,
+                anchor,
                 angle,
                 outward,
                 ..
@@ -335,12 +334,21 @@ pub(in super::super) fn collect_feature_coverage(
                     FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
                 );
                 let native_faces = matches!(faces, FaceSelection::Native(_));
-                let unresolved_neutral_plane = matches!(
-                    neutral_plane,
-                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                let unresolved_neutral_plane = match anchor {
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => matches!(
+                        plane,
+                        FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                    ),
+                    cadmpeg_ir::features::DraftAnchor::PartingLine { .. } => true,
+                };
+                let native_neutral_plane = matches!(
+                    anchor,
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                        plane: FaceSelection::Native(_),
+                        ..
+                    }
                 );
-                let native_neutral_plane = matches!(neutral_plane, FaceSelection::Native(_));
-                let unresolved_direction = pull_direction.is_none();
+                let unresolved_direction = anchor.pull().is_none();
                 let unresolved_angle = angle.is_none();
                 let unresolved_outward = outward.is_none();
                 unresolved_draft_face_selection_feature_count += usize::from(unresolved_faces);

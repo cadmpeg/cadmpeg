@@ -1857,18 +1857,20 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         &draft.definition,
         cadmpeg_ir::features::FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
-            neutral_plane: cadmpeg_ir::features::FaceSelection::Native(plane),
-            parting_tool: None,
-            pull_direction,
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: pull_direction,
+                    plane: None,
+                }),
+            },
             angle: Some(cadmpeg_ir::features::Angle(angle)),
             outward: Some(true),
         } if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
-            && pull_direction.is_some_and(|direction|
-                (direction.x - 0.0).abs() < 1.0e-12
-                    && (direction.y + 1.0).abs() < 1.0e-12
-                    && direction.z.abs() < 1.0e-12)
+            && (pull_direction.x - 0.0).abs() < 1.0e-12
+            && (pull_direction.y + 1.0).abs() < 1.0e-12
+            && pull_direction.z.abs() < 1.0e-12
             && (*angle + 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
@@ -1882,7 +1884,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     assert!(matches!(
         face_draft.definition,
         FeatureDefinition::Draft {
-            pull_direction: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull: None, .. },
             ..
         }
     ));

@@ -976,10 +976,13 @@ fn encoder_writes_source_less_native_features() {
         },
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),
-            neutral_plane: FaceSelection::Native("face-c".into()),
-            parting_tool: None,
-            pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native("face-c".into()),
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                    plane: None,
+                }),
+            },
             angle: Some(Angle(0.2)),
             outward: Some(false),
         },

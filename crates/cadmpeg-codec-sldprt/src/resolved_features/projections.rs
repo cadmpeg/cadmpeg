@@ -1610,39 +1610,48 @@ pub(crate) fn project_draft_operands(
         else {
             continue;
         };
-        let FeatureDefinition::Draft {
-            faces,
-            neutral_plane,
-            parting_tool,
-            pull_direction,
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::Draft { faces, anchor, .. } = &mut feature.definition else {
             continue;
         };
-        match &first.anchor {
-            DraftAnchor::NeutralPlane(path)
-                if matches!(
-                    neutral_plane,
-                    cadmpeg_ir::features::FaceSelection::Unresolved
-                ) =>
-            {
-                *neutral_plane = draft_face_selection(
+        match (&first.anchor, &mut *anchor) {
+            (
+                DraftAnchor::NeutralPlane(path),
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    pull,
+                },
+            ) => {
+                let plane = draft_face_selection(
                     std::slice::from_ref(path),
                     native_ref,
                     &history_features,
                     &feature_ids_by_native,
                     &mut feature.dependencies,
                 );
+                let pull = pull.take();
+                *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull };
             }
-            DraftAnchor::PartingTool(paths) if parting_tool.is_none() => {
-                *parting_tool = Some(draft_face_selection(
+            (
+                DraftAnchor::PartingTool(paths),
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    ..
+                },
+            ) => {
+                let tool = draft_face_selection(
                     paths,
                     native_ref,
                     &history_features,
                     &feature_ids_by_native,
                     &mut feature.dependencies,
-                ));
+                );
+                *anchor = cadmpeg_ir::features::DraftAnchor::PartingLine {
+                    tool,
+                    pull: cadmpeg_ir::features::DraftPull {
+                        direction: first.pull_direction,
+                        plane: None,
+                    },
+                };
             }
             _ => {}
         }
@@ -1655,8 +1664,14 @@ pub(crate) fn project_draft_operands(
                 &mut feature.dependencies,
             );
         }
-        if pull_direction.is_none() {
-            *pull_direction = Some(first.pull_direction);
+        match anchor {
+            cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. } if pull.is_none() => {
+                *pull = Some(cadmpeg_ir::features::DraftPull {
+                    direction: first.pull_direction,
+                    plane: None,
+                });
+            }
+            _ => {}
         }
     }
 }

@@ -39,10 +39,13 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Draft {
             faces: faces.clone(),
-            neutral_plane: FaceSelection::Unresolved,
-            parting_tool: Some(faces),
-            pull_direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
+                tool: faces,
+                pull: cadmpeg_ir::features::DraftPull {
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                    plane: None,
+                },
+            },
             angle: Some(Angle(0.1)),
             outward: None,
         },
@@ -57,22 +60,22 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         .iter()
         .all(|loss| !loss.message.contains("typed feature(s) retain native")));
 
-    let FeatureDefinition::Draft {
-        neutral_plane,
-        parting_tool,
-        ..
-    } = &mut ir.model.features[0].definition
-    else {
+    let FeatureDefinition::Draft { anchor, .. } = &mut ir.model.features[0].definition else {
         unreachable!();
     };
-    *neutral_plane = FaceSelection::Generated {
-        faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-            feature: FeatureId("producer".into()),
-            local_id: "2".into(),
-        }],
-        native: "native".into(),
+    *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+        plane: FaceSelection::Generated {
+            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                feature: FeatureId("producer".into()),
+                local_id: "2".into(),
+            }],
+            native: "native".into(),
+        },
+        pull: Some(cadmpeg_ir::features::DraftPull {
+            direction: Vector3::new(1.0, 0.0, 0.0),
+            plane: None,
+        }),
     };
-    *parting_tool = None;
     let mut neutral_plane_report = super::empty_report(true);
 
     append_design_losses(&ir, &mut neutral_plane_report);

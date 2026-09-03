@@ -363,8 +363,10 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         projected[10].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
-            neutral_plane: FaceSelection::Unresolved,
-            pull_direction: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Unresolved,
+                pull: None,
+            },
             angle: Some(Angle(value)),
             outward: None,
             ..
