@@ -246,14 +246,9 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<D
     let mut matches = Vec::new();
     for brep in &scan.breps {
         let header = brep
-            .header
+            .kernel
             .as_ref()
-            .map(cadmpeg_asm::dialect::KernelHeaderRef::Asm)
-            .or_else(|| {
-                brep.acis_header
-                    .as_ref()
-                    .map(cadmpeg_asm::dialect::KernelHeaderRef::Acis)
-            })
+            .map(crate::container::KernelFraming::as_header_ref)
             .unwrap_or(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
         matches.push(cadmpeg_asm::dialect::classify_layer(
             header, &brep.name, instance,
