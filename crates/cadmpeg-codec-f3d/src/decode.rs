@@ -3816,9 +3816,12 @@ pub(crate) fn document_local_sha256_with_source(
     ir: &CadIr,
     source: &cadmpeg_ir::SourceMeta,
 ) -> String {
-    let mut projected = ir.clone();
-    projected.source = Some(source.clone());
-    document_local_sha256(&projected)
+    cadmpeg_ir::hash::document_local_sha256_with_source(
+        ir,
+        source,
+        "f3d",
+        crate::ids::FILE_SOURCE_IMAGE_ID,
+    )
 }
 
 fn populate_annotations(
