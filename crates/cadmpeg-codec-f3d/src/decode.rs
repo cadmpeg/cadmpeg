@@ -3770,25 +3770,21 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image]);
-    let source = crate::report::classify_document(
+    let mut source = crate::report::classify_document(
         scan,
         report_scope,
         retained.source_attributes,
         &mut report,
     );
-    ir.source = Some(source);
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
-    let hash = document_local_sha256(&ir);
-    ir.source
-        .as_mut()
-        .expect("F3D decode just authored source metadata")
-        .attributes
-        .insert(
-            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
-            hash,
-        );
+    let hash = document_local_sha256_with_source(&ir, &source);
+    source.attributes.insert(
+        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+        hash,
+    );
+    ir.source = Some(source);
     Ok(Decoded {
         ir,
         body: report,
@@ -3813,6 +3809,18 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
     cadmpeg_ir::hash::document_local_sha256(ir, "f3d", crate::ids::FILE_SOURCE_IMAGE_ID)
+}
+
+/// Computes the digest for a document whose source metadata is still local to
+/// its author. The digest covers that metadata without its own digest
+/// attribute, as defined by [`cadmpeg_ir::hash::document_local_sha256`].
+pub(crate) fn document_local_sha256_with_source(
+    ir: &CadIr,
+    source: &cadmpeg_ir::SourceMeta,
+) -> String {
+    let mut projected = ir.clone();
+    projected.source = Some(source.clone());
+    document_local_sha256(&projected)
 }
 
 fn populate_annotations(

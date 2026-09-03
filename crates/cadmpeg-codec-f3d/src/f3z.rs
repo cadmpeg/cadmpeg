@@ -113,16 +113,17 @@ fn finalize_result(
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Decoded {
+    let mut source = ir
+        .source
+        .take()
+        .expect("the decoded F3Z model root authored source metadata");
     ir.finalize();
-    let hash = crate::decode::document_local_sha256(&ir);
-    ir.source
-        .as_mut()
-        .expect("the decoded F3Z model root authored source metadata")
-        .attributes
-        .insert(
-            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
-            hash,
-        );
+    let hash = crate::decode::document_local_sha256_with_source(&ir, &source);
+    source.attributes.insert(
+        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+        hash,
+    );
+    ir.source = Some(source);
     Decoded {
         ir,
         body,
