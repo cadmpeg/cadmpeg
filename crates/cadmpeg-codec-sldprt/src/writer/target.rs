@@ -2,7 +2,7 @@
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
+use cadmpeg_ir::codec::write::{EncodeInput, ExportBody, ResolvedWrite, WritePath};
 use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
@@ -57,7 +57,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             input.ir,
             &Annotations::default(),
             &[],
-            SemanticFidelity::Consumed(Consumption::NotConsumed),
+            SemanticFidelity::NotConsumed,
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
@@ -67,7 +67,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
-                SemanticFidelity::Consumed(Consumption::NotConsumed)
+                SemanticFidelity::NotConsumed
             },
             &mut bytes,
         )?,

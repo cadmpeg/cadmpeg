@@ -298,14 +298,14 @@ impl ReplaySkipped {
 /// carries the sole typed reason from which both the consumption and any
 /// applicable loss are derived.
 enum SemanticFidelity {
-    Consumed(Consumption),
+    NotConsumed,
     ReplaySkipped(ReplaySkipped),
 }
 
 impl SemanticFidelity {
     fn consumption(&self) -> Consumption {
         match self {
-            Self::Consumed(consumption) => consumption.clone(),
+            Self::NotConsumed => Consumption::NotConsumed,
             Self::ReplaySkipped(reason) => reason.consumption(),
         }
     }
