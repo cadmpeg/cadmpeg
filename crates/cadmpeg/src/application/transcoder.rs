@@ -30,10 +30,8 @@ pub struct SourceRequest<'a> {
 
 /// Output format with an encoder already constructed at the CLI boundary.
 pub struct ExportTarget {
-    /// Encoder for that format.
-    pub encoder: Box<dyn Encoder>,
-    /// What the command line asked that encoder to write.
-    pub selection: TargetSelection,
+    encoder: Box<dyn Encoder>,
+    selection: TargetSelection,
 }
 
 /// The output format and target token selected by the command line.
