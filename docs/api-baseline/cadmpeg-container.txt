@@ -1,4 +1,4 @@
-# generated at e2a1e5bba
+# generated at 5662d8326
 pub mod cadmpeg_container
 pub mod cadmpeg_container::compound
 pub enum cadmpeg_container::compound::CompoundAllocation
@@ -25,8 +25,7 @@ impl cadmpeg_container::compound::CompoundEntryId
 pub const fn cadmpeg_container::compound::CompoundEntryId::directory_id(self) -> u32
 pub struct cadmpeg_container::compound::CompoundPhysicalSpan
 pub cadmpeg_container::compound::CompoundPhysicalSpan::end: u64
-pub cadmpeg_container::compound::CompoundPhysicalSpan::entry: core::option::Option<alloc::string::String>
-pub cadmpeg_container::compound::CompoundPhysicalSpan::role: alloc::string::String
+pub cadmpeg_container::compound::CompoundPhysicalSpan::role: cadmpeg_container::SpanRole
 pub cadmpeg_container::compound::CompoundPhysicalSpan::start: u64
 pub struct cadmpeg_container::compound::CompoundSnapshot<'a>
 impl<'a> cadmpeg_container::compound::CompoundSnapshot<'a>
@@ -70,6 +69,38 @@ pub cadmpeg_container::EntryCompression::Stored
 pub cadmpeg_container::EntryCompression::Zstd
 impl cadmpeg_container::EntryCompression
 pub const fn cadmpeg_container::EntryCompression::label(self) -> &'static str
+pub enum cadmpeg_container::SpanRole
+pub cadmpeg_container::SpanRole::ArchivePadding
+pub cadmpeg_container::SpanRole::CentralComment(alloc::string::String)
+pub cadmpeg_container::SpanRole::CentralExtra(alloc::string::String)
+pub cadmpeg_container::SpanRole::CentralFields(alloc::string::String)
+pub cadmpeg_container::SpanRole::CentralName(alloc::string::String)
+pub cadmpeg_container::SpanRole::CentralSignature(alloc::string::String)
+pub cadmpeg_container::SpanRole::CfbDifat
+pub cadmpeg_container::SpanRole::CfbDirectory
+pub cadmpeg_container::SpanRole::CfbEntryPadding(alloc::string::String)
+pub cadmpeg_container::SpanRole::CfbFat
+pub cadmpeg_container::SpanRole::CfbHeader
+pub cadmpeg_container::SpanRole::CfbMiniFat
+pub cadmpeg_container::SpanRole::CfbMiniStreamPadding
+pub cadmpeg_container::SpanRole::CfbMiniStreamPayload(alloc::string::String)
+pub cadmpeg_container::SpanRole::CfbPadding
+pub cadmpeg_container::SpanRole::CfbRangeLockSector
+pub cadmpeg_container::SpanRole::CfbRegularStreamPayload(alloc::string::String)
+pub cadmpeg_container::SpanRole::CfbUnallocatedSector
+pub cadmpeg_container::SpanRole::CompressedPayload(alloc::string::String)
+pub cadmpeg_container::SpanRole::DataDescriptor(alloc::string::String)
+pub cadmpeg_container::SpanRole::EndRecord
+pub cadmpeg_container::SpanRole::EntryArchivePadding(alloc::string::String)
+pub cadmpeg_container::SpanRole::LocalExtra(alloc::string::String)
+pub cadmpeg_container::SpanRole::LocalFields(alloc::string::String)
+pub cadmpeg_container::SpanRole::LocalName(alloc::string::String)
+pub cadmpeg_container::SpanRole::LocalSignature(alloc::string::String)
+pub cadmpeg_container::SpanRole::Zip64EndLocator
+pub cadmpeg_container::SpanRole::Zip64EndRecord
+impl cadmpeg_container::SpanRole
+pub fn cadmpeg_container::SpanRole::entry(&self) -> core::option::Option<&str>
+pub const fn cadmpeg_container::SpanRole::label(&self) -> &'static str
 pub struct cadmpeg_container::ArchiveSnapshot<'a>
 impl<'a> cadmpeg_container::ArchiveSnapshot<'a>
 pub fn cadmpeg_container::ArchiveSnapshot<'a>::container_entries(&self, impl core::ops::function::Fn(&str) -> &'static str) -> alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
@@ -92,6 +123,5 @@ pub fn cadmpeg_container::EntryRecord::data_end(&self) -> core::result::Result<u
 pub fn cadmpeg_container::EntryRecord::uses_utf8_name_encoding(&self) -> bool
 pub struct cadmpeg_container::PhysicalSpan
 pub cadmpeg_container::PhysicalSpan::end: u64
-pub cadmpeg_container::PhysicalSpan::entry: core::option::Option<alloc::string::String>
-pub cadmpeg_container::PhysicalSpan::role: alloc::string::String
+pub cadmpeg_container::PhysicalSpan::role: cadmpeg_container::SpanRole
 pub cadmpeg_container::PhysicalSpan::start: u64

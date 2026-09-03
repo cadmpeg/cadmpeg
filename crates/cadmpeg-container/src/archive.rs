@@ -352,6 +352,123 @@ fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<us
     Ok(entry_count)
 }
 
+/// The closed structural role of one physical container range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpanRole {
+    /// ZIP local-header signature for the named entry.
+    LocalSignature(String),
+    /// ZIP local-header fields for the named entry.
+    LocalFields(String),
+    /// ZIP local-header name for the named entry.
+    LocalName(String),
+    /// ZIP local-header extra data for the named entry.
+    LocalExtra(String),
+    /// ZIP compressed payload for the named entry.
+    CompressedPayload(String),
+    /// ZIP data descriptor for the named entry.
+    DataDescriptor(String),
+    /// ZIP padding following the named entry.
+    EntryArchivePadding(String),
+    /// ZIP central-header signature for the named entry.
+    CentralSignature(String),
+    /// ZIP central-header fields for the named entry.
+    CentralFields(String),
+    /// ZIP central-header name for the named entry.
+    CentralName(String),
+    /// ZIP central-header extra data for the named entry.
+    CentralExtra(String),
+    /// ZIP central-header comment for the named entry.
+    CentralComment(String),
+    /// ZIP64 end-of-central-directory record.
+    Zip64EndRecord,
+    /// ZIP64 end-of-central-directory locator.
+    Zip64EndLocator,
+    /// ZIP end-of-central-directory record.
+    EndRecord,
+    /// ZIP padding not owned by an entry.
+    ArchivePadding,
+    /// CFB file header.
+    CfbHeader,
+    /// CFB version-4 range-lock sector.
+    CfbRangeLockSector,
+    /// CFB file-allocation-table sector.
+    CfbFat,
+    /// CFB double-indirect file-allocation-table sector.
+    CfbDifat,
+    /// CFB directory sector.
+    CfbDirectory,
+    /// CFB mini-file-allocation-table sector.
+    CfbMiniFat,
+    /// CFB regular-sector payload for the named stream.
+    CfbRegularStreamPayload(String),
+    /// CFB allocation padding owned by the named stream.
+    CfbEntryPadding(String),
+    /// CFB mini-sector payload for the named stream.
+    CfbMiniStreamPayload(String),
+    /// Unallocated bytes inside the CFB root mini stream.
+    CfbMiniStreamPadding,
+    /// CFB allocation padding not owned by a stream.
+    CfbPadding,
+    /// Unallocated CFB sector.
+    CfbUnallocatedSector,
+}
+
+impl SpanRole {
+    /// Returns the stable physical-ledger label.
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::LocalSignature(_) => "local-signature",
+            Self::LocalFields(_) => "local-fields",
+            Self::LocalName(_) => "local-name",
+            Self::LocalExtra(_) => "local-extra",
+            Self::CompressedPayload(_) => "compressed-payload",
+            Self::DataDescriptor(_) => "data-descriptor",
+            Self::EntryArchivePadding(_) | Self::ArchivePadding => "archive-padding",
+            Self::CentralSignature(_) => "central-signature",
+            Self::CentralFields(_) => "central-fields",
+            Self::CentralName(_) => "central-name",
+            Self::CentralExtra(_) => "central-extra",
+            Self::CentralComment(_) => "central-comment",
+            Self::Zip64EndRecord => "zip64-end-record",
+            Self::Zip64EndLocator => "zip64-end-locator",
+            Self::EndRecord => "end-record",
+            Self::CfbHeader => "header",
+            Self::CfbRangeLockSector => "range lock sector",
+            Self::CfbFat => "FAT",
+            Self::CfbDifat => "DIFAT",
+            Self::CfbDirectory => "directory",
+            Self::CfbMiniFat => "mini FAT",
+            Self::CfbRegularStreamPayload(_) => "regular stream payload",
+            Self::CfbEntryPadding(_) | Self::CfbPadding => "padding",
+            Self::CfbMiniStreamPayload(_) => "mini stream payload",
+            Self::CfbMiniStreamPadding => "mini-stream padding",
+            Self::CfbUnallocatedSector => "unallocated sector",
+        }
+    }
+
+    /// Returns the owning entry for an entry-owned range.
+    pub fn entry(&self) -> Option<&str> {
+        match self {
+            Self::LocalSignature(entry)
+            | Self::LocalFields(entry)
+            | Self::LocalName(entry)
+            | Self::LocalExtra(entry)
+            | Self::CompressedPayload(entry)
+            | Self::DataDescriptor(entry)
+            | Self::EntryArchivePadding(entry)
+            | Self::CentralSignature(entry)
+            | Self::CentralFields(entry)
+            | Self::CentralName(entry)
+            | Self::CentralExtra(entry)
+            | Self::CentralComment(entry)
+            | Self::CfbRegularStreamPayload(entry)
+            | Self::CfbEntryPadding(entry)
+            | Self::CfbMiniStreamPayload(entry) => Some(entry),
+            _ => None,
+        }
+    }
+}
+
 /// One exact physical range in a ZIP archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalSpan {
@@ -359,18 +476,15 @@ pub struct PhysicalSpan {
     pub start: u64,
     /// Exclusive byte offset.
     pub end: u64,
-    /// ZIP structural role.
-    pub role: String,
-    /// Owning entry name, when applicable.
-    pub entry: Option<String>,
+    /// ZIP structural role, including an owning entry where applicable.
+    pub role: SpanRole,
 }
 
 #[derive(Debug)]
 struct Region {
     start: u64,
     end: u64,
-    role: &'static str,
-    entry: Option<String>,
+    role: SpanRole,
 }
 
 fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
@@ -407,20 +521,9 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-fn push_region(
-    regions: &mut Vec<Region>,
-    start: u64,
-    end: u64,
-    role: &'static str,
-    entry: Option<&str>,
-) {
+fn push_region(regions: &mut Vec<Region>, start: u64, end: u64, role: SpanRole) {
     if start < end {
-        regions.push(Region {
-            start,
-            end,
-            role,
-            entry: entry.map(str::to_owned),
-        });
+        regions.push(Region { start, end, role });
     }
 }
 
@@ -457,36 +560,31 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
             &mut regions,
             entry.header_start,
             entry.header_start + 4,
-            "local-signature",
-            Some(&entry.name),
+            SpanRole::LocalSignature(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.header_start + 4,
             fixed_end,
-            "local-fields",
-            Some(&entry.name),
+            SpanRole::LocalFields(entry.name.clone()),
         );
         push_region(
             &mut regions,
             fixed_end,
             name_end,
-            "local-name",
-            Some(&entry.name),
+            SpanRole::LocalName(entry.name.clone()),
         );
         push_region(
             &mut regions,
             name_end,
             extra_end,
-            "local-extra",
-            Some(&entry.name),
+            SpanRole::LocalExtra(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.data_start,
             entry.data_end()?,
-            "compressed-payload",
-            Some(&entry.name),
+            SpanRole::CompressedPayload(entry.name.clone()),
         );
 
         let next = local_order
@@ -506,23 +604,20 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
                     &mut regions,
                     entry.data_end()?,
                     descriptor_end,
-                    "data-descriptor",
-                    Some(&entry.name),
+                    SpanRole::DataDescriptor(entry.name.clone()),
                 );
                 push_region(
                     &mut regions,
                     descriptor_end,
                     next,
-                    "archive-padding",
-                    Some(&entry.name),
+                    SpanRole::EntryArchivePadding(entry.name.clone()),
                 );
             } else {
                 push_region(
                     &mut regions,
                     entry.data_end()?,
                     next,
-                    "archive-padding",
-                    Some(&entry.name),
+                    SpanRole::EntryArchivePadding(entry.name.clone()),
                 );
             }
         }
@@ -555,36 +650,31 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
             &mut regions,
             entry.central_start,
             entry.central_start + 4,
-            "central-signature",
-            Some(&entry.name),
+            SpanRole::CentralSignature(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.central_start + 4,
             fixed_end,
-            "central-fields",
-            Some(&entry.name),
+            SpanRole::CentralFields(entry.name.clone()),
         );
         push_region(
             &mut regions,
             fixed_end,
             name_end,
-            "central-name",
-            Some(&entry.name),
+            SpanRole::CentralName(entry.name.clone()),
         );
         push_region(
             &mut regions,
             name_end,
             extra_end,
-            "central-extra",
-            Some(&entry.name),
+            SpanRole::CentralExtra(entry.name.clone()),
         );
         push_region(
             &mut regions,
             extra_end,
             record_end,
-            "central-comment",
-            Some(&entry.name),
+            SpanRole::CentralComment(entry.name.clone()),
         );
         central_end = central_end.max(record_end);
     }
@@ -651,26 +741,29 @@ fn classify_end_records(
                 let body = View::u64_le_at(raw, 0)
                     .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
                 (
-                    "zip64-end-record",
+                    SpanRole::Zip64EndRecord,
                     12_u64
                         .checked_add(body)
                         .ok_or_else(|| CodecError::Malformed("ZIP64 end size overflow".into()))?,
                 )
             }
-            Some(signature) if signature == *b"PK\x06\x07" => ("zip64-end-locator", 20),
+            Some(signature) if signature == *b"PK\x06\x07" => (SpanRole::Zip64EndLocator, 20),
             Some(signature) if signature == *b"PK\x05\x06" => {
                 let comment = u64::from(u16_at(bytes, offset + 20)?);
-                ("end-record", 22_u64 + comment)
+                (SpanRole::EndRecord, 22_u64 + comment)
             }
-            _ => ("archive-padding", len - offset),
+            _ => (SpanRole::ArchivePadding, len - offset),
         };
         let end = offset
             .checked_add(size)
             .ok_or_else(|| CodecError::Malformed("ZIP end-record range overflow".into()))?;
         if end > len {
-            return Err(CodecError::malformed(format_args!("truncated {role}")));
+            return Err(CodecError::malformed(format_args!(
+                "truncated {}",
+                role.label()
+            )));
         }
-        push_region(regions, offset, end, role, None);
+        push_region(regions, offset, end, role);
         offset = end;
     }
     Ok(())
@@ -691,37 +784,32 @@ fn partition(len: u64, regions: &[Region]) -> Result<Vec<PhysicalSpan>, CodecErr
     let mut ordered_regions = regions.iter().collect::<Vec<_>>();
     ordered_regions.sort_by_key(|region| (region.start, region.end));
     let mut region_index = 0_usize;
-    let spans = points
-        .windows(2)
-        .filter_map(|pair| {
-            let (start, end) = (pair[0], pair[1]);
-            (start < end).then(|| {
-                while ordered_regions
-                    .get(region_index)
-                    .is_some_and(|region| region.end <= start)
-                {
-                    region_index += 1;
-                }
-                let owner = ordered_regions
-                    .get(region_index)
-                    .copied()
-                    .filter(|region| region.start <= start && end <= region.end);
-                let (role, entry) = owner.map_or(("unclassified", None), |region| {
-                    (region.role, region.entry.clone())
-                });
-                PhysicalSpan {
-                    start,
-                    end: end.min(len),
-                    role: role.into(),
-                    entry,
-                }
-            })
-        })
-        .collect::<Vec<_>>();
-    if spans.iter().any(|span| span.role == "unclassified") {
-        return Err(CodecError::Malformed(
-            "physical ZIP ledger contains an unclassified byte range".into(),
-        ));
+    let mut spans = Vec::new();
+    for pair in points.windows(2) {
+        let (start, end) = (pair[0], pair[1]);
+        if start == end {
+            continue;
+        }
+        while ordered_regions
+            .get(region_index)
+            .is_some_and(|region| region.end <= start)
+        {
+            region_index += 1;
+        }
+        let owner = ordered_regions
+            .get(region_index)
+            .copied()
+            .filter(|region| region.start <= start && end <= region.end)
+            .ok_or_else(|| {
+                CodecError::Malformed(
+                    "physical ZIP ledger contains an unclassified byte range".into(),
+                )
+            })?;
+        spans.push(PhysicalSpan {
+            start,
+            end: end.min(len),
+            role: owner.role.clone(),
+        });
     }
     for pair in spans.windows(2) {
         if pair[0].end != pair[1].start {

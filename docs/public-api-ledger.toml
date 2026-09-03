@@ -2857,3 +2857,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::diff::SourceDiff::format_change"
 reason = "a sealed FormatChange represents an absent source format without storing an empty-string sentinel in memory"
+
+[[change]]
+commit = "5662d83267feb84cf58e3848518fb4d2672d5e07"
+crate = "cadmpeg-container"
+kind = "field"
+item = "cadmpeg_container::{PhysicalSpan,compound::CompoundPhysicalSpan}::{role,entry}"
+reason = "a closed SpanRole carries an entry name only for entry-owned physical ranges instead of permitting arbitrary role strings and independent optional entries"
