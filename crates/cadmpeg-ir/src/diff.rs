@@ -305,8 +305,14 @@ fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Toleran
 /// attribute as a difference or as an informational machine-local digest.
 fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let empty_attributes = BTreeMap::new();
-    let left_format = left.source.as_ref().map(|source| source.format());
-    let right_format = right.source.as_ref().map(|source| source.format());
+    let left_format = left
+        .source
+        .as_ref()
+        .map(crate::document::SourceMeta::format);
+    let right_format = right
+        .source
+        .as_ref()
+        .map(crate::document::SourceMeta::format);
     let left_dialects = left.source.as_ref().and_then(|source| source.dialects());
     let right_dialects = right.source.as_ref().and_then(|source| source.dialects());
     let left_attributes = left
