@@ -59,7 +59,6 @@ fn counted_offset_return_run_pairs_sources_and_results() {
         pairs,
         distance,
         parameter,
-        parameter_factor,
     } = definition
     else {
         panic!("expected offset")
@@ -71,7 +70,6 @@ fn counted_offset_return_run_pairs_sources_and_results() {
     assert!((distance.0 - 2.0).abs() <= 1.0e-9);
     assert!(pairs.iter().all(|pair| pair.source_reversed));
     assert_eq!(parameter, None);
-    assert_eq!(parameter_factor, None);
 }
 
 #[test]
@@ -482,8 +480,10 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             results: actual_results,
             normal,
             distance: Length(3.0),
-            parameter: Some(actual_parameter),
-            parameter_factor: Some(-1.0),
+            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
+                id: actual_parameter,
+                negated: true,
+            }),
         } if actual_sources == sources.iter().map(|entity| entity.id.clone()).collect::<Vec<_>>()
             && actual_results == results.iter().map(|entity| entity.id.clone()).collect::<Vec<_>>()
             && normal == Vector3::new(0.0, 0.0, 1.0)

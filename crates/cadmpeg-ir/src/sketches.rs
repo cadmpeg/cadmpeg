@@ -598,12 +598,10 @@ pub enum SpatialSketchConstraintDefinition {
         normal: Vector3,
         /// Strictly positive operation-level offset magnitude.
         distance: crate::features::Length,
-        /// Driving offset-distance parameter, when dimensional.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter: Option<crate::features::ParameterId>,
-        /// Multiplier from the driving parameter value to `distance`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_factor: Option<f64>,
+        /// Signed driving offset-distance parameter, when dimensional.
+        #[serde(flatten, with = "offset_parameter_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]
+        parameter: Option<OffsetParameter>,
     },
     /// A model-space line is parallel to one fixed model-space direction.
     ParallelToDirection {
@@ -795,6 +793,58 @@ pub struct SketchOffsetPair {
     /// Reverse the source's stored traversal before selecting its left normal.
     #[serde(default)]
     pub source_reversed: bool,
+}
+
+/// Signed use of a driving offset-distance parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetParameter {
+    /// Driving parameter identity.
+    pub id: ParameterId,
+    /// Whether the stored positive distance is the negation of the parameter.
+    pub negated: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct OffsetParameterWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parameter_factor: Option<f64>,
+}
+
+mod offset_parameter_wire {
+    use super::{OffsetParameter, OffsetParameterWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<OffsetParameter>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        OffsetParameterWire {
+            parameter: value.as_ref().map(|parameter| parameter.id.clone()),
+            parameter_factor: value
+                .as_ref()
+                .map(|parameter| if parameter.negated { -1.0 } else { 1.0 }),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OffsetParameter>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = OffsetParameterWire::deserialize(deserializer)?;
+        match (wire.parameter, wire.parameter_factor) {
+            (None, None) => Ok(None),
+            (Some(id), Some(1.0)) => Ok(Some(OffsetParameter { id, negated: false })),
+            (Some(id), Some(-1.0)) => Ok(Some(OffsetParameter { id, negated: true })),
+            (Some(_), Some(_)) => Err(serde::de::Error::custom("parameter_factor must be -1 or 1")),
+            _ => Err(serde::de::Error::custom(
+                "offset parameter and parameter_factor must be present together",
+            )),
+        }
+    }
 }
 
 /// One axis of a rectangular sketch pattern.
@@ -1390,12 +1440,10 @@ pub enum SketchConstraintDefinition {
         /// Strictly positive common offset magnitude, measured along each
         /// oriented source entity's left normal.
         distance: Length,
-        /// Driving offset-distance parameter, when the source relation is dimensional.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter: Option<ParameterId>,
-        /// Multiplier from the driving parameter value to `distance`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_factor: Option<f64>,
+        /// Signed driving offset-distance parameter, when dimensional.
+        #[serde(flatten, with = "offset_parameter_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]
+        parameter: Option<OffsetParameter>,
     },
     /// A regular profile entity copied from a projected reference entity.
     ProjectedCopy {

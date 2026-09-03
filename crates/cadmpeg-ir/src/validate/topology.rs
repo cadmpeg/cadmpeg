@@ -1653,7 +1653,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     .iter()
                     .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
                     .collect(),
-                parameter.as_ref().map(|parameter| parameter.0.as_str()),
+                parameter.as_ref().map(|parameter| parameter.id.0.as_str()),
             ),
             Definition::PointOnObject { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)

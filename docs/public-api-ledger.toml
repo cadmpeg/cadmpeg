@@ -3214,3 +3214,17 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::sketches::{SketchRectangularPattern,SketchCircularPattern}"
 reason = "private fields and checked constructors enforce non-empty fixed-arity positional patterns"
+
+[[change]]
+commit = "270dc540c4034074f7facc9024bc7ce337c560a2"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::{SketchConstraintDefinition::Offset,SpatialSketchConstraintDefinition::Offset}"
+reason = "one optional OffsetParameter now carries the driving id and its sign together"
+
+[[change]]
+commit = "270dc540c4034074f7facc9024bc7ce337c560a2"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::sketches::OffsetParameter"
+reason = "the boolean sign representation restricts the legacy parameter_factor field to minus or plus one"
