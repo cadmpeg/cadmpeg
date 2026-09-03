@@ -93,8 +93,8 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
             id: crate::native::native_id("archive-span", index.to_string()),
             start: span.start,
             end: span.end,
-            role: span.role,
-            entry: span.entry,
+            role: span.role.label().into(),
+            entry: span.role.entry().map(str::to_owned),
         })
         .collect();
     Ok(Scan {

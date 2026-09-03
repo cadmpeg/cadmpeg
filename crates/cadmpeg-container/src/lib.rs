@@ -5,4 +5,4 @@ mod archive;
 pub mod compound;
 pub mod compression;
 
-pub use archive::{ArchiveSnapshot, EntryCompression, EntryRecord, PhysicalSpan};
+pub use archive::{ArchiveSnapshot, EntryCompression, EntryRecord, PhysicalSpan, SpanRole};

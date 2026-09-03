@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 
+use crate::SpanRole;
+
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
 const END_OF_CHAIN: u32 = 0xffff_fffe;
@@ -165,10 +167,8 @@ pub struct CompoundPhysicalSpan {
     pub start: u64,
     /// Exclusive byte offset.
     pub end: u64,
-    /// CFB structural role.
-    pub role: String,
-    /// Owning entry path, when the range stores stream data.
-    pub entry: Option<String>,
+    /// CFB structural role, including an owning entry where applicable.
+    pub role: SpanRole,
 }
 
 #[derive(Debug, Clone)]
@@ -397,16 +397,16 @@ impl<'a> CompoundSnapshot<'a> {
     pub fn physical_ledger(&self) -> Result<Vec<CompoundPhysicalSpan>, CodecError> {
         let mut structural = BTreeMap::new();
         for &sector in &self.parsed.fat_sectors {
-            structural.insert(sector, "FAT");
+            structural.insert(sector, SpanRole::CfbFat);
         }
         for &sector in &self.parsed.difat_sectors {
-            structural.insert(sector, "DIFAT");
+            structural.insert(sector, SpanRole::CfbDifat);
         }
         for &sector in &self.parsed.directory_chain {
-            structural.insert(sector, "directory");
+            structural.insert(sector, SpanRole::CfbDirectory);
         }
         for &sector in &self.parsed.mini_fat_chain {
-            structural.insert(sector, "mini FAT");
+            structural.insert(sector, SpanRole::CfbMiniFat);
         }
         let mut regular = BTreeMap::new();
         let mut mini = BTreeMap::new();
@@ -435,8 +435,7 @@ impl<'a> CompoundSnapshot<'a> {
         let mut spans = vec![CompoundPhysicalSpan {
             start: 0,
             end: self.parsed.sector_size as u64,
-            role: "header".into(),
-            entry: None,
+            role: SpanRole::CfbHeader,
         }];
         let root_size = self.parsed.directory[0].size;
         let root_sectors = self
@@ -464,9 +463,14 @@ impl<'a> CompoundSnapshot<'a> {
             let sector = u32::try_from(index)
                 .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
             if self.parsed.range_lock_sector == Some(sector) {
-                push_span(&mut spans, start, sector_length, "range lock sector", None);
+                push_span(
+                    &mut spans,
+                    start,
+                    sector_length,
+                    SpanRole::CfbRangeLockSector,
+                );
             } else if let Some(role) = structural.get(&sector) {
-                push_span(&mut spans, start, sector_length, role, None);
+                push_span(&mut spans, start, sector_length, role.clone());
             } else if let Some((entry, payload)) = regular.get(&sector) {
                 if *payload > sector_length {
                     return malformed(format!("CFB stream {entry} is shorter than declared"));
@@ -475,15 +479,13 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     *payload,
-                    "regular stream payload",
-                    Some(entry.clone()),
+                    SpanRole::CfbRegularStreamPayload(entry.clone()),
                 );
                 push_span(
                     &mut spans,
                     start + *payload as u64,
                     sector_length - *payload,
-                    "padding",
-                    Some(entry.clone()),
+                    SpanRole::CfbEntryPadding(entry.clone()),
                 );
             } else if let Some(root_ordinal) = root_sectors.get(&sector) {
                 for mini_ordinal in 0..sector_length.div_ceil(self.parsed.mini_sector_size) {
@@ -514,29 +516,36 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start,
                             *payload,
-                            "mini stream payload",
-                            Some(entry.clone()),
+                            SpanRole::CfbMiniStreamPayload(entry.clone()),
                         );
                         push_span(
                             &mut spans,
                             mini_start + *payload as u64,
                             mini_length - *payload,
-                            "padding",
-                            Some(entry.clone()),
+                            SpanRole::CfbEntryPadding(entry.clone()),
                         );
                     } else {
-                        push_span(&mut spans, mini_start, mapped, "mini-stream padding", None);
+                        push_span(
+                            &mut spans,
+                            mini_start,
+                            mapped,
+                            SpanRole::CfbMiniStreamPadding,
+                        );
                         push_span(
                             &mut spans,
                             mini_start + mapped as u64,
                             mini_length - mapped,
-                            "padding",
-                            None,
+                            SpanRole::CfbPadding,
                         );
                     }
                 }
             } else {
-                push_span(&mut spans, start, sector_length, "unallocated sector", None);
+                push_span(
+                    &mut spans,
+                    start,
+                    sector_length,
+                    SpanRole::CfbUnallocatedSector,
+                );
             }
         }
         if spans.first().is_none_or(|span| span.start != 0)
@@ -1667,21 +1676,14 @@ fn physically_contiguous(views: &[View<'_>]) -> bool {
         .all(|pair| pair[0].end() == pair[1].start())
 }
 
-fn push_span(
-    spans: &mut Vec<CompoundPhysicalSpan>,
-    start: u64,
-    length: usize,
-    role: &str,
-    entry: Option<String>,
-) {
+fn push_span(spans: &mut Vec<CompoundPhysicalSpan>, start: u64, length: usize, role: SpanRole) {
     if length == 0 {
         return;
     }
     spans.push(CompoundPhysicalSpan {
         start,
         end: start + length as u64,
-        role: role.into(),
-        entry,
+        role,
     });
 }
 
