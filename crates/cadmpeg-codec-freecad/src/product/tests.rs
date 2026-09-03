@@ -971,10 +971,7 @@ fn transfers_external_product_paths_and_targets() {
     assert_eq!(document.as_path(), Some("parts/widget.FCStd"));
     assert_eq!(document.as_document_id(), None);
     assert_eq!(object.as_deref(), Some("Body"));
-    assert_eq!(
-        document.resolution,
-        cadmpeg_ir::ExternalResolution::Unresolved
-    );
+    assert!(!document.is_missing());
 
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
