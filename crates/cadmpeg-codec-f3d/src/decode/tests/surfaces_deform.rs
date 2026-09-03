@@ -453,12 +453,9 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         resolved.as_ref(),
         TSplineSubtransform::Inline { program, .. } if program.contains("v 1 0 0 0")
     ));
+    assert_eq!(construction.program_graph().unwrap().records.len(), 1);
     assert_eq!(
-        construction.program_graph.as_ref().unwrap().records.len(),
-        1
-    );
-    assert_eq!(
-        construction.values_graph.as_ref().unwrap().records[0].kind,
+        construction.values_graph().unwrap().records[0].kind,
         "100verts"
     );
 

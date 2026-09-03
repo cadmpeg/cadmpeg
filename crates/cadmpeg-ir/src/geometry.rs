@@ -1381,8 +1381,7 @@ pub enum TSplineSubtransform {
 }
 
 /// Complete native `t_spl_sur` wrapper.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TSplineSurfaceConstruction {
     /// Ordered U and V native parameter intervals.
     pub parameter_ranges: [[f64; 2]; 2],
@@ -1390,12 +1389,6 @@ pub struct TSplineSurfaceConstruction {
     pub type_code: i64,
     /// Inline or referenced shared subtransform object.
     pub subtransform: TSplineSubtransform,
-    /// Parsed semantic index of the inline program, absent for references.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub program_graph: Option<TSplineProgram>,
-    /// Parsed semantic index of the companion values program.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub values_graph: Option<TSplineProgram>,
     /// Native trailing integer.
     pub trailing_value: i64,
     /// Six ordered solved-surface discontinuity arrays.
@@ -1406,8 +1399,143 @@ pub struct TSplineSurfaceConstruction {
     /// revision layout stores the shared tail first, then four optional
     /// parameter values (`support_bounds`), the type code as an enum, the
     /// nested subtransform scope, and the trailing integer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision_form: Option<RevisionSurfaceForm>,
+}
+
+impl TSplineSurfaceConstruction {
+    fn inline_programs(&self) -> Option<(&str, &str)> {
+        let subtransform = match &self.subtransform {
+            TSplineSubtransform::Inline { .. } => &self.subtransform,
+            TSplineSubtransform::Reference {
+                resolved: Some(resolved),
+                ..
+            } => resolved,
+            TSplineSubtransform::Reference { resolved: None, .. } => return None,
+        };
+        match subtransform {
+            TSplineSubtransform::Inline {
+                program, values, ..
+            } => Some((program, values)),
+            TSplineSubtransform::Reference { .. } => None,
+        }
+    }
+
+    /// Parse the semantic index of the effective topology program.
+    #[must_use]
+    pub fn program_graph(&self) -> Option<TSplineProgram> {
+        self.inline_programs()
+            .map(|(program, _)| TSplineProgram::parse(program))
+    }
+
+    /// Parse the semantic index of the effective values program.
+    #[must_use]
+    pub fn values_graph(&self) -> Option<TSplineProgram> {
+        self.inline_programs()
+            .map(|(_, values)| TSplineProgram::parse(values))
+    }
+}
+
+#[derive(Serialize)]
+struct TSplineSurfaceConstructionWriteWire<'a> {
+    parameter_ranges: &'a [[f64; 2]; 2],
+    type_code: i64,
+    subtransform: &'a TSplineSubtransform,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    program_graph: Option<&'a TSplineProgram>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    values_graph: Option<&'a TSplineProgram>,
+    trailing_value: i64,
+    discontinuities: &'a [Vec<f64>; 6],
+    discontinuity_flag: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    revision_form: Option<&'a RevisionSurfaceForm>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TSplineSurfaceConstructionReadWire {
+    parameter_ranges: [[f64; 2]; 2],
+    type_code: i64,
+    subtransform: TSplineSubtransform,
+    #[serde(default)]
+    program_graph: Option<TSplineProgram>,
+    #[serde(default)]
+    values_graph: Option<TSplineProgram>,
+    trailing_value: i64,
+    discontinuities: [Vec<f64>; 6],
+    discontinuity_flag: bool,
+    #[serde(default)]
+    revision_form: Option<RevisionSurfaceForm>,
+}
+
+impl Serialize for TSplineSurfaceConstruction {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let program_graph = self.program_graph();
+        let values_graph = self.values_graph();
+        TSplineSurfaceConstructionWriteWire {
+            parameter_ranges: &self.parameter_ranges,
+            type_code: self.type_code,
+            subtransform: &self.subtransform,
+            program_graph: program_graph.as_ref(),
+            values_graph: values_graph.as_ref(),
+            trailing_value: self.trailing_value,
+            discontinuities: &self.discontinuities,
+            discontinuity_flag: self.discontinuity_flag,
+            revision_form: self.revision_form.as_ref(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = TSplineSurfaceConstructionReadWire::deserialize(deserializer)?;
+        let construction = Self {
+            parameter_ranges: wire.parameter_ranges,
+            type_code: wire.type_code,
+            subtransform: wire.subtransform,
+            trailing_value: wire.trailing_value,
+            discontinuities: wire.discontinuities,
+            discontinuity_flag: wire.discontinuity_flag,
+            revision_form: wire.revision_form,
+        };
+        if wire
+            .program_graph
+            .as_ref()
+            .is_some_and(|graph| Some(graph) != construction.program_graph().as_ref())
+        {
+            return Err(serde::de::Error::custom(
+                "program_graph does not match the T-spline program",
+            ));
+        }
+        if wire
+            .values_graph
+            .as_ref()
+            .is_some_and(|graph| Some(graph) != construction.values_graph().as_ref())
+        {
+            return Err(serde::de::Error::custom(
+                "values_graph does not match the T-spline values program",
+            ));
+        }
+        Ok(construction)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for TSplineSurfaceConstruction {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "TSplineSurfaceConstruction".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        TSplineSurfaceConstructionReadWire::json_schema(generator)
+    }
 }
 
 /// Parsed line-oriented T-spline subtransform program.
