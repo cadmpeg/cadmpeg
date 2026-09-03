@@ -134,7 +134,8 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
-        let representation = representation::classify(&mut reader)?;
+        let representation = representation::classify(&mut reader)?
+            .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {
                 reader::inspect(ctx, root.window(), representation, root.window().len())
@@ -147,15 +148,13 @@ impl CodecBackend for IgesCodec {
                 let normalized = binary::normalize(root.window(), ctx)?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
-            representation::Representation::Unknown => Err(CodecError::WrongFormat(
-                "unrecognized IGES representation".into(),
-            )),
         }
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut source = Cursor::new(root.window());
-        let representation = representation::classify(&mut source)?;
+        let representation = representation::classify(&mut source)?
+            .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {
                 reader::decode(root.window(), root.window(), representation, ctx)
@@ -168,9 +167,6 @@ impl CodecBackend for IgesCodec {
                 let normalized = binary::normalize(root.window(), ctx)?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
-            representation::Representation::Unknown => Err(CodecError::WrongFormat(
-                "unrecognized IGES representation".into(),
-            )),
         }
     }
 }

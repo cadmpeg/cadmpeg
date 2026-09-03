@@ -25,7 +25,7 @@ fn representation_version_products_and_registry_rows_are_closed_bidirectionally(
                 .map(|flag| dialect_id(representation, Some(flag))),
         );
     }
-    ids.push(dialect_id(Representation::Unknown, None));
+    ids.push(IGES_UNKNOWN);
     cadmpeg_test_support::assert_dialect_rows_closed(&ids, FORMAT);
 }
 
@@ -35,7 +35,7 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
     for flag in 1..=11 {
         assert_ne!(
             dialect_id(Representation::FixedAscii, VersionFlag::exact(flag)),
-            dialect_id(Representation::Unknown, None),
+            IGES_UNKNOWN,
             "fixed ASCII flag {flag} must name its own row"
         );
     }
@@ -44,14 +44,14 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
         for flag in [6, 8, 9, 10, 11] {
             assert_ne!(
                 dialect_id(representation, VersionFlag::exact(flag)),
-                dialect_id(Representation::Unknown, None),
+                IGES_UNKNOWN,
                 "{representation:?} flag {flag} must name its own row"
             );
         }
         for flag in [1, 2, 3, 4, 5, 7] {
             assert_eq!(
                 dialect_id(representation, VersionFlag::exact(flag)),
-                dialect_id(Representation::Unknown, None),
+                IGES_UNKNOWN,
                 "{representation:?} flag {flag} has no declared row"
             );
         }
@@ -405,7 +405,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
             Representation::Binary,
         ] {
             let matched = classify(representation, &global);
-            if matched.dialect() == &dialect_id(Representation::Unknown, None) {
+            if matched.dialect() == &IGES_UNKNOWN {
                 assert_ne!(
                     matched.admission(),
                     &Admission::Admitted,
