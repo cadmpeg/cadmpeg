@@ -1,4 +1,4 @@
-# generated at 98c80dcd0
+# generated at 40fe31a58
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -11,7 +11,10 @@ pub cadmpeg_registry::DetectionOutcome::Detected::format_id: &'static str
 pub cadmpeg_registry::DetectionOutcome::None
 pub enum cadmpeg_registry::ForcedInput
 pub cadmpeg_registry::ForcedInput::Cadir
-pub cadmpeg_registry::ForcedInput::Codec(&'static str)
+pub cadmpeg_registry::ForcedInput::Codec(&'static cadmpeg_registry::FormatDescriptor)
+impl core::cmp::Eq for cadmpeg_registry::ForcedInput
+impl core::cmp::PartialEq for cadmpeg_registry::ForcedInput
+pub fn cadmpeg_registry::ForcedInput::eq(&self, &Self) -> bool
 pub enum cadmpeg_registry::Format
 pub cadmpeg_registry::Format::Cadir
 pub cadmpeg_registry::Format::F3d
@@ -56,7 +59,6 @@ pub enum cadmpeg_registry::ResolveSourceError
 pub cadmpeg_registry::ResolveSourceError::Ambiguous
 pub cadmpeg_registry::ResolveSourceError::Ambiguous::candidates: alloc::string::String
 pub cadmpeg_registry::ResolveSourceError::Ambiguous::confidence: cadmpeg_ir::codec::Confidence
-pub cadmpeg_registry::ResolveSourceError::UnsupportedFormat(&'static str)
 pub enum cadmpeg_registry::ResolvedSource<'a>
 pub cadmpeg_registry::ResolvedSource::Cadir
 pub cadmpeg_registry::ResolvedSource::Native
@@ -91,6 +93,10 @@ pub cadmpeg_registry::DialectProvenance::write_targets: core::option::Option<cad
 pub struct cadmpeg_registry::Disposition
 pub cadmpeg_registry::Disposition::read: cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::Disposition::write: cadmpeg_registry::WriteDisposition
+pub struct cadmpeg_registry::FormatDescriptor
+impl cadmpeg_registry::FormatDescriptor
+pub const fn cadmpeg_registry::FormatDescriptor::id(&self) -> &'static str
+pub const fn cadmpeg_registry::FormatDescriptor::input_extensions(&self) -> &'static [&'static str]
 pub struct cadmpeg_registry::FormatDialects
 pub cadmpeg_registry::FormatDialects::catalog: core::option::Option<cadmpeg_core::target::TargetCatalog>
 pub cadmpeg_registry::FormatDialects::format: alloc::string::String
@@ -113,9 +119,9 @@ pub fn cadmpeg_registry::InputCatalog::detect(&self, &[u8]) -> cadmpeg_registry:
 pub fn cadmpeg_registry::InputCatalog::resolve_source<'a>(&'a self, &[u8], core::option::Option<cadmpeg_registry::ForcedInput>) -> core::result::Result<cadmpeg_registry::ResolvedSource<'a>, cadmpeg_registry::ResolveSourceError>
 pub fn cadmpeg_registry::InputCatalog::with_builtins() -> Self
 pub struct cadmpeg_registry::InputDescriptor
-pub cadmpeg_registry::InputDescriptor::codec: core::option::Option<alloc::boxed::Box<dyn cadmpeg_ir::codec::Codec>>
-pub cadmpeg_registry::InputDescriptor::extensions: &'static [&'static str]
 impl cadmpeg_registry::InputDescriptor
+pub fn cadmpeg_registry::InputDescriptor::codec(&self) -> core::option::Option<&dyn cadmpeg_ir::codec::Codec>
+pub fn cadmpeg_registry::InputDescriptor::extensions(&self) -> &'static [&'static str]
 pub fn cadmpeg_registry::InputDescriptor::format_id(&self) -> &'static str
 pub struct cadmpeg_registry::Inspected
 pub cadmpeg_registry::Inspected::format: &'static str

@@ -53,7 +53,7 @@ impl Format {
     pub fn from_name(name: &str) -> Option<Self> {
         let canonical = crate::registry::canonical_format_name(name)?;
         crate::descriptors::writable()
-            .find(|(descriptor, _)| descriptor.id == canonical)
+            .find(|(descriptor, _)| descriptor.id() == canonical)
             .map(|(_, output)| output.format)
     }
 
@@ -75,7 +75,7 @@ impl Format {
     /// The stable format id, which is also its canonical `--to` spelling.
     #[must_use]
     pub fn name(self) -> &'static str {
-        self.descriptor().0.id
+        self.descriptor().0.id()
     }
 
     /// Whether this format's encoder emits a binary container.

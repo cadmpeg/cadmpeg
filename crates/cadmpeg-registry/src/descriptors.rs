@@ -9,6 +9,13 @@ use crate::{ForcedInput, Format};
 pub(crate) type DecoderConstructor = fn() -> Box<dyn Codec>;
 pub(crate) type EncoderConstructor = fn() -> Box<dyn Encoder>;
 
+/// Whether a compiled input is neutral CADIR or has a native decoder.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum FormatKind {
+    Neutral,
+    Native { decoder: DecoderConstructor },
+}
+
 /// Delivery and semantic-admission physics of a writable format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputPhysics {
@@ -60,6 +67,7 @@ impl OutputPhysics {
 }
 
 /// Facts that exist together only when a format is writable.
+#[derive(Debug)]
 pub(crate) struct OutputDescriptor {
     pub format: Format,
     pub order: u8,
@@ -69,11 +77,24 @@ pub(crate) struct OutputDescriptor {
 }
 
 /// One compiled format and all registration facts owned by the registry.
-pub(crate) struct FormatDescriptor {
-    pub id: &'static str,
-    pub input_extensions: &'static [&'static str],
-    pub decoder: Option<DecoderConstructor>,
-    pub output: Option<&'static OutputDescriptor>,
+#[derive(Debug)]
+pub struct FormatDescriptor {
+    id: &'static str,
+    input_extensions: &'static [&'static str],
+    pub(crate) kind: FormatKind,
+    output: Option<&'static OutputDescriptor>,
+}
+
+impl FormatDescriptor {
+    /// Stable format identifier.
+    pub const fn id(&self) -> &'static str {
+        self.id
+    }
+
+    /// Recognized lowercase filename extensions.
+    pub const fn input_extensions(&self) -> &'static [&'static str] {
+        self.input_extensions
+    }
 }
 
 macro_rules! reader {
@@ -81,14 +102,14 @@ macro_rules! reader {
         static $name: FormatDescriptor = FormatDescriptor {
             id: $id,
             input_extensions: $input_exts,
-            decoder: Some($decoder),
+            kind: FormatKind::Native { decoder: $decoder },
             output: None,
         };
     };
 }
 
 macro_rules! writable {
-    ($name:ident, $output:ident, $id:literal, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
+    ($name:ident, $output:ident, $id:literal, $input_exts:expr, $kind:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
         static $output: OutputDescriptor = OutputDescriptor {
             format: $format,
             order: $order,
@@ -99,7 +120,7 @@ macro_rules! writable {
         static $name: FormatDescriptor = FormatDescriptor {
             id: $id,
             input_extensions: $input_exts,
-            decoder: $decoder,
+            kind: $kind,
             output: Some(&$output),
         };
     };
@@ -111,7 +132,9 @@ writable!(
     FCSTD_OUTPUT,
     "fcstd",
     &["fcstd"],
-    Some(|| Box::new(cadmpeg_codec_freecad::FcstdCodec)),
+    FormatKind::Native {
+        decoder: || Box::new(cadmpeg_codec_freecad::FcstdCodec)
+    },
     Format::Fcstd,
     2,
     &["fcstd"],
@@ -124,7 +147,9 @@ writable!(
     F3D_OUTPUT,
     "f3d",
     &["f3d", "f3z"],
-    Some(|| Box::new(cadmpeg_codec_f3d::F3dCodec)),
+    FormatKind::Native {
+        decoder: || Box::new(cadmpeg_codec_f3d::F3dCodec)
+    },
     Format::F3d,
     3,
     &["f3d"],
@@ -141,7 +166,9 @@ writable!(
     SLDPRT_OUTPUT,
     "sldprt",
     &["sldprt"],
-    Some(|| Box::new(cadmpeg_codec_sldprt::SldprtCodec)),
+    FormatKind::Native {
+        decoder: || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
+    },
     Format::Sldprt,
     4,
     &["sldprt"],
@@ -164,7 +191,9 @@ writable!(
     RHINO_OUTPUT,
     "rhino",
     &["3dm"],
-    Some(|| Box::new(cadmpeg_codec_rhino::RhinoCodec)),
+    FormatKind::Native {
+        decoder: || Box::new(cadmpeg_codec_rhino::RhinoCodec)
+    },
     Format::Rhino,
     5,
     &["3dm"],
@@ -177,7 +206,9 @@ writable!(
     STEP_OUTPUT,
     "step",
     &["step", "stp"],
-    Some(|| Box::new(cadmpeg_codec_step::StepCodec::default())),
+    FormatKind::Native {
+        decoder: || Box::new(cadmpeg_codec_step::StepCodec::default())
+    },
     Format::Step,
     1,
     &["step", "stp"],
@@ -190,7 +221,9 @@ writable!(
     IGES_OUTPUT,
     "iges",
     &["iges", "igs"],
-    Some(|| Box::new(cadmpeg_codec_iges::IgesCodec)),
+    FormatKind::Native {
+        decoder: || Box::new(cadmpeg_codec_iges::IgesCodec)
+    },
     Format::Iges,
     6,
     &["iges", "igs"],
@@ -206,7 +239,7 @@ writable!(
     CADIR_OUTPUT,
     "cadir",
     &["cadir", "json"],
-    None,
+    FormatKind::Neutral,
     Format::Cadir,
     0,
     &["cadir", "json"],
@@ -279,10 +312,9 @@ pub fn forced_input(name: &str) -> Option<ForcedInput> {
     let descriptor = FORMAT_DESCRIPTORS
         .iter()
         .find(|descriptor| canonical == descriptor.id)?;
-    Some(if descriptor.decoder.is_some() {
-        ForcedInput::Codec(descriptor.id)
-    } else {
-        ForcedInput::Cadir
+    Some(match descriptor.kind {
+        FormatKind::Native { .. } => ForcedInput::Codec(descriptor),
+        FormatKind::Neutral => ForcedInput::Cadir,
     })
 }
 
@@ -342,10 +374,9 @@ mod tests {
     #[test]
     fn every_registry_word_resolves_through_its_descriptor() {
         for descriptor in FORMAT_DESCRIPTORS {
-            let expected = if descriptor.decoder.is_some() {
-                ForcedInput::Codec(descriptor.id)
-            } else {
-                ForcedInput::Cadir
+            let expected = match descriptor.kind {
+                FormatKind::Native { .. } => ForcedInput::Codec(descriptor),
+                FormatKind::Neutral => ForcedInput::Cadir,
             };
             for name in crate::registry::format_words(descriptor.id) {
                 assert_eq!(forced_input(name), Some(expected), "{name}");
