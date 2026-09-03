@@ -132,7 +132,7 @@ pub fn identify_with(
     match catalog.detect(&prefix) {
         DetectionOutcome::None if crate::catalog::is_cadir_prefix(&prefix) => {
             Ok(vec![Identification {
-                format: "cadir",
+                format: crate::descriptors::CADIR.id(),
                 confidence: Confidence::High,
                 inspection: Inspection::Skipped,
             }])
