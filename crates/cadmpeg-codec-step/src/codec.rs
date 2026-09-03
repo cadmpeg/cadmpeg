@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeOptions, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
@@ -90,15 +90,7 @@ impl CodecBackend for StepCodec {
         if self.detect_impl(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        reader::decode(
-            bytes,
-            DecodeOptions {
-                container_only: ctx.container_only(),
-                policy: *ctx.policy(),
-            },
-            ctx,
-            reader::Packaging::Bare,
-        )
+        reader::decode(bytes, ctx, reader::Packaging::Bare)
     }
 }
 
@@ -363,10 +355,6 @@ fn decode_zip(
     let root_data_offset = root_entry.data_start;
     let mut decoded = reader::decode(
         root_view.window(),
-        DecodeOptions {
-            container_only: ctx.container_only(),
-            policy: *ctx.policy(),
-        },
         ctx,
         reader::Packaging::Zip {
             entry_count,

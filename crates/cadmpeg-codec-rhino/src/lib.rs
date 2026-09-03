@@ -155,7 +155,7 @@ impl CodecBackend for RhinoCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        container::decode(ctx, root, ctx.container_only())
+        container::decode(ctx, root)
     }
 }
 

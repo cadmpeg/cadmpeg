@@ -1229,18 +1229,14 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
 }
 
 /// Decode a Rhino stream according to the supported container depth.
-pub(crate) fn decode(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    container_only: bool,
-) -> Result<Decoded, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
     if header.archive_version == ArchiveVersion::V1 {
         return crate::legacy::decode_v1(data);
     }
     let scan = scan(data)?;
-    if container_only && scan.archive.is_chunked() {
+    if ctx.container_only() && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }
     Ok(crate::decode::decode(

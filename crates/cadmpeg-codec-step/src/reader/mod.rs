@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
@@ -221,32 +221,22 @@ struct OpaqueSourceRecord {
 /// Decode a complete clear-text exchange structure.
 pub fn decode(
     input: &[u8],
-    options: DecodeOptions,
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
-    decode_exchange(input, options, exchange, &diagnostics, Some(ctx), packaging)
+    decode_exchange(input, exchange, &diagnostics, Some(ctx), packaging)
 }
 
 pub(super) fn decode_exchange(
     input: &[u8],
-    options: DecodeOptions,
     mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],
     ctx: Option<&DecodeContext<'_>>,
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
-    decode_exchange_mode(
-        input,
-        options,
-        &mut exchange,
-        diagnostics,
-        true,
-        ctx,
-        packaging,
-    )
-    .map(|(result, _)| result)
+    decode_exchange_mode(input, &mut exchange, diagnostics, true, ctx, packaging)
+        .map(|(result, _)| result)
 }
 
 /// Deep semantic analysis used by STEP `inspect`.
@@ -260,20 +250,11 @@ pub(super) fn analyze_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
-    decode_exchange_mode(
-        input,
-        DecodeOptions::default(),
-        exchange,
-        diagnostics,
-        false,
-        ctx,
-        Packaging::Bare,
-    )
+    decode_exchange_mode(input, exchange, diagnostics, false, ctx, Packaging::Bare)
 }
 
 fn decode_exchange_mode(
     input: &[u8],
-    options: DecodeOptions,
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
@@ -281,7 +262,7 @@ fn decode_exchange_mode(
     packaging: Packaging,
 ) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, packaging);
-    if options.container_only {
+    if ctx.is_some_and(DecodeContext::container_only) {
         return Ok((
             session.into_result(SourceFidelity::default()),
             BTreeSet::new(),
