@@ -225,7 +225,7 @@ impl Layout {
                 let (decimal, hex) = match field.kind {
                     FieldKind::Scalar(ty, endian) => {
                         let value = ty.read(bytes, endian);
-                        (value.decimal(), value.hex(ty))
+                        (value.decimal(), value.hex())
                     }
                     FieldKind::Bytes(_) => (String::new(), hex_bytes(bytes)),
                     FieldKind::Pad(_) => unreachable!("pad fields are filtered out"),
