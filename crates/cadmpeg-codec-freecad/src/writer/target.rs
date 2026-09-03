@@ -15,7 +15,6 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::document::CadIr;
 
 use super::write;
-use crate::dialect;
 use crate::native::DocumentFacts;
 
 /// What resolving a [`cadmpeg_ir::codec::write::TargetRequest`] against the source decided.
@@ -54,31 +53,9 @@ impl<'a> Resolution<'a> {
     }
 }
 
-/// Why the retained native graph cannot witness the resolved write target.
-#[derive(Debug)]
-pub(in crate::writer) enum BaselineRefusal {
-    Unavailable,
-    DialectMismatch {
-        retained: DialectId,
-        resolved: DialectId,
-    },
-}
-
-impl BaselineRefusal {
-    fn message(self) -> String {
-        match self {
-            Self::Unavailable => {
-                "the retained FCStd document graph is unavailable, and this writer regenerates \
-                 no Document.xml, so the target cannot be written"
-                    .into()
-            }
-            Self::DialectMismatch { retained, resolved } => format!(
-                "the retained FCStd document graph declares {retained}, not the resolved target \
-                 {resolved}, and this writer regenerates no Document.xml"
-            ),
-        }
-    }
-}
+const BASELINE_UNAVAILABLE: &str =
+    "the retained FCStd document graph is unavailable, and this writer regenerates no \
+     Document.xml, so the target cannot be written";
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -131,46 +108,30 @@ pub(in crate::writer) fn resolve<'a>(
     ir: &'a CadIr,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<Resolution<'a>, CodecError> {
-    // A decoded document has matching source and native identities. A caller
-    // can hand-edit CADIR and make them disagree, so retained-graph
-    // deliverability remains a named refusal at this admission boundary. The
-    // accepted Resolution threads the resolved target to the byte writer; the
-    // byte writer does not classify the native declaration again.
+    // Target resolution already classified the source declaration. The
+    // accepted Resolution threads that witness to the byte writer; the byte
+    // writer does not classify the native declaration again.
     retained_baseline(ir, resolved.target_id())
-        .map_err(|reason| resolved.unavailable(reason.message()))
+        .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))
 }
 
 /// The write options and dialect witnessed by the retained document graph.
 ///
 /// The graph is the whole baseline: the writer never regenerates a
 /// `Document.xml`, so preservation is possible exactly when the retained
-/// document record is present and its exact declaration classifies as the
-/// retained dialect. A `SchemaVersion` of `"04"` classifies as
-/// `fcstd:unknown`, so it is preserved as residual identity rather than being
-/// rewritten as `"4"`.
+/// document record is present. `target` is the dialect witness resolved from
+/// the source declaration; this adapter does not derive a second identity from
+/// the retained graph.
 pub(in crate::writer) fn retained_baseline<'a>(
     ir: &'a CadIr,
     target: &DialectId,
-) -> Result<Resolution<'a>, BaselineRefusal> {
-    let namespace = ir
-        .native
-        .namespace("fcstd")
-        .ok_or(BaselineRefusal::Unavailable)?;
-    let documents = namespace
-        .arena_as::<DocumentFacts>("document")
-        .map_err(|_| BaselineRefusal::Unavailable)?;
+) -> Option<Resolution<'a>> {
+    let namespace = ir.native.namespace("fcstd")?;
+    let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
     let [document] = documents.as_slice() else {
-        return Err(BaselineRefusal::Unavailable);
+        return None;
     };
-    let dialect = dialect::FcstdDialect::from_schema_version(&document.schema_version);
-    let retained = dialect.id();
-    if &retained != target {
-        return Err(BaselineRefusal::DialectMismatch {
-            retained,
-            resolved: target.clone(),
-        });
-    }
-    Ok(Resolution {
+    Some(Resolution {
         ir,
         namespace,
         document: document.clone(),
