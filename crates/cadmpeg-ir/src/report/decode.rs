@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode reports, coverage, and source-transfer disposition.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
@@ -437,32 +436,59 @@ impl TransferLedger {
 }
 
 /// A typed decode-coverage measure name.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CoverageKey(Cow<'static, str>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CoverageKey(&'static str);
 
 impl CoverageKey {
     /// Declares a coverage key with a static wire name.
     #[must_use]
     pub const fn new(name: &'static str) -> Self {
-        Self(Cow::Borrowed(name))
+        Self(name)
     }
 
     /// Returns the coverage key's wire name.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        self.0.as_ref()
+        self.0
     }
 }
 
-impl From<&'static str> for CoverageKey {
-    fn from(value: &'static str) -> Self {
-        Self::new(value)
+/// A statically declared coverage-name template with one numeric component.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexedCoverageKey {
+    prefix: &'static str,
+    suffix: &'static str,
+}
+
+/// A statically declared coverage-name template with one hexadecimal byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HexByteCoverageKey {
+    prefix: &'static str,
+    suffix: &'static str,
+}
+
+impl IndexedCoverageKey {
+    /// Declares a coverage-name template whose index uses decimal notation.
+    #[must_use]
+    pub const fn decimal(prefix: &'static str, suffix: &'static str) -> Self {
+        Self { prefix, suffix }
+    }
+
+    fn wire_name(self, index: u32) -> String {
+        format!("{}{index}{}", self.prefix, self.suffix)
     }
 }
 
-impl From<String> for CoverageKey {
-    fn from(value: String) -> Self {
-        Self(Cow::Owned(value))
+impl HexByteCoverageKey {
+    /// Declares a coverage-name template whose byte uses two lowercase
+    /// hexadecimal digits.
+    #[must_use]
+    pub const fn new(prefix: &'static str, suffix: &'static str) -> Self {
+        Self { prefix, suffix }
+    }
+
+    fn wire_name(self, value: u8) -> String {
+        format!("{}{:02x}{}", self.prefix, value, self.suffix)
     }
 }
 
@@ -475,7 +501,18 @@ pub struct Coverage {
 impl Coverage {
     /// Records an observed count. A repeated key replaces its prior value.
     pub fn record(&mut self, key: CoverageKey, count: usize) {
-        self.entries.insert(key.0.into_owned(), count);
+        self.entries.insert(key.0.to_owned(), count);
+    }
+
+    /// Records an observed count under a declared numeric key template.
+    pub fn record_indexed(&mut self, key: IndexedCoverageKey, index: u32, count: usize) {
+        self.entries.insert(key.wire_name(index), count);
+    }
+
+    /// Records an observed count under a declared hexadecimal-byte key
+    /// template.
+    pub fn record_hex_byte(&mut self, key: HexByteCoverageKey, value: u8, count: usize) {
+        self.entries.insert(key.wire_name(value), count);
     }
 
     /// Returns an observed count, or zero when the measure was not recorded.

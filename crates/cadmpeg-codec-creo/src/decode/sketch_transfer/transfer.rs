@@ -43,6 +43,7 @@ use super::{
     SectionEntityIncidenceFamily,
 };
 use crate::container::ContainerScan;
+use crate::coverage::SketchSegmentFamily;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
@@ -95,22 +96,31 @@ pub(in super::super) fn transfer_sketches(
             coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
             for segment in &table.rows {
                 let family = match segment.kind {
-                    crate::feature::FeatureSegmentKind::Line => "line",
-                    crate::feature::FeatureSegmentKind::Arc => "arc",
-                    crate::feature::FeatureSegmentKind::Point => "point",
+                    crate::feature::FeatureSegmentKind::Line => SketchSegmentFamily::Line,
+                    crate::feature::FeatureSegmentKind::Arc => SketchSegmentFamily::Arc,
+                    crate::feature::FeatureSegmentKind::Point => SketchSegmentFamily::Point,
                 };
-                coverage.by_family.entry(family).or_default().0 += 1;
+                coverage.family_mut(family).0 += 1;
             }
             for (family, count) in [
-                ("circle", table.circle_rows.len()),
-                ("point", table.point_rows.len()),
-                ("centered_line", table.centered_line_rows.len()),
-                ("reference_line", table.reference_line_rows.len()),
-                ("bounded_curve", table.bounded_curve_rows.len()),
-                ("conic", table.conic_rows.len()),
-                ("opaque", table.opaque_rows.len()),
+                (SketchSegmentFamily::Circle, table.circle_rows.len()),
+                (SketchSegmentFamily::Point, table.point_rows.len()),
+                (
+                    SketchSegmentFamily::CenteredLine,
+                    table.centered_line_rows.len(),
+                ),
+                (
+                    SketchSegmentFamily::ReferenceLine,
+                    table.reference_line_rows.len(),
+                ),
+                (
+                    SketchSegmentFamily::BoundedCurve,
+                    table.bounded_curve_rows.len(),
+                ),
+                (SketchSegmentFamily::Conic, table.conic_rows.len()),
+                (SketchSegmentFamily::Opaque, table.opaque_rows.len()),
             ] {
-                coverage.by_family.entry(family).or_default().0 += count;
+                coverage.family_mut(family).0 += count;
             }
         }
         let variable_points = resolved_section_coordinates(definition);
@@ -267,11 +277,11 @@ pub(in super::super) fn transfer_sketches(
             .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
         {
             let family = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line => "line",
-                crate::feature::FeatureSegmentKind::Arc => "arc",
-                crate::feature::FeatureSegmentKind::Point => "point",
+                crate::feature::FeatureSegmentKind::Line => SketchSegmentFamily::Line,
+                crate::feature::FeatureSegmentKind::Arc => SketchSegmentFamily::Arc,
+                crate::feature::FeatureSegmentKind::Point => SketchSegmentFamily::Point,
             };
-            coverage.by_family.entry(family).or_default().1 += 1;
+            coverage.family_mut(family).1 += 1;
         }
         let resolved_circles = definition
             .segments
@@ -284,7 +294,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_circles;
-        coverage.by_family.entry("circle").or_default().1 += resolved_circles;
+        coverage.family_mut(SketchSegmentFamily::Circle).1 += resolved_circles;
         let resolved_points = definition
             .segments
             .iter()
@@ -296,7 +306,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_points;
-        coverage.by_family.entry("point").or_default().1 += resolved_points;
+        coverage.family_mut(SketchSegmentFamily::Point).1 += resolved_points;
         let resolved_centered_lines = definition
             .segments
             .iter()
@@ -308,7 +318,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_centered_lines;
-        coverage.by_family.entry("centered_line").or_default().1 += resolved_centered_lines;
+        coverage.family_mut(SketchSegmentFamily::CenteredLine).1 += resolved_centered_lines;
         let resolved_reference_lines = definition
             .segments
             .iter()
@@ -316,7 +326,7 @@ pub(in super::super) fn transfer_sketches(
             .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
             .count();
         coverage.resolved_geometry += resolved_reference_lines;
-        coverage.by_family.entry("reference_line").or_default().1 += resolved_reference_lines;
+        coverage.family_mut(SketchSegmentFamily::ReferenceLine).1 += resolved_reference_lines;
         let resolved_bounded_curves = definition
             .segments
             .iter()
@@ -327,7 +337,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_bounded_curves;
-        coverage.by_family.entry("bounded_curve").or_default().1 += resolved_bounded_curves;
+        coverage.family_mut(SketchSegmentFamily::BoundedCurve).1 += resolved_bounded_curves;
         let resolved_conics = definition
             .segments
             .iter()
@@ -338,7 +348,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_conics;
-        coverage.by_family.entry("conic").or_default().1 += resolved_conics;
+        coverage.family_mut(SketchSegmentFamily::Conic).1 += resolved_conics;
         let resolved_opaque = definition
             .segments
             .iter()
@@ -349,7 +359,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_opaque;
-        coverage.by_family.entry("opaque").or_default().1 += resolved_opaque;
+        coverage.family_mut(SketchSegmentFamily::Opaque).1 += resolved_opaque;
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let generated_profile_geometries = segments
             .iter()

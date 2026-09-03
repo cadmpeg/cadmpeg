@@ -1296,13 +1296,13 @@ fn try_decode_standard_populations(
         })
         .sum::<usize>();
     let population_coverage = [
-        "attempted_standard_topology_count",
-        "standard_topology_curve_support_count",
-        "standard_topology_native_endpoint_pair_count",
-        "standard_topology_empty_endpoint_domain_count",
-        "standard_topology_singleton_endpoint_domain_count",
-        "standard_topology_multiple_endpoint_domain_count",
-        "standard_topology_endpoint_domain_choice_count",
+        crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
+        crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT,
+        crate::coverage::STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT,
+        crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT,
+        crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT,
+        crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT,
+        crate::coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
     ]
     .into_iter()
     .map(|key| {
@@ -1310,7 +1310,14 @@ fn try_decode_standard_populations(
             key,
             outputs
                 .iter()
-                .map(|output| output.report.coverage.get(key).copied().unwrap_or_default())
+                .map(|output| {
+                    output
+                        .report
+                        .coverage
+                        .get(key.as_str())
+                        .copied()
+                        .unwrap_or_default()
+                })
                 .sum::<usize>(),
         )
     })
@@ -1341,26 +1348,26 @@ fn try_decode_standard_populations(
     }
 
     for (key, value) in population_coverage {
-        merged.report.coverage.record(key.into(), value);
+        merged.report.coverage.record(key, value);
     }
-    merged
-        .report
-        .coverage
-        .record("standard_fbb_run_count".into(), scan.census.fbb_runs);
     merged.report.coverage.record(
-        "standard_fbb_candidate_face_row_count".into(),
+        crate::coverage::STANDARD_FBB_RUN_COUNT,
+        scan.census.fbb_runs,
+    );
+    merged.report.coverage.record(
+        crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
         scan.census.fbb_face_rows,
     );
     merged.report.coverage.record(
-        "standard_fbb_admitted_face_row_count".into(),
+        crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
         admitted_face_rows,
     );
     merged.report.coverage.record(
-        "standard_fbb_withheld_face_row_count".into(),
+        crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
         scan.census.fbb_face_rows.saturating_sub(admitted_face_rows),
     );
     merged.report.coverage.record(
-        "attached_standard_topology_count".into(),
+        crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
         attached_topology_count,
     );
 
@@ -2056,85 +2063,87 @@ fn try_decode_standard_population(
         topology_failure.map(StandardTopologyFailure::message),
     );
     report.coverage.record(
-        "attempted_standard_topology_count".into(),
+        crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
         usize::from(true),
     );
-    report
-        .coverage
-        .record("standard_fbb_run_count".into(), scan.census.fbb_runs);
     report.coverage.record(
-        "standard_fbb_candidate_face_row_count".into(),
+        crate::coverage::STANDARD_FBB_RUN_COUNT,
+        scan.census.fbb_runs,
+    );
+    report.coverage.record(
+        crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
         scan.census.fbb_face_rows,
     );
-    report
-        .coverage
-        .record("standard_fbb_admitted_face_row_count".into(), face_count);
     report.coverage.record(
-        "standard_fbb_withheld_face_row_count".into(),
+        crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
+        face_count,
+    );
+    report.coverage.record(
+        crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
         scan.census.fbb_face_rows.saturating_sub(face_count),
     );
     report.coverage.record(
-        "attached_standard_topology_count".into(),
+        crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
         usize::from(topology_attached),
     );
     for failure in StandardTopologyFailure::ALL {
         report.coverage.record(
-            failure.coverage_key().into(),
+            failure.coverage_key(),
             usize::from(topology_failure == Some(failure)),
         );
     }
     report.coverage.record(
-        "standard_topology_curve_support_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT,
         topology_diagnostics.curve_supports,
     );
     report.coverage.record(
-        "standard_topology_native_endpoint_pair_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT,
         topology_diagnostics.native_endpoint_pairs,
     );
     report.coverage.record(
-        "standard_topology_empty_endpoint_domain_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT,
         topology_diagnostics.empty_endpoint_domains,
     );
     report.coverage.record(
-        "standard_topology_singleton_endpoint_domain_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT,
         topology_diagnostics.singleton_endpoint_domains,
     );
     report.coverage.record(
-        "standard_topology_multiple_endpoint_domain_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT,
         topology_diagnostics.multiple_endpoint_domains,
     );
     report.coverage.record(
-        "standard_topology_endpoint_domain_choice_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
         topology_diagnostics.endpoint_domain_choices,
     );
     for (key, rejection) in [
         (
-            "standard_topology_mesh_rejection_input_structure_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_STRUCTURE_COUNT,
             mesh_quotient::MeshCandidateRejection::InputStructure,
         ),
         (
-            "standard_topology_mesh_rejection_input_cardinality_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_CARDINALITY_COUNT,
             mesh_quotient::MeshCandidateRejection::InputCardinality,
         ),
         (
-            "standard_topology_mesh_rejection_face_boundary_cardinality_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_FACE_BOUNDARY_CARDINALITY_COUNT,
             mesh_quotient::MeshCandidateRejection::FaceBoundaryCardinality,
         ),
         (
-            "standard_topology_mesh_rejection_port_cardinality_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_PORT_CARDINALITY_COUNT,
             mesh_quotient::MeshCandidateRejection::PortCardinality,
         ),
         (
-            "standard_topology_mesh_rejection_quotient_preparation_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_QUOTIENT_PREPARATION_COUNT,
             mesh_quotient::MeshCandidateRejection::QuotientPreparation,
         ),
         (
-            "standard_topology_mesh_rejection_edge_class_constraint_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_EDGE_CLASS_CONSTRAINT_COUNT,
             mesh_quotient::MeshCandidateRejection::EdgeClassConstraint,
         ),
     ] {
         report.coverage.record(
-            key.into(),
+            key,
             usize::from(topology_diagnostics.mesh_rejection == Some(rejection)),
         );
     }
@@ -2148,11 +2157,11 @@ fn try_decode_standard_population(
                 _ => None,
             });
     report.coverage.record(
-        "standard_topology_mesh_rejection_endpoint_incidence_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT,
         usize::from(endpoint_incidence_rejection.is_some()),
     );
     report.coverage.record(
-        "standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT,
         usize::from(matches!(
             endpoint_incidence_rejection,
             Some(mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(
@@ -2161,7 +2170,7 @@ fn try_decode_standard_population(
         )),
     );
     report.coverage.record(
-        "standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count".into(),
+        crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT,
         usize::from(
             endpoint_incidence_rejection
                 == Some(mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction),
@@ -2173,107 +2182,106 @@ fn try_decode_standard_population(
     });
     for (key, rejection) in [
         (
-            "standard_topology_mesh_rejection_incidence_input_shape_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT,
             crate::solve::incidence::IncidenceRejection::InputShape,
         ),
         (
-            "standard_topology_mesh_rejection_incidence_choice_pruning_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT,
             crate::solve::incidence::IncidenceRejection::ChoicePruning,
         ),
         (
-            "standard_topology_mesh_rejection_incidence_fixed_assignment_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT,
             crate::solve::incidence::IncidenceRejection::FixedAssignment,
         ),
         (
-            "standard_topology_mesh_rejection_incidence_component_domain_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT,
             crate::solve::incidence::IncidenceRejection::ComponentDomain,
         ),
         (
-            "standard_topology_mesh_rejection_incidence_component_composition_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT,
             crate::solve::incidence::IncidenceRejection::ComponentComposition,
         ),
     ] {
-        report.coverage.record(
-            key.into(),
-            usize::from(incidence_rejection == Some(rejection)),
-        );
+        report
+            .coverage
+            .record(key, usize::from(incidence_rejection == Some(rejection)));
     }
     for (key, ambiguity) in [
         (
-            "standard_topology_mesh_ambiguity_coordinate_root_closure_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_COORDINATE_ROOT_CLOSURE_COUNT,
             mesh_quotient::MeshCandidateAmbiguity::CoordinateRootClosure,
         ),
         (
-            "standard_topology_mesh_ambiguity_endpoint_resolution_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_ENDPOINT_RESOLUTION_COUNT,
             mesh_quotient::MeshCandidateAmbiguity::EndpointResolution,
         ),
         (
-            "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_DISTINCT_TOPOLOGY_SOLUTIONS_COUNT,
             mesh_quotient::MeshCandidateAmbiguity::DistinctTopologySolutions,
         ),
     ] {
         report.coverage.record(
-            key.into(),
+            key,
             usize::from(topology_diagnostics.mesh_ambiguity == Some(ambiguity)),
         );
     }
     for (key, exhaustion) in [
         (
-            "standard_topology_mesh_exhaustion_quotient_preparation_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
             mesh_quotient::MeshCandidateExhaustion::QuotientPreparation,
         ),
         (
-            "standard_topology_mesh_exhaustion_incidence_enumeration_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
             mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,
         ),
         (
-            "standard_topology_mesh_exhaustion_endpoint_resolution_count",
+            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_ENDPOINT_RESOLUTION_COUNT,
             mesh_quotient::MeshCandidateExhaustion::EndpointResolution,
         ),
     ] {
         report.coverage.record(
-            key.into(),
+            key,
             usize::from(topology_diagnostics.mesh_exhaustion == Some(exhaustion)),
         );
     }
     report.coverage.record(
-        "refined_consolidated_analytic_surface_count".into(),
+        crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT,
         refined_analytic_surfaces.len(),
     );
     report.coverage.record(
-        "decoded_standard_limit_curve_count".into(),
+        crate::coverage::DECODED_STANDARD_LIMIT_CURVE_COUNT,
         standard_limit_curve_count,
     );
     report.coverage.record(
-        "bound_standard_limit_curve_count".into(),
+        crate::coverage::BOUND_STANDARD_LIMIT_CURVE_COUNT,
         bound_standard_limit_curve_count,
     );
     report.coverage.record(
-        "bound_consolidated_revolution_face_surface_count".into(),
+        crate::coverage::BOUND_CONSOLIDATED_REVOLUTION_FACE_SURFACE_COUNT,
         bound_revolution_face_surface_count,
     );
     report.coverage.record(
-        "resolved_consolidated_revolution_seam_curve_count".into(),
+        crate::coverage::RESOLVED_CONSOLIDATED_REVOLUTION_SEAM_CURVE_COUNT,
         resolved_revolution_seam_curve_count,
     );
     report.coverage.record(
-        "bound_consolidated_standard_edge_count".into(),
+        crate::coverage::BOUND_CONSOLIDATED_STANDARD_EDGE_COUNT,
         consolidated_curve_bindings.standard_edges,
     );
     report.coverage.record(
-        "bound_consolidated_partner_support_count".into(),
+        crate::coverage::BOUND_CONSOLIDATED_PARTNER_SUPPORT_COUNT,
         consolidated_curve_bindings.partner_supports,
     );
     report.coverage.record(
-        "bound_consolidated_partner_face_pcurve_pair_count".into(),
+        crate::coverage::BOUND_CONSOLIDATED_PARTNER_FACE_PCURVE_PAIR_COUNT,
         consolidated_curve_bindings.partner_face_pcurve_pairs,
     );
     report.coverage.record(
-        "bound_consolidated_standard_face_surface_count".into(),
+        crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_SURFACE_COUNT,
         consolidated_curve_bindings.standard_face_surfaces,
     );
     report.coverage.record(
-        "bound_consolidated_standard_face_pcurve_count".into(),
+        crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT,
         consolidated_curve_bindings.standard_face_pcurves,
     );
     Some(FamilyOutput {
@@ -2337,23 +2345,41 @@ impl StandardTopologyFailure {
         Self::InadmissibleNeutralModel,
     ];
 
-    const fn coverage_key(self) -> &'static str {
+    const fn coverage_key(self) -> cadmpeg_ir::CoverageKey {
         match self {
-            Self::NoCurveSupports => "standard_topology_failure_no_curve_supports_count",
-            Self::EdgeFaceAssignment => "standard_topology_failure_edge_face_assignment_count",
-            Self::MissingFaceSurface => "standard_topology_failure_missing_face_surface_count",
+            Self::NoCurveSupports => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_NO_CURVE_SUPPORTS_COUNT
+            }
+            Self::EdgeFaceAssignment => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_EDGE_FACE_ASSIGNMENT_COUNT
+            }
+            Self::MissingFaceSurface => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_MISSING_FACE_SURFACE_COUNT
+            }
             Self::ConflictingNativeEndpoints => {
-                "standard_topology_failure_conflicting_native_endpoints_count"
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_CONFLICTING_NATIVE_ENDPOINTS_COUNT
             }
             Self::NativeEndpointPropagation => {
-                "standard_topology_failure_native_endpoint_propagation_count"
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_NATIVE_ENDPOINT_PROPAGATION_COUNT
             }
-            Self::EmptyEndpointDomain => "standard_topology_failure_empty_endpoint_domain_count",
-            Self::NoTopologySolution => "standard_topology_failure_no_solution_count",
-            Self::AmbiguousTopologySolution => "standard_topology_failure_ambiguous_solution_count",
-            Self::TopologySearchExhausted => "standard_topology_failure_search_exhausted_count",
-            Self::InvalidTopologySolution => "standard_topology_failure_invalid_solution_count",
-            Self::InadmissibleNeutralModel => "standard_topology_failure_inadmissible_model_count",
+            Self::EmptyEndpointDomain => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_EMPTY_ENDPOINT_DOMAIN_COUNT
+            }
+            Self::NoTopologySolution => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_NO_SOLUTION_COUNT
+            }
+            Self::AmbiguousTopologySolution => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT
+            }
+            Self::TopologySearchExhausted => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT
+            }
+            Self::InvalidTopologySolution => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_INVALID_SOLUTION_COUNT
+            }
+            Self::InadmissibleNeutralModel => {
+                crate::coverage::STANDARD_TOPOLOGY_FAILURE_INADMISSIBLE_MODEL_COUNT
+            }
         }
     }
 

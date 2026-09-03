@@ -1,4 +1,4 @@
-# generated at 2c906f0ca
+# generated at 2f16f5798
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4569,6 +4569,8 @@ pub fn cadmpeg_ir::WritePath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core:
 pub struct cadmpeg_ir::report::Coverage
 impl cadmpeg_ir::Coverage
 pub fn cadmpeg_ir::Coverage::record(&mut self, cadmpeg_ir::CoverageKey, usize)
+pub fn cadmpeg_ir::Coverage::record_hex_byte(&mut self, cadmpeg_ir::HexByteCoverageKey, u8, usize)
+pub fn cadmpeg_ir::Coverage::record_indexed(&mut self, cadmpeg_ir::IndexedCoverageKey, u32, usize)
 impl core::iter::traits::collect::Extend<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
 pub fn cadmpeg_ir::Coverage::extend<T: core::iter::traits::collect::IntoIterator<Item = (cadmpeg_ir::CoverageKey, usize)>>(&mut self, T)
 impl core::iter::traits::collect::FromIterator<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
@@ -4580,10 +4582,6 @@ pub struct cadmpeg_ir::report::CoverageKey(_)
 impl cadmpeg_ir::CoverageKey
 pub fn cadmpeg_ir::CoverageKey::as_str(&self) -> &str
 pub const fn cadmpeg_ir::CoverageKey::new(&'static str) -> Self
-impl core::convert::From<&'static str> for cadmpeg_ir::CoverageKey
-pub fn cadmpeg_ir::CoverageKey::from(&'static str) -> Self
-impl core::convert::From<alloc::string::String> for cadmpeg_ir::CoverageKey
-pub fn cadmpeg_ir::CoverageKey::from(alloc::string::String) -> Self
 pub struct cadmpeg_ir::report::DecodeReport
 pub cadmpeg_ir::report::DecodeReport::losses: alloc::vec::Vec<cadmpeg_ir::LossNote>
 pub cadmpeg_ir::report::DecodeReport::notes: alloc::vec::Vec<alloc::string::String>
@@ -4623,6 +4621,12 @@ pub cadmpeg_ir::report::Finding::check: cadmpeg_ir::Check
 pub cadmpeg_ir::report::Finding::entity: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::report::Finding::message: alloc::string::String
 pub cadmpeg_ir::report::Finding::severity: cadmpeg_ir::Severity
+pub struct cadmpeg_ir::report::HexByteCoverageKey
+impl cadmpeg_ir::HexByteCoverageKey
+pub const fn cadmpeg_ir::HexByteCoverageKey::new(&'static str, &'static str) -> Self
+pub struct cadmpeg_ir::report::IndexedCoverageKey
+impl cadmpeg_ir::IndexedCoverageKey
+pub const fn cadmpeg_ir::IndexedCoverageKey::decimal(&'static str, &'static str) -> Self
 pub struct cadmpeg_ir::report::LossKind
 pub cadmpeg_ir::report::LossKind::code: alloc::string::String
 pub cadmpeg_ir::report::LossKind::namespace: alloc::string::String
@@ -7398,6 +7402,8 @@ pub fn cadmpeg_ir::container::ContainerSummary::deserialize<D: serde_core::de::D
 pub struct cadmpeg_ir::Coverage
 impl cadmpeg_ir::Coverage
 pub fn cadmpeg_ir::Coverage::record(&mut self, cadmpeg_ir::CoverageKey, usize)
+pub fn cadmpeg_ir::Coverage::record_hex_byte(&mut self, cadmpeg_ir::HexByteCoverageKey, u8, usize)
+pub fn cadmpeg_ir::Coverage::record_indexed(&mut self, cadmpeg_ir::IndexedCoverageKey, u32, usize)
 impl core::iter::traits::collect::Extend<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
 pub fn cadmpeg_ir::Coverage::extend<T: core::iter::traits::collect::IntoIterator<Item = (cadmpeg_ir::CoverageKey, usize)>>(&mut self, T)
 impl core::iter::traits::collect::FromIterator<(cadmpeg_ir::CoverageKey, usize)> for cadmpeg_ir::Coverage
@@ -7409,10 +7415,6 @@ pub struct cadmpeg_ir::CoverageKey(_)
 impl cadmpeg_ir::CoverageKey
 pub fn cadmpeg_ir::CoverageKey::as_str(&self) -> &str
 pub const fn cadmpeg_ir::CoverageKey::new(&'static str) -> Self
-impl core::convert::From<&'static str> for cadmpeg_ir::CoverageKey
-pub fn cadmpeg_ir::CoverageKey::from(&'static str) -> Self
-impl core::convert::From<alloc::string::String> for cadmpeg_ir::CoverageKey
-pub fn cadmpeg_ir::CoverageKey::from(alloc::string::String) -> Self
 pub struct cadmpeg_ir::DatumReference
 pub cadmpeg_ir::DatumReference::common_group: core::option::Option<u32>
 pub cadmpeg_ir::DatumReference::datum: cadmpeg_ir::ids::PmiId
@@ -7568,6 +7570,12 @@ pub cadmpeg_ir::Finding::check: cadmpeg_ir::Check
 pub cadmpeg_ir::Finding::entity: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::Finding::message: alloc::string::String
 pub cadmpeg_ir::Finding::severity: cadmpeg_ir::Severity
+pub struct cadmpeg_ir::HexByteCoverageKey
+impl cadmpeg_ir::HexByteCoverageKey
+pub const fn cadmpeg_ir::HexByteCoverageKey::new(&'static str, &'static str) -> Self
+pub struct cadmpeg_ir::IndexedCoverageKey
+impl cadmpeg_ir::IndexedCoverageKey
+pub const fn cadmpeg_ir::IndexedCoverageKey::decimal(&'static str, &'static str) -> Self
 pub struct cadmpeg_ir::IrDiff
 pub cadmpeg_ir::IrDiff::per_arena: alloc::vec::Vec<cadmpeg_ir::diff::ArenaDiff>
 pub cadmpeg_ir::IrDiff::source: cadmpeg_ir::diff::SourceDiff

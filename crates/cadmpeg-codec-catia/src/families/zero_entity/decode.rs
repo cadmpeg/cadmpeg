@@ -807,11 +807,11 @@ pub(crate) fn try_decode_zero_entity(
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let mut coverage: cadmpeg_ir::Coverage = [
         (
-            "transferred_zero_entity_support_curve_count".into(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
             transferred_support_curves,
         ),
         (
-            "transferred_zero_entity_parametric_surface_curve_count".into(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT,
             transferred_parametric_surface_curves,
         ),
         (

@@ -53,14 +53,44 @@ pub(crate) const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
     crate::surface::SurfaceKind::Extrusion,
 ];
 
+const fn surface_family_index(kind: crate::surface::SurfaceKind) -> usize {
+    match kind {
+        crate::surface::SurfaceKind::Plane => 0,
+        crate::surface::SurfaceKind::Cylinder => 1,
+        crate::surface::SurfaceKind::Cone => 2,
+        crate::surface::SurfaceKind::TorusOrSphere => 3,
+        crate::surface::SurfaceKind::Spline => 4,
+        crate::surface::SurfaceKind::Fillet => 5,
+        crate::surface::SurfaceKind::Extrusion => 6,
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SurfaceTransferCoverage {
     pub(crate) unique_rows: usize,
     pub(crate) transferred_rows: usize,
     pub(crate) retained_unknown_rows: usize,
     pub(crate) ambiguous_rows: usize,
-    pub(crate) by_family: BTreeMap<&'static str, (usize, usize)>,
-    pub(crate) unknown_by_family: BTreeMap<&'static str, usize>,
+    by_family: [(usize, usize); 7],
+    unknown_by_family: [usize; 7],
+}
+
+impl SurfaceTransferCoverage {
+    pub(crate) fn family(&self, kind: crate::surface::SurfaceKind) -> (usize, usize) {
+        self.by_family[surface_family_index(kind)]
+    }
+
+    fn family_mut(&mut self, kind: crate::surface::SurfaceKind) -> &mut (usize, usize) {
+        &mut self.by_family[surface_family_index(kind)]
+    }
+
+    pub(crate) fn unknown_family(&self, kind: crate::surface::SurfaceKind) -> usize {
+        self.unknown_by_family[surface_family_index(kind)]
+    }
+
+    fn unknown_family_mut(&mut self, kind: crate::surface::SurfaceKind) -> &mut usize {
+        &mut self.unknown_by_family[surface_family_index(kind)]
+    }
 }
 
 #[derive(Default)]
@@ -78,7 +108,20 @@ pub(crate) struct SketchSegmentTransferCoverage {
     pub(crate) decoded_rows: usize,
     pub(crate) resolved_geometry: usize,
     pub(crate) missing_rows: usize,
-    pub(crate) by_family: BTreeMap<&'static str, (usize, usize)>,
+    by_family: [(usize, usize); 9],
+}
+
+impl SketchSegmentTransferCoverage {
+    pub(crate) fn family(&self, family: crate::coverage::SketchSegmentFamily) -> (usize, usize) {
+        self.by_family[family.index()]
+    }
+
+    pub(crate) fn family_mut(
+        &mut self,
+        family: crate::coverage::SketchSegmentFamily,
+    ) -> &mut (usize, usize) {
+        &mut self.by_family[family.index()]
+    }
 }
 
 #[derive(Default)]
@@ -264,10 +307,6 @@ pub(crate) fn surface_transfer_coverage(
         ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
         ..SurfaceTransferCoverage::default()
     };
-    for kind in SURFACE_KINDS {
-        coverage.by_family.insert(surface_family(kind), (0, 0));
-        coverage.unknown_by_family.insert(surface_family(kind), 0);
-    }
     for row in unique_rows {
         let is_transferred = transferred
             .iter()
@@ -275,11 +314,10 @@ pub(crate) fn surface_transfer_coverage(
         let retained_unknown = unknown_ids.contains(&row.id);
         coverage.transferred_rows += usize::from(is_transferred);
         coverage.retained_unknown_rows += usize::from(retained_unknown);
-        let family = surface_family(row.kind);
-        let family_coverage = coverage.by_family.entry(family).or_default();
+        let family_coverage = coverage.family_mut(row.kind);
         family_coverage.0 += 1;
         family_coverage.1 += usize::from(is_transferred);
-        *coverage.unknown_by_family.entry(family).or_default() += usize::from(retained_unknown);
+        *coverage.unknown_family_mut(row.kind) += usize::from(retained_unknown);
     }
     coverage
 }

@@ -2871,3 +2871,10 @@ crate = "cadmpeg-core"
 kind = "field"
 item = "cadmpeg_core::decode::SpaceDerivation::Concatenated::{parents,first_parent,additional_parents}"
 reason = "a concatenated address space carries its required first parent structurally, and concat_views refuses an empty input"
+
+[[change]]
+commit = "2f16f5798f9ad271c06fc52dc576ee9d1002b595"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "impl From<{&'static str,String}> for cadmpeg_ir::CoverageKey"
+reason = "coverage producers use statically declared keys or typed numeric templates, so runtime strings cannot enter the coverage map through the public key type"

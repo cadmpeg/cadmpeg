@@ -628,7 +628,420 @@ pub(crate) const UNRESOLVED_STORAGE_RECORD_COUNT: CoverageKey =
 pub(crate) const UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT: CoverageKey =
     CoverageKey::new("unresolved_unreferenced_relation_expression_count");
 
+pub(crate) const ATTACHED_STANDALONE_WIRE_EDGE_COUNT: CoverageKey =
+    CoverageKey::new("attached_standalone_wire_edge_count");
+pub(crate) const BOUND_CONSOLIDATED_PARTNER_FACE_PCURVE_PAIR_COUNT: CoverageKey =
+    CoverageKey::new("bound_consolidated_partner_face_pcurve_pair_count");
+pub(crate) const BOUND_CONSOLIDATED_PARTNER_SUPPORT_COUNT: CoverageKey =
+    CoverageKey::new("bound_consolidated_partner_support_count");
+pub(crate) const BOUND_CONSOLIDATED_REVOLUTION_FACE_SURFACE_COUNT: CoverageKey =
+    CoverageKey::new("bound_consolidated_revolution_face_surface_count");
+pub(crate) const BOUND_CONSOLIDATED_STANDARD_EDGE_COUNT: CoverageKey =
+    CoverageKey::new("bound_consolidated_standard_edge_count");
+pub(crate) const BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT: CoverageKey =
+    CoverageKey::new("bound_consolidated_standard_face_pcurve_count");
+pub(crate) const BOUND_CONSOLIDATED_STANDARD_FACE_SURFACE_COUNT: CoverageKey =
+    CoverageKey::new("bound_consolidated_standard_face_surface_count");
+pub(crate) const BOUND_STANDARD_LIMIT_CURVE_COUNT: CoverageKey =
+    CoverageKey::new("bound_standard_limit_curve_count");
+pub(crate) const DECODED_A5_NURBS_CURVE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_a5_nurbs_curve_count");
+pub(crate) const DECODED_B2_NURBS_CURVE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_b2_nurbs_curve_count");
+pub(crate) const DECODED_B2_SPATIAL_CIRCLE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_b2_spatial_circle_count");
+pub(crate) const DECODED_OBJECT_STREAM_RUN_COUNT: CoverageKey =
+    CoverageKey::new("decoded_object_stream_run_count");
+pub(crate) const DECODED_STANDARD_LIMIT_CURVE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_standard_limit_curve_count");
+pub(crate) const EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT: CoverageKey =
+    CoverageKey::new("exhausted_object_stream_selection_count");
+pub(crate) const RESOLVED_CONSOLIDATED_REVOLUTION_SEAM_CURVE_COUNT: CoverageKey =
+    CoverageKey::new("resolved_consolidated_revolution_seam_curve_count");
+pub(crate) const SELECTED_OBJECT_STREAM_RUN_COUNT: CoverageKey =
+    CoverageKey::new("selected_object_stream_run_count");
+pub(crate) const STANDARD_FBB_ADMITTED_FACE_ROW_COUNT: CoverageKey =
+    CoverageKey::new("standard_fbb_admitted_face_row_count");
+pub(crate) const STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT: CoverageKey =
+    CoverageKey::new("standard_fbb_candidate_face_row_count");
+pub(crate) const STANDARD_FBB_RUN_COUNT: CoverageKey = CoverageKey::new("standard_fbb_run_count");
+pub(crate) const STANDARD_FBB_WITHHELD_FACE_ROW_COUNT: CoverageKey =
+    CoverageKey::new("standard_fbb_withheld_face_row_count");
+pub(crate) const STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_endpoint_domain_choice_count");
+pub(crate) const STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_native_endpoint_pair_count");
+pub(crate) const TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_extended_loop_metadata_count");
+pub(crate) const TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_uncounted_face_count");
+pub(crate) const TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_vertex_incidence_terminal_control_00_count");
+pub(crate) const UNSELECTED_OBJECT_STREAM_RUN_COUNT: CoverageKey =
+    CoverageKey::new("unselected_object_stream_run_count");
+
+pub(crate) const AMBIGUOUS_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
+    CoverageKey::new("ambiguous_relation_program_parameter_dependency_count");
+pub(crate) const DECODED_APPEARANCE_PACKET_COUNT: CoverageKey =
+    CoverageKey::new("decoded_appearance_packet_count");
+pub(crate) const DECODED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_boolean_parser_version_relation_expression_count");
+pub(crate) const DECODED_CLASSIFIED_REFERENCE_SIGNATURE_ENTITY_COUNT: CoverageKey =
+    CoverageKey::new("decoded_classified_reference_signature_entity_count");
+pub(crate) const DECODED_COMPACT_ENTITY_VALUE_PACKET_COUNT: CoverageKey =
+    CoverageKey::new("decoded_compact_entity_value_packet_count");
+pub(crate) const DECODED_CONSOLIDATED_CIRCLE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_circle_count");
+pub(crate) const DECODED_CONSOLIDATED_CLASS61_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_class61_record_count");
+pub(crate) const DECODED_CONSOLIDATED_CONE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_cone_count");
+pub(crate) const DECODED_CONSOLIDATED_CYLINDER_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_cylinder_count");
+pub(crate) const DECODED_CONSOLIDATED_GROUP_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_group_count");
+pub(crate) const DECODED_CONSOLIDATED_PARAMETER_POINT_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_parameter_point_count");
+pub(crate) const DECODED_CONSOLIDATED_PCURVE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_pcurve_count");
+pub(crate) const DECODED_CONSOLIDATED_REFERENCE_LIST_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_reference_list_count");
+pub(crate) const DECODED_CONSOLIDATED_REVOLUTION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_revolution_count");
+pub(crate) const DECODED_CONSOLIDATED_SPHERE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_sphere_count");
+pub(crate) const DECODED_CONSOLIDATED_TORUS_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_torus_count");
+pub(crate) const DECODED_DEFINITION_CHAIN_CONTROL_COUNT: CoverageKey =
+    CoverageKey::new("decoded_definition_chain_control_count");
+pub(crate) const DECODED_DEFINITION_CHAIN_SEPARATOR_COUNT: CoverageKey =
+    CoverageKey::new("decoded_definition_chain_separator_count");
+pub(crate) const DECODED_DEFINITION_SCHEMA_SELECTION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_definition_schema_selection_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_cell_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_CLASSIFIED_CELL_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_classified_cell_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_CLASSIFIED_COLUMN_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_classified_column_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_COLUMN_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_column_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_MATCHED_ROW_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_matched_row_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_NULL_CELL_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_null_cell_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_RESOLVED_CELL_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_resolved_cell_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_ROW_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_row_count");
+pub(crate) const DECODED_DESIGN_PARALLEL_REFERENCE_TABLE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_design_parallel_reference_table_count");
+pub(crate) const DECODED_ENTITY_VALUE_FIELD_COUNT: CoverageKey =
+    CoverageKey::new("decoded_entity_value_field_count");
+pub(crate) const DECODED_ENTITY_VALUE_SCHEMA_SELECTION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_entity_value_schema_selection_count");
+pub(crate) const DECODED_ESCAPED_WORD_ENTITY_SUFFIX_COUNT: CoverageKey =
+    CoverageKey::new("decoded_escaped_word_entity_suffix_count");
+pub(crate) const DECODED_FIXED_FE_F6_ENTITY_SUFFIX_COUNT: CoverageKey =
+    CoverageKey::new("decoded_fixed_fe_f6_entity_suffix_count");
+pub(crate) const DECODED_LAYOUT_ENTITY_VALUE_PACKET_COUNT: CoverageKey =
+    CoverageKey::new("decoded_layout_entity_value_packet_count");
+pub(crate) const DECODED_LEGACY_DIRECTORY_BOUND_SCHEMA_PROGRAM_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_directory_bound_schema_program_count");
+pub(crate) const DECODED_LEGACY_EVALUATED_VALUE_NAME_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_evaluated_value_name_count");
+pub(crate) const DECODED_LEGACY_LITERAL_TYPE_DESCRIPTOR_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_literal_type_descriptor_count");
+pub(crate) const DECODED_LEGACY_NAMED_SCALAR_VALUE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_named_scalar_value_count");
+pub(crate) const DECODED_LEGACY_PARAMETER_RELATION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_parameter_relation_count");
+pub(crate) const DECODED_LEGACY_SCALAR_VALUE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_scalar_value_count");
+pub(crate) const DECODED_LEGACY_SCHEMA_IDENTIFIER_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_schema_identifier_count");
+pub(crate) const DECODED_LEGACY_SCHEMA_PROGRAM_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_schema_program_count");
+pub(crate) const DECODED_LEGACY_TYPE_DESCRIPTOR_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_type_descriptor_count");
+pub(crate) const DECODED_LEGACY_VENDOR_FOOTER_SCHEMA_PROGRAM_COUNT: CoverageKey =
+    CoverageKey::new("decoded_legacy_vendor_footer_schema_program_count");
+pub(crate) const DECODED_NULL_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT: CoverageKey =
+    CoverageKey::new("decoded_null_lead12_relation_program_context_entity_count");
+pub(crate) const DECODED_NULL_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT: CoverageKey =
+    CoverageKey::new("decoded_null_lead54_relation_program_trailing_entity_count");
+pub(crate) const DECODED_OBJECT_RECORD_REFERENCE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_object_record_reference_count");
+pub(crate) const DECODED_PAGED_ATOM_STATE_01_ENTITY_SUFFIX_COUNT: CoverageKey =
+    CoverageKey::new("decoded_paged_atom_state_01_entity_suffix_count");
+pub(crate) const DECODED_PARAMETER_VALUE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_parameter_value_count");
+pub(crate) const DECODED_PLACEHOLDER_STATE_RELATION_EXPRESSION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_placeholder_state_relation_expression_count");
+pub(crate) const DECODED_REPEATED_REFERENCE_SCHEMA_SELECTION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_repeated_reference_schema_selection_count");
+pub(crate) const DECODED_REPEATED_REFERENCE_SUFFIX_COUNT: CoverageKey =
+    CoverageKey::new("decoded_repeated_reference_suffix_count");
+pub(crate) const DECODED_RESOLVED_OBJECT_RECORD_REFERENCE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_resolved_object_record_reference_count");
+pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
+    CoverageKey::new("decoded_resolved_relation_program_parameter_dependency_count");
+pub(crate) const DECODED_SCHEMA_CONFIGURATION_ROW_SOURCE_INTERVAL_CHAIN_COUNT: CoverageKey =
+    CoverageKey::new("decoded_schema_configuration_row_source_interval_chain_count");
+pub(crate) const DECODED_STORAGE_RECORD_LINK_COUNT: CoverageKey =
+    CoverageKey::new("decoded_storage_record_link_count");
+pub(crate) const DECODED_TOKEN_8149_ENTITY_SUFFIX_COUNT: CoverageKey =
+    CoverageKey::new("decoded_token_8149_entity_suffix_count");
+pub(crate) const DECODED_UNTYPED_RELATION_EXPRESSION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_untyped_relation_expression_count");
+pub(crate) const DECODED_VALUE_BLOCK_COUNT: CoverageKey =
+    CoverageKey::new("decoded_value_block_count");
+pub(crate) const DECODED_VALUE_FIELD_COUNT: CoverageKey =
+    CoverageKey::new("decoded_value_field_count");
+pub(crate) const DECODED_VALUE_SCHEMA_SELECTION_COUNT: CoverageKey =
+    CoverageKey::new("decoded_value_schema_selection_count");
+pub(crate) const DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_bound_support_member_count");
+pub(crate) const DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_bound_typed_loop_reference_count");
+pub(crate) const DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_endpoint_locus_candidate_count");
+pub(crate) const DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_endpoint_pair_candidate_count");
+pub(crate) const DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_model_endpoint_pair_count");
+pub(crate) const DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_oriented_model_endpoint_pair_count");
+pub(crate) const TRANSFERRED_APPEARANCE_ASSET_COUNT: CoverageKey =
+    CoverageKey::new("transferred_appearance_asset_count");
+pub(crate) const TRANSFERRED_APPEARANCE_BINDING_COUNT: CoverageKey =
+    CoverageKey::new("transferred_appearance_binding_count");
+pub(crate) const TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT: CoverageKey =
+    CoverageKey::new("transferred_native_sketch_entity_count");
+pub(crate) const TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("transferred_principal_plane_record_count");
+pub(crate) const TRANSFERRED_SKETCH_ENTITY_COUNT: CoverageKey =
+    CoverageKey::new("transferred_sketch_entity_count");
+pub(crate) const UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT: CoverageKey =
+    CoverageKey::new("unclassified_design_parallel_reference_cell_count");
+pub(crate) const UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_COLUMN_COUNT: CoverageKey =
+    CoverageKey::new("unclassified_design_parallel_reference_column_count");
+pub(crate) const UNCLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
+    CoverageKey::new("unclassified_relation_program_reference_incidence_count");
+pub(crate) const UNCLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
+    CoverageKey::new("unclassified_schema_configuration_row_chain_terminal_count");
+pub(crate) const UNMATCHED_DESIGN_PARALLEL_REFERENCE_ROW_COUNT: CoverageKey =
+    CoverageKey::new("unmatched_design_parallel_reference_row_count");
+pub(crate) const UNRESOLVED_APPEARANCE_PACKET_COUNT: CoverageKey =
+    CoverageKey::new("unresolved_appearance_packet_count");
+pub(crate) const UNRESOLVED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT: CoverageKey =
+    CoverageKey::new("unresolved_design_parallel_reference_cell_count");
+
+pub(crate) const RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT: CoverageKey =
+    CoverageKey::new("resolved_object_stream_loop_framing_controls_03_03_count");
+pub(crate) const RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT: CoverageKey =
+    CoverageKey::new("resolved_object_stream_loop_framing_controls_03_05_count");
+pub(crate) const RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT: CoverageKey =
+    CoverageKey::new("resolved_object_stream_loop_framing_controls_05_03_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_CONFLICTING_NATIVE_ENDPOINTS_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_conflicting_native_endpoints_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_EDGE_FACE_ASSIGNMENT_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_edge_face_assignment_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_EMPTY_ENDPOINT_DOMAIN_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_empty_endpoint_domain_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_INADMISSIBLE_MODEL_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_inadmissible_model_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_INVALID_SOLUTION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_invalid_solution_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_MISSING_FACE_SURFACE_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_missing_face_surface_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_NATIVE_ENDPOINT_PROPAGATION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_native_endpoint_propagation_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_NO_CURVE_SUPPORTS_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_no_curve_supports_count");
+pub(crate) const STANDARD_TOPOLOGY_FAILURE_NO_SOLUTION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_failure_no_solution_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_AMBIGUITY_COORDINATE_ROOT_CLOSURE_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_ambiguity_coordinate_root_closure_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_AMBIGUITY_DISTINCT_TOPOLOGY_SOLUTIONS_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_ambiguity_distinct_topology_solutions_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_AMBIGUITY_ENDPOINT_RESOLUTION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_ambiguity_endpoint_resolution_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_EXHAUSTION_ENDPOINT_RESOLUTION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_exhaustion_endpoint_resolution_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_exhaustion_incidence_enumeration_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_exhaustion_quotient_preparation_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_EDGE_CLASS_CONSTRAINT_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_rejection_edge_class_constraint_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_FACE_BOUNDARY_CARDINALITY_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_rejection_face_boundary_cardinality_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_CARDINALITY_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_rejection_input_cardinality_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_STRUCTURE_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_rejection_input_structure_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_PORT_CARDINALITY_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_rejection_port_cardinality_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_QUOTIENT_PREPARATION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_rejection_quotient_preparation_count");
+pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_01_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_edge_terminal_control_01_count");
+pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_02_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_edge_terminal_control_02_count");
+pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_22_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_edge_terminal_control_22_count");
+pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_25_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_edge_terminal_control_25_count");
+pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_26_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_edge_terminal_control_26_count");
+pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_29_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_edge_terminal_control_29_count");
+pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_loop_framing_controls_03_03_count");
+pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_loop_framing_controls_03_05_count");
+pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT: CoverageKey =
+    CoverageKey::new("typed_object_stream_loop_framing_controls_05_03_count");
+
 pub(crate) const ALL: &[CoverageKey] = &[
+    RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
+    RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
+    RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_CONFLICTING_NATIVE_ENDPOINTS_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_EDGE_FACE_ASSIGNMENT_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_EMPTY_ENDPOINT_DOMAIN_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_INADMISSIBLE_MODEL_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_INVALID_SOLUTION_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_MISSING_FACE_SURFACE_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_NATIVE_ENDPOINT_PROPAGATION_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_NO_CURVE_SUPPORTS_COUNT,
+    STANDARD_TOPOLOGY_FAILURE_NO_SOLUTION_COUNT,
+    STANDARD_TOPOLOGY_MESH_AMBIGUITY_COORDINATE_ROOT_CLOSURE_COUNT,
+    STANDARD_TOPOLOGY_MESH_AMBIGUITY_DISTINCT_TOPOLOGY_SOLUTIONS_COUNT,
+    STANDARD_TOPOLOGY_MESH_AMBIGUITY_ENDPOINT_RESOLUTION_COUNT,
+    STANDARD_TOPOLOGY_MESH_EXHAUSTION_ENDPOINT_RESOLUTION_COUNT,
+    STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
+    STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_EDGE_CLASS_CONSTRAINT_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_FACE_BOUNDARY_CARDINALITY_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_CARDINALITY_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_STRUCTURE_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_PORT_CARDINALITY_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_QUOTIENT_PREPARATION_COUNT,
+    TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_01_COUNT,
+    TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_02_COUNT,
+    TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_22_COUNT,
+    TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_25_COUNT,
+    TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_26_COUNT,
+    TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_29_COUNT,
+    TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
+    TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
+    TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
+    AMBIGUOUS_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
+    DECODED_APPEARANCE_PACKET_COUNT,
+    DECODED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT,
+    DECODED_CLASSIFIED_REFERENCE_SIGNATURE_ENTITY_COUNT,
+    DECODED_COMPACT_ENTITY_VALUE_PACKET_COUNT,
+    DECODED_CONSOLIDATED_CIRCLE_COUNT,
+    DECODED_CONSOLIDATED_CLASS61_RECORD_COUNT,
+    DECODED_CONSOLIDATED_CONE_COUNT,
+    DECODED_CONSOLIDATED_CYLINDER_COUNT,
+    DECODED_CONSOLIDATED_GROUP_COUNT,
+    DECODED_CONSOLIDATED_PARAMETER_POINT_COUNT,
+    DECODED_CONSOLIDATED_PCURVE_COUNT,
+    DECODED_CONSOLIDATED_REFERENCE_LIST_COUNT,
+    DECODED_CONSOLIDATED_REVOLUTION_COUNT,
+    DECODED_CONSOLIDATED_SPHERE_COUNT,
+    DECODED_CONSOLIDATED_TORUS_COUNT,
+    DECODED_DEFINITION_CHAIN_CONTROL_COUNT,
+    DECODED_DEFINITION_CHAIN_SEPARATOR_COUNT,
+    DECODED_DEFINITION_SCHEMA_SELECTION_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_CLASSIFIED_CELL_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_CLASSIFIED_COLUMN_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_COLUMN_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_MATCHED_ROW_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_NULL_CELL_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_RESOLVED_CELL_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_ROW_COUNT,
+    DECODED_DESIGN_PARALLEL_REFERENCE_TABLE_COUNT,
+    DECODED_ENTITY_VALUE_FIELD_COUNT,
+    DECODED_ENTITY_VALUE_SCHEMA_SELECTION_COUNT,
+    DECODED_ESCAPED_WORD_ENTITY_SUFFIX_COUNT,
+    DECODED_FIXED_FE_F6_ENTITY_SUFFIX_COUNT,
+    DECODED_LAYOUT_ENTITY_VALUE_PACKET_COUNT,
+    DECODED_LEGACY_DIRECTORY_BOUND_SCHEMA_PROGRAM_COUNT,
+    DECODED_LEGACY_EVALUATED_VALUE_NAME_COUNT,
+    DECODED_LEGACY_LITERAL_TYPE_DESCRIPTOR_COUNT,
+    DECODED_LEGACY_NAMED_SCALAR_VALUE_COUNT,
+    DECODED_LEGACY_PARAMETER_RELATION_COUNT,
+    DECODED_LEGACY_SCALAR_VALUE_COUNT,
+    DECODED_LEGACY_SCHEMA_IDENTIFIER_COUNT,
+    DECODED_LEGACY_SCHEMA_PROGRAM_COUNT,
+    DECODED_LEGACY_TYPE_DESCRIPTOR_COUNT,
+    DECODED_LEGACY_VENDOR_FOOTER_SCHEMA_PROGRAM_COUNT,
+    DECODED_NULL_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT,
+    DECODED_NULL_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT,
+    DECODED_OBJECT_RECORD_REFERENCE_COUNT,
+    DECODED_PAGED_ATOM_STATE_01_ENTITY_SUFFIX_COUNT,
+    DECODED_PARAMETER_VALUE_COUNT,
+    DECODED_PLACEHOLDER_STATE_RELATION_EXPRESSION_COUNT,
+    DECODED_REPEATED_REFERENCE_SCHEMA_SELECTION_COUNT,
+    DECODED_REPEATED_REFERENCE_SUFFIX_COUNT,
+    DECODED_RESOLVED_OBJECT_RECORD_REFERENCE_COUNT,
+    DECODED_RESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
+    DECODED_SCHEMA_CONFIGURATION_ROW_SOURCE_INTERVAL_CHAIN_COUNT,
+    DECODED_STORAGE_RECORD_LINK_COUNT,
+    DECODED_TOKEN_8149_ENTITY_SUFFIX_COUNT,
+    DECODED_UNTYPED_RELATION_EXPRESSION_COUNT,
+    DECODED_VALUE_BLOCK_COUNT,
+    DECODED_VALUE_FIELD_COUNT,
+    DECODED_VALUE_SCHEMA_SELECTION_COUNT,
+    DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT,
+    DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
+    DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT,
+    DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
+    DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT,
+    DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT,
+    TRANSFERRED_APPEARANCE_ASSET_COUNT,
+    TRANSFERRED_APPEARANCE_BINDING_COUNT,
+    TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT,
+    TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT,
+    TRANSFERRED_SKETCH_ENTITY_COUNT,
+    UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
+    UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_COLUMN_COUNT,
+    UNCLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
+    UNCLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
+    UNMATCHED_DESIGN_PARALLEL_REFERENCE_ROW_COUNT,
+    UNRESOLVED_APPEARANCE_PACKET_COUNT,
+    UNRESOLVED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
+    ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
+    BOUND_CONSOLIDATED_PARTNER_FACE_PCURVE_PAIR_COUNT,
+    BOUND_CONSOLIDATED_PARTNER_SUPPORT_COUNT,
+    BOUND_CONSOLIDATED_REVOLUTION_FACE_SURFACE_COUNT,
+    BOUND_CONSOLIDATED_STANDARD_EDGE_COUNT,
+    BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT,
+    BOUND_CONSOLIDATED_STANDARD_FACE_SURFACE_COUNT,
+    BOUND_STANDARD_LIMIT_CURVE_COUNT,
+    DECODED_A5_NURBS_CURVE_COUNT,
+    DECODED_B2_NURBS_CURVE_COUNT,
+    DECODED_B2_SPATIAL_CIRCLE_COUNT,
+    DECODED_OBJECT_STREAM_RUN_COUNT,
+    DECODED_STANDARD_LIMIT_CURVE_COUNT,
+    EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
+    RESOLVED_CONSOLIDATED_REVOLUTION_SEAM_CURVE_COUNT,
+    SELECTED_OBJECT_STREAM_RUN_COUNT,
+    STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
+    STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
+    STANDARD_FBB_RUN_COUNT,
+    STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
+    STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
+    STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT,
+    TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
+    TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
+    TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
+    UNSELECTED_OBJECT_STREAM_RUN_COUNT,
     AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT,
     ATTACHED_STANDARD_TOPOLOGY_COUNT,
     ATTEMPTED_STANDARD_TOPOLOGY_COUNT,

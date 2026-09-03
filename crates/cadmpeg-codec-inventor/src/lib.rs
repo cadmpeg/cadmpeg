@@ -10,6 +10,7 @@
 
 mod assembly;
 mod container;
+mod coverage;
 mod database;
 mod decode;
 mod design;

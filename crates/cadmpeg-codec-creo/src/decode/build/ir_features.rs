@@ -545,84 +545,84 @@ pub(super) fn finish_feature_transfers(
                 .count()
         };
         coverage.record(
-            "decoded_active_curve_expression_assignment_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             decoded_curve_expression_assignment_count,
         );
         coverage.record(
-            "transferred_curve_expression_parameter_count".into(),
+            crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT,
             transferred_curve_expression_parameter_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_table_cell_assignment_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT,
             decoded_curve_expression_table_cell_assignment_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_scoped_symbol_assignment_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_scoped_symbol_assignment_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_system_symbol_assignment_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_system_symbol_assignment_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_function_write_assignment_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT,
             decoded_curve_expression_function_write_assignment_count,
         );
         coverage.record(
-            "evaluated_active_curve_expression_assignment_count".into(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             evaluated_curve_expression_assignment_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_solve_block_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             decoded_curve_expression_solve_block_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_simultaneous_equation_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT,
             decoded_curve_expression_simultaneous_equation_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_solve_assignment_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT,
             decoded_curve_expression_solve_assignment_count,
         );
         coverage.record(
-            "decoded_active_curve_expression_solve_variable_count".into(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             decoded_curve_expression_solve_variable_count,
         );
         coverage.record(
-            "evaluated_active_curve_expression_solve_block_count".into(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             evaluated_curve_expression_solve_block_count,
         );
         coverage.record(
-            "evaluated_active_curve_expression_solve_variable_count".into(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             evaluated_curve_expression_solve_variable_count,
         );
         coverage.record(
-            "unresolved_active_curve_expression_solve_control_count".into(),
+            crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT,
             unresolved_curve_expression_solve_control_count,
         );
         coverage.record(
-            "prohibited_active_curve_expression_record_count".into(),
+            crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT,
             prohibited_curve_expression_record_count,
         );
         coverage.record(
-            "prohibited_active_curve_expression_kind_count".into(),
+            crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT,
             prohibited_curve_expression_kind_count,
         );
-        for (name, activation) in [
-            ("active", crate::curve::CurveExpressionActivation::Active),
+        for (key, activation) in [
             (
-                "inactive",
+                crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
+                crate::curve::CurveExpressionActivation::Active,
+            ),
+            (
+                crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
                 crate::curve::CurveExpressionActivation::Inactive,
             ),
             (
-                "conditional",
+                crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            coverage.record(
-                format!("{name}_curve_expression_assignment_count").into(),
-                activation_count(activation),
-            );
+            coverage.record(key, activation_count(activation));
         }
         let (decoded_dimension_count, resolved_dimension_count) = scan
             .features
@@ -637,19 +637,19 @@ pub(super) fn finish_feature_transfers(
                 )
             });
         coverage.record(
-            "decoded_feature_dimension_count".into(),
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
             decoded_dimension_count,
         );
         coverage.record(
-            "transferred_feature_dimension_parameter_count".into(),
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT,
             transferred_feature_dimension_count,
         );
         coverage.record(
-            "resolved_feature_dimension_value_count".into(),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             resolved_dimension_count,
         );
         coverage.record(
-            "unresolved_feature_dimension_value_count".into(),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             decoded_dimension_count.saturating_sub(resolved_dimension_count),
         );
     }
