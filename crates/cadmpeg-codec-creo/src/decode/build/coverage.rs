@@ -226,8 +226,8 @@ pub(in super::super) fn collect_feature_coverage(
                             cadmpeg_ir::features::HolePlacement::Directed { .. }
                         )
                     });
-                let unresolved_kind = matches!(kind, HoleKind::Unresolved { .. })
-                    || matches!(exit_kind, Some(HoleKind::Unresolved { .. }));
+                let unresolved_kind =
+                    kind.is_unresolved() || exit_kind.as_ref().is_some_and(HoleKind::is_unresolved);
                 let unresolved_diameter = diameter.is_none();
                 let incomplete_termination = extent
                     .as_ref()

@@ -488,20 +488,12 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             face: None,
             position: None,
             direction: None,
-            kind: cadmpeg_ir::features::HoleKind::Unresolved {
-                form: Some(cadmpeg_ir::features::HoleForm::Chamfer),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
-            exit_kind: Some(cadmpeg_ir::features::HoleKind::Unresolved {
-                form: Some(cadmpeg_ir::features::HoleForm::Chamfer),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            }),
+            kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::HoleForm::Chamfer,
+            )),
+            exit_kind: Some(cadmpeg_ir::features::HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::HoleForm::Chamfer,
+            ))),
             diameter: None,
             extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
             ..
@@ -520,13 +512,9 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Unresolved {
-                form: Some(cadmpeg_ir::features::HoleForm::Counterbore),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
+            kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::HoleForm::Counterbore,
+            )),
             exit_kind: None,
             extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
             ..
@@ -556,13 +544,9 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Unresolved {
-                form: Some(cadmpeg_ir::features::HoleForm::Countersink),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
+            kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::HoleForm::Countersink,
+            )),
             exit_kind: None,
             extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
             ..
@@ -857,7 +841,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     assert!(matches!(
         super::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
         FeatureDefinition::Hole {
-            kind: HoleKind::Unresolved { form: None, .. },
+            kind: HoleKind::Unresolved(None),
             ..
         }
     ));
@@ -871,7 +855,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         ),
         FeatureDefinition::Hole {
             diameter: Some(cadmpeg_ir::features::Length(8.0)),
-            kind: HoleKind::Unresolved { form: None, .. },
+            kind: HoleKind::Unresolved(None),
             ..
         }
     ));

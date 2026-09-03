@@ -852,16 +852,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
             Some(cadmpeg_ir::features::ProfileRef::Native("profile".into())),
             None,
         ),
-        hole(
-            None,
-            Some(cadmpeg_ir::features::HoleKind::Unresolved {
-                form: None,
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            }),
-        ),
+        hole(None, Some(cadmpeg_ir::features::HoleKind::Unresolved(None))),
         hole(None, None),
     ]
     .into_iter()

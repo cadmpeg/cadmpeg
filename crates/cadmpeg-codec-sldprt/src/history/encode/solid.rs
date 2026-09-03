@@ -367,8 +367,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.insert("Diameter".into(), format_length_mm(diameter.0));
             }
             match kind {
-                HoleKind::Unresolved { .. } if existing.is_some() => {}
-                HoleKind::Unresolved { .. } => {
+                HoleKind::Unresolved(_)
+                | HoleKind::PartialCounterbore { .. }
+                | HoleKind::PartialCountersink { .. }
+                    if existing.is_some() => {}
+                HoleKind::Unresolved(_)
+                | HoleKind::PartialCounterbore { .. }
+                | HoleKind::PartialCountersink { .. } => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has unresolved hole entry construction",
                         feature.id

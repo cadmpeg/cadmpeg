@@ -124,13 +124,9 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         &[],
         (
             &HoleKind::Simple,
-            Some(&HoleKind::Unresolved {
-                form: Some(cadmpeg_ir::features::HoleForm::Chamfer),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            }),
+            Some(&HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::HoleForm::Chamfer,
+            ))),
         ),
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),

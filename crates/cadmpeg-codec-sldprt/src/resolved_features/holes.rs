@@ -1082,7 +1082,7 @@ pub(crate) fn project_profiled_hole_constructions(
             || extent
                 .as_ref()
                 .is_none_or(|extent| matches!(extent, Termination::Unresolved))
-            || matches!(kind, HoleKind::Unresolved { .. })
+            || kind.is_unresolved()
     };
     let complete_native_holes = features
         .iter()

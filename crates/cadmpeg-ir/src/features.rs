@@ -1796,6 +1796,7 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         axis: Option<Vector3>,
         /// Applied deformation mode and magnitude.
+        #[cfg_attr(feature = "schema", schemars(with = "FlexModeWire"))]
         mode: FlexMode,
     },
     /// Scales selected bodies about a model-space point.
@@ -1829,9 +1830,11 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         placements: Vec<HolePlacement>,
         /// Structural drilling, entry-treatment, and threading form.
+        #[cfg_attr(feature = "schema", schemars(with = "HoleKindWire"))]
         kind: HoleKind,
         /// Exit treatment at the far side, when distinct from the entry treatment.
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<HoleKindWire>"))]
         exit_kind: Option<HoleKind>,
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4331,25 +4334,23 @@ pub enum ChamferForm {
 /// Structural drilling, entry-treatment, and threading form of a hole.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "HoleKindWire", into = "HoleKindWire")]
 pub enum HoleKind {
-    /// Entry treatment fields whose complete form is unresolved.
-    Unresolved {
-        /// Entry-treatment family, when established.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<HoleForm>,
-        /// Resolved counterbore diameter.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_diameter: Option<Length>,
-        /// Resolved counterbore depth.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_depth: Option<Length>,
-        /// Resolved countersink diameter.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_diameter: Option<Length>,
-        /// Resolved countersink included angle.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_angle: Option<Angle>,
+    /// Entry-treatment family whose dimensions remain unresolved.
+    Unresolved(Option<HoleForm>),
+    /// Independently retained counterbore dimensions.
+    PartialCounterbore {
+        /// Counterbore diameter, when resolved.
+        diameter: Option<Length>,
+        /// Counterbore depth, when resolved.
+        depth: Option<Length>,
+    },
+    /// Independently retained countersink dimensions.
+    PartialCountersink {
+        /// Countersink diameter, when resolved.
+        diameter: Option<Length>,
+        /// Countersink included angle, when resolved.
+        angle: Option<Angle>,
     },
     /// Plain cylindrical hole with no entry feature.
     Simple,
@@ -4412,6 +4413,222 @@ pub enum HoleKind {
         /// Included conical entry angle.
         angle: Angle,
     },
+}
+
+impl HoleKind {
+    /// Whether the entry treatment still lacks required construction data.
+    #[must_use]
+    pub const fn is_unresolved(&self) -> bool {
+        matches!(
+            self,
+            Self::Unresolved(_) | Self::PartialCounterbore { .. } | Self::PartialCountersink { .. }
+        )
+    }
+
+    /// Identified entry-treatment family of an unresolved construction.
+    #[must_use]
+    pub const fn unresolved_form(&self) -> Option<HoleForm> {
+        match self {
+            Self::Unresolved(form) => *form,
+            Self::PartialCounterbore { .. } => Some(HoleForm::Counterbore),
+            Self::PartialCountersink { .. } => Some(HoleForm::Countersink),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum HoleKindWire {
+    Unresolved {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<HoleForm>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        counterbore_diameter: Option<Length>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        counterbore_depth: Option<Length>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        countersink_diameter: Option<Length>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        countersink_angle: Option<Angle>,
+    },
+    Simple,
+    Chamfer {
+        diameter: Length,
+        angle: Angle,
+    },
+    SimpleDrilled {
+        drill_point_angle: Angle,
+    },
+    Counterbore {
+        diameter: Length,
+        depth: Length,
+    },
+    CounterboreDrilled {
+        diameter: Length,
+        depth: Length,
+        drill_point_angle: Angle,
+    },
+    Countersink {
+        diameter: Length,
+        angle: Angle,
+    },
+    Threaded {
+        major_diameter: Length,
+        thread_depth: Length,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pitch: Option<Length>,
+        drill_point_angle: Angle,
+    },
+    Counterdrill {
+        diameter: Length,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry_diameter: Option<Length>,
+        depth: Length,
+        angle: Angle,
+    },
+}
+
+impl From<HoleKind> for HoleKindWire {
+    fn from(value: HoleKind) -> Self {
+        match value {
+            HoleKind::Unresolved(form) => Self::Unresolved {
+                form,
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: None,
+                countersink_angle: None,
+            },
+            HoleKind::PartialCounterbore { diameter, depth } => Self::Unresolved {
+                form: Some(HoleForm::Counterbore),
+                counterbore_diameter: diameter,
+                counterbore_depth: depth,
+                countersink_diameter: None,
+                countersink_angle: None,
+            },
+            HoleKind::PartialCountersink { diameter, angle } => Self::Unresolved {
+                form: Some(HoleForm::Countersink),
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: diameter,
+                countersink_angle: angle,
+            },
+            HoleKind::Simple => Self::Simple,
+            HoleKind::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
+            HoleKind::SimpleDrilled { drill_point_angle } => {
+                Self::SimpleDrilled { drill_point_angle }
+            }
+            HoleKind::Counterbore { diameter, depth } => Self::Counterbore { diameter, depth },
+            HoleKind::CounterboreDrilled {
+                diameter,
+                depth,
+                drill_point_angle,
+            } => Self::CounterboreDrilled {
+                diameter,
+                depth,
+                drill_point_angle,
+            },
+            HoleKind::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
+            HoleKind::Threaded {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } => Self::Threaded {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            },
+            HoleKind::Counterdrill {
+                diameter,
+                entry_diameter,
+                depth,
+                angle,
+            } => Self::Counterdrill {
+                diameter,
+                entry_diameter,
+                depth,
+                angle,
+            },
+        }
+    }
+}
+
+impl TryFrom<HoleKindWire> for HoleKind {
+    type Error = String;
+
+    fn try_from(value: HoleKindWire) -> Result<Self, Self::Error> {
+        Ok(match value {
+            HoleKindWire::Unresolved {
+                form,
+                counterbore_diameter,
+                counterbore_depth,
+                countersink_diameter,
+                countersink_angle,
+            } => {
+                let counterbore_present =
+                    counterbore_diameter.is_some() || counterbore_depth.is_some();
+                let countersink_present =
+                    countersink_diameter.is_some() || countersink_angle.is_some();
+                match (form, counterbore_present, countersink_present) {
+                    (Some(HoleForm::Counterbore), true, false) => Self::PartialCounterbore {
+                        diameter: counterbore_diameter,
+                        depth: counterbore_depth,
+                    },
+                    (Some(HoleForm::Countersink), false, true) => Self::PartialCountersink {
+                        diameter: countersink_diameter,
+                        angle: countersink_angle,
+                    },
+                    (form, false, false) => Self::Unresolved(form),
+                    _ => {
+                        return Err(
+                            "unresolved hole fields do not match the form field".to_string()
+                        );
+                    }
+                }
+            }
+            HoleKindWire::Simple => Self::Simple,
+            HoleKindWire::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
+            HoleKindWire::SimpleDrilled { drill_point_angle } => {
+                Self::SimpleDrilled { drill_point_angle }
+            }
+            HoleKindWire::Counterbore { diameter, depth } => Self::Counterbore { diameter, depth },
+            HoleKindWire::CounterboreDrilled {
+                diameter,
+                depth,
+                drill_point_angle,
+            } => Self::CounterboreDrilled {
+                diameter,
+                depth,
+                drill_point_angle,
+            },
+            HoleKindWire::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
+            HoleKindWire::Threaded {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } => Self::Threaded {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            },
+            HoleKindWire::Counterdrill {
+                diameter,
+                entry_diameter,
+                depth,
+                angle,
+            } => Self::Counterdrill {
+                diameter,
+                entry_diameter,
+                depth,
+                angle,
+            },
+        })
+    }
 }
 
 /// Profile geometry families accepted as hole-location generators.
@@ -4523,23 +4740,10 @@ pub enum HoleForm {
 /// Deformation applied by a flex feature.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "FlexModeWire", into = "FlexModeWire")]
 pub enum FlexMode {
-    /// Mode fields whose complete deformation is unresolved.
-    Unresolved {
-        /// Deformation family, when established.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<FlexForm>,
-        /// Resolved bending or twisting magnitude.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angle: Option<Angle>,
-        /// Resolved taper factor.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        factor: Option<f64>,
-        /// Resolved stretching distance.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        distance: Option<Length>,
-    },
+    /// Deformation family whose required magnitude remains unresolved.
+    Unresolved(Option<FlexForm>),
     /// Bend through a signed angle.
     Bending {
         /// Total bend angle.
@@ -4560,6 +4764,73 @@ pub enum FlexMode {
         /// Signed change in length.
         distance: Length,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum FlexModeWire {
+    Unresolved {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<FlexForm>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<Angle>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        factor: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<Length>,
+    },
+    Bending {
+        angle: Angle,
+    },
+    Twisting {
+        angle: Angle,
+    },
+    Tapering {
+        factor: f64,
+    },
+    Stretching {
+        distance: Length,
+    },
+}
+
+impl From<FlexMode> for FlexModeWire {
+    fn from(value: FlexMode) -> Self {
+        match value {
+            FlexMode::Unresolved(form) => Self::Unresolved {
+                form,
+                angle: None,
+                factor: None,
+                distance: None,
+            },
+            FlexMode::Bending { angle } => Self::Bending { angle },
+            FlexMode::Twisting { angle } => Self::Twisting { angle },
+            FlexMode::Tapering { factor } => Self::Tapering { factor },
+            FlexMode::Stretching { distance } => Self::Stretching { distance },
+        }
+    }
+}
+
+impl TryFrom<FlexModeWire> for FlexMode {
+    type Error = String;
+
+    fn try_from(value: FlexModeWire) -> Result<Self, Self::Error> {
+        Ok(match value {
+            FlexModeWire::Unresolved {
+                form,
+                angle: None,
+                factor: None,
+                distance: None,
+            } => Self::Unresolved(form),
+            FlexModeWire::Unresolved { .. } => {
+                return Err("unresolved flex magnitude fields must be absent".to_string());
+            }
+            FlexModeWire::Bending { angle } => Self::Bending { angle },
+            FlexModeWire::Twisting { angle } => Self::Twisting { angle },
+            FlexModeWire::Tapering { factor } => Self::Tapering { factor },
+            FlexModeWire::Stretching { distance } => Self::Stretching { distance },
+        })
+    }
 }
 
 /// Structural form of a flex deformation.

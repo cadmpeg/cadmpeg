@@ -374,13 +374,13 @@ pub(in super::super) fn schema_feature_definition(
                         depth: Length(depth),
                     }
                 }
-                (_, _, form, dimensions) => HoleKind::Unresolved {
-                    form,
-                    counterbore_diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
-                    counterbore_depth: dimensions.map(|(_, _, depth)| Length(depth)),
-                    countersink_diameter: None,
-                    countersink_angle: None,
-                },
+                (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
+                    HoleKind::PartialCounterbore {
+                        diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
+                        depth: dimensions.map(|(_, _, depth)| Length(depth)),
+                    }
+                }
+                (_, _, form, _) => HoleKind::Unresolved(form),
             },
             exit_kind: None,
             diameter: diameter

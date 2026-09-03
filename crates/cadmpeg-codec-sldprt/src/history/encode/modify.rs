@@ -759,8 +759,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (axis.is_none() || matches!(mode, FlexMode::Unresolved { .. }))
-            {
+            if existing.is_none() && (axis.is_none() || matches!(mode, FlexMode::Unresolved(_))) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved flex construction",
                     feature.id
@@ -778,7 +777,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.remove("AxisDirection");
             }
             match mode {
-                FlexMode::Unresolved { .. } => {}
+                FlexMode::Unresolved(_) => {}
                 FlexMode::Bending { angle } => {
                     if !angle.0.is_finite() {
                         return Err(CodecError::malformed(format_args!(

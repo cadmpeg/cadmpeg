@@ -4,7 +4,7 @@
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::{
     Angle, ConfigurationBodies, DatumPlaneReference, DesignConfiguration, FaceSelection,
-    FeatureDefinition, FeatureId, HoleKind, Length, ParameterValue, SketchSpace, Termination,
+    FeatureDefinition, FeatureId, Length, ParameterValue, SketchSpace, Termination,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -821,10 +821,10 @@ pub(crate) fn inherit_configuration_hole_semantics(
     if inherit_placements && placements.is_empty() {
         placements.clone_from(base_placements);
     }
-    if missing_construction || matches!(kind, HoleKind::Unresolved { .. }) {
+    if missing_construction || kind.is_unresolved() {
         kind.clone_from(base_kind);
     }
-    if exit_kind.is_none() || matches!(exit_kind, Some(HoleKind::Unresolved { .. })) {
+    if exit_kind.is_none() || exit_kind.is_some_and(|kind| kind.is_unresolved()) {
         exit_kind.clone_from(base_exit_kind);
     }
     if diameter.is_none() {

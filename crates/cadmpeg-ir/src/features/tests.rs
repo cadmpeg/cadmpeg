@@ -678,6 +678,52 @@ fn flex_modes_round_trip_and_validate() {
 }
 
 #[test]
+fn unresolved_hole_and_flex_wire_forms_preserve_the_legacy_layout() {
+    use crate::features::{FlexMode, HoleKind};
+
+    let counterbore = serde_json::json!({
+        "kind": "unresolved",
+        "form": "counterbore",
+        "counterbore_diameter": 10.0
+    });
+    let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
+    assert_eq!(
+        kind,
+        HoleKind::PartialCounterbore {
+            diameter: Some(crate::features::Length(10.0)),
+            depth: None,
+        }
+    );
+    assert_eq!(serde_json::to_value(kind).unwrap(), counterbore);
+
+    let flex = serde_json::json!({"kind": "unresolved", "form": "twisting"});
+    let mode: FlexMode = serde_json::from_value(flex.clone()).unwrap();
+    assert_eq!(
+        mode,
+        FlexMode::Unresolved(Some(crate::features::FlexForm::Twisting))
+    );
+    assert_eq!(serde_json::to_value(mode).unwrap(), flex);
+}
+
+#[test]
+fn unresolved_hole_and_flex_wire_forms_reject_cross_family_payloads() {
+    use crate::features::{FlexMode, HoleKind};
+
+    assert!(serde_json::from_value::<HoleKind>(serde_json::json!({
+        "kind": "unresolved",
+        "form": "counterbore",
+        "countersink_angle": 0.5
+    }))
+    .is_err());
+    assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
+        "kind": "unresolved",
+        "form": "twisting",
+        "factor": 2.0
+    }))
+    .is_err());
+}
+
+#[test]
 fn edge_selections_round_trip_through_json() {
     use crate::features::EdgeSelection;
     use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};

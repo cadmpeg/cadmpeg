@@ -837,7 +837,7 @@ fn scale_flex_mode(mode: &mut cadmpeg_ir::features::FlexMode, scale: f64) {
     use cadmpeg_ir::features::FlexMode;
 
     match mode {
-        FlexMode::Unresolved { distance, .. } => scale_optional_length(distance, scale),
+        FlexMode::Unresolved(_) => {}
         FlexMode::Stretching { distance } => scale_length(distance, scale),
         FlexMode::Bending { .. } | FlexMode::Twisting { .. } | FlexMode::Tapering { .. } => {}
     }
@@ -856,15 +856,13 @@ fn scale_hole_kind(kind: &mut cadmpeg_ir::features::HoleKind, scale: f64) {
     use cadmpeg_ir::features::HoleKind;
 
     match kind {
-        HoleKind::Unresolved {
-            counterbore_diameter,
-            counterbore_depth,
-            countersink_diameter,
-            ..
-        } => {
-            scale_optional_length(counterbore_diameter, scale);
-            scale_optional_length(counterbore_depth, scale);
-            scale_optional_length(countersink_diameter, scale);
+        HoleKind::Unresolved(_) => {}
+        HoleKind::PartialCounterbore { diameter, depth } => {
+            scale_optional_length(diameter, scale);
+            scale_optional_length(depth, scale);
+        }
+        HoleKind::PartialCountersink { diameter, .. } => {
+            scale_optional_length(diameter, scale);
         }
         HoleKind::Chamfer { diameter, .. } | HoleKind::Countersink { diameter, .. } => {
             scale_length(diameter, scale);
