@@ -1623,11 +1623,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ],
                 None,
             ),
-            Definition::HorizontalPoints { first, second }
-            | Definition::VerticalPoints { first, second } => (
-                vec![locus_entity(first).clone(), locus_entity(second).clone()],
-                None,
-            ),
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
@@ -1668,11 +1663,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     locus_entity(second).clone(),
                     axis.clone(),
                 ],
-                None,
-            ),
-            Definition::HorizontalLoci { first, second }
-            | Definition::VerticalLoci { first, second } => (
-                vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
             Definition::DistanceLoci {
@@ -1817,9 +1807,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 });
             }
         }
-        if let Definition::HorizontalLoci { first, second }
-        | Definition::VerticalLoci { first, second } = &constraint.definition
-        {
+        if let Definition::SameCoordinate { first, second, .. } = &constraint.definition {
             if first == second {
                 findings.push(Finding {
                     check: Check::Counts,

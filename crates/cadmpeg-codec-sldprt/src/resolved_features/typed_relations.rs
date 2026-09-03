@@ -30,8 +30,8 @@ use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-    SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -222,10 +222,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if let (Some(first), Some(second)) = (point_locus(first_link), point_locus(second_link))
             {
                 if first != second {
-                    return Some(if kind == Horizontal {
-                        SketchConstraintDefinition::HorizontalPoints { first, second }
-                    } else {
-                        SketchConstraintDefinition::VerticalPoints { first, second }
+                    return Some(SketchConstraintDefinition::SameCoordinate {
+                        first,
+                        second,
+                        axis: if kind == Horizontal {
+                            SketchCoordinateAxis::V
+                        } else {
+                            SketchCoordinateAxis::U
+                        },
                     });
                 }
             }
@@ -241,10 +245,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     markers_by_id,
                     loci_by_marker,
                 ) {
-                    return Some(if kind == Horizontal {
-                        SketchConstraintDefinition::HorizontalPoints { first, second }
-                    } else {
-                        SketchConstraintDefinition::VerticalPoints { first, second }
+                    return Some(SketchConstraintDefinition::SameCoordinate {
+                        first,
+                        second,
+                        axis: if kind == Horizontal {
+                            SketchCoordinateAxis::V
+                        } else {
+                            SketchCoordinateAxis::U
+                        },
                     });
                 }
             }
@@ -268,16 +276,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             relation_operand_loci(marker, markers_by_id, loci_by_marker)
                         {
                             if let [first, second] = loci.as_slice() {
-                                return Some(if kind == Horizontal {
-                                    SketchConstraintDefinition::HorizontalPoints {
-                                        first: first.clone(),
-                                        second: second.clone(),
-                                    }
-                                } else {
-                                    SketchConstraintDefinition::VerticalPoints {
-                                        first: first.clone(),
-                                        second: second.clone(),
-                                    }
+                                return Some(SketchConstraintDefinition::SameCoordinate {
+                                    first: first.clone(),
+                                    second: second.clone(),
+                                    axis: if kind == Horizontal {
+                                        SketchCoordinateAxis::V
+                                    } else {
+                                        SketchCoordinateAxis::U
+                                    },
                                 });
                             }
                         }
@@ -387,16 +393,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 let [first, second] = loci.as_slice() else {
                     return Some(native());
                 };
-                if kind == Horizontal {
-                    SketchConstraintDefinition::HorizontalPoints {
-                        first: first.clone(),
-                        second: second.clone(),
-                    }
-                } else {
-                    SketchConstraintDefinition::VerticalPoints {
-                        first: first.clone(),
-                        second: second.clone(),
-                    }
+                SketchConstraintDefinition::SameCoordinate {
+                    first: first.clone(),
+                    second: second.clone(),
+                    axis: if kind == Horizontal {
+                        SketchCoordinateAxis::V
+                    } else {
+                        SketchCoordinateAxis::U
+                    },
                 }
             } else {
                 return Some(native());
@@ -640,16 +644,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let [first, second] = loci.as_slice() else {
                 return Some(native());
             };
-            match kind {
-                HorizontalPoints => SketchConstraintDefinition::HorizontalPoints {
-                    first: first.clone(),
-                    second: second.clone(),
+            SketchConstraintDefinition::SameCoordinate {
+                first: first.clone(),
+                second: second.clone(),
+                axis: if kind == HorizontalPoints {
+                    SketchCoordinateAxis::V
+                } else {
+                    SketchCoordinateAxis::U
                 },
-                VerticalPoints => SketchConstraintDefinition::VerticalPoints {
-                    first: first.clone(),
-                    second: second.clone(),
-                },
-                _ => unreachable!("relation kind was filtered above"),
             }
         }
         AtIntersection => {
@@ -1472,20 +1474,17 @@ fn typed_axis_relation_is_inactive(
                 },
             )
         }
-        SketchConstraintDefinition::HorizontalPoints { first, second }
-        | SketchConstraintDefinition::VerticalPoints { first, second } => {
+        SketchConstraintDefinition::SameCoordinate {
+            first,
+            second,
+            axis,
+        } => {
             let first = profile_locus_point(first, sketch_entities)?;
             let second = profile_locus_point(second, sketch_entities)?;
-            Some(
-                if matches!(
-                    definition,
-                    SketchConstraintDefinition::HorizontalPoints { .. }
-                ) {
-                    !same_dimension_length(first.v, second.v)
-                } else {
-                    !same_dimension_length(first.u, second.u)
-                },
-            )
+            Some(match axis {
+                SketchCoordinateAxis::V => !same_dimension_length(first.v, second.v),
+                SketchCoordinateAxis::U => !same_dimension_length(first.u, second.u),
+            })
         }
         _ => None,
     }

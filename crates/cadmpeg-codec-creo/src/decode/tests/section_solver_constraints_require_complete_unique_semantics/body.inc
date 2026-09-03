@@ -647,16 +647,15 @@
         }];
         synchronize_skamp_count(&mut oriented_arc);
         let expected_entity = SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string());
-        let expected = if kind == 12 {
-            SketchConstraintDefinition::HorizontalLoci {
-                first: SketchLocus::Start(expected_entity.clone()),
-                second: SketchLocus::End(expected_entity),
-            }
+        let axis = if kind == 12 {
+            SketchCoordinateAxis::V
         } else {
-            SketchConstraintDefinition::VerticalLoci {
-                first: SketchLocus::Start(expected_entity.clone()),
-                second: SketchLocus::End(expected_entity),
-            }
+            SketchCoordinateAxis::U
+        };
+        let expected = SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(expected_entity.clone()),
+            second: SketchLocus::End(expected_entity),
+            axis,
         };
         assert_eq!(
             section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
@@ -669,8 +668,7 @@
             section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
-            SketchConstraintDefinition::HorizontalLoci { .. }
-                | SketchConstraintDefinition::VerticalLoci { .. }
+            SketchConstraintDefinition::SameCoordinate { .. }
         ));
         oriented_arc.relations.as_mut().expect("relations").skamps[0].items[0] =
             crate::feature::FeatureSkampItem {

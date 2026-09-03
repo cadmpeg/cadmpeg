@@ -21,8 +21,9 @@ fn encoder_writes_source_less_curved_sketches() {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchId, SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -445,9 +446,10 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "horizontal-points",
-            SketchConstraintDefinition::HorizontalPoints {
+            SketchConstraintDefinition::SameCoordinate {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[14].clone()),
+                axis: SketchCoordinateAxis::V,
             },
         ),
         (
@@ -487,9 +489,10 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "vertical-points",
-            SketchConstraintDefinition::VerticalPoints {
+            SketchConstraintDefinition::SameCoordinate {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[15].clone()),
+                axis: SketchCoordinateAxis::U,
             },
         ),
     ] {
@@ -742,10 +745,16 @@ fn encoder_writes_source_less_curved_sketches() {
                 matches!(
                     (&constraint.definition, definition),
                     (
-                        SketchConstraintDefinition::HorizontalPoints { .. },
+                        SketchConstraintDefinition::SameCoordinate {
+                            axis: SketchCoordinateAxis::V,
+                            ..
+                        },
                         "horizontal_points"
                     ) | (
-                        SketchConstraintDefinition::VerticalPoints { .. },
+                        SketchConstraintDefinition::SameCoordinate {
+                            axis: SketchCoordinateAxis::U,
+                            ..
+                        },
                         "vertical_points"
                     ) | (SketchConstraintDefinition::Midpoint { .. }, "midpoint")
                         | (SketchConstraintDefinition::Tangent { .. }, "tangent")

@@ -156,12 +156,6 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         | SketchConstraintDefinition::Fixed { entity }
         | SketchConstraintDefinition::Radius { entity, .. }
         | SketchConstraintDefinition::Diameter { entity, .. } => emitted.contains(entity),
-        SketchConstraintDefinition::HorizontalPoints { first, second }
-        | SketchConstraintDefinition::VerticalPoints { first, second }
-        | SketchConstraintDefinition::HorizontalLoci { first, second }
-        | SketchConstraintDefinition::VerticalLoci { first, second } => {
-            locus_emitted(first) && locus_emitted(second)
-        }
         SketchConstraintDefinition::ArcAngle { entity, .. }
         | SketchConstraintDefinition::EllipseAngle { entity, .. } => emitted.contains(entity),
         SketchConstraintDefinition::SnellsLaw {
@@ -247,8 +241,6 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
         SketchConstraintDefinition::Disabled
         | SketchConstraintDefinition::PointOnObject { .. }
         | SketchConstraintDefinition::AtIntersection { .. }
-        | SketchConstraintDefinition::HorizontalPoints { .. }
-        | SketchConstraintDefinition::VerticalPoints { .. }
         | SketchConstraintDefinition::ArcAngle { .. }
         | SketchConstraintDefinition::EllipseAngle { .. }
         | SketchConstraintDefinition::InternalAlignment { .. }

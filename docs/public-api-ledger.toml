@@ -3270,3 +3270,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::{SketchInternalAlignment,SketchConstraintDefinition::InternalAlignment}"
 reason = "B-spline alignment variants now own their required index and other families cannot carry one"
+
+[[change]]
+commit = "e09e01f23f224dfc47588c300f9b230d506f514b"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::{HorizontalLoci,VerticalLoci,HorizontalPoints,VerticalPoints}"
+reason = "one SameCoordinate variant with a typed axis replaces four duplicate relation spellings"

@@ -19,8 +19,8 @@ use crate::records::{FeatureInputLane, SketchRelationKind};
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SketchLocus, SpatialSketchGeometry, SpatialSketchId,
+    SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity,
+    SketchEntityId, SketchGeometry, SketchId, SketchLocus, SpatialSketchGeometry, SpatialSketchId,
 };
 
 #[cfg(test)]
@@ -401,17 +401,16 @@ fn validate_generated_marker_constraint(
         )));
     }
     match &constraint.definition {
-        SketchConstraintDefinition::HorizontalPoints { first, second }
-        | SketchConstraintDefinition::VerticalPoints { first, second } => {
+        SketchConstraintDefinition::SameCoordinate {
+            first,
+            second,
+            axis,
+        } => {
             let first_point = constraint_locus_point(ir, constraint, first)?;
             let second_point = constraint_locus_point(ir, constraint, second)?;
-            let delta = if matches!(
-                &constraint.definition,
-                SketchConstraintDefinition::HorizontalPoints { .. }
-            ) {
-                (first_point.v - second_point.v).abs()
-            } else {
-                (first_point.u - second_point.u).abs()
+            let delta = match axis {
+                SketchCoordinateAxis::U => (first_point.u - second_point.u).abs(),
+                SketchCoordinateAxis::V => (first_point.v - second_point.v).abs(),
             };
             if constraint.active != Some(false) && delta > SKETCH_POINT_TOLERANCE {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -1656,9 +1655,10 @@ mod source_less_lane_tests {
         ir.model.sketch_constraints.push(SketchConstraint {
             id: SketchConstraintId("horizontal".into()),
             sketch: sketch.id,
-            definition: SketchConstraintDefinition::HorizontalPoints {
+            definition: SketchConstraintDefinition::SameCoordinate {
                 first: SketchLocus::Entity(SketchEntityId("first".into())),
                 second: SketchLocus::Entity(SketchEntityId("second".into())),
+                axis: SketchCoordinateAxis::V,
             },
             name: None,
             driving: None,
