@@ -66,8 +66,7 @@ fn generated_f3d_rejects_act_binding_divergence() {
         );
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("divergent ACT and appearance binding must fail");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -83,8 +82,7 @@ fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
         native.act_root_components[0].record_index += 1;
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("an ACT record-index edit without its MetaStream index must fail");
     assert!(matches!(
         error,

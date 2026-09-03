@@ -58,9 +58,12 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
 
     let scan = container::scan_bytes(&written);
     let payload = scan
@@ -132,9 +135,12 @@ fn semantic_writer_preserves_document_metadata() {
         .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

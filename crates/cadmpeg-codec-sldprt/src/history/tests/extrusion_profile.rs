@@ -71,9 +71,12 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact extrusion".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -204,9 +207,12 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     edited.model.configurations[1]
         .feature_states
         .insert(feature_id, replacement);
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut Vec::new())
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &edited,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()

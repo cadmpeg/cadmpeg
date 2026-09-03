@@ -161,8 +161,7 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         native.design_material_assignments[0].physical_token = Some("PrismMaterial-019".into());
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("divergent assignment and appearance must fail");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -180,8 +179,7 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
         assignment.entity_suffix = 986;
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("a partial presentation-graph identity edit must fail");
     assert!(error.to_string().contains(
         "requires synchronized body-presentation, browser-node, B-rep, and scene graphs"
@@ -199,9 +197,12 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     invalid.model.appearances[0]
         .properties
         .insert("refraction_index".into(), 0.5);
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&invalid, decoded.source_fidelity(), &mut Vec::new())
-        .expect_err("out-of-range refraction must be refused");
+    let error = crate::test_support::plan_inherited_write(
+        &invalid,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .expect_err("out-of-range refraction must be refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("refraction_index"))
     );
@@ -210,8 +211,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     structural.model.appearances[0]
         .properties
         .insert("unserialized_property".into(), 0.5);
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&structural, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&structural, &fidelity, &mut Vec::new())
         .expect_err("new Protein property must be refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
@@ -246,8 +246,7 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("multi-Protein appearance regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -292,8 +291,7 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
         .insert("refraction_index".into(), 2.25);
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("Prism scalar regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

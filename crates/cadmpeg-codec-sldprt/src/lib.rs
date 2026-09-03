@@ -165,25 +165,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
 }
 
 impl SldprtCodec {
-    /// Write a decoded document with its retained source-fidelity sidecar.
-    #[cfg_attr(not(test), allow(dead_code))] // Crate-owned replay tests exercise this write door.
-    #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)] // Preserve the tested method shape while narrowing visibility.
-    pub(crate) fn write_preserved_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        source_fidelity: &SourceFidelity,
-        writer: &mut dyn Write,
-    ) -> Result<WritePath, CodecError> {
-        let records = source_records(ir, source_fidelity)?;
-        Ok(Self::write_preserved_with_annotations(
-            ir,
-            &source_fidelity.annotations,
-            &records,
-            writer,
-        )?
-        .path())
-    }
-
     /// Replay the retained source image when the document is untouched since the
     /// decode that recorded its baseline, and write it semantically otherwise.
     ///

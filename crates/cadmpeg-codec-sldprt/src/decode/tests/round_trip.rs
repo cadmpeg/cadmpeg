@@ -200,8 +200,7 @@ fn decode_is_equivariant_under_rigid_translation() {
 fn source_less_cube_reaches_encode_decode_fixpoint() {
     let first = encode_decode_result(&source_less_cube());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(first.ir(), first.source_fidelity(), &mut encoded)
+    crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut encoded)
         .unwrap();
     let second = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())

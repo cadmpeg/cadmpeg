@@ -125,9 +125,12 @@ fn mutated_semantic_write_round_trips() {
     let expected_faces = decoded.ir().model.faces.len();
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .expect("mutated triangle should write");
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .expect("mutated triangle should write");
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written triangle should decode");
@@ -163,9 +166,12 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .expect("translated triangle should write");
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .expect("translated triangle should write");
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written translated triangle should decode");

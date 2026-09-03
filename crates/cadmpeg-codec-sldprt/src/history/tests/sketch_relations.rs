@@ -90,13 +90,12 @@ fn decode_projects_owned_native_sketch_relation() {
     ));
     let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -158,13 +157,12 @@ fn decode_groups_compact_relation_scalar_pair() {
                     && candidate.native_ref.as_deref() == Some(driving.id.as_str())
             })
     ));
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -265,13 +263,12 @@ fn decode_groups_native_tagged_point_line_relations() {
             && operands[0].native_kind == "7b83"
             && operands[1].native_kind == "8683"
     ));
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -420,13 +417,12 @@ fn decode_groups_unary_circle_diameter_relations() {
                         && operands[0].native_kind == "fe83"
                 )
         }));
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]

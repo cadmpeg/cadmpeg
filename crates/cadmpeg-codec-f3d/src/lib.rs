@@ -125,7 +125,6 @@ use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ContainerSummary;
-use cadmpeg_ir::WritePath;
 use std::io::Write;
 
 #[cfg(test)]
@@ -149,36 +148,7 @@ pub(crate) enum PreservedWritePath {
     VerbatimReplay,
 }
 
-impl PreservedWritePath {
-    const fn report_path(self) -> WritePath {
-        match self {
-            Self::Patched => WritePath::Patched,
-            Self::VerbatimReplay => WritePath::VerbatimReplay,
-        }
-    }
-}
-
 impl F3dCodec {
-    /// Write a decoded F3D document using its source-fidelity sidecar.
-    #[cfg_attr(not(test), allow(dead_code))] // Crate-owned replay tests exercise this write door.
-    #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)] // Preserve the tested method shape while narrowing visibility.
-    pub(crate) fn write_preserved_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        source_fidelity: &cadmpeg_ir::SourceFidelity,
-        writer: &mut dyn Write,
-    ) -> Result<WritePath, CodecError> {
-        let record = source_fidelity
-            .retained_record(ids::FILE_SOURCE_IMAGE_ID)
-            .ok_or_else(|| {
-                CodecError::NotImplemented("sidecar has no retained F3D source image".into())
-            })?;
-        let data = record.data().ok_or_else(|| {
-            CodecError::Malformed("retained F3D source image has no bytes".into())
-        })?;
-        Self::write_preserved_bytes(ir, data, writer).map(PreservedWritePath::report_path)
-    }
-
     /// Replay retained source bytes when the document baseline still matches;
     /// otherwise patch. Absent baseline: refuse. Returns which branch ran.
     fn write_preserved_bytes(

@@ -152,8 +152,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     edited.model.points[0].position.x = 2.5;
     edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     let mut bytes = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut bytes)
+    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut bytes)
         .expect("preserved F3D write");
     let round_trip = decode(bytes);
     assert_eq!(round_trip.ir().model.points[0].position.x, 2.5);

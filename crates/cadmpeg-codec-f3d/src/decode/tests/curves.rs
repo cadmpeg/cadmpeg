@@ -160,8 +160,7 @@ fn decode_retains_generated_helix_construction() {
     let edited_definition = edited.model.procedural_curves[0].definition.clone();
     let edited_cache = solved_curve.geometry.clone();
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("helix definition regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -383,8 +382,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     edited.model.procedural_curves[0].cache_fit_tolerance = Some(0.015);
     let edited_definition = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("vector-offset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -509,8 +507,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     *parameter_range = [-2.0, 4.0];
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("subset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -885,8 +882,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     *component_parameters = vec![-3.0, 5.0];
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("compound intcurve regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -994,8 +990,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     *offsets = [-3.0, 5.0];
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("two-sided offset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1075,13 +1070,12 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     *offsets = [-2.5, 4.5];
     let expected_retained = retained.model.procedural_curves[0].definition.clone();
     let mut retained_bytes = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(
-            &retained,
-            result.source_fidelity(),
-            &mut retained_bytes,
-        )
-        .expect("retained embedded offset-support edit");
+    crate::test_support::plan_inherited_write(
+        &retained,
+        result.source_fidelity(),
+        &mut retained_bytes,
+    )
+    .expect("retained embedded offset-support edit");
     let retained_round_trip = F3dCodec
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
         .expect("retained embedded offset-support round trip");
@@ -1347,8 +1341,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     context.parameter_range = [-1.0, 2.0];
     *discontinuity_flag = false;
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("intersection context regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1452,8 +1445,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     *parameter_range = [-4.0, 5.0];
     *role = "surf1".into();
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("projection context regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1533,8 +1525,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     };
     *flag = false;
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("early-close projection regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1612,8 +1603,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     context.parameter_range = [-1.0, 2.0];
     *selector = -4;
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, result.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("three-surface intersection regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1693,13 +1683,12 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         };
         context.parameter_range = [-1.0, 2.0];
         let mut regenerated = Vec::new();
-        F3dCodec
-            .write_preserved_with_source_fidelity(
-                &edited,
-                result.source_fidelity(),
-                &mut regenerated,
-            )
-            .unwrap_or_else(|error| panic!("{name} context regeneration failed: {error}"));
+        crate::test_support::plan_inherited_write(
+            &edited,
+            result.source_fidelity(),
+            &mut regenerated,
+        )
+        .unwrap_or_else(|error| panic!("{name} context regeneration failed: {error}"));
         let regenerated = F3dCodec
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
@@ -1792,13 +1781,12 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             *draft_factor = -0.2;
         }
         let mut regenerated = Vec::new();
-        F3dCodec
-            .write_preserved_with_source_fidelity(
-                &edited,
-                result.source_fidelity(),
-                &mut regenerated,
-            )
-            .unwrap_or_else(|error| panic!("{name} regeneration failed: {error}"));
+        crate::test_support::plan_inherited_write(
+            &edited,
+            result.source_fidelity(),
+            &mut regenerated,
+        )
+        .unwrap_or_else(|error| panic!("{name} regeneration failed: {error}"));
         let regenerated = F3dCodec
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));

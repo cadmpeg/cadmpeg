@@ -146,13 +146,12 @@ fn native_validation_rejects_edited_relation_binding() {
             .message
             .contains("relation bindings do not match the native payload")
     }));
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("edited relation bindings"));
 }
 
@@ -177,12 +176,11 @@ fn native_validation_rejects_edited_relation_instance() {
             .message
             .contains("relation instances do not match the native payload")
     }));
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("edited relation instances"));
 }

@@ -104,13 +104,12 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     .expect("edited configuration order");
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(
-            &retained,
-            decoded.source_fidelity(),
-            &mut retained_bytes,
-        )
-        .expect("retained configuration edit");
+    crate::test_support::plan_inherited_write(
+        &retained,
+        decoded.source_fidelity(),
+        &mut retained_bytes,
+    )
+    .expect("retained configuration edit");
     let retained_round_trip = F3dCodec
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
         .expect("retained configuration round trip");
@@ -261,13 +260,12 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
         .unwrap();
 
     let mut replayed = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut replayed,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut replayed,
+    )
+    .unwrap();
     assert_eq!(replayed, source);
 
     let mut point_edited = decoded.ir().clone();
@@ -284,13 +282,12 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     *normal = cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0);
     *u_axis = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(
-            &point_edited,
-            decoded.source_fidelity(),
-            &mut regenerated,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        &point_edited,
+        decoded.source_fidelity(),
+        &mut regenerated,
+    )
+    .unwrap();
     assert_ne!(regenerated, source);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -306,8 +303,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
 
     let (mut modified, _, fidelity) = decoded.into_parts();
     modified.model.bodies[0].name = Some("edited".into());
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&modified, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&modified, &fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -535,8 +531,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         native.tolerant_vertex_tails[0].leading_tolerances = [3.5, -4.5];
     }
     let mut retained = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut retained)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut retained)
         .expect("retained double-sided containment edit");
     let retained = F3dCodec
         .decode(&mut Cursor::new(retained), &DecodeOptions::default())
@@ -1269,13 +1264,12 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     };
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(
-            round_trip.ir(),
-            round_trip.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .expect_err("native ellipse record cannot silently retain a line edit");
+    let error = crate::test_support::plan_inherited_write(
+        round_trip.ir(),
+        round_trip.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .expect_err("native ellipse record cannot silently retain a line edit");
     assert!(error
         .to_string()
         .contains("does not support edits to curve"));
@@ -1641,8 +1635,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     *half_angle = 0.35;
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&retained, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&retained, &fidelity, &mut regenerated)
         .expect("cone ratio regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1676,8 +1669,7 @@ fn generated_f3d_rewrites_plane_frame() {
     edited.model.surfaces[0].geometry = expected.clone();
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
         .expect("plane frame regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1703,9 +1695,12 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
         radius: 5.0,
     };
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut Vec::new())
-        .expect_err("native plane record cannot silently retain a sphere edit");
+    let error = crate::test_support::plan_inherited_write(
+        &edited,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .expect_err("native plane record cannot silently retain a sphere edit");
     assert!(error
         .to_string()
         .contains("does not support edits to surface"));

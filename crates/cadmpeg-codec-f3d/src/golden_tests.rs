@@ -409,11 +409,8 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     edited.model.points[0].position.x += 1.0;
     let mut out = Vec::new();
     Some(
-        match F3dCodec.write_preserved_with_source_fidelity(
-            &edited,
-            result.source_fidelity(),
-            &mut out,
-        ) {
+        match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out)
+        {
             Ok(path) => {
                 assert_eq!(
                     path,

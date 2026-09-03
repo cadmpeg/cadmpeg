@@ -169,8 +169,7 @@ fn decode_transfers_generated_wire_body_topology() {
         native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
     let mut edited = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(result.ir(), result.source_fidelity(), &mut edited)
+    crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut edited)
         .expect("wire-side retained edit");
     let edited = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
@@ -287,8 +286,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         point: Point3::new(2.0, 3.0, 4.0),
     };
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
         .expect("degenerate curve regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

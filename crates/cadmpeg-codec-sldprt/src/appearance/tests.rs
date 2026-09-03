@@ -322,8 +322,7 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
 
     result.ir_mut().model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(result.ir(), result.source_fidelity(), &mut encoded)
+    crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
