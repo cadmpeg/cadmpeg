@@ -1183,7 +1183,6 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
 /// Builds source metadata from classified layers and the container scan.
 pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    let legacy_cfb = scan.container.is_legacy_cfb();
     attributes.insert(
         "file_size".to_string(),
         scan.container.physical_size.to_string(),
@@ -1196,18 +1195,21 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         "header_entry_count".to_string(),
         scan.container.header_entry_count.to_string(),
     );
-    if !legacy_cfb {
-        attributes.insert(
-            "footer_offset".to_string(),
-            scan.container.footer_offset.to_string(),
-        );
+    if let crate::container::ContainerLayout::Modern {
+        footer_offset,
+        footer_entry_count,
+        footer_fingerprint,
+        ..
+    } = scan.container.layout
+    {
+        attributes.insert("footer_offset".to_string(), footer_offset.to_string());
         attributes.insert(
             "footer_entry_count".to_string(),
-            scan.container.footer_entry_count.to_string(),
+            footer_entry_count.to_string(),
         );
         attributes.insert(
             "footer_fingerprint".to_string(),
-            format!("{:08x}", assemble_u32_be(scan.container.footer_fingerprint)),
+            format!("{:08x}", assemble_u32_be(footer_fingerprint)),
         );
     }
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);

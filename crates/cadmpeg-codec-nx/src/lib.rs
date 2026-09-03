@@ -272,7 +272,10 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 }
             }
         }
-        let legacy_cfb = scan.container.is_legacy_cfb();
+        let (compression, compressed_size) = match scan.container.layout {
+            container::ContainerLayout::Modern { .. } => ("zlib", 0),
+            container::ContainerLayout::LegacyCfb => ("stored", stream.consumed),
+        };
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),
             role: if stream.kind.is_parasolid() {
@@ -280,8 +283,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             } else {
                 "preview".to_string()
             },
-            compression: if legacy_cfb { "stored" } else { "zlib" }.to_string(),
-            compressed_size: if legacy_cfb { stream.consumed } else { 0 },
+            compression: compression.to_string(),
+            compressed_size,
             uncompressed_size: stream.inflated.len() as u64,
             attributes,
         });

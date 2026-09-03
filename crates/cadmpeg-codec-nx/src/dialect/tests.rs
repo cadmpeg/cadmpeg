@@ -23,13 +23,13 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
     Container {
         data: (&[] as &[u8]).into(),
         version,
-        file_tag: 0,
-        footer_offset: 0,
         header_entry_count: 0,
-        footer_entry_count: 0,
-        footer_fingerprint: [0; 4],
         physical_size: 0,
-        legacy_cfb,
+        layout: if legacy_cfb {
+            crate::container::ContainerLayout::LegacyCfb
+        } else {
+            crate::container::TEST_MODERN_LAYOUT
+        },
         entries: Vec::new(),
         indexed_section_layouts: OnceLock::new(),
         om_operation_label_layouts: OnceLock::new(),
