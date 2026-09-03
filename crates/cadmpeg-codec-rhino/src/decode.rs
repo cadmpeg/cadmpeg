@@ -2571,7 +2571,7 @@ impl<'a> DecodeContext<'a> {
             ir: self.ir,
             body: DecodeBody {
                 geometry_transferred: self.geometry_transferred,
-                coverage: Default::default(),
+                coverage: cadmpeg_ir::Coverage::default(),
                 losses,
                 notes,
                 transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

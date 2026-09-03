@@ -163,7 +163,7 @@ mod tests {
             &ctx,
             &mut ir,
             "test",
-            std::num::NonZeroU32::new(7).unwrap(),
+            std::num::NonZeroU32::new(7).expect("ASM native version is nonzero"),
             AsmBrep::default(),
         )
         .expect("empty ASM transfer succeeds");
@@ -196,7 +196,7 @@ mod tests {
             &ctx,
             &mut ir,
             "test",
-            std::num::NonZeroU32::new(7).unwrap(),
+            std::num::NonZeroU32::new(7).expect("ASM native version is nonzero"),
             AsmBrep::default()
         )
         .is_err());

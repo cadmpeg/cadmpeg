@@ -138,7 +138,9 @@ pub(super) fn store_arena<T: Serialize>(
         return Ok(());
     }
     let namespace = ir.native.namespace_mut("creo");
-    namespace.set_version(std::num::NonZeroU32::new(CREO_NATIVE_VERSION).unwrap());
+    namespace.set_version(
+        std::num::NonZeroU32::new(CREO_NATIVE_VERSION).expect("Creo native version is nonzero"),
+    );
     namespace.set_arena(key, records)?;
     Ok(())
 }

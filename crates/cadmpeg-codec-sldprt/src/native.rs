@@ -1353,7 +1353,10 @@ impl SldprtNative {
                 "history feature classes do not match the feature-input index".into(),
             ));
         }
-        namespace.set_version(std::num::NonZeroU32::new(SLDPRT_NATIVE_VERSION).unwrap());
+        namespace.set_version(
+            std::num::NonZeroU32::new(SLDPRT_NATIVE_VERSION)
+                .expect("SLDPRT native version is nonzero"),
+        );
         SLDPRT_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(SLDPRT_ARENA_NAMES
             .iter()
