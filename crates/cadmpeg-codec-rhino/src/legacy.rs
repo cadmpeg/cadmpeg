@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
     SurfaceGeometry,
@@ -2132,9 +2132,9 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     let primary = ArchiveVersion::V1.classify(None);
 
     let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(primary),
-        BTreeMap::from([("archive_version".to_string(), "1".to_string())]),
+    ir.source = Some(crate::container::source_meta(
+        primary,
+        crate::container::SourceMetaDetail::FlatLegacyArchive,
     ));
     let mut decoded = 0_usize;
     let mut decoded_curves = 0_usize;
