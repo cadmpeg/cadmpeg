@@ -207,8 +207,8 @@ pub struct StringsArgs {
     )]
     pub min: usize,
     /// Which encodings to scan for.
-    #[arg(long, value_enum, default_value_t = search::StringEncoding::Ascii)]
-    pub encoding: search::StringEncoding,
+    #[arg(long, value_enum, default_value_t = search::StringScan::Ascii)]
+    pub encoding: search::StringScan,
     /// Rejected placeholder: this tool has no JSON form.
     #[arg(long, hide = true)]
     pub json: bool,
