@@ -15,7 +15,9 @@
 use std::fmt;
 
 use crate::document::CadIr;
-use crate::report::{Coverage, DecodeReport, LossNote, StrictConsequence, TransferLedger};
+use crate::report::{
+    Coverage, DecodeReport, LossNote as DecodeLoss, StrictConsequence, TransferLedger,
+};
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
@@ -103,7 +105,7 @@ impl StrictDecodeRejection {
 
     /// Returns the loss that caused the strict-policy refusal.
     #[must_use]
-    pub fn loss(&self) -> &LossNote {
+    pub fn loss(&self) -> &DecodeLoss {
         &self.report.losses[self.loss_index]
     }
 
@@ -164,7 +166,7 @@ pub struct DecodeBody {
     /// Coverage measures keyed by their declared name.
     pub coverage: Coverage,
     /// Losses resolved during decoding.
-    pub losses: Vec<LossNote>,
+    pub losses: Vec<DecodeLoss>,
     /// Codec-defined informational notes.
     pub notes: Vec<String>,
     /// Complete source-to-result accounting.
