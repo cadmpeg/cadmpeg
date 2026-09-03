@@ -27,6 +27,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
         &[],
         true,
         None,
+        Packaging::Bare,
     )
     .expect("synthesized unknown record conversion")
     .0;
@@ -88,7 +89,7 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
                 .expect("root fits the test policy");
-        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx, Packaging::Bare)
             .expect_err("a small work budget must refuse one decode stage");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -119,7 +120,7 @@ fn semantic_decode_admits_ir_entities_at_stage_boundaries() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
                 .expect("root fits the test policy");
-        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx, Packaging::Bare)
             .expect_err("a model entity must be admitted before the next semantic stage");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -160,8 +161,13 @@ fn implicit_face_plane_work_is_charged_before_plane_inference() {
             &policy,
         )
         .expect("root fits the test policy");
-        let error = crate::reader::decode(source.as_bytes(), DecodeOptions::default(), &ctx)
-            .expect_err("bounded implicit-plane work must be refused at some budget");
+        let error = crate::reader::decode(
+            source.as_bytes(),
+            DecodeOptions::default(),
+            &ctx,
+            Packaging::Bare,
+        )
+        .expect_err("bounded implicit-plane work must be refused at some budget");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };

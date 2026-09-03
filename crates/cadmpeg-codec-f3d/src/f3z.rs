@@ -115,12 +115,14 @@ fn finalize_result(
 ) -> Decoded {
     ir.finalize();
     let hash = crate::decode::document_local_sha256(&ir);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
+    ir.source
+        .as_mut()
+        .expect("the decoded F3Z model root authored source metadata")
+        .attributes
+        .insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
-    }
     Decoded {
         ir,
         body,
