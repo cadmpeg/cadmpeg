@@ -74,8 +74,8 @@ const TRANSCODE_UNAVAILABLE: &str =
 /// source's dialect, `Inherit` refuses, naming that dialect and the catalog.
 /// There is no fall-through to the catalog default: a same-format conversion
 /// never silently changes what the file is. `fcstd:schema-2` is the canonical
-/// case, and an explicit `--to` is the escape — from the inherit refusal, not
-/// from the deliverability one, which no request can talk this writer out of.
+/// off-catalog preservation case. An explicit target can name a catalog row,
+/// but no request can override the retained graph's deliverability.
 ///
 /// An `FCStd` source that records no dialect is refused too: there is nothing to
 /// preserve, and no identity to default to. A source of another format is also
