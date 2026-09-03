@@ -3193,7 +3193,6 @@ fn build_geometry_report(
     decoded: &Brep,
     classification: &crate::dialect::LayerClassification,
 ) -> DecodeBody {
-    let dialects = classification.layers();
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -3270,7 +3269,7 @@ fn build_geometry_report(
         geometry_transferred: true,
         coverage: Default::default(),
         losses,
-        notes: container::summarize(scan, dialects.clone()).notes,
+        notes: container::notes(scan),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
@@ -4549,8 +4548,6 @@ fn build_container_report(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
 ) -> DecodeBody {
-    let dialects = classification.layers();
-    let summary = container::summarize(scan, dialects.clone());
     let parasolid_sources = scan
         .blocks
         .iter()
@@ -4595,7 +4592,7 @@ fn build_container_report(
         geometry_transferred: false,
         coverage: Default::default(),
         losses,
-        notes: summary.notes,
+        notes: container::notes(scan),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
