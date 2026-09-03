@@ -1221,14 +1221,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             }
             FeatureDefinition::HelixNativeAxis { .. } => true,
             FeatureDefinition::Wrap {
-                profile,
-                face,
-                mode,
-                depth,
+                profile, face, ..
             } => {
-                incomplete_profile(profile)
-                    || incomplete_face_selection(face)
-                    || (*mode != cadmpeg_ir::features::WrapMode::Scribe && depth.is_none())
+                incomplete_profile(profile) || incomplete_face_selection(face)
             }
             FeatureDefinition::Sketch { sketch, .. } => sketch.is_none(),
             FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),

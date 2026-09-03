@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
+use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -345,7 +345,14 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
             scale_length(major_radius, scale);
             scale_length(minor_radius, scale);
         }
-        FeatureDefinition::Wrap { depth, .. } => scale_optional_length(depth, scale),
+        FeatureDefinition::Wrap {
+            mode: WrapMode::Emboss { depth } | WrapMode::Deboss { depth },
+            ..
+        } => scale_length(depth, scale),
+        FeatureDefinition::Wrap {
+            mode: WrapMode::Scribe,
+            ..
+        } => {}
         FeatureDefinition::SketchBlockInstance {
             placement: Some(placement),
             ..

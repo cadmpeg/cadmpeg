@@ -258,21 +258,18 @@ pub(crate) fn project_wrap(
         .to_ascii_lowercase()
         .as_str()
     {
-        "emboss" => WrapMode::Emboss,
-        "deboss" => WrapMode::Deboss,
+        "emboss" => WrapMode::Emboss {
+            depth: Length(parse_positive_length_mm(feature.parameters.get("Depth")?)?),
+        },
+        "deboss" => WrapMode::Deboss {
+            depth: Length(parse_positive_length_mm(feature.parameters.get("Depth")?)?),
+        },
         "scribe" => WrapMode::Scribe,
         _ => return None,
-    };
-    let depth = match mode {
-        WrapMode::Emboss | WrapMode::Deboss => Some(Length(parse_positive_length_mm(
-            feature.parameters.get("Depth")?,
-        )?)),
-        WrapMode::Scribe => None,
     };
     Some(FeatureDefinition::Wrap {
         profile: ProfileRef::Native(profile),
         face,
         mode,
-        depth,
     })
 }
