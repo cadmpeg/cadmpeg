@@ -1065,24 +1065,26 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
         definition("Helix"),
         cadmpeg_ir::features::FeatureDefinition::Helix {
             radius: cadmpeg_ir::features::Length(3.0),
-            pitch: cadmpeg_ir::features::Length(4.0),
+            shape: cadmpeg_ir::features::HelixShape::Conical {
+                pitch,
+                cone_angle: cadmpeg_ir::features::Angle(angle),
+            },
             revolutions: 5.0,
             clockwise: true,
-            cone_angle: Some(cadmpeg_ir::features::Angle(angle)),
             segment_turns: Some(0.5),
             construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Corrected),
-            radial_growth: None,
             ..
-        } if (*angle - 12_f64.to_radians()).abs() < 1.0e-12
+        } if (pitch.get().0 - 4.0).abs() < 1.0e-12
+            && (*angle - 12_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Spiral"),
         cadmpeg_ir::features::FeatureDefinition::Helix {
             radius: cadmpeg_ir::features::Length(5.0),
-            pitch: cadmpeg_ir::features::Length(0.0),
+            shape: cadmpeg_ir::features::HelixShape::Spiral {
+                radial_growth: cadmpeg_ir::features::Length(2.0),
+            },
             revolutions: 3.5,
-            radial_growth: Some(cadmpeg_ir::features::Length(2.0)),
-            cone_angle: None,
             segment_turns: Some(0.25),
             construction_style: None,
             ..

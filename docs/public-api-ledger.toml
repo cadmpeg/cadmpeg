@@ -2969,3 +2969,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::features::{FeatureDefinition::Wrap::depth,WrapMode::{Emboss,Deboss}}"
 reason = "emboss and deboss variants own their required depth, while the scribe variant has no depth carrier"
+
+[[change]]
+commit = "f36fbc552614c029aa76d71ceb2f0d2aaa734788"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::FeatureDefinition::Helix::{pitch,radial_growth,cone_angle}"
+reason = "HelixShape selects cylindrical, conical, or spiral data directly, and HelixPitch prevents axial forms from carrying the legacy zero-pitch spiral sentinel"

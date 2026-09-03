@@ -206,12 +206,12 @@ pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         axis_origin,
         axis_direction,
         radius: Length(radius),
-        pitch: Length(pitch),
+        shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+            pitch: cadmpeg_ir::features::HelixPitch::new(Length(pitch))?,
+        },
         revolutions,
         start_angle: Angle(start_angle),
         clockwise,
-        radial_growth: None,
-        cone_angle: None,
         segment_turns: None,
         construction_style: None,
     })

@@ -975,6 +975,93 @@ fn wrap_mode_rejects_a_missing_or_forbidden_depth() {
 }
 
 #[test]
+fn helix_shape_round_trips_through_the_flat_wire_shape() {
+    use crate::features::{FeatureDefinition, HelixShape, Length};
+
+    let conical_wire = serde_json::json!({
+        "definition": "helix",
+        "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "radius": 2.0,
+        "pitch": 3.0,
+        "revolutions": 4.0,
+        "start_angle": 0.0,
+        "clockwise": false,
+        "cone_angle": 0.2
+    });
+    let conical: FeatureDefinition = serde_json::from_value(conical_wire.clone()).unwrap();
+    assert!(matches!(
+        &conical,
+        FeatureDefinition::Helix {
+            shape: HelixShape::Conical { pitch, .. },
+            ..
+        } if pitch.get() == Length(3.0)
+    ));
+    assert_eq!(serde_json::to_value(conical).unwrap(), conical_wire);
+
+    let spiral_wire = serde_json::json!({
+        "definition": "helix",
+        "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "radius": 2.0,
+        "pitch": 0.0,
+        "revolutions": 4.0,
+        "start_angle": 0.0,
+        "clockwise": false,
+        "radial_growth": 1.5
+    });
+    let spiral: FeatureDefinition = serde_json::from_value(spiral_wire.clone()).unwrap();
+    assert!(matches!(
+        &spiral,
+        FeatureDefinition::Helix {
+            shape: HelixShape::Spiral {
+                radial_growth: Length(1.5)
+            },
+            ..
+        }
+    ));
+    assert_eq!(serde_json::to_value(spiral).unwrap(), spiral_wire);
+}
+
+#[test]
+fn helix_shape_rejects_sentinel_and_conflicting_wire_fields() {
+    use crate::features::FeatureDefinition;
+
+    let base = serde_json::json!({
+        "definition": "helix",
+        "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "radius": 2.0,
+        "pitch": 0.0,
+        "revolutions": 4.0,
+        "start_angle": 0.0,
+        "clockwise": false
+    });
+    for invalid in [
+        base.clone(),
+        {
+            let mut value = base.clone();
+            value["pitch"] = serde_json::json!(3.0);
+            value["radial_growth"] = serde_json::json!(1.5);
+            value
+        },
+        {
+            let mut value = base.clone();
+            value["radial_growth"] = serde_json::json!(1.5);
+            value["cone_angle"] = serde_json::json!(0.2);
+            value
+        },
+        {
+            let mut value = base.clone();
+            value["cone_angle"] = serde_json::json!(0.2);
+            value
+        },
+    ] {
+        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+    }
+}
+
+#[test]
 fn trim_cell_selection_requires_unique_in_range_ordinals() {
     let valid = TrimCellSelection {
         removed: vec![1, 4],

@@ -1095,8 +1095,10 @@ pub enum FeatureDefinition {
         axis_direction: Vector3,
         /// Initial radial distance from the axis.
         radius: Length,
-        /// Signed axial rise per revolution; zero produces a planar spiral.
-        pitch: Length,
+        /// Axial or radial construction law.
+        #[serde(flatten, with = "helix_shape_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "HelixShapeSchemaWire"))]
+        shape: HelixShape,
         /// Positive number of revolutions.
         revolutions: f64,
         /// Angular position at the curve start.
@@ -1104,12 +1106,6 @@ pub enum FeatureDefinition {
         start_angle: Angle,
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
-        /// Radial growth per revolution for a planar spiral, when non-cylindrical.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        radial_growth: Option<Length>,
-        /// Cone half-angle for a conical helix, when non-cylindrical.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cone_angle: Option<Angle>,
         /// Number of turns per generated curve subdivision, when requested.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         segment_turns: Option<f64>,
@@ -3336,6 +3332,136 @@ pub enum HelixConstructionStyle {
     Legacy,
     /// Corrected construction used by newly created features.
     Corrected,
+}
+
+/// Axial or radial construction law of a helix feature.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HelixShape {
+    /// Constant-radius helix with signed axial rise per revolution.
+    Cylindrical {
+        /// Signed axial rise per revolution.
+        pitch: HelixPitch,
+    },
+    /// Conical helix with signed axial rise and cone half-angle.
+    Conical {
+        /// Signed axial rise per revolution.
+        pitch: HelixPitch,
+        /// Cone half-angle.
+        cone_angle: Angle,
+    },
+    /// Planar spiral with signed radial growth per revolution.
+    Spiral {
+        /// Signed radial growth per revolution.
+        radial_growth: Length,
+    },
+}
+
+/// Finite, nonzero signed axial rise per revolution.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct HelixPitch(Length);
+
+impl HelixPitch {
+    /// Construct a finite, nonzero axial pitch.
+    #[must_use]
+    pub fn new(value: Length) -> Option<Self> {
+        (value.0.is_finite() && value.0 != 0.0).then_some(Self(value))
+    }
+
+    /// Return the signed axial pitch.
+    #[must_use]
+    pub const fn get(self) -> Length {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for HelixPitch {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Length::deserialize(deserializer)?;
+        Self::new(value)
+            .ok_or_else(|| serde::de::Error::custom("helix pitch must be finite and nonzero"))
+    }
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the helix-shape wire schema")]
+struct HelixShapeSchemaWire {
+    pitch: Length,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    radial_growth: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cone_angle: Option<Angle>,
+}
+
+mod helix_shape_wire {
+    use super::{Angle, HelixPitch, HelixShape, Length};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        pitch: Length,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        radial_growth: Option<Length>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cone_angle: Option<Angle>,
+    }
+
+    pub fn serialize<S>(value: &HelixShape, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let (pitch, radial_growth, cone_angle) = match value {
+            HelixShape::Cylindrical { pitch } => (pitch.get(), None, None),
+            HelixShape::Conical { pitch, cone_angle } => (pitch.get(), None, Some(*cone_angle)),
+            HelixShape::Spiral { radial_growth } => (Length(0.0), Some(*radial_growth), None),
+        };
+        Wire {
+            pitch,
+            radial_growth,
+            cone_angle,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HelixShape, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.pitch.0 == 0.0, wire.radial_growth, wire.cone_angle) {
+            (false, None, None) => Ok(HelixShape::Cylindrical {
+                pitch: HelixPitch::new(wire.pitch).ok_or_else(|| {
+                    serde::de::Error::custom("helix pitch field must be finite and nonzero")
+                })?,
+            }),
+            (false, None, Some(cone_angle)) => Ok(HelixShape::Conical {
+                pitch: HelixPitch::new(wire.pitch).ok_or_else(|| {
+                    serde::de::Error::custom("helix pitch field must be finite and nonzero")
+                })?,
+                cone_angle,
+            }),
+            (true, Some(radial_growth), None) => Ok(HelixShape::Spiral { radial_growth }),
+            (_, Some(_), Some(_)) => Err(serde::de::Error::custom(
+                "helix radial_growth and cone_angle fields are mutually exclusive",
+            )),
+            (false, Some(_), None) => Err(serde::de::Error::custom(
+                "helix radial_growth requires a zero pitch field",
+            )),
+            (true, None, Some(_)) => Err(serde::de::Error::custom(
+                "helix cone_angle requires a nonzero pitch field",
+            )),
+            (true, None, None) => Err(serde::de::Error::custom(
+                "helix zero pitch requires the radial_growth field",
+            )),
+        }
+    }
 }
 
 /// Result topology retained by a projection-on-surface operation.

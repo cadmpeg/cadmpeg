@@ -3543,47 +3543,54 @@ fn parametric_helix_definition(
         return None;
     }
     let segment_turns = (segment_value > 0.0).then_some(segment_value);
-    let (pitch, revolutions, clockwise, radial_growth, cone_angle, construction_style) =
-        if kind == "Part::Helix" {
-            let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
-            let height = scalar_named(properties, "Height").filter(|value| *value > 0.0)?;
-            let angle = scalar_named(properties, "Angle").unwrap_or(0.0);
-            if !angle.is_finite() || angle.abs() >= 90.0 {
-                return None;
-            }
-            let clockwise = match enumeration_selector(properties, "LocalCoord", 0)? {
-                0 => false,
-                1 => true,
-                _ => return None,
-            };
-            let construction_style = match enumeration_selector(properties, "Style", 0)? {
-                0 => Some(HelixConstructionStyle::Legacy),
-                1 => Some(HelixConstructionStyle::Corrected),
-                _ => return None,
-            };
-            (
-                pitch,
-                height / pitch,
-                clockwise,
-                None,
-                (angle != 0.0).then_some(cadmpeg_ir::features::Angle(angle.to_radians())),
-                construction_style,
-            )
-        } else {
-            let growth = scalar_named(properties, "Growth").filter(|value| *value >= 0.0)?;
-            let revolutions = scalar_named(properties, "Rotations").filter(|value| *value > 0.0)?;
-            (0.0, revolutions, false, Some(Length(growth)), None, None)
+    let (shape, revolutions, clockwise, construction_style) = if kind == "Part::Helix" {
+        let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
+        let height = scalar_named(properties, "Height").filter(|value| *value > 0.0)?;
+        let angle = scalar_named(properties, "Angle").unwrap_or(0.0);
+        if !angle.is_finite() || angle.abs() >= 90.0 {
+            return None;
+        }
+        let clockwise = match enumeration_selector(properties, "LocalCoord", 0)? {
+            0 => false,
+            1 => true,
+            _ => return None,
         };
+        let construction_style = match enumeration_selector(properties, "Style", 0)? {
+            0 => Some(HelixConstructionStyle::Legacy),
+            1 => Some(HelixConstructionStyle::Corrected),
+            _ => return None,
+        };
+        let shape = if angle == 0.0 {
+            cadmpeg_ir::features::HelixShape::Cylindrical {
+                pitch: cadmpeg_ir::features::HelixPitch::new(Length(pitch))?,
+            }
+        } else {
+            cadmpeg_ir::features::HelixShape::Conical {
+                pitch: cadmpeg_ir::features::HelixPitch::new(Length(pitch))?,
+                cone_angle: cadmpeg_ir::features::Angle(angle.to_radians()),
+            }
+        };
+        (shape, height / pitch, clockwise, construction_style)
+    } else {
+        let growth = scalar_named(properties, "Growth").filter(|value| *value >= 0.0)?;
+        let revolutions = scalar_named(properties, "Rotations").filter(|value| *value > 0.0)?;
+        (
+            cadmpeg_ir::features::HelixShape::Spiral {
+                radial_growth: Length(growth),
+            },
+            revolutions,
+            false,
+            None,
+        )
+    };
     (revolutions.is_finite() && revolutions > 0.0).then_some(FeatureDefinition::Helix {
         axis_origin: Point3::new(0.0, 0.0, 0.0),
         axis_direction: Vector3::new(0.0, 0.0, 1.0),
         radius: Length(radius),
-        pitch: Length(pitch),
+        shape,
         revolutions,
         start_angle: cadmpeg_ir::features::Angle(0.0),
         clockwise,
-        radial_growth,
-        cone_angle,
         segment_turns,
         construction_style,
     })

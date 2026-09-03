@@ -316,14 +316,24 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
         FeatureDefinition::Helix {
             axis_origin,
             radius,
-            pitch,
-            radial_growth,
+            shape,
             ..
         } => {
             scale_point3(axis_origin, scale);
             scale_length(radius, scale);
-            scale_length(pitch, scale);
-            scale_optional_length(radial_growth, scale);
+            match shape {
+                cadmpeg_ir::features::HelixShape::Cylindrical { pitch }
+                | cadmpeg_ir::features::HelixShape::Conical { pitch, .. } => {
+                    if let Some(scaled) =
+                        cadmpeg_ir::features::HelixPitch::new(Length(pitch.get().0 * scale))
+                    {
+                        *pitch = scaled;
+                    }
+                }
+                cadmpeg_ir::features::HelixShape::Spiral { radial_growth } => {
+                    scale_length(radial_growth, scale);
+                }
+            }
         }
         FeatureDefinition::HelixNativeAxis {
             axial_rise, pitch, ..

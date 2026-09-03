@@ -56,7 +56,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         axis_origin,
         axis_direction,
         radius,
-        pitch,
+        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
         revolutions,
         start_angle,
         clockwise,
@@ -72,7 +72,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(axis_direction.y.abs() <= EPS_HELIX_FEATURE);
     assert!((axis_direction.z + 1.0).abs() <= EPS_HELIX_FEATURE);
     assert!((radius.0 - 5.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((pitch.0 - 71.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((pitch.get().0 - 71.0).abs() <= EPS_HELIX_FEATURE);
     assert!((*revolutions - 1.0).abs() <= EPS_HELIX_FEATURE);
     assert!(start_angle.0.abs() <= EPS_HELIX_FEATURE);
     assert!(!clockwise);
