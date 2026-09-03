@@ -1049,10 +1049,15 @@ fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
         )
         .expect("early-era revision loft decode");
     let member = decoded_revision_loft_member(decoded.ir());
-    assert_eq!(member.type_code, 1);
-    assert_eq!(member.data.first_flag, Some(false));
-    assert_eq!(member.data.asm_extension, None);
-    assert_eq!(member.data.secondary_pcurve, None);
+    assert!(matches!(
+        &member.form,
+        cadmpeg_ir::geometry::LoftMemberForm::Support {
+            type_code: 1,
+            first_flag: false,
+            asm_extension: None,
+            ..
+        }
+    ));
     assert_eq!(regenerated_procedural_surface_span(decoded.ir()), subtype);
 }
 
@@ -1068,12 +1073,15 @@ fn revision_loft_type_zero_member_stores_two_pcurve_slots() {
         )
         .expect("type-zero revision loft decode");
     let member = decoded_revision_loft_member(decoded.ir());
-    assert_eq!(member.type_code, 0);
-    assert_eq!(member.data.surface, None);
-    assert!(member.data.pcurve.is_some());
-    assert_eq!(member.data.secondary_pcurve, None);
-    assert_eq!(member.data.first_flag, None);
-    assert_eq!(member.data.asm_extension, Some(-1));
+    assert!(matches!(
+        &member.form,
+        cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+            pcurve: Some(_),
+            secondary_pcurve: None,
+            asm_extension: Some(-1),
+            ..
+        }
+    ));
     assert_revision_surface_round_trip(smbh, "loft");
 }
 

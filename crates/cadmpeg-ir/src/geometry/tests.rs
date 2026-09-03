@@ -206,3 +206,87 @@ fn variable_blend_shape_rejects_inconsistent_wire_fields() {
     wire["u_range"] = serde_json::json!([-1.0, null]);
     assert!(serde_json::from_value::<VariableBlendShapeWireTest>(wire).is_err());
 }
+
+fn empty_loft_subdata() -> crate::geometry::LoftSubdata {
+    crate::geometry::LoftSubdata {
+        type_code: 211,
+        row_count: 1,
+        column_count: 0,
+        rows: vec![crate::geometry::LoftSubdataRow {
+            parameters: [0.0, 1.0],
+            columns: Vec::new(),
+            extra: None,
+        }],
+    }
+}
+
+#[test]
+fn loft_member_form_keeps_the_nested_wire_shape() {
+    let member = crate::geometry::LoftProfileMember {
+        curve: crate::ids::CurveId("test:curve#loft".into()),
+        endpoints: Some([Some(0.0), Some(1.0)]),
+        form: crate::geometry::LoftMemberForm::Support {
+            type_code: 3,
+            surface: Some(crate::ids::SurfaceId("test:surface#loft".into())),
+            support_bounds: [Some(-1.0), Some(1.0), None, None],
+            pcurve: None,
+            first_flag: true,
+            asm_extension: Some(-1),
+            subdata: empty_loft_subdata(),
+            direction: None,
+        },
+    };
+    let wire = serde_json::to_value(&member).unwrap();
+    assert_eq!(wire["type_code"], 3);
+    assert_eq!(wire["data"]["surface"], "test:surface#loft");
+    assert_eq!(wire["data"]["first_flag"], true);
+    assert!(wire["data"].get("secondary_pcurve").is_none());
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LoftProfileMember>(wire).unwrap(),
+        member
+    );
+}
+
+#[test]
+fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
+    let pair = crate::geometry::LoftProfileMember {
+        curve: crate::ids::CurveId("test:curve#loft".into()),
+        endpoints: Some([None, None]),
+        form: crate::geometry::LoftMemberForm::PcurvePair {
+            pcurve: None,
+            secondary_pcurve: None,
+            asm_extension: None,
+            subdata: empty_loft_subdata(),
+            direction: None,
+        },
+    };
+    let mut pair_wire = serde_json::to_value(pair).unwrap();
+    pair_wire["data"]["surface"] = serde_json::json!("test:surface#conflict");
+    let error =
+        serde_json::from_value::<crate::geometry::LoftProfileMember>(pair_wire).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("pcurve-pair form cannot carry a support surface"));
+
+    let mut support_wire = serde_json::to_value(crate::geometry::LoftProfileMember {
+        curve: crate::ids::CurveId("test:curve#loft".into()),
+        endpoints: None,
+        form: crate::geometry::LoftMemberForm::Support {
+            type_code: 4,
+            surface: None,
+            support_bounds: [None; 4],
+            pcurve: None,
+            first_flag: false,
+            asm_extension: Some(-1),
+            subdata: empty_loft_subdata(),
+            direction: None,
+        },
+    })
+    .unwrap();
+    support_wire["data"]["first_flag"] = serde_json::Value::Null;
+    let error =
+        serde_json::from_value::<crate::geometry::LoftProfileMember>(support_wire).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("nonzero loft type_code requires data.first_flag"));
+}

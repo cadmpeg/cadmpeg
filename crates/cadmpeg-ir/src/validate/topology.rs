@@ -591,7 +591,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         }
                     }
                     for member in &entry.profile {
-                        if let Some(surface) = &member.data.surface {
+                        if let Some(surface) = member.form.surface() {
                             if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
@@ -810,7 +810,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         }
                     }
                     for member in &entry.profile {
-                        if let Some(surface) = &member.data.surface {
+                        if let Some(surface) = member.form.surface() {
                             if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
@@ -885,7 +885,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     if ids.curves(&member.curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &member.curve.0);
                     }
-                    if let Some(surface) = &member.data.surface {
+                    if let Some(surface) = member.form.surface() {
                         if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
