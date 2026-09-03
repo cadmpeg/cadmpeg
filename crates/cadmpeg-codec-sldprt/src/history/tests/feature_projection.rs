@@ -27,7 +27,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
         .push(cadmpeg_ir::features::DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true.into(),
+            active: true,
             source_index: None,
             name: "configuration".into(),
             material: None,

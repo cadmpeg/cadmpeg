@@ -114,7 +114,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: None,
         name: "Metric".into(),
         material: Some("Steel".into()),
@@ -129,7 +129,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
         ordinal: 1,
-        active: false.into(),
+        active: false,
         source_index: None,
         name: "Empty".into(),
         material: None,
@@ -188,7 +188,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
-    assert!(configuration.active.is_active());
+    assert!(configuration.active);
     assert_eq!(
         configuration.bodies,
         decoded
@@ -231,8 +231,8 @@ fn semantic_writer_round_trips_active_configuration() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    assert!(decoded.ir().model.configurations[0].active.is_active());
-    assert!(decoded.ir().model.configurations[1].active.is_inactive());
+    assert!(decoded.ir().model.configurations[0].active);
+    assert!(!decoded.ir().model.configurations[1].active);
 
     decoded.ir_mut().model.configurations[0].active = false.into();
     decoded.ir_mut().model.configurations[1].active = true.into();
@@ -246,10 +246,8 @@ fn semantic_writer_round_trips_active_configuration() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(regenerated.ir().model.configurations[0]
-        .active
-        .is_inactive());
-    assert!(regenerated.ir().model.configurations[1].active.is_active());
+    assert!(!regenerated.ir().model.configurations[0].active);
+    assert!(regenerated.ir().model.configurations[1].active);
     assert_eq!(
         regenerated.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Manufacturing & QA"
@@ -327,7 +325,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|(index, body)| DesignConfiguration {
             id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
             ordinal: index as u32,
-            active: false.into(),
+            active: false,
             source_index: None,
             name: format!("Config {index}").into(),
             material: None,
@@ -369,7 +367,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     assert_eq!(decoded.ir().model.bodies.len(), 2);
     assert_eq!(decoded.ir().model.configurations[0].bodies.len(), 1);
     assert_eq!(decoded.ir().model.configurations[1].bodies.len(), 1);
-    assert!(decoded.ir().model.configurations[1].active.is_active());
+    assert!(decoded.ir().model.configurations[1].active);
     assert_ne!(
         decoded.ir().model.configurations[0].bodies,
         decoded.ir().model.configurations[1].bodies
@@ -413,7 +411,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(3));
-    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert!(decoded.ir().model.configurations[0].active);
 
     decoded.ir_mut().model.configurations[0].source_index = Some(5);
     let mut written = Vec::new();

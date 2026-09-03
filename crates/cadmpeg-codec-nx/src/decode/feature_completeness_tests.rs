@@ -1398,7 +1398,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("test:configuration#0".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Model".into(),
         material: None,

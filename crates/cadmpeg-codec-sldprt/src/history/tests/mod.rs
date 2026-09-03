@@ -53,7 +53,7 @@ fn design_configuration(
     DesignConfiguration {
         id: ConfigurationId(id.into()),
         ordinal,
-        active: false.into(),
+        active: false,
         source_index,
         name: id.into(),
         material: None,

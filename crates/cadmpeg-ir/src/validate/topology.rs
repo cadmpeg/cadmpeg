@@ -1942,7 +1942,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
     for configuration in &ir.model.configurations {
-        active_configurations += usize::from(configuration.active.is_active());
+        active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
             findings.push(Finding {
                 check: Check::Counts,
@@ -2007,7 +2007,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 });
             }
         }
-        if configuration.active.is_active() {
+        if configuration.active {
             for feature in &ir.model.features {
                 if feature.suppressed.is_some_and(|suppressed| {
                     suppressed_features.contains(&feature.id) != suppressed

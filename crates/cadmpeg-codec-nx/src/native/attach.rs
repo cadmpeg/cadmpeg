@@ -296,7 +296,7 @@ pub(crate) fn attach(
             ir.model.configurations.push(DesignConfiguration {
                 id,
                 ordinal: ordinal as u32,
-                active: active_attribute_use.is_some().into(),
+                active: active_attribute_use.is_some(),
                 source_index: Some(ordinal as u32),
                 name: configuration.name.clone().into(),
                 material: None,
@@ -993,7 +993,7 @@ fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> 
     let active = configurations
         .iter()
         .enumerate()
-        .filter_map(|(index, configuration)| configuration.active.is_active().then_some(index))
+        .filter_map(|(index, configuration)| configuration.active.then_some(index))
         .collect::<Vec<_>>();
     let [index] = active.as_slice() else {
         return None;

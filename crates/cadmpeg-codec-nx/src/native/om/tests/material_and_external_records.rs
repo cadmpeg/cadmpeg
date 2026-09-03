@@ -122,7 +122,7 @@ fn decode_rejects_duplicate_nx_configuration_stream_paths_atomically() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
     assert_eq!(result.ir().model.configurations.len(), 1);
-    assert!(result.ir().model.configurations[0].active.is_inactive());
+    assert!(!result.ir().model.configurations[0].active);
     assert!(result.ir().model.configurations[0].bodies.is_unresolved());
     assert!(result.ir().native.namespace("nx").is_none_or(|namespace| {
         namespace

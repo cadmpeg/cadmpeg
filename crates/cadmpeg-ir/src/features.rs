@@ -240,49 +240,6 @@ impl PartialEq<String> for ConfigurationName {
     }
 }
 
-/// Resolution state of a configuration's active-model status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
-pub enum ConfigurationActivation {
-    /// Whether this configuration supplies the document's active model state.
-    Resolved(bool),
-    /// Source configuration exists but its active-model status is not established.
-    Unresolved,
-}
-
-impl Default for ConfigurationActivation {
-    fn default() -> Self {
-        Self::Resolved(false)
-    }
-}
-
-impl ConfigurationActivation {
-    /// Return the active-model status when resolved.
-    pub fn resolved(&self) -> Option<bool> {
-        match self {
-            Self::Resolved(value) => Some(*value),
-            Self::Unresolved => None,
-        }
-    }
-
-    /// Whether this configuration is known to supply the active model state.
-    pub fn is_active(&self) -> bool {
-        self.resolved() == Some(true)
-    }
-
-    /// Whether this configuration is known not to supply the active model state.
-    pub fn is_inactive(&self) -> bool {
-        self.resolved() == Some(false)
-    }
-}
-
-impl From<bool> for ConfigurationActivation {
-    fn from(value: bool) -> Self {
-        Self::Resolved(value)
-    }
-}
-
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
@@ -345,8 +302,8 @@ pub struct DesignConfiguration {
     #[serde(default)]
     pub ordinal: u32,
     /// Whether this configuration supplies the document's active model state.
-    #[serde(default, skip_serializing_if = "ConfigurationActivation::is_inactive")]
-    pub active: ConfigurationActivation,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub active: bool,
     /// Format-native configuration slot, when distinct from list order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_index: Option<u32>,

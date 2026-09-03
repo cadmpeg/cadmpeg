@@ -72,7 +72,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .iter()
         .find(|configuration| configuration.name == "Medium")
         .expect("active medium configuration");
-    assert!(medium.active.is_active());
+    assert!(medium.active);
     assert_eq!(medium.properties["parameter:width"], "25 mm");
     assert_eq!(medium.properties["suppressed:slot"], "true");
     assert_eq!(

@@ -138,7 +138,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId(format!("configuration-{ordinal}")),
             ordinal,
-            active: (ordinal == 0).into(),
+            active: ordinal == 0,
             source_index: Some(ordinal),
             name: format!("Configuration {ordinal}").into(),
             material: None,
@@ -278,7 +278,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Configuration".into(),
         material: None,
@@ -433,7 +433,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Configuration".into(),
         material: None,
@@ -509,7 +509,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId(format!("configuration-{ordinal}")),
             ordinal,
-            active: active.into(),
+            active,
             source_index: Some(ordinal),
             name: format!("Configuration {ordinal}").into(),
             material: None,
@@ -600,7 +600,7 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     let configuration = |id: &str, parameter_values| DesignConfiguration {
         id: ConfigurationId(id.into()),
         ordinal: 0,
-        active: false.into(),
+        active: false,
         source_index: Some(0),
         name: id.into(),
         material: None,

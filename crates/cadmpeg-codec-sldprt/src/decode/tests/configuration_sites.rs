@@ -37,7 +37,7 @@ fn decode_preserves_unresolved_active_configuration() {
         .model
         .configurations
         .iter()
-        .all(|configuration| configuration.active.is_inactive()));
+        .all(|configuration| !configuration.active));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
@@ -74,7 +74,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.configurations.len(), 1);
-    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(
         decoded.ir().model.configurations[0].bodies,
         decoded
@@ -126,7 +126,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let configuration = &decoded.ir().model.configurations[0];
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
-    assert!(configuration.active.is_active());
+    assert!(configuration.active);
     assert_eq!(configuration.name, "Config-3");
     assert_eq!(
         configuration.bodies,
@@ -293,7 +293,7 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         .find(|configuration| configuration.name.resolved() == Some("Second"))
         .expect("manifest configuration is projected");
 
-    assert!(second.active.is_active());
+    assert!(second.active);
     assert_eq!(second.source_index, Some(1));
     assert!(!second.bodies.is_empty());
     assert!(result
@@ -302,7 +302,7 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         .configurations
         .iter()
         .filter(|configuration| configuration.name.resolved() == Some("First"))
-        .all(|configuration| configuration.active.is_inactive()));
+        .all(|configuration| !configuration.active));
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Second"

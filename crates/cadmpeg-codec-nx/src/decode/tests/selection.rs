@@ -1164,7 +1164,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         DesignConfiguration {
             id: ConfigurationId("test:configuration#0".into()),
             ordinal: 0,
-            active: true.into(),
+            active: true,
             source_index: Some(0),
             name: "Model".into(),
             material: None,
@@ -1179,7 +1179,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         DesignConfiguration {
             id: ConfigurationId("test:configuration#1".into()),
             ordinal: 1,
-            active: false.into(),
+            active: false,
             source_index: Some(1),
             name: "Arrangement".into(),
             material: None,

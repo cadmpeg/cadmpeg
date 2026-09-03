@@ -482,7 +482,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature_id = decoded.ir().model.features[0].id.clone();
-    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(1));
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,

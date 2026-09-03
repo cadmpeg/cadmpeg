@@ -36,7 +36,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
         ordinal: 0,
-        active: false.into(),
+        active: false,
         source_index: Some(7),
         name: "Default".into(),
         material: None,
@@ -294,7 +294,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#1".into()),
         ordinal: 0,
-        active: false.into(),
+        active: false,
         source_index: Some(7),
         name: "Alternate".into(),
         material: None,
@@ -324,24 +324,23 @@ fn configuration_body_membership_round_trips_and_validates() {
 }
 
 #[test]
-fn configuration_name_and_activation_preserve_resolution_state() {
-    use crate::features::{ConfigurationActivation, ConfigurationName, DesignConfiguration};
+fn configuration_name_preserves_resolution_state() {
+    use crate::features::{ConfigurationName, DesignConfiguration};
 
-    let mut configuration: DesignConfiguration = serde_json::from_value(serde_json::json!({
+    let configuration: DesignConfiguration = serde_json::from_value(serde_json::json!({
         "id": "synthetic:test:configuration#0"
     }))
     .expect("legacy configuration");
     assert_eq!(configuration.name, ConfigurationName::Unresolved);
-    assert_eq!(configuration.active.resolved(), Some(false));
+    assert!(!configuration.active);
 
-    configuration.active = ConfigurationActivation::Unresolved;
     let encoded = serde_json::to_value(&configuration).expect("unresolved configuration");
     assert!(encoded.get("name").is_none());
-    assert_eq!(encoded.get("active"), Some(&serde_json::Value::Null));
+    assert!(encoded.get("active").is_none());
     let round_trip: DesignConfiguration =
         serde_json::from_value(encoded).expect("round-trip unresolved configuration");
     assert_eq!(round_trip.name, ConfigurationName::Unresolved);
-    assert_eq!(round_trip.active, ConfigurationActivation::Unresolved);
+    assert!(!round_trip.active);
 }
 
 #[test]

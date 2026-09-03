@@ -140,7 +140,7 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
         payload,
     ));
     assert_eq!(configured.ir().model.configurations.len(), 1);
-    assert!(configured.ir().model.configurations[0].active.is_active());
+    assert!(configured.ir().model.configurations[0].active);
     assert_valid(&configured);
 }
 
