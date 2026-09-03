@@ -8,6 +8,6 @@ mod tests;
 
 pub use backend::{
     CadirEncoder, Catalog, Consumption, DialectFree, EncodeInput, Encoder, EncoderBackend,
-    ExportBody, ExportPlan, PatchConsumption, TargetDomain, WritePath,
+    ExportBody, ExportPlan, PatchConsumption, TargetDomain, TargetResolution, WritePath,
 };
 pub use resolve::{ResolvedTarget, ResolvedWrite, SourceIdentity, TargetRequest};

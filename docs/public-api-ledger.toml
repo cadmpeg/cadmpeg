@@ -2787,3 +2787,10 @@ crate = "cadmpeg-registry"
 kind = "field"
 item = "cadmpeg_registry::DialectProvenance::write_targets"
 reason = "optional TargetCatalog preserves the distinction between a build without an encoder and an encoder whose dialect catalog is empty"
+
+[[change]]
+commit = "216b40ea4898396c3abaaea874d21617da878502"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::write::{TargetDomain::resolve,TargetResolution}"
+reason = "each resolved domain value exposes the export identity it proves, so target resolution no longer returns an independently variable optional identity"

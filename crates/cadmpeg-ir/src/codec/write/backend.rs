@@ -27,6 +27,30 @@ mod domain_sealed {
     impl Sealed for super::Catalog {}
 }
 
+mod resolution_sealed {
+    pub trait Sealed {}
+    impl Sealed for () {}
+    impl Sealed for super::ResolvedWrite<'_> {}
+}
+
+/// A target-domain resolution that states the export identity it proves.
+pub trait TargetResolution: resolution_sealed::Sealed {
+    /// The native target identity, or `None` for the neutral document.
+    fn export_target(&self) -> Option<&DialectId>;
+}
+
+impl TargetResolution for () {
+    fn export_target(&self) -> Option<&DialectId> {
+        None
+    }
+}
+
+impl TargetResolution for ResolvedWrite<'_> {
+    fn export_target(&self) -> Option<&DialectId> {
+        Some(self.target_id())
+    }
+}
+
 /// Where an encoder's targets come from, and what a resolved request looks
 /// like for that encoder.
 ///
@@ -35,20 +59,19 @@ mod domain_sealed {
 /// domain's resolution type and nothing else.
 pub trait TargetDomain: domain_sealed::Sealed {
     /// The proof handed to `plan_resolved` for one request.
-    type Resolved<'a>;
+    type Resolved<'a>: TargetResolution;
 
     /// The static catalog of output flavors this domain lists.
     fn targets(&self) -> TargetCatalog;
 
-    /// Resolves one request against this domain; the second element is the
-    /// export identity the wrapper stamps, `None` for the neutral document.
+    /// Resolves one request against this domain.
     #[doc(hidden)]
     fn resolve<'a>(
         &self,
         ir: &'a CadIr,
         request: TargetRequest<'a>,
         format: &'static str,
-    ) -> Result<(Self::Resolved<'a>, Option<DialectId>), CodecError>;
+    ) -> Result<Self::Resolved<'a>, CodecError>;
 }
 
 /// The neutral representation has no dialect catalog or target identity.
@@ -70,9 +93,9 @@ impl TargetDomain for DialectFree {
         _ir: &'a CadIr,
         request: TargetRequest<'a>,
         format: &'static str,
-    ) -> Result<((), Option<DialectId>), CodecError> {
+    ) -> Result<(), CodecError> {
         match request {
-            TargetRequest::Inherit => Ok(((), None)),
+            TargetRequest::Inherit => Ok(()),
             TargetRequest::Explicit(id) => {
                 Err(TargetRefusal::unknown_explicit(format, id, TargetCatalog::EMPTY).into())
             }
@@ -108,10 +131,8 @@ impl TargetDomain for Catalog {
         ir: &'a CadIr,
         request: TargetRequest<'a>,
         format: &'static str,
-    ) -> Result<(ResolvedWrite<'a>, Option<DialectId>), CodecError> {
-        let resolved = resolve_write_request(ir, request, format, self.0)?;
-        let identity = resolved.target_id().clone();
-        Ok((resolved, Some(identity)))
+    ) -> Result<ResolvedWrite<'a>, CodecError> {
+        resolve_write_request(ir, request, format, self.0)
     }
 }
 
@@ -180,7 +201,8 @@ impl<E: EncoderBackend> Encoder for E {
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError> {
-        let (target, identity) = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
+        let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
+        let identity = target.export_target().cloned();
         let body = self.plan_resolved(input, target)?;
         let ExportBody {
             bytes,
