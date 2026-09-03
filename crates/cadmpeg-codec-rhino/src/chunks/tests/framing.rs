@@ -314,7 +314,9 @@ fn top_level_framing_preserves_truncation_classification() {
             &mut Cursor::new(truncated),
             &InspectOptions::default()
         ),
-        Err(CodecError::Truncated { location, context })
-            if location.offset == 31 && context.operation == "rhino chunk framing"
+        Err(CodecError::Truncated {
+            location,
+            operation
+        }) if location.offset == 31 && operation == "rhino chunk framing"
     ));
 }

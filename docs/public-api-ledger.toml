@@ -2696,3 +2696,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::AssemblyJoint::{kind,operands,frames,offset_frames}"
 reason = "the independent public fields are replaced by sealed grounded and paired constructors and read-only structural accessors"
+
+[[change]]
+commit = "bae4c7cfa0b2bf4890686b64f2dc248a6cf2df76"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::CodecError::Truncated::{context,operation}"
+reason = "a truncation stores its source location once and carries the operation directly instead of embedding a second copy in ErrorContext"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Errors returned by codec parsing and resource enforcement.
 
-use crate::decode::{ErrorContext, ResourceLimit, SourceLocation};
+use crate::decode::{ResourceLimit, SourceLocation};
 use crate::dialect::DialectLayers;
 use crate::target::TargetRefusal;
 
@@ -27,13 +27,13 @@ pub enum CodecError {
     /// not an inconsistency inside the bytes that are present.
     #[error(
         "truncated input during {} at space {} offset {}",
-        .context.operation, .location.space.index(), .location.offset
+        .operation, .location.space.index(), .location.offset
     )]
     Truncated {
         /// Where the truncated read began.
         location: SourceLocation,
-        /// Static context for the failure.
-        context: ErrorContext,
+        /// Static operation that required the missing bytes.
+        operation: &'static str,
     },
     /// A resource limit refused the decode: policy or the allocator.
     ///
@@ -87,10 +87,7 @@ impl CodecError {
     pub const fn truncated(location: SourceLocation, operation: &'static str) -> Self {
         Self::Truncated {
             location,
-            context: ErrorContext {
-                operation,
-                location: Some(location),
-            },
+            operation,
         }
     }
 }

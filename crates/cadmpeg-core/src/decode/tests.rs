@@ -310,10 +310,12 @@ fn committed_reads_preserve_truncation_location_and_operation() {
         .into();
     assert!(matches!(
         error,
-        CodecError::Truncated { location, context }
+        CodecError::Truncated {
+            location,
+            operation
+        }
             if location == root.location_at(0)
-                && context.operation == "read header size"
-                && context.location == Some(location)
+                && operation == "read header size"
     ));
 }
 
