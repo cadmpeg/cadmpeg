@@ -2780,3 +2780,10 @@ crate = "cadmpeg-registry"
 kind = "field"
 item = "cadmpeg_registry::FormatDialects::{catalog,default_target}"
 reason = "FormatDialects retains the complete TargetCatalog and derives its default target from that single value instead of storing a second copy"
+
+[[change]]
+commit = "98c80dcd01e7390c3c543744a8e6fd0d52a39afa"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::DialectProvenance::write_targets"
+reason = "optional TargetCatalog preserves the distinction between a build without an encoder and an encoder whose dialect catalog is empty"

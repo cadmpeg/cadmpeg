@@ -1,4 +1,4 @@
-# generated at d0693f898
+# generated at 98c80dcd0
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -87,7 +87,7 @@ pub cadmpeg_registry::DialectEntry::title: alloc::string::String
 pub struct cadmpeg_registry::DialectProvenance
 pub cadmpeg_registry::DialectProvenance::id: cadmpeg_core::dialect::DialectId
 pub cadmpeg_registry::DialectProvenance::read: core::option::Option<cadmpeg_registry::ReadDisposition>
-pub cadmpeg_registry::DialectProvenance::write_targets: &'static [cadmpeg_core::target::TargetDescriptor]
+pub cadmpeg_registry::DialectProvenance::write_targets: core::option::Option<cadmpeg_core::target::TargetCatalog>
 pub struct cadmpeg_registry::Disposition
 pub cadmpeg_registry::Disposition::read: cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::Disposition::write: cadmpeg_registry::WriteDisposition

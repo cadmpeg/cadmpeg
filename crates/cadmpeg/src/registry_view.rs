@@ -98,13 +98,15 @@ pub fn dialect_lines(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) ->
     if let Some(read) = read {
         clauses.push(format!("read {read}"));
     }
-    if !write_targets.is_empty() {
-        let targets = write_targets
-            .iter()
-            .map(|target| suffix(target.id.as_str()))
-            .collect::<Vec<_>>()
-            .join(", ");
-        clauses.push(format!("write targets {targets}"));
+    if let Some(catalog) = write_targets {
+        if !catalog.is_empty() {
+            let targets = catalog
+                .iter()
+                .map(|target| suffix(target.id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!("write targets {targets}"));
+        }
     }
     let primary = if clauses.is_empty() {
         format!("dialect: {id}")
