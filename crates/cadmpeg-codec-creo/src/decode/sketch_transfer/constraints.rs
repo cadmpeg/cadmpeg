@@ -29,6 +29,7 @@ use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair,
     SketchEntityId, SketchId, SketchLocus, SketchNativeOperand, SketchSolverScalar,
+    SolverScalarClass,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1041,7 +1042,6 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
     section_equation_function_sixteen_angle_difference_rows(definition)
         .into_iter()
         .map(|equation| {
-            let scalar = |(variable_type, key)| SketchSolverScalar { variable_type, key };
             (
                 SketchConstraint {
                     id: sketch_constraint_id(
@@ -1050,9 +1050,18 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
                     ),
                     sketch: sketch.clone(),
                     definition: SketchConstraintDefinition::AngleDifference {
-                        first: scalar(equation.first),
-                        second: scalar(equation.second),
-                        difference: scalar(equation.difference),
+                        first: SketchSolverScalar {
+                            class: SolverScalarClass::Angle,
+                            key: equation.first.1,
+                        },
+                        second: SketchSolverScalar {
+                            class: SolverScalarClass::Angle,
+                            key: equation.second.1,
+                        },
+                        difference: SketchSolverScalar {
+                            class: SolverScalarClass::Difference,
+                            key: equation.difference.1,
+                        },
                         value: Angle(equation.value),
                     },
                     name: None,
@@ -1079,7 +1088,6 @@ pub(in super::super) fn section_equation_function_five_scalar_equality_constrain
     section_equation_function_five_scalar_equality_rows(definition)
         .into_iter()
         .map(|equation| {
-            let scalar = |(variable_type, key)| SketchSolverScalar { variable_type, key };
             (
                 SketchConstraint {
                     id: sketch_constraint_id(
@@ -1088,8 +1096,14 @@ pub(in super::super) fn section_equation_function_five_scalar_equality_constrain
                     ),
                     sketch: sketch.clone(),
                     definition: SketchConstraintDefinition::ScalarEquality {
-                        first: scalar(equation.first),
-                        second: scalar(equation.second),
+                        first: SketchSolverScalar {
+                            class: SolverScalarClass::Equality,
+                            key: equation.first.1,
+                        },
+                        second: SketchSolverScalar {
+                            class: SolverScalarClass::Equality,
+                            key: equation.second.1,
+                        },
                     },
                     name: None,
                     driving: None,
@@ -2009,7 +2023,7 @@ mod tests {
     };
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntityId, SketchId, SketchSolverScalar,
+        SketchConstraintDefinition, SketchEntityId, SketchId, SketchSolverScalar, SolverScalarClass,
     };
     use std::collections::BTreeSet;
 
@@ -2070,15 +2084,15 @@ mod tests {
             constraints[0].0.definition,
             SketchConstraintDefinition::AngleDifference {
                 first: SketchSolverScalar {
-                    variable_type: 4,
+                    class: SolverScalarClass::Angle,
                     key: 10,
                 },
                 second: SketchSolverScalar {
-                    variable_type: 4,
+                    class: SolverScalarClass::Angle,
                     key: 11,
                 },
                 difference: SketchSolverScalar {
-                    variable_type: 0,
+                    class: SolverScalarClass::Difference,
                     key: 20,
                 },
                 value: cadmpeg_ir::features::Angle(1.5),
@@ -2141,11 +2155,11 @@ mod tests {
             constraints[0].0.definition,
             SketchConstraintDefinition::ScalarEquality {
                 first: SketchSolverScalar {
-                    variable_type: 6,
+                    class: SolverScalarClass::Equality,
                     key: 10,
                 },
                 second: SketchSolverScalar {
-                    variable_type: 6,
+                    class: SolverScalarClass::Equality,
                     key: 11,
                 },
             }

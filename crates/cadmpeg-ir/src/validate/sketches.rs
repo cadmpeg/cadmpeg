@@ -1726,14 +1726,16 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 difference,
                 value,
             } => {
-                first.variable_type == 4
-                    && second.variable_type == 4
-                    && difference.variable_type == 0
+                first.class == crate::sketches::SolverScalarClass::Angle
+                    && second.class == crate::sketches::SolverScalarClass::Angle
+                    && difference.class == crate::sketches::SolverScalarClass::Difference
                     && value.0.is_finite()
                     && (0.0..=std::f64::consts::PI).contains(&value.0)
             }
             Constraint::ScalarEquality { first, second } => {
-                first.variable_type == 6 && second.variable_type == 6 && first.key != second.key
+                first.class == crate::sketches::SolverScalarClass::Equality
+                    && second.class == crate::sketches::SolverScalarClass::Equality
+                    && first.key != second.key
             }
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();

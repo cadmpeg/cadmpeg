@@ -1470,16 +1470,64 @@ pub struct SketchDistancePair {
     pub second: SketchLocus,
 }
 
+/// Solver class of an opaque scalar symbol in a sketch solver graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SolverScalarClass {
+    /// Result scalar of an angle-difference relation (wire class 0).
+    Difference,
+    /// Angle operand scalar (wire class 4).
+    Angle,
+    /// Operand scalar of a direct scalar equality (wire class 6).
+    Equality,
+}
+
+impl SolverScalarClass {
+    const fn wire_value(self) -> u32 {
+        match self {
+            Self::Difference => 0,
+            Self::Angle => 4,
+            Self::Equality => 6,
+        }
+    }
+}
+
+impl Serialize for SolverScalarClass {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u32(self.wire_value())
+    }
+}
+
+impl<'de> Deserialize<'de> for SolverScalarClass {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match u32::deserialize(deserializer)? {
+            0 => Ok(Self::Difference),
+            4 => Ok(Self::Angle),
+            6 => Ok(Self::Equality),
+            value => Err(serde::de::Error::custom(format_args!(
+                "variable_type must be 0, 4, or 6, got {value}"
+            ))),
+        }
+    }
+}
+
 /// One opaque scalar symbol in a sketch solver graph.
 ///
-/// The identity is local to the owning sketch. `variable_type` preserves the
-/// solver's scalar class so relations can join only compatible symbols; it has
-/// no meaning outside that solver graph.
+/// The identity is local to the owning sketch. The class preserves the
+/// solver's scalar family so relations can join only compatible symbols; it
+/// has no meaning outside that solver graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchSolverScalar {
     /// Solver scalar class.
-    pub variable_type: u32,
+    #[serde(rename = "variable_type")]
+    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
+    pub class: SolverScalarClass,
     /// Solver-local scalar key.
     pub key: u32,
 }
@@ -1881,7 +1929,7 @@ pub enum SketchConstraintDefinition {
         /// Source-evaluated non-negative angle difference in radians.
         value: Angle,
     },
-    /// Equality between two type-6 solver scalars.
+    /// Equality between two equality-class solver scalars.
     ScalarEquality {
         /// First scalar in the equality.
         first: SketchSolverScalar,
