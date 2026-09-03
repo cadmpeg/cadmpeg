@@ -25,7 +25,7 @@ fn decode_emits_both_intersection_support_pcurves() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -44,7 +44,7 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -77,7 +77,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         supports,
         parameterization,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("typed tolerant intersection");
     };
@@ -125,7 +125,7 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("unresolved tolerant intersection");
     };
@@ -166,7 +166,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("unresolved tolerant intersection");
     };
@@ -180,7 +180,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let cross_branch = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert!(matches!(
-        cross_branch.ir().model.procedural_curves[0].definition,
+        cross_branch.ir().model.procedural_curves[0].definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
@@ -218,7 +218,7 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("unresolved tolerant intersection");
     };
@@ -270,7 +270,7 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("unresolved {family} meridian");
         };
@@ -293,7 +293,7 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(matches!(
-        result.ir().model.procedural_curves[0].definition,
+        result.ir().model.procedural_curves[0].definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
     ));
     assert!(matches!(

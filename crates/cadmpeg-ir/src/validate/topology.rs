@@ -442,7 +442,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         entity: Some(s.id.0.clone()),
                     });
                 } else if ir.model.procedural_surfaces.iter().any(|procedural| {
-                    procedural.id == *construction && procedural.cache_fit_tolerance.is_some()
+                    procedural.id == *construction && procedural.cache_fit_tolerance().is_some()
                 }) {
                     findings.push(Finding {
                         check: Check::ReferentialIntegrity,
@@ -482,7 +482,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         entity: Some(curve.id.0.clone()),
                     });
                 } else if ir.model.procedural_curves.iter().any(|procedural| {
-                    procedural.id == *construction && procedural.cache_fit_tolerance.is_some()
+                    procedural.id == *construction && procedural.cache_fit_tolerance().is_some()
                 }) {
                     findings.push(Finding {
                         check: Check::ReferentialIntegrity,
@@ -545,7 +545,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 &procedural.surface.0,
             );
         }
-        match &procedural.definition {
+        match procedural.definition() {
             ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Compound { components, .. } => {
                 for component in components {
@@ -1154,7 +1154,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         if ids.curves(&procedural.curve.0).is_none() {
             ref_error(findings, &procedural.curve.0, "curve", &procedural.curve.0);
         }
-        match &procedural.definition {
+        match procedural.definition() {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
             ProceduralCurveDefinition::Law {
                 context,

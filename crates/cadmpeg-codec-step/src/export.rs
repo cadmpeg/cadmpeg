@@ -2519,7 +2519,7 @@ impl<'a> Builder<'a> {
             let procedural = self
                 .procedural_surfaces
                 .get(surface_id)
-                .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
+                .map(|procedural| (procedural.id.0.clone(), procedural.definition().clone()));
             let emitted = procedural.and_then(|(id, definition)| {
                 self.emit_procedural_surface(&surf.geometry, &definition)
                     .map(|reference| (id, reference))
@@ -2667,7 +2667,7 @@ impl<'a> Builder<'a> {
             let procedural = self
                 .procedural_curves
                 .get(curve_id)
-                .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
+                .map(|procedural| (procedural.id.0.clone(), procedural.definition().clone()));
             let emitted = procedural.and_then(|(id, definition)| {
                 self.emit_procedural_curve(&definition)
                     .map(|reference| (id, reference))
@@ -3705,7 +3705,7 @@ impl<'a> Builder<'a> {
                                 procedural.surface == surface.id
                                     && self.written_procedural_surfaces.contains(&procedural.id.0)
                                     && matches!(
-                                        procedural.definition,
+                                        procedural.definition(),
                                         ProceduralSurfaceDefinition::DegenerateTorus { .. }
                                     )
                             }))

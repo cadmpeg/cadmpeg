@@ -615,7 +615,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         endpoints,
         tolerance,
         parameterization,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("tolerant intersection definition");
     };
@@ -700,7 +700,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         unreachable!()
     };
@@ -729,7 +729,7 @@ fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         unreachable!()
     };
@@ -755,7 +755,8 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
     assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
             return false;
         };
         context.sides[1].pcurve.is_some()
@@ -782,7 +783,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[1].definition
+        ir.model.procedural_curves[1].definition()
     else {
         unreachable!()
     };
@@ -820,7 +821,8 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
     assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
             return false;
         };
         context.sides[1].pcurve.is_some()
@@ -848,13 +850,13 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     );
 
     let ProceduralCurveDefinition::Intersection { context: first, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         unreachable!()
     };
     assert!(first.sides[1].pcurve.is_none());
     let ProceduralCurveDefinition::Intersection { context: later, .. } =
-        &ir.model.procedural_curves[1].definition
+        ir.model.procedural_curves[1].definition()
     else {
         unreachable!()
     };
@@ -905,10 +907,10 @@ fn cylinder_plane_transfer_fixture(
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: construction,
-        curve: curve.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction,
+        curve.clone(),
+        ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
                     IntcurveSupportSide {
@@ -930,8 +932,7 @@ fn cylinder_plane_transfer_fixture(
             },
             discontinuity_flag: false,
         },
-        cache_fit_tolerance: None,
-    });
+    ));
     ir.model.edges.push(Edge {
         id: EdgeId("synthetic:edge".into()),
         curve: Some(curve),
@@ -1019,10 +1020,10 @@ fn blend_contact_transfer_fixture(
     } else {
         other_support.clone()
     };
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: ProceduralCurveId("synthetic:blend-contact-spine-construction".into()),
-        curve: spine.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        ProceduralCurveId("synthetic:blend-contact-spine-construction".into()),
+        spine.clone(),
+        ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
                     IntcurveSupportSide {
@@ -1041,12 +1042,11 @@ fn blend_contact_transfer_fixture(
             },
             discontinuity_flag: false,
         },
-        cache_fit_tolerance: None,
-    });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
-        surface: target.clone(),
-        definition: ProceduralSurfaceDefinition::Blend {
+    ));
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
+        target.clone(),
+        ProceduralSurfaceDefinition::Blend {
             supports: [
                 Some(BlendSupport {
                     surface: support.clone(),
@@ -1062,9 +1062,8 @@ fn blend_contact_transfer_fixture(
             cross_section: BlendCrossSection::Circular,
             native: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
 
     for index in 0..candidate_count {
         let curve = CurveId(format!("synthetic:blend-contact-curve-{index}"));
@@ -1076,30 +1075,33 @@ fn blend_contact_transfer_fixture(
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId(format!("synthetic:blend-contact-intersection-{index}")),
-            curve,
-            definition: ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
-                        IntcurveSupportSide {
-                            surface: Some(support.clone()),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(source_pcurve.clone()),
-                        },
-                        IntcurveSupportSide {
-                            surface: Some(target.clone()),
-                            pcurve_parameter_range: None,
-                            pcurve: None,
-                        },
-                    ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ir.model.procedural_curves.push(
+            ProceduralCurve::try_new(
+                ProceduralCurveId(format!("synthetic:blend-contact-intersection-{index}")),
+                curve,
+                ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides: [
+                            IntcurveSupportSide {
+                                surface: Some(support.clone()),
+                                pcurve_parameter_range: None,
+                                pcurve: Some(source_pcurve.clone()),
+                            },
+                            IntcurveSupportSide {
+                                surface: Some(target.clone()),
+                                pcurve_parameter_range: None,
+                                pcurve: None,
+                            },
+                        ],
+                        parameter_range: [0.0, 1.0],
+                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                    },
+                    discontinuity_flag: false,
                 },
-                discontinuity_flag: false,
-            },
-            cache_fit_tolerance: Some(tolerance),
-        });
+                Some(tolerance),
+            )
+            .unwrap(),
+        );
     }
     ir
 }
@@ -1153,10 +1155,10 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: target_construction,
-        surface: target.clone(),
-        definition: ProceduralSurfaceDefinition::Blend {
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        target_construction,
+        target.clone(),
+        ProceduralSurfaceDefinition::Blend {
             supports: [
                 Some(BlendSupport {
                     surface: source.clone(),
@@ -1172,9 +1174,8 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             cross_section: BlendCrossSection::Circular,
             native: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
 
     let curve = CurveId("synthetic:solved-boundary".into());
     let construction = ProceduralCurveId("synthetic:boundary-intersection".into());
@@ -1186,10 +1187,10 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: construction,
-        curve: curve.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction,
+        curve.clone(),
+        ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
                     IntcurveSupportSide {
@@ -1211,8 +1212,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             },
             discontinuity_flag: false,
         },
-        cache_fit_tolerance: None,
-    });
+    ));
     ir.model.edges.push(Edge {
         id: EdgeId("synthetic:boundary-edge".into()),
         curve: Some(curve),
@@ -1225,7 +1225,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         unreachable!()
     };
@@ -1290,17 +1290,16 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: construction,
-        curve: curve.clone(),
-        definition: ProceduralCurveDefinition::TolerantIntersection {
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction,
+        curve.clone(),
+        ProceduralCurveDefinition::TolerantIntersection {
             supports: [nurbs, plane],
             endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             tolerance: 1.0e-8,
             parameterization: None,
         },
-        cache_fit_tolerance: None,
-    });
+    ));
     let point_ids = [
         PointId("synthetic:p0".into()),
         PointId("synthetic:p1".into()),
@@ -1349,12 +1348,12 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         supports,
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         unreachable!()
     };
     assert_eq!(
-        ir.model.procedural_curves[0].cache_fit_tolerance,
+        ir.model.procedural_curves[0].cache_fit_tolerance(),
         Some(1.0e-8)
     );
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
@@ -1478,30 +1477,33 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         param_range: None,
         tolerance: Some(1.0e-8),
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: ProceduralCurveId("nx:test:serialized-boundary".into()),
-        curve,
-        definition: ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(first_support.clone()),
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(second_support.clone()),
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+    ir.model.procedural_curves.push(
+        ProceduralCurve::try_new(
+            ProceduralCurveId("nx:test:serialized-boundary".into()),
+            curve,
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(first_support.clone()),
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(second_support.clone()),
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-        cache_fit_tolerance: Some(0.25),
-    });
+            Some(0.25),
+        )
+        .unwrap(),
+    );
 
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
         &mut ir,
@@ -1513,8 +1515,8 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         .procedural_curves
         .last()
         .expect("boundary construction");
-    assert_eq!(procedural.cache_fit_tolerance, Some(0.25));
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    assert_eq!(procedural.cache_fit_tolerance(), Some(0.25));
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));

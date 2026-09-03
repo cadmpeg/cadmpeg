@@ -105,7 +105,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 v_sense,
                 extension_flags,
                 ..
-            } = &procedural.definition
+            } = procedural.definition()
             else {
                 panic!("offset definition");
             };
@@ -200,7 +200,7 @@ fn decode_emits_rolling_ball_blend_surface() {
         cross_section,
         spine,
         native,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("blend definition");
     };
@@ -402,9 +402,9 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(nurbs.degree, 1);
     assert_eq!(nurbs.control_points[0].x, 0.0);
     assert_eq!(nurbs.control_points[1].x, 10.0);
-    assert_eq!(procedural.cache_fit_tolerance, Some(0.01));
+    assert_eq!(procedural.cache_fit_tolerance(), Some(0.01));
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("typed surface intersection");
     };
@@ -447,7 +447,7 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
     );
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };

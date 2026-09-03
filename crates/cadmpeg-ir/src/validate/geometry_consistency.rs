@@ -56,7 +56,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             tolerance,
             parameterization: Some(parameterization),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let evaluated = parameterization
                 .parameter_range
@@ -91,7 +91,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             base_endpoints,
             distance: offset,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let Some(solved) = curves.get(procedural.curve.0.as_str()) else {
                 continue;
@@ -102,8 +102,10 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             let [Some(solved_start), Some(solved_end)] = solved else {
                 continue;
             };
-            let bound =
-                procedural_support_allowance(ir.tolerances.linear, procedural.cache_fit_tolerance);
+            let bound = procedural_support_allowance(
+                ir.tolerances.linear,
+                procedural.cache_fit_tolerance(),
+            );
             let Some(base) = curves.get(base.0.as_str()) else {
                 continue;
             };
@@ -149,7 +151,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             );
             continue;
         }
-        let (context, third) = match &procedural.definition {
+        let (context, third) = match procedural.definition() {
             crate::geometry::ProceduralCurveDefinition::Law { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }
             | crate::geometry::ProceduralCurveDefinition::SurfaceCurve { context, .. }
@@ -176,7 +178,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             continue;
         };
         let bound =
-            procedural_support_allowance(ir.tolerances.linear, procedural.cache_fit_tolerance);
+            procedural_support_allowance(ir.tolerances.linear, procedural.cache_fit_tolerance());
         check_support_sides(
             context,
             third,
@@ -280,7 +282,9 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .map(|curve| {
             (
                 curve.curve.0.as_str(),
-                curve.cache_fit_tolerance.filter(|value| value.is_finite()),
+                curve
+                    .cache_fit_tolerance()
+                    .filter(|value| value.is_finite()),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -417,7 +421,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .iter()
         .filter(|surface| {
             !matches!(
-                &surface.definition,
+                surface.definition(),
                 crate::geometry::ProceduralSurfaceDefinition::Subset { .. }
             )
         })
@@ -809,7 +813,7 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.surface == *context.surface_id)
-        .map(|procedural| &procedural.definition)
+        .map(|procedural| procedural.definition())
     {
         let [[u_start, u_end], [v_start, v_end]] = *parameter_ranges;
         let u_span = (u_end - u_start).abs();

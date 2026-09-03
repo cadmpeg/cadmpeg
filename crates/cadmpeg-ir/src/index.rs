@@ -165,7 +165,7 @@ macro_rules! define_model_index {
                         .or_insert(procedural);
                 }
                 for procedural in &ir.model.procedural_surfaces {
-                    if procedural.cache_fit_tolerance.is_some() {
+            if procedural.cache_fit_tolerance().is_some() {
                         if let Some(producer) =
                             unique_cached_producers.get_mut(procedural.surface.0.as_str())
                         {
@@ -336,11 +336,42 @@ mod tests {
     use crate::{NativeNamespace, NativeRecord};
     use serde_json::Map;
 
+    macro_rules! procedural_surface {
+        (
+            id: $id:expr,
+            surface: $surface:expr,
+            definition: $definition:expr,
+            cache_fit_tolerance: $cache_fit_tolerance:expr,
+            record_bounds: $record_bounds:expr $(,)?
+        ) => {
+            ProceduralSurface::try_new(
+                $id,
+                $surface,
+                $definition,
+                $cache_fit_tolerance,
+                $record_bounds,
+            )
+            .expect("valid procedural surface fixture")
+        };
+    }
+
+    macro_rules! procedural_curve {
+        (
+            id: $id:expr,
+            curve: $curve:expr,
+            definition: $definition:expr,
+            cache_fit_tolerance: $cache_fit_tolerance:expr $(,)?
+        ) => {
+            ProceduralCurve::try_new($id, $curve, $definition, $cache_fit_tolerance)
+                .expect("valid procedural curve fixture")
+        };
+    }
+
     #[test]
     fn procedural_surface_owner_index_preserves_arena_precedence() {
         let mut ir = CadIr::empty(Units::default());
         for id in ["first", "second"] {
-            ir.model.procedural_surfaces.push(ProceduralSurface {
+            ir.model.procedural_surfaces.push(procedural_surface! {
                 id: ProceduralSurfaceId(format!("test:procedural-surface#{id}")),
                 surface: SurfaceId("test:surface#owner".to_string()),
                 definition: ProceduralSurfaceDefinition::Unknown { record: None },
@@ -364,7 +395,7 @@ mod tests {
         let mut ir = CadIr::empty(Units::default());
         let curve = CurveId("test:curve#owner".to_string());
         for id in ["first", "second"] {
-            ir.model.procedural_curves.push(ProceduralCurve {
+            ir.model.procedural_curves.push(procedural_curve! {
                 id: ProceduralCurveId(format!("test:procedural-curve#{id}")),
                 curve: curve.clone(),
                 definition: ProceduralCurveDefinition::Unknown {
@@ -468,14 +499,14 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
+        ir.model.procedural_surfaces.push(procedural_surface! {
             id: exact_construction.clone(),
             surface: exact_surface.clone(),
             definition: ProceduralSurfaceDefinition::Unknown { record: None },
             cache_fit_tolerance: None,
             record_bounds: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
+        ir.model.procedural_surfaces.push(procedural_surface! {
             id: exact_construction,
             surface: crate::ids::SurfaceId("test:surface#different".into()),
             definition: ProceduralSurfaceDefinition::Unknown { record: None },
@@ -493,7 +524,7 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
+        ir.model.procedural_surfaces.push(procedural_surface! {
             id: crate::ids::ProceduralSurfaceId("test:procedural#cached".into()),
             surface: cached_surface.clone(),
             definition: ProceduralSurfaceDefinition::Unknown { record: None },
@@ -515,7 +546,7 @@ mod tests {
             Some("test:procedural#cached")
         );
 
-        ir.model.procedural_surfaces.push(ProceduralSurface {
+        ir.model.procedural_surfaces.push(procedural_surface! {
             id: crate::ids::ProceduralSurfaceId("test:procedural#cached-duplicate".into()),
             surface: cached_surface.clone(),
             definition: ProceduralSurfaceDefinition::Unknown { record: None },

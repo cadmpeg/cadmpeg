@@ -778,17 +778,22 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
             direction: Vector3::new(1.0, 0.0, 0.0),
         }
     );
-    assert!(matches!(
-        ir.model.procedural_curves.as_slice(),
-        [ProceduralCurve {
-            curve,
-            definition: ProceduralCurveDefinition::Intersection { context, .. },
-            ..
-        }] if curve == &id
-            && context.sides[0].surface.as_ref().is_some_and(|id| id.0 == "surface-0")
-            && context.sides[1].surface.as_ref().is_some_and(|id| id.0 == "surface-1")
-            && context.parameter_range == [0.0, 3.0]
-    ));
+    let [procedural] = ir.model.procedural_curves.as_slice() else {
+        panic!("one procedural curve");
+    };
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
+        panic!("intersection construction");
+    };
+    assert_eq!(procedural.curve, id);
+    assert!(context.sides[0]
+        .surface
+        .as_ref()
+        .is_some_and(|id| id.0 == "surface-0"));
+    assert!(context.sides[1]
+        .surface
+        .as_ref()
+        .is_some_and(|id| id.0 == "surface-1"));
+    assert_eq!(context.parameter_range, [0.0, 3.0]);
 }
 
 #[test]
@@ -1100,16 +1105,15 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
     let curve = curve.expect("native support identifies the curve");
     assert_eq!(range, Some([2.0, 5.0]));
     assert_eq!(ir.model.surfaces.len(), 2);
-    assert!(matches!(
-        ir.model.procedural_curves.as_slice(),
-        [ProceduralCurve {
-            curve: bound_curve,
-            definition: ProceduralCurveDefinition::Intersection { context, .. },
-            ..
-        }] if bound_curve == &curve
-            && context.parameter_range == [2.0, 5.0]
-            && context.sides.iter().all(|side| side.pcurve.is_some())
-    ));
+    let [procedural] = ir.model.procedural_curves.as_slice() else {
+        panic!("one procedural curve");
+    };
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
+        panic!("intersection construction");
+    };
+    assert_eq!(procedural.curve, curve);
+    assert_eq!(context.parameter_range, [2.0, 5.0]);
+    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
 }
 
 #[test]
@@ -1396,15 +1400,14 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
     );
     let curve = curve.expect("procedural support identifies the curve");
     assert_eq!(ir.model.surfaces.len(), 2);
-    assert!(matches!(
-        ir.model.procedural_surfaces.as_slice(),
-        [ProceduralSurface {
-            surface,
-            definition,
-            ..
-        }] if surface.0 == "catia:standard:edge-support-surface#21"
-            && definition == &rolling_ball_definition
-    ));
+    let [procedural] = ir.model.procedural_surfaces.as_slice() else {
+        panic!("one procedural surface");
+    };
+    assert_eq!(
+        procedural.surface.0,
+        "catia:standard:edge-support-surface#21"
+    );
+    assert_eq!(procedural.definition(), &rolling_ball_definition);
     assert!(matches!(
         ir.model.procedural_curves.as_slice(),
         [ProceduralCurve { curve: bound, .. }] if bound == &curve

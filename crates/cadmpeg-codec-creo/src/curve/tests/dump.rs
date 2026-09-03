@@ -1127,7 +1127,7 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
         pitch,
         apex_factor,
         axis,
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };
@@ -1158,7 +1158,7 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
         pitch,
         axis,
         ..
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };

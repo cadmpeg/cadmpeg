@@ -217,13 +217,12 @@ pub(crate) fn try_decode_e5(
         annotations
             .derived(&procedural_id, "surface")
             .derived(&procedural_id, "definition");
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: procedural_id,
-            surface: surface_id,
-            definition: jet.definition(),
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            surface_id,
+            jet.definition(),
+            None,
+        ));
     }
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
@@ -1512,15 +1511,14 @@ fn emit_e5_curves_and_edges(
             Exactness::Derived,
         );
         annotations.derived(&id, "curve").derived(&id, "definition");
-        ir.model.procedural_curves.push(ProceduralCurve {
+        ir.model.procedural_curves.push(ProceduralCurve::new(
             id,
             curve,
-            definition: ProceduralCurveDefinition::Intersection {
+            ProceduralCurveDefinition::Intersection {
                 context: context.clone(),
                 discontinuity_flag: false,
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
         if intersection_plan.contains_key(&record_id) {
@@ -1537,10 +1535,10 @@ fn emit_e5_curves_and_edges(
             Exactness::Derived,
         );
         annotations.derived(&id, "curve").derived(&id, "definition");
-        ir.model.procedural_curves.push(ProceduralCurve {
+        ir.model.procedural_curves.push(ProceduralCurve::new(
             id,
             curve,
-            definition: ProceduralCurveDefinition::SurfaceCurve {
+            ProceduralCurveDefinition::SurfaceCurve {
                 family: SurfaceCurveFamily::Parametric,
                 context: IntcurveSupportContext {
                     sides: [
@@ -1560,8 +1558,7 @@ fn emit_e5_curves_and_edges(
                 },
                 tail: None,
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     for (&record_id, edge) in &topology.edges {
         let id = edge_ids[&record_id].clone();

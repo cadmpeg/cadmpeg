@@ -3797,7 +3797,7 @@ fn surface_selection_parameter_domains(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.surface == *surface_id)
-        .map(|procedural| &procedural.definition);
+        .map(|procedural| procedural.definition());
     match definition {
         Some(ProceduralSurfaceDefinition::Subset {
             parameter_ranges, ..

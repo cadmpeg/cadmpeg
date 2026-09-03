@@ -182,11 +182,11 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_curves
         .iter()
         .any(|curve| matches!(
-            curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 parameter_range: [start, end],
                 ..
-            } if start == 0.0 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+            } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
         )));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
@@ -313,18 +313,18 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
         .expect("Cartesian trimmed curve");
     assert!(matches!(
-        cartesian_trim.definition,
+        cartesian_trim.definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
             parameter_range: [start, end],
             ..
-        } if start == 0.0 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     let (source, parameter_range) = result
         .ir()
         .model
         .procedural_curves
         .iter()
-        .find_map(|curve| match &curve.definition {
+        .find_map(|curve| match curve.definition() {
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 source,
                 parameter_range,
@@ -341,7 +341,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_curves
         .iter()
         .any(|curve| matches!(
-            curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset {
                 distance: 1.0,
                 self_intersect: None,
@@ -355,7 +355,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
-            surface.definition,
+            surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::DegenerateTorus {
                 select_outer: true
             }
@@ -366,7 +366,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
-            surface.definition,
+            surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { direction, .. }
                 if direction.z == 2.0
         )));
@@ -376,7 +376,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
-            surface.definition,
+            surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution { axis_direction, .. }
                 if axis_direction.z == 1.0
         )));
@@ -386,7 +386,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
-            surface.definition,
+            surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset {
                 distance: 0.5,
                 self_intersect: Some(false),

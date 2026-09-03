@@ -358,7 +358,8 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
         let Some(procedural) = procedural_by_id.get(procedural_id).copied() else {
             continue;
         };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
             continue;
         };
         let expected_range = [
@@ -555,7 +556,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
-        let (surfaces, missing) = match &procedural.definition {
+        let (surfaces, missing) = match procedural.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 let [Some(first), Some(second)] = &context.sides.clone().map(|side| side.surface)
                 else {
@@ -627,11 +628,11 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
         else {
             continue;
         };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
-        else {
-            unreachable!("definition checked above");
-        };
-        context.sides[side].pcurve = Some(replacement);
+        procedural.edit_definition(|definition| {
+            if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
+                context.sides[side].pcurve = Some(replacement);
+            }
+        });
     }
 }
 
@@ -757,7 +758,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
             let Some(procedural) = index.procedural_curves(procedural_id.0.as_str()) else {
                 continue;
             };
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 continue;
             };
@@ -854,11 +855,11 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         else {
             continue;
         };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
-        else {
-            unreachable!("definition selected above");
-        };
-        context.sides[side].pcurve = None;
+        procedural.edit_definition(|definition| {
+            if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
+                context.sides[side].pcurve = None;
+            }
+        });
     }
     SupportUvValidationResult {
         endpoint_witnesses,
@@ -875,7 +876,7 @@ pub(crate) fn pending_support_lanes_requiring_completion(
         .iter()
         .filter_map(|(procedural_id, ..)| index.procedural_curves(procedural_id.0.as_str()))
         .filter_map(|procedural| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 return None;
             };
@@ -916,7 +917,7 @@ fn complete_support_uv_wave(
             let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
                 continue;
             };
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 continue;
             };
@@ -950,7 +951,7 @@ fn complete_support_uv_wave(
                         .filter(|procedural| &procedural.surface == surface_id)
                         .is_some_and(|procedural| {
                             matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 ProceduralSurfaceDefinition::Offset {
                                     support_extension: Some(OffsetSupportExtension::Linear),
                                     ..
@@ -1360,21 +1361,19 @@ fn complete_support_uv_wave(
             else {
                 continue;
             };
-            let ProceduralCurveDefinition::Intersection { context, .. } =
-                &mut procedural.definition
-            else {
-                continue;
-            };
-            if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
-                context.sides[side].pcurve = Some(pcurve);
-                if cache_backed_curves.contains(&procedural.curve) {
-                    procedural.cache_fit_tolerance = Some(
-                        procedural
-                            .cache_fit_tolerance
-                            .unwrap_or(0.0)
-                            .max(effective_fit_tolerance),
-                    );
+            let completed = procedural.edit_definition(|definition| {
+                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                    return false;
+                };
+                if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+                    context.sides[side].pcurve = Some(pcurve);
+                    true
+                } else {
+                    false
                 }
+            });
+            if completed && cache_backed_curves.contains(&procedural.curve) {
+                procedural.raise_cache_fit_tolerance(effective_fit_tolerance);
             }
         }
     }
@@ -1416,7 +1415,7 @@ pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
             index
                 .procedural_curves_for_curve(spine.0.as_str())
                 .and_then(|procedurals| procedurals.first().copied())
-                .and_then(|procedural| procedural.cache_fit_tolerance)
+                .and_then(|procedural| procedural.cache_fit_tolerance())
         })
         .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
         .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance)
@@ -1493,7 +1492,8 @@ fn complete_coupled_support_uv(
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
             continue;
         };
         let lane_state = context.sides.each_ref().map(|side| side.pcurve.clone());
@@ -1656,13 +1656,14 @@ fn complete_coupled_support_uv(
         else {
             continue;
         };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
-        else {
-            continue;
-        };
-        if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
-            context.sides[side].pcurve = Some(pcurve);
-        }
+        procedural.edit_definition(|definition| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                return;
+            };
+            if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+                context.sides[side].pcurve = Some(pcurve);
+            }
+        });
     }
     lane_geometry_exhausted
 }
@@ -1707,7 +1708,7 @@ pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
             .enumerate()
             .filter_map(|(procedural_index, procedural)| {
                 let ProceduralCurveDefinition::Intersection { context, .. } =
-                    &procedural.definition
+                    procedural.definition()
                 else {
                     return None;
                 };
@@ -1738,14 +1739,13 @@ pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
             .collect::<Vec<_>>()
     };
     for (procedural_index, side, pcurve) in replacements {
-        let ProceduralCurveDefinition::Intersection { context, .. } =
-            &mut ir.model.procedural_curves[procedural_index].definition
-        else {
-            unreachable!("definition selected above");
-        };
-        if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
-            context.sides[side].pcurve = Some(pcurve);
-        }
+        ir.model.procedural_curves[procedural_index].edit_definition(|definition| {
+            if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
+                if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+                    context.sides[side].pcurve = Some(pcurve);
+                }
+            }
+        });
     }
 }
 
@@ -1810,10 +1810,10 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
         ) = (
             index
                 .procedural_surface_for_carrier(first.0.as_str())
-                .map(|surface| &surface.definition),
+                .map(|surface| surface.definition()),
             index
                 .procedural_surface_for_carrier(second.0.as_str())
-                .map(|surface| &surface.definition),
+                .map(|surface| surface.definition()),
         )
         else {
             return false;
@@ -1978,7 +1978,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         {
             continue;
         }
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
             continue;
         };
         for side in &context.sides {
@@ -1993,7 +1994,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let candidate = (
                 pcurve.clone(),
                 context.parameter_range,
-                procedural.cache_fit_tolerance,
+                procedural.cache_fit_tolerance(),
             );
             if !values.contains(&candidate) {
                 values.push(candidate);

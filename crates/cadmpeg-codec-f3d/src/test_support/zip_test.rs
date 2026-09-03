@@ -36,8 +36,8 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .procedural_surfaces
         .first()
         .expect("revision surface construction");
-    let expected = scrubbed_definition(&procedural.definition);
-    let kind = serde_json::to_value(&procedural.definition).expect("kind")["kind"]
+    let expected = scrubbed_definition(procedural.definition());
+    let kind = serde_json::to_value(procedural.definition()).expect("kind")["kind"]
         .as_str()
         .expect("kind string")
         .to_string();
@@ -60,7 +60,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
             .procedural_surfaces
             .first()
             .expect("round-trip construction")
-            .definition,
+            .definition(),
     );
     assert_eq!(actual, expected);
 }

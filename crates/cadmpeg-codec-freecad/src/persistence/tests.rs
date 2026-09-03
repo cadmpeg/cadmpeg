@@ -310,13 +310,13 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         other => panic!("unexpected curve {other:?}"),
     }
     assert_eq!(result.ir().model.procedural_curves.len(), 2);
-    match &result.ir().model.procedural_curves[0].definition {
+    match result.ir().model.procedural_curves[0].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
             parameter_range, ..
         } => assert_eq!(*parameter_range, [0.0, 5.0]),
         other => panic!("unexpected trimmed construction {other:?}"),
     }
-    match &result.ir().model.procedural_curves[1].definition {
+    match result.ir().model.procedural_curves[1].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
             distance,
             direction,
@@ -343,18 +343,18 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(matches!(
-        result.ir().model.procedural_surfaces[0].definition,
+        result.ir().model.procedural_surfaces[0].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
     ));
     assert!(matches!(
-        result.ir().model.procedural_surfaces[1].definition,
+        result.ir().model.procedural_surfaces[1].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
             parameter_interval: None,
             ..
         }
     ));
     assert!(matches!(
-        result.ir().model.procedural_surfaces[2].definition,
+        result.ir().model.procedural_surfaces[2].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
             u_sense: None,
             v_sense: None,
@@ -362,7 +362,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
     ));
     assert!(matches!(
-        result.ir().model.procedural_surfaces[3].definition,
+        result.ir().model.procedural_surfaces[3].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset { .. }
     ));
     match &result.ir().model.surfaces[1].geometry {

@@ -322,10 +322,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id,
-                definition: ProceduralSurfaceDefinition::Revolution {
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                procedural_id,
+                surface_id,
+                ProceduralSurfaceDefinition::Revolution {
                     directrix: curve_id,
                     axis_origin: axis.origin,
                     axis_direction: axis.direction,
@@ -339,9 +339,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     transposed: false,
                     revision_form: None,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
             transferred += 1;
         }
     }

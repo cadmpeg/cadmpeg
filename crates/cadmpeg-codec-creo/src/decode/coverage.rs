@@ -269,7 +269,7 @@ pub(crate) fn surface_transfer_coverage(
         .iter()
         .filter(|procedural| {
             matches!(
-                procedural.definition,
+                procedural.definition(),
                 ProceduralSurfaceDefinition::Extrusion { .. }
             )
         })

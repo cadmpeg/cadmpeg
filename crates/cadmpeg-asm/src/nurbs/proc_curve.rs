@@ -1852,20 +1852,23 @@ fn cache_first_curve_context(
     // has a defined grammar, so it fails and the containing record is retained
     // verbatim.
     let cache_enum = cur.take_enum()?;
-    let parameterization = match cache_enum {
+    let cache = match cache_enum {
         0 => {
             let (_, end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(end);
-            cur.take_f64()?;
-            None
+            cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
+                fit_tolerance: cur.take_f64()? * LEN_TO_MM,
+            }
         }
-        2 => Some(cadmpeg_ir::geometry::CacheFirstCurveParameterization {
-            interval: [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
-            ],
-            closed_form: cur.take_enum()?,
-        }),
+        2 => cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(
+            cadmpeg_ir::geometry::CacheFirstCurveParameterization {
+                interval: [
+                    cur.take_optional_range_value()?,
+                    cur.take_optional_range_value()?,
+                ],
+                closed_form: cur.take_enum()?,
+            },
+        ),
         _ => return None,
     };
     let first_surface_start = cur.pos();
@@ -1908,8 +1911,7 @@ fn cache_first_curve_context(
     Some(CacheFirstCurveContext {
         form: cadmpeg_ir::geometry::CacheFirstCurveForm {
             revision,
-            cache_enum,
-            parameterization,
+            cache,
             support_bounds: [first_bounds, second_bounds],
             solved_range,
             extension,
@@ -1983,8 +1985,7 @@ fn cache_first_surface_curve(
             flag,
             second_flag,
             revision: context.form.revision,
-            cache_enum: context.form.cache_enum,
-            parameterization: context.form.parameterization,
+            cache: context.form.cache,
             support_bounds: context.form.support_bounds,
             solved_range: context.form.solved_range,
         }),
@@ -3297,8 +3298,13 @@ mod cache_form_tests {
             // token of the ASM extension integer.
             assert_eq!(cur.pos(), toks.len());
             assert_eq!(context.form.revision, 23_100);
-            assert_eq!(context.form.cache_enum, 2);
-            let parameterization = context.form.parameterization.expect("parameterization");
+            assert_eq!(context.form.cache.selector(), 2);
+            let parameterization = match context.form.cache {
+                cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(value) => value,
+                cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { .. } => {
+                    panic!("parameterized cache-first context")
+                }
+            };
             assert_eq!(parameterization.interval, [Some(0.125), None]);
             assert_eq!(parameterization.closed_form, 1);
             assert_eq!(context.form.extension, 7);

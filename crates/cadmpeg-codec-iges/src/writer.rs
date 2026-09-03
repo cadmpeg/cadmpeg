@@ -152,7 +152,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 .procedural_surfaces
                 .iter()
                 .find(|procedural| procedural.id == *construction)
-                .and_then(|procedural| match &procedural.definition {
+                .and_then(|procedural| match procedural.definition() {
                     ProceduralSurfaceDefinition::Revolution { directrix, .. }
                     | ProceduralSurfaceDefinition::Extrusion { directrix, .. } => Some(directrix),
                     _ => None,
@@ -427,7 +427,7 @@ fn has_brep_topology(ir: &CadIr) -> bool {
 fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     for procedural in &ir.model.procedural_surfaces {
         if matches!(
-            &procedural.definition,
+            procedural.definition(),
             ProceduralSurfaceDefinition::CurveBounded { .. }
         ) {
             continue;
@@ -443,8 +443,11 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                     procedural.id, procedural.surface
                 ))
             })?;
-        if is_native_surface_construction(&surface.geometry, &procedural.id, &procedural.definition)
-        {
+        if is_native_surface_construction(
+            &surface.geometry,
+            &procedural.id,
+            procedural.definition(),
+        ) {
             continue;
         }
         if !matches!(
@@ -497,7 +500,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         .iter()
         .filter(|procedural| {
             if matches!(
-                &procedural.definition,
+                procedural.definition(),
                 ProceduralSurfaceDefinition::CurveBounded { .. }
             ) {
                 return false;
@@ -513,7 +516,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             !is_native_surface_construction(
                 &surface.geometry,
                 &procedural.id,
-                &procedural.definition,
+                procedural.definition(),
             )
         })
         .count();
@@ -3205,7 +3208,7 @@ fn procedural_pcurve_source_map(
     else {
         return Ok(None);
     };
-    let (directrix, fallback_interval) = match &procedural.definition {
+    let (directrix, fallback_interval) = match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             parameter_interval,
@@ -3233,7 +3236,7 @@ fn procedural_pcurve_source_map(
         construction_carrier_interval(ir, directrix, &geometry, procedural, fallback_interval)?;
     let mut u_map;
     let mut v_map = (1.0, 0.0);
-    match &procedural.definition {
+    match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             parameter_interval,
@@ -4384,7 +4387,7 @@ fn surface_entities_for_ir(
                         "IGES procedural surface construction {construction} is missing"
                     ))
                 })?;
-            match procedural.definition {
+            match procedural.definition() {
                 ProceduralSurfaceDefinition::Revolution { .. } => {
                     revolution_surface_entities(ir, construction, base_index, version)
                 }
@@ -4422,7 +4425,7 @@ fn extrusion_surface_entities(
         direction,
         native_position,
         revision_form,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer only encodes Extrusion surfaces as Type 122".into(),
@@ -4573,7 +4576,7 @@ fn revolution_surface_entities(
         parameter_interval,
         transposed,
         revision_form,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer only encodes procedural Revolution surfaces as Type 120".into(),

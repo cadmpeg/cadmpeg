@@ -548,7 +548,7 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
         .iter()
         .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
         .expect("resolved consolidated construction");
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
     assert!(context.sides.iter().all(|side| side.surface.is_some()));
@@ -595,7 +595,7 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
         .iter()
         .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
         .expect("resolved consolidated construction");
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
     assert!(context.sides.iter().all(|side| side.surface.is_some()));
@@ -624,7 +624,8 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             .iter()
             .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
             .expect("resolved consolidated construction");
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
             panic!("two resolved support sides form an intersection");
         };
         let surface_id = context.sides[1]
@@ -656,7 +657,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                 .expect("offset NURBS construction");
             let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
                 support, distance, ..
-            } = &construction.definition
+            } = construction.definition()
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
@@ -701,7 +702,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         v_sense,
         extension_flags,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -752,7 +753,7 @@ fn decode_standard_transfers_construction_use_offset() {
         panic!("one offset construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -797,7 +798,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         knots,
         multiplicities,
         sites,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("rolling-ball jet");
     };

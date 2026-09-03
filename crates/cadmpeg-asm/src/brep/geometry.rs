@@ -556,10 +556,14 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         | DecodedProceduralSurfaceDefinition::Sum { .. }
         | DecodedProceduralSurfaceDefinition::VertexBlend(_)
         | DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
-        DecodedProceduralSurfaceDefinition::Sweep(construction) => construction
-            .revision_form
-            .as_ref()
-            .is_some_and(|form| form.tail_enum == 2),
+        DecodedProceduralSurfaceDefinition::Sweep(construction) => {
+            construction.revision_form.as_ref().is_some_and(|form| {
+                matches!(
+                    form.cache,
+                    cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+                )
+            })
+        }
         DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full
@@ -573,9 +577,15 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         DecodedProceduralSurfaceDefinition::Blend {
             native: Some(construction),
             ..
-        } => construction.tail_enum == 2,
+        } => matches!(
+            construction.cache,
+            cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+        ),
         DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
-            construction.tail_enum == 2 || construction.shape_prefix == 0
+            matches!(
+                construction.cache,
+                cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+            ) || construction.shape_prefix == 0
         }
         _ => false,
     }

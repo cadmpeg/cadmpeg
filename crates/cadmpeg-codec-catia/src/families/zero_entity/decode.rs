@@ -133,14 +133,18 @@ fn append_oriented_wire_curve(
         annotations
             .derived(&construction_id, "curve")
             .derived(&construction_id, "definition");
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: construction_id.clone(),
-            curve: curve_id.clone(),
+        if let Ok(procedural) = ProceduralCurve::try_new(
+            construction_id.clone(),
+            curve_id.clone(),
             definition,
             cache_fit_tolerance,
-        });
-        CurveGeometry::Procedural {
-            construction: construction_id,
+        ) {
+            ir.model.procedural_curves.push(procedural);
+            CurveGeometry::Procedural {
+                construction: construction_id,
+            }
+        } else {
+            geometry
         }
     } else {
         geometry
@@ -175,8 +179,8 @@ fn source_wire_procedural(
         .find(|candidate| candidate.id == *construction && candidate.curve == *curve_id)
         .map(|candidate| WireSourceProcedural {
             construction_id: candidate.id.clone(),
-            definition: candidate.definition.clone(),
-            cache_fit_tolerance: candidate.cache_fit_tolerance,
+            definition: candidate.definition().clone(),
+            cache_fit_tolerance: candidate.cache_fit_tolerance(),
         })
 }
 
@@ -408,7 +412,7 @@ fn transfer_closed_wire_loops(
                                                     && candidate.curve == *curve
                                             })
                                             .map(|candidate| {
-                                                candidate.definition = definition.clone();
+                                                candidate.replace_definition(definition.clone());
                                             })
                                             .is_some()
                                     } else {
@@ -757,12 +761,11 @@ pub(crate) fn try_decode_zero_entity(
                 },
                 source_object: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: construction_id,
-                curve: curve_id.clone(),
+            ir.model.procedural_curves.push(ProceduralCurve::new(
+                construction_id,
+                curve_id.clone(),
                 definition,
-                cache_fit_tolerance: None,
-            });
+            ));
             support_curve_ids.insert(support.record_ordinal, curve_id);
             transferred_support_curves += 1;
         }
@@ -1276,12 +1279,11 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: construction_id.clone(),
-            curve: curve_id.clone(),
-            definition: definition.clone(),
-            cache_fit_tolerance: None,
-        });
+        ir.model.procedural_curves.push(ProceduralCurve::new(
+            construction_id.clone(),
+            curve_id.clone(),
+            definition.clone(),
+        ));
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
                 carrier_pos: 0,
@@ -1340,7 +1342,7 @@ mod tests {
             .iter()
             .find(|construction| construction.id == construction_id)
             .expect("source construction")
-            .definition
+            .definition()
             .clone();
         assert_ne!(source_definition, definition);
         let derived_construction = match &ir
@@ -1361,8 +1363,8 @@ mod tests {
                 .iter()
                 .find(|construction| construction.id == derived_construction)
                 .expect("derived construction")
-                .definition,
-            definition
+                .definition(),
+            &definition
         );
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
     }

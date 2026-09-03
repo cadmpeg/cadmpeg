@@ -34,10 +34,10 @@ fn direct_surface_fixture(
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
         surface: surface_id.clone(),
-        definition,
+        definition: definition,
         cache_fit_tolerance: None,
         record_bounds: None,
     });

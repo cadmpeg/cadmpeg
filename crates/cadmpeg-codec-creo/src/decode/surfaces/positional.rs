@@ -360,19 +360,18 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 instance_path: Vec::new(),
             }),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: procedural_id,
-            surface: surface_id,
-            definition: ProceduralSurfaceDefinition::Extrusion {
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            surface_id,
+            ProceduralSurfaceDefinition::Extrusion {
                 directrix: curve_id,
                 parameter_interval: None,
                 direction: Vector3::new(frame.direction[0], frame.direction[1], frame.direction[2]),
                 native_position: None,
                 revision_form: None,
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+            None,
+        ));
         transferred += 1;
     }
     transferred
@@ -504,19 +503,18 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 instance_path: Vec::new(),
             }),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: procedural_id,
-            surface: surface_id,
-            definition: ProceduralSurfaceDefinition::Extrusion {
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            surface_id,
+            ProceduralSurfaceDefinition::Extrusion {
                 directrix: curve_id,
                 parameter_interval: Some([0.0, 1.0]),
                 direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
                 native_position: None,
                 revision_form: None,
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+            None,
+        ));
         transferred += 1;
     }
     transferred

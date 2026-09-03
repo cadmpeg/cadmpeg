@@ -376,12 +376,14 @@ pub(super) fn emit_edges(
             if cache_fit_tolerance.is_some() {
                 annotations.derived(&procedural_id, "cache_fit_tolerance");
             }
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedural_id,
-                curve: curve_id.clone(),
+            if let Ok(procedural) = ProceduralCurve::try_new(
+                procedural_id,
+                curve_id.clone(),
                 definition,
                 cache_fit_tolerance,
-            });
+            ) {
+                ir.model.procedural_curves.push(procedural);
+            }
         }
         annotate(
             annotations,

@@ -371,7 +371,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             angular_parameter_interval,
             parameter_interval,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let valid = [
                 Some(angular_interval),
@@ -395,7 +395,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             axis_origin,
             axis_direction,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if ![
                 axis_origin.x,
@@ -413,7 +413,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
         if let crate::geometry::ProceduralSurfaceDefinition::Sum { basepoint, .. } =
-            &procedural.definition
+            procedural.definition()
         {
             if !basepoint.x.is_finite() || !basepoint.y.is_finite() || !basepoint.z.is_finite() {
                 bounds_err(findings, &procedural.id.0, "sum basepoint is not finite");

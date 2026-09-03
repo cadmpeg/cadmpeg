@@ -655,7 +655,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     }));
     assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     assert!(matches!(
-        &revolution.definition,
+        revolution.definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
             angular_interval,
             parameter_interval: Some([-4.0, 9.0]),

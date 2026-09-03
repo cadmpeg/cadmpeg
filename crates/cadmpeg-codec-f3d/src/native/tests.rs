@@ -471,14 +471,14 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| matches!(curve.definition, ProceduralCurveDefinition::Law { .. }))
+        .find(|curve| matches!(curve.definition(), ProceduralCurveDefinition::Law { .. }))
         .expect("stamped law construction");
     let ProceduralCurveDefinition::Law {
         version,
         primary,
         additional,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         unreachable!()
     };
@@ -543,9 +543,9 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| matches!(curve.definition, ProceduralCurveDefinition::Law { .. }))
+        .find(|curve| matches!(curve.definition(), ProceduralCurveDefinition::Law { .. }))
         .expect("legacy law construction");
-    let ProceduralCurveDefinition::Law { version, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Law { version, .. } = procedural.definition() else {
         unreachable!()
     };
     assert!(version.is_none());
@@ -610,7 +610,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
         discontinuity_flag,
         cache_first,
         direction,
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
@@ -636,8 +636,8 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first spring round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].definition,
-        source_less.model.procedural_curves[0].definition
+        round_trip.ir().model.procedural_curves[0].definition(),
+        source_less.model.procedural_curves[0].definition()
     );
 }
 
@@ -664,7 +664,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         family,
         context,
         tail,
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface-curve construction")
     };
@@ -689,8 +689,8 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first parametric round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].definition,
-        source_less.model.procedural_curves[0].definition
+        round_trip.ir().model.procedural_curves[0].definition(),
+        source_less.model.procedural_curves[0].definition()
     );
 }
 
@@ -735,7 +735,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         shift,
         scale,
         ..
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface-offset construction")
     };
@@ -763,9 +763,9 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first surface-offset round trip");
-    let mut expected = source_less.model.procedural_curves[0].definition.clone();
+    let mut expected = source_less.model.procedural_curves[0].definition().clone();
     let mut actual = round_trip.ir().model.procedural_curves[0]
-        .definition
+        .definition()
         .clone();
     let (
         ProceduralCurveDefinition::SurfaceOffset {
@@ -824,7 +824,7 @@ fn generated_revision_offset_surface_round_trips() {
         extension_flags,
         revision_form,
         ..
-    } = &result.ir().model.procedural_surfaces[0].definition
+    } = &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected offset surface construction")
     };
@@ -864,17 +864,17 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
         .expect("parameterized revision offset decode");
     let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { revision_form, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("expected offset surface construction")
     };
     let form = revision_form.as_ref().expect("revision form");
-    assert_eq!(form.tail_enum, 2);
+    assert_eq!(form.cache.selector(), 2);
     let parameterization = form
-        .tail_parameterization
-        .as_ref()
+        .cache
+        .parameterization()
         .expect("tail parameterization");
     assert_eq!(parameterization.u_interval, [Some(0.25), None]);
     assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
@@ -940,7 +940,7 @@ fn generated_revision_orthogonal_taper_decodes_sense_true() {
         .procedural_surfaces
         .first()
         .expect("ortho construction")
-        .definition;
+        .definition();
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper { taper, .. } = definition else {
         panic!("expected taper definition, got {definition:?}");
     };
@@ -1017,14 +1017,14 @@ fn generated_parameterized_revision_loft_surface_round_trips() {
         .expect("parameterized revision loft decode");
     let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft { revision_form, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("expected a loft construction")
     };
     let form = revision_form.as_ref().expect("revision form");
-    assert_parameterized_tail(form.tail_enum, form.tail_parameterization.as_ref());
+    assert_parameterized_tail(&form.cache);
 }
 
 #[test]

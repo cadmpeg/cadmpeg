@@ -24,10 +24,10 @@ fn helix_fixture() -> (CadIr, CurveId) {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
+    ir.model.procedural_curves.push(procedural_curve! {
         id: construction_id,
         curve: curve_id.clone(),
-        definition,
+        definition: definition,
         cache_fit_tolerance: None,
     });
     (ir, curve_id)

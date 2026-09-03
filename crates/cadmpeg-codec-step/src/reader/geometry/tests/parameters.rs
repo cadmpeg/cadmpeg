@@ -173,27 +173,25 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
     ]);
     ir.model.procedural_surfaces.extend([
-        ProceduralSurface {
-            id: ProceduralSurfaceId("sweep-construction".into()),
-            surface: sweep.clone(),
-            definition: ProceduralSurfaceDefinition::LinearSweep {
+        ProceduralSurface::new(
+            ProceduralSurfaceId("sweep-construction".into()),
+            sweep.clone(),
+            ProceduralSurfaceDefinition::LinearSweep {
                 directrix: directrix.clone(),
                 direction: Vector3::new(0.0, 1.0, 0.0),
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        },
-        ProceduralSurface {
-            id: ProceduralSurfaceId("revolution-construction".into()),
-            surface: revolution.clone(),
-            definition: ProceduralSurfaceDefinition::AxisRevolution {
+            None,
+        ),
+        ProceduralSurface::new(
+            ProceduralSurfaceId("revolution-construction".into()),
+            revolution.clone(),
+            ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
                 axis_direction: Vector3::new(0.0, 0.0, 1.0),
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        },
+            None,
+        ),
     ]);
     let length_scale = 0.001;
     let angle_scale = std::f64::consts::PI / 180.0;
@@ -278,16 +276,15 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("sweep-construction".into()),
-        surface: surface.clone(),
-        definition: ProceduralSurfaceDefinition::LinearSweep {
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ProceduralSurfaceId("sweep-construction".into()),
+        surface.clone(),
+        ProceduralSurfaceDefinition::LinearSweep {
             directrix,
             direction: Vector3::new(0.0, 1.0, 0.0),
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
 
     assert_eq!(
         surface_parameter_scales_for_step(
@@ -320,17 +317,16 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("construction".into()),
-        surface: surface_id.clone(),
-        definition: ProceduralSurfaceDefinition::AxisRevolution {
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ProceduralSurfaceId("construction".into()),
+        surface_id.clone(),
+        ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 1.0),
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
 
     assert_eq!(
         surface_parameter_scales_for_step(

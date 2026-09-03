@@ -344,7 +344,7 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         parameters,
         components,
         ..
-    } = &root.definition
+    } = root.definition()
     else {
         panic!("compound definition");
     };

@@ -1180,6 +1180,7 @@ fn generate_ir_seeds() {
         .to_canonical_json()
         .unwrap();
     let directed_subd_sum = cadmpeg_ir::examples::directed_subd_sum()
+        .unwrap()
         .to_canonical_json()
         .unwrap();
     let canonical = [

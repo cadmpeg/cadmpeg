@@ -545,10 +545,10 @@ pub(super) fn emit_surfaces(
                     "2d_surface_of_revolution",
                     Exactness::Derived,
                 );
-                ir.model.procedural_surfaces.push(ProceduralSurface {
-                    id: procedural_id,
-                    surface: id,
-                    definition: ProceduralSurfaceDefinition::Revolution {
+                ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                    procedural_id,
+                    id,
+                    ProceduralSurfaceDefinition::Revolution {
                         directrix: directrix_id,
                         axis_origin: revolution.axis_origin,
                         axis_direction: revolution.axis_direction,
@@ -558,9 +558,8 @@ pub(super) fn emit_surfaces(
                         transposed: false,
                         revision_form: None,
                     },
-                    cache_fit_tolerance: None,
-                    record_bounds: None,
-                });
+                    None,
+                ));
             }
             Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
@@ -579,13 +578,12 @@ pub(super) fn emit_surfaces(
                     &carrier_tag,
                     Exactness::ByteExact,
                 );
-                ir.model.procedural_surfaces.push(ProceduralSurface {
-                    id: procedural_id,
-                    surface: id,
+                ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                    procedural_id,
+                    id,
                     definition,
-                    cache_fit_tolerance: None,
-                    record_bounds: None,
-                });
+                    None,
+                ));
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
@@ -611,10 +609,10 @@ pub(super) fn emit_surfaces(
             "30_offset_surface",
             Exactness::Derived,
         );
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: procedural_id,
-            surface: surface.clone(),
-            definition: ProceduralSurfaceDefinition::Offset {
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            surface.clone(),
+            ProceduralSurfaceDefinition::Offset {
                 support: support.clone(),
                 distance: offset.distance,
                 u_sense: None,
@@ -623,9 +621,8 @@ pub(super) fn emit_surfaces(
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
-            cache_fit_tolerance: None,
-            record_bounds: Some(parameter_record_bounds(offset.parameter_bounds)),
-        });
+            Some(parameter_record_bounds(offset.parameter_bounds)),
+        ));
     }
     surface_ids
 }
@@ -686,10 +683,10 @@ fn emit_extrusion_procedure(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             );
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedure_id,
-                curve: directrix_id.clone(),
-                definition: ProceduralCurveDefinition::Intersection {
+            if let Ok(procedure) = ProceduralCurve::try_new(
+                procedure_id,
+                directrix_id.clone(),
+                ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides,
                         parameter_range: extrusion.directrix_parameter_range,
@@ -697,8 +694,10 @@ fn emit_extrusion_procedure(
                     },
                     discontinuity_flag: false,
                 },
-                cache_fit_tolerance: Some(cache_fit_tolerance),
-            });
+                Some(cache_fit_tolerance),
+            ) {
+                ir.model.procedural_curves.push(procedure);
+            }
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
@@ -760,10 +759,10 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             );
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedure_id,
-                curve: directrix_id.clone(),
-                definition: ProceduralCurveDefinition::Offset {
+            ir.model.procedural_curves.push(ProceduralCurve::new(
+                procedure_id,
+                directrix_id.clone(),
+                ProceduralCurveDefinition::Offset {
                     source: source_id,
                     distance,
                     direction: Some(direction),
@@ -772,8 +771,7 @@ fn emit_extrusion_procedure(
                     parameter_range: Some(source_parameter_range),
                     distance_law: None,
                 },
-                cache_fit_tolerance: None,
-            });
+            ));
         }
     }
     let procedure_id = ProceduralSurfaceId(format!("catia:b5:extrusion#{surface_object_id}"));
@@ -784,19 +782,18 @@ fn emit_extrusion_procedure(
         "2c_extrusion_surface",
         Exactness::ByteExact,
     );
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: procedure_id,
-        surface: surface_id,
-        definition: ProceduralSurfaceDefinition::Extrusion {
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        procedure_id,
+        surface_id,
+        ProceduralSurfaceDefinition::Extrusion {
             directrix: directrix_id,
             parameter_interval: Some(extrusion.directrix_parameter_range),
             direction: extrusion.direction,
             native_position: None,
             revision_form: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: Some(parameter_record_bounds(extrusion.parameter_bounds)),
-    });
+        Some(parameter_record_bounds(extrusion.parameter_bounds)),
+    ));
 }
 
 #[cfg(test)]
@@ -873,7 +870,7 @@ mod tests {
             CurveGeometry::Unknown { record: None }
         ));
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            &ir.model.procedural_curves[0].definition
+            ir.model.procedural_curves[0].definition()
         else {
             panic!("expected intersection directrix");
         };
@@ -883,17 +880,17 @@ mod tests {
         assert_eq!(context.sides[1].surface, Some(support_ids[&20].clone()));
         assert_eq!(context.sides[1].pcurve_parameter_range, Some([0.25, 0.75]));
         assert_eq!(
-            ir.model.procedural_curves[0].cache_fit_tolerance,
+            ir.model.procedural_curves[0].cache_fit_tolerance(),
             Some(1e-5)
         );
         assert!(matches!(
-            ir.model.procedural_surfaces[0].definition,
+            ir.model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Extrusion {
                 parameter_interval: Some([0.0, 1.0]),
                 direction,
                 native_position: None,
                 ..
-            } if direction == Vector3::new(0.0, 0.0, 1.0)
+            } if *direction == Vector3::new(0.0, 0.0, 1.0)
         ));
         assert_eq!(
             ir.model.procedural_surfaces[0].record_bounds,

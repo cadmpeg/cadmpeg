@@ -44,14 +44,16 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
         || !model.pcurves.is_empty()
         || model.procedural_surfaces.iter().any(|surface| {
             !matches!(
-                &surface.definition,
+                surface.definition(),
                 ProceduralSurfaceDefinition::Unknown { .. }
             )
         })
-        || model
-            .procedural_curves
-            .iter()
-            .any(|curve| !matches!(&curve.definition, ProceduralCurveDefinition::Unknown { .. }))
+        || model.procedural_curves.iter().any(|curve| {
+            !matches!(
+                curve.definition(),
+                ProceduralCurveDefinition::Unknown { .. }
+            )
+        })
         || model
             .sketch_entities
             .iter()

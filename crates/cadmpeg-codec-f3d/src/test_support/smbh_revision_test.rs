@@ -148,7 +148,7 @@ pub(crate) fn decoded_revision_loft_member(
         .procedural_surfaces
         .first()
         .expect("revision loft construction")
-        .definition
+        .definition()
     else {
         panic!("expected a loft construction")
     };
@@ -200,12 +200,8 @@ pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
 }
 
 /// The parameterization the shared form-`2` tail builder writes.
-pub(crate) fn assert_parameterized_tail(
-    tail_enum: i64,
-    parameterization: Option<&cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
-) {
-    assert_eq!(tail_enum, 2);
-    let parameterization = parameterization.expect("tail parameterization");
+pub(crate) fn assert_parameterized_tail(cache: &cadmpeg_ir::geometry::RevisionCacheForm) {
+    let parameterization = cache.parameterization().expect("tail parameterization");
     assert_eq!(parameterization.u_interval, [Some(0.25), None]);
     assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
     assert_eq!(

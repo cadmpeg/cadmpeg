@@ -37,12 +37,16 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
         scale_curve_geometry(&mut curve.geometry, length_scale_mm);
     }
     for procedural in &mut ir.model.procedural_surfaces {
-        scale_procedural_surface_definition(&mut procedural.definition, length_scale_mm);
-        scale_optional(&mut procedural.cache_fit_tolerance, length_scale_mm);
+        procedural.edit_definition(|definition| {
+            scale_procedural_surface_definition(definition, length_scale_mm);
+        });
+        procedural.scale_cache_fit_tolerance(length_scale_mm);
     }
     for procedural in &mut ir.model.procedural_curves {
-        scale_procedural_curve_definition(&mut procedural.definition, length_scale_mm);
-        scale_optional(&mut procedural.cache_fit_tolerance, length_scale_mm);
+        procedural.edit_definition(|definition| {
+            scale_procedural_curve_definition(definition, length_scale_mm);
+        });
+        procedural.scale_cache_fit_tolerance(length_scale_mm);
     }
     for point in &mut ir.model.points {
         scale_point3(&mut point.position, length_scale_mm);
@@ -1646,27 +1650,27 @@ mod tests {
     #[test]
     fn scales_procedural_model_lengths_and_cache_tolerances() {
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-        ir.model
-            .procedural_surfaces
-            .push(cadmpeg_ir::geometry::ProceduralSurface {
-                id: cadmpeg_ir::ids::ProceduralSurfaceId("surface-construction".into()),
-                surface: cadmpeg_ir::ids::SurfaceId("surface".into()),
-                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+        ir.model.procedural_surfaces.push(
+            cadmpeg_ir::geometry::ProceduralSurface::try_new(
+                cadmpeg_ir::ids::ProceduralSurfaceId("surface-construction".into()),
+                cadmpeg_ir::ids::SurfaceId("surface".into()),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     directrix: cadmpeg_ir::ids::CurveId("directrix".into()),
                     parameter_interval: Some([1.0, 2.0]),
                     direction: Vector3::new(1.0, 2.0, 3.0),
                     native_position: Some(Point3::new(4.0, 5.0, 6.0)),
                     revision_form: None,
                 },
-                cache_fit_tolerance: Some(7.0),
-                record_bounds: Some([Some(8.0), None, Some(9.0), None]),
-            });
-        ir.model
-            .procedural_curves
-            .push(cadmpeg_ir::geometry::ProceduralCurve {
-                id: cadmpeg_ir::ids::ProceduralCurveId("curve-construction".into()),
-                curve: cadmpeg_ir::ids::CurveId("curve".into()),
-                definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+                Some(7.0),
+                Some([Some(8.0), None, Some(9.0), None]),
+            )
+            .unwrap(),
+        );
+        ir.model.procedural_curves.push(
+            cadmpeg_ir::geometry::ProceduralCurve::try_new(
+                cadmpeg_ir::ids::ProceduralCurveId("curve-construction".into()),
+                cadmpeg_ir::ids::CurveId("curve".into()),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
                     angle_range: [0.0, 1.0],
                     center: Point3::new(1.0, 2.0, 3.0),
                     major: Vector3::new(4.0, 5.0, 6.0),
@@ -1675,8 +1679,10 @@ mod tests {
                     apex_factor: 0.25,
                     axis: Vector3::new(0.0, 0.0, 1.0),
                 },
-                cache_fit_tolerance: Some(13.0),
-            });
+                Some(13.0),
+            )
+            .unwrap(),
+        );
 
         normalize_model_lengths(&mut ir, 25.4);
 
@@ -1686,7 +1692,7 @@ mod tests {
             native_position,
             parameter_interval,
             ..
-        } = &surface.definition
+        } = surface.definition()
         else {
             panic!("test surface construction changed family");
         };
@@ -1697,7 +1703,9 @@ mod tests {
         );
         assert_eq!(*parameter_interval, Some([1.0, 2.0]));
         assert_close(
-            surface.cache_fit_tolerance.expect("test surface tolerance"),
+            surface
+                .cache_fit_tolerance()
+                .expect("test surface tolerance"),
             177.8,
         );
         assert_eq!(
@@ -1714,7 +1722,7 @@ mod tests {
             axis,
             apex_factor,
             ..
-        } = &curve.definition
+        } = curve.definition()
         else {
             panic!("test curve construction changed family");
         };
@@ -1725,7 +1733,7 @@ mod tests {
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
         assert_close(*apex_factor, 0.25);
         assert_close(
-            curve.cache_fit_tolerance.expect("test curve tolerance"),
+            curve.cache_fit_tolerance().expect("test curve tolerance"),
             330.2,
         );
     }

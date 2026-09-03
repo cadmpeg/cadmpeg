@@ -548,7 +548,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             direction,
             native_position,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if parameter_interval.is_some_and(|range| !range.iter().all(|value| value.is_finite()))
                 || ![direction.x, direction.y, direction.z]
@@ -565,7 +565,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::LinearSweep { direction, .. } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::LinearSweep { direction, .. } = procedural.definition()
+        {
             if ![direction.x, direction.y, direction.z]
                 .into_iter()
                 .all(f64::is_finite)
@@ -574,13 +575,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds_err(findings, &procedural.id.0, "invalid linear-sweep direction");
             }
         }
-        if let ProceduralSurfaceDefinition::ParallelOffset { distance, .. } = &procedural.definition
+        if let ProceduralSurfaceDefinition::ParallelOffset { distance, .. } =
+            procedural.definition()
         {
             if !distance.is_finite() {
                 bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
             }
         }
-        if let ProceduralSurfaceDefinition::Replica { transform, .. } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::Replica { transform, .. } = procedural.definition() {
             if !transform.is_affine() {
                 bounds_err(
                     findings,
@@ -589,7 +591,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Exact { parameters, .. } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::Exact { parameters, .. } = procedural.definition() {
             let valid = match parameters {
                 crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
                     ranges.iter().all(|range| {
@@ -613,7 +615,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let ProceduralSurfaceDefinition::Compound {
             parameters,
             components,
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if parameters.len() != components.len()
                 || parameters.iter().any(|parameter| !parameter.is_finite())
@@ -627,7 +629,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralSurfaceDefinition::SubSurface {
             parameter_ranges, ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if !parameter_ranges
                 .iter()
@@ -643,7 +645,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralSurfaceDefinition::Taper {
             parameter, taper, ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
@@ -687,7 +689,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             parameters,
             bridge,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let parameters_valid = match parameters {
                 crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
@@ -737,7 +739,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::CompoundLoft { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::CompoundLoft { construction } = procedural.definition()
+        {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
@@ -803,7 +806,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
-            &procedural.definition
+            procedural.definition()
         {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
@@ -888,7 +891,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Law { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::Law { construction } = procedural.definition() {
             fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
                 if depth > 64 {
                     return false;
@@ -941,14 +944,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             };
             let tail_valid = match &construction.tail {
                 crate::geometry::LawSurfaceTail::Full => procedural
-                    .cache_fit_tolerance
+                    .cache_fit_tolerance()
                     .is_some_and(|value| value.is_finite() && value >= 0.0),
                 crate::geometry::LawSurfaceTail::Summary {
                     parameters,
                     fit_tolerance,
                     ..
                 } => {
-                    procedural.cache_fit_tolerance.is_none()
+                    procedural.cache_fit_tolerance().is_none()
                         && fit_tolerance.is_finite()
                         && *fit_tolerance >= 0.0
                         && parameters.iter().flatten().all(|value| value.is_finite())
@@ -956,7 +959,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::LawSurfaceTail::None {
                     parameter_ranges, ..
                 } => {
-                    procedural.cache_fit_tolerance.is_none()
+                    procedural.cache_fit_tolerance().is_none()
                         && parameter_ranges
                             .iter()
                             .flatten()
@@ -964,7 +967,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 crate::geometry::LawSurfaceTail::Historical
                 | crate::geometry::LawSurfaceTail::Optimal => {
-                    procedural.cache_fit_tolerance.is_none()
+                    procedural.cache_fit_tolerance().is_none()
                 }
             };
             let valid = construction
@@ -985,7 +988,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Skin { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::Skin { construction } = procedural.definition() {
             fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
                 if depth > 64 {
                     return false;
@@ -1092,7 +1095,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Net { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::Net { construction } = procedural.definition() {
             fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
                 if depth > 64 {
                     return false;
@@ -1187,7 +1190,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let ProceduralSurfaceDefinition::Sweep {
             native: Some(construction),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
                 if depth > 64 {
@@ -1372,7 +1375,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::TSpline { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::TSpline { construction } = procedural.definition() {
             let ranges_valid = construction
                 .parameter_ranges
                 .iter()
@@ -1420,7 +1423,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Helix { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::Helix { construction } = procedural.definition() {
             let path = &construction.path;
             let finite = construction
                 .angle_range
@@ -1465,7 +1468,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Deformable { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::Deformable { construction } = procedural.definition() {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
@@ -1565,7 +1568,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::G2Blend { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::G2Blend { construction } = procedural.definition() {
             let direction_finite = |direction: &Vector3| {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
             };
@@ -1612,7 +1615,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition
+        if let ProceduralSurfaceDefinition::VariableBlend { construction } = procedural.definition()
         {
             use crate::geometry::VariableBlendRadiusKind;
 
@@ -1675,7 +1678,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::VertexBlend { construction } = &procedural.definition {
+        if let ProceduralSurfaceDefinition::VertexBlend { construction } = procedural.definition() {
             let point_finite = |point: &crate::math::Point3| {
                 point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
             };
@@ -1734,7 +1737,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let ProceduralSurfaceDefinition::Blend {
             native: Some(construction),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let point_finite = |point: &crate::math::Point3| {
                 point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
@@ -1782,7 +1785,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             knots,
             multiplicities,
             sites,
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let point_finite = |point: &crate::math::Point3| {
                 point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
@@ -1846,7 +1849,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             extension_flags,
             revision_form,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             // A revision-gated offset stores its four-boolean carrier run in
             // the revision form and has no ASM extension tail of its own.
@@ -1866,37 +1869,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let Some((enumeration, parameterization)) = revision_tail_form(&procedural.definition) {
-            // Tail enum `0` stores a solved cache and its fit tolerance; `2`
-            // stores the parameterization instead. No other value is defined.
-            let cache_is_stale = matches!(
-                &procedural.definition,
-                ProceduralSurfaceDefinition::VariableBlend { construction }
-                    if construction.shape_prefix == 0
-            );
-            let form_matches = match enumeration {
-                0 => {
-                    parameterization.is_none()
-                        && if cache_is_stale {
-                            procedural.cache_fit_tolerance.is_none()
-                        } else {
-                            procedural.cache_fit_tolerance.is_some()
-                        }
-                }
-                2 => parameterization.is_some() && procedural.cache_fit_tolerance.is_none(),
-                _ => false,
-            };
-            if !form_matches {
-                bounds_err(
-                    findings,
-                    &procedural.id.0,
-                    "revision-gated surface tail enum does not match its stored cache form",
-                );
-            }
-        }
         if let ProceduralSurfaceDefinition::Subset {
             parameter_ranges, ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if !parameter_ranges
                 .iter()
@@ -2223,7 +2198,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             parameter_range,
             distance_law,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let normal_valid = normal.is_none_or(|normal| {
                 normal.x.is_finite()
@@ -2269,7 +2244,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             distance,
             reference_direction,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if !distance.is_finite()
                 || ![
@@ -2288,7 +2263,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             source_parameter_range,
             data,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let finite_vector = |vector: &crate::math::Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
@@ -2344,7 +2319,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             first_pcurve_parameter_range,
             cache_first,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             // The conditional inline ranges belong to the context-first
             // layout: a cache-first record stores its bounds in the shared
@@ -2394,7 +2369,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             shift,
             scale,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let ranges = [base_u_range, base_v_range, base_range];
             if !support_context_is_finite(context)
@@ -2418,7 +2393,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             silhouette,
             light_direction,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let draft_finite = match silhouette {
                 crate::geometry::SilhouetteKind::Taper { draft_factor } => draft_factor.is_finite(),
@@ -2439,7 +2414,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::SurfaceCurve { context, .. } = &procedural.definition {
+        if let ProceduralCurveDefinition::SurfaceCurve { context, .. } = procedural.definition() {
             if !support_context_is_finite(context) {
                 bounds_err(
                     findings,
@@ -2450,7 +2425,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             continue;
         }
         if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } =
-            &procedural.definition
+            procedural.definition()
         {
             if !support_context_is_finite(context)
                 || !support_side_mapping_is_finite(third)
@@ -2465,7 +2440,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Projection { context, tail, .. } = &procedural.definition
+        if let ProceduralCurveDefinition::Projection { context, tail, .. } = procedural.definition()
         {
             let tail_finite = match tail {
                 crate::geometry::ProjectionTail::EarlyClose { .. } => true,
@@ -2485,7 +2460,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition {
+        if let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() {
             if !support_context_is_finite(context) {
                 bounds_err(
                     findings,
@@ -2500,7 +2475,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             endpoints,
             tolerance,
             parameterization,
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let point_is_finite = |point: &crate::math::Point3| {
                 point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
@@ -2531,7 +2506,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             distance,
             direction,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let direction_valid = direction.is_none_or(|direction| {
                 direction.x.is_finite()
@@ -2550,7 +2525,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralCurveDefinition::TwoSidedOffset {
             context, offsets, ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let finite =
                 support_context_is_finite(context) && offsets.iter().all(|value| value.is_finite());
@@ -2567,7 +2542,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             parameters,
             component_parameters,
             components,
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if components.is_empty() || component_parameters.len() != components.len() {
                 bounds_err(
@@ -2591,7 +2566,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralCurveDefinition::Subset {
             parameter_range, ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if !parameter_range.iter().all(|value| value.is_finite())
                 || parameter_range[0] > parameter_range[1]
@@ -2604,7 +2579,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Replica { transform, .. } = &procedural.definition {
+        if let ProceduralCurveDefinition::Replica { transform, .. } = procedural.definition() {
             if !transform.is_affine() {
                 bounds_err(
                     findings,
@@ -2618,7 +2593,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             parameter_range,
             offset,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if !parameter_range.iter().all(|value| value.is_finite())
                 || parameter_range[0] > parameter_range[1]
@@ -2642,7 +2617,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             pitch,
             apex_factor,
             axis,
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             continue;
         };
@@ -3012,51 +2987,6 @@ pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], 
         };
         bounds_err(findings, id, &label);
     }
-}
-
-/// The shared revision-gated surface tail's form enum and the parameterization
-/// paired with it, from whichever carrier the definition uses.
-fn revision_tail_form(
-    definition: &ProceduralSurfaceDefinition,
-) -> Option<(
-    i64,
-    Option<&crate::geometry::RevisionSurfaceParameterization>,
-)> {
-    let form = match definition {
-        ProceduralSurfaceDefinition::Exact { revision_form, .. }
-        | ProceduralSurfaceDefinition::Taper { revision_form, .. }
-        | ProceduralSurfaceDefinition::Revolution { revision_form, .. }
-        | ProceduralSurfaceDefinition::Sum { revision_form, .. }
-        | ProceduralSurfaceDefinition::Extrusion { revision_form, .. }
-        | ProceduralSurfaceDefinition::Offset { revision_form, .. } => revision_form.as_ref(),
-        ProceduralSurfaceDefinition::TSpline { construction } => {
-            construction.revision_form.as_ref()
-        }
-        ProceduralSurfaceDefinition::VariableBlend { construction } => {
-            return Some((
-                construction.tail_enum,
-                construction.tail_parameterization.as_ref(),
-            ))
-        }
-        ProceduralSurfaceDefinition::Blend {
-            native: Some(construction),
-            ..
-        } => {
-            return Some((
-                construction.tail_enum,
-                construction.tail_parameterization.as_ref(),
-            ))
-        }
-        ProceduralSurfaceDefinition::Sweep {
-            native: Some(construction),
-            ..
-        } => {
-            let form = construction.revision_form.as_ref()?;
-            return Some((form.tail_enum, form.tail_parameterization.as_ref()));
-        }
-        _ => None,
-    }?;
-    Some((form.tail_enum, form.tail_parameterization.as_ref()))
 }
 
 pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {

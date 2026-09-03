@@ -2899,3 +2899,31 @@ crate = "cadmpeg-registry"
 kind = "variant"
 item = "cadmpeg_registry::ForcedInput::Codec"
 reason = "a forced codec carries an opaque native-decoder witness, while the descriptor-owned constructor maps the neutral CADIR row directly to ForcedInput::Cadir"
+
+[[change]]
+commit = "1ebb933993ebb3f83865554e2dab21c7acde51d3"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::{RevisionSurfaceForm,LoftRevisionForm,RollingBallConstruction,VariableBlendConstruction,RevisionG2BlendConstruction,RevisionCompoundLoftConstruction,SweepRevisionForm,CacheFirstCurveForm,SurfaceCurveTail}::{tail_enum,cache_enum,tail_parameterization,parameterization}"
+reason = "RevisionCacheForm carries either the solved-cache contract or the parameterization selected by the native discriminator, so mismatched selector and payload states cannot be constructed; variable blends distinguish current and stale solved caches without inventing an active tolerance for stale source data"
+
+[[change]]
+commit = "1ebb933993ebb3f83865554e2dab21c7acde51d3"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::{ProceduralSurface,ProceduralCurve}::{definition,cache_fit_tolerance}"
+reason = "private construction storage and checked mutation keep legacy cache tolerance separate from revision forms that own their tolerance; accessors expose the effective definition and tolerance"
+
+[[change]]
+commit = "1ebb933993ebb3f83865554e2dab21c7acde51d3"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "impl Default for cadmpeg_ir::geometry::{RevisionSurfaceForm,LoftRevisionForm,SweepRevisionForm,CacheFirstCurveForm}"
+reason = "the cache discriminator has no valid payload-free default, so each revision form must select and construct a complete RevisionCacheForm"
+
+[[change]]
+commit = "1ebb933993ebb3f83865554e2dab21c7acde51d3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::examples::directed_subd_sum"
+reason = "the public fixture propagates checked procedural-surface construction instead of assuming that independently supplied cache fields agree"

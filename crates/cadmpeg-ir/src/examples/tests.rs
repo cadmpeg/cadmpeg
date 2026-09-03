@@ -6,7 +6,7 @@ use crate::validate::validate_neutral;
 
 #[test]
 fn directed_subd_sum_fixture_round_trips_and_validates() {
-    let ir = directed_subd_sum();
+    let ir = directed_subd_sum().unwrap();
     let report = crate::validate::validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:?}", report.findings);
     let json = ir.to_canonical_json().expect("serialize fixture");

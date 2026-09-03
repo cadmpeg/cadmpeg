@@ -5,8 +5,8 @@ use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
-    LawFormula, NurbsCurve, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceForm,
+    LawFormula, NurbsCurve, NurbsSurface, OffsetSupportExtension, PcurveGeometry, ProceduralCurve,
+    ProceduralSurface, ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm,
     RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
     RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry,
     SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
@@ -22,6 +22,37 @@ use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 use cadmpeg_core::decode::WorkBudget;
+
+macro_rules! procedural_surface {
+    (
+        id: $id:expr,
+        surface: $surface:expr,
+        definition: $definition:expr,
+        cache_fit_tolerance: $cache_fit_tolerance:expr,
+        record_bounds: $record_bounds:expr $(,)?
+    ) => {
+        ProceduralSurface::try_new(
+            $id,
+            $surface,
+            $definition,
+            $cache_fit_tolerance,
+            $record_bounds,
+        )
+        .expect("valid procedural surface fixture")
+    };
+}
+
+macro_rules! procedural_curve {
+    (
+        id: $id:expr,
+        curve: $curve:expr,
+        definition: $definition:expr,
+        cache_fit_tolerance: $cache_fit_tolerance:expr $(,)?
+    ) => {
+        ProceduralCurve::try_new($id, $curve, $definition, $cache_fit_tolerance)
+            .expect("valid procedural curve fixture")
+    };
+}
 
 mod helix;
 mod law_sweep;
@@ -300,7 +331,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("budgeted-sweep-construction".into()),
         surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::LinearSweep {
@@ -854,7 +885,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
         },
     ];
     ir.model.procedural_surfaces = vec![
-        ProceduralSurface {
+        procedural_surface! {
             id: first_construction,
             surface: first_id.clone(),
             definition: ProceduralSurfaceDefinition::Offset {
@@ -869,7 +900,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             cache_fit_tolerance: None,
             record_bounds: None,
         },
-        ProceduralSurface {
+        procedural_surface! {
             id: second_construction,
             surface: second_id.clone(),
             definition: ProceduralSurfaceDefinition::Offset {
@@ -949,7 +980,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
             source_object: None,
         },
     ];
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
         surface: offset_id.clone(),
         definition: ProceduralSurfaceDefinition::Offset {
@@ -997,7 +1028,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
             source_object: None,
         },
     ];
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
         surface: offset_id.clone(),
         definition: ProceduralSurfaceDefinition::Offset {
@@ -1055,7 +1086,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         },
     ];
     ir.model.procedural_surfaces = vec![
-        ProceduralSurface {
+        procedural_surface! {
             id: subset_construction,
             surface: subset_id.clone(),
             definition: ProceduralSurfaceDefinition::Subset {
@@ -1067,7 +1098,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             cache_fit_tolerance: None,
             record_bounds: None,
         },
-        ProceduralSurface {
+        procedural_surface! {
             id: offset_construction,
             surface: offset_id.clone(),
             definition: ProceduralSurfaceDefinition::Offset {
@@ -1117,7 +1148,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
             source_object: None,
         },
     ];
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("curve-bounded-construction".into()),
         surface: bounded_id.clone(),
         definition: ProceduralSurfaceDefinition::CurveBounded {
@@ -1160,7 +1191,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("sweep-construction".into()),
         surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::LinearSweep {
@@ -1211,7 +1242,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
         surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::Extrusion {
@@ -1225,8 +1256,9 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
                 reference_endpoints: [None; 2],
                 second_endpoints: [None; 2],
                 flags: vec![true],
-                tail_enum: 2,
-                tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                cache: RevisionCacheForm::Parameterization(
+                    RevisionSurfaceParameterization::default(),
+                ),
                 discontinuities: Default::default(),
                 tail_flag: false,
                 trailing_flags: Vec::new(),
@@ -1275,7 +1307,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("cacheless-sweep-construction".into()),
         surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::Sweep {
@@ -1288,8 +1320,9 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                     primary_flag: false,
                     profile_endpoints: [Some(0.0), Some(1.0)],
                     path_endpoints: [Some(0.0), Some(1.0)],
-                    tail_enum: 2,
-                    tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                    cache: RevisionCacheForm::Parameterization(
+                        RevisionSurfaceParameterization::default(),
+                    ),
                 }),
                 layout: SweepSurfaceLayout::LawDriven {
                     mode: 10,
@@ -1368,7 +1401,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("revolution-construction".into()),
         surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::AxisRevolution {
@@ -1418,7 +1451,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("mapped-revolution-construction".into()),
         surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::Revolution {
@@ -1503,7 +1536,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("normalized-revolution-construction".into()),
         surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::Revolution {

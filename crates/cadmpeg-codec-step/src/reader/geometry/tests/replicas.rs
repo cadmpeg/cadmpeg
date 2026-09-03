@@ -73,7 +73,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .procedural_curves
         .iter()
         .any(|curve| matches!(
-            curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 parameter_range: [start, end],
                 ..
@@ -249,18 +249,18 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id
                 && matches!(
-                    curve.definition,
+                    curve.definition(),
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                         parameter_range,
                         ..
-                    } if parameter_range == expected
+                    } if *parameter_range == expected
                 )
         }));
     }
 
     assert!(result.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
                 if curve.curve.as_str() == "step:data:curve#8"
                     && source.as_str() == "step:data:curve#6"
@@ -292,7 +292,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         .expect("decode trimmed replica");
     assert!(round_trip.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
                 if source.as_str().starts_with("step:data:curve#")
         )
@@ -395,7 +395,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .any(|surface| {
             surface.surface.as_str() == "step:data:surface#10"
                 && matches!(
-                    &surface.definition,
+                    surface.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
                         support,
                         parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
@@ -417,7 +417,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .iter()
         .any(|surface| {
             matches!(
-                &surface.definition,
+                surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
                     if surface.surface.as_str() == "step:data:surface#8"
                         && source.as_str() == "step:data:surface#9"
@@ -454,7 +454,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .iter()
         .any(|surface| {
             matches!(
-                &surface.definition,
+                surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
                     if source.as_str().starts_with("step:data:surface#")
             )
@@ -729,7 +729,7 @@ fn replicas_retain_bounded_parent_relations() {
 
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
                 if curve.curve.as_str() == "step:data:curve#9"
                     && source.as_str() == "step:data:curve#7"
@@ -742,7 +742,7 @@ fn replicas_retain_bounded_parent_relations() {
         .iter()
         .any(|surface| {
             matches!(
-                &surface.definition,
+                surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
                     if surface.surface.as_str() == "step:data:surface#13"
                         && source.as_str() == "step:data:surface#12"

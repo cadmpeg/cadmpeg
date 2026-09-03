@@ -401,10 +401,10 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
 #[test]
 fn revolution_rejects_equal_intervals() {
     let mut ir = unit_cube();
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("synthetic:test:procedural-surface#equal".into()),
-        surface: ir.model.surfaces[0].id.clone(),
-        definition: ProceduralSurfaceDefinition::Revolution {
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ProceduralSurfaceId("synthetic:test:procedural-surface#equal".into()),
+        ir.model.surfaces[0].id.clone(),
+        ProceduralSurfaceDefinition::Revolution {
             directrix: ir.model.curves[0].id.clone(),
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 1.0),
@@ -414,9 +414,8 @@ fn revolution_rejects_equal_intervals() {
             transposed: false,
             revision_form: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

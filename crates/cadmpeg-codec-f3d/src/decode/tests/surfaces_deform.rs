@@ -125,7 +125,7 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
         )
         .expect("deformable surface decode");
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected deformable surface")
     };
@@ -146,7 +146,7 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Deformable { .. }
     ));
 }
@@ -164,7 +164,7 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             )
             .unwrap();
         let ProceduralSurfaceDefinition::Deformable { construction } =
-            &decoded.ir().model.procedural_surfaces[0].definition
+            &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected deformable surface")
         };
@@ -205,7 +205,7 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition,
+            round_trip.ir().model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Deformable { .. }
         ));
     }
@@ -221,7 +221,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
         )
         .expect("revision deformable surface decode");
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected deformable surface")
     };
@@ -264,7 +264,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("revision deformable source-less round trip");
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &round_trip.ir().model.procedural_surfaces[0].definition
+        &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip deformable surface")
     };
@@ -295,7 +295,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         )
         .unwrap();
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!()
     };
@@ -337,7 +337,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        round.ir().model.procedural_surfaces[0].definition,
+        round.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Deformable { .. }
     ));
     assert!(round.ir().model.curves.iter().any(|curve| matches!(
@@ -361,7 +361,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             )
             .unwrap();
         let ProceduralSurfaceDefinition::Deformable { construction } =
-            &decoded.ir().model.procedural_surfaces[0].definition
+            &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!()
         };
@@ -408,7 +408,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
         let ProceduralSurfaceDefinition::Deformable { construction } =
-            &round.ir().model.procedural_surfaces[0].definition
+            &round.ir().model.procedural_surfaces[0].definition()
         else {
             panic!()
         };
@@ -437,7 +437,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         )
         .expect("referenced T-spline decode");
     let ProceduralSurfaceDefinition::TSpline { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected T-spline surface")
     };
@@ -474,7 +474,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less referenced T-spline round trip");
     let ProceduralSurfaceDefinition::TSpline { construction } =
-        &round_trip.ir().model.procedural_surfaces[0].definition
+        &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip T-spline surface")
     };
@@ -499,7 +499,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -552,7 +552,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    } = &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip explicit formula sweep")
     };
@@ -592,12 +592,12 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .0;
     decoded.source = None;
     decoded.set_native_unknowns("f3d", &[]).unwrap();
-    let ProceduralSurfaceDefinition::Sweep { native, .. } =
-        &mut decoded.model.procedural_surfaces[0].definition
-    else {
-        panic!("expected generated sweep")
-    };
-    *native = None;
+    decoded.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Sweep { native, .. } = definition else {
+            panic!("expected generated sweep")
+        };
+        *native = None;
+    });
 
     let error = F3dCodec
         .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
@@ -625,7 +625,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -680,7 +680,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less explicit guide sweep round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
@@ -717,7 +717,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -767,7 +767,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less explicit surface sweep round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
@@ -804,7 +804,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -855,7 +855,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less law-driven sweep round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
@@ -890,7 +890,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -925,7 +925,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    } = &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-tripped native sweep")
     };
@@ -960,7 +960,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native revision sweep")
     };
@@ -1002,7 +1002,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    } = &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-tripped revision sweep")
     };
@@ -1031,19 +1031,19 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
         )
         .expect("cacheless revision text-law sweep decode");
     let procedural = &decoded.ir().model.procedural_surfaces[0];
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected cacheless native revision sweep")
     };
     let form = native.revision_form.as_ref().expect("revision form");
     assert_eq!(form.revision, 23100);
-    assert_eq!(form.tail_enum, 2);
+    assert_eq!(form.cache.selector(), 2);
     assert_eq!(
-        form.tail_parameterization.as_ref(),
+        form.cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
     );
     let SweepSurfaceLayout::LawDriven {
@@ -1075,22 +1075,22 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("cacheless revision text-law sweep round trip");
     let procedural = &round_trip.ir().model.procedural_surfaces[0];
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected round-tripped cacheless native revision sweep")
     };
-    assert_eq!(native.revision_form.as_ref().unwrap().tail_enum, 2);
+    assert_eq!(native.revision_form.as_ref().unwrap().cache.selector(), 2);
     assert_eq!(
         native
             .revision_form
             .as_ref()
             .unwrap()
-            .tail_parameterization
-            .as_ref(),
+            .cache
+            .parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
     );
 }
@@ -1140,7 +1140,7 @@ fn generated_legacy_surface_names_select_modern_layouts() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{expected} legacy decode: {error}"));
-        let definition = &decoded.ir().model.procedural_surfaces[0].definition;
+        let definition = &decoded.ir().model.procedural_surfaces[0].definition();
         assert!(
             matches!(
                 (expected, definition),
@@ -1163,26 +1163,8 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let required = [
-        (
-            synthetic_minimal_deformable_surface_smbh(),
-            "deformable surface",
-        ),
-        (synthetic_t_spl_sur_smbh(), "T-spline surface"),
-        (
-            synthetic_exact_spl_sur_smbh("exact_spl_sur"),
-            "exact spline surface",
-        ),
-        (
-            synthetic_variable_blend_smbh("var_blend_spl_sur"),
-            "variable blend",
-        ),
-        (
-            synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
-            "rolling-ball blend",
-        ),
         (synthetic_skin_spl_sur_smbh(0, false), "skin surface"),
         (synthetic_net_spl_sur_smbh(), "net surface"),
-        (synthetic_profile_first_sweep_smbh(), "sweep surface"),
     ];
     for (smbh, family) in required {
         let decoded = F3dCodec
@@ -1192,12 +1174,14 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             )
             .unwrap_or_else(|error| panic!("{family} decode: {error}"));
         assert!(decoded.ir().model.procedural_surfaces[0]
-            .cache_fit_tolerance
+            .cache_fit_tolerance()
             .is_some());
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        source_less.model.procedural_surfaces[0]
+            .set_cache_fit_tolerance(None)
+            .unwrap();
         let error = F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -1233,7 +1217,9 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        source_less.model.procedural_surfaces[0]
+            .set_cache_fit_tolerance(None)
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1248,7 +1234,7 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             "{family} procedural surface was not reconstructed"
         );
         assert_eq!(
-            round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance,
+            round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
             None
         );
     }
@@ -1262,7 +1248,9 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+    source_less.model.procedural_surfaces[0]
+        .set_cache_fit_tolerance(None)
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1272,11 +1260,11 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less loft round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Loft { .. }
     ));
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance,
+        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
         None
     );
 }

@@ -690,7 +690,7 @@ fn retain_unowned_carriers(
                     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
                         boundary_pcurves,
                         ..
-                    } = &surface.definition
+                    } = surface.definition()
                     else {
                         return None;
                     };

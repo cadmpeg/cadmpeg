@@ -1364,7 +1364,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
         knots,
         multiplicities,
         sites,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("rolling-ball jet");
     };

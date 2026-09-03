@@ -520,7 +520,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         directrix,
         parameter_interval: Some(parameter_interval),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected an exact revolution definition");
     };
@@ -635,7 +635,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             parameter_interval: Some(parameter_interval),
             angular_interval,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact revolution definition");
         };
@@ -721,7 +721,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
         parameter_interval: Some(parameter_interval),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected bounded trimmed revolution");
     };
@@ -755,7 +755,7 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
         directrix,
         axis_origin,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected a revolution definition");
     };
@@ -845,7 +845,7 @@ fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
         .find(|surface| surface.surface.0 == "iges:model:surface#D9")
         .expect("Type 122 neutral carrier");
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("expected an extrusion definition");
     };
@@ -900,7 +900,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             direction,
             native_position: Some(native_position),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact extrusion definition");
         };
@@ -995,7 +995,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             direction,
             native_position: Some(native_position),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact placed extrusion definition");
         };
@@ -1084,7 +1084,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             direction,
             native_position: Some(native_position),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact placed NURBS extrusion definition");
         };
@@ -1206,7 +1206,7 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact {
         parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected exact Type 128 construction")
     };
@@ -1243,11 +1243,11 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
-            result.ir().model.procedural_surfaces[0].definition
+            result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected an offset dependency");
         };
-        assert_eq!(distance, expected_z);
+        assert_eq!(*distance, expected_z);
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);

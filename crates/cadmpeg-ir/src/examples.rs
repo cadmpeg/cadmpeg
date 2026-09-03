@@ -254,7 +254,7 @@ pub fn unit_cube() -> CadIr {
 }
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
-pub fn directed_subd_sum() -> CadIr {
+pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceError> {
     let mut ir = CadIr::empty(Units::default());
     ir.model.curves = vec![
         Curve {
@@ -283,18 +283,20 @@ pub fn directed_subd_sum() -> CadIr {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("synthetic:v2:procedural-surface#sum".into()),
-        surface: SurfaceId("synthetic:v2:surface#sum-cache".into()),
-        definition: ProceduralSurfaceDefinition::Sum {
-            first: CurveId("synthetic:v2:curve#u".into()),
-            second: CurveId("synthetic:v2:curve#v".into()),
-            basepoint: Vector3::new(0.0, 0.0, 0.0),
-            revision_form: None,
-        },
-        cache_fit_tolerance: Some(EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9),
-        record_bounds: None,
-    });
+    ir.model
+        .procedural_surfaces
+        .push(ProceduralSurface::try_new(
+            ProceduralSurfaceId("synthetic:v2:procedural-surface#sum".into()),
+            SurfaceId("synthetic:v2:surface#sum-cache".into()),
+            ProceduralSurfaceDefinition::Sum {
+                first: CurveId("synthetic:v2:curve#u".into()),
+                second: CurveId("synthetic:v2:curve#v".into()),
+                basepoint: Vector3::new(0.0, 0.0, 0.0),
+                revision_form: None,
+            },
+            Some(EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9),
+            None,
+        )?);
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:v2:subd#directed".into()),
         scheme: SubdScheme::CatmullClark,
@@ -358,7 +360,7 @@ pub fn directed_subd_sum() -> CadIr {
         source_object: None,
     });
     ir.finalize();
-    ir
+    Ok(ir)
 }
 
 #[cfg(test)]

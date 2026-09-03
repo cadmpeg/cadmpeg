@@ -274,7 +274,7 @@ fn procedural_source_parameter_map(
         .find(|procedural| procedural.surface == *support.surface_id);
     if let Some(procedural) = procedural.filter(|procedural| {
         matches!(
-            &procedural.definition,
+            procedural.definition(),
             ProceduralSurfaceDefinition::Extrusion { .. }
                 | ProceduralSurfaceDefinition::Revolution { .. }
         )
@@ -458,7 +458,7 @@ fn procedural_pcurve_parameter_map(
     }
     let mut u_map = (1.0, 0.0);
     let mut v_map = (1.0, 0.0);
-    match &procedural.definition {
+    match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             parameter_interval,
@@ -1350,7 +1350,7 @@ fn surface_parameter_bounds(
             return None;
         }
         let procedural = index.procedural_surface_for_surface(&surface_id.0)?;
-        let bounds = match &procedural.definition {
+        let bounds = match procedural.definition() {
             ProceduralSurfaceDefinition::Ruled { .. }
             | ProceduralSurfaceDefinition::Extrusion { .. } => procedural
                 .record_bounds
@@ -1370,7 +1370,7 @@ fn surface_parameter_bounds(
         if let Some(bounds) = bounds {
             return Some(bounds);
         }
-        let support = match &procedural.definition {
+        let support = match procedural.definition() {
             ProceduralSurfaceDefinition::Offset { support, .. }
             | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => support,
             ProceduralSurfaceDefinition::Replica { source, .. } => source,
@@ -2267,21 +2267,20 @@ pub(super) fn project(
             candidate
                 .model_mut()
                 .procedural_surfaces
-                .push(ProceduralSurface {
-                    id: ProceduralSurfaceId(format!(
+                .push(ProceduralSurface::new(
+                    ProceduralSurfaceId(format!(
                         "iges:model:procedural-surface#D{}:implicit-outer",
                         entry.sequence
                     )),
-                    surface: derived_surface_id.clone(),
-                    definition: ProceduralSurfaceDefinition::CurveBounded {
+                    derived_surface_id.clone(),
+                    ProceduralSurfaceDefinition::CurveBounded {
                         support: surface_id.clone(),
                         boundaries: implicit_boundary_curves,
                         boundary_pcurves: implicit_boundary_pcurves,
                         implicit_outer: true,
                     },
-                    cache_fit_tolerance: None,
-                    record_bounds: support_parameter_bounds,
-                });
+                    support_parameter_bounds,
+                ));
             derived_surface_id
         } else {
             surface_id

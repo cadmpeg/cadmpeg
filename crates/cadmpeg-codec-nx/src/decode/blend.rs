@@ -2799,15 +2799,15 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         .copied()
         .find(|candidate| {
             matches!(
-                candidate.definition,
+                candidate.definition(),
                 ProceduralCurveDefinition::Intersection { .. }
             )
         })?;
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         unreachable!("definition selected above");
     };
     let contact_fit_tolerance = procedural
-        .cache_fit_tolerance
+        .cache_fit_tolerance()
         .filter(|fit| fit.is_finite() && *fit > 0.0)
         .map_or(tolerance, |fit| tolerance.max(fit));
     let offset_surfaces = context
@@ -2944,11 +2944,11 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
         .copied()
         .find(|candidate| {
             matches!(
-                candidate.definition,
+                candidate.definition(),
                 ProceduralCurveDefinition::Intersection { .. }
             )
         })?;
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         unreachable!("definition selected above");
     };
     let candidates = context.sides.iter().filter_map(|side| {
@@ -3243,7 +3243,7 @@ fn surface_offset_lineage_with_index(
     };
     let ProceduralSurfaceDefinition::Offset {
         support, distance, ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return Some((surface.clone(), 0.0));
     };
@@ -3276,7 +3276,7 @@ fn blend_surface_definition_from_procedural(
         radius: BlendRadiusLaw::Constant { signed_radius },
         cross_section: BlendCrossSection::Circular,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return None;
     };

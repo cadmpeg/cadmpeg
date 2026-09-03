@@ -34,7 +34,7 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
 
 #[test]
 fn cadir_encoder_census_matches_validation_counts() {
-    let ir = directed_subd_sum();
+    let ir = directed_subd_sum().unwrap();
     let validation_counts = validate_neutral(&ir, Vec::new()).entity_counts;
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)

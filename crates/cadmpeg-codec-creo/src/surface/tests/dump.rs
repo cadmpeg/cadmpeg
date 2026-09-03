@@ -65,7 +65,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
         .find(|surface| surface.surface == carrier_id)
         .expect("extrusion construction");
     assert!(matches!(
-        construction.definition,
+        construction.definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
             parameter_interval: None,
             direction: cadmpeg_ir::math::Vector3 {
