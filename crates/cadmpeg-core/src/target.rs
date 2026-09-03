@@ -28,13 +28,8 @@ pub struct TargetDescriptor {
 impl TargetDescriptor {
     /// Every token accepted for this target: full id, format-local id, and aliases.
     pub fn accepted_tokens(&self) -> impl Iterator<Item = &str> {
-        let local = self
-            .id
-            .as_str()
-            .split_once(':')
-            .map_or(self.id.as_str(), |(_, local)| local);
         std::iter::once(self.id.as_str())
-            .chain(std::iter::once(local))
+            .chain(std::iter::once(self.id.local()))
             .chain(self.aliases.iter().copied())
     }
 }
