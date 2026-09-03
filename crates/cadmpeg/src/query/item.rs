@@ -41,6 +41,27 @@ pub struct ItemArgs {
     pub json: bool,
 }
 
+impl ItemArgs {
+    /// Resolves the flat clap output fields into one output mode.
+    pub(crate) fn mode(&self) -> Output<'_> {
+        if self.json {
+            Output::Json
+        } else if let Some(paths) = self.fields.as_deref() {
+            Output::Tsv(paths)
+        } else {
+            Output::Pretty
+        }
+    }
+}
+
+/// Record-oriented query output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Output<'a> {
+    Pretty,
+    Tsv(&'a [String]),
+    Json,
+}
+
 /// Where the requested arena lives in the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ArenaTarget {
@@ -121,7 +142,7 @@ fn string_id(raw: &RawValue) -> Option<String> {
 }
 
 /// Runs `query item` against one artifact.
-pub fn run(args: &ItemArgs) -> Result<()> {
+pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
     match artifact {
@@ -164,12 +185,12 @@ pub fn run(args: &ItemArgs) -> Result<()> {
     match mode {
         KeepMode::Head(_) => {
             let values = parse_kept(&capture.kept)?;
-            emit(args, &values)
+            emit_values("item", output, &values)
         }
         KeepMode::Ids(ids) => {
             let dotted = target.dotted();
             let (values, errors) = resolve_ids(ids, &capture, &dotted)?;
-            match (emit(args, &values), errors.is_empty()) {
+            match (emit_values("item", output, &values), errors.is_empty()) {
                 (Ok(()), true) => Ok(()),
                 (Ok(()), false) => bail!("{}", errors.join("\n")),
                 (Err(err), true) => Err(err),
@@ -261,18 +282,13 @@ fn resolve_one<'a>(
     }
 }
 
-fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
-    emit_values("item", args.json, args.fields.as_deref(), values)
-}
-
 /// Pretty-print records, TSV `--fields`, or the versioned `--json` envelope.
 pub(crate) fn emit_values(
     view: &str,
-    json: bool,
-    fields: Option<&[String]>,
+    output: Output<'_>,
     values: &[serde_json::Value],
 ) -> Result<()> {
-    if json {
+    if output == Output::Json {
         print_json(view, &serde_json::Value::Array(values.to_vec()));
         return Ok(());
     }
@@ -281,7 +297,7 @@ pub(crate) fn emit_values(
     if values.is_empty() {
         return Ok(());
     }
-    if let Some(paths) = fields {
+    if let Output::Tsv(paths) = output {
         let (tsv, empty_paths) = project_fields(values, paths)?;
         print!("{tsv}");
         if !empty_paths.is_empty() {

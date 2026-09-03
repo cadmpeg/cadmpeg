@@ -42,30 +42,9 @@ pub use schema::SchemaArgs;
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
 pub enum QueryView {
-    /// What this JSON file is.
-    ///
-    /// Accepts every artifact kind. Each source, decode, inspect, or refusal
-    /// identity is one `*_dialects` JSON value; export identity is
-    /// `export_target`. Sidecar summaries state whether fidelity validation ran.
-    Summary(QueryArgs),
-    /// Decode coverage counts.
-    ///
-    /// Accepts a command report or a decode sidecar. Empty coverage is not an error.
-    Coverage(QueryArgs),
-    /// Check errors and warnings.
-    ///
-    /// Accepts a command report written by `check` or `convert`.
-    Findings(QueryArgs),
-    /// What was dropped or reduced.
-    ///
-    /// Accepts a command report or a decode sidecar.
-    Losses(QueryArgs),
-    /// Entity counts.
-    ///
-    /// Accepts a CADIR document (arena lengths, including `native.<codec>`
-    /// arenas) or a command report (`entity_counts`).
-    #[command(visible_alias = "arenas")]
-    Counts(QueryArgs),
+    /// Aggregate artifact projections with common input and output arguments.
+    #[command(flatten)]
+    Aggregate(AggregateView),
     /// One record by id.
     ///
     /// Arena names are the dotted keys from `query counts --json`
@@ -140,6 +119,35 @@ pub enum QueryView {
     Fidelity(FidelityArgs),
 }
 
+/// Aggregate query views that share [`QueryArgs`].
+#[derive(Debug, Subcommand)]
+pub enum AggregateView {
+    /// What this JSON file is.
+    ///
+    /// Accepts every artifact kind. Each source, decode, inspect, or refusal
+    /// identity is one `*_dialects` JSON value; export identity is
+    /// `export_target`. Sidecar summaries state whether fidelity validation ran.
+    Summary(QueryArgs),
+    /// Decode coverage counts.
+    ///
+    /// Accepts a command report or a decode sidecar. Empty coverage is not an error.
+    Coverage(QueryArgs),
+    /// Check errors and warnings.
+    ///
+    /// Accepts a command report written by `check` or `convert`.
+    Findings(QueryArgs),
+    /// What was dropped or reduced.
+    ///
+    /// Accepts a command report or a decode sidecar.
+    Losses(QueryArgs),
+    /// Entity counts.
+    ///
+    /// Accepts a CADIR document (arena lengths, including `native.<codec>`
+    /// arenas) or a command report (`entity_counts`).
+    #[command(visible_alias = "arenas")]
+    Counts(QueryArgs),
+}
+
 /// Input selection and output format for one query view.
 #[derive(Debug, Args)]
 pub struct QueryArgs {
@@ -150,7 +158,7 @@ pub struct QueryArgs {
     pub json: bool,
 }
 
-impl QueryView {
+impl AggregateView {
     fn args(&self) -> &QueryArgs {
         match self {
             Self::Summary(args)
@@ -158,11 +166,6 @@ impl QueryView {
             | Self::Findings(args)
             | Self::Losses(args)
             | Self::Counts(args) => args,
-            Self::Item(_) => unreachable!("item uses ItemArgs"),
-            Self::Schema(_) => unreachable!("schema uses SchemaArgs"),
-            Self::Graph(_) => unreachable!("graph uses GraphArgs"),
-            Self::Join(_) => unreachable!("join uses JoinArgs"),
-            Self::Fidelity(_) => unreachable!("fidelity uses FidelityArgs"),
         }
     }
 }
@@ -571,40 +574,29 @@ impl<'de> Deserialize<'de> for ArenaLen {
 
 /// Runs one query view against one artifact file.
 pub fn run(view: &QueryView) -> Result<()> {
-    if let QueryView::Item(args) = view {
-        return item::run(args);
+    match view {
+        QueryView::Aggregate(view) => run_aggregate(view),
+        QueryView::Item(args) => item::run(args, args.mode()),
+        QueryView::Schema(args) => schema::run(args),
+        QueryView::Graph(args) => graph::run(args, args.mode()),
+        QueryView::Join(args) => join::run(args, args.mode()),
+        QueryView::Fidelity(args) => fidelity::run(&args.file, args.mode()?),
     }
-    if let QueryView::Schema(args) = view {
-        return schema::run(args);
-    }
-    if let QueryView::Graph(args) = view {
-        return graph::run(args);
-    }
-    if let QueryView::Join(args) = view {
-        return join::run(args);
-    }
-    if let QueryView::Fidelity(args) = view {
-        return fidelity::run(args);
-    }
+}
+
+fn run_aggregate(view: &AggregateView) -> Result<()> {
     let args = view.args();
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
     match view {
-        QueryView::Summary(args) => {
+        AggregateView::Summary(args) => {
             summary(&artifact, args);
             Ok(())
         }
-        QueryView::Coverage(args) => coverage(&artifact, args),
-        QueryView::Findings(args) => findings(&artifact, args),
-        QueryView::Losses(args) => losses(&artifact, args),
-        QueryView::Counts(args) => counts(&artifact, args),
-        QueryView::Item(_)
-        | QueryView::Schema(_)
-        | QueryView::Graph(_)
-        | QueryView::Join(_)
-        | QueryView::Fidelity(_) => {
-            unreachable!("handled above")
-        }
+        AggregateView::Coverage(args) => coverage(&artifact, args),
+        AggregateView::Findings(args) => findings(&artifact, args),
+        AggregateView::Losses(args) => losses(&artifact, args),
+        AggregateView::Counts(args) => counts(&artifact, args),
     }
 }
 

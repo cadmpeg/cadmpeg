@@ -69,11 +69,11 @@ pub struct EndianArgs {
 
 impl EndianArgs {
     /// Returns the selected byte order, defaulting to little-endian.
-    pub const fn endian(&self) -> Endian {
-        if self.be {
-            Endian::Big
-        } else {
-            Endian::Little
+    pub fn mode(&self) -> Endian {
+        match (self.le, self.be) {
+            (false, true) => Endian::Big,
+            (false, false) | (true, false) => Endian::Little,
+            (true, true) => unreachable!("clap rejects conflicting byte-order flags"),
         }
     }
 }
