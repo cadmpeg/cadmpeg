@@ -316,8 +316,12 @@ pub fn project_sketch_design(
                 // is not a neutral horizontal scale of zero; only a positive
                 // factor carries one.
                 width_factor: text.width_factor.filter(|factor| *factor > 0.0),
-                anchor: text.anchor,
-                rotation: text.rotation.map(cadmpeg_ir::features::Angle),
+                placement: text.anchor.zip(text.rotation).map(|(anchor, rotation)| {
+                    cadmpeg_ir::sketches::TextPlacement {
+                        anchor,
+                        rotation: cadmpeg_ir::features::Angle(rotation),
+                    }
+                }),
                 horizontal_alignment: sketch_text_horizontal_alignment(text.horizontal_alignment),
                 vertical_alignment: sketch_text_vertical_alignment(text.vertical_alignment),
             },

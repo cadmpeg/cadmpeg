@@ -312,14 +312,10 @@ pub enum SketchGeometry {
         /// source stores none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         width_factor: Option<f64>,
-        /// Point the text is placed and rotated about, in sketch coordinates,
-        /// absent when the source stores no placement.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        anchor: Option<Point2>,
-        /// Rotation about the anchor, counterclockwise from the sketch u axis,
-        /// absent when the source stores no placement.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        rotation: Option<Angle>,
+        /// Text placement in sketch coordinates, absent when the source stores none.
+        #[serde(flatten, with = "text_placement_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "TextPlacementWire"))]
+        placement: Option<TextPlacement>,
         /// Horizontal placement about the text anchor, when the source class
         /// carries an alignment enum.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -345,6 +341,54 @@ pub enum SketchGeometry {
         /// Source geometry family.
         native_kind: String,
     },
+}
+
+/// Placement of sketch text about one anchor point.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextPlacement {
+    /// Point the text is placed and rotated about, in sketch coordinates.
+    pub anchor: Point2,
+    /// Counterclockwise rotation from the sketch u axis.
+    pub rotation: Angle,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TextPlacementWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    anchor: Option<Point2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rotation: Option<Angle>,
+}
+
+mod text_placement_wire {
+    use super::{TextPlacement, TextPlacementWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<TextPlacement>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        TextPlacementWire {
+            anchor: value.map(|placement| placement.anchor),
+            rotation: value.map(|placement| placement.rotation),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<TextPlacement>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = TextPlacementWire::deserialize(deserializer)?;
+        match (wire.anchor, wire.rotation) {
+            (None, None) => Ok(None),
+            (Some(anchor), Some(rotation)) => Ok(Some(TextPlacement { anchor, rotation })),
+            _ => Err(serde::de::Error::custom(
+                "text anchor and rotation must be present together",
+            )),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
