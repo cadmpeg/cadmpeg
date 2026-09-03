@@ -1,4 +1,4 @@
-# generated at 58029ba0b
+# generated at 3b5fd975d
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -3593,6 +3593,7 @@ pub const cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str
 pub fn cadmpeg_ir::hash::canonical_json_sha256<T: serde_core::ser::Serialize>(&T) -> alloc::string::String
 pub fn cadmpeg_ir::hash::document_local_sha256(&cadmpeg_ir::document::CadIr, &str, &str) -> alloc::string::String
 pub fn cadmpeg_ir::hash::document_local_sha256_with_charge<E>(&cadmpeg_ir::document::CadIr, &str, &str, impl core::ops::function::FnMut(u64) -> core::result::Result<(), E>) -> core::result::Result<alloc::string::String, E>
+pub fn cadmpeg_ir::hash::document_local_sha256_with_source(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::document::SourceMeta, &str, &str) -> alloc::string::String
 pub fn cadmpeg_ir::hash::sha256_hex(&[u8]) -> alloc::string::String
 pub mod cadmpeg_ir::ids
 pub enum cadmpeg_ir::ids::IdentityError

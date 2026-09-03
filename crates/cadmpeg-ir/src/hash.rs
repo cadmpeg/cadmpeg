@@ -58,7 +58,29 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`]; see
 /// [`crate::document::SourceMeta`].
 pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
-    document_local_sha256_with_charge(ir, format, source_image_id, |_| {
+    document_local_sha256_with_source_and_charge(
+        ir,
+        ir.source.as_ref(),
+        format,
+        source_image_id,
+        |_| Ok::<(), std::convert::Infallible>(()),
+    )
+    .expect("canonical JSON serialization")
+}
+
+/// Returns the machine-local content digest of `ir` with source metadata that
+/// its producer has not assigned to the document yet.
+///
+/// The digest covers `source` without its own `document_local_sha256`
+/// attribute. All other normalization is identical to
+/// [`document_local_sha256`].
+pub fn document_local_sha256_with_source(
+    ir: &CadIr,
+    source: &SourceMeta,
+    format: &str,
+    source_image_id: &str,
+) -> String {
+    document_local_sha256_with_source_and_charge(ir, Some(source), format, source_image_id, |_| {
         Ok::<(), std::convert::Infallible>(())
     })
     .expect("canonical JSON serialization")
@@ -77,10 +99,26 @@ pub fn document_local_sha256_with_charge<E>(
     source_image_id: &str,
     charge: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<String, E> {
+    document_local_sha256_with_source_and_charge(
+        ir,
+        ir.source.as_ref(),
+        format,
+        source_image_id,
+        charge,
+    )
+}
+
+fn document_local_sha256_with_source_and_charge<E>(
+    ir: &CadIr,
+    source: Option<&SourceMeta>,
+    format: &str,
+    source_image_id: &str,
+    charge: impl FnMut(u64) -> Result<(), E>,
+) -> Result<String, E> {
     let unknowns = reduced_unknowns(ir, format, source_image_id);
     let document = NormalizedDocument {
         ir_version: ir.ir_version(),
-        source: ir.source.as_ref().map(|source| {
+        source: source.map(|source| {
             let mut source = source.clone();
             source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
@@ -532,6 +570,22 @@ mod tests {
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
             independently_normalized
+        );
+    }
+
+    #[test]
+    fn local_source_digest_matches_an_assigned_source_without_cloning_the_document() {
+        let mut ir = pinned_document_with_source();
+        let source = ir.source.take().expect("fixture carries source metadata");
+
+        assert_eq!(
+            crate::hash::document_local_sha256_with_source(
+                &ir,
+                &source,
+                "pin",
+                "pin:source-image#0",
+            ),
+            document_local_sha256(&pinned_document_with_source(), "pin", "pin:source-image#0")
         );
     }
 
