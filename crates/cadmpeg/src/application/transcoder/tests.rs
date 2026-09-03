@@ -323,7 +323,7 @@ fn rejecting_export_losses_does_not_name_a_target() {
 /// `--to` carries the dialect half verbatim; the encoder resolves it.
 ///
 /// Both spellings the grammar admits reach `plan` unchanged, and both
-/// resolve, because `find_target` matches a catalog row by id or by alias.
+/// resolve, because catalog lookup matches a row by id or by alias.
 /// Resolving here instead would put a second copy of every catalog in the
 /// CLI, which is the drift the registries exist to kill.
 #[cfg(feature = "rhino")]

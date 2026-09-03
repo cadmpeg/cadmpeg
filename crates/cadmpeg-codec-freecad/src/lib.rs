@@ -1403,7 +1403,7 @@ impl CodecBackend for FcstdCodec {
 impl EncoderBackend for FcstdCodec {
     const FORMAT: &'static str = dialect::FORMAT;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog(dialect::TARGETS);
+    const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 
     fn plan_resolved(
         &self,

@@ -6,7 +6,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::target::{default_target, find_target};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -134,7 +133,9 @@ fn inherit_synthesizes_the_source_schema_not_the_catalog_default() {
 
     let encoder = StepCodec::default();
     assert_eq!(
-        default_target(Encoder::targets(&encoder)).map(|target| target.id.as_str()),
+        Encoder::targets(&encoder)
+            .default()
+            .map(|(_, target)| target.id.as_str()),
         Some("step:ap214")
     );
     let plan = inherit(&encoder, decoded.ir()).expect("an AP203 edition 1 source is a catalog row");
@@ -313,7 +314,9 @@ fn an_explicit_target_overrides_the_source_schema() {
 #[test]
 fn a_cross_format_conversion_writes_the_catalog_default() {
     let encoder = StepCodec::default();
-    let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
+    let (_, default) = Encoder::targets(&encoder)
+        .default()
+        .expect("the catalog has a default");
     assert_eq!(default.id.as_str(), "step:ap214");
 
     let mut ir = unit_cube();
@@ -345,7 +348,9 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
 #[test]
 fn nothing_to_inherit_falls_to_the_catalog_default() {
     let encoder = StepCodec::default();
-    let default = default_target(Encoder::targets(&encoder)).expect("the catalog has a default");
+    let (_, default) = Encoder::targets(&encoder)
+        .default()
+        .expect("the catalog has a default");
     assert_eq!(default.id.as_str(), "step:ap214");
 
     let sourceless = unit_cube();
@@ -415,12 +420,13 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
     let targets = Encoder::targets(&encoder);
     assert_eq!(targets.len(), StepSchema::ALL.len());
     for schema in StepSchema::ALL {
-        let target = find_target(targets, schema.descriptor().id.as_str())
+        let (_, target) = targets
+            .find(schema.descriptor().id.as_str())
             .unwrap_or_else(|| panic!("{schema:?} has no catalog row"));
         assert!(!target.aliases.is_empty(), "{schema:?}");
         for alias in target.aliases {
             assert_eq!(
-                find_target(targets, alias).map(|row| &row.id),
+                targets.find(alias).map(|(_, row)| &row.id),
                 Some(&target.id)
             );
         }
@@ -441,7 +447,7 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
         "step:ap242-bo-model-xml",
         "step:part26-hdf5",
     ] {
-        assert!(find_target(targets, id).is_none(), "{id}");
+        assert!(targets.find(id).is_none(), "{id}");
     }
 }
 

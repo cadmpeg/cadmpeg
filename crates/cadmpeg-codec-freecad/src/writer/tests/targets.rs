@@ -6,7 +6,7 @@ use super::super::*;
 use crate::native::DocumentFacts;
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_core::target::{find_target, DefaultSource, TargetRefusalKind};
+use cadmpeg_core::target::{DefaultSource, TargetRefusalKind};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
@@ -151,7 +151,9 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
         Some("fcstd:schema-2".to_owned())
     );
     assert!(
-        find_target(Encoder::targets(&FcstdCodec), "fcstd:schema-2").is_none(),
+        Encoder::targets(&FcstdCodec)
+            .find("fcstd:schema-2")
+            .is_none(),
         "schema 2 is preserved, never synthesized"
     );
 

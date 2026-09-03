@@ -16,7 +16,7 @@ use crate::report::{
 };
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_core::target::{TargetDescriptor, TargetRefusal};
+use cadmpeg_core::target::{TargetCatalog, TargetRefusal};
 use cadmpeg_core::CodecError;
 
 use super::resolve::{resolve_write_request, ResolvedWrite, TargetRequest};
@@ -38,7 +38,7 @@ pub trait TargetDomain: domain_sealed::Sealed {
     type Resolved<'a>;
 
     /// The static catalog of output flavors this domain lists.
-    fn targets(&self) -> &'static [TargetDescriptor];
+    fn targets(&self) -> TargetCatalog;
 
     /// Resolves one request against this domain; the second element is the
     /// export identity the wrapper stamps, `None` for the neutral document.
@@ -61,8 +61,8 @@ pub struct DialectFree;
 impl TargetDomain for DialectFree {
     type Resolved<'a> = ();
 
-    fn targets(&self) -> &'static [TargetDescriptor] {
-        &[]
+    fn targets(&self) -> TargetCatalog {
+        TargetCatalog::EMPTY
     }
 
     fn resolve<'a>(
@@ -74,7 +74,7 @@ impl TargetDomain for DialectFree {
         match request {
             TargetRequest::Inherit => Ok(((), None)),
             TargetRequest::Explicit(id) => {
-                Err(TargetRefusal::unknown_explicit(format, id, &[]).into())
+                Err(TargetRefusal::unknown_explicit(format, id, TargetCatalog::EMPTY).into())
             }
         }
     }
@@ -82,12 +82,24 @@ impl TargetDomain for DialectFree {
 
 /// A native format resolves every request against this complete catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Catalog(pub &'static [TargetDescriptor]);
+pub struct Catalog(TargetCatalog);
+
+impl Catalog {
+    /// Builds a native target domain whose optional default indexes one of
+    /// `targets`.
+    #[must_use]
+    pub const fn new(
+        targets: &'static [cadmpeg_core::target::TargetDescriptor],
+        default: Option<usize>,
+    ) -> Self {
+        Self(TargetCatalog::new(targets, default))
+    }
+}
 
 impl TargetDomain for Catalog {
     type Resolved<'a> = ResolvedWrite<'a>;
 
-    fn targets(&self) -> &'static [TargetDescriptor] {
+    fn targets(&self) -> TargetCatalog {
         self.0
     }
 
@@ -144,7 +156,7 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// deliver. Preservation of dialects outside the catalog is not listed
     /// here; [`TargetRequest::Inherit`] asks for it. Ids come from this
     /// encoder's own format namespace only.
-    fn targets(&self) -> &'static [TargetDescriptor];
+    fn targets(&self) -> TargetCatalog;
 
     /// Plans one export without writing to the destination.
     fn plan(
@@ -159,7 +171,7 @@ impl<E: EncoderBackend> Encoder for E {
         E::FORMAT
     }
 
-    fn targets(&self) -> &'static [TargetDescriptor] {
+    fn targets(&self) -> TargetCatalog {
         E::TARGET.targets()
     }
 

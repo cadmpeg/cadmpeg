@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_core::dialect::DialectId;
-use cadmpeg_core::target::TargetDescriptor;
+use cadmpeg_core::target::TargetCatalog;
 use serde::Deserialize;
 
 use crate::disposition::{Disposition, ReadDisposition, WriteDisposition};
@@ -215,7 +215,7 @@ pub(crate) fn registries() -> &'static Registries {
     })
 }
 
-pub(crate) fn catalog_of(format: &str) -> Option<&'static [TargetDescriptor]> {
+pub(crate) fn catalog_of(format: &str) -> Option<TargetCatalog> {
     Format::from_name(format).map(|format| build_encoder(format).targets())
 }
 

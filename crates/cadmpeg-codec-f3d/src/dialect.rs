@@ -53,7 +53,6 @@ include!("dialect/registry_ids.rs");
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: F3dDialect::Manifest3200.id(),
     aliases: &["3-2-0-0"],
-    default: true,
 }];
 
 /// Key of the top-level `Manifest.dat` version field in

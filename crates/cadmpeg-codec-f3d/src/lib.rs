@@ -243,7 +243,7 @@ impl CodecBackend for F3dCodec {
 impl EncoderBackend for F3dCodec {
     const FORMAT: &'static str = dialect::FORMAT;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog(dialect::TARGETS);
+    const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 
     fn plan_resolved(
         &self,

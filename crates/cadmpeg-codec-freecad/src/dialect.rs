@@ -56,7 +56,6 @@ include!("dialect/registry_ids.rs");
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: FcstdDialect::Schema4.id(),
     aliases: &["4"],
-    default: false,
 }];
 
 /// Key of `Document/@SchemaVersion` in [`DialectMatch::declared`].

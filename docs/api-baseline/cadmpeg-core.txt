@@ -1,4 +1,4 @@
-# generated at 9bf4ff07b
+# generated at 082e47db2
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -411,9 +411,24 @@ pub cadmpeg_core::target::TargetRefusalKind::NoDefault::source: cadmpeg_core::ta
 pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit
 pub cadmpeg_core::target::TargetRefusalKind::UnknownExplicit::requested: cadmpeg_core::target::TargetToken
 pub cadmpeg_core::target::TargetRefusalKind::UnrecordedSource
+pub struct cadmpeg_core::target::TargetCatalog
+impl cadmpeg_core::target::TargetCatalog
+pub const cadmpeg_core::target::TargetCatalog::EMPTY: Self
+pub fn cadmpeg_core::target::TargetCatalog::default(self) -> core::option::Option<(usize, &'static cadmpeg_core::target::TargetDescriptor)>
+pub fn cadmpeg_core::target::TargetCatalog::find(self, &str) -> core::option::Option<(usize, &'static cadmpeg_core::target::TargetDescriptor)>
+pub const fn cadmpeg_core::target::TargetCatalog::is_empty(self) -> bool
+pub fn cadmpeg_core::target::TargetCatalog::iter(self) -> core::slice::iter::Iter<'static, cadmpeg_core::target::TargetDescriptor>
+pub const fn cadmpeg_core::target::TargetCatalog::len(self) -> usize
+pub const fn cadmpeg_core::target::TargetCatalog::new(&'static [cadmpeg_core::target::TargetDescriptor], core::option::Option<usize>) -> Self
+pub const fn cadmpeg_core::target::TargetCatalog::targets(self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+impl core::iter::traits::collect::IntoIterator for cadmpeg_core::target::TargetCatalog
+pub type cadmpeg_core::target::TargetCatalog::IntoIter = core::slice::iter::Iter<'static, cadmpeg_core::target::TargetDescriptor>
+pub type cadmpeg_core::target::TargetCatalog::Item = &'static cadmpeg_core::target::TargetDescriptor
+pub fn cadmpeg_core::target::TargetCatalog::into_iter(self) -> Self::IntoIter
+impl serde_core::ser::Serialize for cadmpeg_core::target::TargetCatalog
+pub fn cadmpeg_core::target::TargetCatalog::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_core::target::TargetDescriptor
 pub cadmpeg_core::target::TargetDescriptor::aliases: &'static [&'static str]
-pub cadmpeg_core::target::TargetDescriptor::default: bool
 pub cadmpeg_core::target::TargetDescriptor::id: cadmpeg_core::dialect::DialectId
 impl cadmpeg_core::target::TargetDescriptor
 pub fn cadmpeg_core::target::TargetDescriptor::accepted_tokens(&self) -> impl core::iter::traits::iterator::Iterator<Item = &str>
@@ -422,10 +437,10 @@ impl cadmpeg_core::target::TargetRefusal
 pub const fn cadmpeg_core::target::TargetRefusal::available(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
 pub fn cadmpeg_core::target::TargetRefusal::format(&self) -> &str
 pub const fn cadmpeg_core::target::TargetRefusal::kind(&self) -> &cadmpeg_core::target::TargetRefusalKind
-pub fn cadmpeg_core::target::TargetRefusal::new(impl core::convert::Into<alloc::string::String>, cadmpeg_core::target::TargetRefusalKind, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
+pub fn cadmpeg_core::target::TargetRefusal::new(impl core::convert::Into<alloc::string::String>, cadmpeg_core::target::TargetRefusalKind, cadmpeg_core::target::TargetCatalog) -> Self
 pub fn cadmpeg_core::target::TargetRefusal::reason(&self) -> core::option::Option<&str>
 pub fn cadmpeg_core::target::TargetRefusal::requested(&self) -> core::option::Option<&str>
-pub fn cadmpeg_core::target::TargetRefusal::unknown_explicit(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, &'static [cadmpeg_core::target::TargetDescriptor]) -> Self
+pub fn cadmpeg_core::target::TargetRefusal::unknown_explicit(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_core::target::TargetCatalog) -> Self
 impl core::convert::From<cadmpeg_core::target::TargetRefusal> for cadmpeg_core::error::CodecError
 pub fn cadmpeg_core::error::CodecError::from(cadmpeg_core::target::TargetRefusal) -> Self
 impl core::error::Error for cadmpeg_core::target::TargetRefusal
@@ -437,9 +452,7 @@ pub fn cadmpeg_core::target::TargetToken::as_str(&self) -> &str
 pub fn cadmpeg_core::target::TargetToken::new(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::fmt::Display for cadmpeg_core::target::TargetToken
 pub fn cadmpeg_core::target::TargetToken::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub fn cadmpeg_core::target::assert_valid_target_catalog(&[cadmpeg_core::target::TargetDescriptor])
-pub fn cadmpeg_core::target::default_target(&'static [cadmpeg_core::target::TargetDescriptor]) -> core::option::Option<&'static cadmpeg_core::target::TargetDescriptor>
-pub fn cadmpeg_core::target::find_target<'a>(&'a [cadmpeg_core::target::TargetDescriptor], &str) -> core::option::Option<&'a cadmpeg_core::target::TargetDescriptor>
+pub fn cadmpeg_core::target::assert_valid_target_catalog(cadmpeg_core::target::TargetCatalog)
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
 pub cadmpeg_core::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::CodecError::Io(core::io::error::Error)

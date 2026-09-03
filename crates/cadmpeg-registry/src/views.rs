@@ -35,7 +35,9 @@ pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectPro
     Some(DialectProvenance {
         id: entry.dialect().clone(),
         read: support(entry.dialect()).map(|disposition| disposition.read),
-        write_targets: catalog_of(entry.format()).unwrap_or(&[]),
+        write_targets: catalog_of(entry.format())
+            .map(|catalog| catalog.targets())
+            .unwrap_or(&[]),
     })
 }
 
@@ -121,12 +123,12 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Unknow
     Ok(formats
         .into_iter()
         .map(|name| {
-            let catalog = catalog_of(&name);
+            let write_catalog = catalog_of(&name);
             FormatDialects {
-                catalog,
-                default_target: catalog
-                    .and_then(|targets| targets.iter().find(|target| target.default))
-                    .map(|target| target.id.as_str()),
+                catalog: write_catalog.map(|catalog| catalog.targets()),
+                default_target: write_catalog
+                    .and_then(|catalog| catalog.default())
+                    .map(|(_, target)| target.id.as_str()),
                 rows: registries.rows_of(&name).cloned().collect(),
                 format: name,
             }

@@ -87,7 +87,6 @@ const PARASOLID_FORMAT: &str = "parasolid";
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: SldprtDialect::Unknown.id(),
     aliases: &[],
-    default: true,
 }];
 
 /// Key of the `swSolidWorks` `swVersion` attribute in

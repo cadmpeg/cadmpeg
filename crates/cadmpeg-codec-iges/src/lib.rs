@@ -47,10 +47,9 @@ use std::io::Cursor;
 pub(crate) const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 
 /// IGES specification version selected for semantic output.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IgesVersion {
     /// IGES 5.3 Fixed ASCII.
-    #[default]
     V5_3,
     /// IGES 5.2 Fixed ASCII.
     V5_2,
@@ -92,17 +91,16 @@ impl IgesVersion {
     /// The typed write-target catalog row for this version.
     #[must_use]
     pub const fn descriptor(self) -> TargetDescriptor {
-        let (aliases, default) = match self {
-            Self::V4_0 => (&["4.0"].as_slice(), false),
-            Self::V5_0 => (&["5.0"].as_slice(), false),
-            Self::V5_1 => (&["5.1"].as_slice(), false),
-            Self::V5_2 => (&["5.2"].as_slice(), false),
-            Self::V5_3 => (&["5.3"].as_slice(), true),
+        let aliases = match self {
+            Self::V4_0 => &["4.0"].as_slice(),
+            Self::V5_0 => &["5.0"].as_slice(),
+            Self::V5_1 => &["5.1"].as_slice(),
+            Self::V5_2 => &["5.2"].as_slice(),
+            Self::V5_3 => &["5.3"].as_slice(),
         };
         TargetDescriptor {
             id: dialect::fixed_ascii_id(self),
             aliases,
-            default,
         }
     }
 
@@ -184,7 +182,7 @@ impl CodecBackend for IgesCodec {
 impl EncoderBackend for IgesCodec {
     const FORMAT: &'static str = dialect::FORMAT;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog(IgesVersion::TARGETS);
+    const TARGET: Catalog = Catalog::new(IgesVersion::TARGETS, Some(4));
 
     fn plan_resolved(
         &self,

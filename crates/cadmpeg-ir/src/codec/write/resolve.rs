@@ -4,7 +4,7 @@
 use crate::document::CadIr;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::{
-    DefaultSource, TargetDescriptor, TargetRefusal, TargetRefusalKind, TargetToken,
+    DefaultSource, TargetCatalog, TargetDescriptor, TargetRefusal, TargetRefusalKind, TargetToken,
 };
 use cadmpeg_core::CodecError;
 
@@ -102,7 +102,7 @@ pub enum ResolvedTarget<'a> {
 pub struct ResolvedWrite<'a> {
     format: &'static str,
     target: ResolvedTarget<'a>,
-    available: &'static [TargetDescriptor],
+    available: TargetCatalog,
 }
 
 impl<'a> ResolvedWrite<'a> {
@@ -264,28 +264,6 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
     }
 }
 
-/// The catalog row `token` names, with its position in the catalog.
-fn find_indexed(
-    targets: &'static [TargetDescriptor],
-    token: &str,
-) -> Option<(usize, &'static TargetDescriptor)> {
-    targets.iter().enumerate().find(|(_, candidate)| {
-        candidate
-            .accepted_tokens()
-            .any(|accepted| accepted == token)
-    })
-}
-
-/// The catalog's cross-format default, with its position in the catalog.
-fn default_indexed(
-    targets: &'static [TargetDescriptor],
-) -> Option<(usize, &'static TargetDescriptor)> {
-    targets
-        .iter()
-        .enumerate()
-        .find(|(_, target)| target.default)
-}
-
 /// Resolve a native target and inheritance once, before codec-specific delivery.
 ///
 /// Native requests always name a catalog or preserved off-catalog dialect.
@@ -295,14 +273,14 @@ pub(in crate::codec) fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
     format: &'static str,
-    targets: &'static [TargetDescriptor],
+    catalog: TargetCatalog,
 ) -> Result<ResolvedWrite<'a>, CodecError> {
     let refuse =
-        |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(format, kind, targets)));
+        |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(format, kind, catalog)));
     let source = source_identity(ir, format);
     let target = match request {
         TargetRequest::Explicit(requested) => {
-            let (index, entry) = find_indexed(targets, requested).ok_or_else(|| {
+            let (index, entry) = catalog.find(requested).ok_or_else(|| {
                 refuse(TargetRefusalKind::UnknownExplicit {
                     requested: TargetToken::new(requested),
                 })
@@ -316,7 +294,7 @@ pub(in crate::codec) fn resolve_write_request<'a>(
         }
         TargetRequest::Inherit => match source {
             SourceIdentity::Other(source) => {
-                let (index, entry) = default_indexed(targets).ok_or_else(|| {
+                let (index, entry) = catalog.default().ok_or_else(|| {
                     refuse(TargetRefusalKind::NoDefault {
                         source: source.clone(),
                     })
@@ -328,7 +306,7 @@ pub(in crate::codec) fn resolve_write_request<'a>(
                 }
             }
             SourceIdentity::Unrecorded => return Err(refuse(TargetRefusalKind::UnrecordedSource)),
-            SourceIdentity::Recorded(source) => match find_indexed(targets, source.as_str()) {
+            SourceIdentity::Recorded(source) => match catalog.find(source.as_str()) {
                 Some((index, entry)) => ResolvedTarget::Inherited {
                     index,
                     entry,
@@ -341,6 +319,6 @@ pub(in crate::codec) fn resolve_write_request<'a>(
     Ok(ResolvedWrite {
         format,
         target,
-        available: targets,
+        available: catalog,
     })
 }

@@ -54,14 +54,13 @@ impl Default for StepWriteOptions {
 ///
 /// The AP242 edition number and the long-form schema revision are distinct:
 /// editions 1, 2, and 3 use long-form revisions 1, 3, and 4 respectively.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StepSchema {
     /// AP203 edition 1 `CONFIG_CONTROL_DESIGN`.
     Ap203Edition1,
     /// AP203 edition 2 modular long form.
     Ap203Edition2,
     /// AP214 `AUTOMOTIVE_DESIGN`.
-    #[default]
     Ap214,
     /// AP242 edition 1 modular long form.
     Ap242Edition1,
@@ -125,18 +124,17 @@ impl StepSchema {
     /// The typed write-target catalog row for this schema.
     #[must_use]
     pub const fn descriptor(self) -> TargetDescriptor {
-        let (aliases, default) = match self {
-            Self::Ap203Edition1 => (&["ap203e1"].as_slice(), false),
-            Self::Ap203Edition2 => (&["ap203e2"].as_slice(), false),
-            Self::Ap214 => (&["ap214"].as_slice(), true),
-            Self::Ap242Edition1 => (&["ap242e1"].as_slice(), false),
-            Self::Ap242Edition2 => (&["ap242e2"].as_slice(), false),
-            Self::Ap242Edition3 => (&["ap242e3"].as_slice(), false),
+        let aliases = match self {
+            Self::Ap203Edition1 => &["ap203e1"].as_slice(),
+            Self::Ap203Edition2 => &["ap203e2"].as_slice(),
+            Self::Ap214 => &["ap214"].as_slice(),
+            Self::Ap242Edition1 => &["ap242e1"].as_slice(),
+            Self::Ap242Edition2 => &["ap242e2"].as_slice(),
+            Self::Ap242Edition3 => &["ap242e3"].as_slice(),
         };
         TargetDescriptor {
             id: self.id(),
             aliases,
-            default,
         }
     }
 
