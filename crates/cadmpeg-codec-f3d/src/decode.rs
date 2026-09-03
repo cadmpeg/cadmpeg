@@ -2085,8 +2085,7 @@ fn try_decode_text_model(
                 name: name.clone(),
                 is_smbh: false,
                 uncompressed_len: bytes.len() as u64,
-                header: Some(header),
-                acis_header: None,
+                kernel: Some(crate::container::KernelFraming::Asm(header)),
                 solved_record_limit: None,
                 sha256: sha256_hex(bytes),
             },
@@ -4073,8 +4072,9 @@ fn decode_asm_history(
     history_brep: &BrepFacts,
 ) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
     let width = history_brep
-        .header
+        .kernel
         .as_ref()
+        .and_then(crate::container::KernelFraming::asm_header)
         .map_or(8, |header| usize::from(header.width));
     let bytes = scan.entry_bytes(&history_brep.name)?;
     Ok(crate::history::decode(
@@ -4724,7 +4724,11 @@ fn try_decode_brep(
     scan: &ContainerScan,
     brep_entry: &BrepFacts,
 ) -> Result<Option<Brep>, CodecError> {
-    let width = brep_entry.header.as_ref().map_or(0, |h| h.width);
+    let width = brep_entry
+        .kernel
+        .as_ref()
+        .and_then(crate::container::KernelFraming::asm_header)
+        .map_or(0, |header| header.width);
     if width != 4 && width != 8 {
         return Ok(None);
     }
@@ -4826,7 +4830,11 @@ fn source_attributes_and_tolerances(
     }
 
     let mut tolerances = Tolerances::default();
-    if let Some(h) = &primary_model_brep.header {
+    if let Some(h) = primary_model_brep
+        .kernel
+        .as_ref()
+        .and_then(crate::container::KernelFraming::asm_header)
+    {
         if let Some(pf) = &h.product_family {
             attributes.insert("product_family".to_string(), pf.clone());
         }
@@ -4969,7 +4977,11 @@ fn build_metadata_ir(
         if let Some(off) = brep.solved_record_limit {
             attributes.insert("solved_record_len".to_string(), off.to_string());
         }
-        if let Some(h) = &brep.header {
+        if let Some(h) = brep
+            .kernel
+            .as_ref()
+            .and_then(crate::container::KernelFraming::asm_header)
+        {
             if let Some(pf) = &h.product_family {
                 attributes.insert("product_family".to_string(), pf.clone());
             }

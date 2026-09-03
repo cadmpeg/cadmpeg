@@ -173,6 +173,33 @@ pub fn classify(name: &str) -> &'static str {
     }
 }
 
+/// Owned binary kernel framing for one BREP stream.
+#[derive(Debug, Clone)]
+pub enum KernelFraming {
+    /// Autodesk Shape Manager binary framing.
+    Asm(KernelHeader),
+    /// Spatial ACIS binary framing.
+    Acis(KernelHeader),
+}
+
+impl KernelFraming {
+    /// Borrow this owned framing as the shared dialect-classification input.
+    pub(crate) fn as_header_ref(&self) -> cadmpeg_asm::dialect::KernelHeaderRef<'_> {
+        match self {
+            Self::Asm(header) => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
+            Self::Acis(header) => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
+        }
+    }
+
+    /// Return the header only when ASM framing owns it.
+    pub(crate) fn asm_header(&self) -> Option<&KernelHeader> {
+        match self {
+            Self::Asm(header) => Some(header),
+            Self::Acis(_) => None,
+        }
+    }
+}
+
 /// One decoded BREP stream's header facts, kept for the summary and decode
 /// metadata.
 #[derive(Debug, Clone)]
@@ -183,10 +210,8 @@ pub struct BrepFacts {
     pub is_smbh: bool,
     /// Uncompressed byte length.
     pub uncompressed_len: u64,
-    /// Parsed ASM header, if the magic was present.
-    pub header: Option<KernelHeader>,
-    /// Parsed ACIS header, if the carrier was not ASM and ACIS framing matched.
-    pub acis_header: Option<KernelHeader>,
+    /// Parsed ASM or ACIS framing, when either header matched.
+    pub kernel: Option<KernelFraming>,
     /// Exact byte boundary between solved records and construction history.
     pub solved_record_limit: Option<usize>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
@@ -377,18 +402,19 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let view = archive.open(ctx, file)?;
         let buf = view.window();
         if is_brep {
-            let (header, acis_header) = if asm_header::has_asm_magic(buf) {
-                (asm_header::parse(buf), None)
+            let kernel = if asm_header::has_asm_magic(buf) {
+                asm_header::parse(buf).map(KernelFraming::Asm)
             } else {
-                (None, acis_header::parse(buf))
+                acis_header::parse(buf).map(KernelFraming::Acis)
             };
-            let solved_record_limit = header
+            let solved_record_limit = kernel
                 .as_ref()
+                .and_then(KernelFraming::asm_header)
                 .and_then(|header| asm_header::solved_record_limit_with_header(buf, header));
             let sha = sha256_hex(buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
-            if let Some(h) = &header {
+            if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {
                 attributes.insert("asm_width".to_string(), h.width.to_string());
                 if let Some(v) = h.save_format_version {
                     attributes.insert("acis_save_format_version".to_string(), v.to_string());
@@ -436,8 +462,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                 name: name.clone(),
                 is_smbh: role == role::BREP_SMBH,
                 uncompressed_len: uncompressed_size,
-                header,
-                acis_header,
+                kernel,
                 solved_record_limit,
                 sha256: sha,
             });
@@ -587,8 +612,9 @@ pub(crate) fn is_f3d_name(name: &str) -> bool {
 /// The extension is not used as a semantic substitute for the header flag.
 pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s BrepFacts> + 's {
     design_breps(scan).filter(|brep| {
-        brep.header
+        brep.kernel
             .as_ref()
+            .and_then(KernelFraming::asm_header)
             .is_some_and(KernelHeader::has_history_partition)
     })
 }
