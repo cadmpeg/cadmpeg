@@ -12,11 +12,10 @@ use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BodySelection, EdgeSelection, FaceSelection, FeatureId, Length, PathRef,
-    RuledSurfaceCorner, RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceContinuity,
-    SurfaceExtension, ThickenSide, TrimCellSelection, TrimRegion,
+    Angle, BodySelection, EdgeSelection, FaceSelection, Length, PathRef, RuledSurfaceCorner,
+    RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceContinuity, SurfaceExtension,
+    ThickenSide, TrimCellSelection, TrimRegion,
 };
-use cadmpeg_ir::math::Vector3;
 
 #[allow(
     clippy::too_many_arguments,
@@ -538,16 +537,26 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_draft(
         &self,
         face_selection: &FaceSelection,
-        plane_selection: &FaceSelection,
-        parting_tool: &Option<FaceSelection>,
-        pull_plane: &Option<FeatureId>,
-        pull_direction: &Option<Vector3>,
+        anchor: &cadmpeg_ir::features::DraftAnchor,
         angle: &Option<Angle>,
         outward: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
+            let (plane_selection, pull) = match anchor {
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
+                    (plane, pull.as_ref())
+                }
+                cadmpeg_ir::features::DraftAnchor::PartingLine { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported draft semantics",
+                        feature.id
+                    )));
+                }
+            };
+            let pull_direction = pull.map(|pull| &pull.direction);
+            let pull_plane = pull.and_then(|pull| pull.plane.as_ref());
             let faces = face_selection_value(face_selection);
             let neutral_plane = face_selection_value(plane_selection);
             let operands_supported = |selection: &FaceSelection, native: Option<&String>| {
@@ -555,7 +564,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
             };
             if existing.is_some_and(|record| !feature_family(record, "Draft"))
-                || parting_tool.is_some()
                 || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())

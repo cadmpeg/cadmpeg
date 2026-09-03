@@ -433,12 +433,14 @@ pub(in super::super) fn schema_feature_definition(
         };
     }
     if schema_class == 927 {
+        let neutral_plane = draft_neutral_plane_selection(scan, feature_id);
+        let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            plane: neutral_plane,
+            pull: None,
+        };
         return IrFeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
-            neutral_plane: draft_neutral_plane_selection(scan, feature_id),
-            parting_tool: None,
-            pull_direction: None,
-            pull_plane: None,
+            anchor,
             angle: None,
             outward: None,
         };

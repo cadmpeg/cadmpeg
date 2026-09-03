@@ -362,13 +362,16 @@ pub fn bind_topology_selections(
                 resolve_edge_selection(edges, &edge_ids);
                 resolve_face(support_faces);
             }
-            FeatureDefinition::Draft {
-                faces,
-                neutral_plane,
-                ..
-            } => {
+            FeatureDefinition::Draft { faces, anchor, .. } => {
                 resolve_face(faces);
-                resolve_face(neutral_plane);
+                match anchor {
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                        resolve_face(plane);
+                    }
+                    cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+                        resolve_face(tool);
+                    }
+                }
             }
             FeatureDefinition::Combine { target, tools, .. } => {
                 resolve_body_selection(target, &body_ids);

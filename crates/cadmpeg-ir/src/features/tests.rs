@@ -858,6 +858,69 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
 }
 
 #[test]
+fn draft_anchor_round_trips_through_the_flat_wire_shape() {
+    use crate::features::{DraftAnchor, FeatureDefinition};
+
+    let wire = serde_json::json!({
+        "definition": "draft",
+        "faces": {"kind": "native", "value": "draft:faces"},
+        "neutral_plane": {"kind": "unresolved"},
+        "parting_tool": {"kind": "native", "value": "draft:parting-tool"},
+        "pull_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "pull_plane": "draft:pull-plane",
+        "angle": 0.1,
+        "outward": false
+    });
+    let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Draft {
+            anchor: DraftAnchor::PartingLine { .. },
+            ..
+        }
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), wire);
+}
+
+#[test]
+fn draft_anchor_rejects_split_or_conflicting_wire_fields() {
+    use crate::features::FeatureDefinition;
+
+    let base = serde_json::json!({
+        "definition": "draft",
+        "faces": {"kind": "unresolved"},
+        "neutral_plane": {"kind": "unresolved"},
+        "pull_direction": null,
+        "angle": null,
+        "outward": null
+    });
+    for invalid in [
+        {
+            let mut value = base.clone();
+            value["pull_plane"] = serde_json::json!("draft:pull-plane");
+            value
+        },
+        {
+            let mut value = base.clone();
+            value["parting_tool"] =
+                serde_json::json!({"kind": "native", "value": "draft:parting-tool"});
+            value
+        },
+        {
+            let mut value = base.clone();
+            value["neutral_plane"] =
+                serde_json::json!({"kind": "native", "value": "draft:neutral-plane"});
+            value["parting_tool"] =
+                serde_json::json!({"kind": "native", "value": "draft:parting-tool"});
+            value["pull_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+            value
+        },
+    ] {
+        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+    }
+}
+
+#[test]
 fn trim_cell_selection_requires_unique_in_range_ordinals() {
     let valid = TrimCellSelection {
         removed: vec![1, 4],

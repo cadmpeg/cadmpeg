@@ -1652,10 +1652,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     ir.model.features[0].definition = FeatureDefinition::Draft {
         faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-        neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-        parting_tool: None,
-        pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-        pull_plane: None,
+        anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+            pull: Some(cadmpeg_ir::features::DraftPull {
+                direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                plane: None,
+            }),
+        },
         angle: Some(cadmpeg_ir::features::Angle(0.1)),
         outward: Some(false),
     };
@@ -1664,18 +1667,23 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("draft (1)"));
 
-    let draft = |pull_direction, angle, outward| FeatureDefinition::Draft {
-        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-            "test:face#draft".into(),
-        )]),
-        neutral_plane: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-            "test:face#neutral".into(),
-        )]),
-        parting_tool: None,
-        pull_direction,
-        pull_plane: None,
-        angle,
-        outward,
+    let draft = |pull_direction: Option<cadmpeg_ir::math::Vector3>, angle, outward| {
+        FeatureDefinition::Draft {
+            faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
+                "test:face#draft".into(),
+            )]),
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
+                    "test:face#neutral".into(),
+                )]),
+                pull: pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
+                    direction,
+                    plane: None,
+                }),
+            },
+            angle,
+            outward,
+        }
     };
     for incomplete in [
         draft(None, Some(cadmpeg_ir::features::Angle(0.1)), Some(false)),
@@ -1827,10 +1835,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(
         FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-            neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-            parting_tool: None,
-            pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    plane: None,
+                }),
+            },
             angle: Some(cadmpeg_ir::features::Angle(0.1)),
             outward: Some(false),
         }

@@ -3402,20 +3402,20 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::Draft {
                 faces,
-                neutral_plane,
-                parting_tool,
-                pull_plane,
-                pull_direction,
+                anchor,
                 angle,
                 ..
             } => {
                 face_selections.push(faces);
-                if let Some(parting_tool) = parting_tool {
-                    face_selections.push(parting_tool);
-                } else {
-                    face_selections.push(neutral_plane);
+                match anchor {
+                    crate::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                        face_selections.push(plane);
+                    }
+                    crate::features::DraftAnchor::PartingLine { tool, .. } => {
+                        face_selections.push(tool);
+                    }
                 }
-                if let Some(pull_plane) = pull_plane {
+                if let Some(pull_plane) = anchor.pull().and_then(|pull| pull.plane.as_ref()) {
                     check_plane_feature_reference(
                         findings,
                         feature,
@@ -3424,7 +3424,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         "draft pull plane",
                     );
                 }
-                if pull_direction.is_some_and(|value| !valid_feature_direction(value))
+                if anchor
+                    .pull()
+                    .is_some_and(|pull| !valid_feature_direction(pull.direction))
                     || angle.is_some_and(|value| !valid_draft_angle(value))
                 {
                     feature_geometry_error(findings, feature, "draft geometry is invalid");

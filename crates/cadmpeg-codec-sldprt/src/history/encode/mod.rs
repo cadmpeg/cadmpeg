@@ -279,21 +279,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             ),
             FeatureDefinition::Draft {
                 faces: face_selection,
-                neutral_plane: plane_selection,
-                parting_tool,
-                pull_plane,
-                pull_direction,
+                anchor,
                 angle,
                 outward,
-            } => self.encode_draft(
-                face_selection,
-                plane_selection,
-                parting_tool,
-                pull_plane,
-                pull_direction,
-                angle,
-                outward,
-            ),
+            } => self.encode_draft(face_selection, anchor, angle, outward),
             FeatureDefinition::Combine {
                 target,
                 tools,
