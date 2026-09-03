@@ -357,10 +357,11 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
 /// not against entry payloads. `target` comes from the resolution's write
 /// options; the `SchemaVersion` in the output comes from the retained
 /// `Document.xml`, which this writer patches and never regenerates. Those
-/// are two independent sources for one fact, and the equality gate in
-/// `resolve` is the only thing that ties them together — disabling it makes
-/// this test fail. Both bands are covered: the catalog dialect and the
-/// schema-2 dialect that is preserved but never synthesized.
+/// values originate in the same native scan; the CADIR reader rejects a wire
+/// document that makes them disagree, and the writer consumes the resolved
+/// source witness without classifying the retained record again. Both bands
+/// are covered: the catalog dialect and the schema-2 dialect that is preserved
+/// but never synthesized.
 #[test]
 fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
     let schema_two = schema_two_archive();
