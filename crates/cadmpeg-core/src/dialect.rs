@@ -84,7 +84,7 @@ impl DialectId {
         self.parts().0
     }
 
-    fn local(&self) -> &str {
+    pub(crate) fn local(&self) -> &str {
         self.parts().1
     }
 
