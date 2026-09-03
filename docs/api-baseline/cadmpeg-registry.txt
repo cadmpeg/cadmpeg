@@ -1,4 +1,4 @@
-# generated at 40fe31a58
+# generated at 3a61a7d4d
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -7,7 +7,6 @@ pub cadmpeg_registry::DetectionOutcome::Ambiguous::confidence: cadmpeg_ir::codec
 pub cadmpeg_registry::DetectionOutcome::Detected
 pub cadmpeg_registry::DetectionOutcome::Detected::codec: &'a dyn cadmpeg_ir::codec::Codec
 pub cadmpeg_registry::DetectionOutcome::Detected::confidence: cadmpeg_ir::codec::Confidence
-pub cadmpeg_registry::DetectionOutcome::Detected::format_id: &'static str
 pub cadmpeg_registry::DetectionOutcome::None
 pub enum cadmpeg_registry::ForcedInput
 pub cadmpeg_registry::ForcedInput::Cadir
@@ -64,7 +63,6 @@ pub cadmpeg_registry::ResolvedSource::Cadir
 pub cadmpeg_registry::ResolvedSource::Native
 pub cadmpeg_registry::ResolvedSource::Native::codec: &'a dyn cadmpeg_ir::codec::Codec
 pub cadmpeg_registry::ResolvedSource::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
-pub cadmpeg_registry::ResolvedSource::Native::format_id: &'static str
 pub cadmpeg_registry::ResolvedSource::Unrecognized
 pub enum cadmpeg_registry::Selection
 pub cadmpeg_registry::Selection::Detected

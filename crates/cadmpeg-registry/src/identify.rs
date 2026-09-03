@@ -159,17 +159,13 @@ pub fn identify_with(
             }])
         }
         DetectionOutcome::None => Ok(Vec::new()),
-        DetectionOutcome::Detected {
-            codec,
-            format_id,
-            confidence,
-        } => {
+        DetectionOutcome::Detected { codec, confidence } => {
             let inspection = match inspect_codec(codec, source, options)? {
                 Ok(summary) => Inspection::Classified(summary),
                 Err(error) => Inspection::Failed(error),
             };
             Ok(vec![Identification {
-                format: format_id,
+                format: codec.id(),
                 confidence,
                 inspection,
             }])
@@ -202,22 +198,18 @@ pub fn resolve_and_inspect_with(
 ) -> Result<Inspected, InspectError> {
     let prefix = read_prefix(source, options)?;
     match catalog.resolve_source(&prefix, forced)? {
-        ResolvedSource::Native {
-            codec,
-            format_id,
-            confidence,
-        } => {
+        ResolvedSource::Native { codec, confidence } => {
             let selection = confidence.map_or(Selection::Forced, |confidence| {
                 Selection::Detected { confidence }
             });
             match inspect_codec(codec, source, options)? {
                 Ok(summary) => Ok(Inspected {
-                    format: format_id,
+                    format: codec.id(),
                     selection,
                     summary,
                 }),
                 Err(error) => Err(InspectError::Codec {
-                    format: format_id,
+                    format: codec.id(),
                     selection,
                     error,
                 }),
@@ -474,15 +466,15 @@ mod tests {
                 let resolved = catalog
                     .resolve_source(case.bytes, None)
                     .unwrap_or_else(|error| panic!("{}: {error}", case.format));
-                let crate::ResolvedSource::Native {
-                    format_id,
-                    confidence,
-                    ..
-                } = resolved
-                else {
+                let crate::ResolvedSource::Native { codec, confidence } = resolved else {
                     panic!("{}: resolver did not select a native codec", case.format);
                 };
-                assert_eq!(winner.format, format_id, "{}: resolver winner", case.format);
+                assert_eq!(
+                    winner.format,
+                    codec.id(),
+                    "{}: resolver winner",
+                    case.format
+                );
                 assert_eq!(
                     Some(winner.confidence),
                     confidence,

@@ -2815,3 +2815,17 @@ crate = "cadmpeg-registry"
 kind = "variant"
 item = "cadmpeg_registry::ResolveSourceError::UnsupportedFormat"
 reason = "forced native selections are minted from the compiled descriptor table, so an unregistered forced format cannot reach source resolution"
+
+[[change]]
+commit = "3a61a7d4d5c7f1edc24102d8e11b42395315a20e"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::DetectionOutcome::Detected::format_id"
+reason = "the selected codec is the single carrier of its stable format id"
+
+[[change]]
+commit = "3a61a7d4d5c7f1edc24102d8e11b42395315a20e"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::ResolvedSource::Native::format_id"
+reason = "the resolved codec is the single carrier of its stable format id"

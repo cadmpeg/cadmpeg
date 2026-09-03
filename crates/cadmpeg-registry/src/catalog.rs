@@ -88,8 +88,6 @@ pub enum DetectionOutcome<'a> {
     Detected {
         /// Winning codec.
         codec: &'a dyn Codec,
-        /// Stable format id of the winning codec.
-        format_id: &'static str,
         /// Winning confidence.
         confidence: Confidence,
     },
@@ -108,8 +106,6 @@ pub enum ResolvedSource<'a> {
     Native {
         /// Selected codec.
         codec: &'a dyn Codec,
-        /// Stable format id.
-        format_id: &'static str,
         /// Detection confidence when not forced.
         confidence: Option<Confidence>,
     },
@@ -198,7 +194,6 @@ impl InputCatalog {
             let codec = matches[0].0;
             DetectionOutcome::Detected {
                 codec,
-                format_id: codec.id(),
                 confidence: best_confidence,
             }
         } else {
@@ -247,7 +242,6 @@ impl InputCatalog {
                     .expect("a forced native descriptor always constructs a codec");
                 Ok(ResolvedSource::Native {
                     codec,
-                    format_id: codec.id(),
                     confidence: None,
                 })
             }
@@ -255,13 +249,8 @@ impl InputCatalog {
             None => match self.detect(prefix) {
                 DetectionOutcome::None if is_cadir_prefix(prefix) => Ok(ResolvedSource::Cadir),
                 DetectionOutcome::None => Ok(ResolvedSource::Unrecognized),
-                DetectionOutcome::Detected {
+                DetectionOutcome::Detected { codec, confidence } => Ok(ResolvedSource::Native {
                     codec,
-                    format_id,
-                    confidence,
-                } => Ok(ResolvedSource::Native {
-                    codec,
-                    format_id,
                     confidence: Some(confidence),
                 }),
                 DetectionOutcome::Ambiguous {
@@ -360,11 +349,7 @@ mod tests {
         ));
         #[cfg(feature = "step")]
         {
-            let ResolvedSource::Native {
-                format_id,
-                confidence,
-                ..
-            } = catalog
+            let ResolvedSource::Native { codec, confidence } = catalog
                 .resolve_source(
                     b"",
                     Some(crate::forced_input("step").expect("step is registered")),
@@ -373,7 +358,7 @@ mod tests {
             else {
                 panic!("forced step must resolve to native");
             };
-            assert_eq!(format_id, "step");
+            assert_eq!(codec.id(), "step");
             assert!(confidence.is_none());
         }
     }
