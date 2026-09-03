@@ -2948,3 +2948,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::{RevisionCompoundLoftConstruction::{selector,direction,direction_curve},CompoundLoftDirection::Curve::selector}"
 reason = "CompoundLoftDirection carries exactly one vector or curve and retains the curve form's nonzero native selector, so revision compound lofts cannot pair a selector with the wrong payload"
+
+[[change]]
+commit = "8ca1ba62be9a2c3ac3f359a17a63fa117c480304"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::{VariableBlendRadiusKind,VariableBlendConstruction::{radius_kind,first_value,second_value,u_range,v_range}}"
+reason = "VariableBlendRadii carries exactly one or two radius laws, the U interval requires both bounds, and v_lower carries the only optional bound admitted by the second interval"

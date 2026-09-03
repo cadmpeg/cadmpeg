@@ -1029,19 +1029,19 @@ pub(crate) fn var_blend_spl_sur(
     ]);
     let slice = rolling_ball_curve(&mut cur, reference_context)?;
     let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
-    let radius_kind = match cur.take_enum()? {
-        0 => cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius,
-        1 => cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii,
+    let two_radii = match cur.take_enum()? {
+        0 => false,
+        1 => true,
         _ => return None,
     };
     let first_value = variable_blend_value(&mut cur, true, 0)?;
-    let second_value = if matches!(
-        radius_kind,
-        cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
-    ) {
-        Some(variable_blend_value(&mut cur, true, 0)?)
+    let radii = if two_radii {
+        cadmpeg_ir::geometry::VariableBlendRadii::Two {
+            first: first_value,
+            second: variable_blend_value(&mut cur, true, 0)?,
+        }
     } else {
-        None
+        cadmpeg_ir::geometry::VariableBlendRadii::Single { value: first_value }
     };
     // The cross-section clause follows the complete one- or two-radius law
     // sequence. An absent enum is the elided circular default.
@@ -1075,10 +1075,17 @@ pub(crate) fn var_blend_spl_sur(
         cur.take_optional_range_value()?,
         cur.take_optional_range_value()?,
     ];
+    let [Some(u_lower), Some(u_upper)] = u_range else {
+        return None;
+    };
     let v_range = [
         cur.take_optional_range_value()?,
         cur.take_optional_range_value()?,
     ];
+    let v_lower = match v_range {
+        [lower, None] => lower,
+        _ => return None,
+    };
     let shape_prefix = cur.take_long()?;
     let shape_parameter = cur.take_f64()?;
     let shape_length = cur.take_f64()? * LEN_TO_MM;
@@ -1139,12 +1146,10 @@ pub(crate) fn var_blend_spl_sur(
                 slice: slice.geometry,
                 slice_range: slice.parameter_range,
                 offsets,
-                radius_kind,
-                first_value,
-                second_value,
+                radii,
                 cross_section,
-                u_range,
-                v_range,
+                u_range: [u_lower, u_upper],
+                v_lower,
                 shape_prefix,
                 shape_parameter,
                 shape_length,

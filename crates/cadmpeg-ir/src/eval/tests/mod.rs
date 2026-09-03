@@ -11,7 +11,7 @@ use crate::geometry::{
     RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry,
     SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
     VariableBlendConstruction, VariableBlendConvexity, VariableBlendCrossSection,
-    VariableBlendRadiusKind, VariableBlendRenderMode, VariableBlendSupportKind,
+    VariableBlendRadii, VariableBlendRenderMode, VariableBlendSupportKind,
     VariableBlendSurfaceSubtype, VariableBlendValue, VariableBlendValuePayload,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};

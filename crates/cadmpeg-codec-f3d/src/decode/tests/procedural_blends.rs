@@ -562,8 +562,8 @@ fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.u_range, [Some(-1.0), Some(2.0)]);
-    assert_eq!(construction.v_range, [Some(-0.5), None]);
+    assert_eq!(construction.u_range, [-1.0, 2.0]);
+    assert_eq!(construction.v_lower, Some(-0.5));
     assert_eq!(construction.shape_prefix, 11);
     assert_eq!(construction.shape_length, 6.0);
 }
@@ -603,7 +603,7 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
         };
         let VariableBlendValuePayload::Interpolated {
             function, points, ..
-        } = &construction.first_value.payload
+        } = &construction.radii.first().payload
         else {
             panic!("expected interpolated radius law")
         };
@@ -640,7 +640,7 @@ fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
         panic!("expected variable blend")
     };
     let VariableBlendValuePayload::EdgeOffset { scalars, lengths } =
-        &construction.first_value.payload
+        &construction.radii.first().payload
     else {
         panic!("expected edge-offset radius law")
     };
@@ -714,23 +714,20 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
         );
         assert_eq!(construction.offsets, [-2.0, 4.0]);
-        assert_eq!(
-            construction.radius_kind,
-            cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius
-        );
         let VariableBlendValuePayload::TwoEnds { parameters, radii } =
-            &construction.first_value.payload
+            &construction.radii.first().payload
         else {
             panic!("expected two-ends radius law")
         };
-        assert!(construction.first_value.modern_flag);
-        assert_eq!(construction.first_value.discriminator, 7);
-        assert_eq!(construction.first_value.calibrated, 3);
+        assert!(construction.radii.is_single());
+        assert!(construction.radii.first().modern_flag);
+        assert_eq!(construction.radii.first().discriminator, 7);
+        assert_eq!(construction.radii.first().calibrated, 3);
         assert_eq!(*parameters, [0.25, 0.75]);
         assert_eq!(*radii, [15.0, 25.0]);
         assert_eq!(construction.slice_range, [None, None]);
-        assert_eq!(construction.u_range, [Some(-1.0), Some(2.0)]);
-        assert_eq!(construction.v_range, [None, None]);
+        assert_eq!(construction.u_range, [-1.0, 2.0]);
+        assert_eq!(construction.v_lower, None);
         assert_eq!(construction.shape_prefix, 11);
         assert_eq!(construction.shape_length, 6.0);
         assert_eq!(construction.cache.selector(), 0);
@@ -859,45 +856,9 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
 }
 
 #[test]
-fn generated_variable_blend_rejects_radius_cardinality_mismatch() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-
-    let mut decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh(
-                "var_blend_spl_sur",
-            ))),
-            &DecodeOptions::default(),
-        )
-        .expect("variable-blend decode")
-        .into_parts()
-        .0;
-    decoded.source = None;
-    decoded.set_native_unknowns("f3d", &[]).unwrap();
-    decoded.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
-            panic!("expected variable blend")
-        };
-        construction.second_value = Some(construction.first_value.clone());
-    });
-
-    assert!(cadmpeg_ir::validate_neutral(&decoded, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "variable blend construction payload is invalid"));
-    let error = F3dCodec
-        .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("single-radius variable blend carries two-radii payloads"));
-}
-
-#[test]
 fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, VariableBlendRadiusKind, VariableBlendValuePayload,
+        ProceduralSurfaceDefinition, VariableBlendRadii, VariableBlendValuePayload,
     };
 
     let decoded = F3dCodec
@@ -914,16 +875,18 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
     assert!(matches!(
-        construction
-            .second_value
-            .as_ref()
-            .map(|value| &value.payload),
-        Some(VariableBlendValuePayload::TwoEnds {
-            parameters: [0.1, 0.9],
-            radii: [35.0, 45.0]
-        })
+        &construction.radii,
+        VariableBlendRadii::Two {
+            second: cadmpeg_ir::geometry::VariableBlendValue {
+                payload: VariableBlendValuePayload::TwoEnds {
+                    parameters: [0.1, 0.9],
+                    radii: [35.0, 45.0]
+                },
+                ..
+            },
+            ..
+        }
     ));
     let Some(cadmpeg_ir::geometry::VariableBlendCrossSection::RoundedChamfer {
         radius: Some(radius),
@@ -960,7 +923,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
 
 #[test]
 fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadiusKind};
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadii};
 
     let decoded = F3dCodec
         .decode(
@@ -978,7 +941,7 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
+    assert!(matches!(construction.radii, VariableBlendRadii::Two { .. }));
     assert!(matches!(
         &construction.cross_section,
         Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)

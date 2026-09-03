@@ -1618,60 +1618,51 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralSurfaceDefinition::VariableBlend { construction } = procedural.definition()
         {
-            use crate::geometry::VariableBlendRadiusKind;
-
-            let ranges_valid = [
-                construction.u_range,
-                construction.v_range,
-                construction.post_range,
-                construction.slice_range,
-                construction.secondary_range,
-            ]
-            .iter()
-            .all(|range| {
-                range.iter().flatten().all(|value| value.is_finite())
-                    && match (range[0], range[1]) {
-                        (Some(lower), Some(upper)) => lower <= upper,
-                        _ => true,
-                    }
-            });
+            let ranges_valid = construction.u_range.iter().all(|value| value.is_finite())
+                && construction.u_range[0] <= construction.u_range[1]
+                && construction.v_lower.is_none_or(f64::is_finite)
+                && [
+                    construction.post_range,
+                    construction.slice_range,
+                    construction.secondary_range,
+                ]
+                .iter()
+                .all(|range| {
+                    range.iter().flatten().all(|value| value.is_finite())
+                        && match (range[0], range[1]) {
+                            (Some(lower), Some(upper)) => lower <= upper,
+                            _ => true,
+                        }
+                });
             let sides_valid = construction.sides.iter().all(|side| {
                 side.location.x.is_finite()
                     && side.location.y.is_finite()
                     && side.location.z.is_finite()
             });
-            let values_valid = variable_blend_value_valid(&construction.first_value)
-                && construction
-                    .second_value
-                    .as_ref()
-                    .is_none_or(variable_blend_value_valid)
-                && construction
-                    .cross_section
-                    .as_ref()
-                    .is_none_or(|cross_section| match cross_section {
-                        crate::geometry::VariableBlendCrossSection::Circular => true,
-                        crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
-                        | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
-                            parameters.iter().all(|value| value.is_finite())
-                        }
-                        crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
-                            radius.as_deref().is_none_or(variable_blend_value_valid)
-                        }
-                        crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
-                    });
+            let values_valid = match &construction.radii {
+                crate::geometry::VariableBlendRadii::Single { value } => {
+                    variable_blend_value_valid(value)
+                }
+                crate::geometry::VariableBlendRadii::Two { first, second } => {
+                    variable_blend_value_valid(first) && variable_blend_value_valid(second)
+                }
+            } && construction.cross_section.as_ref().is_none_or(
+                |cross_section| match cross_section {
+                    crate::geometry::VariableBlendCrossSection::Circular => true,
+                    crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
+                    | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
+                        radius.as_deref().is_none_or(variable_blend_value_valid)
+                    }
+                    crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
+                },
+            );
             let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
                 && construction.shape_parameter.is_finite()
                 && construction.shape_length.is_finite();
-            let radius_branch_valid = match construction.radius_kind {
-                VariableBlendRadiusKind::SingleRadius => construction.second_value.is_none(),
-                VariableBlendRadiusKind::TwoRadii => construction.second_value.is_some(),
-            };
-            if !ranges_valid
-                || !sides_valid
-                || !values_valid
-                || !scalar_tail_valid
-                || !radius_branch_valid
-            {
+            if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,

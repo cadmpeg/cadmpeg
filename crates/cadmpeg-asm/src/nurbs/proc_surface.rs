@@ -278,19 +278,15 @@ pub struct EmbeddedVariableBlend {
     pub slice_range: [Option<f64>; 2],
     /// Two side offsets in document length units.
     pub offsets: [f64; 2],
-    /// The radius-law kind of the blend.
-    pub radius_kind: cadmpeg_ir::geometry::VariableBlendRadiusKind,
-    /// The first radius-law value.
-    pub first_value: cadmpeg_ir::geometry::VariableBlendValue,
-    /// The second radius-law value, when serialized.
-    pub second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
+    /// Structurally selected radius-law payloads.
+    pub radii: cadmpeg_ir::geometry::VariableBlendRadii,
     /// The cross-section law, when serialized.
     pub cross_section: Option<cadmpeg_ir::geometry::VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`.
-    pub u_range: [Option<f64>; 2],
+    pub u_range: [f64; 2],
     /// Second interval `(T lo, F)`: a lower bound with an unbounded-above
     /// marker decoding to `[Some(lo), None]`.
-    pub v_range: [Option<f64>; 2],
+    pub v_lower: Option<f64>,
     /// Approximation-current flag (`1` when the cache is current).
     pub shape_prefix: i64,
     /// Requested fit tolerance.

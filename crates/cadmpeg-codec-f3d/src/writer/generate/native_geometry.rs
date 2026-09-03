@@ -3922,10 +3922,7 @@ fn encode_native_variable_blend(
     }
     let slice_range = match construction.slice_range {
         [Some(lower), Some(upper)] => Some([lower, upper]),
-        _ => match construction.u_range {
-            [Some(lower), Some(upper)] => Some([lower, upper]),
-            _ => None,
-        },
+        _ => Some(construction.u_range),
     };
     let slice = native_loft_curve_in_range(target, &construction.slice, slice_range)?;
     native_nurbs_curve(bytes, &slice)?;
@@ -3940,24 +3937,14 @@ fn encode_native_variable_blend(
     }
     native_enum(
         bytes,
-        match construction.radius_kind {
-            cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius => 0,
-            cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii => 1,
+        match construction.radii {
+            cadmpeg_ir::geometry::VariableBlendRadii::Single { .. } => 0,
+            cadmpeg_ir::geometry::VariableBlendRadii::Two { .. } => 1,
         },
     );
-    native_variable_blend_value(bytes, &construction.first_value, 0)?;
-    if matches!(
-        construction.radius_kind,
-        cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
-    ) {
-        let second = construction.second_value.as_ref().ok_or_else(|| {
-            CodecError::Malformed("two-radii variable blend lacks its second value".into())
-        })?;
+    native_variable_blend_value(bytes, construction.radii.first(), 0)?;
+    if let Some(second) = construction.radii.second() {
         native_variable_blend_value(bytes, second, 0)?;
-    } else if construction.second_value.is_some() {
-        return Err(CodecError::Malformed(
-            "single-radius variable blend carries two-radii payloads".into(),
-        ));
     }
     if let Some(cross_section) = &construction.cross_section {
         use cadmpeg_ir::geometry::VariableBlendCrossSection as CrossSection;
@@ -3987,7 +3974,7 @@ fn encode_native_variable_blend(
             }
         }
     }
-    for range in [construction.u_range, construction.v_range] {
+    for range in [construction.u_range.map(Some), [construction.v_lower, None]] {
         for endpoint in range {
             bytes.push(native_bool(endpoint.is_some()));
             if let Some(value) = endpoint {

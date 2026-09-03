@@ -84,12 +84,10 @@ fn variable_blend_eval_fixture(
                 slice,
                 slice_range: [Some(0.0), Some(1.0)],
                 offsets: [0.0, 0.0],
-                radius_kind: VariableBlendRadiusKind::SingleRadius,
-                first_value: radius,
-                second_value: None,
+                radii: VariableBlendRadii::Single { value: radius },
                 cross_section,
-                u_range: [Some(0.0), Some(1.0)],
-                v_range: [Some(0.0), Some(1.0)],
+                u_range: [0.0, 1.0],
+                v_lower: Some(0.0),
                 shape_prefix: 1,
                 shape_parameter: 0.0,
                 shape_length: 0.0,
@@ -154,8 +152,11 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
             unreachable!()
         };
-        construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
-        construction.second_value = Some(construction.first_value.clone());
+        let first = construction.radii.first().clone();
+        construction.radii = VariableBlendRadii::Two {
+            first: first.clone(),
+            second: first,
+        };
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
