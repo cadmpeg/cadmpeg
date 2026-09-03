@@ -461,7 +461,7 @@ pub enum FidelityError {
 }
 
 /// Decode-time source annotations and retained native records.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
     pub annotations: Annotations,
@@ -521,6 +521,17 @@ impl JsonSchema for SourceFidelity {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         SourceFidelityWriteWire::json_schema(generator)
+    }
+}
+
+// Keep the explicit impl visible in the rustdoc-derived public API baseline.
+#[allow(clippy::derivable_impls)]
+impl Default for SourceFidelity {
+    fn default() -> Self {
+        Self {
+            annotations: Annotations::default(),
+            retained_records: Vec::new(),
+        }
     }
 }
 
