@@ -92,9 +92,12 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         FeatureDefinition::SpatialSketch { sketch: None };
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -138,9 +141,12 @@ fn semantic_writer_applies_line_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -185,9 +191,12 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let scan = container::scan_bytes(&written);
     let lane = scan
         .blocks
@@ -240,13 +249,12 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         start.u += 1.0;
     }
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::Malformed(message)
@@ -278,9 +286,12 @@ fn semantic_writer_applies_circle_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -324,9 +335,12 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -397,9 +411,12 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -446,9 +463,12 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -487,9 +507,12 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -545,9 +568,12 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -614,9 +640,12 @@ fn semantic_writer_preserves_display_list_geometry() {
     decoded.ir_mut().model.tessellations[0].vertices[0].z = 250.0;
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -639,13 +668,12 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.tessellations[0].vertices[0].x = f64::MAX;
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("tessellation position exceeds f32 range"));

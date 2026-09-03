@@ -145,9 +145,12 @@ fn decode_resolves_feature_topology_selections() {
         *face = Some(FaceSelection::Faces(vec![face_id.clone()]));
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -268,9 +271,12 @@ fn decode_dispatches_typed_features_by_xml_family() {
             .insert("Algorithm".into(), "FaceBlend".into());
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -291,13 +297,12 @@ fn decode_dispatches_typed_features_by_xml_family() {
         ]
     );
     regenerated.ir_mut().model.features[2].dependencies.pop();
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            regenerated.ir(),
-            regenerated.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        regenerated.ir(),
+        regenerated.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -337,9 +342,12 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact combine".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -773,13 +781,12 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         unreachable!("typed surface sweep");
     };
     *section = cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native("other".into()));
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            &changed_profile,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &changed_profile,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("changes a reference-curve sweep profile"));
@@ -793,9 +800,12 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .unwrap()
         .name = Some("Renamed surface sweep".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -977,13 +987,12 @@ fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
     assert_eq!(scalar.operands[1].entity_index, 2);
     assert_eq!(scalar.operands[1].entity_ref, None);
 
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]

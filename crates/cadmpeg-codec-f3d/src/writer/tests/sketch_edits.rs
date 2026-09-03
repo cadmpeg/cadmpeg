@@ -33,8 +33,7 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-point regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -72,8 +71,7 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-arc regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -110,8 +108,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-constraint regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -154,8 +151,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

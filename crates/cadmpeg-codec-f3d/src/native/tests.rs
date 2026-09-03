@@ -144,8 +144,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         native.tolerant_coedge_parameters[0].parameter_range = [-1.5, 2.25];
     });
     let mut edited = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut edited)
+    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut edited)
         .expect("tolerant coedge sense edit");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
@@ -365,8 +364,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     nurbs.control_points[0].x += 1.0;
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut preserved)
+    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut preserved)
         .expect("embedded use-curve edit");
     let preserved = F3dCodec
         .decode(&mut Cursor::new(preserved), &DecodeOptions::default())

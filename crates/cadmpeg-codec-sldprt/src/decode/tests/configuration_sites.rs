@@ -86,9 +86,12 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
             .collect::<Vec<_>>()
     );
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -139,9 +142,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     edited.model.points[0].position.x += 1.0;
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
         .blocks

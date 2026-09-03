@@ -52,9 +52,12 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -129,13 +132,12 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     ] {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = SldprtCodec
-            .write_preserved_with_source_fidelity(
-                &detached,
-                decoded.source_fidelity(),
-                &mut Vec::new(),
-            )
-            .unwrap_err();
+        let error = crate::test_support::plan_inherited_write(
+            &detached,
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains(message));
     }
     let mut detached = decoded.ir().clone();
@@ -144,18 +146,24 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         panic!("partial hole");
     };
     *kind = HoleKind::Simple;
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &detached,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("unresolved hole termination"));
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
         feature.name = Some(format!("Renamed hole {}", index + 1));
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -213,9 +221,12 @@ fn semantic_writer_round_trips_hole_placement() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -307,9 +318,12 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

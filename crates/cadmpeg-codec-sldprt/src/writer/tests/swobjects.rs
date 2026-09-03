@@ -32,13 +32,13 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
 
     let mut encoded = Vec::new();
-    let path = SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
-    assert!(matches!(
-        path,
-        cadmpeg_ir::codec::write::WritePath::Patched { .. }
-    ));
+    let path = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    assert_eq!(path, cadmpeg_ir::WritePath::Patched);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -65,13 +65,12 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
         a: 1.0,
     });
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -637,13 +636,12 @@ fn encoder_writes_source_less_line_sketches() {
         point.v = 8.0;
     }
     let mut rewritten = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut rewritten,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut rewritten,
+    )
+    .unwrap();
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
@@ -788,13 +786,12 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         end: edited_end,
     };
     let mut rewritten = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            regenerated.ir(),
-            regenerated.source_fidelity(),
-            &mut rewritten,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        regenerated.ir(),
+        regenerated.source_fidelity(),
+        &mut rewritten,
+    )
+    .unwrap();
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();

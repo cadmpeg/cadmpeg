@@ -200,8 +200,7 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
     let mut edited = decoded.ir().clone();
     translate_model_x(&mut edited, 3.0);
     let mut bytes = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut bytes)
+    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut bytes)
         .expect("semantic SLDPRT write");
     let round_trip = decode(bytes);
     assert_eq!(
@@ -220,8 +219,7 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
     assert_valid(&first);
 
     let mut bytes = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(first.ir(), first.source_fidelity(), &mut bytes)
+    crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut bytes)
         .unwrap();
     let second = decode(bytes);
     assert_eq!(

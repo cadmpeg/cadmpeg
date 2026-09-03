@@ -160,8 +160,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let expected_face_sense = edited.model.faces[0].sense;
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("generated BinaryFile4 regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -208,8 +207,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     let expected = nurbs.clone();
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("generated BinaryFile4 NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -367,8 +365,7 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("delta-state owner regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

@@ -1256,9 +1256,12 @@ fn semantic_writer_round_trips_flex_operations() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1312,9 +1315,12 @@ fn semantic_writer_round_trips_all_flex_modes() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1387,13 +1393,12 @@ fn semantic_writer_retains_partial_native_flex_construction() {
     for index in 0..4 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = SldprtCodec
-            .write_preserved_with_source_fidelity(
-                &detached,
-                decoded.source_fidelity(),
-                &mut Vec::new(),
-            )
-            .unwrap_err();
+        let error = crate::test_support::plan_inherited_write(
+            &detached,
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("unresolved flex construction"));
     }
 
@@ -1401,9 +1406,12 @@ fn semantic_writer_retains_partial_native_flex_construction() {
         feature.name = Some(format!("Renamed flex {}", index + 1));
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1487,9 +1495,12 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1554,9 +1565,12 @@ fn semantic_writer_removes_deleted_history_records() {
         .retain(|configuration| configuration.name == "Keep");
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1592,9 +1606,12 @@ fn semantic_writer_reorders_nested_history_records() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

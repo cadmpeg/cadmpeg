@@ -92,13 +92,12 @@ fn native_version_one_migrates_the_body_selection_arena() {
 
     *decoded.ir_mut().native.namespace_mut("sldprt") = legacy;
     assert!(crate::validate_native(decoded.ir()).is_empty());
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]

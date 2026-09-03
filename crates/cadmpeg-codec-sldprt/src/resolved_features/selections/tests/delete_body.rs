@@ -99,13 +99,12 @@ fn decode_and_validate_compact_delete_body_selection() {
                 native: "sldprt:feature-input:body-ids:287,115".into(),
             } && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
     ));
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 
     decoded
         .ir_mut()
@@ -116,9 +115,12 @@ fn decode_and_validate_compact_delete_body_selection() {
         .expect("delete-body feature")
         .name = Some("Renamed Delete Body".into());
     let mut renamed = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut renamed)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut renamed,
+    )
+    .unwrap();
     let renamed = SldprtCodec
         .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
         .unwrap();
@@ -149,13 +151,12 @@ fn decode_and_validate_compact_delete_body_selection() {
                 "sldprt:feature-input:body-ids:287".into(),
             );
         }
-        let error = SldprtCodec
-            .write_preserved_with_source_fidelity(
-                decoded.ir(),
-                decoded.source_fidelity(),
-                &mut Vec::new(),
-            )
-            .unwrap_err();
+        let error = crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
         assert!(error
             .to_string()
             .contains("changes a compact body selection"));
@@ -181,13 +182,12 @@ fn decode_and_validate_compact_delete_body_selection() {
             };
             *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
         }
-        let error = SldprtCodec
-            .write_preserved_with_source_fidelity(
-                decoded.ir(),
-                decoded.source_fidelity(),
-                &mut Vec::new(),
-            )
-            .unwrap_err();
+        let error = crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
         assert!(error
             .to_string()
             .contains("changes a compact body retention mode"));

@@ -93,13 +93,12 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
             .collect::<Vec<_>>(),
         [(2, lane.sketch_entities[1].id.as_str())]
     );
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -116,13 +115,12 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
         .iter()
         .any(|finding| finding.message.contains("local object id does not match")));
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("inconsistent marker order"));
 }
 
@@ -140,13 +138,12 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
         .iter()
         .any(|finding| finding.message.contains("object index does not match")));
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("inconsistent marker order"));
 }
 
@@ -167,13 +164,12 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     });
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()

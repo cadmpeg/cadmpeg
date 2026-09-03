@@ -125,8 +125,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     native.store(edited.native.namespace_mut("f3d")).unwrap();
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("persistent-reference regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

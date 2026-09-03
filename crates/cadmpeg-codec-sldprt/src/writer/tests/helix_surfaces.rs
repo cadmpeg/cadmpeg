@@ -68,9 +68,12 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -161,9 +164,12 @@ fn semantic_writer_round_trips_equation_driven_curve() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -252,9 +258,12 @@ fn semantic_writer_round_trips_helix() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -343,9 +352,12 @@ fn semantic_writer_round_trips_slash_named_helix() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -420,9 +432,12 @@ fn semantic_writer_round_trips_native_axis_helix() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -505,13 +520,12 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         *radius = Length(9.0);
     }
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -570,9 +584,12 @@ fn semantic_writer_round_trips_wrap() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -603,9 +620,12 @@ fn semantic_writer_round_trips_wrap() {
         *depth = None;
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(scribed.ir(), scribed.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        scribed.ir(),
+        scribed.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let scribed = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -682,9 +702,12 @@ fn semantic_writer_round_trips_move_copy_body() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -711,13 +734,12 @@ fn semantic_writer_round_trips_move_copy_body() {
         *copies = 0;
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            translated.ir(),
-            translated.source_fidelity(),
-            &mut encoded,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        translated.ir(),
+        translated.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let translated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -778,9 +800,12 @@ fn semantic_writer_round_trips_offset_surface() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -847,9 +872,12 @@ fn semantic_writer_round_trips_knit_surface() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -920,9 +948,12 @@ fn semantic_writer_round_trips_cut_with_surface() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -971,9 +1002,12 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
     ));
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1046,9 +1080,12 @@ fn semantic_writer_round_trips_filled_surface() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1116,9 +1153,12 @@ fn semantic_writer_round_trips_trim_surface() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1183,9 +1223,12 @@ fn semantic_writer_round_trips_extend_surface() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1264,9 +1307,12 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1289,13 +1335,12 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         };
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            regenerated.ir(),
-            regenerated.source_fidelity(),
-            &mut encoded,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        regenerated.ir(),
+        regenerated.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let tangent = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1365,9 +1410,12 @@ fn semantic_writer_round_trips_projected_curve() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1437,9 +1485,12 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1514,9 +1565,12 @@ fn semantic_writer_round_trips_typed_revolution() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1571,18 +1625,24 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     ));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &detached,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("unresolved revolution construction"));
     decoded.ir_mut().model.features[0].name = Some("Renamed turn".into());
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1678,9 +1738,12 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
