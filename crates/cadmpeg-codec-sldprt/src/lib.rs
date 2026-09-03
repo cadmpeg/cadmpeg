@@ -442,14 +442,15 @@ mod tests {
     fn source_record_join_borrows_the_retained_source_image() {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        fidelity.retained_records =
-            vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(
+        let fidelity = cadmpeg_ir::SourceFidelity {
+            retained_records: vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(
                 SOURCE_IMAGE_ID,
                 "source",
                 0,
                 payload,
-            )];
+            )],
+            ..cadmpeg_ir::SourceFidelity::default()
+        };
 
         let records = crate::source_records(&cadmpeg_ir::examples::unit_cube(), &fidelity).unwrap();
         let retained = records[0].data.expect("retained source bytes");
