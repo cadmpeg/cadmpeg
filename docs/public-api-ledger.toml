@@ -2773,3 +2773,10 @@ crate = "cadmpeg-codec-iges"
 kind = "trait_impl"
 item = "cadmpeg_codec_iges::IgesVersion::Default"
 reason = "the encoder catalog is the sole author of the cross-format IGES 5.3 default"
+
+[[change]]
+commit = "d0693f898628fb2791c980bda7f4d3c6653fd060"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::FormatDialects::{catalog,default_target}"
+reason = "FormatDialects retains the complete TargetCatalog and derives its default target from that single value instead of storing a second copy"

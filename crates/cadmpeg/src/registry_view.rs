@@ -47,8 +47,10 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
         }
         let name = &section.format;
         match section.catalog {
-            Some(targets) if !targets.is_empty() => {
-                let default = section.default_target.unwrap_or("none");
+            Some(catalog) if !catalog.is_empty() => {
+                let default = catalog
+                    .default()
+                    .map_or("none", |(_, target)| target.id.as_str());
                 println!("{name}  (write targets in this build; default {default})");
             }
             Some(_) => println!("{name}  (this build writes it, with no dialect catalog)"),
@@ -58,7 +60,7 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
         for row in &section.rows {
             let is_target = section
                 .catalog
-                .is_some_and(|targets| targets.iter().any(|target| target.id == row.id));
+                .is_some_and(|catalog| catalog.iter().any(|target| target.id == row.id));
             println!(
                 "  {:<34} {:<24} {:<24} {}",
                 row.id.as_str(),
