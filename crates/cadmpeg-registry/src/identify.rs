@@ -31,8 +31,17 @@ pub enum Inspection {
     Classified(ContainerSummary),
     /// The codec recognized the prefix but inspection failed.
     Failed(CodecError),
-    /// Inspection was not applicable or no single codec won resolution.
-    Skipped,
+    /// Inspection did not run for this typed reason.
+    Skipped(SkipReason),
+}
+
+/// Why a candidate did not run native container inspection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipReason {
+    /// The candidate is neutral CADIR and has no native container.
+    Neutral,
+    /// Multiple native codecs tied, so no single codec could inspect.
+    Ambiguous,
 }
 
 /// What cadmpeg makes of one file, before any semantic decode.
@@ -134,7 +143,7 @@ pub fn identify_with(
             Ok(vec![Identification {
                 format: crate::descriptors::CADIR.id(),
                 confidence: Confidence::High,
-                inspection: Inspection::Skipped,
+                inspection: Inspection::Skipped(SkipReason::Neutral),
             }])
         }
         DetectionOutcome::None => Ok(Vec::new()),
@@ -157,7 +166,7 @@ pub fn identify_with(
             .map(|format| Identification {
                 format,
                 confidence,
-                inspection: Inspection::Skipped,
+                inspection: Inspection::Skipped(SkipReason::Ambiguous),
             })
             .collect()),
     }
@@ -343,7 +352,7 @@ mod tests {
         fn summary(identification: &Identification) -> Option<&ContainerSummary> {
             match &identification.inspection {
                 Inspection::Classified(summary) => Some(summary),
-                Inspection::Failed(_) | Inspection::Skipped => None,
+                Inspection::Failed(_) | Inspection::Skipped(_) => None,
             }
         }
 
@@ -486,7 +495,10 @@ mod tests {
         assert!(found.len() > 1, "{found:?}");
         for identification in &found {
             assert_eq!(identification.confidence, Confidence::Low);
-            assert!(matches!(identification.inspection, Inspection::Skipped));
+            assert!(matches!(
+                identification.inspection,
+                Inspection::Skipped(SkipReason::Ambiguous)
+            ));
         }
         let formats = found
             .iter()
@@ -564,7 +576,10 @@ mod tests {
             assert_eq!(found.len(), 1);
             assert_eq!(found[0].format, "cadir");
             assert_eq!(found[0].confidence, Confidence::High);
-            assert!(matches!(found[0].inspection, Inspection::Skipped));
+            assert!(matches!(
+                found[0].inspection,
+                Inspection::Skipped(SkipReason::Neutral)
+            ));
         }
     }
 
