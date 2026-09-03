@@ -2,7 +2,7 @@
 //! Runtime projections of the joined dialect registries.
 
 use cadmpeg_core::dialect::{DialectId, DialectLayers};
-use cadmpeg_core::target::TargetDescriptor;
+use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 
 use crate::disposition::ReadDisposition;
 use crate::registry::{canonical_format_name, catalog_of, registries, support, DialectEntry};
@@ -88,9 +88,7 @@ pub struct FormatDialects {
     pub format: String,
     /// `None` when this build has no encoder for the format; otherwise the
     /// encoder's catalog, which is empty for an encoder with no dialects.
-    pub catalog: Option<&'static [TargetDescriptor]>,
-    /// The catalog's default target id, when it declares one.
-    pub default_target: Option<&'static str>,
+    pub catalog: Option<TargetCatalog>,
     /// The declared dialects, in registry order.
     pub rows: Vec<DialectEntry>,
 }
@@ -122,16 +120,10 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Unknow
 
     Ok(formats
         .into_iter()
-        .map(|name| {
-            let write_catalog = catalog_of(&name);
-            FormatDialects {
-                catalog: write_catalog.map(|catalog| catalog.targets()),
-                default_target: write_catalog
-                    .and_then(|catalog| catalog.default())
-                    .map(|(_, target)| target.id.as_str()),
-                rows: registries.rows_of(&name).cloned().collect(),
-                format: name,
-            }
+        .map(|name| FormatDialects {
+            catalog: catalog_of(&name),
+            rows: registries.rows_of(&name).cloned().collect(),
+            format: name,
         })
         .collect())
 }
