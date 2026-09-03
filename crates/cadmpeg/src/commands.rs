@@ -4,9 +4,10 @@
 pub(crate) mod reporting;
 
 use reporting::{
-    command_report_json, fidelity_diff, fidelity_differs, losses, print_check_report,
-    print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
-    print_source_diff, write_command_report, write_json_report, CommandReportBody,
+    command_body_json, command_report_json, fidelity_diff, fidelity_differs, losses,
+    print_check_report, print_decode_report, print_export_emission, print_fidelity_summary,
+    print_id_delta, print_source_diff, refused_command_report_json, write_command_report,
+    write_json_report, write_refused_json_report, CommandReportBody,
 };
 
 use cadmpeg_ir::codec::write::TargetRequest;
@@ -83,16 +84,6 @@ pub struct ConversionArgs {
     pub forced_input: Option<ForcedInput>,
 }
 
-fn refusal_report_body(refusal: &ConversionRefusal) -> CommandReportBody<'_> {
-    let reports = refusal.evidence().reports;
-    CommandReportBody {
-        decode_report: reports.decode,
-        check_report: reports.check,
-        export: reports.export,
-        refusal: Some(refusal),
-    }
-}
-
 /// Attempt to persist a semantic refusal without replacing it with a report
 /// I/O failure. The original refusal controls the process exit status; report
 /// persistence failure remains visible on stderr.
@@ -103,8 +94,16 @@ fn write_refusal_command_report(
     command: &'static str,
     refusal: &ConversionRefusal,
 ) {
-    let body = refusal_report_body(refusal);
-    write_refusal_report(input, output, force, command, &body, refusal);
+    let body = CommandReportBody::Refused(refusal);
+    if !refusal.may_write_report() {
+        return;
+    }
+    if let Err(error) = write_command_report(input, output, force, command, body) {
+        eprintln!(
+            "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
+            refusal.code()
+        );
+    }
 }
 
 fn write_refusal_report<P: Serialize>(
@@ -118,7 +117,7 @@ fn write_refusal_report<P: Serialize>(
     if !refusal.may_write_report() {
         return;
     }
-    if let Err(error) = write_json_report(input, output, force, command, payload, Some(refusal)) {
+    if let Err(error) = write_refused_json_report(input, output, force, command, payload, refusal) {
         eprintln!(
             "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
             refusal.code()
@@ -139,12 +138,6 @@ pub(crate) struct DiffInput<'a> {
 struct InspectReportPayload<'a> {
     confidence: Option<cadmpeg_ir::codec::Confidence>,
     summary: Option<&'a cadmpeg_ir::ContainerSummary>,
-}
-
-#[derive(Serialize)]
-struct CheckReportPayload<'a> {
-    decode_report: Option<&'a cadmpeg_ir::DecodeReport>,
-    check_report: &'a cadmpeg_ir::ValidationReport,
 }
 
 #[derive(Serialize)]
@@ -200,7 +193,7 @@ pub fn inspect(
             if json {
                 println!(
                     "{}",
-                    command_report_json("inspect", &payload, Some(&refusal))?
+                    refused_command_report_json("inspect", &payload, &refusal)?
                 );
             }
             return Err(refusal.into());
@@ -216,9 +209,9 @@ pub fn inspect(
         confidence,
         summary: Some(&summary),
     };
-    write_json_report(path, report_path, force, "inspect", &payload, None)?;
+    write_json_report(path, report_path, force, "inspect", &payload)?;
     if json {
-        println!("{}", command_report_json("inspect", &payload, None)?);
+        println!("{}", command_report_json("inspect", &payload)?);
         return Ok(());
     }
     println!(
@@ -333,11 +326,10 @@ pub fn dump(
         report_path,
         force,
         "dump",
-        CommandReportBody {
+        CommandReportBody::Ok {
             decode_report: loaded.decode_report(),
             check_report: None,
             export: None,
-            refusal: None,
         },
     )?;
     Ok(())
@@ -378,24 +370,17 @@ pub fn check_cmd(
         decode_report: loaded.decode_report().cloned(),
         validation: report.clone(),
     });
-    let payload = CheckReportPayload {
-        decode_report: loaded.decode_report(),
-        check_report: &report,
+    let body = match check_refusal.as_ref() {
+        Some(refusal) => CommandReportBody::Refused(refusal),
+        None => CommandReportBody::Ok {
+            decode_report: loaded.decode_report(),
+            check_report: Some(&report),
+            export: None,
+        },
     };
-    write_json_report(
-        path,
-        report_path,
-        force,
-        "check",
-        &payload,
-        check_refusal.as_ref(),
-    )?;
+    write_command_report(path, report_path, force, "check", body)?;
     if json {
-        writeln!(
-            stdout,
-            "{}",
-            command_report_json("check", &payload, check_refusal.as_ref())?
-        )?;
+        writeln!(stdout, "{}", command_body_json("check", body)?)?;
     } else {
         print_check_report(&mut stdout, &report)?;
     }
@@ -511,11 +496,10 @@ pub fn convert(
         conversion.report.as_deref(),
         conversion.report_overwrite,
         "convert",
-        CommandReportBody {
+        CommandReportBody::Ok {
             decode_report: decode_report.as_ref(),
             check_report: Some(&validation),
             export: Some(&emission.report),
-            refusal: None,
         },
     ) {
         eprintln!(
@@ -547,9 +531,9 @@ pub fn diff(
         diff: &result,
         source_fidelity: &fidelity,
     };
-    write_json_report(a.path, report_path, force, "diff", &payload, None)?;
+    write_json_report(a.path, report_path, force, "diff", &payload)?;
     if json {
-        println!("{}", command_report_json("diff", &payload, None)?);
+        println!("{}", command_report_json("diff", &payload)?);
         return Ok(if different {
             ExitCode::from(1)
         } else {
