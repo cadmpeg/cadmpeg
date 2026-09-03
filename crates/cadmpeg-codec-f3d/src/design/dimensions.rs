@@ -2210,7 +2210,8 @@ pub(crate) fn constraint_parameters(
         | Definition::RepeatedDiameter { parameter, .. }
         | Definition::SnellsLaw { parameter, .. }
         | Definition::Weight { parameter, .. } => vec![parameter],
-        Definition::RectangularPattern { directions, .. } => directions
+        Definition::RectangularPattern { pattern } => pattern
+            .directions()
             .iter()
             .flat_map(|direction| {
                 [
@@ -2222,14 +2223,12 @@ pub(crate) fn constraint_parameters(
                 .flatten()
             })
             .collect(),
-        Definition::CircularPattern {
-            angle_parameter,
-            count_parameter,
-            ..
-        } => [angle_parameter.as_ref(), count_parameter.as_ref()]
-            .into_iter()
-            .flatten()
-            .collect(),
+        Definition::CircularPattern { pattern } => {
+            [pattern.angle_parameter(), pattern.count_parameter()]
+                .into_iter()
+                .flatten()
+                .collect()
+        }
         Definition::Disabled
         | Definition::Coincident { .. }
         | Definition::ProjectedCopy { .. }

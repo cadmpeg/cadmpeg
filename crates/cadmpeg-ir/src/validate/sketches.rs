@@ -1530,73 +1530,38 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         let valid = match &constraint.definition {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::SplineGroup { entities } => entities.len() >= 2,
-            Constraint::RectangularPattern {
-                directions,
-                instances,
-            } => {
-                let expected_instances =
-                    directions.iter().try_fold(1usize, |product, direction| {
-                        product.checked_mul(usize::try_from(direction.count).ok()?)
-                    });
-                let seed_arity = instances
-                    .first()
-                    .map_or(0, |instance| instance.entities.len());
-                let mut indices = HashSet::new();
+            Constraint::RectangularPattern { pattern } => {
+                let directions = pattern.directions();
                 let mut entities = HashSet::new();
                 let dot = directions[0].direction[0] * directions[1].direction[0]
                     + directions[0].direction[1] * directions[1].direction[1];
-                expected_instances == Some(instances.len())
-                    && seed_arity > 0
-                    && dot.abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
-                    && instances
-                        .first()
-                        .is_some_and(|instance| instance.indices == [0, 0])
+                dot.abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     && directions.iter().all(|direction| {
                         let length = direction.direction[0].hypot(direction.direction[1]);
-                        direction.count > 0
-                            && direction.spacing.0.is_finite()
+                        direction.spacing.0.is_finite()
                             && direction.direction.iter().all(|value| value.is_finite())
                             && (length - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     })
-                    && instances.iter().all(|instance| {
-                        instance.indices[0] < directions[0].count
-                            && instance.indices[1] < directions[1].count
-                            && instance.entities.len() == seed_arity
-                            && indices.insert(instance.indices)
-                            && instance
-                                .entities
-                                .iter()
-                                .all(|entity| entities.insert(entity))
+                    && pattern.rows().iter().flatten().all(|instance| {
+                        instance
+                            .entities
+                            .iter()
+                            .all(|entity| entities.insert(entity))
                     })
             }
-            Constraint::CircularPattern {
-                center,
-                angle,
-                count,
-                instances,
-                ..
-            } => {
-                let seed_arity = instances
-                    .first()
-                    .map_or(0, |instance| instance.entities.len());
-                let mut indices = HashSet::new();
+            Constraint::CircularPattern { pattern } => {
+                let instances = pattern.instances();
                 let mut entities = HashSet::new();
-                *count > 0
-                    && angle.0.is_finite()
-                    && seed_arity > 0
-                    && instances.len() == usize::try_from(*count).unwrap_or(usize::MAX)
+                pattern.angle().0.is_finite()
                     && instances
                         .first()
-                        .is_some_and(|instance| instance.index == 0 && instance.angle.0 == 0.0)
+                        .is_some_and(|instance| instance.angle.0 == 0.0)
                     && !instances
                         .iter()
                         .flat_map(|instance| &instance.entities)
-                        .any(|entity| entity == center)
+                        .any(|entity| entity == pattern.center())
                     && instances.iter().all(|instance| {
-                        instance.index < *count
-                            && instance.angle.0.is_finite()
-                            && instance.entities.len() == seed_arity
-                            && indices.insert(instance.index)
+                        instance.angle.0.is_finite()
                             && instance
                                 .entities
                                 .iter()

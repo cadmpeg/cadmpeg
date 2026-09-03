@@ -1548,19 +1548,20 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 parameter: None,
                 ..
             } => (entities.clone(), None),
-            Definition::RectangularPattern { instances, .. } => (
-                instances
+            Definition::RectangularPattern { pattern } => (
+                pattern
+                    .rows()
                     .iter()
+                    .flatten()
                     .flat_map(|instance| instance.entities.iter().cloned())
                     .collect(),
                 None,
             ),
-            Definition::CircularPattern {
-                center, instances, ..
-            } => (
-                std::iter::once(center.clone())
+            Definition::CircularPattern { pattern } => (
+                std::iter::once(pattern.center().clone())
                     .chain(
-                        instances
+                        pattern
+                            .instances()
                             .iter()
                             .flat_map(|instance| instance.entities.iter().cloned()),
                     )
@@ -1847,8 +1848,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ref_error(findings, &constraint.id.0, "parameter", parameter);
             }
         }
-        if let Definition::RectangularPattern { directions, .. } = &constraint.definition {
-            for parameter in directions.iter().flat_map(|direction| {
+        if let Definition::RectangularPattern { pattern } = &constraint.definition {
+            for parameter in pattern.directions().iter().flat_map(|direction| {
                 [
                     direction.spacing_parameter.as_ref(),
                     direction.span_parameter.as_ref(),
@@ -1867,13 +1868,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
         }
-        if let Definition::CircularPattern {
-            angle_parameter,
-            count_parameter,
-            ..
-        } = &constraint.definition
-        {
-            for parameter in [angle_parameter.as_ref(), count_parameter.as_ref()]
+        if let Definition::CircularPattern { pattern } = &constraint.definition {
+            for parameter in [pattern.angle_parameter(), pattern.count_parameter()]
                 .into_iter()
                 .flatten()
             {
